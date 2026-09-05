@@ -166,6 +166,20 @@ uint32_t ibusLastFrame = 0;
 bool ibusFrameReady = false;
 
 // ============================================================
+// THROTTLE BOOST
+// ============================================================
+
+constexpr uint16_t THROTTLE_LIMIT_PERCENT = 40;
+
+constexpr uint32_t THROTTLE_BOOST_TIME_MS = 5000;
+
+bool throttleBoostActive = false;
+
+bool throttleBoostReady = true;
+
+uint32_t throttleBoostStartTime = 0;
+
+// ============================================================
 
 // RECEIVER STATUS
 
@@ -439,21 +453,86 @@ int16_t elevator =
         false
     );
 
-// Left and right ailerons move in opposite directions.
 
-uint16_t aileronLeftOutput =
+//
+// AILERONS + FLAPS
+//
+// CH1 = aileron control
+// CH5 = flap position
+//
+// CH1 moves the ailerons in opposite directions.
+// CH5 moves BOTH ailerons down together.
+//
+
+// --------------------------------------------------------
+// FLAP OFFSET
+// --------------------------------------------------------
+//
+// CH5 = 1000 -> 0 us
+// CH5 = 1500 -> 50 us
+// CH5 = 2000 -> 100 us
+//
+
+uint16_t flapOffset = 0;
+
+if (ch[4] >= 1750)
+{
+    // Flaps position 3
+    flapOffset = 100;
+}
+else if (ch[4] >= 1250)
+{
+    // Flaps position 2
+    flapOffset = 50;
+}
+else
+{
+    // Flaps retracted
+    flapOffset = 0;
+}
+
+// --------------------------------------------------------
+// LEFT AILERON
+// --------------------------------------------------------
+//
+// Aileron control + flap deflection.
+//
+
+int32_t aileronLeftOutput =
+    PWM_CENTER + aileron + flapOffset;
+
+// --------------------------------------------------------
+// RIGHT AILERON
+// --------------------------------------------------------
+//
+// Aileron control is reversed.
+// Flap offset stays in the SAME physical direction.
+//
+
+int32_t aileronRightOutput =
+    PWM_CENTER - aileron - flapOffset;
+
+// --------------------------------------------------------
+// LIMIT OUTPUT
+// --------------------------------------------------------
+
+aileronLeftOutput =
     constrain(
-        PWM_CENTER + aileron,
+        aileronLeftOutput,
         PWM_MIN,
         PWM_MAX
     );
 
-uint16_t aileronRightOutput =
+aileronRightOutput =
     constrain(
-        PWM_CENTER - aileron,
+        aileronRightOutput,
         PWM_MIN,
         PWM_MAX
     );
+
+// --------------------------------------------------------
+// ELEVATOR
+// --------------------------------------------------------
 
 uint16_t elevatorOutput =
     constrain(
@@ -462,27 +541,139 @@ uint16_t elevatorOutput =
         PWM_MAX
     );
 
-servoAileronLeft.writeMicroseconds(aileronLeftOutput);
-servoAileronRight.writeMicroseconds(aileronRightOutput);
-
-servoElevator.writeMicroseconds(elevatorOutput);
-
-    // --------------------------------------------------------
-
-    // MOTOR SAFETY
-
-    // --------------------------------------------------------
-
-   // --------------------------------------------------------
-// MOTOR (CH3 → 1000-2000 µs = 0-100 %)
 // --------------------------------------------------------
+// SERVO OUTPUT
+// --------------------------------------------------------
+
+servoAileronLeft.writeMicroseconds(
+    aileronLeftOutput
+);
+
+servoAileronRight.writeMicroseconds(
+    aileronRightOutput
+);
+
+servoElevator.writeMicroseconds(
+    elevatorOutput
+);
+
+    // --------------------------------------------------------
+
+// --------------------------------------------------------
+// MOTOR / THROTTLE LIMIT
+// --------------------------------------------------------
+//
+// CH6 = 1000:
+//     throttle limited to 40%
+//
+// CH6 = 2000:
+//     full throttle for 5 seconds
+//
+// After 5 seconds:
+//     throttle returns to 40%
+//
+// Boost can only be triggered again after CH6
+// has been returned to LOW and then switched HIGH again.
+//
+
 uint16_t throttle =
     constrain(
         throttleInput,
         PWM_MIN,
         PWM_MAX
     );
-esc.writeMicroseconds(throttle);
+
+uint16_t throttleSwitch = ch[5];
+
+uint32_t nowMs = millis();
+
+// --------------------------------------------------------
+// RESET BOOST TRIGGER
+// --------------------------------------------------------
+//
+// CH6 LOW = arm boost button/switch again.
+//
+
+if (throttleSwitch < 1250)
+{
+    throttleBoostReady = true;
+}
+
+// --------------------------------------------------------
+// START BOOST
+// --------------------------------------------------------
+
+if (
+    throttleSwitch >= 1750 &&
+    throttleBoostReady &&
+    !throttleBoostActive
+)
+{
+    throttleBoostActive = true;
+    throttleBoostReady = false;
+    throttleBoostStartTime = nowMs;
+}
+
+// --------------------------------------------------------
+// BOOST TIMER
+// --------------------------------------------------------
+
+if (throttleBoostActive)
+{
+    if (
+        nowMs - throttleBoostStartTime
+        >= THROTTLE_BOOST_TIME_MS
+    )
+    {
+        throttleBoostActive = false;
+    }
+}
+
+// --------------------------------------------------------
+// THROTTLE OUTPUT
+// --------------------------------------------------------
+
+if (throttleBoostActive)
+{
+    // Full throttle during boost.
+    esc.writeMicroseconds(PWM_MAX);
+}
+else
+{
+    // Normal mode: maximum 40%.
+    //
+    // 1000 = 1000
+    // 2000 = 1400
+    //
+    // The throttle stick remains proportional,
+    // but its maximum is limited to 40%.
+
+    uint16_t limitedThrottle =
+        map(
+            throttle,
+            PWM_MIN,
+            PWM_MAX,
+            PWM_MIN,
+            PWM_MIN +
+                (
+                    (PWM_MAX - PWM_MIN) *
+                    THROTTLE_LIMIT_PERCENT
+                ) / 100
+        );
+
+    limitedThrottle =
+        constrain(
+            limitedThrottle,
+            PWM_MIN,
+            PWM_MIN +
+                (
+                    (PWM_MAX - PWM_MIN) *
+                    THROTTLE_LIMIT_PERCENT
+                ) / 100
+        );
+
+    esc.writeMicroseconds(limitedThrottle);
+}
 
 }
 
