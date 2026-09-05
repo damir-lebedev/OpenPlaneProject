@@ -510,7 +510,7 @@ int32_t aileronLeftOutput =
 //
 
 int32_t aileronRightOutput =
-    PWM_CENTER - aileron - flapOffset;
+    PWM_CENTER + aileron - flapOffset;
 
 // --------------------------------------------------------
 // LIMIT OUTPUT
