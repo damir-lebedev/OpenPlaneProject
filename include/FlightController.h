@@ -1,3 +1,5 @@
+#pragma once
+
 // ============================================================
 // 🎮 ГЛАВНЫЙ КОНТРОЛЛЕР ПОЛЁТА (FlightController)
 //
@@ -164,9 +166,13 @@ public:
 
         receiver.update();
 
+        // ====================================================
+        // ШАГ 1.5: ПРОВЕРЯЕМ FAILSAFE ДЛЯ АВТОПИЛОТА
+        // ====================================================
+        const bool receiverFailsafe = receiver.isSignalLost();
 
         // ====================================================
-        // ШАГ 1.5: ОБНОВЛЯЕМ FEATURE MANAGER И AUTOPILOT
+        // ШАГ 1.6: ОБНОВЛЯЕМ FEATURE MANAGER И AUTOPILOT
         // ====================================================
         // Если Autopilot и FeatureManager подключены,
         // обновляем их ПОСЛЕ получения RC сигналов
@@ -213,9 +219,7 @@ public:
         // сигнал ЕСТЬ!
         // ====================================================
 
-        const bool receiverFailsafe =
-            receiver.isSignalLost();
-
+        // receiverFailsafe уже определена на ШАГ 1.5
 
         // ====================================================
         // ШАГ 3: ПОЛУЧАЕМ ТЕКУЩЕЕ СОСТОЯНИЕ ВСЕХ КАНАЛОВ
@@ -360,19 +364,19 @@ public:
             float rollCorr = autopilot->getRollCorrection();
             float pitchCorr = autopilot->getPitchCorrection();
 
-            output.leftAileron += pitchCorr - rollCorr;
-            output.rightAileron += pitchCorr + rollCorr;
+            output.aileronLeft += pitchCorr - rollCorr;
+            output.aileronRight += pitchCorr + rollCorr;
 
             // Ограничиваем границы сигналов
-            if (output.leftAileron > Config::PWM_MAX)
-                output.leftAileron = Config::PWM_MAX;
-            if (output.leftAileron < Config::PWM_MIN)
-                output.leftAileron = Config::PWM_MIN;
+            if (output.aileronLeft > Config::PWM_MAX)
+                output.aileronLeft = Config::PWM_MAX;
+            if (output.aileronLeft < Config::PWM_MIN)
+                output.aileronLeft = Config::PWM_MIN;
 
-            if (output.rightAileron > Config::PWM_MAX)
-                output.rightAileron = Config::PWM_MAX;
-            if (output.rightAileron < Config::PWM_MIN)
-                output.rightAileron = Config::PWM_MIN;
+            if (output.aileronRight > Config::PWM_MAX)
+                output.aileronRight = Config::PWM_MAX;
+            if (output.aileronRight < Config::PWM_MIN)
+                output.aileronRight = Config::PWM_MIN;
 
             // Коррекция elevator
             output.elevator += pitchCorr;

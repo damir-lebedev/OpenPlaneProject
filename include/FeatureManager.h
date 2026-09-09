@@ -1,3 +1,5 @@
+#pragma once
+
 // ============================================================
 // 🎛️  FEATURE MANAGER
 //
@@ -12,7 +14,6 @@
 //   • Веб-интерфейс позволяет менять назначение без USB
 // ============================================================
 
-#pragma once
 #include "Autopilot.h"
 #include "RcChannelState.h"
 #include <Arduino.h>
@@ -109,7 +110,7 @@ public:
         // Обрабатываем каналы 7-10 (индексы 6-9, так как нумерация с 0)
         for (int ch = 0; ch < 4; ch++)
         {
-            processChannel(ch, rcState.getChannel(ch + 7));
+            processChannel(ch, rcState.get(ch + 7));
         }
 
         // Переходим в режим, если произошло переключение

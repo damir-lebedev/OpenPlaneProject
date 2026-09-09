@@ -1,3 +1,5 @@
+#pragma once
+
 // ============================================================
 // 🔌 MPU6050 GY-521 SENSOR IMPLEMENTATION
 //
@@ -13,7 +15,6 @@
 // (установить через PlatformIO: lib_deps = jrowberg/MPU6050)
 // ============================================================
 
-#pragma once
 #include "SensorInterface.h"
 #include <Wire.h>
 

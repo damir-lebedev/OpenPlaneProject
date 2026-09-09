@@ -1,3 +1,5 @@
+#pragma once
+
 // ============================================================
 // 🚀 AUTOPILOT SYSTEM
 //
@@ -14,7 +16,6 @@
 //   • Выход: коррекции к ControlMixer
 // ============================================================
 
-#pragma once
 #include "sensors/SensorInterface.h"
 #include "Config.h"
 #include <Arduino.h>
@@ -290,6 +291,19 @@ public:
     float getDesiredRoll() const { return desiredRoll; }
     float getDesiredPitch() const { return desiredPitch; }
     float getTargetAltitude() const { return targetAltitude; }
+    // ========================================================
+    // ДОСТУП К ДАТЧИКАМ (для WebDebugServer и диагностики)
+    // ========================================================
+
+    ImuSensor* getImuSensor() const
+    {
+        return imuSensor;
+    }
+
+    BarometerSensor* getBarometerSensor() const
+    {
+        return baroSensor;
+    }
 
     // ========================================================
     // ДИАГНОСТИКА

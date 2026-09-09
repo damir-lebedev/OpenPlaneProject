@@ -1,3 +1,5 @@
+#pragma once
+
 // ============================================================
 // 🔌 BME280 BAROMETER/ALTIMETER IMPLEMENTATION
 //
@@ -13,7 +15,6 @@
 // (установить: lib_deps = adafruit/Adafruit BME280 Library)
 // ============================================================
 
-#pragma once
 #include "SensorInterface.h"
 #include <Wire.h>
 

@@ -1,3 +1,5 @@
+#pragma once
+
 // ============================================================
 // 🌐 WEB DEBUG SERVER
 //
@@ -15,7 +17,6 @@
 //   • WebSocket для потока данных (опционально)
 // ============================================================
 
-#pragma once
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Arduino.h>
@@ -183,298 +184,75 @@ private:
 
     void handleRoot()
     {
-        String html = R"(
-<!DOCTYPE html>
-<html>
-<head>
-    <title>OpenPlane Debug Dashboard</title>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            padding: 20px;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-        h1 {
-            color: white;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 2.5em;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 20px;
-            margin-bottom: 20px;
-        }
-        .card {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-        }
-        .card h2 {
-            color: #667eea;
-            margin-bottom: 15px;
-            font-size: 1.5em;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
-        }
-        .data-row {
-            display: flex;
-            justify-content: space-between;
-            margin: 10px 0;
-            font-size: 1.1em;
-        }
-        .label {
-            font-weight: 600;
-            color: #333;
-        }
-        .value {
-            color: #667eea;
-            font-weight: bold;
-        }
-        .status {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        .status.armed {
-            background: #4CAF50;
-        }
-        .status.disarmed {
-            background: #f44336;
-        }
-        .status.stabilize {
-            background: #2196F3;
-        }
-        .button {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-size: 1em;
-            margin: 5px;
-            transition: background 0.3s;
-        }
-        .button:hover {
-            background: #764ba2;
-        }
-        .button.danger {
-            background: #f44336;
-        }
-        .button.danger:hover {
-            background: #da190b;
-        }
-        .button.success {
-            background: #4CAF50;
-        }
-        .button.success:hover {
-            background: #45a049;
-        }
-        .controls {
-            text-align: center;
-            margin-top: 20px;
-        }
-        .gauge {
-            width: 100%;
-            height: 200px;
-            border: 2px solid #667eea;
-            border-radius: 10px;
-            margin: 10px 0;
-            background: #f5f5f5;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 2em;
-            color: #667eea;
-        }
-        .slider {
-            width: 100%;
-            height: 8px;
-            border-radius: 5px;
-            background: #d3d3d3;
-            outline: none;
-            -webkit-appearance: none;
-            margin: 10px 0;
-        }
-        .slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #667eea;
-            cursor: pointer;
-        }
-        .slider::-moz-range-thumb {
-            width: 20px;
-            height: 20px;
-            border-radius: 50%;
-            background: #667eea;
-            cursor: pointer;
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>✈️ OpenPlane Debug Dashboard</h1>
-
-        <div class="grid">
-            <!-- Датчики -->
-            <div class="card">
-                <h2>📊 Датчики</h2>
-                <div class="data-row">
-                    <span class="label">Roll:</span>
-                    <span class="value" id="roll">--.--°</span>
-                </div>
-                <div class="data-row">
-                    <span class="label">Pitch:</span>
-                    <span class="value" id="pitch">--.--°</span>
-                </div>
-                <div class="data-row">
-                    <span class="label">Yaw:</span>
-                    <span class="value" id="yaw">--.--°</span>
-                </div>
-                <div class="data-row">
-                    <span class="label">Altitude:</span>
-                    <span class="value" id="altitude">--.-- m</span>
-                </div>
-                <div class="data-row">
-                    <span class="label">Climb Rate:</span>
-                    <span class="value" id="climb">--.-- m/s</span>
-                </div>
-            </div>
-
-            <!-- Состояние Автопилота -->
-            <div class="card">
-                <h2>🚀 Autopilot</h2>
-                <div class="data-row">
-                    <span class="label">Mode:</span>
-                    <span class="value" id="mode">MANUAL</span>
-                </div>
-                <div class="data-row">
-                    <span class="label">Desired Roll:</span>
-                    <span class="value" id="desired-roll">0.0°</span>
-                </div>
-                <div class="data-row">
-                    <span class="label">Desired Pitch:</span>
-                    <span class="value" id="desired-pitch">0.0°</span>
-                </div>
-                <div class="data-row">
-                    <span class="label">Target Alt:</span>
-                    <span class="value" id="target-alt">0.0 m</span>
-                </div>
-            </div>
-
-            <!-- Функции (Features) -->
-            <div class="card">
-                <h2>🎛️ Features</h2>
-                <div id="features-list"></div>
-            </div>
-        </div>
-
-        <!-- Контролы -->
-        <div class="card">
-            <h2>⚙️ Controls</h2>
-            <div class="controls">
-                <button class="button success" onclick="setMode(1)">🚀 Takeoff</button>
-                <button class="button success" onclick="setMode(3)">📈 Alt Hold</button>
-                <button class="button success" onclick="setMode(2)">🛫 Stabilize</button>
-                <button class="button danger" onclick="setMode(0)">🛑 Manual</button>
-            </div>
-        </div>
-
-        <!-- PID Tune (опциональный раздел) -->
-        <div class="card">
-            <h2>⚙️ PID Configuration</h2>
-            <p style="color: #666; font-size: 0.9em;">Экспериментальная функция - используйте с осторожностью!</p>
-            <div style="margin-top: 10px; color: #999; font-size: 0.9em;">
-                Текущие коэффициенты отображаются в консоли.
-            </div>
-        </div>
-    </div>
-
-    <script>
-        // Обновляем данные каждые 200ms
-        setInterval(updateDashboard, 200);
-
-        async function updateDashboard() {
-            try {
-                // Получаем данные датчиков
-                const sensorsResp = await fetch('/api/sensors');
-                const sensors = await sensorsResp.json();
-
-                document.getElementById('roll').textContent = sensors.roll.toFixed(2) + '°';
-                document.getElementById('pitch').textContent = sensors.pitch.toFixed(2) + '°';
-                document.getElementById('yaw').textContent = sensors.yaw.toFixed(2) + '°';
-                document.getElementById('altitude').textContent = sensors.altitude.toFixed(2) + ' m';
-                document.getElementById('climb').textContent = sensors.climb.toFixed(2) + ' m/s';
-
-                // Получаем состояние автопилота
-                const apResp = await fetch('/api/autopilot');
-                const ap = await apResp.json();
-
-                const modes = ['MANUAL', 'STABILIZE', 'AUTO_TAKEOFF', 'ALT_HOLD'];
-                document.getElementById('mode').textContent = modes[ap.mode] || 'UNKNOWN';
-                document.getElementById('desired-roll').textContent = ap.desired_roll.toFixed(1) + '°';
-                document.getElementById('desired-pitch').textContent = ap.desired_pitch.toFixed(1) + '°';
-                document.getElementById('target-alt').textContent = ap.target_alt.toFixed(1) + ' m';
-
-                // Получаем конфигурацию функций
-                const featuresResp = await fetch('/api/features');
-                const features = await featuresResp.json();
-
-                let featuresList = document.getElementById('features-list');
-                featuresList.innerHTML = '';
-                for (let i = 0; i < 4; i++) {
-                    let ch = 7 + i;
-                    let active = features['ch' + ch + '_active'] ? '✓' : '✗';
-                    let status = features['ch' + ch + '_active'] ? 'active' : 'inactive';
-                    featuresList.innerHTML += `
-                        <div class="data-row">
-                            <span class="label">CH${ch}:</span>
-                            <span class="value" style="color: ${features['ch' + ch + '_active'] ? '#4CAF50' : '#999'}">${active} ${features['ch' + ch]}</span>
-                        </div>
-                    `;
-                }
-            } catch (error) {
-                console.error('Error updating dashboard:', error);
-            }
-        }
-
-        async function setMode(mode) {
-            try {
-                const response = await fetch('/api/setmode', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mode: mode })
-                });
-                const result = await response.json();
-                console.log('Mode set:', result);
-            } catch (error) {
-                console.error('Error setting mode:', error);
-            }
-        }
-
-        // Первое обновление
-        updateDashboard();
-    </script>
-</body>
-</html>
-        )";
+        // Простой HTML для дашборда (без специальных символов)
+        String html = 
+            "<!DOCTYPE html>"
+            "<html><head><title>OpenPlane Debug</title>"
+            "<meta charset='UTF-8'><meta name='viewport' content='width=device-width'>"
+            "<style>"
+            "body{font-family:Arial;background:#667eea;margin:0;padding:20px}"
+            ".container{max-width:1200px;margin:0 auto}"
+            "h1{color:white;text-align:center;margin:20px 0}"
+            ".card{background:white;border-radius:10px;padding:20px;margin:10px 0;box-shadow:0 4px 8px rgba(0,0,0,0.2)}"
+            ".card h2{color:#667eea;border-bottom:2px solid #667eea;padding-bottom:10px}"
+            ".row{display:flex;justify-content:space-between;padding:5px 0}"
+            ".label{font-weight:bold;color:#333}"
+            ".value{color:#667eea;font-weight:bold}"
+            ".button{background:#667eea;color:white;border:none;padding:10px 20px;margin:5px;border-radius:5px;cursor:pointer}"
+            ".button:hover{background:#764ba2}"
+            ".button.danger{background:#f44336}"
+            ".button.success{background:#4CAF50}"
+            "</style></head><body>"
+            "<div class='container'>"
+            "<h1>OpenPlane Debug Dashboard</h1>"
+            
+            "<div class='card'>"
+            "<h2>Sensors</h2>"
+            "<div class='row'><span class='label'>Roll:</span><span class='value' id='roll'>--</span></div>"
+            "<div class='row'><span class='label'>Pitch:</span><span class='value' id='pitch'>--</span></div>"
+            "<div class='row'><span class='label'>Yaw:</span><span class='value' id='yaw'>--</span></div>"
+            "<div class='row'><span class='label'>Altitude:</span><span class='value' id='altitude'>--</span></div>"
+            "<div class='row'><span class='label'>Climb Rate:</span><span class='value' id='climb'>--</span></div>"
+            "</div>"
+            
+            "<div class='card'>"
+            "<h2>Autopilot</h2>"
+            "<div class='row'><span class='label'>Mode:</span><span class='value' id='mode'>MANUAL</span></div>"
+            "<div class='row'><span class='label'>Desired Roll:</span><span class='value' id='desired-roll'>0</span></div>"
+            "<div class='row'><span class='label'>Desired Pitch:</span><span class='value' id='desired-pitch'>0</span></div>"
+            "<div class='row'><span class='label'>Target Alt:</span><span class='value' id='target-alt'>0</span></div>"
+            "</div>"
+            
+            "<div class='card'>"
+            "<h2>Controls</h2>"
+            "<button class='button success' onclick='setMode(2)'>Takeoff</button>"
+            "<button class='button success' onclick='setMode(3)'>Alt Hold</button>"
+            "<button class='button success' onclick='setMode(1)'>Stabilize</button>"
+            "<button class='button danger' onclick='setMode(0)'>Manual</button>"
+            "</div>"
+            
+            "</div><script>"
+            "setInterval(updateDashboard,200);"
+            "async function updateDashboard(){"
+            "try{"
+            "const s=await fetch('/api/sensors');const sensors=await s.json();"
+            "document.getElementById('roll').textContent=sensors.roll.toFixed(2);"
+            "document.getElementById('pitch').textContent=sensors.pitch.toFixed(2);"
+            "document.getElementById('yaw').textContent=sensors.yaw.toFixed(2);"
+            "document.getElementById('altitude').textContent=sensors.altitude.toFixed(2);"
+            "document.getElementById('climb').textContent=sensors.climb.toFixed(2);"
+            "const a=await fetch('/api/autopilot');const ap=await a.json();"
+            "const modes=['MANUAL','STABILIZE','AUTO_TAKEOFF','ALT_HOLD'];"
+            "document.getElementById('mode').textContent=modes[ap.mode]||'UNKNOWN';"
+            "document.getElementById('desired-roll').textContent=ap.desired_roll.toFixed(1);"
+            "document.getElementById('desired-pitch').textContent=ap.desired_pitch.toFixed(1);"
+            "document.getElementById('target-alt').textContent=ap.target_alt.toFixed(1);"
+            "}catch(e){console.error(e);}}"
+            "async function setMode(m){"
+            "try{await fetch('/api/setmode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})});"
+            "}catch(e){console.error(e);}}"
+            "updateDashboard();"
+            "</script></body></html>";
 
         webServer.send(200, "text/html", html);
     }
@@ -485,28 +263,33 @@ private:
     // ========================================================
 
     void handleSensorsAPI()
-    {
-        String json = "{";
+{
+    String json = "{";
 
-        if (autopilot)
+    if (autopilot)
+    {
+        ImuSensor* imuSensor = autopilot->getImuSensor();
+        if (imuSensor)
         {
-            const ImuData& imu = autopilot->imuSensor->getImuData();
+            const ImuData& imu = imuSensor->getImuData();
             json += "\"roll\":" + String(imu.roll, 2) + ",";
             json += "\"pitch\":" + String(imu.pitch, 2) + ",";
             json += "\"yaw\":" + String(imu.yaw, 2) + ",";
         }
 
-        if (autopilot && autopilot->baroSensor)
+        BarometerSensor* baroSensor = autopilot->getBarometerSensor();
+        if (baroSensor)
         {
-            const BarometerData& baro = autopilot->baroSensor->getBarometerData();
+            const BarometerData& baro = baroSensor->getBarometerData();
             json += "\"altitude\":" + String(baro.altitude, 2) + ",";
             json += "\"climb\":" + String(baro.verticalSpeed, 2);
         }
-
-        json += "}";
-
-        webServer.send(200, "application/json", json);
     }
+
+    json += "}";
+
+    webServer.send(200, "application/json", json);
+}
 
 
     // ========================================================
