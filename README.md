@@ -10,6 +10,41 @@
 - систем управления;
 - автономных летательных аппаратов.
 
+---
+
+## 📚 ДОКУМЕНТАЦИЯ (ЧИТАЙТЕ!)
+
+**Новичок?** Начните отсюда (за 5 минут):
+- [`QUICK_START_GUIDE.md`](QUICK_START_GUIDE.md) — быстрый старт
+- [`CHANNELS_REFERENCE.md`](CHANNELS_REFERENCE.md) — справочник RC каналов
+
+**Хотите понять всё?** Читайте подробно:
+- [`SIGNAL_FLOW_GUIDE.md`](SIGNAL_FLOW_GUIDE.md) — полный поток сигнала от пульта до самолёта
+- [`DOCUMENTATION_INDEX.md`](DOCUMENTATION_INDEX.md) — индекс всей документации
+
+**Что-то не работает?**
+- [`DEBUGGING_GUIDE.md`](DEBUGGING_GUIDE.md) — полное руководство по отладке
+
+**🚀 НОВОЕ: Автопилот система** (требует датчиков IMU + Barometer)
+- [`AUTOPILOT_GUIDE.md`](AUTOPILOT_GUIDE.md) — **ПОЛНОЕ руководство по автопилоту**
+- [`MAIN_CPP_INTEGRATION_EXAMPLE.cpp`](MAIN_CPP_INTEGRATION_EXAMPLE.cpp) — пример интеграции в main.cpp
+- Датчики: MPU6050 GY-521 (гироскоп + акселерометр), BME280 (барометр)
+- Режимы: MANUAL, STABILIZE, AUTO_TAKEOFF, ALT_HOLD
+- Веб-отладка через WiFi (http://192.168.4.1)
+
+**Комментарии в коде:**
+- [`src/main.cpp`](src/main.cpp) — ОЧЕНЬ ПОДРОБНЫЕ комментарии!
+- [`include/IBusReceiver.h`](include/IBusReceiver.h) — подробные комментарии о парсинге iBUS
+- [`include/FlightController.h`](include/FlightController.h) — подробные комментарии о логике управления
+- [`include/Autopilot.h`](include/Autopilot.h) — система автопилота с PID контроллерами
+- [`include/FeatureManager.h`](include/FeatureManager.h) — гибкое назначение функций на каналы
+- [`include/sensors/SensorInterface.h`](include/sensors/SensorInterface.h) — абстрактные интерфейсы датчиков
+- [`include/sensors/MPU6050_Sensor.h`](include/sensors/MPU6050_Sensor.h) — IMU датчик
+- [`include/sensors/BME280_Sensor.h`](include/sensors/BME280_Sensor.h) — барометр
+- [`include/WebDebugServer.h`](include/WebDebugServer.h) — веб-сервер отладки
+
+---
+
 ## Идея проекта
 
 Я хочу документировать весь процесс разработки: от первых неудачных прототипов до работающей летающей платформы.
