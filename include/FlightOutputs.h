@@ -1,4 +1,8 @@
 #pragma once
+
+#include <ESP32Servo.h>          // для Servo и ESP32PWM
+#include "Config.h"              // для Config::PIN_..., PWM_MIN и т.д.
+#include "FlightOutputState.h"   // для FlightOutputState
 // ============================================================
 // 10. FLIGHT OUTPUTS
 //

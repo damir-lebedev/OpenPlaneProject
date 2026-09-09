@@ -1,4 +1,8 @@
 #pragma once
+#pragma once
+
+#include "Config.h"  
+
 // ============================================================
 // 6. FLIGHT OUTPUT STATE
 //
