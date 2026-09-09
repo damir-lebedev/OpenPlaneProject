@@ -11,3 +11,5 @@
 #include "../include/ThrottleManager.h"
 #include "../include/ArmingManager.h"
 #include "../include/FlightOutputs.h"
+#include "../include/FlightController.h"
+#include "../include/DebugLogger.h"
