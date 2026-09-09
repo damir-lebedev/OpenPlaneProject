@@ -81,13 +81,17 @@ public:
         ControlMixer& mixer,
         ThrottleManager& throttle,
         ArmingManager& arming,
-        FlightOutputs& outputs
+        FlightOutputs& outputs,
+        Autopilot* autopilot = nullptr,
+        FeatureManager* featureManager = nullptr
     )
         : receiver(receiver),
           mixer(mixer),
           throttle(throttle),
           arming(arming),
-          outputs(outputs)
+          outputs(outputs),
+          autopilot(autopilot),
+          featureManager(featureManager)
     {
     }
 
@@ -159,6 +163,38 @@ public:
         // ====================================================
 
         receiver.update();
+
+
+        // ====================================================
+        // ШАГ 1.5: ОБНОВЛЯЕМ FEATURE MANAGER И AUTOPILOT
+        // ====================================================
+        // Если Autopilot и FeatureManager подключены,
+        // обновляем их ПОСЛЕ получения RC сигналов
+        //
+        // Что происходит:
+        //   1. FeatureManager обрабатывает каналы CH7-CH10
+        //   2. Определяет, какой режим должен быть активен
+        //   3. Autopilot обновляет датчики и рассчитывает коррекции
+        //   4. Эти коррекции будут применены к mixer выходам
+        //
+        // Это позволяет добавлять коррекции поверх RC сигналов:
+        //   • Stabilize корректирует roll/pitch
+        //   • AutoTakeoff управляет углом и мощностью
+        //   • AltHold корректирует throttle
+        // ====================================================
+
+        if (featureManager && !receiverFailsafe)
+        {
+            // Обновляем Feature Manager (обрабатываем CH7-CH10)
+            const RcChannelState& rc_temp = receiver.getState();
+            featureManager->update(rc_temp);
+        }
+
+        if (autopilot && !receiverFailsafe)
+        {
+            // Обновляем Autopilot (датчики, ПИД, коррекции)
+            autopilot->update();
+        }
 
 
         // ====================================================
@@ -304,6 +340,50 @@ public:
 
 
         // ====================================================
+        // STEP 6.5: APPLY AUTOPILOT CORRECTIONS
+        // ====================================================
+        // Если Autopilot активен, применяем его коррекции
+        // к сигналам управления
+        //
+        // Коррекции добавляются к основным сигналам:
+        //   • Roll correction: улучшает стабилизацию крена
+        //   • Pitch correction: улучшает стабилизацию тангажа
+        //   • Throttle correction: для удержания высоты
+        //
+        // Это комбинирует RC управление с автопилотом
+        // в единый выход, обеспечивая плавный контроль.
+        // ====================================================
+
+        if (autopilot && !receiverFailsafe && arming.isArmed())
+        {
+            // Применяем коррекции roll и pitch к ailerons
+            float rollCorr = autopilot->getRollCorrection();
+            float pitchCorr = autopilot->getPitchCorrection();
+
+            output.leftAileron += pitchCorr - rollCorr;
+            output.rightAileron += pitchCorr + rollCorr;
+
+            // Ограничиваем границы сигналов
+            if (output.leftAileron > Config::PWM_MAX)
+                output.leftAileron = Config::PWM_MAX;
+            if (output.leftAileron < Config::PWM_MIN)
+                output.leftAileron = Config::PWM_MIN;
+
+            if (output.rightAileron > Config::PWM_MAX)
+                output.rightAileron = Config::PWM_MAX;
+            if (output.rightAileron < Config::PWM_MIN)
+                output.rightAileron = Config::PWM_MIN;
+
+            // Коррекция elevator
+            output.elevator += pitchCorr;
+            if (output.elevator > Config::PWM_MAX)
+                output.elevator = Config::PWM_MAX;
+            if (output.elevator < Config::PWM_MIN)
+                output.elevator = Config::PWM_MIN;
+        }
+
+
+        // ====================================================
         // ШАГ 7: ОБНОВЛЯЕМ THROTTLE И BOOST
         // ====================================================
         // Вызываем throttle.update() для обработки мотора
@@ -417,4 +497,8 @@ private:
     ArmingManager& arming;       // Система ARM/DISARM
 
     FlightOutputs& outputs;      // PWM выходы на GPIO
+
+    Autopilot* autopilot;        // Система автопилота (опционально)
+
+    FeatureManager* featureManager;  // Менеджер функций CH7-CH10 (опционально)
 };
