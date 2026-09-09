@@ -1,892 +1,1760 @@
 #include <Arduino.h>
-
 #include <ESP32Servo.h>
-// ------------------------------------------------------------
-// THROTTLE LIMIT BY CHANNEL 6
-// ------------------------------------------------------------
-// Канал 6 = 1000 → 100 % мощности
-// Канал 6 = 2000 → максимум 40 % мощности (растянуто на весь стик)
-constexpr uint16_t THROTTLE_LIMIT_MIN_PERCENT = 40;   // при CH6 = 2000
-// ============================================================
 
+// ============================================================
 // AEROS-001 FLIGHT CONTROLLER
-
 // ESP32-C3 SuperMini
-
-// GPIO 4 -> Aileron R
-
-// GPIO 5 -> Aileron L
-
-// GPIO 6 -> Elevator
-
-// GPIO 7 -> ESC
-
-// GPIO 8 -> PPM input from FS-i6 receiver
-
 //
-
-// PPM channels assumed:
-
-// CH1 = Aileron
-
-// CH2 = Elevator
-
-// CH3 = Throttle
-
-// CH4 = Rudder
-
+// Текущая архитектура:
+//
+//   Receiver
+//       ↓
+//   FlightController
+//       ↓
+//   ControlMixer
+//       ↓
+//   ThrottleManager
+//       ↓
+//   FlightOutputs
+//
+// В будущем сюда можно независимо добавить:
+//
+//   IMU
+//   Gyroscope
+//   Accelerometer
+//   GPS
+//   Autopilot
+//   WaypointNavigator
+//   Telemetry
+//   GUI
+//   FlightModes
+//
+// Весь код пока находится в одном файле намеренно.
+// Классы уже изолированы так, чтобы позже их можно было
+// безболезненно разнести по отдельным .h/.cpp.
 // ============================================================
-
-// ------------------------------------------------------------
-// PINOUT
-// ------------------------------------------------------------
-
-constexpr uint8_t PIN_AILERON_LEFT  = 5;
-constexpr uint8_t PIN_AILERON_RIGHT = 4;
-
-constexpr uint8_t PIN_ELEVATOR = 6;
-
-constexpr uint8_t PIN_ESC = 7;
-
-constexpr uint8_t PIN_IBUS = 8;
-
-// ------------------------------------------------------------
-// IBUS CONFIGURATION
-// ------------------------------------------------------------
-
-constexpr uint8_t IBUS_CHANNELS = 10;
-
-constexpr uint8_t IBUS_FRAME_LENGTH = 32;
-
-constexpr uint8_t IBUS_HEADER_0 = 0x20;
-constexpr uint8_t IBUS_HEADER_1 = 0x40;
-
-constexpr uint32_t IBUS_BAUDRATE = 115200;
-
-// Receiver considered lost after this time.
-
-constexpr uint32_t RX_TIMEOUT_US = 100000; // 100 ms
-// ------------------------------------------------------------
-
-// SERVO / ESC PULSE LIMITS
-
-// ------------------------------------------------------------
-
-constexpr uint16_t PWM_MIN = 1000;
-
-constexpr uint16_t PWM_CENTER = 1500;
-
-constexpr uint16_t PWM_MAX = 2000;
-
-// ------------------------------------------------------------
-
-// CONTROL LIMITS
-
-// ------------------------------------------------------------
-
-// Maximum control surface deflection.
-
-// Start conservative.
-
-constexpr int16_t AILERON_MAX_US = 1500;
-
-constexpr int16_t ELEVATOR_MAX_US = 1000;
-
-// ------------------------------------------------------------
-
-// THROTTLE SAFETY
-
-// ------------------------------------------------------------
-
-// Throttle below this value is considered LOW.
-
-constexpr uint16_t THROTTLE_LOW_US = 1050;
-
-// Number of milliseconds throttle must stay low before arming
-
-// becomes possible.
-
-constexpr uint32_t ARM_LOW_TIME_MS = 1500;
-
-// ------------------------------------------------------------
-
-// FAILSAFE
-
-// ------------------------------------------------------------
-
-constexpr uint16_t FAILSAFE_AILERON = 1500;
-
-constexpr uint16_t FAILSAFE_ELEVATOR = 1500;
-
-constexpr uint16_t FAILSAFE_THROTTLE = 1000;
-
-// ------------------------------------------------------------
-
-// DEBUG
-
-// ------------------------------------------------------------
-
-constexpr uint32_t DEBUG_INTERVAL_MS = 100;
 
 
 // ============================================================
-// GLOBAL OBJECTS
+// 1. CONFIGURATION
+// Все постоянные параметры проекта находятся здесь.
+// Логика классов ниже не должна содержать "магических" пинов,
+// таймаутов и прочих настроек.
 // ============================================================
 
-Servo servoAileronLeft;
-Servo servoAileronRight;
+namespace Config
+{
+    // --------------------------------------------------------
+    // Hardware pinout
+    // --------------------------------------------------------
 
-Servo servoElevator;
+    constexpr uint8_t PIN_AILERON_LEFT  = 5;
+    constexpr uint8_t PIN_AILERON_RIGHT = 4;
+    constexpr uint8_t PIN_ELEVATOR      = 6;
+    constexpr uint8_t PIN_ESC            = 7;
+    constexpr uint8_t PIN_IBUS           = 8;
 
-Servo esc;
+
+    // --------------------------------------------------------
+    // iBUS configuration
+    // --------------------------------------------------------
+
+    constexpr uint8_t IBUS_CHANNELS = 10;
+    constexpr uint8_t IBUS_FRAME_LENGTH = 32;
+
+    constexpr uint8_t IBUS_HEADER_0 = 0x20;
+    constexpr uint8_t IBUS_HEADER_1 = 0x40;
+
+    constexpr uint32_t IBUS_BAUDRATE = 115200;
+
+    // При отсутствии корректного iBUS кадра дольше этого
+    // времени приёмник считается потерянным.
+    constexpr uint32_t RX_TIMEOUT_US = 100000;
+
+
+    // --------------------------------------------------------
+    // Standard RC pulse range
+    // --------------------------------------------------------
+
+    constexpr uint16_t PWM_MIN    = 1000;
+    constexpr uint16_t PWM_CENTER = 1500;
+    constexpr uint16_t PWM_MAX    = 2000;
+
+
+    // --------------------------------------------------------
+    // Flight-control limits
+    // --------------------------------------------------------
+
+    // Максимальное отклонение элеронов относительно центра.
+    constexpr int16_t AILERON_MAX_US = 1500;
+
+    // Максимальное отклонение руля высоты.
+    constexpr int16_t ELEVATOR_MAX_US = 1000;
+
+
+    // --------------------------------------------------------
+    // Throttle safety
+    // --------------------------------------------------------
+
+    // Ниже этого значения газ считается LOW.
+    constexpr uint16_t THROTTLE_LOW_US = 1050;
+
+    // Минимальное время нахождения газа в LOW.
+    constexpr uint32_t ARM_LOW_TIME_MS = 1500;
+
+
+    // --------------------------------------------------------
+    // Failsafe outputs
+    // --------------------------------------------------------
+
+    constexpr uint16_t FAILSAFE_AILERON  = 1500;
+    constexpr uint16_t FAILSAFE_ELEVATOR = 1500;
+    constexpr uint16_t FAILSAFE_THROTTLE = 1000;
+
+
+    // --------------------------------------------------------
+    // Throttle boost
+    // --------------------------------------------------------
+
+    // В обычном режиме максимальный газ = 40%.
+    constexpr uint16_t THROTTLE_LIMIT_PERCENT = 40;
+
+    // Полный газ разрешается на 5 секунд.
+    constexpr uint32_t THROTTLE_BOOST_TIME_MS = 5000;
+
+
+    // --------------------------------------------------------
+    // Debug
+    // --------------------------------------------------------
+
+    constexpr uint32_t DEBUG_INTERVAL_MS = 100;
+}
+
 
 // ============================================================
-// IBUS DATA
+// 2. CHANNEL MAP
+//
+// Важно: здесь находится только логическое описание каналов.
+// Если позже передатчик будет перенастроен, менять нужно будет
+// только этот блок.
 // ============================================================
 
-uint16_t ibusChannels[IBUS_CHANNELS] = {
-    1500,
-    1500,
-    1000,
-    1500,
-    1500,
-    1500,
-    1500,
-    1500,
-    1500,
-    1500
+namespace Channels
+{
+    constexpr uint8_t AILERON  = 0;  // CH1
+    constexpr uint8_t ELEVATOR = 1;  // CH2
+    constexpr uint8_t THROTTLE = 2;  // CH3
+    constexpr uint8_t RUDDER   = 3;  // CH4
+
+    constexpr uint8_t FLAPS    = 4;  // CH5
+
+    constexpr uint8_t AUX_1    = 5;  // CH6
+    constexpr uint8_t AUX_2    = 6;  // CH7
+
+    // Текущая логика boost использует CH8.
+    constexpr uint8_t BOOST    = 7;  // CH8
+
+    constexpr uint8_t AUX_4    = 8;  // CH9
+    constexpr uint8_t AUX_5    = 9;  // CH10
+}
+
+
+// ============================================================
+// 3. RC CHANNEL STATE
+//
+// Этот класс представляет состояние одного набора каналов.
+// Никакой логики управления самолётом здесь нет.
+//
+// В будущем сюда можно будет добавить:
+// - timestamp;
+// - quality;
+// - signal strength;
+// - channel validity;
+// - failsafe information.
+// ============================================================
+
+class RcChannelState
+{
+public:
+
+    RcChannelState()
+    {
+        reset();
+    }
+
+
+    // --------------------------------------------------------
+    // Сброс каналов в безопасное состояние.
+    // --------------------------------------------------------
+
+    void reset()
+    {
+        for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i)
+        {
+            channels[i] = Config::PWM_CENTER;
+        }
+
+        channels[Channels::THROTTLE] = Config::PWM_MIN;
+    }
+
+
+    // --------------------------------------------------------
+    // Получить значение конкретного канала.
+    // --------------------------------------------------------
+
+    uint16_t get(uint8_t index) const
+    {
+        if (index >= Config::IBUS_CHANNELS)
+        {
+            return Config::PWM_CENTER;
+        }
+
+        return channels[index];
+    }
+
+
+    // --------------------------------------------------------
+    // Установить значение конкретного канала.
+    // --------------------------------------------------------
+
+    void set(uint8_t index, uint16_t value)
+    {
+        if (index >= Config::IBUS_CHANNELS)
+        {
+            return;
+        }
+
+        channels[index] = value;
+    }
+
+
+    // --------------------------------------------------------
+    // Доступ к массиву каналов.
+    //
+    // Используется только для систем, которым действительно
+    // нужен весь набор каналов.
+    // --------------------------------------------------------
+
+    const uint16_t* data() const
+    {
+        return channels;
+    }
+
+
+private:
+
+    uint16_t channels[Config::IBUS_CHANNELS];
 };
 
-uint8_t ibusFrame[IBUS_FRAME_LENGTH];
-
-uint8_t ibusFrameIndex = 0;
-
-uint32_t ibusLastFrame = 0;
-
-bool ibusFrameReady = false;
 
 // ============================================================
-// THROTTLE BOOST
+// 4. IBUS RECEIVER
+//
+// Единственная задача класса:
+//
+// UART → iBUS frames → RC channel state
+//
+// Здесь НЕТ:
+// - сервоприводов;
+// - throttle;
+// - failsafe поведения самолёта;
+// - mixer;
+// - автопилота.
+//
+// Благодаря этому в будущем можно заменить iBUS на другой
+// источник команд, не переписывая FlightController.
 // ============================================================
 
-constexpr uint16_t THROTTLE_LIMIT_PERCENT = 40;
+class IBusReceiver
+{
+public:
 
-constexpr uint32_t THROTTLE_BOOST_TIME_MS = 5000;
+    explicit IBusReceiver(HardwareSerial& serial)
+        : serial(serial)
+    {
+    }
 
-bool throttleBoostActive = false;
 
-bool throttleBoostReady = true;
+    // --------------------------------------------------------
+    // Инициализация UART.
+    // --------------------------------------------------------
 
-uint32_t throttleBoostStartTime = 0;
+    void begin()
+    {
+        serial.begin(
+            Config::IBUS_BAUDRATE,
+            SERIAL_8N1,
+            Config::PIN_IBUS,
+            -1
+        );
+
+        lastFrameTime = micros();
+    }
+
+
+    // --------------------------------------------------------
+    // Обработка входящих UART данных.
+    //
+    // Метод должен вызываться постоянно из loop().
+    // --------------------------------------------------------
+
+    void update()
+    {
+        while (serial.available())
+        {
+            const uint8_t byte = serial.read();
+
+            processByte(byte);
+        }
+    }
+
+
+    // --------------------------------------------------------
+    // Возвращает текущее состояние каналов.
+    // --------------------------------------------------------
+
+    const RcChannelState& getState() const
+    {
+        return state;
+    }
+
+
+    // --------------------------------------------------------
+    // Проверка наличия свежего iBUS кадра.
+    // --------------------------------------------------------
+
+    bool isSignalLost() const
+    {
+        return (micros() - lastFrameTime) > Config::RX_TIMEOUT_US;
+    }
+
+
+    // --------------------------------------------------------
+    // Время последнего корректного кадра.
+    // --------------------------------------------------------
+
+    uint32_t getLastFrameTime() const
+    {
+        return lastFrameTime;
+    }
+
+
+private:
+
+    HardwareSerial& serial;
+
+    RcChannelState state;
+
+    uint8_t frame[Config::IBUS_FRAME_LENGTH] = {};
+
+    uint8_t frameIndex = 0;
+
+    uint32_t lastFrameTime = 0;
+
+
+    // --------------------------------------------------------
+    // Обработка одного байта входящего iBUS потока.
+    //
+    // Состояния:
+    //
+    // 0 → ждём 0x20
+    // 1 → ждём 0x40
+    // 2..31 → принимаем frame
+    // --------------------------------------------------------
+
+    void processByte(uint8_t byte)
+    {
+        // ----------------------------------------------------
+        // Поиск первого байта заголовка.
+        // ----------------------------------------------------
+
+        if (frameIndex == 0)
+        {
+            if (byte != Config::IBUS_HEADER_0)
+            {
+                return;
+            }
+
+            frame[frameIndex++] = byte;
+            return;
+        }
+
+
+        // ----------------------------------------------------
+        // Проверка второго байта заголовка.
+        // ----------------------------------------------------
+
+        if (frameIndex == 1)
+        {
+            if (byte != Config::IBUS_HEADER_1)
+            {
+                frameIndex = 0;
+                return;
+            }
+
+            frame[frameIndex++] = byte;
+            return;
+        }
+
+
+        // ----------------------------------------------------
+        // Принимаем оставшуюся часть кадра.
+        // ----------------------------------------------------
+
+        frame[frameIndex++] = byte;
+
+
+        // ----------------------------------------------------
+        // Полный кадр получен.
+        // ----------------------------------------------------
+
+        if (frameIndex >= Config::IBUS_FRAME_LENGTH)
+        {
+            processFrame();
+
+            frameIndex = 0;
+        }
+    }
+
+
+    // --------------------------------------------------------
+    // Проверка checksum и извлечение каналов.
+    // --------------------------------------------------------
+
+    void processFrame()
+    {
+        uint16_t checksum = 0xFFFF;
+
+        // Первые 30 байт участвуют в checksum.
+        for (uint8_t i = 0; i < 30; ++i)
+        {
+            checksum -= frame[i];
+        }
+
+
+        // ----------------------------------------------------
+        // Checksum, переданный приёмником.
+        // ----------------------------------------------------
+
+        const uint16_t receivedChecksum =
+            static_cast<uint16_t>(frame[30]) |
+            (static_cast<uint16_t>(frame[31]) << 8);
+
+
+        // ----------------------------------------------------
+        // Некорректный кадр игнорируем.
+        // ----------------------------------------------------
+
+        if (checksum != receivedChecksum)
+        {
+            return;
+        }
+
+
+        // ----------------------------------------------------
+        // Извлекаем 10 каналов.
+        // ----------------------------------------------------
+
+        for (uint8_t channel = 0;
+             channel < Config::IBUS_CHANNELS;
+             ++channel)
+        {
+            const uint8_t lowByte  = frame[2 + channel * 2];
+            const uint8_t highByte = frame[3 + channel * 2];
+
+            const uint16_t value =
+                static_cast<uint16_t>(lowByte) |
+                (static_cast<uint16_t>(highByte) << 8);
+
+            state.set(channel, value);
+        }
+
+
+        // ----------------------------------------------------
+        // Фиксируем время последнего валидного кадра.
+        // ----------------------------------------------------
+
+        lastFrameTime = micros();
+    }
+};
+
 
 // ============================================================
-
-// RECEIVER STATUS
-
+// 5. RC INPUT UTILITIES
+//
+// Маленький независимый класс для стандартной обработки
+// значений RC.
+//
+// Здесь нет знания о самолёте.
 // ============================================================
 
-bool receiverFailsafe = true;
+class RcInput
+{
+public:
 
-bool armed = false;
+    // --------------------------------------------------------
+    // Ограничение RC значения стандартным диапазоном.
+    // --------------------------------------------------------
 
-uint32_t throttleLowSince = 0;
+    static uint16_t clamp(uint16_t value)
+    {
+        return constrain(
+            value,
+            Config::PWM_MIN,
+            Config::PWM_MAX
+        );
+    }
+
+
+    // --------------------------------------------------------
+    // Преобразование:
+//
+// 1000 → -maximumDeflection
+// 1500 → 0
+// 2000 → +maximumDeflection
+//
+// reverse позволяет инвертировать канал.
+// --------------------------------------------------------
+
+    static int16_t centered(
+        uint16_t input,
+        int16_t maximumDeflection,
+        bool reverse = false
+    )
+    {
+        input = clamp(input);
+
+        int32_t output = map(
+            input,
+            Config::PWM_MIN,
+            Config::PWM_MAX,
+            -maximumDeflection,
+            maximumDeflection
+        );
+
+
+        if (reverse)
+        {
+            output = -output;
+        }
+
+
+        return static_cast<int16_t>(
+            constrain(
+                output,
+                -maximumDeflection,
+                maximumDeflection
+            )
+        );
+    }
+};
 
 
 // ============================================================
-// IBUS RECEIVER
+// 6. FLIGHT OUTPUT STATE
+//
+// Это логическое представление того, что мы хотим отправить
+// на физические исполнительные механизмы.
+//
+// Важный момент:
+//
+// ControlMixer НЕ должен знать о Servo.
+//
+// Он только рассчитывает:
+//
+//   left aileron
+//   right aileron
+//   elevator
+//   throttle
+//
+// А FlightOutputs уже превращает это в PWM.
+// ============================================================
+
+struct FlightOutputState
+{
+    uint16_t aileronLeft  = Config::PWM_CENTER;
+    uint16_t aileronRight = Config::PWM_CENTER;
+    uint16_t elevator     = Config::PWM_CENTER;
+    uint16_t throttle     = Config::PWM_MIN;
+};
+
+
+// ============================================================
+// 7. CONTROL MIXER
+//
+// Здесь находится только аэродинамическая логика.
+//
+// RC:
+//
+// CH1 → Aileron
+// CH2 → Elevator
+// CH5 → Flaps
+//
+// На выходе:
+//
+// Left Aileron
+// Right Aileron
+// Elevator
+//
+// Никакого UART.
+// Никаких Servo.
+// Никакого failsafe.
+// Никакого millis().
+//
+// Это особенно важно для будущего автопилота:
+//
+// manual input и autopilot output смогут использовать
+// один и тот же mixer.
+// ============================================================
+
+class ControlMixer
+{
+public:
+
+    // --------------------------------------------------------
+    // Расчёт управляющих поверхностей.
+    // --------------------------------------------------------
+
+    FlightOutputState calculate(
+        const RcChannelState& rc
+    ) const
+    {
+        FlightOutputState output;
+
+
+        // ----------------------------------------------------
+        // Получаем основные RC inputs.
+        // ----------------------------------------------------
+
+        const uint16_t aileronInput =
+            rc.get(Channels::AILERON);
+
+        const uint16_t elevatorInput =
+            rc.get(Channels::ELEVATOR);
+
+
+        // ----------------------------------------------------
+        // Преобразуем Aileron.
+        // ----------------------------------------------------
+
+        const int16_t aileron =
+            RcInput::centered(
+                aileronInput,
+                Config::AILERON_MAX_US,
+                false
+            );
+
+
+        // ----------------------------------------------------
+        // Преобразуем Elevator.
+        // ----------------------------------------------------
+
+        const int16_t elevator =
+            RcInput::centered(
+                elevatorInput,
+                Config::ELEVATOR_MAX_US,
+                false
+            );
+
+
+        // ----------------------------------------------------
+        // Рассчитываем положение закрылков.
+        //
+        // CH5:
+        //
+        // < 1250 → 0 us
+        // 1250..1749 → 50 us
+        // >= 1750 → 100 us
+        // ----------------------------------------------------
+
+        const uint16_t flapOffset =
+            calculateFlapOffset(
+                rc.get(Channels::FLAPS)
+            );
+
+
+        // ----------------------------------------------------
+        // LEFT AILERON
+        //
+        // Элерон + flap offset.
+        // ----------------------------------------------------
+
+        int32_t left =
+            Config::PWM_CENTER +
+            aileron +
+            flapOffset;
+
+
+        // ----------------------------------------------------
+        // RIGHT AILERON
+        //
+        // Элерон зеркальный.
+        //
+        // Flap offset остаётся физически направленным вниз
+        // относительно соответствующего крыла.
+        // ----------------------------------------------------
+
+        int32_t right =
+            Config::PWM_CENTER -
+            aileron -
+            flapOffset;
+
+
+        // ----------------------------------------------------
+        // Ограничиваем выходы стандартным PWM диапазоном.
+        // ----------------------------------------------------
+
+        left = constrain(
+            left,
+            Config::PWM_MIN,
+            Config::PWM_MAX
+        );
+
+        right = constrain(
+            right,
+            Config::PWM_MIN,
+            Config::PWM_MAX
+        );
+
+
+        // ----------------------------------------------------
+        // Elevator.
+        // ----------------------------------------------------
+
+        const int32_t elevatorOutput =
+            constrain(
+                Config::PWM_CENTER + elevator,
+                Config::PWM_MIN,
+                Config::PWM_MAX
+            );
+
+
+        // ----------------------------------------------------
+        // Формируем итоговое состояние поверхностей.
+        // ----------------------------------------------------
+
+        output.aileronLeft =
+            static_cast<uint16_t>(left);
+
+        output.aileronRight =
+            static_cast<uint16_t>(right);
+
+        output.elevator =
+            static_cast<uint16_t>(elevatorOutput);
+
+
+        return output;
+    }
+
+
+private:
+
+    // --------------------------------------------------------
+    // Преобразование положения CH5 в flap offset.
+    // --------------------------------------------------------
+
+    uint16_t calculateFlapOffset(uint16_t input) const
+    {
+        if (input >= 1750)
+        {
+            return 100;
+        }
+
+        if (input >= 1250)
+        {
+            return 50;
+        }
+
+        return 0;
+    }
+};
+
+
+// ============================================================
+// 8. THROTTLE MANAGER
+//
+// Вся логика двигателя находится здесь.
+//
+// Ответственность:
+//
+// - чтение throttle;
+// - ограничение мощности;
+// - boost;
+// - boost timer;
+// - повторная активация boost.
+//
+// Этот класс ничего не знает о Servo.
+// Он просто возвращает требуемый PWM.
+// ============================================================
+
+class ThrottleManager
+{
+public:
+
+    // --------------------------------------------------------
+    // Обновление throttle.
+    // --------------------------------------------------------
+
+    uint16_t update(
+        const RcChannelState& rc,
+        bool receiverFailsafe
+    )
+    {
+        const uint32_t now = millis();
+
+
+        // ----------------------------------------------------
+        // Приёмник потерян → немедленно выключаем boost.
+        // ----------------------------------------------------
+
+        if (receiverFailsafe)
+        {
+            boostActive = false;
+
+            return Config::FAILSAFE_THROTTLE;
+        }
+
+
+        const uint16_t throttle =
+            RcInput::clamp(
+                rc.get(Channels::THROTTLE)
+            );
+
+
+        const uint16_t boostSwitch =
+            rc.get(Channels::BOOST);
+
+
+        // ----------------------------------------------------
+        // LOW на boost switch снова разрешает следующий boost.
+        // ----------------------------------------------------
+
+        if (boostSwitch < 1250)
+        {
+            boostReady = true;
+        }
+
+
+        // ----------------------------------------------------
+        // HIGH на boost switch запускает boost.
+        //
+        // Boost запускается только один раз до тех пор,
+        // пока переключатель не вернётся в LOW.
+        // ----------------------------------------------------
+
+        if (
+            boostSwitch >= 1750 &&
+            boostReady &&
+            !boostActive
+        )
+        {
+            boostActive = true;
+            boostReady = false;
+            boostStartTime = now;
+        }
+
+
+        // ----------------------------------------------------
+        // Проверяем таймер boost.
+        // ----------------------------------------------------
+
+        if (boostActive)
+        {
+            if (
+                now - boostStartTime >=
+                Config::THROTTLE_BOOST_TIME_MS
+            )
+            {
+                boostActive = false;
+            }
+        }
+
+
+        // ----------------------------------------------------
+        // Во время boost разрешаем полный газ.
+        // ----------------------------------------------------
+
+        if (boostActive)
+        {
+            return Config::PWM_MAX;
+        }
+
+
+        // ----------------------------------------------------
+        // Обычный режим.
+        //
+        // 1000 → 1000
+        // 1500 → 1200
+        // 2000 → 1400
+        //
+        // То есть весь ход стика сохраняется,
+        // но максимум ограничивается 40%.
+        // ----------------------------------------------------
+
+        const uint16_t maximumThrottle =
+            Config::PWM_MIN +
+            (
+                (Config::PWM_MAX - Config::PWM_MIN) *
+                Config::THROTTLE_LIMIT_PERCENT
+            ) / 100;
+
+
+        uint16_t limitedThrottle =
+            map(
+                throttle,
+                Config::PWM_MIN,
+                Config::PWM_MAX,
+                Config::PWM_MIN,
+                maximumThrottle
+            );
+
+
+        // ----------------------------------------------------
+        // Дополнительная защита результата.
+        // ----------------------------------------------------
+
+        limitedThrottle =
+            constrain(
+                limitedThrottle,
+                Config::PWM_MIN,
+                maximumThrottle
+            );
+
+
+        return limitedThrottle;
+    }
+
+
+    // --------------------------------------------------------
+    // Активен ли boost прямо сейчас.
+    // --------------------------------------------------------
+
+    bool isBoostActive() const
+    {
+        return boostActive;
+    }
+
+
+    // --------------------------------------------------------
+    // Можно ли снова запустить boost.
+    // --------------------------------------------------------
+
+    bool isBoostReady() const
+    {
+        return boostReady;
+    }
+
+
+private:
+
+    bool boostActive = false;
+
+    bool boostReady = true;
+
+    uint32_t boostStartTime = 0;
+};
+
+
+// ============================================================
+// 9. ARMING MANAGER
+//
+// В исходном коде функция updateArming() была пустой,
+// поэтому armed фактически никогда не становился true.
+//
+// Здесь логика вынесена отдельно.
+//
+// ВАЖНО:
+//
+// Сейчас armed НЕ блокирует throttle, потому что это изменило
+// бы исходное поведение программы.
+//
+// Этот класс пока только ведёт состояние ARM.
+//
+// Когда появится полноценная arm/disarm логика, её можно будет
+// изменить здесь, не трогая receiver/mixer/outputs.
+// ============================================================
+
+class ArmingManager
+{
+public:
+
+    // --------------------------------------------------------
+    // Обновление состояния ARM.
+    // --------------------------------------------------------
+
+    void update(
+        uint16_t throttle,
+        bool receiverFailsafe
+    )
+    {
+        // ----------------------------------------------------
+        // Приёмник потерян → DISARM.
+        // ----------------------------------------------------
+
+        if (receiverFailsafe)
+        {
+            armed = false;
+            throttleLowSince = 0;
+            return;
+        }
+
+
+        // ----------------------------------------------------
+        // Газ LOW.
+        // ----------------------------------------------------
+
+        if (throttle < Config::THROTTLE_LOW_US)
+        {
+            if (throttleLowSince == 0)
+            {
+                throttleLowSince = millis();
+            }
+
+
+            // ------------------------------------------------
+            // После удержания газа LOW считаем систему ARM-ready.
+            // ------------------------------------------------
+
+            if (
+                millis() - throttleLowSince >=
+                Config::ARM_LOW_TIME_MS
+            )
+            {
+                armed = true;
+            }
+
+            return;
+        }
+
+
+        // ----------------------------------------------------
+        // Газ поднят.
+        //
+        // В текущей архитектуре не делаем автоматический
+        // disarm здесь, чтобы не менять поведение оригинала.
+        // ----------------------------------------------------
+
+        throttleLowSince = 0;
+    }
+
+
+    // --------------------------------------------------------
+    // Текущее состояние ARM.
+    // --------------------------------------------------------
+
+    bool isArmed() const
+    {
+        return armed;
+    }
+
+
+private:
+
+    bool armed = false;
+
+    uint32_t throttleLowSince = 0;
+};
+
+
+// ============================================================
+// 10. FLIGHT OUTPUTS
+//
+// Единственный класс, который знает о Servo.
+//
+// Это очень важная граница.
+//
+// Если позже вместо ESP32Servo появится:
+// - другой PWM driver;
+// - PCA9685;
+// - другой MCU;
+// - simulator;
+//
+// остальные классы менять не придётся.
+// ============================================================
+
+class FlightOutputs
+{
+public:
+
+    // --------------------------------------------------------
+    // Инициализация PWM.
+    // --------------------------------------------------------
+
+    bool begin()
+    {
+        // ----------------------------------------------------
+        // Выделяем все четыре hardware timers ESP32Servo.
+        // ----------------------------------------------------
+
+        ESP32PWM::allocateTimer(0);
+        ESP32PWM::allocateTimer(1);
+        ESP32PWM::allocateTimer(2);
+        ESP32PWM::allocateTimer(3);
+
+
+        // ----------------------------------------------------
+        // Все поверхности и ESC работают на 50 Hz.
+        // ----------------------------------------------------
+
+        aileronLeft.setPeriodHertz(50);
+        aileronRight.setPeriodHertz(50);
+        elevator.setPeriodHertz(50);
+        esc.setPeriodHertz(50);
+
+
+        // ----------------------------------------------------
+        // Подключаем левый элерон.
+        // ----------------------------------------------------
+
+        const bool leftOK =
+            aileronLeft.attach(
+                Config::PIN_AILERON_LEFT,
+                Config::PWM_MIN,
+                Config::PWM_MAX
+            );
+
+
+        // ----------------------------------------------------
+        // Подключаем правый элерон.
+        // ----------------------------------------------------
+
+        const bool rightOK =
+            aileronRight.attach(
+                Config::PIN_AILERON_RIGHT,
+                Config::PWM_MIN,
+                Config::PWM_MAX
+            );
+
+
+        // ----------------------------------------------------
+        // Подключаем elevator.
+        // ----------------------------------------------------
+
+        const bool elevatorOK =
+            elevator.attach(
+                Config::PIN_ELEVATOR,
+                Config::PWM_MIN,
+                Config::PWM_MAX
+            );
+
+
+        // ----------------------------------------------------
+        // Подключаем ESC.
+        // ----------------------------------------------------
+
+        const bool escOK =
+            esc.attach(
+                Config::PIN_ESC,
+                Config::PWM_MIN,
+                Config::PWM_MAX
+            );
+
+
+        return
+            leftOK &&
+            rightOK &&
+            elevatorOK &&
+            escOK;
+    }
+
+
+    // --------------------------------------------------------
+    // Применить рассчитанное состояние к физическим Servo.
+    // --------------------------------------------------------
+
+    void write(const FlightOutputState& state)
+    {
+        aileronLeft.writeMicroseconds(
+            state.aileronLeft
+        );
+
+        aileronRight.writeMicroseconds(
+            state.aileronRight
+        );
+
+        elevator.writeMicroseconds(
+            state.elevator
+        );
+
+        esc.writeMicroseconds(
+            state.throttle
+        );
+
+
+        // ----------------------------------------------------
+        // Сохраняем последнее состояние для debug/telemetry.
+        // ----------------------------------------------------
+
+        lastState = state;
+    }
+
+
+    // --------------------------------------------------------
+    // Немедленно выставить безопасные выходы.
+    // --------------------------------------------------------
+
+    void setFailsafe()
+    {
+        FlightOutputState safe;
+
+        safe.aileronLeft =
+            Config::FAILSAFE_AILERON;
+
+        safe.aileronRight =
+            Config::FAILSAFE_AILERON;
+
+        safe.elevator =
+            Config::FAILSAFE_ELEVATOR;
+
+        safe.throttle =
+            Config::FAILSAFE_THROTTLE;
+
+
+        write(safe);
+    }
+
+
+    // --------------------------------------------------------
+    // Получить последние записанные значения.
+    // --------------------------------------------------------
+
+    const FlightOutputState& getLastState() const
+    {
+        return lastState;
+    }
+
+
+private:
+
+    Servo aileronLeft;
+    Servo aileronRight;
+    Servo elevator;
+    Servo esc;
+
+    FlightOutputState lastState;
+};
+
+
+// ============================================================
+// 11. FLIGHT CONTROLLER
+//
+// Это главный координатор.
+//
+// Очень важно:
+//
+// FlightController НЕ содержит реализацию iBUS.
+// FlightController НЕ управляет Servo напрямую.
+// FlightController НЕ считает mixer вручную.
+// FlightController НЕ занимается debug.
+//
+// Он только координирует подсистемы:
+//
+// Receiver
+//   ↓
+// Failsafe
+//   ↓
+// Arming
+//   ↓
+// Mixer
+//   ↓
+// Throttle
+//   ↓
+// Outputs
+//
+// Именно этот класс в будущем станет точкой объединения
+// ручного управления и автопилота.
+// ============================================================
+
+class FlightController
+{
+public:
+
+    FlightController(
+        IBusReceiver& receiver,
+        ControlMixer& mixer,
+        ThrottleManager& throttle,
+        ArmingManager& arming,
+        FlightOutputs& outputs
+    )
+        : receiver(receiver),
+          mixer(mixer),
+          throttle(throttle),
+          arming(arming),
+          outputs(outputs)
+    {
+    }
+
+
+    // --------------------------------------------------------
+    // Основная инициализация.
+    // --------------------------------------------------------
+
+    void begin()
+    {
+        outputs.setFailsafe();
+
+        receiver.begin();
+    }
+
+
+    // --------------------------------------------------------
+    // Главный цикл flight controller.
+    // --------------------------------------------------------
+
+    void update()
+    {
+        // ----------------------------------------------------
+        // 1. Получаем новые iBUS кадры.
+        // ----------------------------------------------------
+
+        receiver.update();
+
+
+        // ----------------------------------------------------
+        // 2. Проверяем состояние радиоканала.
+        // ----------------------------------------------------
+
+        const bool receiverFailsafe =
+            receiver.isSignalLost();
+
+
+        // ----------------------------------------------------
+        // 3. Получаем текущее состояние RC.
+        // ----------------------------------------------------
+
+        const RcChannelState& rc =
+            receiver.getState();
+
+
+        // ----------------------------------------------------
+        // 4. Failsafe имеет абсолютный приоритет.
+        // ----------------------------------------------------
+
+        if (receiverFailsafe)
+        {
+            arming.update(
+                Config::PWM_MIN,
+                true
+            );
+
+            throttle.update(
+                rc,
+                true
+            );
+
+            outputs.setFailsafe();
+
+            return;
+        }
+
+
+        // ----------------------------------------------------
+        // 5. Обновляем ARM state.
+        // ----------------------------------------------------
+
+        arming.update(
+            rc.get(Channels::THROTTLE),
+            false
+        );
+
+
+        // ----------------------------------------------------
+        // 6. Рассчитываем поверхности управления.
+        // ----------------------------------------------------
+
+        FlightOutputState output =
+            mixer.calculate(rc);
+
+
+        // ----------------------------------------------------
+        // 7. Рассчитываем throttle.
+        // ----------------------------------------------------
+
+        output.throttle =
+            throttle.update(
+                rc,
+                false
+            );
+
+
+        // ----------------------------------------------------
+        // 8. Отправляем весь рассчитанный state
+        //    физическим выходам.
+        // ----------------------------------------------------
+
+        outputs.write(output);
+    }
+
+
+    // --------------------------------------------------------
+    // Состояние приёмника.
+    // --------------------------------------------------------
+
+    bool isReceiverFailsafe() const
+    {
+        return receiver.isSignalLost();
+    }
+
+
+    // --------------------------------------------------------
+    // Состояние ARM.
+    // --------------------------------------------------------
+
+    bool isArmed() const
+    {
+        return arming.isArmed();
+    }
+
+
+    // --------------------------------------------------------
+    // Состояние boost.
+    // --------------------------------------------------------
+
+    bool isBoostActive() const
+    {
+        return throttle.isBoostActive();
+    }
+
+
+    // --------------------------------------------------------
+    // Последние PWM outputs.
+    // --------------------------------------------------------
+
+    const FlightOutputState& getOutputState() const
+    {
+        return outputs.getLastState();
+    }
+
+
+    // --------------------------------------------------------
+    // Текущее RC состояние.
+    // --------------------------------------------------------
+
+    const RcChannelState& getRcState() const
+    {
+        return receiver.getState();
+    }
+
+
+private:
+
+    IBusReceiver& receiver;
+
+    ControlMixer& mixer;
+
+    ThrottleManager& throttle;
+
+    ArmingManager& arming;
+
+    FlightOutputs& outputs;
+};
+
+
+// ============================================================
+// 12. DEBUG LOGGER
+//
+// Debug полностью отделён от flight logic.
+//
+// В будущем этот класс можно заменить на:
+//
+// SerialLogger
+// TelemetryLogger
+// WiFiLogger
+// WebSocketLogger
+// SDLogger
+//
+// При этом FlightController менять не потребуется.
+// ============================================================
+
+class DebugLogger
+{
+public:
+
+    explicit DebugLogger(
+        FlightController& controller
+    )
+        : controller(controller)
+    {
+    }
+
+
+    // --------------------------------------------------------
+    // Периодический вывод состояния.
+    // --------------------------------------------------------
+
+    void update()
+    {
+        const uint32_t now = millis();
+
+        if (
+            now - lastDebugTime <
+            Config::DEBUG_INTERVAL_MS
+        )
+        {
+            return;
+        }
+
+
+        lastDebugTime = now;
+
+        printState();
+    }
+
+
+private:
+
+    FlightController& controller;
+
+    uint32_t lastDebugTime = 0;
+
+
+    // --------------------------------------------------------
+    // Вывод полного текущего состояния.
+    // --------------------------------------------------------
+
+    void printState()
+    {
+        const RcChannelState& rc =
+            controller.getRcState();
+
+        const FlightOutputState& output =
+            controller.getOutputState();
+
+
+        // ----------------------------------------------------
+        // RC channels.
+        // ----------------------------------------------------
+
+        Serial.print("IBUS: ");
+
+        for (
+            uint8_t i = 0;
+            i < Config::IBUS_CHANNELS;
+            ++i
+        )
+        {
+            Serial.print("CH");
+            Serial.print(i + 1);
+            Serial.print("=");
+
+            Serial.print(rc.get(i));
+
+            Serial.print(" ");
+        }
+
+
+        // ----------------------------------------------------
+        // Receiver status.
+        // ----------------------------------------------------
+
+        Serial.print("| RX=");
+
+        Serial.print(
+            controller.isReceiverFailsafe()
+                ? "LOST"
+                : "OK"
+        );
+
+
+        // ----------------------------------------------------
+        // ARM status.
+        // ----------------------------------------------------
+
+        Serial.print(" | ARM=");
+
+        Serial.print(
+            controller.isArmed()
+                ? "YES"
+                : "NO"
+        );
+
+
+        // ----------------------------------------------------
+        // Boost status.
+        // ----------------------------------------------------
+
+        Serial.print(" | BOOST=");
+
+        Serial.print(
+            controller.isBoostActive()
+                ? "ON"
+                : "OFF"
+        );
+
+
+        // ----------------------------------------------------
+        // Calculated outputs.
+        // ----------------------------------------------------
+
+        Serial.print(" | OUT LAIL=");
+        Serial.print(output.aileronLeft);
+
+        Serial.print(" RAIL=");
+        Serial.print(output.aileronRight);
+
+        Serial.print(" ELE=");
+        Serial.print(output.elevator);
+
+        Serial.print(" ESC=");
+        Serial.println(output.throttle);
+    }
+};
+
+
+// ============================================================
+// 13. SYSTEM OBJECTS
+//
+// Здесь создаётся конкретная конфигурация системы.
+//
+// В будущем именно этот участок будет похож на composition
+// root приложения:
+//   sensors
+//   controllers
+//   navigation
+//   telemetry
+//   GUI
+//   etc.
 // ============================================================
 
 HardwareSerial IBusSerial(1);
 
-void readIBus()
-{
-    while (IBusSerial.available())
-    {
-        uint8_t byte = IBusSerial.read();
+IBusReceiver ibusReceiver(IBusSerial);
 
-        // Looking for frame start
-        if (ibusFrameIndex == 0)
-        {
-            if (byte != IBUS_HEADER_0)
-            {
-                continue;
-            }
+ControlMixer controlMixer;
 
-            ibusFrame[ibusFrameIndex++] = byte;
-            continue;
-        }
+ThrottleManager throttleManager;
 
-        if (ibusFrameIndex == 1)
-        {
-            if (byte != IBUS_HEADER_1)
-            {
-                ibusFrameIndex = 0;
-                continue;
-            }
+ArmingManager armingManager;
 
-            ibusFrame[ibusFrameIndex++] = byte;
-            continue;
-        }
+FlightOutputs flightOutputs;
 
-        ibusFrame[ibusFrameIndex++] = byte;
-
-        if (ibusFrameIndex >= IBUS_FRAME_LENGTH)
-        {
-            uint16_t checksum = 0xFFFF;
-
-            for (uint8_t i = 0; i < 30; i++)
-            {
-                checksum -= ibusFrame[i];
-            }
-
-            uint16_t receivedChecksum =
-                ibusFrame[30] |
-                (ibusFrame[31] << 8);
-
-            if (checksum == receivedChecksum)
-            {
-                for (uint8_t channel = 0; channel < IBUS_CHANNELS; channel++)
-                {
-                    ibusChannels[channel] =
-                        ibusFrame[2 + channel * 2] |
-                        (ibusFrame[3 + channel * 2] << 8);
-                }
-
-                ibusLastFrame = micros();
-                ibusFrameReady = true;
-            }
-
-            ibusFrameIndex = 0;
-        }
-    }
-}
-
-// ============================================================
-// COPY IBUS DATA
-// ============================================================
-
-void getIBusChannels(uint16_t *destination)
-{
-    for (uint8_t i = 0; i < IBUS_CHANNELS; i++)
-    {
-        destination[i] = ibusChannels[i];
-    }
-}
-
-// ============================================================
-// CLAMP IBUS VALUE
-// ============================================================
-
-uint16_t clampIBus(uint16_t value)
-{
-    return constrain(value, PWM_MIN, PWM_MAX);
-}
-
-// ============================================================
-
-// MAP CONTROL INPUT
-
-// ============================================================
-
-int16_t centeredControl(
-
-    uint16_t input,
-
-    int16_t maximumDeflection,
-
-    bool reverse = false
-
-)
-
-{
-
-    input = clampIBus(input);
-
-    int32_t output =
-
-        map(
-
-            input,
-
-            1000,
-
-            2000,
-
-            -maximumDeflection,
-
-            maximumDeflection
-
-        );
-
-    if (reverse) {
-
-        output = -output;
-
-    }
-
-    return constrain(
-
-        output,
-
-        -maximumDeflection,
-
-        maximumDeflection
-
-    );
-
-}
-
-// ============================================================
-// SET SAFE OUTPUTS
-// ============================================================
-
-void setSafeOutputs()
-{
-    servoAileronLeft.writeMicroseconds(PWM_CENTER);
-    servoAileronRight.writeMicroseconds(PWM_CENTER);
-
-    servoElevator.writeMicroseconds(PWM_CENTER);
-
-    // ESC receives minimum throttle.
-
-    esc.writeMicroseconds(PWM_MIN);
-}
-
-// ============================================================
-
-// ARM LOGIC
-
-// ============================================================
-
-void updateArming(uint16_t throttle)
-
-{
-
-}
-
-// ============================================================
-
-// CONTROL UPDATE
-
-// ============================================================
-
-void updateControls()
-
-{
-
-uint16_t ch[IBUS_CHANNELS];
-
-getIBusChannels(ch);
-
-uint16_t aileronInput = ch[0];
-uint16_t elevatorInput = ch[1];
-uint16_t throttleInput = ch[2];
-
-// Additional channels available:
-//
-// CH4 = Rudder
-// CH5 = Gear
-// CH6 = Flaps / auxiliary
-// CH7 = Auxiliary
-// CH8 = Auxiliary
-// CH9 = Auxiliary
-// CH10 = Auxiliary
-
-    // --------------------------------------------------------
-
-    // RECEIVER FAILSAFE
-
-    // --------------------------------------------------------
-
-uint32_t now = micros();
-
-uint32_t lastFrame = ibusLastFrame;
-
-receiverFailsafe =
-    ((now - lastFrame) > RX_TIMEOUT_US);
-
-    // --------------------------------------------------------
-
-    // FAILSAFE OUTPUT
-
-    // --------------------------------------------------------
-
-    if (receiverFailsafe) {
-
-        armed = false;
-
-        setSafeOutputs();
-
-        return;
-
-    }
-
-    // --------------------------------------------------------
-
-    // ARMING
-
-    // --------------------------------------------------------
-
-    updateArming(throttleInput);
-
-    // --------------------------------------------------------
-
-    // CONTROL SURFACES
-
-    // --------------------------------------------------------
-
-// --------------------------------------------------------
-// CONTROL SURFACES
-// --------------------------------------------------------
-
-int16_t aileron =
-    centeredControl(
-        aileronInput,
-        AILERON_MAX_US,
-        false
-    );
-
-int16_t elevator =
-    centeredControl(
-        elevatorInput,
-        ELEVATOR_MAX_US,
-        false
-    );
-
-
-//
-// AILERONS + FLAPS
-//
-// CH1 = aileron control
-// CH5 = flap position
-//
-// CH1 moves the ailerons in opposite directions.
-// CH5 moves BOTH ailerons down together.
-//
-
-// --------------------------------------------------------
-// FLAP OFFSET
-// --------------------------------------------------------
-//
-// CH5 = 1000 -> 0 us
-// CH5 = 1500 -> 50 us
-// CH5 = 2000 -> 100 us
-//
-
-uint16_t flapOffset = 0;
-
-if (ch[4] >= 1750)
-{
-    // Flaps position 3
-    flapOffset = 100;
-}
-else if (ch[4] >= 1250)
-{
-    // Flaps position 2
-    flapOffset = 50;
-}
-else
-{
-    // Flaps retracted
-    flapOffset = 0;
-}
-
-// --------------------------------------------------------
-// LEFT AILERON
-// --------------------------------------------------------
-//
-// Aileron control + flap deflection.
-//
-
-int32_t aileronLeftOutput =
-    PWM_CENTER + aileron + flapOffset;
-
-// --------------------------------------------------------
-// RIGHT AILERON
-// --------------------------------------------------------
-//
-// Aileron control is reversed.
-// Flap offset stays in the SAME physical direction.
-//
-
-int32_t aileronRightOutput =
-    PWM_CENTER + aileron - flapOffset;
-
-// --------------------------------------------------------
-// LIMIT OUTPUT
-// --------------------------------------------------------
-
-aileronLeftOutput =
-    constrain(
-        aileronLeftOutput,
-        PWM_MIN,
-        PWM_MAX
-    );
-
-aileronRightOutput =
-    constrain(
-        aileronRightOutput,
-        PWM_MIN,
-        PWM_MAX
-    );
-
-// --------------------------------------------------------
-// ELEVATOR
-// --------------------------------------------------------
-
-uint16_t elevatorOutput =
-    constrain(
-        PWM_CENTER + elevator,
-        PWM_MIN,
-        PWM_MAX
-    );
-
-// --------------------------------------------------------
-// SERVO OUTPUT
-// --------------------------------------------------------
-
-servoAileronLeft.writeMicroseconds(
-    aileronLeftOutput
+FlightController flightController(
+    ibusReceiver,
+    controlMixer,
+    throttleManager,
+    armingManager,
+    flightOutputs
 );
 
-servoAileronRight.writeMicroseconds(
-    aileronRightOutput
+DebugLogger debugLogger(
+    flightController
 );
 
-servoElevator.writeMicroseconds(
-    elevatorOutput
-);
-
-    // --------------------------------------------------------
-
-// --------------------------------------------------------
-// MOTOR / THROTTLE LIMIT
-// --------------------------------------------------------
-//
-// CH6 = 1000:
-//     throttle limited to 40%
-//
-// CH6 = 2000:
-//     full throttle for 5 seconds
-//
-// After 5 seconds:
-//     throttle returns to 40%
-//
-// Boost can only be triggered again after CH6
-// has been returned to LOW and then switched HIGH again.
-//
-
-uint16_t throttle =
-    constrain(
-        throttleInput,
-        PWM_MIN,
-        PWM_MAX
-    );
-
-uint16_t throttleSwitch = ch[5];
-
-uint32_t nowMs = millis();
-
-// --------------------------------------------------------
-// RESET BOOST TRIGGER
-// --------------------------------------------------------
-//
-// CH6 LOW = arm boost button/switch again.
-//
-
-if (throttleSwitch < 1250)
-{
-    throttleBoostReady = true;
-}
-
-// --------------------------------------------------------
-// START BOOST
-// --------------------------------------------------------
-
-if (
-    throttleSwitch >= 1750 &&
-    throttleBoostReady &&
-    !throttleBoostActive
-)
-{
-    throttleBoostActive = true;
-    throttleBoostReady = false;
-    throttleBoostStartTime = nowMs;
-}
-
-// --------------------------------------------------------
-// BOOST TIMER
-// --------------------------------------------------------
-
-if (throttleBoostActive)
-{
-    if (
-        nowMs - throttleBoostStartTime
-        >= THROTTLE_BOOST_TIME_MS
-    )
-    {
-        throttleBoostActive = false;
-    }
-}
-
-// --------------------------------------------------------
-// THROTTLE OUTPUT
-// --------------------------------------------------------
-
-if (throttleBoostActive)
-{
-    // Full throttle during boost.
-    esc.writeMicroseconds(PWM_MAX);
-}
-else
-{
-    // Normal mode: maximum 40%.
-    //
-    // 1000 = 1000
-    // 2000 = 1400
-    //
-    // The throttle stick remains proportional,
-    // but its maximum is limited to 40%.
-
-    uint16_t limitedThrottle =
-        map(
-            throttle,
-            PWM_MIN,
-            PWM_MAX,
-            PWM_MIN,
-            PWM_MIN +
-                (
-                    (PWM_MAX - PWM_MIN) *
-                    THROTTLE_LIMIT_PERCENT
-                ) / 100
-        );
-
-    limitedThrottle =
-        constrain(
-            limitedThrottle,
-            PWM_MIN,
-            PWM_MIN +
-                (
-                    (PWM_MAX - PWM_MIN) *
-                    THROTTLE_LIMIT_PERCENT
-                ) / 100
-        );
-
-    esc.writeMicroseconds(limitedThrottle);
-}
-
-}
 
 // ============================================================
-
-// DEBUG OUTPUT
-
-// ============================================================
-
-// ============================================================
-// DEBUG OUTPUT
-// ============================================================
-
-void debugOutput()
-{
-    static uint32_t lastDebug = 0;
-
-    if (millis() - lastDebug < DEBUG_INTERVAL_MS)
-    {
-        return;
-    }
-
-    lastDebug = millis();
-
-    uint16_t ch[IBUS_CHANNELS];
-
-    getIBusChannels(ch);
-
-    Serial.print("IBUS: ");
-
-    for (uint8_t i = 0; i < IBUS_CHANNELS; i++)
-    {
-        Serial.print("CH");
-        Serial.print(i + 1);
-        Serial.print("=");
-        Serial.print(ch[i]);
-        Serial.print(" ");
-    }
-
-    Serial.print("| RX=");
-
-    if (receiverFailsafe)
-    {
-        Serial.print("LOST");
-    }
-    else
-    {
-        Serial.print("OK");
-    }
-
-    Serial.print(" | ARM=");
-    Serial.print(armed ? "YES" : "NO");
-
-    Serial.print(" | OUT LAIL=");
-    Serial.print(servoAileronLeft.readMicroseconds());
-
-    Serial.print(" RAIL=");
-    Serial.print(servoAileronRight.readMicroseconds());
-
-    Serial.print(" ELE=");
-    Serial.print(servoElevator.readMicroseconds());
-
-    Serial.print(" ESC=");
-    Serial.println(esc.readMicroseconds());
-}
-
-// ============================================================
-
-// SETUP
-
+// 14. SETUP
+//
+// setup() только запускает систему.
+//
+// Здесь не должно быть flight logic.
 // ============================================================
 
 void setup()
-
 {
+    // --------------------------------------------------------
+    // Serial debug.
+    // --------------------------------------------------------
 
     Serial.begin(115200);
 
     delay(1000);
 
+
+    // --------------------------------------------------------
+    // Startup message.
+    // --------------------------------------------------------
+
     Serial.println();
-
     Serial.println("=================================");
-
     Serial.println(" AEROS-001 FLIGHT CONTROLLER");
-
     Serial.println(" ESP32-C3");
-
+    Serial.println(" OOP ARCHITECTURE");
     Serial.println("=================================");
-
     Serial.println();
 
 
     // --------------------------------------------------------
-
-    // SERVO PWM
-
+    // Инициализация физических PWM outputs.
     // --------------------------------------------------------
 
-    ESP32PWM::allocateTimer(0);
-
-    ESP32PWM::allocateTimer(1);
-
-    ESP32PWM::allocateTimer(2);
-
-    ESP32PWM::allocateTimer(3);
-    servoAileronLeft.setPeriodHertz(50);
-    servoAileronRight.setPeriodHertz(50);
-
-    servoElevator.setPeriodHertz(50);
-
-    esc.setPeriodHertz(50);
+    const bool outputsOK =
+        flightOutputs.begin();
 
 
-    bool aileronLeftOK =
-    servoAileronLeft.attach(
-        PIN_AILERON_LEFT,
-        PWM_MIN,
-        PWM_MAX
-    );
-
-bool aileronRightOK =
-    servoAileronRight.attach(
-        PIN_AILERON_RIGHT,
-        PWM_MIN,
-        PWM_MAX
-    );
-
-bool elevatorOK =
-    servoElevator.attach(
-        PIN_ELEVATOR,
-        PWM_MIN,
-        PWM_MAX
-    );
-
-bool escOK =
-    esc.attach(
-        PIN_ESC,
-        PWM_MIN,
-        PWM_MAX
-    );
-
-    Serial.print("Aileron LEFT attach: ");
+    Serial.print("Flight outputs: ");
 
     Serial.println(
-        aileronLeftOK ? "OK" : "FAILED"
+        outputsOK
+            ? "OK"
+            : "FAILED"
     );
 
-    Serial.print("Aileron RIGHT attach: ");
-
-    Serial.println(
-        aileronRightOK ? "OK" : "FAILED"
-    );
-
-    Serial.print("Elevator attach: ");
-
-    Serial.println(
-
-        elevatorOK ? "OK" : "FAILED"
-
-    );
-
-    Serial.print("ESC attach: ");
-
-    Serial.println(
-
-        escOK ? "OK" : "FAILED"
-
-    );
 
     // --------------------------------------------------------
-
-    // INITIAL SAFE OUTPUT
-
+    // Сразу после старта выставляем безопасные значения.
     // --------------------------------------------------------
 
-    setSafeOutputs();
+    flightOutputs.setFailsafe();
+
 
     // --------------------------------------------------------
-// IBUS INPUT
-// --------------------------------------------------------
+    // Инициализация flight controller.
+    // --------------------------------------------------------
 
-IBusSerial.begin(
-    IBUS_BAUDRATE,
-    SERIAL_8N1,
-    PIN_IBUS,
-    -1
-);
+    flightController.begin();
 
-ibusLastFrame = micros();
 
-Serial.println();
+    // --------------------------------------------------------
+    // Информационный вывод.
+    // --------------------------------------------------------
 
-Serial.println("iBUS input initialized.");
-Serial.println("115200 baud.");
-Serial.println("10 channels.");
-Serial.println("Throttle must be LOW.");
-Serial.println("Motor is DISARMED.");
-Serial.println();
-
+    Serial.println();
+    Serial.println("iBUS input initialized.");
+    Serial.println("115200 baud.");
+    Serial.println("10 channels.");
+    Serial.println("Throttle must be LOW.");
+    Serial.println("Motor is DISARMED.");
+    Serial.println();
 }
 
+
 // ============================================================
-// LOOP
+// 15. MAIN LOOP
+//
+// loop() намеренно максимально маленький.
+//
+// Это одна из главных целей новой архитектуры.
+//
+// В будущем сюда можно будет добавить:
+//
+//   sensors.update();
+//   autopilot.update();
+//   navigation.update();
+//   telemetry.update();
+//   gui.update();
+//
+// При этом отдельные системы останутся независимыми.
 // ============================================================
 
 void loop()
 {
-    readIBus();
+    // --------------------------------------------------------
+    // Основной flight controller.
+    // --------------------------------------------------------
 
-    updateControls();
+    flightController.update();
 
-    debugOutput();
+
+    // --------------------------------------------------------
+    // Отдельная debug-подсистема.
+    // --------------------------------------------------------
+
+    debugLogger.update();
+
+
+    // --------------------------------------------------------
+    // Небольшая пауза.
+    // --------------------------------------------------------
 
     delay(2);
 }
