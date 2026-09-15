@@ -1,26 +1,13 @@
 #pragma once
-#pragma once
 
-#include "Config.h"  
+#include "Config.h"
 
 // ============================================================
-// 6. FLIGHT OUTPUT STATE
+// FLIGHT OUTPUT STATE
 //
-// Это логическое представление того, что мы хотим отправить
-// на физические исполнительные механизмы.
-//
-// Важный момент:
-//
-// ControlMixer НЕ должен знать о Servo.
-//
-// Он только рассчитывает:
-//
-//   left aileron
-//   right aileron
-//   elevator
-//   throttle
-//
-// А FlightOutputs уже превращает это в PWM.
+// Логическое представление желаемых положений поверхностей и
+// газа (в µs), без привязки к Servo/PWM. ControlMixer считает
+// это; FlightOutputs превращает в реальный PWM.
 // ============================================================
 
 struct FlightOutputState
