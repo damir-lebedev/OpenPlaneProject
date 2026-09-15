@@ -214,7 +214,15 @@ public:
         Serial.print("Autopilot: mode=");
         Serial.print(modeToString(currentMode));
 
-        if (imuSensor)
+        if (!imuSensor)
+        {
+            Serial.print(" imu=NOT_ATTACHED");
+        }
+        else if (!imuSensor->isAvailable())
+        {
+            Serial.print(" imu=NO_RESPONSE");
+        }
+        else
         {
             const ImuData& imu = imuSensor->getImuData();
             Serial.print(" roll="); Serial.print(imu.roll, 1);
@@ -224,7 +232,15 @@ public:
             Serial.print(" yaw="); Serial.print(imu.yaw, 1);
         }
 
-        if (baroSensor)
+        if (!baroSensor)
+        {
+            Serial.print(" baro=NOT_ATTACHED");
+        }
+        else if (!baroSensor->isAvailable())
+        {
+            Serial.print(" baro=NO_RESPONSE");
+        }
+        else
         {
             const BarometerData& baro = baroSensor->getBarometerData();
             Serial.print(" alt="); Serial.print(baro.altitude, 1);

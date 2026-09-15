@@ -1,83 +1,27 @@
 #pragma once
 
 // ============================================================
-// 🎮 ГЛАВНЫЙ КОНТРОЛЛЕР ПОЛЁТА (FlightController)
+// FLIGHT CONTROLLER
 //
-// НАЗНАЧЕНИЕ:
-//   Это КООРДИНАТОР всех компонентов системы управления.
-//   Здесь находится вся логика:
-//     • Failsafe (потеря сигнала)
-//     • Arming (вооружение системы)
-//     • Mixer (преобразование RC в управляющие сигналы)
-//     • Throttle (управление мотором)
-//     • Outputs (отправка PWM)
+// Единственный координатор всего цикла управления. Сам не
+// парсит UART, не трогает Servo и не считает mixer/throttle —
+// только вызывает остальные классы в правильном порядке.
 //
-// ОЧЕНЬ ВАЖНО ЧТО ЗДЕСЬ НЕ НАХОДИТСЯ:
-//   ✗ Парсинг UART/iBUS → в IBusReceiver
-//   ✗ Управление Servo напрямую → в FlightOutputs
-//   ✗ Расчёты mixer → в ControlMixer
-//   ✗ Отладочные выводы → в DebugLogger
-//
-// Это — чистая координация! Благодаря такому разделению:
-//   • Каждый класс отвечает за одно
-//   • Легко тестировать (Unit Tests)
-//   • Легко расширять (добавить Autopilot, GPS, IMU)
-//   • Легко переиспользовать (Mixer могут использовать и Autopilot!)
-//
-// АРХИТЕКТУРА УПРАВЛЕНИЯ:
-// ============================================================
-//
-//   loop() каждые 2ms
-//        │
-//        ▼
-//   flightController.update()
-//        │
-//        ├─ receiver.update()
-//        │  ↓ Получаем iBUS кадры
-//        │
-//        ├─ Проверяем failsafe?
-//        │  ├─ ДА:  outputs.setFailsafe()  → ВЫХОД!
-//        │  └─ НЕТ: идём дальше
-//        │
-//        ├─ arming.update()
-//        │  ↓ Проверяем условия ARM (газ LOW 2 сек)
-//        │
-//        ├─ mixer.calculate()
-//        │  ↓ Преобразуем CH1,CH2,CH5 → управляющие сигналы
-//        │
-//        ├─ throttle.update()
-//        │  ↓ Обработаем CH3 и CH6 (boost)
-//        │
-//        └─ outputs.write()
-//           ↓ Отправляем PWM на GPIO4-7
-//
+// Порядок в update() и есть приоритет управления:
+//   1. FAILSAFE   — потеря сигнала важнее всего, обрывает cycle
+//   2. ARMING     — обновляем состояние ARM
+//   3. MIXER      — RC -> положения поверхностей
+//   4. AUTOPILOT  — коррекции поверх mixer (только если armed)
+//   5. THROTTLE   — газ + boost
+//   6. OUTPUTS    — PWM на GPIO
 // ============================================================
 
 class FlightController
 {
 public:
 
-    // ========================================================
-    // КОНСТРУКТОР
-    // ========================================================
-    // Принимает ссылки на все компоненты системы
-    // Сохраняет их как приватные переменные-члены
-    //
-    // Компоненты подаются из main.cpp (Composition Root):
-    //   FlightController flightController(
-    //       ibusReceiver,        // Получение RC сигналов
-    //       controlMixer,        // Преобразование RC
-    //       throttleManager,     // Управление мотором
-    //       armingManager,       // Система ARM/DISARM
-    //       flightOutputs        // PWM на GPIO
-    //   );
-    //
-    // Это называется DEPENDENCY INJECTION:
-    //   • Зависимости передаются через конструктор
-    //   • Не создаются внутри класса
-    //   • Легко подменять для тестирования
-    // ========================================================
-
+    // Autopilot/FeatureManager опциональны (nullptr = чистое
+    // ручное управление, как раньше).
     FlightController(
         IBusReceiver& receiver,
         ControlMixer& mixer,
@@ -97,412 +41,85 @@ public:
     {
     }
 
-
-    // ========================================================
-    // ИНИЦИАЛИЗАЦИЯ
-    // ========================================================
-    // Вызывается один раз из setup()
-    //
-    // Порядок инициализации:
-    //   1. Выставляем всем failsafe (безопасные значения)
-    //   2. Инициализируем UART приёмника
-    //   3. Остальные компоненты инициализируются в конструкторе
-    //
-    // После этого система готова:
-    //   • Слушает UART приёмник
-    //   • Сервоприводы в безопасном положении
-    //   • Мотор выключен
-    //   • Система в режиме DISARM
-    // ========================================================
-
     void begin()
     {
-        // Сразу выставляем безопасные значения
-        // (газ выключен, сервы в нейтраль)
         outputs.setFailsafe();
-
-        // Инициализируем UART приёмника (GPIO3, 115200 baud)
         receiver.begin();
     }
 
-
-    // ========================================================
-    // ГЛАВНЫЙ ЦИКЛ УПРАВЛЕНИЯ (FLIGHT LOGIC)
-    // ========================================================
-    // Вызывается каждый цикл из loop() (каждые 2ms)
-    //
-    // ОЧЕНЬ ВАЖНО: порядок операций в этом методе
-    // определяет ЛОГИКУ управления полётом!
-    //
-    // ПРИОРИТЕТ (от высшего к низшему):
-    //   1 🛑 FAILSAFE     (потеря сигнала = отключить всё!)
-    //   2 🔒 ARMING       (система вооружена?)
-    //   3 🎮 MIXER        (управление поверхностями)
-    //   4 🚀 THROTTLE     (управление мотором)
-    //   5 📤 OUTPUTS      (отправка PWM)
-    //
-    // Если failsafe → сразу выходим, ничего больше не делаем!
-    // Это гарантирует, что при потере сигнала самолёт
-    // немедленно перейдёт в безопасный режим.
-    // ========================================================
-
     void update()
     {
-        // ====================================================
-        // ШАГ 1: ПОЛУЧАЕМ НОВЫЕ iBUS КАДРЫ
-        // ====================================================
-        // Вызываем receiver.update() для обработки новых байтов
-        // из UART буфера
-        //
-        // Что здесь происходит:
-        //   • Читаем все доступные байты из UART
-        //   • Парсим iBUS протокол (заголовок, каналы, checksum)
-        //   • Если полный валидный кадр → обновляем RcChannelState
-        //   • Фиксируем время получения кадра
-        //
-        // Частота: Кадры приходят ~100 Hz (каждые ~10ms)
-        //   (update() вызывается 500 Hz, но новых кадров редко)
-        // ====================================================
-
         receiver.update();
 
-        // ====================================================
-        // ШАГ 1.5: ПРОВЕРЯЕМ FAILSAFE ДЛЯ АВТОПИЛОТА
-        // ====================================================
         const bool receiverFailsafe = receiver.isSignalLost();
 
-        // ====================================================
-        // ШАГ 1.6: ОБНОВЛЯЕМ FEATURE MANAGER И AUTOPILOT
-        // ====================================================
-        // Если Autopilot и FeatureManager подключены,
-        // обновляем их ПОСЛЕ получения RC сигналов
-        //
-        // Что происходит:
-        //   1. FeatureManager обрабатывает каналы CH7-CH10
-        //   2. Определяет, какой режим должен быть активен
-        //   3. Autopilot обновляет датчики и рассчитывает коррекции
-        //   4. Эти коррекции будут применены к mixer выходам
-        //
-        // Это позволяет добавлять коррекции поверх RC сигналов:
-        //   • Stabilize корректирует roll/pitch
-        //   • AutoTakeoff управляет углом и мощностью
-        //   • AltHold корректирует throttle
-        // ====================================================
-
+        // FeatureManager/Autopilot обновляются до failsafe-проверки:
+        // так их внутренние таймеры/фильтры продолжают идти даже
+        // если этот конкретный цикл потом обрывается по failsafe.
         if (featureManager && !receiverFailsafe)
         {
-            // Обновляем Feature Manager (обрабатываем CH7-CH10)
-            const RcChannelState& rc_temp = receiver.getState();
-            featureManager->update(rc_temp);
+            featureManager->update(receiver.getState());
         }
 
         if (autopilot && !receiverFailsafe)
         {
-            // Обновляем Autopilot (датчики, ПИД, коррекции)
             autopilot->update();
         }
 
-
-        // ====================================================
-        // ШАГ 2: ПРОВЕРЯЕМ ПОТЕРЮ СИГНАЛА (FAILSAFE)
-        // ====================================================
-        // Вызываем isSignalLost() — проверяем время
-        // последнего валидного кадра
-        //
-        // Если прошло > 500ms без кадров:
-        //   receiverFailsafe = true
-        //   → Самолёт в опасности!
-        //   → Переходим в режим FAILSAFE
-        //
-        // Это ЕДИНСТВЕННОЕ, что нас интересует на этом этапе.
-        // Все остальные проверки делаем только если
-        // сигнал ЕСТЬ!
-        // ====================================================
-
-        // receiverFailsafe уже определена на ШАГ 1.5
-
-        // ====================================================
-        // ШАГ 3: ПОЛУЧАЕМ ТЕКУЩЕЕ СОСТОЯНИЕ ВСЕХ КАНАЛОВ
-        // ====================================================
-        // Получаем ссылку на RcChannelState объект
-        // (содержит CH1–CH10, каждый в микросекундах)
-        //
-        // Пример содержимого:
-        //   CH1 (Aileron) = 1400 µs (влево на 90%)
-        //   CH2 (Elevator) = 1500 µs (нейтраль)
-        //   CH3 (Throttle) = 1200 µs (30% мощности)
-        //   CH4 (Rudder) = 1500 µs (не используется)
-        //   CH5 (Flaps) = 1750 µs (выпущены)
-        //   CH6 (Boost) = 1800 µs (активен!)
-        //   CH7-CH10 = 1500 µs (не используются)
-        //
-        // Эти значения будут использованы дальше
-        // в mixer, throttle и других компонентах
-        // ====================================================
-
-        const RcChannelState& rc =
-            receiver.getState();
-
-
-        // ====================================================
-        // ШАГ 4: FAILSAFE ИМЕЕТ АБСОЛЮТНЫЙ ПРИОРИТЕТ! 🛑
-        // ====================================================
-        // ЕСЛИ сигнал потерян:
-        //   1. Обновляем arming (DISARM!)
-        //   2. Обновляем throttle (failsafe режим)
-        //   3. Выставляем все выходы на failsafe
-        //   4. ВЫХОДИМ из update()
-        //
-        // Ничего больше не делаем!
-        // Mixer и другие компоненты вообще не вызываются.
-        //
-        // Это гарантирует, что при потере сигнала:
-        //   • Мотор ВЫКЛЮЧЕН (throttle = 1000 µs)
-        //   • Сервоприводы в НЕЙТРАЛЬ (1500 µs)
-        //   • Система РАЗОРУЖЕНА
-        //   • Самолёт теряет управление и летит вперёд/вниз
-        //
-        // ДА, это плохо. Но лучше падать прямо вперёд,
-        // чем летать в непредсказуемую сторону!
-        // ====================================================
+        const RcChannelState& rc = receiver.getState();
 
         if (receiverFailsafe)
         {
-            // DISARM при потере сигнала
-            arming.update(
-                Config::PWM_MIN,  // газ в минимуме
-                true              // failsafe флаг = true
-            );
-
-            // Throttle в режиме failsafe
-            throttle.update(
-                rc,
-                true              // failsafe флаг = true
-            );
-
-            // Выставляем все выходы на безопасные значения
+            arming.update(Config::PWM_MIN, true);
+            throttle.update(rc, true);
             outputs.setFailsafe();
-
-            // ВЫХОДИМ! Дальше ничего не делаем!
-            return;
+            return;  // ничего больше не делаем — самолёт в безопасном режиме
         }
 
+        arming.update(rc.get(Channels::THROTTLE), false);
 
-        // ====================================================
-        // ШАГ 5: ОБНОВЛЯЕМ СОСТОЯНИЕ ARM
-        // ====================================================
-        // Система не в failsafe, можно проверить ARM логику
-        //
-        // Логика ARM:
-        //   • Удерживайте газ на МИНИМУМЕ 2 секунды
-        //   • Система перейдёт в состояние ARMED
-        //   • Теперь готова к полёту
-        //
-        // Проверяем текущее значение throttle (CH3):
-        //   rc.get(Channels::THROTTLE) → 1000–2000 µs
-        //
-        // Если throttle < 1000 µs → газ в минимуме
-        //   arming.update() засекает время
-        //   если > 2 сек в этом положении → armed = true
-        //
-        // failsafe флаг = false, потому что сигнал есть
-        // ====================================================
+        FlightOutputState output = mixer.calculate(rc);
 
-        arming.update(
-            rc.get(Channels::THROTTLE),  // Читаем CH3
-            false                         // Нет failsafe
-        );
-
-
-        // ====================================================
-        // ШАГ 6: РАССЧИТЫВАЕМ УПРАВЛЯЮЩИЕ СИГНАЛЫ
-        // ====================================================
-        // Вызываем mixer.calculate() для преобразования
-        // RC inputs в управляющие сигналы для поверхностей
-        //
-        // INPUT (из RC пульта):
-        //   CH1 (Aileron)  = 1400 µs → отклонение влево
-        //   CH2 (Elevator) = 1500 µs → нейтраль
-        //   CH5 (Flaps)    = 1750 µs → выпущены
-        //
-        // OUTPUT (для сервоприводов):
-        //   Left Aileron   = 1350 µs (вверх)
-        //   Right Aileron  = 1650 µs (вниз)
-        //   Elevator       = 1500 µs (нейтраль)
-        //
-        // Логика:
-        //   • Aileron = Stick Input ± Flaps Offset
-        //   • Left Aileron = 1500 + aileron + flap_offset
-        //   • Right Aileron = 1500 - aileron + flap_offset
-        //
-        // Это — чистая аэродинамическая логика.
-        // Никаких servo напрямую, только цифры (µs)!
-        // ====================================================
-
-        FlightOutputState output =
-            mixer.calculate(rc);
-
-
-        // ====================================================
-        // STEP 6.5: APPLY AUTOPILOT CORRECTIONS
-        // ====================================================
-        // Если Autopilot активен, применяем его коррекции
-        // к сигналам управления
-        //
-        // Коррекции добавляются к основным сигналам:
-        //   • Roll correction: улучшает стабилизацию крена
-        //   • Pitch correction: улучшает стабилизацию тангажа
-        //   • Throttle correction: для удержания высоты
-        //
-        // Это комбинирует RC управление с автопилотом
-        // в единый выход, обеспечивая плавный контроль.
-        // ====================================================
-
-        if (autopilot && !receiverFailsafe && arming.isArmed())
+        // Коррекции автопилота применяются только когда armed —
+        // иначе на земле до вооружения система могла бы дёргать
+        // поверхности сама.
+        if (autopilot && arming.isArmed())
         {
-            // Применяем коррекции roll и pitch к ailerons
-            float rollCorr = autopilot->getRollCorrection();
-            float pitchCorr = autopilot->getPitchCorrection();
+            const float rollCorr = autopilot->getRollCorrection();
+            const float pitchCorr = autopilot->getPitchCorrection();
 
             output.aileronLeft += pitchCorr - rollCorr;
             output.aileronRight += pitchCorr + rollCorr;
-
-            // Ограничиваем границы сигналов
-            if (output.aileronLeft > Config::PWM_MAX)
-                output.aileronLeft = Config::PWM_MAX;
-            if (output.aileronLeft < Config::PWM_MIN)
-                output.aileronLeft = Config::PWM_MIN;
-
-            if (output.aileronRight > Config::PWM_MAX)
-                output.aileronRight = Config::PWM_MAX;
-            if (output.aileronRight < Config::PWM_MIN)
-                output.aileronRight = Config::PWM_MIN;
-
-            // Коррекция elevator
             output.elevator += pitchCorr;
-            if (output.elevator > Config::PWM_MAX)
-                output.elevator = Config::PWM_MAX;
-            if (output.elevator < Config::PWM_MIN)
-                output.elevator = Config::PWM_MIN;
+
+            output.aileronLeft = constrain(output.aileronLeft, Config::PWM_MIN, Config::PWM_MAX);
+            output.aileronRight = constrain(output.aileronRight, Config::PWM_MIN, Config::PWM_MAX);
+            output.elevator = constrain(output.elevator, Config::PWM_MIN, Config::PWM_MAX);
         }
 
-
-        // ====================================================
-        // ШАГ 7: ОБНОВЛЯЕМ THROTTLE И BOOST
-        // ====================================================
-        // Вызываем throttle.update() для обработки мотора
-        //
-        // INPUT:
-        //   CH3 (Throttle) = 1300 µs (30% мощности)
-        //   CH6 (Boost)    = 1800 µs (активен!)
-        //
-        // OUTPUT:
-        //   output.throttle = 1550 µs (с boost +250)
-        //
-        // Логика BOOST:
-        //   1. Если CH6 < 1250 µs → boost разблокирован
-        //   2. Если CH6 > 1750 µs → boost активируется
-        //   3. Throttle увеличивается на 250 µs
-        //   4. Через 5 секунд boost отключается автоматически
-        //   5. Вернуть CH6 в LOW для повторной активации
-        //
-        // failsafe флаг = false, потому что мы не в failsafe
-        // ====================================================
-
-        output.throttle =
-            throttle.update(
-                rc,
-                false              // Нет failsafe
-            );
-
-
-        // ====================================================
-        // ШАГ 8: ОТПРАВЛЯЕМ ВСЕ СИГНАЛЫ НА GPIO
-        // ====================================================
-        // Вызываем outputs.write() для отправки PWM
-        // сигналов на физические GPIO пины
-        //
-        // INPUT (из шагов 6-7):
-        //   output.leftAileron  = 1350 µs
-        //   output.rightAileron = 1650 µs
-        //   output.elevator     = 1500 µs
-        //   output.throttle     = 1550 µs
-        //
-        // OUTPUT (GPIO PWM):
-        //   GPIO4 ← writeMicroseconds(1350)  → Left Aileron Servo
-        //   GPIO5 ← writeMicroseconds(1650)  → Right Aileron Servo
-        //   GPIO6 ← writeMicroseconds(1500)  → Elevator Servo
-        //   GPIO7 ← writeMicroseconds(1550)  → ESC (Motor)
-        //
-        // Сервоприводы получают сигналы и двигаются!
-        // Мотор начинает вращаться!
-        //
-        // ВСЕ! Цикл завершён.
-        // Через 2ms loop() вызовет update() снова.
-        // ====================================================
+        output.throttle = throttle.update(rc, false);
 
         outputs.write(output);
     }
 
 
-    // ========================================================
-    // ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ДЛЯ ОТЛАДКИ И МОНИТОРИНГА
-    // ========================================================
-    // Эти методы используются DebugLogger для вывода
-    // информации о состоянии системы
-    // ========================================================
-
-    // Проверить, потеряли ли сигнал?
-    bool isReceiverFailsafe() const
-    {
-        return receiver.isSignalLost();
-    }
-
-    // Вооружена ли система?
-    bool isArmed() const
-    {
-        return arming.isArmed();
-    }
-
-    // Активен ли режим boost?
-    bool isBoostActive() const
-    {
-        return throttle.isBoostActive();
-    }
-
-    // Получить последний выход PWM сигналов
-    const FlightOutputState& getOutputState() const
-    {
-        return outputs.getLastState();
-    }
-
-    // Получить текущее состояние RC каналов
-    const RcChannelState& getRcState() const
-    {
-        return receiver.getState();
-    }
+    // Для DebugLogger/WebDebugServer.
+    bool isReceiverFailsafe() const { return receiver.isSignalLost(); }
+    bool isArmed() const { return arming.isArmed(); }
+    bool isBoostActive() const { return throttle.isBoostActive(); }
+    const FlightOutputState& getOutputState() const { return outputs.getLastState(); }
+    const RcChannelState& getRcState() const { return receiver.getState(); }
+    const FlightOutputs& getOutputs() const { return outputs; }
 
 
 private:
 
-    // ========================================================
-    // ПРИВАТНЫЕ ЧЛЕНЫ КЛАССА (Dependency Injection)
-    // ========================================================
-    // Ссылки на все компоненты системы
-    // Передаются в конструкторе из main.cpp
-    // ========================================================
+    IBusReceiver& receiver;
+    ControlMixer& mixer;
+    ThrottleManager& throttle;
+    ArmingManager& arming;
+    FlightOutputs& outputs;
 
-    IBusReceiver& receiver;      // Получение iBUS сигналов из UART
-
-    ControlMixer& mixer;         // Преобразование RC в управляющие сигналы
-
-    ThrottleManager& throttle;   // Управление мотором
-
-    ArmingManager& arming;       // Система ARM/DISARM
-
-    FlightOutputs& outputs;      // PWM выходы на GPIO
-
-    Autopilot* autopilot;        // Система автопилота (опционально)
-
-    FeatureManager* featureManager;  // Менеджер функций CH7-CH10 (опционально)
+    Autopilot* autopilot;
+    FeatureManager* featureManager;
 };
