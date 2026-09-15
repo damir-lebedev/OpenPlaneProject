@@ -12,6 +12,7 @@
 // ============================================================
 
 #include "SensorInterface.h"
+#include "../Config.h"
 #include <Wire.h>
 
 class MPU6050_Sensor : public ImuSensor
@@ -30,7 +31,7 @@ public:
 
     bool begin() override
     {
-        Wire.begin();          // SCL=GPIO22, SDA=GPIO21 (стандартные пины ESP32)
+        Wire.begin(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL);
         Wire.setClock(400000);
 
         delay(100);

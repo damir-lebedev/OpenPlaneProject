@@ -18,6 +18,7 @@
 // ============================================================
 
 #include "SensorInterface.h"
+#include "../Config.h"
 #include <Wire.h>
 
 class BME280_Sensor : public BarometerSensor
@@ -36,7 +37,7 @@ public:
 
     bool begin() override
     {
-        Wire.begin();
+        Wire.begin(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL);
         Wire.setClock(400000);
 
         delay(100);

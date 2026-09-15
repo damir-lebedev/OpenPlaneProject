@@ -10,14 +10,58 @@
 namespace Config
 {
     // --------------------------------------------------------
-    // Hardware pinout
+    // Hardware pinout — выбирается платой сборки (platformio.ini
+    // задаёт ровно один из макросов ниже через build_flags, env
+    // esp32-c3 / esp32-s3 / esp32-dev). Чтобы добавить новую плату:
+    // скопируйте блок, поменяйте номера пинов, добавьте #elif
+    // и одноимённый [env:...] в platformio.ini.
+    //
+    // Ни один пин здесь не проверен вживую, кроме ESP32-C3
+    // SuperMini (текущий прототип) — остальные распиновки
+    // подобраны по документации чипа (не заняты флешем/USB,
+    // не input-only) и требуют проверки под конкретную плату.
     // --------------------------------------------------------
 
+#if defined(BOARD_ESP32_S3)
+    // ESP32-S3-DevKitC-1 — планируемый основной лётный контроллер.
+    // GPIO19/20 (USB D-/D+) и GPIO26-32 (SPI flash) намеренно не используются.
+    constexpr uint8_t PIN_AILERON_LEFT  = 4;
+    constexpr uint8_t PIN_AILERON_RIGHT = 5;
+    constexpr uint8_t PIN_ELEVATOR      = 6;
+    constexpr uint8_t PIN_ESC           = 7;
+    constexpr uint8_t PIN_IBUS          = 17;
+    constexpr uint8_t PIN_I2C_SDA       = 8;   // = дефолт Wire для esp32s3
+    constexpr uint8_t PIN_I2C_SCL       = 9;   // = дефолт Wire для esp32s3
+
+#elif defined(BOARD_ESP32_CLASSIC)
+    // Обычная ESP32 38-pin (esp32dev/DOIT/NodeMCU-32S).
+    // GPIO0/2/5/12/15 (strapping) и GPIO6-11 (SPI flash) не используются;
+    // 34-39 пропущены — они input-only и не годятся для Servo/ESC.
+    constexpr uint8_t PIN_AILERON_LEFT  = 13;
+    constexpr uint8_t PIN_AILERON_RIGHT = 14;
+    constexpr uint8_t PIN_ELEVATOR      = 27;
+    constexpr uint8_t PIN_ESC           = 26;
+    constexpr uint8_t PIN_IBUS          = 16;
+    constexpr uint8_t PIN_I2C_SDA       = 21;  // = дефолт Wire для esp32 classic
+    constexpr uint8_t PIN_I2C_SCL       = 22;  // = дефолт Wire для esp32 classic
+
+#elif defined(BOARD_ESP32_C3)
+    // ESP32-C3 SuperMini — текущий прототип, единственная плата,
+    // на которой это реально прошито и проверено.
     constexpr uint8_t PIN_AILERON_LEFT  = 5;
     constexpr uint8_t PIN_AILERON_RIGHT = 4;
     constexpr uint8_t PIN_ELEVATOR      = 6;
-    constexpr uint8_t PIN_ESC            = 7;
-    constexpr uint8_t PIN_IBUS           = 8;
+    constexpr uint8_t PIN_ESC           = 7;
+    constexpr uint8_t PIN_IBUS          = 8;
+    // ВАЖНО: дефолт Wire для esp32c3 — это как раз SDA=8/SCL=9, то
+    // есть SDA совпал бы с PIN_IBUS. Поэтому I2C явно уведён на
+    // GPIO1/3 — обычные GPIO, не участвующие во flash/USB.
+    constexpr uint8_t PIN_I2C_SDA       = 1;
+    constexpr uint8_t PIN_I2C_SCL       = 3;
+
+#else
+    #error "Не задана плата: используйте env esp32-c3/esp32-s3/esp32-dev из platformio.ini (или определите свой -D BOARD_... и добавьте ветку в Config.h)"
+#endif
 
 
     // --------------------------------------------------------
