@@ -1,27 +1,21 @@
 #pragma once
-
-// ============================================================
-// 🚀 AUTOPILOT SYSTEM
-//
-// Основные режимы:
-//   1. MANUAL - полностью управление с пульта
-//   2. STABILIZE - гиро-стабилизация (удерживает углы крена/тангажа)
-//   3. AUTO_TAKEOFF - автоматический взлёт с разгоном
-//   4. ALT_HOLD - удержание высоты (после набора скорости)
-//
-// Архитектура:
-//   • Режимы включаются через Feature Manager (каналы CH7-CH10)
-//   • PID контроллеры для стабилизации (roll/pitch)
-//   • Интеграция с IMU (гироскоп) и барометром (высота)
-//   • Выход: коррекции к ControlMixer
-// ============================================================
+#include <Arduino.h>
 
 #include "sensors/SensorInterface.h"
 #include "Config.h"
-#include <Arduino.h>
 
 // ============================================================
-// PID КОНТРОЛЛЕР
+// АВТОПИЛОТ
+//
+// Режимы: MANUAL (без коррекции) / STABILIZE (ПИД по крену и
+// тангажу) / AUTO_TAKEOFF (сценарий газ+тангаж по времени) /
+// ALT_HOLD (ПИД газа по высоте барометра).
+//
+// Режим переключается снаружи (FeatureManager). Этот класс
+// только считает коррекции, которые FlightController добавляет
+// к сигналам микшера. Безопасно работает и без датчиков (imu/baro
+// == nullptr или физически не отвечают на I2C) — тогда просто
+// не даёт коррекции (0).
 // ============================================================
 
 class PID_Controller
@@ -35,10 +29,6 @@ public:
     {
     }
 
-    // ========================================================
-    // УСТАНОВКА КОЭФФИЦИЕНТОВ
-    // ========================================================
-
     void setGains(float kp, float ki, float kd)
     {
         Kp = kp;
@@ -46,67 +36,49 @@ public:
         Kd = kd;
     }
 
-    // ========================================================
-    // УСТАНОВКА ЛИМИТОВ ВЫВОДА
-    // ========================================================
-
     void setLimits(float minOut, float maxOut)
     {
         minOutput = minOut;
         maxOutput = maxOut;
     }
 
-    // ========================================================
-    // РАСЧЁТ ПИД ВЫВОДА
-    // ========================================================
-    // setpoint - желаемое значение (например, желаемый угол крена)
-    // feedback - текущее значение (например, текущий угол крена)
-    // returns: коррекция сигнала (-500 ... +500 µs)
-
+    // setpoint/feedback в одних единицах (например, градусы).
+    // Возвращает коррекцию, ограниченную [minOutput, maxOutput].
     float calculate(float setpoint, float feedback)
     {
         unsigned long now = micros();
         float dt = (now - lastTime) / 1000000.0f;
         lastTime = now;
 
-        // Защита от больших прыжков по времени
+        // Первый вызов после reset() или долгая пауза (например,
+        // I2C подвис) — берём номинальный период цикла, чтобы
+        // D-член не выдал случайный всплеск.
         if (dt < 0.001f || dt > 1.0f)
         {
-            dt = 0.002f;  // 2 ms (стандартный цикл)
+            dt = 0.002f;
         }
 
-        // Ошибка между желаемым и текущим значением
         float error = setpoint - feedback;
 
-        // P (пропорциональный) термин
         float P = Kp * error;
 
-        // I (интегральный) термин
         errorSum += error * dt;
-        // Ограничиваем windup (переполнение интегратора)
-        if (errorSum > 100) errorSum = 100;
+        if (errorSum > 100) errorSum = 100;   // защита от переполнения интегратора
         if (errorSum < -100) errorSum = -100;
         float I = Ki * errorSum;
 
-        // D (дифференциальный) термин
         float dError = (error - lastError) / dt;
         float D = Kd * dError;
 
         lastError = error;
 
-        // Сумма всех компонент
         float output = P + I + D;
 
-        // Ограничиваем выход
         if (output > maxOutput) output = maxOutput;
         if (output < minOutput) output = minOutput;
 
         return output;
     }
-
-    // ========================================================
-    // СБРОС КОНТРОЛЛЕРА
-    // ========================================================
 
     void reset()
     {
@@ -123,30 +95,17 @@ private:
     float minOutput, maxOutput;
 };
 
-// ============================================================
-// РЕЖИМЫ АВТОПИЛОТА
-// ============================================================
-
 enum AutopilotMode
 {
-    MODE_MANUAL = 0,       // Полностью управление с пульта
-    MODE_STABILIZE = 1,    // Стабилизация углов
-    MODE_AUTO_TAKEOFF = 2, // Автоматический взлёт
-    MODE_ALT_HOLD = 3      // Удержание высоты
+    MODE_MANUAL = 0,
+    MODE_STABILIZE = 1,
+    MODE_AUTO_TAKEOFF = 2,
+    MODE_ALT_HOLD = 3
 };
-
-// ============================================================
-// ОСНОВНОЙ КЛАСС АВТОПИЛОТА
-// ============================================================
 
 class Autopilot
 {
 public:
-
-    // ========================================================
-    // КОНСТРУКТОР
-    // ========================================================
-    // Принимает указатели на датчики
 
     Autopilot(ImuSensor* imu = nullptr, BarometerSensor* baro = nullptr)
         : imuSensor(imu),
@@ -154,54 +113,45 @@ public:
           currentMode(MODE_MANUAL),
           previousMode(MODE_MANUAL),
           modeChangeTime(0),
+          rollCorrection(0.0f),
+          pitchCorrection(0.0f),
+          throttleCorrection(0.0f),
           desiredRoll(0),
           desiredPitch(0),
           autoTakeoffThrottle(0),
           autoTakeoffStartTime(0),
           targetAltitude(0)
     {
-        // Инициализируем PID контроллеры для крена и тангажа
-        // Эти коэффициенты можно настраивать через Web UI
-        pidRoll.setGains(0.05f, 0.01f, 0.02f);   // Kp, Ki, Kd для крена
-        pidPitch.setGains(0.05f, 0.01f, 0.02f);  // Kp, Ki, Kd для тангажа
-        pidThrottle.setGains(0.1f, 0.05f, 0.01f); // Для удержания высоты
+        // Значения по умолчанию, можно перенастроить через setPIDGains()/веб.
+        pidRoll.setGains(0.05f, 0.01f, 0.02f);
+        pidPitch.setGains(0.05f, 0.01f, 0.02f);
+        pidThrottle.setGains(0.1f, 0.05f, 0.01f);
 
         pidRoll.setLimits(-500, 500);
         pidPitch.setLimits(-500, 500);
         pidThrottle.setLimits(-100, 100);
     }
 
-    // ========================================================
-    // ИНИЦИАЛИЗАЦИЯ
-    // ========================================================
-
+    // Возвращает false, если датчики не подключены; STABILIZE/ALT_HOLD
+    // в этом случае просто не дают коррекции (см. handle*Mode()).
     bool begin()
     {
         if (!imuSensor || !baroSensor)
         {
-            Serial.println("❌ Autopilot: IMU or Barometer not attached!");
+            Serial.println("Autopilot: IMU или барометр не подключены, STABILIZE/ALT_HOLD недоступны");
             return false;
         }
 
-        Serial.println("✅ Autopilot: Initialized");
+        Serial.println("Autopilot: инициализирован");
         return true;
     }
 
-    // ========================================================
-    // ОБНОВЛЕНИЕ АВТОПИЛОТА
-    // ========================================================
-    // Должна вызваться из FlightController::update()
-
+    // Вызывается один раз за цикл из FlightController::update().
     void update()
     {
-        // Обновляем датчики
         if (imuSensor) imuSensor->update();
         if (baroSensor) baroSensor->update();
 
-        // Обновляем режим
-        updateMode();
-
-        // Выполняем логику текущего режима
         switch (currentMode)
         {
             case MODE_MANUAL:
@@ -222,146 +172,73 @@ public:
         }
     }
 
-    // ========================================================
-    // УСТАНОВИТЬ РЕЖИМ
-    // ========================================================
-
     void setMode(AutopilotMode mode)
     {
-        if (mode != currentMode)
-        {
-            Serial.print("🔄 Autopilot: Mode changed from ");
-            Serial.print(modeToString(currentMode));
-            Serial.print(" to ");
-            Serial.println(modeToString(mode));
+        if (mode == currentMode) return;
 
-            previousMode = currentMode;
-            currentMode = mode;
-            modeChangeTime = millis();
+        Serial.print("Autopilot: режим ");
+        Serial.print(modeToString(currentMode));
+        Serial.print(" -> ");
+        Serial.println(modeToString(mode));
 
-            // Сбрасываем ПИД контроллеры при смене режима
-            pidRoll.reset();
-            pidPitch.reset();
-            pidThrottle.reset();
+        previousMode = currentMode;
+        currentMode = mode;
+        modeChangeTime = millis();
 
-            // Инициализируем переменные для нового режима
-            initializeMode();
-        }
+        pidRoll.reset();
+        pidPitch.reset();
+        pidThrottle.reset();
+
+        initializeMode();
     }
 
-    // ========================================================
-    // ПОЛУЧИТЬ ТЕКУЩИЙ РЕЖИМ
-    // ========================================================
+    AutopilotMode getMode() const { return currentMode; }
 
-    AutopilotMode getMode() const
-    {
-        return currentMode;
-    }
+    // Коррекции для добавления к выходу микшера, в микросекундах.
+    float getRollCorrection() const { return rollCorrection; }
+    float getPitchCorrection() const { return pitchCorrection; }
+    float getThrottleCorrection() const { return throttleCorrection; }
 
-    // ========================================================
-    // ПОЛУЧИТЬ ПОПРАВКИ УПРАВЛЕНИЯ
-    // ========================================================
-    // Возвращает поправки к сигналам с пульта (-500...+500 µs)
-    // Интегрируются в ControlMixer
-
-    float getRollCorrection() const
-    {
-        return rollCorrection;
-    }
-
-    float getPitchCorrection() const
-    {
-        return pitchCorrection;
-    }
-
-    float getThrottleCorrection() const
-    {
-        return throttleCorrection;
-    }
-
-    // ========================================================
-    // ПОЛУЧИТЬ ИНФОРМАЦИЮ О СТАТУСЕ
-    // ========================================================
-
-    const char* getModeName() const
-    {
-        return modeToString(currentMode);
-    }
+    const char* getModeName() const { return modeToString(currentMode); }
 
     float getDesiredRoll() const { return desiredRoll; }
     float getDesiredPitch() const { return desiredPitch; }
     float getTargetAltitude() const { return targetAltitude; }
-    // ========================================================
-    // ДОСТУП К ДАТЧИКАМ (для WebDebugServer и диагностики)
-    // ========================================================
 
-    ImuSensor* getImuSensor() const
-    {
-        return imuSensor;
-    }
-
-    BarometerSensor* getBarometerSensor() const
-    {
-        return baroSensor;
-    }
-
-    // ========================================================
-    // ДИАГНОСТИКА
-    // ========================================================
+    // Для WebDebugServer и диагностики; может быть nullptr.
+    ImuSensor* getImuSensor() const { return imuSensor; }
+    BarometerSensor* getBarometerSensor() const { return baroSensor; }
 
     void printStatus() const
     {
-        Serial.println("\n🚀 Autopilot Status:");
-        Serial.print("  Mode: ");
-        Serial.println(modeToString(currentMode));
+        Serial.print("Autopilot: mode=");
+        Serial.print(modeToString(currentMode));
 
         if (imuSensor)
         {
             const ImuData& imu = imuSensor->getImuData();
-            Serial.print("  Roll: ");
-            Serial.print(imu.roll, 1);
-            Serial.print("° (desired: ");
-            Serial.print(desiredRoll, 1);
-            Serial.println("°)");
-
-            Serial.print("  Pitch: ");
-            Serial.print(imu.pitch, 1);
-            Serial.print("° (desired: ");
-            Serial.print(desiredPitch, 1);
-            Serial.println("°)");
-
-            Serial.print("  Yaw: ");
-            Serial.print(imu.yaw, 1);
-            Serial.println("°");
+            Serial.print(" roll="); Serial.print(imu.roll, 1);
+            Serial.print("(want "); Serial.print(desiredRoll, 1); Serial.print(")");
+            Serial.print(" pitch="); Serial.print(imu.pitch, 1);
+            Serial.print("(want "); Serial.print(desiredPitch, 1); Serial.print(")");
+            Serial.print(" yaw="); Serial.print(imu.yaw, 1);
         }
 
         if (baroSensor)
         {
             const BarometerData& baro = baroSensor->getBarometerData();
-            Serial.print("  Altitude: ");
-            Serial.print(baro.altitude, 1);
-            Serial.print("m (target: ");
-            Serial.print(targetAltitude, 1);
-            Serial.println("m)");
-
-            Serial.print("  Climb rate: ");
-            Serial.print(baro.verticalSpeed, 2);
-            Serial.println(" m/s");
+            Serial.print(" alt="); Serial.print(baro.altitude, 1);
+            Serial.print("(want "); Serial.print(targetAltitude, 1); Serial.print(")");
+            Serial.print(" climb="); Serial.print(baro.verticalSpeed, 2);
         }
 
-        Serial.print("  Corrections: Roll=");
-        Serial.print(rollCorrection);
-        Serial.print(", Pitch=");
-        Serial.print(pitchCorrection);
-        Serial.print(", Throttle=");
+        Serial.print(" corr(roll,pitch,thr)=");
+        Serial.print(rollCorrection); Serial.print(",");
+        Serial.print(pitchCorrection); Serial.print(",");
         Serial.println(throttleCorrection);
     }
 
-    // ========================================================
-    // УСТАНОВИТЬ PID КОЭФФИЦИЕНТЫ
-    // ========================================================
-    // Используется для настройки через Web UI
-
+    // Перенастройка коэффициентов стабилизации крена/тангажа на ходу (веб-интерфейс).
     void setPIDGains(float kpRoll, float kiRoll, float kdRoll,
                      float kpPitch, float kiPitch, float kdPitch)
     {
@@ -371,10 +248,6 @@ public:
 
 private:
 
-    // ========================================================
-    // ПРИВАТНЫЕ ПЕРЕМЕННЫЕ
-    // ========================================================
-
     ImuSensor* imuSensor;
     BarometerSensor* baroSensor;
 
@@ -382,32 +255,23 @@ private:
     AutopilotMode previousMode;
     unsigned long modeChangeTime;
 
-    // PID контроллеры
     PID_Controller pidRoll;
     PID_Controller pidPitch;
     PID_Controller pidThrottle;
 
-    // Вывод поправок
     float rollCorrection;
     float pitchCorrection;
     float throttleCorrection;
 
-    // Параметры стабилизации
     float desiredRoll;
     float desiredPitch;
 
-    // Параметры автоматического взлёта
     float autoTakeoffThrottle;
     unsigned long autoTakeoffStartTime;
 
-    // Параметры удержания высоты
     float targetAltitude;
 
-
-    // ========================================================
-    // ИНИЦИАЛИЗАЦИЯ РЕЖИМА
-    // ========================================================
-
+    // Сбрасывает состояние режима, вызывается только при реальной смене режима.
     void initializeMode()
     {
         rollCorrection = 0;
@@ -438,35 +302,12 @@ private:
         }
     }
 
-
-    // ========================================================
-    // ОБНОВЛЕНИЕ РЕЖИМА (из внешних сигналов)
-    // ========================================================
-
-    void updateMode()
-    {
-        // Эта функция переопределяется Feature Manager
-        // Пока оставляем пустой (переключение вручную через setMode())
-    }
-
-
-    // ========================================================
-    // ОБРАБОТКА РЕЖИМА MANUAL
-    // ========================================================
-
     void handleManualMode()
     {
-        // В ручном режиме автопилот не вмешивается
         rollCorrection = 0;
         pitchCorrection = 0;
         throttleCorrection = 0;
     }
-
-
-    // ========================================================
-    // ОБРАБОТКА РЕЖИМА STABILIZE
-    // ========================================================
-    // Гиро-стабилизация: удерживаем углы крена и тангажа
 
     void handleStabilizeMode()
     {
@@ -474,60 +315,42 @@ private:
 
         const ImuData& imu = imuSensor->getImuData();
 
-        // Используем ПИД контроллеры для стабилизации
         rollCorrection = pidRoll.calculate(desiredRoll, imu.roll);
         pitchCorrection = pidPitch.calculate(desiredPitch, imu.pitch);
     }
 
-
-    // ========================================================
-    // ОБРАБОТКА РЕЖИМА AUTO_TAKEOFF
-    // ========================================================
-    // Автоматический взлёт с управлением тангажом
-
+    // Сценарий по времени: 1с разгон на земле, 2с набор с тангажом 15°,
+    // затем крейсерский набор высоты с тангажом 10°. Крен всё время держим нулевым.
     void handleAutoTakeoffMode()
     {
         if (!imuSensor) return;
 
         const ImuData& imu = imuSensor->getImuData();
 
-        // Фазы взлёта:
         unsigned long elapsedTime = millis() - autoTakeoffStartTime;
 
         if (elapsedTime < 1000)
         {
-            // Фаза 1: Разгон на земле (1 сек)
-            autoTakeoffThrottle = 30;  // 30% газа
-            desiredPitch = 0;          // Горизонтально
+            autoTakeoffThrottle = 30;
+            desiredPitch = 0;
         }
         else if (elapsedTime < 3000)
         {
-            // Фаза 2: Взлёт с углом в 15 градусов (2 сек)
-            autoTakeoffThrottle = 60;  // 60% газа
-            desiredPitch = 15;         // 15 градусов носом вверх
+            autoTakeoffThrottle = 60;
+            desiredPitch = 15;
         }
         else
         {
-            // Фаза 3: Набор высоты (100% газа)
-            autoTakeoffThrottle = 100; // 100% газа
-            desiredPitch = 10;         // Удерживаем 10 градусов
+            autoTakeoffThrottle = 100;
+            desiredPitch = 10;
         }
 
-        // Стабилизируем крен (убираем крен при взлёте)
         rollCorrection = pidRoll.calculate(0, imu.roll);
-
-        // Стабилизируем тангаж
         pitchCorrection = pidPitch.calculate(desiredPitch, imu.pitch);
 
-        // Поправка газа (кроме стабилизации используем также задаваемую мощность)
-        throttleCorrection = autoTakeoffThrottle - 50;  // Центр = 50, max = 100
+        // 50 — нейтральная точка коррекции газа (throttleCorrection в %).
+        throttleCorrection = autoTakeoffThrottle - 50;
     }
-
-
-    // ========================================================
-    // ОБРАБОТКА РЕЖИМА ALT_HOLD
-    // ========================================================
-    // Удержание высоты автоматически
 
     void handleAltHoldMode()
     {
@@ -535,15 +358,8 @@ private:
 
         const BarometerData& baro = baroSensor->getBarometerData();
 
-        // Используем ПИД для поддержания целевой высоты
-        // Вывод контроллера = коррекция газа
         throttleCorrection = pidThrottle.calculate(targetAltitude, baro.altitude);
     }
-
-
-    // ========================================================
-    // ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ
-    // ========================================================
 
     const char* modeToString(AutopilotMode mode) const
     {
