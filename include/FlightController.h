@@ -11,8 +11,9 @@
 //   1. FAILSAFE   — потеря сигнала важнее всего, обрывает cycle
 //   2. ARMING     — обновляем состояние ARM
 //   3. MIXER      — RC -> положения поверхностей
-//   4. AUTOPILOT  — коррекции поверх mixer (только если armed)
-//   5. THROTTLE   — газ + boost
+//   4. AUTOPILOT  — roll/pitch коррекции поверх mixer (только если armed)
+//   5. THROTTLE   — газ + boost, затем коррекция автопилота по газу
+//                   (ALT_HOLD/AUTO_TAKEOFF, только если armed)
 //   6. OUTPUTS    — PWM на GPIO
 // ============================================================
 
@@ -98,6 +99,19 @@ public:
         }
 
         output.throttle = throttle.update(rc, false);
+
+        // Autopilot::getThrottleCorrection() — это проценты (-100..100,
+        // см. ALT_HOLD/AUTO_TAKEOFF в Autopilot.h), а не микросекунды, как
+        // roll/pitch выше — масштабируем на диапазон PWM_MIN..PWM_MAX
+        // перед тем, как прибавить к газу.
+        if (autopilot && arming.isArmed())
+        {
+            const int32_t throttleCorrUs =
+                static_cast<int32_t>(autopilot->getThrottleCorrection() *
+                                      (Config::PWM_MAX - Config::PWM_MIN) / 100.0f);
+
+            output.throttle = constrain(output.throttle + throttleCorrUs, Config::PWM_MIN, Config::PWM_MAX);
+        }
 
         outputs.write(output);
     }
