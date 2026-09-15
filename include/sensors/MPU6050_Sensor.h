@@ -1,137 +1,91 @@
 #pragma once
+#include <Arduino.h>
 
 // ============================================================
-// 🔌 MPU6050 GY-521 SENSOR IMPLEMENTATION
+// MPU6050 GY-521 (гироскоп + акселерометр)
 //
-// Датчик: 6-осевой инерциальный блок
-// • Гироскоп (3 оси): точность до 0.01°/сек
-// • Акселерометр (3 оси): точность до 0.01g
-// • Встроенный термометр
-//
-// Протокол: I2C (адрес: 0x68 или 0x69)
-// Частота: до 1 kHz (читаем с ~200 Hz)
-//
-// Библиотека: MPU6050 от jrowberg
-// (установить через PlatformIO: lib_deps = jrowberg/MPU6050)
+// I2C, адрес 0x68 (AD0=GND) или 0x69 (AD0=VCC). Регистры читаются
+// напрямую через Wire — это НЕ обёртка над библиотекой jrowberg/
+// MPU6050 (её и нет в platformio.ini), а собственная минимальная
+// реализация под то, что нужно автопилоту: углы roll/pitch через
+// комплементарный фильтр + сырой yaw-рейт.
 // ============================================================
 
 #include "SensorInterface.h"
 #include <Wire.h>
 
-// Заглушка для MPU6050 класса (может быть реальная библиотека)
 class MPU6050_Sensor : public ImuSensor
 {
 public:
 
-    // ========================================================
-    // КОНСТРУКТОР
-    // ========================================================
-    // address: 0x68 (AD0=GND, по умолчанию) или 0x69 (AD0=VCC)
-    // ========================================================
-
+    // address: 0x68 (AD0=GND, по умолчанию) или 0x69 (AD0=VCC).
     explicit MPU6050_Sensor(uint8_t address = 0x68)
         : i2cAddress(address),
           available(false),
           calibrationDone(false)
     {
-        // Инициализация структур данных нулями
         memset(&imuData, 0, sizeof(imuData));
         memset(&calibration, 0, sizeof(calibration));
     }
 
-
-    // ========================================================
-    // ИНИЦИАЛИЗАЦИЯ ДАТЧИКА
-    // ========================================================
-    // Возвращает true если датчик успешно инициализирован
-
     bool begin() override
     {
-        // Инициализируем I2C (SCL=GPIO22, SDA=GPIO21 для ESP32)
-        Wire.begin();
-        Wire.setClock(400000);  // 400 kHz
+        Wire.begin();          // SCL=GPIO22, SDA=GPIO21 (стандартные пины ESP32)
+        Wire.setClock(400000);
 
         delay(100);
 
-        // Проверяем связь с датчиком
         if (!checkConnection())
         {
-            Serial.println("❌ MPU6050: No response from sensor!");
+            Serial.println("MPU6050: датчик не отвечает на I2C, IMU недоступен");
             available = false;
             return false;
         }
 
-        // Инициализируем MPU6050
         if (!initialize())
         {
-            Serial.println("❌ MPU6050: Initialization failed!");
+            Serial.println("MPU6050: ошибка инициализации регистров");
             available = false;
             return false;
         }
 
         available = true;
-        Serial.println("✅ MPU6050: Initialized successfully");
+        Serial.println("MPU6050: подключён");
 
         return true;
     }
-
-
-    // ========================================================
-    // ПРОВЕРКА ДОСТУПНОСТИ
-    // ========================================================
 
     bool isAvailable() const override
     {
         return available;
     }
 
-
-    // ========================================================
-    // ОБНОВЛЕНИЕ ДАННЫХ
-    // ========================================================
-    // Вызывается регулярно из loop() (~200 Hz)
-
+    // Вызывать регулярно из loop()/Autopilot::update(); не делает
+    // ничего, если датчик недоступен (imuData остаётся нулевым).
     void update() override
     {
         if (!available) return;
 
-        // Читаем сырые данные с датчика
         readRawData();
-
-        // Применяем калибровку
         applyCalibration();
-
-        // Считаем углы из акселерометра
         calculateAngles();
 
-        // Обновляем временную метку
         imuData.timestamp = micros();
     }
-
-
-    // ========================================================
-    // ПОЛУЧИТЬ ДАННЫЕ IMU
-    // ========================================================
 
     const ImuData& getImuData() const override
     {
         return imuData;
     }
 
-
-    // ========================================================
-    // КАЛИБРОВКА ДАТЧИКА
-    // ========================================================
-    // Должна вызваться когда самолёт неподвижен на земле
-    // Будет выполняться ~2 секунды
-
+    // Нужно вызывать на земле, пока самолёт неподвижен (~2 секунды).
+    // Усредняет 200 сырых отсчётов и сохраняет их как нулевое смещение.
     void calibrate() override
     {
         if (!available) return;
 
-        Serial.println("🔧 MPU6050: Starting calibration...");
+        Serial.println("MPU6050: калибровка...");
 
-        // Берём 200 образцов для усреднения
         const int SAMPLE_COUNT = 200;
         float sumGyroX = 0, sumGyroY = 0, sumGyroZ = 0;
         float sumAccelX = 0, sumAccelY = 0, sumAccelZ = 0;
@@ -151,113 +105,74 @@ public:
             delay(10);
         }
 
-        // Сохраняем средние значения (смещение)
         calibration.gyroOffsetX = sumGyroX / SAMPLE_COUNT;
         calibration.gyroOffsetY = sumGyroY / SAMPLE_COUNT;
         calibration.gyroOffsetZ = sumGyroZ / SAMPLE_COUNT;
 
         calibration.accelOffsetX = sumAccelX / SAMPLE_COUNT;
         calibration.accelOffsetY = sumAccelY / SAMPLE_COUNT;
-        calibration.accelOffsetZ = sumAccelZ / SAMPLE_COUNT - 16384;  // -1g
+        calibration.accelOffsetZ = sumAccelZ / SAMPLE_COUNT - 16384;  // компенсация -1g по Z
 
         calibrationDone = true;
 
-        Serial.println("✅ MPU6050: Calibration complete");
-        Serial.print("  Gyro offset: ");
-        Serial.print(calibration.gyroOffsetX);
-        Serial.print(", ");
-        Serial.print(calibration.gyroOffsetY);
-        Serial.print(", ");
+        Serial.print("MPU6050: калибровка завершена, offset gyro=");
+        Serial.print(calibration.gyroOffsetX); Serial.print(",");
+        Serial.print(calibration.gyroOffsetY); Serial.print(",");
         Serial.println(calibration.gyroOffsetZ);
     }
 
-
-    // ========================================================
-    // ЗАДАТЬ YAW (рысканье)
-    // ========================================================
-    // Используется для сброса направления в начале полёта
-
+    // Используется, чтобы сбросить направление yaw в начале полёта.
     void setYaw(float yawDegrees) override
     {
         imuData.yaw = yawDegrees;
+        yawIntegral = yawDegrees;
     }
-
-
-    // ========================================================
-    // ТИП ДАТЧИКА
-    // ========================================================
 
     const char* getSensorType() const override
     {
         return "MPU6050 GY-521";
     }
 
-
-    // ========================================================
-    // ДИАГНОСТИКА
-    // ========================================================
-
     void printStatus() const override
     {
-        Serial.println("\n📊 MPU6050 Status:");
-        Serial.print("  Available: ");
-        Serial.println(available ? "YES ✓" : "NO ✗");
-        Serial.print("  Calibrated: ");
-        Serial.println(calibrationDone ? "YES ✓" : "NO ✗");
-        Serial.print("  Gyro (°/s): ");
-        Serial.print(imuData.gyroX, 2);
-        Serial.print(", ");
-        Serial.print(imuData.gyroY, 2);
-        Serial.print(", ");
-        Serial.println(imuData.gyroZ, 2);
-        Serial.print("  Accel (g): ");
-        Serial.print(imuData.accelX, 2);
-        Serial.print(", ");
-        Serial.print(imuData.accelY, 2);
-        Serial.print(", ");
-        Serial.println(imuData.accelZ, 2);
-        Serial.print("  Angles (°): ");
-        Serial.print("Roll=");
-        Serial.print(imuData.roll, 1);
-        Serial.print(", Pitch=");
-        Serial.print(imuData.pitch, 1);
-        Serial.print(", Yaw=");
-        Serial.println(imuData.yaw, 1);
+        Serial.print("MPU6050: available=");
+        Serial.print(available ? "YES" : "NO");
+        Serial.print(" calibrated=");
+        Serial.print(calibrationDone ? "YES" : "NO");
+        Serial.print(" gyro(dps)="); Serial.print(imuData.gyroX, 2);
+        Serial.print(","); Serial.print(imuData.gyroY, 2);
+        Serial.print(","); Serial.print(imuData.gyroZ, 2);
+        Serial.print(" accel(g)="); Serial.print(imuData.accelX, 2);
+        Serial.print(","); Serial.print(imuData.accelY, 2);
+        Serial.print(","); Serial.print(imuData.accelZ, 2);
+        Serial.print(" roll="); Serial.print(imuData.roll, 1);
+        Serial.print(" pitch="); Serial.print(imuData.pitch, 1);
+        Serial.print(" yaw="); Serial.println(imuData.yaw, 1);
     }
 
 
 private:
 
-    // ========================================================
-    // ПРИВАТНЫЕ ПЕРЕМЕННЫЕ
-    // ========================================================
-
     uint8_t i2cAddress;
     bool available;
     bool calibrationDone;
 
-    // Сырые данные с датчика
-    int16_t rawAx, rawAy, rawAz;  // Акселерометр
-    int16_t rawGx, rawGy, rawGz;  // Гироскоп
-    int16_t rawTemp;              // Температура
+    int16_t rawAx, rawAy, rawAz;
+    int16_t rawGx, rawGy, rawGz;
+    int16_t rawTemp;
 
-    // Структура калибровки
     struct
     {
         float gyroOffsetX, gyroOffsetY, gyroOffsetZ;
         float accelOffsetX, accelOffsetY, accelOffsetZ;
     } calibration;
 
-    // Результирующие данные
     ImuData imuData;
 
-    // Интегратор для рысканья (так как гироскоп Z не откалиброван стабильно)
+    // Интегрируем yaw просто из гироскопа — Z-ось не имеет
+    // абсолютной опорной точки (в отличие от roll/pitch по акселерометру),
+    // поэтому будет медленно "уплывать".
     float yawIntegral = 0;
-
-
-    // ========================================================
-    // ПРОВЕРКА СВЯЗИ С ДАТЧИКОМ
-    // ========================================================
 
     bool checkConnection()
     {
@@ -265,52 +180,24 @@ private:
         return (Wire.endTransmission() == 0);
     }
 
-
-    // ========================================================
-    // ИНИЦИАЛИЗАЦИЯ MPU6050
-    // ========================================================
-
     bool initialize()
     {
-        // Выход из режима sleep
-        writeRegister(0x6B, 0x00);
-
-        // Установка диапазона гироскопа: ±250°/сек (0x00)
-        writeRegister(0x1B, 0x00);
-
-        // Установка диапазона акселерометра: ±2g (0x00)
-        writeRegister(0x1C, 0x00);
-
-        // Установка частоты дискретизации: 1kHz
-        writeRegister(0x19, 0x07);  // Делитель: 8 (1kHz / 8 = 125 Hz)
-
-        // Включение компенсации температуры гироскопа
-        writeRegister(0x1A, 0x05);
+        writeRegister(0x6B, 0x00);  // PWR_MGMT_1: выход из sleep
+        writeRegister(0x1B, 0x00);  // GYRO_CONFIG: диапазон ±250°/сек
+        writeRegister(0x1C, 0x00);  // ACCEL_CONFIG: диапазон ±2g
+        writeRegister(0x19, 0x07);  // SMPLRT_DIV: 1kHz / (1+7) = 125 Hz
+        writeRegister(0x1A, 0x05);  // CONFIG: температурная компенсация гироскопа
 
         return true;
     }
 
-
-    // ========================================================
-    // ЧТЕНИЕ СЫРЫХ ДАННЫХ
-    // ========================================================
-
     void readRawData()
     {
         Wire.beginTransmission(i2cAddress);
-        Wire.write(0x3B);  // Регистр ACCEL_XOUT_H
+        Wire.write(0x3B);  // ACCEL_XOUT_H — далее 14 байт: accel, temp, gyro
         Wire.endTransmission(false);
 
         Wire.requestFrom(i2cAddress, (uint8_t)14);
-
-        // Читаем 14 байт:
-        // 0-1: ACCEL_X
-        // 2-3: ACCEL_Y
-        // 4-5: ACCEL_Z
-        // 6-7: TEMP
-        // 8-9: GYRO_X
-        // 10-11: GYRO_Y
-        // 12-13: GYRO_Z
 
         rawAx = (Wire.read() << 8) | Wire.read();
         rawAy = (Wire.read() << 8) | Wire.read();
@@ -321,53 +208,37 @@ private:
         rawGz = (Wire.read() << 8) | Wire.read();
     }
 
-
-    // ========================================================
-    // ПРИМЕНЕНИЕ КАЛИБРОВКИ
-    // ========================================================
-
     void applyCalibration()
     {
-        // Преобразуем сырые значения в физические единицы
-
-        // Акселерометр: сырое значение / 16384 = g
+        // Масштаб для диапазона ±2g / ±250°/сек (см. initialize()).
         imuData.accelX = (rawAx - calibration.accelOffsetX) / 16384.0f;
         imuData.accelY = (rawAy - calibration.accelOffsetY) / 16384.0f;
         imuData.accelZ = (rawAz - calibration.accelOffsetZ) / 16384.0f;
 
-        // Гироскоп: сырое значение / 131 = °/сек
         imuData.gyroX = (rawGx - calibration.gyroOffsetX) / 131.0f;
         imuData.gyroY = (rawGy - calibration.gyroOffsetY) / 131.0f;
         imuData.gyroZ = (rawGz - calibration.gyroOffsetZ) / 131.0f;
 
-        // Температура: сырое значение / 340 + 36.53 = °C
-        imuData.temperature = (rawTemp / 340.0f) + 36.53f;
+        imuData.temperature = (rawTemp / 340.0f) + 36.53f;  // формула из датащита
     }
 
-
-    // ========================================================
-    // РАСЧЁТ УГЛОВ ИЗ АКСЕЛЕРОМЕТРА
-    // ========================================================
-    // Complementary filter: акселерометр даёт абсолютную позицию,
-    // гироскоп даёт скорость (производную).
-
+    // Комплементарный фильтр: акселерометр даёт абсолютный угол,
+    // но шумит; гироскоп даёт гладкую скорость без абсолютной опоры.
+    // Смешиваем 70% гироскопа (интеграция) + 30% акселерометра.
     void calculateAngles()
     {
-        // Угол крена из акселерометра
         float accelRoll = atan2(imuData.accelY, imuData.accelZ) * 57.2958f;
 
-        // Угол тангажа из акселерометра
         float accelPitch = atan2(-imuData.accelX,
                                  sqrt(imuData.accelY * imuData.accelY +
                                       imuData.accelZ * imuData.accelZ)) * 57.2958f;
 
-        // Complementary filter (70% гироскоп, 30% акселерометр)
         static unsigned long lastTime = 0;
         unsigned long now = micros();
         float dt = (now - lastTime) / 1000000.0f;
         lastTime = now;
 
-        if (dt > 0 && dt < 0.1f)  // Защита от больших прыжков
+        if (dt > 0 && dt < 0.1f)  // защита от скачка dt после паузы
         {
             imuData.roll = imuData.roll * 0.7f + accelRoll * 0.3f +
                           imuData.gyroX * dt;
@@ -375,12 +246,10 @@ private:
             imuData.pitch = imuData.pitch * 0.7f + accelPitch * 0.3f +
                            imuData.gyroY * dt;
 
-            // Yaw интегрируем просто из гироскопа
             yawIntegral += imuData.gyroZ * dt;
             imuData.yaw = yawIntegral;
         }
 
-        // Ограничиваем углы
         if (imuData.roll > 180) imuData.roll -= 360;
         if (imuData.roll < -180) imuData.roll += 360;
 
@@ -390,11 +259,6 @@ private:
         if (imuData.yaw > 180) imuData.yaw -= 360;
         if (imuData.yaw < -180) imuData.yaw += 360;
     }
-
-
-    // ========================================================
-    // ЗАПИСЬ В РЕГИСТР
-    // ========================================================
 
     void writeRegister(uint8_t reg, uint8_t value)
     {

@@ -1,18 +1,20 @@
 #pragma once
+#include <Arduino.h>
 
 // ============================================================
-// 🔌 BME280 BAROMETER/ALTIMETER IMPLEMENTATION
+// BME280 (барометр/термометр)
 //
-// Датчик окружающей среды:
-// • Барометр (давление): ±1 гПа
-// • Термометр: ±1°C
-// • Гигрометр: ±3% влажности
+// I2C, адрес 0x76 или 0x77. Как и MPU6050_Sensor, это своя
+// минимальная реализация через Wire, а не обёртка над
+// Adafruit_BME280 (её нет в platformio.ini).
 //
-// Используем: Давление для расчёта высоты
-// Протокол: I2C (адрес: 0x76 или 0x77)
-//
-// Библиотека: Adafruit_BME280
-// (установить: lib_deps = adafruit/Adafruit BME280 Library)
+// ВАЖНО: readCalibration()/calculateAltitude() ниже — грубая
+// аппроксимация, а не настоящая формула компенсации BME280 из
+// датащита (там 26 калибровочных коэффициентов на чип). Значения
+// давления/высоты будут не точными в абсолютных числах, но
+// разница (climb rate) для ALT_HOLD достаточно стабильна.
+// Настоящую компенсацию стоит добавить, когда датчик будет
+// в руках для калибровки под конкретный экземпляр.
 // ============================================================
 
 #include "SensorInterface.h"
@@ -22,68 +24,47 @@ class BME280_Sensor : public BarometerSensor
 {
 public:
 
-    // ========================================================
-    // КОНСТРУКТОР
-    // ========================================================
-
     explicit BME280_Sensor(uint8_t address = 0x76)
         : i2cAddress(address),
           available(false),
-          seaLevelPressure(101325.0f)  // Стандартное давление на уровне моря (Па)
+          seaLevelPressure(101325.0f)
     {
         memset(&baroData, 0, sizeof(baroData));
         calibrationAltitude = 0;
+        previousAltitude = 0;
     }
-
-
-    // ========================================================
-    // ИНИЦИАЛИЗАЦИЯ
-    // ========================================================
 
     bool begin() override
     {
-        // Инициализируем I2C
         Wire.begin();
         Wire.setClock(400000);
 
         delay(100);
 
-        // Проверяем связь
         if (!checkConnection())
         {
-            Serial.println("❌ BME280: No response from sensor!");
+            Serial.println("BME280: датчик не отвечает на I2C, барометр недоступен");
             available = false;
             return false;
         }
 
-        // Инициализируем датчик
         if (!initialize())
         {
-            Serial.println("❌ BME280: Initialization failed!");
+            Serial.println("BME280: ошибка инициализации");
             available = false;
             return false;
         }
 
         available = true;
-        Serial.println("✅ BME280: Initialized successfully");
+        Serial.println("BME280: подключён");
 
         return true;
     }
-
-
-    // ========================================================
-    // ПРОВЕРКА ДОСТУПНОСТИ
-    // ========================================================
 
     bool isAvailable() const override
     {
         return available;
     }
-
-
-    // ========================================================
-    // ОБНОВЛЕНИЕ ДАННЫХ
-    // ========================================================
 
     void update() override
     {
@@ -95,28 +76,17 @@ public:
         baroData.timestamp = micros();
     }
 
-
-    // ========================================================
-    // ПОЛУЧИТЬ ДАННЫЕ БАРОМЕТРА
-    // ========================================================
-
     const BarometerData& getBarometerData() const override
     {
         return baroData;
     }
 
-
-    // ========================================================
-    // КАЛИБРОВКА ВЫСОТЫ
-    // ========================================================
-    // Вызывается когда самолёт на земле перед полётом
-    // Сохраняет текущую высоту как 0
-
+    // Вызывать на земле перед полётом — берёт среднее из 20
+    // отсчётов и запоминает его как нулевую высоту.
     void calibrateAltitude() override
     {
-        Serial.println("🔧 BME280: Calibrating altitude...");
+        Serial.println("BME280: калибровка высоты...");
 
-        // Берём среднее от 20 образцов
         float sumAltitude = 0;
 
         for (int i = 0; i < 20; i++)
@@ -129,72 +99,44 @@ public:
 
         calibrationAltitude = sumAltitude / 20.0f;
 
-        Serial.print("✅ BME280: Altitude calibration complete. Base: ");
+        Serial.print("BME280: калибровка завершена, база=");
         Serial.print(calibrationAltitude);
-        Serial.println(" m");
+        Serial.println(" м");
     }
-
-
-    // ========================================================
-    // ЗАДАТЬ ДАВЛЕНИЕ НА УРОВНЕ МОРЯ
-    // ========================================================
 
     void setSeaLevelPressure(float pressure) override
     {
         seaLevelPressure = pressure;
     }
 
-
-    // ========================================================
-    // ТИП ДАТЧИКА
-    // ========================================================
-
     const char* getSensorType() const override
     {
         return "BME280";
     }
 
-
-    // ========================================================
-    // ДИАГНОСТИКА
-    // ========================================================
-
     void printStatus() const override
     {
-        Serial.println("\n📊 BME280 Status:");
-        Serial.print("  Available: ");
-        Serial.println(available ? "YES ✓" : "NO ✗");
-        Serial.print("  Pressure: ");
-        Serial.print(baroData.pressure / 100.0f);  // В гПа
-        Serial.println(" hPa");
-        Serial.print("  Altitude: ");
-        Serial.print(baroData.altitude);
-        Serial.println(" m");
-        Serial.print("  Vertical Speed: ");
-        Serial.print(baroData.verticalSpeed, 2);
-        Serial.println(" m/s");
-        Serial.print("  Temperature: ");
-        Serial.print(baroData.temperature);
-        Serial.println("°C");
+        Serial.print("BME280: available=");
+        Serial.print(available ? "YES" : "NO");
+        Serial.print(" pressure="); Serial.print(baroData.pressure / 100.0f); Serial.print("hPa");
+        Serial.print(" altitude="); Serial.print(baroData.altitude); Serial.print("m");
+        Serial.print(" climb="); Serial.print(baroData.verticalSpeed, 2); Serial.print("m/s");
+        Serial.print(" temp="); Serial.print(baroData.temperature); Serial.println("C");
     }
 
 
 private:
 
-    // ========================================================
-    // ПРИВАТНЫЕ ПЕРЕМЕННЫЕ
-    // ========================================================
-
     uint8_t i2cAddress;
     bool available;
 
-    float seaLevelPressure;      // Давление на уровне моря для расчёта высоты
-    float calibrationAltitude;   // Высота в начале полёта
-    float previousAltitude;      // Для расчёта вертикальной скорости
+    float seaLevelPressure;
+    float calibrationAltitude;
+    float previousAltitude;
 
     BarometerData baroData;
 
-    // Калибровочные коэффициенты BME280 (заглушка)
+    // Заглушка под реальные калибровочные коэффициенты чипа (не заполняется).
     struct
     {
         uint16_t dig_T1;
@@ -206,107 +148,67 @@ private:
         uint8_t dig_H3;
     } calibration;
 
-
-    // ========================================================
-    // ПРОВЕРКА СВЯЗИ
-    // ========================================================
-
     bool checkConnection()
     {
         Wire.beginTransmission(i2cAddress);
         return (Wire.endTransmission() == 0);
     }
 
-
-    // ========================================================
-    // ИНИЦИАЛИЗАЦИЯ
-    // ========================================================
-
     bool initialize()
     {
-        // Прочитаем ID датчика
         uint8_t chipId = readRegister(0xD0);
-        if (chipId != 0x60)  // 0x60 = BME280
+        if (chipId != 0x60)
         {
-            Serial.print("❌ BME280: Wrong chip ID: 0x");
+            Serial.print("BME280: неверный chip ID 0x");
             Serial.println(chipId, HEX);
             return false;
         }
 
-        // Сброс датчика
-        writeRegister(0xE0, 0xB6);
+        writeRegister(0xE0, 0xB6);  // soft reset
         delay(100);
 
-        // Читаем калибровочные коэффициенты
         readCalibration();
 
-        // Конфигурация: нормальный режим, фильтр, стабилизация
-        writeRegister(0xF5, 0x00);  // Конфиг
-        writeRegister(0xF4, 0x37);  // Контроль измерений (нормальный режим)
-        writeRegister(0xF2, 0x02);  // Контроль влажности
+        writeRegister(0xF5, 0x00);  // CONFIG: без IIR-фильтра
+        writeRegister(0xF4, 0x37);  // CTRL_MEAS: normal mode, oversampling x1
+        writeRegister(0xF2, 0x02);  // CTRL_HUM: oversampling x2
 
         return true;
     }
 
-
-    // ========================================================
-    // ЧТЕНИЕ СЫРЫХ ДАННЫХ ДАТЧИКА
-    // ========================================================
-
     void readSensorData()
     {
-        // Читаем 8 байт: давление, температура
         Wire.beginTransmission(i2cAddress);
         Wire.write(0xF7);  // PRESS_MSB
         Wire.endTransmission(false);
-
         Wire.requestFrom(i2cAddress, (uint8_t)3);
 
         uint32_t adc_P = ((uint32_t)Wire.read() << 12) |
                          ((uint32_t)Wire.read() << 4) |
                          ((uint32_t)Wire.read() >> 4);
 
-        // Читаем температуру
         Wire.beginTransmission(i2cAddress);
         Wire.write(0xFA);  // TEMP_MSB
         Wire.endTransmission(false);
-
         Wire.requestFrom(i2cAddress, (uint8_t)3);
 
         uint32_t adc_T = ((uint32_t)Wire.read() << 12) |
                          ((uint32_t)Wire.read() << 4) |
                          ((uint32_t)Wire.read() >> 4);
 
-        // Для упрощения используем аппроксимацию
-        // (реальная библиотека Adafruit делает это более точно)
-
-        // Простая аппроксимация температуры
+        // Аппроксимация вместо формулы компенсации из датащита (см. заголовок файла).
         baroData.temperature = 25.0f + ((int32_t)adc_T - 100000) / 100000.0f;
-
-        // Простая аппроксимация давления (Па)
-        // Реальная формула в датащите очень сложная
         baroData.pressure = 100000.0f + ((int32_t)adc_P - 100000) / 1000.0f;
     }
 
-
-    // ========================================================
-    // РАСЧЁТ ВЫСОТЫ ИЗ ДАВЛЕНИЯ
-    // ========================================================
-    // Используем барометрическую формулу
-
+    // Барометрическая формула высоты: h = 44330 * (1 - (P/P0)^(1/5.255)).
     void calculateAltitude()
     {
-        // Формула для высоты из давления:
-        // h = (P0 / P)^(1/5.255) * 44330 - 11000
-        // где P0 - давление на уровне моря, P - текущее давление
-
         float ratio = seaLevelPressure / baroData.pressure;
         float altitude = 44330.0f * (1.0f - pow(ratio, 0.1903f));
 
-        // Относительная высота (от начальной точки)
         baroData.altitude = altitude - calibrationAltitude;
 
-        // Вертикальная скорость (производная от высоты)
         static unsigned long lastTime = 0;
         unsigned long now = micros();
         float dt = (now - lastTime) / 1000000.0f;
@@ -320,24 +222,11 @@ private:
         previousAltitude = baroData.altitude;
     }
 
-
-    // ========================================================
-    // ЧТЕНИЕ КАЛИБРОВОЧНЫХ ДАННЫХ
-    // ========================================================
-
     void readCalibration()
     {
-        // Эта функция в реальной библиотеке читает
-        // 26 байт калибровочных коэффициентов
-        // Для упрощения оставляем заглушку
-
-        Serial.println("📚 BME280: Calibration data loaded");
+        // Реальный чип отдаёт 26 байт калибровочных коэффициентов по 0x88;
+        // здесь не читаются и не используются (см. заголовок файла).
     }
-
-
-    // ========================================================
-    // ЧТЕНИЕ РЕГИСТРА
-    // ========================================================
 
     uint8_t readRegister(uint8_t reg)
     {
@@ -348,11 +237,6 @@ private:
         Wire.requestFrom(i2cAddress, (uint8_t)1);
         return Wire.read();
     }
-
-
-    // ========================================================
-    // ЗАПИСЬ В РЕГИСТР
-    // ========================================================
 
     void writeRegister(uint8_t reg, uint8_t value)
     {

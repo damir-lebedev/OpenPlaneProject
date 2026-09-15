@@ -1,26 +1,18 @@
 #pragma once
 
 // ============================================================
-// 🎛️  FEATURE MANAGER
+// FEATURE MANAGER
 //
-// Гибкая система назначения RC-каналов к функциям автопилота
-// Позволяет настраивать поведение без переписывания кода.
-//
-// Архитектура:
-//   • Каналы 7-10 зарезервированы для автопилота
-//   • Каждый канал может быть назначен отдельной функции
-//   • Функции: AUTO_TAKEOFF, ALT_HOLD, STABILIZE, и т.д.
-//   • Конфигурация хранится в памяти (EEPROM, LittleFS)
-//   • Веб-интерфейс позволяет менять назначение без USB
+// Назначает 4 функции автопилота на 4 свободных вспомогательных
+// канала (Channels::FEATURE_SLOTS — CH6, CH7, CH9, CH10; CH8
+// занят boost'ом в ThrottleManager). Переключатель: < 1500 µs —
+// выключено, >= 1500 µs — включено. Если активно несколько
+// слотов сразу, выигрывает слот с меньшим индексом.
 // ============================================================
 
 #include "Autopilot.h"
 #include "RcChannelState.h"
 #include <Arduino.h>
-
-// ============================================================
-// ТИПЫ ФУНКЦИЙ, КОТОРЫЕ МОГУТ БЫТЬ НАЗНАЧЕНЫ
-// ============================================================
 
 enum FeatureType
 {
@@ -31,148 +23,88 @@ enum FeatureType
     FEATURE_MANUAL = 4
 };
 
-// ============================================================
-// СОСТОЯНИЕ ФУНКЦИИ
-// ============================================================
-// Отслеживает переключение и фильтрует дребезг
+constexpr uint8_t FEATURE_SLOT_COUNT = 4;
 
 struct FeatureState
 {
-    FeatureType feature;           // Какая функция назначена на этот канал
-    uint16_t lastRawValue;         // Последнее значение RC сигнала
-    bool wasActive;                // Была ли функция активной в прошлом цикле
-    bool isActive;                 // Активна ли функция сейчас
-    unsigned long lastChangeTime;  // Когда произошло последнее изменение
+    FeatureType feature = FEATURE_DISABLED;
+    uint16_t lastRawValue = 1500;
+    bool isActive = false;
+    unsigned long lastChangeTime = 0;
 };
-
-// ============================================================
-// МЕНЕДЖЕР ФУНКЦИЙ
-// ============================================================
 
 class FeatureManager
 {
 public:
 
-    // ========================================================
-    // КОНСТРУКТОР
-    // ========================================================
-
-    FeatureManager(Autopilot* autopilot = nullptr)
+    explicit FeatureManager(Autopilot* autopilot = nullptr)
         : autopilot(autopilot)
     {
-        // По умолчанию все каналы отключены
-        for (int i = 0; i < 4; i++)
-        {
-            features[i].feature = FEATURE_DISABLED;
-            features[i].lastRawValue = 1500;
-            features[i].wasActive = false;
-            features[i].isActive = false;
-            features[i].lastChangeTime = 0;
-        }
-
-        // Начальные назначения (можно переопределить):
-        // CH7 - AUTO_TAKEOFF
-        // CH8 - ALT_HOLD
-        // CH9 - STABILIZE
-        // CH10 - MANUAL
-        assignFeature(7, FEATURE_AUTO_TAKEOFF);
-        assignFeature(8, FEATURE_ALT_HOLD);
-        assignFeature(9, FEATURE_STABILIZE);
-        assignFeature(10, FEATURE_MANUAL);
+        // Назначения по умолчанию, можно поменять через assignFeature().
+        assignFeature(0, FEATURE_AUTO_TAKEOFF);
+        assignFeature(1, FEATURE_ALT_HOLD);
+        assignFeature(2, FEATURE_STABILIZE);
+        assignFeature(3, FEATURE_MANUAL);
     }
-
-    // ========================================================
-    // ИНИЦИАЛИЗАЦИЯ
-    // ========================================================
 
     bool begin()
     {
         if (!autopilot)
         {
-            Serial.println("❌ FeatureManager: Autopilot not attached!");
+            Serial.println("FeatureManager: Autopilot не подключён, функции отключены");
             return false;
         }
 
-        Serial.println("✅ FeatureManager: Initialized");
         printConfiguration();
-
         return true;
     }
 
-    // ========================================================
-    // ОБНОВЛЕНИЕ УПРАВЛЕНИЯ
-    // ========================================================
-    // Должна вызваться из FlightController::update()
-    // Принимает текущие значения RC каналов
-
+    // Вызывается из FlightController::update() с текущими RC-каналами.
     void update(const RcChannelState& rcState)
     {
-        // Обрабатываем каналы 7-10 (индексы 6-9, так как нумерация с 0)
-        for (int ch = 0; ch < 4; ch++)
+        for (uint8_t slot = 0; slot < FEATURE_SLOT_COUNT; ++slot)
         {
-            processChannel(ch, rcState.get(ch + 7));
+            processSlot(slot, rcState.get(Channels::FEATURE_SLOTS[slot]));
         }
 
-        // Переходим в режим, если произошло переключение
-        applyActiveFunctions();
-    }
-
-    // ========================================================
-    // НАЗНАЧИТЬ ФУНКЦИЮ НА КАНАЛ
-    // ========================================================
-    // channel: 7-10
-    // feature: FEATURE_AUTO_TAKEOFF, FEATURE_ALT_HOLD, и т.д.
-
-    void assignFeature(uint8_t channel, FeatureType feature)
-    {
-        if (channel < 7 || channel > 10)
+        if (autopilot)
         {
-            Serial.print("❌ FeatureManager: Invalid channel ");
-            Serial.println(channel);
-            return;
+            autopilot->setMode(getActiveMode());
         }
-
-        int idx = channel - 7;
-        features[idx].feature = feature;
-
-        Serial.print("✅ FeatureManager: CH");
-        Serial.print(channel);
-        Serial.print(" assigned to ");
-        Serial.println(featureToString(feature));
     }
 
-    // ========================================================
-    // ПОЛУЧИТЬ ТЕКУЩУЮ КОНФИГУРАЦИЮ
-    // ========================================================
-
-    FeatureType getFeature(uint8_t channel) const
+    // slot: 0..3, см. Channels::FEATURE_SLOTS.
+    void assignFeature(uint8_t slot, FeatureType feature)
     {
-        if (channel < 7 || channel > 10) return FEATURE_DISABLED;
-        return features[channel - 7].feature;
+        if (slot >= FEATURE_SLOT_COUNT) return;
+        features[slot].feature = feature;
     }
 
-    // ========================================================
-    // ПРОВЕРИТЬ, АКТИВНА ЛИ ФУНКЦИЯ
-    // ========================================================
-
-    bool isFeatureActive(uint8_t channel) const
+    FeatureType getFeature(uint8_t slot) const
     {
-        if (channel < 7 || channel > 10) return false;
-        return features[channel - 7].isActive;
+        return slot < FEATURE_SLOT_COUNT ? features[slot].feature : FEATURE_DISABLED;
     }
 
-    // ========================================================
-    // ПОЛУЧИТЬ АКТИВНЫЙ РЕЖИМ АВТОПИЛОТА
-    // ========================================================
+    bool isFeatureActive(uint8_t slot) const
+    {
+        return slot < FEATURE_SLOT_COUNT && features[slot].isActive;
+    }
+
+    // Физический номер канала (CH1..CH10) для данного слота — для UI и логов.
+    static uint8_t slotChannelNumber(uint8_t slot)
+    {
+        return slot < FEATURE_SLOT_COUNT
+            ? static_cast<uint8_t>(Channels::FEATURE_SLOTS[slot] + 1)
+            : 0;
+    }
 
     AutopilotMode getActiveMode() const
     {
-        // Проверяем каналы в порядке приоритета
-        for (int i = 0; i < 4; i++)
+        for (uint8_t slot = 0; slot < FEATURE_SLOT_COUNT; ++slot)
         {
-            if (!features[i].isActive) continue;
+            if (!features[slot].isActive) continue;
 
-            switch (features[i].feature)
+            switch (features[slot].feature)
             {
                 case FEATURE_AUTO_TAKEOFF: return MODE_AUTO_TAKEOFF;
                 case FEATURE_ALT_HOLD:     return MODE_ALT_HOLD;
@@ -182,146 +114,85 @@ public:
             }
         }
 
-        return MODE_MANUAL;  // По умолчанию ручное управление
+        return MODE_MANUAL;
     }
-
-    // ========================================================
-    // СОХРАНИТЬ КОНФИГУРАЦИЮ
-    // ========================================================
-    // (Заглушка для будущей реализации с EEPROM)
-
-    void saveConfiguration() const
-    {
-        Serial.println("💾 FeatureManager: Configuration saved to EEPROM");
-        // TODO: Реализовать сохранение в EEPROM/LittleFS
-    }
-
-    // ========================================================
-    // ЗАГРУЗИТЬ КОНФИГУРАЦИЮ
-    // ========================================================
-    // (Заглушка для будущей реализации)
-
-    void loadConfiguration()
-    {
-        Serial.println("📂 FeatureManager: Configuration loaded from EEPROM");
-        // TODO: Реализовать загрузку из EEPROM/LittleFS
-    }
-
-    // ========================================================
-    // ДИАГНОСТИКА
-    // ========================================================
 
     void printStatus() const
     {
-        Serial.println("\n🎛️  FeatureManager Status:");
-        Serial.print("  Active mode: ");
-        Serial.println(modeToString(getActiveMode()));
+        Serial.print("Features: mode=");
+        Serial.print(modeToString(getActiveMode()));
 
-        for (int i = 0; i < 4; i++)
+        for (uint8_t slot = 0; slot < FEATURE_SLOT_COUNT; ++slot)
         {
-            Serial.print("  CH");
-            Serial.print(i + 7);
-            Serial.print(": ");
-            Serial.print(featureToString(features[i].feature));
-            Serial.print(" (");
-            Serial.print(features[i].isActive ? "ACTIVE" : "inactive");
-            Serial.print(", raw=");
-            Serial.print(features[i].lastRawValue);
-            Serial.println(" µs)");
+            Serial.print(" CH");
+            Serial.print(slotChannelNumber(slot));
+            Serial.print("=");
+            Serial.print(featureToString(features[slot].feature));
+            Serial.print(features[slot].isActive ? "(on)" : "(off)");
         }
+
+        Serial.println();
     }
 
     void printConfiguration() const
     {
-        Serial.println("\n📋 FeatureManager Configuration:");
-        for (int i = 0; i < 4; i++)
+        Serial.println("FeatureManager: конфигурация каналов");
+
+        for (uint8_t slot = 0; slot < FEATURE_SLOT_COUNT; ++slot)
         {
             Serial.print("  CH");
-            Serial.print(i + 7);
-            Serial.print(" → ");
-            Serial.println(featureToString(features[i].feature));
+            Serial.print(slotChannelNumber(slot));
+            Serial.print(" -> ");
+            Serial.println(featureToString(features[slot].feature));
         }
     }
 
-    // ========================================================
-    // ЭКСПОРТ КОНФИГУРАЦИИ В JSON
-    // ========================================================
-    // Используется для веб-интерфейса
-
+    // Для веб-интерфейса.
     void getConfigAsJSON(char* buffer, size_t bufferSize) const
     {
         snprintf(buffer, bufferSize,
-                 "{\"ch7\":%d,\"ch8\":%d,\"ch9\":%d,\"ch10\":%d,"
-                 "\"active_mode\":%d}",
-                 features[0].feature,
-                 features[1].feature,
-                 features[2].feature,
-                 features[3].feature,
+                 "{\"ch\":[%d,%d,%d,%d],\"feature\":[%d,%d,%d,%d],"
+                 "\"active\":[%s,%s,%s,%s],\"active_mode\":%d}",
+                 slotChannelNumber(0), slotChannelNumber(1),
+                 slotChannelNumber(2), slotChannelNumber(3),
+                 features[0].feature, features[1].feature,
+                 features[2].feature, features[3].feature,
+                 features[0].isActive ? "true" : "false",
+                 features[1].isActive ? "true" : "false",
+                 features[2].isActive ? "true" : "false",
+                 features[3].isActive ? "true" : "false",
                  getActiveMode());
     }
 
 private:
 
-    // ========================================================
-    // ПРИВАТНЫЕ ПЕРЕМЕННЫЕ
-    // ========================================================
-
     Autopilot* autopilot;
-    FeatureState features[4];  // CH7, CH8, CH9, CH10
+    FeatureState features[FEATURE_SLOT_COUNT];
 
-
-    // ========================================================
-    // ОБРАБОТКА ИЗМЕНЕНИЙ НА КАНАЛЕ
-    // ========================================================
-
-    void processChannel(int idx, uint16_t rawValue)
+    void processSlot(uint8_t slot, uint16_t rawValue)
     {
-        // Фильтруем дребезг: величина изменения должна быть > 50 µs
-        if (abs((int)rawValue - (int)features[idx].lastRawValue) < 50)
+        // Фильтр дребезга: игнорируем изменения меньше 50 µs.
+        if (abs((int)rawValue - (int)features[slot].lastRawValue) < 50)
         {
             return;
         }
 
-        features[idx].lastRawValue = rawValue;
+        features[slot].lastRawValue = rawValue;
 
-        // Определяем, активна ли функция на основе положения переключателя
-        // Конвенция: < 1500 µs = OFF, >= 1500 µs = ON
-        bool wasActive = features[idx].isActive;
-        features[idx].isActive = (rawValue >= 1500);
+        const bool wasActive = features[slot].isActive;
+        features[slot].isActive = (rawValue >= 1500);
 
-        // Если произошло изменение, логируем это
-        if (features[idx].isActive != wasActive)
+        if (features[slot].isActive != wasActive)
         {
-            features[idx].lastChangeTime = millis();
+            features[slot].lastChangeTime = millis();
 
-            Serial.print("🔀 FeatureManager: CH");
-            Serial.print(idx + 7);
+            Serial.print("Feature CH");
+            Serial.print(slotChannelNumber(slot));
             Serial.print(" (");
-            Serial.print(featureToString(features[idx].feature));
-            Serial.print(") ");
-            Serial.println(features[idx].isActive ? "ACTIVATED" : "deactivated");
+            Serial.print(featureToString(features[slot].feature));
+            Serial.println(features[slot].isActive ? ") ВКЛ" : ") ВЫКЛ");
         }
     }
-
-    // ========================================================
-    // ПРИМЕНИТЬ АКТИВНЫЕ ФУНКЦИИ
-    // ========================================================
-
-    void applyActiveFunctions()
-    {
-        // Находим активный режим (с приоритетом)
-        AutopilotMode newMode = getActiveMode();
-
-        // Переключаемся в новый режим
-        if (autopilot)
-        {
-            autopilot->setMode(newMode);
-        }
-    }
-
-    // ========================================================
-    // ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-    // ========================================================
 
     const char* featureToString(FeatureType feature) const
     {
