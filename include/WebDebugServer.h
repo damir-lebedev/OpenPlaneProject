@@ -1,20 +1,14 @@
 #pragma once
 
 // ============================================================
-// 🌐 WEB DEBUG SERVER
+// WEB DEBUG SERVER
 //
-// Простой HTTP сервер для отладки и туёвши через Wi-Fi
-// 
-// Режимы работы:
-//   1. AP Mode: ESP32 создаёт своё сеть (OpenPlane-Debug)
-//   2. STA Mode: Подключается к существующему Wi-Fi
-//
-// Функциональность:
-//   • JSON API для получения данных датчиков в реальном времени
-//   • HTML дашборд с живыми графиками
-//   • Настройка PID коэффициентов
-//   • Переключение режимов автопилота
-//   • WebSocket для потока данных (опционально)
+// HTTP-дашборд для отладки по Wi-Fi (AP: OpenPlane-Debug).
+// Отдаёт один агрегированный /api/status (RC-каналы, ARM/failsafe/
+// boost, выходы с флагом attached, датчики с флагом available,
+// автопилот, каналы FeatureManager) и принимает setmode/setpid/
+// assignfeature. Явно показывает отсутствие датчика/серво, а не
+// молчит про них.
 // ============================================================
 
 #include <WiFi.h>
@@ -24,25 +18,13 @@
 #include "Autopilot.h"
 #include "FeatureManager.h"
 
-// ============================================================
-// КОНФИГУРАЦИЯ СЕТИ
-// ============================================================
-
 #define WIFI_SSID_AP "OpenPlane-Debug"
 #define WIFI_PASSWORD_AP "12345678"
 #define WIFI_PORT 80
 
-// ============================================================
-// WEB SERVER
-// ============================================================
-
 class WebDebugServer
 {
 public:
-
-    // ========================================================
-    // КОНСТРУКТОР
-    // ========================================================
 
     WebDebugServer(FlightController* fc = nullptr,
                    Autopilot* ap = nullptr,
@@ -55,58 +37,36 @@ public:
     {
     }
 
-    // ========================================================
-    // ИНИЦИАЛИЗАЦИЯ
-    // ========================================================
-    // mode: 0 = AP (точка доступа), 1 = STA (клиент существующей сети)
-
+    // mode: 0 = точка доступа (AP), 1 = клиент существующей сети (пока не реализовано)
     bool begin(int mode = 0)
     {
-        if (mode == 0)
+        if (mode != 0)
         {
-            // Режим точки доступа (AP)
-            Serial.print("📡 WebServer: Starting AP mode... ");
-            WiFi.mode(WIFI_AP);
-
-            if (!WiFi.softAP(WIFI_SSID_AP, WIFI_PASSWORD_AP))
-            {
-                Serial.println("FAILED");
-                return false;
-            }
-
-            Serial.println("OK");
-            Serial.print("   SSID: ");
-            Serial.println(WIFI_SSID_AP);
-            Serial.print("   Password: ");
-            Serial.println(WIFI_PASSWORD_AP);
-            Serial.print("   IP: ");
-            Serial.println(WiFi.softAPIP());
-        }
-        else
-        {
-            // Режим станции (STA) - подключение к существующей сети
-            // (Не реализовано в этой заглушке, нужно добавить конфигурацию)
-            Serial.println("❌ WebServer: STA mode not implemented yet");
+            Serial.println("WebDebugServer: STA режим ещё не реализован");
             return false;
         }
 
-        // Настраиваем маршруты
-        setupRoutes();
+        Serial.print("WebDebugServer: запуск AP... ");
+        WiFi.mode(WIFI_AP);
 
-        // Запускаем сервер
+        if (!WiFi.softAP(WIFI_SSID_AP, WIFI_PASSWORD_AP))
+        {
+            Serial.println("FAILED");
+            return false;
+        }
+
+        Serial.println("OK");
+        Serial.print("  SSID: "); Serial.println(WIFI_SSID_AP);
+        Serial.print("  IP: "); Serial.println(WiFi.softAPIP());
+
+        setupRoutes();
         webServer.begin();
         isRunning = true;
 
-        Serial.println("✅ WebServer: Started successfully");
-        Serial.println("   Open browser: http://192.168.4.1");
+        Serial.println("WebDebugServer: открой http://192.168.4.1 в браузере");
 
         return true;
     }
-
-    // ========================================================
-    // ОБНОВЛЕНИЕ СЕРВЕРА
-    // ========================================================
-    // Должна вызваться регулярно из loop()
 
     void update()
     {
@@ -116,30 +76,26 @@ public:
         }
     }
 
-    // ========================================================
-    // ДИАГНОСТИКА
-    // ========================================================
-
     void printStatus() const
     {
-        Serial.println("\n🌐 WebServer Status:");
-        Serial.print("  Running: ");
-        Serial.println(isRunning ? "YES" : "NO");
+        Serial.print("WebDebugServer: running=");
+        Serial.print(isRunning ? "YES" : "NO");
 
         if (isRunning)
         {
-            Serial.print("  Connected clients: ");
-            Serial.println(WiFi.softAPgetStationNum());
-            Serial.print("  IP address: ");
+            Serial.print(" clients=");
+            Serial.print(WiFi.softAPgetStationNum());
+            Serial.print(" ip=");
             Serial.println(WiFi.softAPIP());
+        }
+        else
+        {
+            Serial.println();
         }
     }
 
-private:
 
-    // ========================================================
-    // ПРИВАТНЫЕ ПЕРЕМЕННЫЕ
-    // ========================================================
+private:
 
     FlightController* flightController;
     Autopilot* autopilot;
@@ -149,247 +105,403 @@ private:
     bool isRunning;
 
 
-    // ========================================================
-    // НАСТРОЙКА МАРШРУТОВ
-    // ========================================================
-
     void setupRoutes()
     {
-        // Главная страница (HTML)
         webServer.on("/", [this]() { handleRoot(); });
-
-        // JSON API для данных датчиков
-        webServer.on("/api/sensors", [this]() { handleSensorsAPI(); });
-
-        // JSON API для состояния автопилота
-        webServer.on("/api/autopilot", [this]() { handleAutopilotAPI(); });
-
-        // JSON API для конфигурации функций
-        webServer.on("/api/features", [this]() { handleFeaturesAPI(); });
-
-        // POST: Установить режим автопилота
+        webServer.on("/api/status", [this]() { handleStatusAPI(); });
         webServer.on("/api/setmode", HTTP_POST, [this]() { handleSetMode(); });
-
-        // POST: Установить PID коэффициенты
         webServer.on("/api/setpid", HTTP_POST, [this]() { handleSetPID(); });
-
-        // 404 - файл не найден
+        webServer.on("/api/assignfeature", HTTP_POST, [this]() { handleAssignFeature(); });
         webServer.onNotFound([this]() { handleNotFound(); });
     }
 
 
     // ========================================================
-    // ГЛАВНАЯ СТРАНИЦА (HTML + CSS + JS)
+    // GET /api/status — всё состояние системы в одном JSON.
+    // Поля attached/available всегда присутствуют, поэтому
+    // фронтенд может честно показать "нет датчика"/"нет серво"
+    // вместо того, чтобы упасть на undefined или молчать.
+    // ========================================================
+
+    String buildStatusJson()
+    {
+        String json = "{";
+
+        json += "\"rc\":[";
+        if (flightController)
+        {
+            const RcChannelState& rc = flightController->getRcState();
+
+            for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i)
+            {
+                json += String(rc.get(i));
+                if (i + 1 < Config::IBUS_CHANNELS) json += ",";
+            }
+        }
+        json += "],";
+
+        json += "\"armed\":";
+        json += (flightController && flightController->isArmed()) ? "true" : "false";
+        json += ",\"failsafe\":";
+        json += (flightController && flightController->isReceiverFailsafe()) ? "true" : "false";
+        json += ",\"boost\":";
+        json += (flightController && flightController->isBoostActive()) ? "true" : "false";
+
+        json += ",\"outputs\":{";
+        if (flightController)
+        {
+            const FlightOutputs& outputs = flightController->getOutputs();
+            const FlightOutputState& state = outputs.getLastState();
+
+            json += outputJson("aileronLeft", state.aileronLeft, outputs.isAileronLeftAttached()) + ",";
+            json += outputJson("aileronRight", state.aileronRight, outputs.isAileronRightAttached()) + ",";
+            json += outputJson("elevator", state.elevator, outputs.isElevatorAttached()) + ",";
+            json += outputJson("esc", state.throttle, outputs.isEscAttached());
+        }
+        json += "}";
+
+        ImuSensor* imu = autopilot ? autopilot->getImuSensor() : nullptr;
+        json += ",\"imu\":{\"attached\":";
+        json += imu ? "true" : "false";
+        json += ",\"available\":";
+        json += (imu && imu->isAvailable()) ? "true" : "false";
+        if (imu && imu->isAvailable())
+        {
+            const ImuData& d = imu->getImuData();
+            json += ",\"roll\":" + String(d.roll, 2);
+            json += ",\"pitch\":" + String(d.pitch, 2);
+            json += ",\"yaw\":" + String(d.yaw, 2);
+        }
+        json += "}";
+
+        BarometerSensor* baro = autopilot ? autopilot->getBarometerSensor() : nullptr;
+        json += ",\"baro\":{\"attached\":";
+        json += baro ? "true" : "false";
+        json += ",\"available\":";
+        json += (baro && baro->isAvailable()) ? "true" : "false";
+        if (baro && baro->isAvailable())
+        {
+            const BarometerData& d = baro->getBarometerData();
+            json += ",\"altitude\":" + String(d.altitude, 2);
+            json += ",\"climb\":" + String(d.verticalSpeed, 2);
+        }
+        json += "}";
+
+        json += ",\"autopilot\":{\"attached\":";
+        json += autopilot ? "true" : "false";
+        if (autopilot)
+        {
+            json += ",\"mode\":" + String((int)autopilot->getMode());
+            json += ",\"modeName\":\"" + String(autopilot->getModeName()) + "\"";
+            json += ",\"desiredRoll\":" + String(autopilot->getDesiredRoll(), 1);
+            json += ",\"desiredPitch\":" + String(autopilot->getDesiredPitch(), 1);
+            json += ",\"targetAlt\":" + String(autopilot->getTargetAltitude(), 1);
+            json += ",\"rollCorr\":" + String(autopilot->getRollCorrection(), 1);
+            json += ",\"pitchCorr\":" + String(autopilot->getPitchCorrection(), 1);
+            json += ",\"throttleCorr\":" + String(autopilot->getThrottleCorrection(), 1);
+            json += ",\"kpRoll\":" + String(autopilot->getRollPid().getKp(), 3);
+            json += ",\"kiRoll\":" + String(autopilot->getRollPid().getKi(), 3);
+            json += ",\"kdRoll\":" + String(autopilot->getRollPid().getKd(), 3);
+            json += ",\"kpPitch\":" + String(autopilot->getPitchPid().getKp(), 3);
+            json += ",\"kiPitch\":" + String(autopilot->getPitchPid().getKi(), 3);
+            json += ",\"kdPitch\":" + String(autopilot->getPitchPid().getKd(), 3);
+        }
+        json += "}";
+
+        json += ",\"features\":";
+        if (featureManager)
+        {
+            char buf[256];
+            featureManager->getConfigAsJSON(buf, sizeof(buf));
+            json += buf;
+        }
+        else
+        {
+            json += "null";
+        }
+
+        json += "}";
+
+        return json;
+    }
+
+    String outputJson(const char* name, uint16_t us, bool attached) const
+    {
+        return "\"" + String(name) + "\":{\"us\":" + String(us) +
+               ",\"attached\":" + (attached ? "true" : "false") + "}";
+    }
+
+    void handleStatusAPI()
+    {
+        webServer.send(200, "application/json", buildStatusJson());
+    }
+
+
+    // ========================================================
+    // POST /api/setmode  {mode: 0..3}
+    // ========================================================
+
+    void handleSetMode()
+    {
+        if (!webServer.hasArg("plain"))
+        {
+            webServer.send(400, "application/json", "{\"error\":\"no data\"}");
+            return;
+        }
+
+        if (!autopilot)
+        {
+            webServer.send(503, "application/json", "{\"error\":\"autopilot not attached\"}");
+            return;
+        }
+
+        const int mode = (int)extractJsonNumber(webServer.arg("plain"), "mode", -1);
+
+        if (mode < MODE_MANUAL || mode > MODE_ALT_HOLD)
+        {
+            webServer.send(400, "application/json", "{\"error\":\"invalid mode\"}");
+            return;
+        }
+
+        autopilot->setMode((AutopilotMode)mode);
+        webServer.send(200, "application/json", "{\"status\":\"ok\"}");
+    }
+
+
+    // ========================================================
+    // POST /api/setpid  {kpRoll,kiRoll,kdRoll,kpPitch,kiPitch,kdPitch}
+    // Поля можно не указывать — берётся текущее значение.
+    // ========================================================
+
+    void handleSetPID()
+    {
+        if (!webServer.hasArg("plain"))
+        {
+            webServer.send(400, "application/json", "{\"error\":\"no data\"}");
+            return;
+        }
+
+        if (!autopilot)
+        {
+            webServer.send(503, "application/json", "{\"error\":\"autopilot not attached\"}");
+            return;
+        }
+
+        const String body = webServer.arg("plain");
+
+        const float kpRoll = extractJsonNumber(body, "kpRoll", autopilot->getRollPid().getKp());
+        const float kiRoll = extractJsonNumber(body, "kiRoll", autopilot->getRollPid().getKi());
+        const float kdRoll = extractJsonNumber(body, "kdRoll", autopilot->getRollPid().getKd());
+        const float kpPitch = extractJsonNumber(body, "kpPitch", autopilot->getPitchPid().getKp());
+        const float kiPitch = extractJsonNumber(body, "kiPitch", autopilot->getPitchPid().getKi());
+        const float kdPitch = extractJsonNumber(body, "kdPitch", autopilot->getPitchPid().getKd());
+
+        autopilot->setPIDGains(kpRoll, kiRoll, kdRoll, kpPitch, kiPitch, kdPitch);
+
+        webServer.send(200, "application/json", "{\"status\":\"ok\"}");
+    }
+
+
+    // ========================================================
+    // POST /api/assignfeature  {slot: 0..3, feature: 0..4}
+    // ========================================================
+
+    void handleAssignFeature()
+    {
+        if (!webServer.hasArg("plain"))
+        {
+            webServer.send(400, "application/json", "{\"error\":\"no data\"}");
+            return;
+        }
+
+        if (!featureManager)
+        {
+            webServer.send(503, "application/json", "{\"error\":\"feature manager not attached\"}");
+            return;
+        }
+
+        const String body = webServer.arg("plain");
+        const int slot = (int)extractJsonNumber(body, "slot", -1);
+        const int feature = (int)extractJsonNumber(body, "feature", -1);
+
+        if (slot < 0 || slot >= FEATURE_SLOT_COUNT || feature < FEATURE_DISABLED || feature > FEATURE_MANUAL)
+        {
+            webServer.send(400, "application/json", "{\"error\":\"invalid slot or feature\"}");
+            return;
+        }
+
+        featureManager->assignFeature((uint8_t)slot, (FeatureType)feature);
+        webServer.send(200, "application/json", "{\"status\":\"ok\"}");
+    }
+
+
+    void handleNotFound()
+    {
+        webServer.send(404, "text/plain", "404 - Not Found");
+    }
+
+
+    // Простой парсер плоского JSON вида {"key":123.45} — без
+    // вложенности и без сторонней библиотеки (см. Autopilot.h/
+    // FeatureManager.h — весь проект решил не тащить ArduinoJson).
+    static float extractJsonNumber(const String& body, const char* key, float fallback)
+    {
+        const String needle = String("\"") + key + "\":";
+        const int start = body.indexOf(needle);
+
+        if (start < 0) return fallback;
+
+        int pos = start + needle.length();
+        const int end = pos;
+        int len = body.length();
+
+        while (pos < len && (isDigit(body[pos]) || body[pos] == '-' || body[pos] == '.'))
+        {
+            pos++;
+        }
+
+        if (pos == end) return fallback;
+
+        return body.substring(end, pos).toFloat();
+    }
+
+
+    // ========================================================
+    // GET / — HTML-дашборд. Опрашивает /api/status раз в 200мс.
     // ========================================================
 
     void handleRoot()
     {
-        // Простой HTML для дашборда (без специальных символов)
-        String html = 
+        String html =
             "<!DOCTYPE html>"
             "<html><head><title>OpenPlane Debug</title>"
             "<meta charset='UTF-8'><meta name='viewport' content='width=device-width'>"
             "<style>"
             "body{font-family:Arial;background:#667eea;margin:0;padding:20px}"
-            ".container{max-width:1200px;margin:0 auto}"
+            ".container{max-width:900px;margin:0 auto}"
             "h1{color:white;text-align:center;margin:20px 0}"
             ".card{background:white;border-radius:10px;padding:20px;margin:10px 0;box-shadow:0 4px 8px rgba(0,0,0,0.2)}"
-            ".card h2{color:#667eea;border-bottom:2px solid #667eea;padding-bottom:10px}"
-            ".row{display:flex;justify-content:space-between;padding:5px 0}"
-            ".label{font-weight:bold;color:#333}"
+            ".card h2{color:#667eea;border-bottom:2px solid #667eea;padding-bottom:10px;font-size:18px}"
+            ".row{display:flex;justify-content:flex-start;align-items:center;gap:10px;padding:6px 0;flex-wrap:wrap}"
+            ".label{font-weight:bold;color:#333;min-width:140px}"
             ".value{color:#667eea;font-weight:bold}"
-            ".button{background:#667eea;color:white;border:none;padding:10px 20px;margin:5px;border-radius:5px;cursor:pointer}"
+            ".badge{padding:3px 10px;border-radius:12px;font-size:12px;font-weight:bold;color:white;background:#999}"
+            ".badge.ok{background:#4CAF50}"
+            ".badge.bad{background:#f44336}"
+            ".bartrack{flex:1;min-width:80px;height:10px;background:#eee;border-radius:5px;overflow:hidden}"
+            ".barfill{height:100%;background:#667eea;width:50%}"
+            ".button{background:#667eea;color:white;border:none;padding:8px 16px;margin:4px;border-radius:5px;cursor:pointer}"
             ".button:hover{background:#764ba2}"
             ".button.danger{background:#f44336}"
             ".button.success{background:#4CAF50}"
+            "input[type=number]{width:60px}"
             "</style></head><body>"
             "<div class='container'>"
             "<h1>OpenPlane Debug Dashboard</h1>"
-            
+
             "<div class='card'>"
-            "<h2>Sensors</h2>"
-            "<div class='row'><span class='label'>Roll:</span><span class='value' id='roll'>--</span></div>"
-            "<div class='row'><span class='label'>Pitch:</span><span class='value' id='pitch'>--</span></div>"
-            "<div class='row'><span class='label'>Yaw:</span><span class='value' id='yaw'>--</span></div>"
-            "<div class='row'><span class='label'>Altitude:</span><span class='value' id='altitude'>--</span></div>"
-            "<div class='row'><span class='label'>Climb Rate:</span><span class='value' id='climb'>--</span></div>"
+            "<h2>Состояние</h2>"
+            "<div class='row'>"
+            "<span class='label'>Приёмник</span><span class='badge' id='rx'>--</span>"
+            "<span class='label'>ARM</span><span class='badge' id='arm'>--</span>"
+            "<span class='label'>Boost</span><span class='badge' id='boost'>--</span>"
+            "</div></div>"
+
+            "<div class='card'><h2>RC каналы</h2>";
+
+        for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i)
+        {
+            html += "<div class='row'><span class='label'>CH" + String(i + 1) + "</span>"
+                    "<div class='bartrack'><div class='barfill' id='ch" + String(i) + "'></div></div>"
+                    "<span class='value' id='chv" + String(i) + "'>--</span></div>";
+        }
+
+        html +=
             "</div>"
-            
-            "<div class='card'>"
-            "<h2>Autopilot</h2>"
-            "<div class='row'><span class='label'>Mode:</span><span class='value' id='mode'>MANUAL</span></div>"
-            "<div class='row'><span class='label'>Desired Roll:</span><span class='value' id='desired-roll'>0</span></div>"
-            "<div class='row'><span class='label'>Desired Pitch:</span><span class='value' id='desired-pitch'>0</span></div>"
-            "<div class='row'><span class='label'>Target Alt:</span><span class='value' id='target-alt'>0</span></div>"
+
+            "<div class='card'><h2>Выходы (Servo/ESC)</h2>"
+            "<div class='row'><span class='label'>Left aileron</span><span class='value' id='ail-l-val'>--</span><span class='badge' id='ail-l-badge'>--</span></div>"
+            "<div class='row'><span class='label'>Right aileron</span><span class='value' id='ail-r-val'>--</span><span class='badge' id='ail-r-badge'>--</span></div>"
+            "<div class='row'><span class='label'>Elevator</span><span class='value' id='elevator-val'>--</span><span class='badge' id='elevator-badge'>--</span></div>"
+            "<div class='row'><span class='label'>ESC (мотор)</span><span class='value' id='esc-val'>--</span><span class='badge' id='esc-badge'>--</span></div>"
             "</div>"
-            
-            "<div class='card'>"
-            "<h2>Controls</h2>"
+
+            "<div class='card'><h2>Датчики</h2>"
+            "<div class='row'><span class='label'>IMU (MPU6050)</span><span class='value' id='imu-val'>--</span><span class='badge' id='imu-badge'>--</span></div>"
+            "<div class='row'><span class='label'>Барометр (BME280)</span><span class='value' id='baro-val'>--</span><span class='badge' id='baro-badge'>--</span></div>"
+            "</div>"
+
+            "<div class='card'><h2>Автопилот</h2>"
+            "<div class='row'><span class='label'>Режим</span><span class='value' id='mode'>--</span></div>"
+            "<div class='row'><span class='label'>Desired roll/pitch</span><span class='value' id='desired-roll'>--</span><span class='value' id='desired-pitch'>--</span></div>"
+            "<div class='row'><span class='label'>Target alt</span><span class='value' id='target-alt'>--</span></div>"
+            "<div class='row'>"
+            "<button class='button danger' onclick='setMode(0)'>Manual</button>"
+            "<button class='button success' onclick='setMode(1)'>Stabilize</button>"
             "<button class='button success' onclick='setMode(2)'>Takeoff</button>"
             "<button class='button success' onclick='setMode(3)'>Alt Hold</button>"
-            "<button class='button success' onclick='setMode(1)'>Stabilize</button>"
-            "<button class='button danger' onclick='setMode(0)'>Manual</button>"
+            "</div></div>"
+
+            "<div class='card'><h2>PID (roll / pitch)</h2>"
+            "<div class='row'>Kp<input type='number' step='0.01' id='kpRoll'> Ki<input type='number' step='0.01' id='kiRoll'> Kd<input type='number' step='0.01' id='kdRoll'> (roll)</div>"
+            "<div class='row'>Kp<input type='number' step='0.01' id='kpPitch'> Ki<input type='number' step='0.01' id='kiPitch'> Kd<input type='number' step='0.01' id='kdPitch'> (pitch)</div>"
+            "<div class='row'><button class='button' onclick='applyPID()'>Применить</button></div>"
             "</div>"
-            
+
+            "<div class='card'><h2>Каналы автопилота</h2>";
+
+        static const char* FEATURE_NAMES[] = {"DISABLED", "AUTO_TAKEOFF", "ALT_HOLD", "STABILIZE", "MANUAL"};
+
+        for (uint8_t slot = 0; slot < FEATURE_SLOT_COUNT; ++slot)
+        {
+            html += "<div class='row'><span class='label' id='feat-ch" + String(slot) + "'>CH?</span>"
+                    "<select id='feat-select" + String(slot) + "'>";
+
+            for (int f = FEATURE_DISABLED; f <= FEATURE_MANUAL; ++f)
+            {
+                html += "<option value='" + String(f) + "'>" + FEATURE_NAMES[f] + "</option>";
+            }
+
+            html += "</select>"
+                    "<button class='button' onclick='applyFeature(" + String(slot) + ")'>OK</button>"
+                    "<span class='badge' id='feat-active" + String(slot) + "'>--</span></div>";
+        }
+
+        html +=
+            "</div>"
+
             "</div><script>"
-            "setInterval(updateDashboard,200);"
+            "function setBadge(id,ok,onText,offText){var el=document.getElementById(id);if(!el)return;el.textContent=ok?onText:offText;el.className='badge '+(ok?'ok':'bad');}"
+            "function setOutputRow(id,out){var v=document.getElementById(id+'-val');var b=document.getElementById(id+'-badge');if(v)v.textContent=out.us+' us';if(b){b.textContent=out.attached?'OK':'НЕ ПОДКЛЮЧЕН';b.className='badge '+(out.attached?'ok':'bad');}}"
+            "function setSensorRow(id,sensor,fields){var b=document.getElementById(id+'-badge');var v=document.getElementById(id+'-val');if(!sensor.attached){if(b){b.textContent='НЕТ В СХЕМЕ';b.className='badge bad';}if(v)v.textContent='--';return;}if(!sensor.available){if(b){b.textContent='НЕ ОТВЕЧАЕТ';b.className='badge bad';}if(v)v.textContent='--';return;}if(b){b.textContent='OK';b.className='badge ok';}if(v){var parts=[];for(var i=0;i<fields.length;i++){parts.push(fields[i]+'='+sensor[fields[i]].toFixed(2));}v.textContent=parts.join(' ');}}"
             "async function updateDashboard(){"
             "try{"
-            "const s=await fetch('/api/sensors');const sensors=await s.json();"
-            "document.getElementById('roll').textContent=sensors.roll.toFixed(2);"
-            "document.getElementById('pitch').textContent=sensors.pitch.toFixed(2);"
-            "document.getElementById('yaw').textContent=sensors.yaw.toFixed(2);"
-            "document.getElementById('altitude').textContent=sensors.altitude.toFixed(2);"
-            "document.getElementById('climb').textContent=sensors.climb.toFixed(2);"
-            "const a=await fetch('/api/autopilot');const ap=await a.json();"
-            "const modes=['MANUAL','STABILIZE','AUTO_TAKEOFF','ALT_HOLD'];"
-            "document.getElementById('mode').textContent=modes[ap.mode]||'UNKNOWN';"
-            "document.getElementById('desired-roll').textContent=ap.desired_roll.toFixed(1);"
-            "document.getElementById('desired-pitch').textContent=ap.desired_pitch.toFixed(1);"
-            "document.getElementById('target-alt').textContent=ap.target_alt.toFixed(1);"
-            "}catch(e){console.error(e);}}"
-            "async function setMode(m){"
-            "try{await fetch('/api/setmode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})});"
-            "}catch(e){console.error(e);}}"
+            "const r=await fetch('/api/status');const s=await r.json();"
+            "for(var i=0;i<s.rc.length;i++){var val=s.rc[i];var pct=Math.max(0,Math.min(100,(val-1000)/10));var bar=document.getElementById('ch'+i);if(bar)bar.style.width=pct+'%';var lab=document.getElementById('chv'+i);if(lab)lab.textContent=val;}"
+            "setBadge('rx',!s.failsafe,'OK','LOST');"
+            "setBadge('arm',s.armed,'ARMED','DISARMED');"
+            "setBadge('boost',s.boost,'ON','OFF');"
+            "setOutputRow('ail-l',s.outputs.aileronLeft);"
+            "setOutputRow('ail-r',s.outputs.aileronRight);"
+            "setOutputRow('elevator',s.outputs.elevator);"
+            "setOutputRow('esc',s.outputs.esc);"
+            "setSensorRow('imu',s.imu,['roll','pitch','yaw']);"
+            "setSensorRow('baro',s.baro,['altitude','climb']);"
+            "document.getElementById('mode').textContent=s.autopilot.attached?s.autopilot.modeName:'НЕТ АВТОПИЛОТА';"
+            "document.getElementById('desired-roll').textContent=s.autopilot.attached?('roll='+s.autopilot.desiredRoll.toFixed(1)):'--';"
+            "document.getElementById('desired-pitch').textContent=s.autopilot.attached?('pitch='+s.autopilot.desiredPitch.toFixed(1)):'--';"
+            "document.getElementById('target-alt').textContent=s.autopilot.attached?s.autopilot.targetAlt.toFixed(1):'--';"
+            "if(s.autopilot.attached){var pidIds=['kpRoll','kiRoll','kdRoll','kpPitch','kiPitch','kdPitch'];for(var p=0;p<pidIds.length;p++){var inp=document.getElementById(pidIds[p]);if(inp&&!inp.dataset.touched)inp.value=s.autopilot[pidIds[p]];}}"
+            "if(s.features){for(var slot=0;slot<4;slot++){var chEl=document.getElementById('feat-ch'+slot);if(chEl)chEl.textContent='CH'+s.features.ch[slot];var actEl=document.getElementById('feat-active'+slot);if(actEl){actEl.textContent=s.features.active[slot]?'ON':'off';actEl.className='badge '+(s.features.active[slot]?'ok':'');}var sel=document.getElementById('feat-select'+slot);if(sel&&!sel.dataset.touched)sel.value=s.features.feature[slot];}}"
+            "}catch(e){console.error(e);}"
+            "}"
+            "async function setMode(m){try{await fetch('/api/setmode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})});}catch(e){console.error(e);}}"
+            "async function applyPID(){function g(id){document.getElementById(id).dataset.touched='1';return parseFloat(document.getElementById(id).value)||0;}try{await fetch('/api/setpid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpRoll:g('kpRoll'),kiRoll:g('kiRoll'),kdRoll:g('kdRoll'),kpPitch:g('kpPitch'),kiPitch:g('kiPitch'),kdPitch:g('kdPitch')})});}catch(e){console.error(e);}}"
+            "async function applyFeature(slot){var sel=document.getElementById('feat-select'+slot);sel.dataset.touched='1';try{await fetch('/api/assignfeature',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot:slot,feature:parseInt(sel.value)})});}catch(e){console.error(e);}}"
+            "setInterval(updateDashboard,200);"
             "updateDashboard();"
             "</script></body></html>";
 
         webServer.send(200, "text/html", html);
-    }
-
-
-    // ========================================================
-    // API: GET /api/sensors
-    // ========================================================
-
-    void handleSensorsAPI()
-{
-    String json = "{";
-
-    if (autopilot)
-    {
-        ImuSensor* imuSensor = autopilot->getImuSensor();
-        if (imuSensor)
-        {
-            const ImuData& imu = imuSensor->getImuData();
-            json += "\"roll\":" + String(imu.roll, 2) + ",";
-            json += "\"pitch\":" + String(imu.pitch, 2) + ",";
-            json += "\"yaw\":" + String(imu.yaw, 2) + ",";
-        }
-
-        BarometerSensor* baroSensor = autopilot->getBarometerSensor();
-        if (baroSensor)
-        {
-            const BarometerData& baro = baroSensor->getBarometerData();
-            json += "\"altitude\":" + String(baro.altitude, 2) + ",";
-            json += "\"climb\":" + String(baro.verticalSpeed, 2);
-        }
-    }
-
-    json += "}";
-
-    webServer.send(200, "application/json", json);
-}
-
-
-    // ========================================================
-    // API: GET /api/autopilot
-    // ========================================================
-
-    void handleAutopilotAPI()
-    {
-        String json = "{";
-
-        if (autopilot)
-        {
-            json += "\"mode\":" + String((int)autopilot->getMode()) + ",";
-            json += "\"desired_roll\":" + String(autopilot->getDesiredRoll(), 1) + ",";
-            json += "\"desired_pitch\":" + String(autopilot->getDesiredPitch(), 1) + ",";
-            json += "\"target_alt\":" + String(autopilot->getTargetAltitude(), 1);
-        }
-
-        json += "}";
-
-        webServer.send(200, "application/json", json);
-    }
-
-
-    // ========================================================
-    // API: GET /api/features
-    // ========================================================
-
-    void handleFeaturesAPI()
-    {
-        String json = "{";
-
-        if (featureManager)
-        {
-            const char* featureNames[] = {"DISABLED", "AUTO_TAKEOFF", "ALT_HOLD", "STABILIZE", "MANUAL"};
-
-            for (int i = 0; i < 4; i++)
-            {
-                int ch = 7 + i;
-                int feat = (int)featureManager->getFeature(ch);
-                bool active = featureManager->isFeatureActive(ch);
-
-                json += "\"ch" + String(ch) + "\":\"" + featureNames[feat] + "\",";
-                json += "\"ch" + String(ch) + "_active\":" + String(active ? "true" : "false");
-
-                if (i < 3) json += ",";
-            }
-        }
-
-        json += "}";
-
-        webServer.send(200, "application/json", json);
-    }
-
-
-    // ========================================================
-    // API: POST /api/setmode
-    // ========================================================
-
-    void handleSetMode()
-    {
-        if (webServer.hasArg("plain"))
-        {
-            String body = webServer.arg("plain");
-            // Простой парсер (в реальности нужен JSON парсер)
-            int mode = 0;
-            if (body.indexOf("\"mode\":1") > -1) mode = 1;
-            else if (body.indexOf("\"mode\":2") > -1) mode = 2;
-            else if (body.indexOf("\"mode\":3") > -1) mode = 3;
-
-            if (autopilot)
-            {
-                autopilot->setMode((AutopilotMode)mode);
-            }
-
-            webServer.send(200, "application/json", "{\"status\":\"ok\"}");
-        }
-        else
-        {
-            webServer.send(400, "application/json", "{\"error\":\"No data\"}");
-        }
-    }
-
-
-    // ========================================================
-    // API: POST /api/setpid
-    // ========================================================
-
-    void handleSetPID()
-    {
-        webServer.send(501, "application/json", "{\"error\":\"Not implemented\"}");
-    }
-
-
-    // ========================================================
-    // 404 - Not Found
-    // ========================================================
-
-    void handleNotFound()
-    {
-        webServer.send(404, "text/plain", "404 - Not Found");
     }
 };

@@ -42,6 +42,10 @@ public:
         maxOutput = maxOut;
     }
 
+    float getKp() const { return Kp; }
+    float getKi() const { return Ki; }
+    float getKd() const { return Kd; }
+
     // setpoint/feedback в одних единицах (например, градусы).
     // Возвращает коррекцию, ограниченную [minOutput, maxOutput].
     float calculate(float setpoint, float feedback)
@@ -208,6 +212,9 @@ public:
     // Для WebDebugServer и диагностики; может быть nullptr.
     ImuSensor* getImuSensor() const { return imuSensor; }
     BarometerSensor* getBarometerSensor() const { return baroSensor; }
+
+    const PID_Controller& getRollPid() const { return pidRoll; }
+    const PID_Controller& getPitchPid() const { return pidPitch; }
 
     void printStatus() const
     {
