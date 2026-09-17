@@ -19,7 +19,11 @@
 //
 // isAvailable() здесь означает не "чип отвечает по шине" (как у
 // I2C-датчиков — тут нет ACK на уровне протокола), а "хотя бы один
-// валидный кадр NAV-PVT успешно разобран после begin()".
+// валидный кадр NAV-PVT успешно разобран, и последний пришёл не
+// позднее Config::GPS_TIMEOUT_US назад" — если модуль перестанет
+// слать данные (потеря питания, обрыв провода), isAvailable() честно
+// перестанет врать, что GPS на связи, вместо того чтобы навсегда
+// застрять в last-known-good состоянии.
 //
 // На ESP32-C3 SuperMini физически не хватило пина под GPS TX (см.
 // Config::PIN_GPS_TX == -1 и комментарий в Config.h) — GPS там
@@ -29,6 +33,7 @@
 
 #include "SensorInterface.h"
 #include "../hal/IUartPort.h"
+#include "../Config.h"
 
 class UbloxM10_Gps : public GpsSensor
 {
@@ -63,9 +68,15 @@ public:
         return true;  // best-effort: без ACK нечего проверять программно
     }
 
+    // hasValidFrame один раз становится true после первого разобранного
+    // кадра и дальше не сбрасывается сам по себе — если модуль отключат
+    // или он перестанет слать данные, isAvailable() должен перестать
+    // врать, что GPS на связи. Поэтому дополнительно проверяем, что
+    // последний кадр пришёл не более Config::GPS_TIMEOUT_US назад (тот
+    // же принцип, что IBusReceiver::isSignalLost() для RC).
     bool isAvailable() const override
     {
-        return hasValidFrame;
+        return hasValidFrame && (micros() - gpsData.timestamp) <= Config::GPS_TIMEOUT_US;
     }
 
     void update() override
@@ -83,7 +94,7 @@ public:
 
     bool hasFix() const override
     {
-        return hasValidFrame && gpsData.fixType >= 2;
+        return isAvailable() && gpsData.fixType >= 2;
     }
 
     const char* getSensorType() const override

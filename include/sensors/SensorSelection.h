@@ -18,7 +18,10 @@
 //     • BME280                — I2C, адрес 0x76/0x77, приближённая формула
 //     • BMP388                — SPI, свой CS-пин, точная компенсация по датащиту
 //   Магнитометр:
-//     • QMC5883P ("GY-273")   — I2C (регистры — см. TODO в QMC5883P_Sensor.h)
+//     • QMC5883L ("GY-273")   — I2C, самый распространённый чип на этих платах,
+//                               регистры проверены по датащиту (QMC5883L_Sensor.h)
+//     • QMC5883P ("GY-273")   — I2C, более редкий чип с другим адресом; регистры —
+//                               заготовка, см. TODO в QMC5883P_Sensor.h
 //     • нет — компас недоступен, Autopilot получает nullptr
 //   GPS:
 //     • u-blox M10 (UBX)      — UART, парсит UBX-NAV-PVT
@@ -38,6 +41,7 @@
 
 #define SENSOR_MAG_NONE      0
 #define SENSOR_MAG_QMC5883P  1
+#define SENSOR_MAG_QMC5883L  2
 
 #define SENSOR_GPS_NONE      0
 #define SENSOR_GPS_UBLOX_M10 1
@@ -84,6 +88,10 @@
 #if SENSOR_MAG == SENSOR_MAG_QMC5883P
     #include "QMC5883P_Sensor.h"
     using SelectedMag = QMC5883P_Sensor;
+    // Конструктор: SelectedMag magSensor(board.i2c());
+#elif SENSOR_MAG == SENSOR_MAG_QMC5883L
+    #include "QMC5883L_Sensor.h"
+    using SelectedMag = QMC5883L_Sensor;
     // Конструктор: SelectedMag magSensor(board.i2c());
 #elif SENSOR_MAG == SENSOR_MAG_NONE
     // main.cpp оборачивает создание объекта в #if SENSOR_MAG != SENSOR_MAG_NONE,

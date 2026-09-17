@@ -28,7 +28,7 @@ public:
         : i2cBus(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL),
           spiBus(Config::PIN_SPI_SCK, Config::PIN_SPI_MISO, Config::PIN_SPI_MOSI),
           rcSerial(1),
-          gpsSerial(2),
+          gpsSerial(Config::UART_NUM_GPS),
           rcPort(rcSerial, Config::PIN_IBUS, -1),
           gpsPort(gpsSerial, Config::PIN_GPS_RX, Config::PIN_GPS_TX),
           servos{

@@ -76,7 +76,7 @@
 │ IBusReceiver.h (IUartPort→ │  │   GpsSensor — абстрактные)             │
 │   снимок iBUS,             │  │ MPU6050_Sensor / ICM42688_Sensor       │
 │   isSignalLost())          │  │ BME280_Sensor / BMP388_Sensor          │
-│                             │  │ QMC5883P_Sensor, UbloxM10_Gps          │
+│                             │  │ QMC5883L/P_Sensor, UbloxM10_Gps        │
 │                             │  │ SensorSelection.h — какой чип выбран   │
 └─────────────────────────────┘  └─────────────────────────────────────┘
           │                                       ▲
@@ -158,8 +158,9 @@
 | `sensors/ICM42688_Sensor.h` | Реализация `ImuSensor` для ICM-42688-P (плата "601N1"), SPI | `ICM42688_Sensor(ISpiBus&, csPin)`, тот же публичный контракт, что у MPU6050; `WHO_AM_I`=0x75 (ожидает 0x47), банк регистров через `REG_BANK_SEL`=0x76, burst-чтение с `TEMP_DATA1`=0x1D (порядок temp→accel→gyro, не как у MPU6050) | FS_SEL выбран так же, как ±250°/с и ±2g у MPU6050 — те же коэффициенты масштаба (131/16384), комплементарный фильтр скопирован один в один | Ничего специфичного — драйвер написан по структуре MPU6050_Sensor.h намеренно |
 | `sensors/BME280_Sensor.h` | Реализация `BarometerSensor` для BME280, I2C | `BME280_Sensor(II2CBus&, address=0x76)`, `begin()`, `calibrateAltitude()`, `update()`, `getBarometerData()`, `isAvailable()` | Собственную реализацию (НЕ `Adafruit_BME280`); приближённую формулу перевода давления в высоту (не полную 26-коэффициентную компенсацию из даташита BME280) | Точную абсолютную высоту — она приближение; относительная скорость подъёма (climb rate) стабильна для ПИД ALT_HOLD, но абсолютная высота — нет. Точная альтернатива — `BMP388_Sensor.h` |
 | `sensors/BMP388_Sensor.h` | Реализация `BarometerSensor` для BMP388 (Bosch), SPI, с настоящей компенсацией по датащиту | `BMP388_Sensor(ISpiBus&, csPin)`, тот же контракт, что у BME280; читает 21 байт NVM-калибровки с регистра 0x31, компенсирует давление/температуру по floating-point формуле из датащита §9.3 (temp считается первой — pressure от неё зависит) | Высота считается той же барометрической формулой, что в BME280_Sensor.h — она не специфична для чипа | Ничего не приближает — коэффициенты и формула честно по датащиту Bosch |
-| `sensors/QMC5883P_Sensor.h` | Реализация `MagnetometerSensor` для QMC5883P (плата "GY-273"), I2C | `QMC5883P_Sensor(II2CBus&, address)`, `begin()`, `update()`, `getMagData()`, `calibrate()` (offset-only: вращать 15 сек, min/max по осям) | Offset-калибровку (hard-iron), 2D-курс без тilt-компенсации | **⚠️ Регистры/адрес/масштаб — заготовка по схеме QMC5883L, НЕ сверены с датащитом конкретно QMC5883P** — см. `// TODO(verify)` в начале файла, обязательно проверить перед полётом |
-| `sensors/UbloxM10_Gps.h` | Реализация `GpsSensor` для u-blox M10 (QUESCAN, UBX-M10050-KB), UART, протокол UBX binary | `UbloxM10_Gps(IUartPort&)`, `begin()` (шлёт UBX-CFG-RATE/CFG-MSG, без ожидания ACK), `update()` (побайтовый парсер UBX-кадров), `getGpsData()`, `hasFix()` | Разбирает только NAV-PVT (класс 0x01, id 0x07, 92 байта) — этого достаточно для координат/высоты/скорости/курса/фикса/спутников/точности разом | `isAvailable()` здесь значит "хотя бы один валидный кадр разобран", а не "ACK по шине" — у GPS/UART нет протокольного ACK, в отличие от I2C |
+| `sensors/QMC5883L_Sensor.h` | Реализация `MagnetometerSensor` для QMC5883L (плата "GY-273", самый распространённый чип на ней), I2C | `QMC5883L_Sensor(II2CBus&, address=0x0D)`, тот же контракт, что у QMC5883P (см. ниже) | Offset-калибровку (hard-iron), 2D-курс без тilt-компенсации; адрес 0x0D и регистры (0x09 Control1, 0x0B SET/RESET) — проверенная по датащиту QMC5883L раскладка | То же, что у QMC5883P: soft-iron искажения, tilt-компенсация, непрерывный sensor-fusion с IMU |
+| `sensors/QMC5883P_Sensor.h` | Реализация `MagnetometerSensor` для QMC5883P (более редкий чип на тех же платах "GY-273"), I2C | `QMC5883P_Sensor(II2CBus&, address)`, `begin()`, `update()`, `getMagData()`, `calibrate()` (offset-only: вращать 15 сек, min/max по осям) | Offset-калибровку (hard-iron), 2D-курс без тilt-компенсации | **⚠️ Регистры/адрес/масштаб — заготовка по схеме QMC5883L, НЕ сверены с датащитом конкретно QMC5883P** — см. `// TODO(verify)` в начале файла, обязательно проверить перед полётом. Если на плате стоит QMC5883L (чаще всего) — используйте `QMC5883L_Sensor.h`, там регистры уже верные |
+| `sensors/UbloxM10_Gps.h` | Реализация `GpsSensor` для u-blox M10 (QUESCAN, UBX-M10050-KB), UART, протокол UBX binary | `UbloxM10_Gps(IUartPort&)`, `begin()` (шлёт UBX-CFG-RATE/CFG-MSG, без ожидания ACK), `update()` (побайтовый парсер UBX-кадров), `getGpsData()`, `hasFix()` | Разбирает только NAV-PVT (класс 0x01, id 0x07, 92 байта) — этого достаточно для координат/высоты/скорости/курса/фикса/спутников/точности разом | `isAvailable()` здесь значит "хотя бы один валидный кадр разобран, и последний — не позднее `Config::GPS_TIMEOUT_US` назад", а не "ACK по шине" — у GPS/UART нет протокольного ACK, в отличие от I2C; таймаут — та же идея, что `IBusReceiver::isSignalLost()` для RC |
 | `sensors/SensorSelection.h` | **Единственное место, где выбирается, какой конкретно чип каждой категории скомпилирован** | `#define SENSOR_IMU/BARO/MAG/GPS` + `using SelectedImu/Baro/Mag/Gps = ...` | Список всех поддержанных чипов (комментарий в начале файла) и какой конструктор у какого чипа (комментарий у каждой `#if`-ветки) | Ничего о том, как эти классы используются — это делает `main.cpp` |
 | `Autopilot.h` | ПИД-регулятор общего назначения + логика 4 режимов полёта | `PID_Controller` (защита от windup, от скачков `dt`); `Autopilot`: `begin()`, `update()`, `setMode()`, `getMode()`, `getRollCorrection()`/`getPitchCorrection()`/`getThrottleCorrection()` (в µs/условных единицах); режимы `MANUAL`/`STABILIZE`/`AUTO_TAKEOFF`/`ALT_HOLD` | Принимает `ImuSensor*`/`BarometerSensor*`/`MagnetometerSensor*`/`GpsSensor*` только через конструктор (все 4 nullable, сеттеров для подмены после создания нет); STABILIZE — ПИД крена/тангажа к 0; AUTO_TAKEOFF — сценарий по времени (1с разгон, 2с тангаж 15°, далее тангаж 10°, газ по фазам 30/60/100%); ALT_HOLD — ПИД газа к высоте на момент включения режима | Если указатель на датчик `nullptr` — просто не даёт коррекций, не падает. Mag/GPS сейчас используются только для телеметрии (`getMagnetometerSensor()`/`getGpsSensor()`) плюс разовой установки начального yaw по компасу в `main.cpp::setup()` — **никакой навигационной логики по GPS нет**, это осознанно вне объёма текущей реализации. **Важно (честно):** `getThrottleCorrection()` считается на каждом режиме, но `FlightController` её **не** прибавляет к итоговому throttle — сейчас реально применяются только `getRollCorrection()`/`getPitchCorrection()` (см. раздел про `FlightController::update()` ниже) |
 | `FeatureManager.h` | Назначение 4 функций автопилота на 4 свободных вспомогательных RC-канала | `begin()`, `update(rc)`; читает `Channels::FEATURE_SLOTS = {CH6, CH7, CH9, CH10}`; фильтрует дребезг (изменение `<50µs` игнорируется); вызывает `autopilot->setMode()` | Текущее назначение слот→функция (по умолчанию: CH6=AUTO_TAKEOFF, CH7=ALT_HOLD, CH9=STABILIZE, CH10=MANUAL), может быть изменено на лету через `POST /api/assignfeature` | Внутреннюю логику режимов автопилота — только переключает `setMode()` |
@@ -252,8 +253,8 @@
 
 **Кто пишет:** `update()` каждого конкретного драйвера
 (`MPU6050_Sensor`/`ICM42688_Sensor` → `ImuData`,
-`BME280_Sensor`/`BMP388_Sensor` → `BarometerData`, `QMC5883P_Sensor` →
-`MagData`, `UbloxM10_Gps` → `GpsData`). Какой именно класс скомпилирован в
+`BME280_Sensor`/`BMP388_Sensor` → `BarometerData`, `QMC5883L_Sensor`/
+`QMC5883P_Sensor` → `MagData`, `UbloxM10_Gps` → `GpsData`). Какой именно класс скомпилирован в
 каждой категории — решает `sensors/SensorSelection.h`. Драйверы читают шину
 через `II2CBus`/`ISpiBus`/`IUartPort` (см. `include/hal/`), не через
 `Wire`/`SPI`/`HardwareSerial` напрямую.
@@ -528,6 +529,7 @@ JS-стороне, сервер только отдаёт статичный HTM
 | SPI SCK / MISO / MOSI | GPIO0 / GPIO10 / GPIO20 | GPIO12 / GPIO13 / GPIO11 | GPIO18 / GPIO19 / GPIO23 |
 | SPI CS (ICM42688 / BMP388) | GPIO21 / GPIO2 ⚠️ | GPIO10 / GPIO21 | GPIO32 / GPIO33 |
 | GPS UART RX / TX | GPIO9 ⚠️ / **нет пина (-1)** | GPIO15 / GPIO16 | GPIO4 / GPIO17 |
+| GPS UART номер | UART0 (у C3 всего 2 UART, 1 занят iBUS) | UART2 | UART2 |
 
 Заметьте: у ESP32-C3 элероны на GPIO4/GPIO5 переставлены местами
 относительно ESP32-S3 (лево/право поменяны) — это так в актуальном
@@ -747,33 +749,15 @@ defined(BOARD_ESP32_...)` в `include/Config.h`, добавлять новый `
   QMC5883L (тот же чип-семейство, но другая версия), явно помечены
   `// TODO(verify)`. Не полагайтесь на них без проверки по датащиту
   конкретно QMC5883P и без реальной калибровки на физическом датчике.
+  Если фактически на плате стоит QMC5883L (это чаще всего так на платах
+  "GY-273") — используйте `QMC5883L_Sensor.h`, там адрес и регистры уже
+  проверенные, а не заготовка.
 - **ESP32-C3 SuperMini: GPS без отправки конфигурации.** Из-за нехватки
   GPIO (см. раздел про распиновку) `PIN_GPS_TX` на C3 не определён — GPS-
   модуль работает только на приём, `UbloxM10_Gps` не может отправить
   UBX-CFG-RATE/CFG-MSG, и модуль отдаёт то, что настроено на нём по
   заводским настройкам (обычно NMEA на 1Гц, не UBX/25Гц). Полноценный GPS
   сейчас реалистичен только на ESP32-S3.
-- **⚠️ `Esp32Board` жёстко создаёт GPS-порт на `HardwareSerial(2)` —
-  на ESP32-C3 такого UART физически нет (у C3 их всего два, 0 и 1).**
-  Это отдельная и более серьёзная проблема, чем отсутствие `PIN_GPS_TX`
-  выше: если включить `SENSOR_GPS_UBLOX_M10` и собрать под `esp32-c3`,
-  `gpsUart().begin()` внутри `UbloxM10_Gps::begin()` обратится к
-  несуществующему `UART_NUM_2`. Сейчас это не проявляется только потому,
-  что GPS выключен по умолчанию (`SensorSelection.h`) — перед включением
-  GPS на C3 нужно перевести `Esp32Board` на реально существующий номер
-  UART для этой платы.
-- **`QMC5883P_Sensor::calibrate()` блокирует выполнение на 15 секунд** в
-  цикле `while`/`delay()`, а `main.cpp::setup()` вызывает её безусловно,
-  когда магнитометр включён. На ядрах arduino-esp32 3.x/IDF5.x у
-  `setup()`/`loop()` есть Task Watchdog с таймаутом порядка 5 секунд —
-  такая калибровка без `yield()`/сброса вотчдога рискует словить
-  panic/перезагрузку прямо во время калибровки. Сейчас не проявляется,
-  потому что магнитометр выключен по умолчанию.
-- **`UbloxM10_Gps::hasValidFrame` выставляется в `true` при первом
-  разобранном NAV-PVT кадре и никогда не сбрасывается обратно.** Если
-  модуль перестанет присылать данные (потеря питания, обрыв провода),
-  `isAvailable()`/`hasFix()` продолжат честно врать, что GPS на связи, а
-  `getGpsData()` — отдавать последние (устаревшие) координаты.
 - **Yaw по магнитометру устанавливается только один раз при старте.**
   `main.cpp::setup()` зовёт `imuSensor.setYaw(magSensor.getMagData().headingDegrees)`
   один раз после калибровки, если магнитометр доступен — дальше yaw ведёт

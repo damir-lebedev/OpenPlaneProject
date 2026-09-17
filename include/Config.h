@@ -42,8 +42,12 @@ namespace Config
     constexpr uint8_t PIN_SPI_CS_BMP388    = 21;
 
     // Второй UART — GPS (отдельно от iBUS, который на UART1/GPIO17).
+    // У S3 всего 3 аппаратных UART (0/1/2); 0 не занят — Serial здесь
+    // идёт через USB-CDC (см. ARDUINO_USB_CDC_ON_BOOT в platformio.ini),
+    // но GPS всё равно на отдельном UART2, чтобы не зависеть от этого.
     constexpr int8_t PIN_GPS_RX = 15;
     constexpr int8_t PIN_GPS_TX = 16;
+    constexpr uint8_t UART_NUM_GPS = 2;
 
 #elif defined(BOARD_ESP32_CLASSIC)
     // Обычная ESP32 38-pin (esp32dev/DOIT/NodeMCU-32S).
@@ -66,8 +70,11 @@ namespace Config
     constexpr uint8_t PIN_SPI_CS_BMP388    = 33;
 
     // Второй UART — GPS (UART2, отдельно от iBUS на UART1/GPIO16).
+    // У классической ESP32 3 аппаратных UART, Serial висит на UART0
+    // (нативного USB тут нет) — UART2 свободен под GPS.
     constexpr int8_t PIN_GPS_RX = 4;
     constexpr int8_t PIN_GPS_TX = 17;
+    constexpr uint8_t UART_NUM_GPS = 2;
 
 #elif defined(BOARD_ESP32_C3)
     // ESP32-C3 SuperMini — текущий прототип, единственная плата,
@@ -113,6 +120,14 @@ namespace Config
     constexpr int8_t PIN_GPS_RX = 9;   // strapping, см. примечание выше
     constexpr int8_t PIN_GPS_TX = -1;  // не хватило пина — приём без отправки конфигурации
 
+    // У ESP32-C3 всего 2 аппаратных UART (0 и 1) — UART2, который тут
+    // хардкодился раньше, физически не существует и ловил краш при
+    // gpsUart().begin(). UART1 уже занят iBUS (rcSerial выше), так что
+    // GPS — единственный оставшийся вариант, UART0. Serial при этом не
+    // страдает: на C3 он идёт через USB-CDC (ARDUINO_USB_CDC_ON_BOOT в
+    // platformio.ini), а не через физический UART0.
+    constexpr uint8_t UART_NUM_GPS = 0;
+
 #else
     #error "Не задана плата: используйте env esp32-c3/esp32-s3/esp32-dev из platformio.ini (или определите свой -D BOARD_... и добавьте ветку в Config.h)"
 #endif
@@ -133,6 +148,17 @@ namespace Config
     // При отсутствии корректного iBUS кадра дольше этого
     // времени приёмник считается потерянным.
     constexpr uint32_t RX_TIMEOUT_US = 500000;
+
+
+    // --------------------------------------------------------
+    // GPS
+    // --------------------------------------------------------
+
+    // Если корректный кадр NAV-PVT не приходил дольше этого времени,
+    // GPS считается отключённым/недоступным (см. UbloxM10_Gps::isAvailable()) —
+    // тот же принцип, что RX_TIMEOUT_US выше для iBUS. Модуль обычно
+    // шлёт решения не реже 1 раза в секунду, 2с — запас на джиттер.
+    constexpr uint32_t GPS_TIMEOUT_US = 2000000;
 
 
     // --------------------------------------------------------
