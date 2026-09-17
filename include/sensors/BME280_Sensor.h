@@ -5,28 +5,30 @@
 // BME280 (барометр/термометр)
 //
 // I2C, адрес 0x76 или 0x77. Как и MPU6050_Sensor, это своя
-// минимальная реализация через Wire, а не обёртка над
-// Adafruit_BME280 (её нет в platformio.ini).
+// минимальная реализация через II2CBus (см. hal/II2CBus.h), а не
+// обёртка над Adafruit_BME280 (её нет в platformio.ini).
 //
 // ВАЖНО: readCalibration()/calculateAltitude() ниже — грубая
 // аппроксимация, а не настоящая формула компенсации BME280 из
 // датащита (там 26 калибровочных коэффициентов на чип). Значения
 // давления/высоты будут не точными в абсолютных числах, но
 // разница (climb rate) для ALT_HOLD достаточно стабильна.
-// Настоящую компенсацию стоит добавить, когда датчик будет
-// в руках для калибровки под конкретный экземпляр.
+// Точная компенсация по датащиту реализована для BMP388
+// (см. BMP388_Sensor.h) — используйте его, если нужна абсолютная
+// точность, BME280 остаётся как более простая I2C-альтернатива.
 // ============================================================
 
 #include "SensorInterface.h"
 #include "../Config.h"
-#include <Wire.h>
+#include "../hal/II2CBus.h"
 
 class BME280_Sensor : public BarometerSensor
 {
 public:
 
-    explicit BME280_Sensor(uint8_t address = 0x76)
-        : i2cAddress(address),
+    explicit BME280_Sensor(II2CBus& bus, uint8_t address = 0x76)
+        : i2c(bus),
+          i2cAddress(address),
           available(false),
           seaLevelPressure(101325.0f)
     {
@@ -37,9 +39,6 @@ public:
 
     bool begin() override
     {
-        Wire.begin(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL);
-        Wire.setClock(400000);
-
         delay(100);
 
         if (!checkConnection())
@@ -128,6 +127,7 @@ public:
 
 private:
 
+    II2CBus& i2c;
     uint8_t i2cAddress;
     bool available;
 
@@ -151,8 +151,8 @@ private:
 
     bool checkConnection()
     {
-        Wire.beginTransmission(i2cAddress);
-        return (Wire.endTransmission() == 0);
+        i2c.beginTransmission(i2cAddress);
+        return (i2c.endTransmission() == 0);
     }
 
     bool initialize()
@@ -179,23 +179,23 @@ private:
 
     void readSensorData()
     {
-        Wire.beginTransmission(i2cAddress);
-        Wire.write(0xF7);  // PRESS_MSB
-        Wire.endTransmission(false);
-        Wire.requestFrom(i2cAddress, (uint8_t)3);
+        i2c.beginTransmission(i2cAddress);
+        i2c.write(0xF7);  // PRESS_MSB
+        i2c.endTransmission(false);
+        i2c.requestFrom(i2cAddress, (uint8_t)3);
 
-        uint32_t adc_P = ((uint32_t)Wire.read() << 12) |
-                         ((uint32_t)Wire.read() << 4) |
-                         ((uint32_t)Wire.read() >> 4);
+        uint32_t adc_P = ((uint32_t)i2c.read() << 12) |
+                         ((uint32_t)i2c.read() << 4) |
+                         ((uint32_t)i2c.read() >> 4);
 
-        Wire.beginTransmission(i2cAddress);
-        Wire.write(0xFA);  // TEMP_MSB
-        Wire.endTransmission(false);
-        Wire.requestFrom(i2cAddress, (uint8_t)3);
+        i2c.beginTransmission(i2cAddress);
+        i2c.write(0xFA);  // TEMP_MSB
+        i2c.endTransmission(false);
+        i2c.requestFrom(i2cAddress, (uint8_t)3);
 
-        uint32_t adc_T = ((uint32_t)Wire.read() << 12) |
-                         ((uint32_t)Wire.read() << 4) |
-                         ((uint32_t)Wire.read() >> 4);
+        uint32_t adc_T = ((uint32_t)i2c.read() << 12) |
+                         ((uint32_t)i2c.read() << 4) |
+                         ((uint32_t)i2c.read() >> 4);
 
         // Аппроксимация вместо формулы компенсации из датащита (см. заголовок файла).
         baroData.temperature = 25.0f + ((int32_t)adc_T - 100000) / 100000.0f;
@@ -231,19 +231,19 @@ private:
 
     uint8_t readRegister(uint8_t reg)
     {
-        Wire.beginTransmission(i2cAddress);
-        Wire.write(reg);
-        Wire.endTransmission(false);
+        i2c.beginTransmission(i2cAddress);
+        i2c.write(reg);
+        i2c.endTransmission(false);
 
-        Wire.requestFrom(i2cAddress, (uint8_t)1);
-        return Wire.read();
+        i2c.requestFrom(i2cAddress, (uint8_t)1);
+        return i2c.read();
     }
 
     void writeRegister(uint8_t reg, uint8_t value)
     {
-        Wire.beginTransmission(i2cAddress);
-        Wire.write(reg);
-        Wire.write(value);
-        Wire.endTransmission();
+        i2c.beginTransmission(i2cAddress);
+        i2c.write(reg);
+        i2c.write(value);
+        i2c.endTransmission();
     }
 };

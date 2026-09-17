@@ -1,52 +1,42 @@
 #pragma once
 
-#include <ESP32Servo.h>          // для Servo и ESP32PWM
-#include "Config.h"              // для Config::PIN_..., PWM_MIN и т.д.
+#include "hal/IBoard.h"
 #include "FlightOutputState.h"   // для FlightOutputState
 
 // ============================================================
 // FLIGHT OUTPUTS
 //
-// Единственный класс, который знает о Servo/PWM-железе. Если
-// позже появится другой драйвер (PCA9685, другой MCU, симулятор)
-// — меняется только этот файл.
+// Единственный класс, который знает про порядок серво-каналов
+// (aileronLeft/Right, elevator, esc). Само железо (Servo/PWM или
+// что угодно другое) спрятано за IBoard/IServoOutput — этот файл
+// его не видит, поэтому смена MCU/драйвера сюда не проникает.
 //
-// Важная оговорка: attach() сообщает только то, что ESP32Servo
-// смог выделить таймер/канал и настроить пин. Он НЕ проверяет,
+// Важная оговорка: attach() сообщает только то, что плата смогла
+// выделить таймер/канал и настроить пин. Он НЕ проверяет,
 // подключён ли физический сервопривод — обратной связи по току
 // или положению у нас нет. Поэтому "attached=false" означает
 // реальную аппаратную проблему (занятый пин/таймер), а
-// "attached=true" означает лишь "ESP32 готов слать PWM сюда".
+// "attached=true" означает лишь "MCU готов слать PWM сюда".
 // ============================================================
 
 class FlightOutputs
 {
 public:
 
+    explicit FlightOutputs(IBoard& board)
+        : aileronLeft(board.servo(ServoChannel::AILERON_LEFT)),
+          aileronRight(board.servo(ServoChannel::AILERON_RIGHT)),
+          elevator(board.servo(ServoChannel::ELEVATOR)),
+          esc(board.servo(ServoChannel::ESC))
+    {
+    }
+
     bool begin()
     {
-        ESP32PWM::allocateTimer(0);
-        ESP32PWM::allocateTimer(1);
-        ESP32PWM::allocateTimer(2);
-        ESP32PWM::allocateTimer(3);
-
-        // Все поверхности и ESC работают на 50 Hz.
-        aileronLeft.setPeriodHertz(50);
-        aileronRight.setPeriodHertz(50);
-        elevator.setPeriodHertz(50);
-        esc.setPeriodHertz(50);
-
-        aileronLeftAttached = aileronLeft.attach(
-            Config::PIN_AILERON_LEFT, Config::PWM_MIN, Config::PWM_MAX);
-
-        aileronRightAttached = aileronRight.attach(
-            Config::PIN_AILERON_RIGHT, Config::PWM_MIN, Config::PWM_MAX);
-
-        elevatorAttached = elevator.attach(
-            Config::PIN_ELEVATOR, Config::PWM_MIN, Config::PWM_MAX);
-
-        escAttached = esc.attach(
-            Config::PIN_ESC, Config::PWM_MIN, Config::PWM_MAX);
+        aileronLeftAttached = aileronLeft.attach(Config::PWM_MIN, Config::PWM_MAX);
+        aileronRightAttached = aileronRight.attach(Config::PWM_MIN, Config::PWM_MAX);
+        elevatorAttached = elevator.attach(Config::PWM_MIN, Config::PWM_MAX);
+        escAttached = esc.attach(Config::PWM_MIN, Config::PWM_MAX);
 
         printStatus();
 
@@ -82,7 +72,7 @@ public:
     }
 
     // --------------------------------------------------------
-    // Применить рассчитанное состояние к физическим Servo.
+    // Применить рассчитанное состояние к физическим выходам.
     // --------------------------------------------------------
 
     void write(const FlightOutputState& state)
@@ -116,10 +106,10 @@ public:
 
 private:
 
-    Servo aileronLeft;
-    Servo aileronRight;
-    Servo elevator;
-    Servo esc;
+    IServoOutput& aileronLeft;
+    IServoOutput& aileronRight;
+    IServoOutput& elevator;
+    IServoOutput& esc;
 
     bool aileronLeftAttached = false;
     bool aileronRightAttached = false;

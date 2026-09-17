@@ -2,27 +2,35 @@
 #include <Arduino.h>
 
 // ============================================================
-// MPU6050 GY-521 (гироскоп + акселерометр)
+// ICM-42688-P (плата "601N1") — гироскоп + акселерометр
 //
-// I2C, адрес 0x68 (AD0=GND) или 0x69 (AD0=VCC). Регистры читаются
-// напрямую через II2CBus (см. hal/II2CBus.h) — это НЕ обёртка над
-// библиотекой jrowberg/MPU6050 (её и нет в platformio.ini), а
-// собственная минимальная реализация под то, что нужно автопилоту:
-// углы roll/pitch через комплементарный фильтр + сырой yaw-рейт.
+// SPI, свой CS-пин (см. Config::PIN_SPI_CS_ICM42688). Регистры
+// читаются напрямую через ISpiBus — собственная минимальная
+// реализация, без vendor-библиотек, по структуре и математике
+// (комплементарный фильтр roll/pitch, интеграция yaw, калибровка
+// усреднением 200 отсчётов) сознательно скопирована с
+// MPU6050_Sensor.h — принцип ориентации тот же, чип другой.
+//
+// Диапазоны выбраны так же, как у MPU6050 (±250°/сек, ±2g), чтобы
+// переиспользовать те же коэффициенты масштаба (131 LSB/(°/сек),
+// 16384 LSB/g) — это не совпадение, а сознательный выбор FS_SEL
+// при инициализации (см. initialize()).
+//
+// Отличие от MPU6050 по железу: регистры банковые (REG_BANK_SEL),
+// и порядок burst-чтения другой — сначала температура, потом
+// accel, потом gyro (у MPU6050 наоборот, accel первым).
 // ============================================================
 
 #include "SensorInterface.h"
-#include "../Config.h"
-#include "../hal/II2CBus.h"
+#include "../hal/ISpiBus.h"
 
-class MPU6050_Sensor : public ImuSensor
+class ICM42688_Sensor : public ImuSensor
 {
 public:
 
-    // address: 0x68 (AD0=GND, по умолчанию) или 0x69 (AD0=VCC).
-    explicit MPU6050_Sensor(II2CBus& bus, uint8_t address = 0x68)
-        : i2c(bus),
-          i2cAddress(address),
+    ICM42688_Sensor(ISpiBus& bus, uint8_t chipSelectPin)
+        : spi(bus),
+          csPin(chipSelectPin),
           available(false),
           calibrationDone(false)
     {
@@ -32,24 +40,24 @@ public:
 
     bool begin() override
     {
+        pinMode(csPin, OUTPUT);
+        digitalWrite(csPin, HIGH);
+
         delay(100);
 
-        if (!checkConnection())
+        const uint8_t whoAmI = readRegister(REG_WHO_AM_I);
+        if (whoAmI != 0x47)
         {
-            Serial.println("MPU6050: датчик не отвечает на I2C, IMU недоступен");
+            Serial.print("ICM42688: неверный WHO_AM_I 0x");
+            Serial.println(whoAmI, HEX);
             available = false;
             return false;
         }
 
-        if (!initialize())
-        {
-            Serial.println("MPU6050: ошибка инициализации регистров");
-            available = false;
-            return false;
-        }
+        initialize();
 
         available = true;
-        Serial.println("MPU6050: подключён");
+        Serial.println("ICM42688: подключён");
 
         return true;
     }
@@ -83,7 +91,7 @@ public:
     {
         if (!available) return;
 
-        Serial.println("MPU6050: калибровка...");
+        Serial.println("ICM42688: калибровка...");
 
         const int SAMPLE_COUNT = 200;
         float sumGyroX = 0, sumGyroY = 0, sumGyroZ = 0;
@@ -114,7 +122,7 @@ public:
 
         calibrationDone = true;
 
-        Serial.print("MPU6050: калибровка завершена, offset gyro=");
+        Serial.print("ICM42688: калибровка завершена, offset gyro=");
         Serial.print(calibration.gyroOffsetX); Serial.print(",");
         Serial.print(calibration.gyroOffsetY); Serial.print(",");
         Serial.println(calibration.gyroOffsetZ);
@@ -129,12 +137,12 @@ public:
 
     const char* getSensorType() const override
     {
-        return "MPU6050 GY-521";
+        return "ICM42688 (601N1)";
     }
 
     void printStatus() const override
     {
-        Serial.print("MPU6050: available=");
+        Serial.print("ICM42688: available=");
         Serial.print(available ? "YES" : "NO");
         Serial.print(" calibrated=");
         Serial.print(calibrationDone ? "YES" : "NO");
@@ -152,8 +160,16 @@ public:
 
 private:
 
-    II2CBus& i2c;
-    uint8_t i2cAddress;
+    // Регистры банка 0 (REG_BANK_SEL=0 — выставляется в initialize()).
+    static constexpr uint8_t REG_WHO_AM_I     = 0x75;
+    static constexpr uint8_t REG_BANK_SEL     = 0x76;
+    static constexpr uint8_t REG_PWR_MGMT0    = 0x4E;
+    static constexpr uint8_t REG_GYRO_CONFIG0 = 0x4F;
+    static constexpr uint8_t REG_ACCEL_CONFIG0 = 0x50;
+    static constexpr uint8_t REG_TEMP_DATA1   = 0x1D;  // burst-чтение: temp, accel, gyro — 14 байт
+
+    ISpiBus& spi;
+    uint8_t csPin;
     bool available;
     bool calibrationDone;
 
@@ -169,48 +185,56 @@ private:
 
     ImuData imuData;
 
-    // Интегрируем yaw просто из гироскопа — Z-ось не имеет
-    // абсолютной опорной точки (в отличие от roll/pitch по акселерометру),
-    // поэтому будет медленно "уплывать".
+    // Интегрируем yaw просто из гироскопа — та же оговорка, что и
+    // в MPU6050_Sensor.h: без абсолютной опоры, будет уплывать.
     float yawIntegral = 0;
 
-    bool checkConnection()
+    void initialize()
     {
-        i2c.beginTransmission(i2cAddress);
-        return (i2c.endTransmission() == 0);
-    }
+        writeRegister(REG_BANK_SEL, 0x00);  // явно банк 0 — чип может включиться в другом
 
-    bool initialize()
-    {
-        writeRegister(0x6B, 0x00);  // PWR_MGMT_1: выход из sleep
-        writeRegister(0x1B, 0x00);  // GYRO_CONFIG: диапазон ±250°/сек
-        writeRegister(0x1C, 0x00);  // ACCEL_CONFIG: диапазон ±2g
-        writeRegister(0x19, 0x07);  // SMPLRT_DIV: 1kHz / (1+7) = 125 Hz
-        writeRegister(0x1A, 0x05);  // CONFIG: температурная компенсация гироскопа
+        // GYRO_MODE=11 (Low Noise), ACCEL_MODE=11 (Low Noise).
+        writeRegister(REG_PWR_MGMT0, 0x0F);
+        delay(1);  // датащит требует паузу после включения режимов перед чтением данных
 
-        return true;
+        // FS_SEL=3 -> ±250°/сек (совпадает по масштабу с MPU6050: 131 LSB/(°/сек)).
+        // ODR=0110 -> 1 kHz.
+        writeRegister(REG_GYRO_CONFIG0, 0x66);
+
+        // FS_SEL=3 -> ±2g (совпадает по масштабу с MPU6050: 16384 LSB/g).
+        // ODR=0110 -> 1 kHz.
+        writeRegister(REG_ACCEL_CONFIG0, 0x66);
     }
 
     void readRawData()
     {
-        i2c.beginTransmission(i2cAddress);
-        i2c.write(0x3B);  // ACCEL_XOUT_H — далее 14 байт: accel, temp, gyro
-        i2c.endTransmission(false);
+        uint8_t buf[14];
 
-        i2c.requestFrom(i2cAddress, (uint8_t)14);
+        digitalWrite(csPin, LOW);
+        spi.beginTransaction(8000000, 0);
 
-        rawAx = (i2c.read() << 8) | i2c.read();
-        rawAy = (i2c.read() << 8) | i2c.read();
-        rawAz = (i2c.read() << 8) | i2c.read();
-        rawTemp = (i2c.read() << 8) | i2c.read();
-        rawGx = (i2c.read() << 8) | i2c.read();
-        rawGy = (i2c.read() << 8) | i2c.read();
-        rawGz = (i2c.read() << 8) | i2c.read();
+        spi.transfer(REG_TEMP_DATA1 | 0x80);
+        for (uint8_t i = 0; i < 14; ++i)
+        {
+            buf[i] = spi.transfer(0x00);
+        }
+
+        spi.endTransaction();
+        digitalWrite(csPin, HIGH);
+
+        // Порядок в этом чипе: temp, accel(x,y,z), gyro(x,y,z) —
+        // не как у MPU6050, где accel идёт первым.
+        rawTemp = (buf[0] << 8) | buf[1];
+        rawAx = (buf[2] << 8) | buf[3];
+        rawAy = (buf[4] << 8) | buf[5];
+        rawAz = (buf[6] << 8) | buf[7];
+        rawGx = (buf[8] << 8) | buf[9];
+        rawGy = (buf[10] << 8) | buf[11];
+        rawGz = (buf[12] << 8) | buf[13];
     }
 
     void applyCalibration()
     {
-        // Масштаб для диапазона ±2g / ±250°/сек (см. initialize()).
         imuData.accelX = (rawAx - calibration.accelOffsetX) / 16384.0f;
         imuData.accelY = (rawAy - calibration.accelOffsetY) / 16384.0f;
         imuData.accelZ = (rawAz - calibration.accelOffsetZ) / 16384.0f;
@@ -219,12 +243,12 @@ private:
         imuData.gyroY = (rawGy - calibration.gyroOffsetY) / 131.0f;
         imuData.gyroZ = (rawGz - calibration.gyroOffsetZ) / 131.0f;
 
-        imuData.temperature = (rawTemp / 340.0f) + 36.53f;  // формула из датащита
+        // Формула ICM42688 из датащита, отличается от MPU6050.
+        imuData.temperature = (rawTemp / 132.48f) + 25.0f;
     }
 
-    // Комплементарный фильтр: акселерометр даёт абсолютный угол,
-    // но шумит; гироскоп даёт гладкую скорость без абсолютной опоры.
-    // Смешиваем 70% гироскопа (интеграция) + 30% акселерометра.
+    // Комплементарный фильтр — идентичен MPU6050_Sensor.h: 70% гироскоп
+    // (интеграция) + 30% акселерометр (абсолютный угол, но шумный).
     void calculateAngles()
     {
         float accelRoll = atan2(imuData.accelY, imuData.accelZ) * 57.2958f;
@@ -260,11 +284,29 @@ private:
         if (imuData.yaw < -180) imuData.yaw += 360;
     }
 
+    uint8_t readRegister(uint8_t reg)
+    {
+        digitalWrite(csPin, LOW);
+        spi.beginTransaction(8000000, 0);
+
+        spi.transfer(reg | 0x80);
+        uint8_t value = spi.transfer(0x00);
+
+        spi.endTransaction();
+        digitalWrite(csPin, HIGH);
+
+        return value;
+    }
+
     void writeRegister(uint8_t reg, uint8_t value)
     {
-        i2c.beginTransmission(i2cAddress);
-        i2c.write(reg);
-        i2c.write(value);
-        i2c.endTransmission();
+        digitalWrite(csPin, LOW);
+        spi.beginTransaction(8000000, 0);
+
+        spi.transfer(reg & 0x7F);
+        spi.transfer(value);
+
+        spi.endTransaction();
+        digitalWrite(csPin, HIGH);
     }
 };

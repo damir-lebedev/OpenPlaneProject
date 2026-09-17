@@ -187,6 +187,34 @@ private:
         }
         json += "}";
 
+        MagnetometerSensor* mag = autopilot ? autopilot->getMagnetometerSensor() : nullptr;
+        json += ",\"mag\":{\"attached\":";
+        json += mag ? "true" : "false";
+        json += ",\"available\":";
+        json += (mag && mag->isAvailable()) ? "true" : "false";
+        if (mag && mag->isAvailable())
+        {
+            const MagData& d = mag->getMagData();
+            json += ",\"heading\":" + String(d.headingDegrees, 1);
+        }
+        json += "}";
+
+        GpsSensor* gps = autopilot ? autopilot->getGpsSensor() : nullptr;
+        json += ",\"gps\":{\"attached\":";
+        json += gps ? "true" : "false";
+        json += ",\"available\":";
+        json += (gps && gps->isAvailable()) ? "true" : "false";
+        if (gps && gps->isAvailable())
+        {
+            const GpsData& d = gps->getGpsData();
+            json += ",\"fix\":" + String((int)d.fixType);
+            json += ",\"numSV\":" + String((int)d.numSatellites);
+            json += ",\"lat\":" + String(d.latitude, 6);
+            json += ",\"lon\":" + String(d.longitude, 6);
+            json += ",\"alt\":" + String(d.altitude, 1);
+        }
+        json += "}";
+
         json += ",\"autopilot\":{\"attached\":";
         json += autopilot ? "true" : "false";
         if (autopilot)
@@ -427,8 +455,10 @@ private:
             "</div>"
 
             "<div class='card'><h2>Датчики</h2>"
-            "<div class='row'><span class='label'>IMU (MPU6050)</span><span class='value' id='imu-val'>--</span><span class='badge' id='imu-badge'>--</span></div>"
-            "<div class='row'><span class='label'>Барометр (BME280)</span><span class='value' id='baro-val'>--</span><span class='badge' id='baro-badge'>--</span></div>"
+            "<div class='row'><span class='label'>IMU</span><span class='value' id='imu-val'>--</span><span class='badge' id='imu-badge'>--</span></div>"
+            "<div class='row'><span class='label'>Барометр</span><span class='value' id='baro-val'>--</span><span class='badge' id='baro-badge'>--</span></div>"
+            "<div class='row'><span class='label'>Магнитометр</span><span class='value' id='mag-val'>--</span><span class='badge' id='mag-badge'>--</span></div>"
+            "<div class='row'><span class='label'>GPS</span><span class='value' id='gps-val'>--</span><span class='badge' id='gps-badge'>--</span></div>"
             "</div>"
 
             "<div class='card'><h2>Автопилот</h2>"
@@ -487,6 +517,8 @@ private:
             "setOutputRow('esc',s.outputs.esc);"
             "setSensorRow('imu',s.imu,['roll','pitch','yaw']);"
             "setSensorRow('baro',s.baro,['altitude','climb']);"
+            "setSensorRow('mag',s.mag,['heading']);"
+            "setSensorRow('gps',s.gps,['fix','numSV','lat','lon']);"
             "document.getElementById('mode').textContent=s.autopilot.attached?s.autopilot.modeName:'НЕТ АВТОПИЛОТА';"
             "document.getElementById('desired-roll').textContent=s.autopilot.attached?('roll='+s.autopilot.desiredRoll.toFixed(1)):'--';"
             "document.getElementById('desired-pitch').textContent=s.autopilot.attached?('pitch='+s.autopilot.desiredPitch.toFixed(1)):'--';"

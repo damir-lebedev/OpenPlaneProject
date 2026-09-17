@@ -111,9 +111,12 @@ class Autopilot
 {
 public:
 
-    Autopilot(ImuSensor* imu = nullptr, BarometerSensor* baro = nullptr)
+    Autopilot(ImuSensor* imu = nullptr, BarometerSensor* baro = nullptr,
+              MagnetometerSensor* mag = nullptr, GpsSensor* gps = nullptr)
         : imuSensor(imu),
           baroSensor(baro),
+          magSensor(mag),
+          gpsSensor(gps),
           currentMode(MODE_MANUAL),
           previousMode(MODE_MANUAL),
           modeChangeTime(0),
@@ -155,6 +158,8 @@ public:
     {
         if (imuSensor) imuSensor->update();
         if (baroSensor) baroSensor->update();
+        if (magSensor) magSensor->update();
+        if (gpsSensor) gpsSensor->update();
 
         switch (currentMode)
         {
@@ -212,53 +217,73 @@ public:
     // Для WebDebugServer и диагностики; может быть nullptr.
     ImuSensor* getImuSensor() const { return imuSensor; }
     BarometerSensor* getBarometerSensor() const { return baroSensor; }
+    MagnetometerSensor* getMagnetometerSensor() const { return magSensor; }
+    GpsSensor* getGpsSensor() const { return gpsSensor; }
 
     const PID_Controller& getRollPid() const { return pidRoll; }
     const PID_Controller& getPitchPid() const { return pidPitch; }
 
-    void printStatus() const
+    // Печатает статус в переданный Print (обычно — буфер DebugLogger'а,
+    // который потом сверяет кадр целиком и не шлёт в Serial, если ничего
+    // не изменилось).
+    void printStatus(Print& out) const
     {
-        Serial.print("Autopilot: mode=");
-        Serial.print(modeToString(currentMode));
+        out.print("Autopilot: mode=");
+        out.print(modeToString(currentMode));
 
         if (!imuSensor)
         {
-            Serial.print(" imu=NOT_ATTACHED");
+            out.print(" imu=NOT_ATTACHED");
         }
         else if (!imuSensor->isAvailable())
         {
-            Serial.print(" imu=NO_RESPONSE");
+            out.print(" imu=NO_RESPONSE");
         }
         else
         {
             const ImuData& imu = imuSensor->getImuData();
-            Serial.print(" roll="); Serial.print(imu.roll, 1);
-            Serial.print("(want "); Serial.print(desiredRoll, 1); Serial.print(")");
-            Serial.print(" pitch="); Serial.print(imu.pitch, 1);
-            Serial.print("(want "); Serial.print(desiredPitch, 1); Serial.print(")");
-            Serial.print(" yaw="); Serial.print(imu.yaw, 1);
+            out.print(" roll="); out.print(imu.roll, 1);
+            out.print("(want "); out.print(desiredRoll, 1); out.print(")");
+            out.print(" pitch="); out.print(imu.pitch, 1);
+            out.print("(want "); out.print(desiredPitch, 1); out.print(")");
+            out.print(" yaw="); out.print(imu.yaw, 1);
         }
 
         if (!baroSensor)
         {
-            Serial.print(" baro=NOT_ATTACHED");
+            out.print(" baro=NOT_ATTACHED");
         }
         else if (!baroSensor->isAvailable())
         {
-            Serial.print(" baro=NO_RESPONSE");
+            out.print(" baro=NO_RESPONSE");
         }
         else
         {
             const BarometerData& baro = baroSensor->getBarometerData();
-            Serial.print(" alt="); Serial.print(baro.altitude, 1);
-            Serial.print("(want "); Serial.print(targetAltitude, 1); Serial.print(")");
-            Serial.print(" climb="); Serial.print(baro.verticalSpeed, 2);
+            out.print(" alt="); out.print(baro.altitude, 1);
+            out.print("(want "); out.print(targetAltitude, 1); out.print(")");
+            out.print(" climb="); out.print(baro.verticalSpeed, 2);
         }
 
-        Serial.print(" corr(roll,pitch,thr)=");
-        Serial.print(rollCorrection); Serial.print(",");
-        Serial.print(pitchCorrection); Serial.print(",");
-        Serial.println(throttleCorrection);
+        out.print(" corr(roll,pitch,thr)=");
+        out.print(rollCorrection); out.print(",");
+        out.print(pitchCorrection); out.print(",");
+        out.println(throttleCorrection);
+
+        if (magSensor && magSensor->isAvailable())
+        {
+            out.print("Autopilot: mag heading=");
+            out.println(magSensor->getMagData().headingDegrees, 1);
+        }
+
+        if (gpsSensor && gpsSensor->isAvailable())
+        {
+            const GpsData& gps = gpsSensor->getGpsData();
+            out.print("Autopilot: gps fix="); out.print(gps.fixType);
+            out.print(" numSV="); out.print(gps.numSatellites);
+            out.print(" lat="); out.print(gps.latitude, 6);
+            out.print(" lon="); out.println(gps.longitude, 6);
+        }
     }
 
     // Перенастройка коэффициентов стабилизации крена/тангажа на ходу (веб-интерфейс).
@@ -273,6 +298,8 @@ private:
 
     ImuSensor* imuSensor;
     BarometerSensor* baroSensor;
+    MagnetometerSensor* magSensor;
+    GpsSensor* gpsSensor;
 
     AutopilotMode currentMode;
     AutopilotMode previousMode;

@@ -21,22 +21,45 @@
 // продолжает работать как чистое ручное управление.
 // ============================================================
 
-// UART1 приёмника (GPIO3, iBUS, ~100Hz)
-HardwareSerial IBusSerial(1);
+// Плата — единственная точка входа в железо (I2C/SPI/UART/PWM).
+// main.cpp и всё остальное дальше работают через IBoard, не зная,
+// что за ним реально ESP32 (см. hal/IBoard.h).
+Esp32Board board;
 
-IBusReceiver ibusReceiver(IBusSerial);
+IBusReceiver ibusReceiver(board.rcUart());
 ControlMixer controlMixer;
 ThrottleManager throttleManager;
 ArmingManager armingManager;
-FlightOutputs flightOutputs;
+FlightOutputs flightOutputs(board);
 
 // Датчики автопилота. Если физически не подключены/не отвечают —
 // isAvailable() == false, а Autopilot просто не даёт коррекций
 // (см. Autopilot.h). Реальный прототип по README пока без них.
-MPU6050_Sensor imuSensor(0x68);
-BME280_Sensor baroSensor(0x76);
+// Какой конкретно чип скомпилирован — см. sensors/SensorSelection.h.
+SelectedImu imuSensor(board.i2c(), 0x68);
+SelectedBaro baroSensor(board.i2c(), 0x76);
 
-Autopilot autopilot(&imuSensor, &baroSensor);
+#if SENSOR_MAG != SENSOR_MAG_NONE
+SelectedMag magSensor(board.i2c());
+#endif
+
+#if SENSOR_GPS != SENSOR_GPS_NONE
+SelectedGps gpsSensor(board.gpsUart());
+#endif
+
+Autopilot autopilot(
+    &imuSensor, &baroSensor,
+#if SENSOR_MAG != SENSOR_MAG_NONE
+    &magSensor,
+#else
+    nullptr,
+#endif
+#if SENSOR_GPS != SENSOR_GPS_NONE
+    &gpsSensor
+#else
+    nullptr
+#endif
+);
 FeatureManager featureManager(&autopilot);
 
 FlightController flightController(
@@ -74,6 +97,10 @@ void setup()
     Serial.println("=================================");
     Serial.println();
 
+    // Плата: PWM-таймеры + шины I2C/SPI. Один раз, до того как
+    // их начнут использовать FlightOutputs и датчики.
+    board.begin();
+
     // Servo/ESC. begin() сам печатает OK/FAIL по каждому каналу
     // (см. FlightOutputs::printStatus) — это всё, что можно
     // проверить программно без обратной связи от серво.
@@ -97,6 +124,23 @@ void setup()
     {
         baroSensor.calibrateAltitude();
     }
+
+#if SENSOR_MAG != SENSOR_MAG_NONE
+    magSensor.begin();
+    if (magSensor.isAvailable())
+    {
+        magSensor.calibrate();
+
+        // Разовая установка начального курса по магнитометру вместо
+        // произвольного 0 — дальше yaw ведёт только гироскоп (см.
+        // оговорку про дрейф в ImuSensor::setYaw()).
+        imuSensor.setYaw(magSensor.getMagData().headingDegrees);
+    }
+#endif
+
+#if SENSOR_GPS != SENSOR_GPS_NONE
+    gpsSensor.begin();
+#endif
 
     autopilot.begin();
     featureManager.begin();

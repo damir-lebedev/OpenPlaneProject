@@ -117,21 +117,22 @@ public:
         return MODE_MANUAL;
     }
 
-    void printStatus() const
+    // См. Autopilot::printStatus — пишет в переданный Print, а не в Serial.
+    void printStatus(Print& out) const
     {
-        Serial.print("Features: mode=");
-        Serial.print(modeToString(getActiveMode()));
+        out.print("Features: mode=");
+        out.print(modeToString(getActiveMode()));
 
         for (uint8_t slot = 0; slot < FEATURE_SLOT_COUNT; ++slot)
         {
-            Serial.print(" CH");
-            Serial.print(slotChannelNumber(slot));
-            Serial.print("=");
-            Serial.print(featureToString(features[slot].feature));
-            Serial.print(features[slot].isActive ? "(on)" : "(off)");
+            out.print(" CH");
+            out.print(slotChannelNumber(slot));
+            out.print("=");
+            out.print(featureToString(features[slot].feature));
+            out.print(features[slot].isActive ? "(on)" : "(off)");
         }
 
-        Serial.println();
+        out.println();
     }
 
     void printConfiguration() const

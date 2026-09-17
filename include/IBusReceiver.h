@@ -1,11 +1,15 @@
 #pragma once
+#include "hal/IUartPort.h"
+
 // ============================================================
 // iBUS RECEIVER
 //
 // Парсит iBUS-кадры из UART в 10 RC-каналов. Ничего не знает
 // про failsafe-поведение самолёта, Servo или ARM — только UART
 // -> RcChannelState. Замена протокола (S-Bus, PWM) требует
-// правки только этого файла.
+// правки только этого файла. Сам UART спрятан за IUartPort —
+// пины и формат кадра фиксированы в реализации (см. Esp32UartPort),
+// сюда приходит только скорость.
 //
 // Формат кадра (32 байта):
 //   [0x20][0x40] [CH1 low][CH1 high] ... [CH10 low][CH10 high] [CRC low][CRC high]
@@ -16,19 +20,14 @@ class IBusReceiver
 {
 public:
 
-    explicit IBusReceiver(HardwareSerial& serial)
+    explicit IBusReceiver(IUartPort& serial)
         : serial(serial)
     {
     }
 
     void begin()
     {
-        serial.begin(
-            Config::IBUS_BAUDRATE,
-            SERIAL_8N1,
-            Config::PIN_IBUS,
-            -1
-        );
+        serial.begin(Config::IBUS_BAUDRATE);
 
         lastFrameTime = micros();
     }
@@ -62,7 +61,7 @@ public:
 
 private:
 
-    HardwareSerial& serial;
+    IUartPort& serial;
 
     RcChannelState state;
 
