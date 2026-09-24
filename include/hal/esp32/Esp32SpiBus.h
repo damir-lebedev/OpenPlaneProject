@@ -1,6 +1,6 @@
 #pragma once
 #include <SPI.h>
-#include "../ISpiBus.h"
+#include "hal/ISpiBus.h"
 
 // ============================================================
 // Реализация ISpiBus для ESP32 (Arduino core) — обёртка над

@@ -1,21 +1,23 @@
 #pragma once
 #include <Arduino.h>
 #include <HardwareSerial.h>
+#include <Wire.h>
+#include "soc/soc_caps.h"
 
-#include "../IBoard.h"
-#include "Esp32I2CBus.h"
-#include "Esp32SpiBus.h"
-#include "Esp32UartPort.h"
-#include "Esp32ServoOutput.h"
-#include "../../Config.h"
+#include "config/Config.h"
+#include "hal/IBoard.h"
+#include "hal/esp32/Esp32I2CBus.h"
+#include "hal/esp32/Esp32SpiBus.h"
+#include "hal/esp32/Esp32UartPort.h"
+#include "hal/esp32/Esp32ServoOutput.h"
 
 // ============================================================
 // 🧠 РЕАЛИЗАЦИЯ "МОЗГА" ДЛЯ ESP32
 //
-// Единственное место, которое инстанцирует конкретные ESP32-шины
-// (Wire/SPI/HardwareSerial/LEDC) и знает пины из Config.h.
+// Единственное место, которое создаёт конкретные ESP32-шины
+// (Wire/Wire1/SPI/HardwareSerial/LEDC) и знает пины из Config.h.
 // Всё остальное (FlightOutputs, IBusReceiver, драйверы датчиков,
-// main.cpp) видит только интерфейс IBoard.
+// экран, main.cpp) видит только интерфейс IBoard.
 //
 // Чтобы перейти на другой MCU — пишется hal/stm32/Stm32Board.h с
 // таким же публичным API, main.cpp меняет один тип объекта, и всё.
@@ -24,15 +26,20 @@
 class Esp32Board : public IBoard
 {
 public:
+
     Esp32Board()
-        : i2cBus(Config::PIN_I2C_SDA, Config::PIN_I2C_SCL),
+        : i2cBus(Wire, Config::PIN_I2C_SDA, Config::PIN_I2C_SCL),
+#if SOC_I2C_NUM > 1
+          displayBus(Wire1, Config::PIN_I2C2_SDA, Config::PIN_I2C2_SCL),
+#endif
           spiBus(Config::PIN_SPI_SCK, Config::PIN_SPI_MISO, Config::PIN_SPI_MOSI),
           rcSerial(1),
           gpsSerial(Config::UART_NUM_GPS),
           rcPort(rcSerial, Config::PIN_IBUS, -1),
           gpsPort(gpsSerial, Config::PIN_GPS_RX, Config::PIN_GPS_TX),
           servos{
-              Esp32ServoOutput(Config::PIN_AILERON_LEFT, 0),  // второй аргумент — канал LEDC
+              // Второй аргумент — канал LEDC, у каждого выхода свой.
+              Esp32ServoOutput(Config::PIN_AILERON_LEFT, 0),
               Esp32ServoOutput(Config::PIN_AILERON_RIGHT, 1),
               Esp32ServoOutput(Config::PIN_ELEVATOR, 2),
               Esp32ServoOutput(Config::PIN_ESC, 3),
@@ -43,18 +50,28 @@ public:
 
     void begin() override
     {
-        // PWM-выходам (LEDC) отдельная подготовка не нужна — каждый
-        // канал настраивается в Esp32ServoOutput::attach().
         i2cBus.begin();
         spiBus.begin();
 
-        // rcUart()/gpsUart() сознательно не инициализируются здесь —
-        // begin(baud) вызывают их владельцы (IBusReceiver, GPS-драйвер),
-        // как и раньше делал IBusReceiver сам для HardwareSerial.
+#if SOC_I2C_NUM > 1
+        if (hasDisplayBus())
+        {
+            displayBus.begin();
+        }
+#endif
     }
 
     II2CBus& i2c() override { return i2cBus; }
     ISpiBus& spi() override { return spiBus; }
+
+    II2CBus* displayI2c() override
+    {
+#if SOC_I2C_NUM > 1
+        return hasDisplayBus() ? &displayBus : nullptr;
+#else
+        return nullptr;
+#endif
+    }
 
     IUartPort& rcUart() override { return rcPort; }
     IUartPort& gpsUart() override { return gpsPort; }
@@ -63,7 +80,11 @@ public:
 
 
 private:
+
     Esp32I2CBus i2cBus;
+#if SOC_I2C_NUM > 1
+    Esp32I2CBus displayBus;
+#endif
     Esp32SpiBus spiBus;
 
     HardwareSerial rcSerial;
@@ -72,4 +93,11 @@ private:
     Esp32UartPort gpsPort;
 
     Esp32ServoOutput servos[ServoChannel::COUNT];
+
+    // Вторая шина есть, только если у чипа два контроллера I2C
+    // (у ESP32-C3 — один) и для неё заданы пины в Config.h.
+    static constexpr bool hasDisplayBus()
+    {
+        return SOC_I2C_NUM > 1 && Config::PIN_I2C2_SDA >= 0 && Config::PIN_I2C2_SCL >= 0;
+    }
 };

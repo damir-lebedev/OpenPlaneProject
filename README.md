@@ -92,8 +92,9 @@ header-only C++ классов с чёткими границами ответс
   сводит всё это в один `update()`.
 - **Failsafe с абсолютным приоритетом.** Потеря связи — нет кадров iBUS
   дольше 500 мс или failsafe-значение газа от приёмника — немедленно глушит
-  мотор и ставит рули в нейтраль; эта проверка стоит раньше микшера,
-  ARM и автопилота. Отдельный тумблер ARM, газ заблокирован до взвода.
+  мотор; в воздухе автопилот переводит самолёт в планирование с ровными
+  крыльями, на земле рули уходят в нейтраль. Эта проверка стоит раньше
+  микшера, ARM и режимов. Отдельный тумблер ARM, газ заблокирован до взвода.
 - **Одна система знаков от IMU до сервопривода.** Углы датчика, команды
   стиков и коррекции автопилота живут в одних авиационных знаках, а
   направление каждой сервы задаётся ровно в одном месте (`Config.h`) —
@@ -237,33 +238,19 @@ OpenPlaneProject/
 │   ├── DEVELOPER_GUIDE.md         # архитектура, знаки, API, как расширять
 │   └── ROADMAP.md                 # видение, фазы развития, GPS/GUI/доставка
 ├── include/
-│   ├── Config.h                   # выбор платы, пины, все настройки (ход рулей, реверс, ARM, failsafe...)
-│   ├── Channels.h                 # имена RC-каналов
-│   ├── RcChannelState.h           # снимок 10 каналов
-│   ├── RcInput.h                  # clamp()/centered()
-│   ├── IBusReceiver.h             # iBUS -> каналы + распознавание потери связи
-│   ├── ControlMixer.h             # стики -> команда крена/тангажа/рысканья/закрылков -> PWM
-│   ├── ThrottleManager.h          # газ пилота
-│   ├── ArmingManager.h            # ARM тумблером SwA + предполётные проверки
-│   ├── FlightOutputState.h        # контракт "желаемое положение поверхностей"
-│   ├── FlightOutputs.h            # 4 выхода через IBoard/IServoOutput + самопроверка
-│   ├── Autopilot.h                # ПИД + режимы STABILIZE/AUTO_TAKEOFF/ALT_HOLD
-│   ├── AutopilotModeSelector.h    # CH7 -> режим автопилота
-│   ├── FlightController.h         # единственный оркестратор цикла управления
-│   ├── DebugLogger.h              # состояние в Serial + строка SYS
-│   ├── WebDebugServer.h           # веб-дашборд и JSON API (своя задача FreeRTOS)
-│   ├── OledDisplay.h              # экран статуса SSD1306 (своя задача FreeRTOS)
-│   ├── LoopStats.h                # частота и время цикла
-│   ├── hal/
-│   │   ├── IBoard.h, II2CBus.h, ISpiBus.h, IUartPort.h, IServoOutput.h  # абстракция "мозга" (MCU)
-│   │   └── esp32/                 # реализация над Wire/SPI/HardwareSerial/LEDC
-│   └── sensors/
-│       ├── SensorInterface.h      # абстрактные Sensor/ImuSensor/BarometerSensor/MagnetometerSensor/GpsSensor
-│       ├── SensorSelection.h      # ЕДИНСТВЕННЫЙ файл для смены датчика
-│       ├── MPU6050_Sensor.h, ICM42688_Sensor.h                   # IMU (I2C / SPI)
-│       ├── BMP388_I2C_Sensor.h, BMP388_Sensor.h, BME280_Sensor.h # барометр (I2C / SPI / I2C)
-│       ├── QMC5883P_Sensor.h, QMC5883L_Sensor.h                  # магнитометр (два варианта GY-273)
-│       └── UbloxM10_Gps.h                                        # GPS, протокол UBX (UART)
+│   ├── config/        Config.h (пины и все настройки), Channels.h (имена RC-каналов)
+│   ├── hal/           абстракция "мозга": IBoard, шины I2C/SPI/UART, PWM-выходы,
+│   │   │              RegisterDevice (регистровое устройство поверх I2C/SPI)
+│   │   └── esp32/     реализация над Wire/Wire1/SPI/HardwareSerial/LEDC
+│   ├── rc/            приём iBUS, распознавание потери связи
+│   ├── control/       микшер (+ закрылки), газ, ARM, выходы, FlightController
+│   ├── autopilot/     ПИД, режимы, планирование при потере связи, выбор режима с CH7
+│   ├── sensors/       интерфейсы, SensorSelection.h (ЕДИНСТВЕННЫЙ файл смены датчика)
+│   │   ├── imu/       ImuSensorBase + фильтр ориентации; MPU6050/6500, ICM42688
+│   │   ├── baro/      BarometerBase; BMP388 (I2C/SPI), BME280/BMP280
+│   │   ├── mag/       MagnetometerBase (калибровка в NVS); QMC5883P, QMC5883L
+│   │   └── gps/       u-blox M10 (UBX)
+│   └── telemetry/     лог в Serial, консоль, веб-дашборд, OLED, статистика цикла
 ├── src/
 │   └── main.cpp                    # composition root: создаёт объекты и вызывает setup()/loop()
 ├── lib/

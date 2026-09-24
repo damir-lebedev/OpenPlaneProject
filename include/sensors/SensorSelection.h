@@ -4,39 +4,42 @@
 // 🔧 ВЫБОР ДАТЧИКОВ ПРОЕКТА
 //
 // Единственное место, которое нужно менять, чтобы сменить
-// физический датчик — поменяйте #define ниже на один из
-// поддерживаемых вариантов. main.cpp дальше работает через
-// SelectedImu/SelectedBaro/SelectedMag/SelectedGps, не зная,
-// какой конкретно класс за ними стоит (тот же приём, что выбор
-// платы через BOARD_ESP32_* в Config.h).
+// физический датчик: поменяйте #define в блоке "АКТИВНЫЙ ВЫБОР".
+// main.cpp работает через SelectedImu/SelectedBaro/SelectedMag/
+// SelectedGps и не знает, какой класс за ними стоит.
+//
+// Для каждого датчика здесь же задано, на какой шине он висит:
+// SELECTED_*_DEVICE(board) создаёт регистровое устройство
+// (I2cRegisterDevice с адресом или SpiRegisterDevice с CS-пином,
+// см. hal/RegisterDevice.h), которое main.cpp передаёт драйверу.
+// Драйверы шины не различают — один и тот же BMP388_Sensor
+// работает и по I2C, и по SPI.
 //
 // ПОДДЕРЖИВАЕМЫЕ ДАТЧИКИ:
 //   IMU (гироскоп + акселерометр):
-//     • MPU6050/MPU6500 (GY-521) — I2C, адрес 0x68/0x69; чип
-//                                   определяется по WHO_AM_I
-//     • ICM42688 ("601N1")    — SPI, свой CS-пин
+//     • MPU6050 / MPU6500 (GY-521) — I2C 0x68; чип по WHO_AM_I
+//     • ICM42688 ("601N1")        — SPI, свой CS
 //   Барометр:
-//     • BME280                — I2C, адрес 0x76/0x77, приближённая формула
-//     • BMP388                — SPI, свой CS-пин, точная компенсация по датащиту
-//     • BMP388 (I2C)          — I2C, адрес 0x76/0x77, та же компенсация
-//   Магнитометр:
-//     • QMC5883L ("GY-273")   — I2C, адрес 0x0D
-//     • QMC5883P ("GY-273")   — I2C, адрес 0x2C (на текущем стенде — он)
-//     • нет — компас недоступен, Autopilot получает nullptr
+//     • BMP388 по I2C              — 0x76
+//     • BMP388 по SPI              — свой CS
+//     • BME280 / BMP280            — I2C 0x76
+//   Магнитометр (плата GY-273, чип бывает разный):
+//     • QMC5883P                   — I2C 0x2C (на текущем стенде)
+//     • QMC5883L                   — I2C 0x0D
+//     • нет
 //   GPS:
-//     • u-blox M10 (UBX)      — UART, парсит UBX-NAV-PVT
-//     • нет — GPS недоступен, Autopilot получает nullptr
-//
-// Аргументы конструктора каждого датчика (I2C-шина + адрес, SPI +
-// CS-пин, UART) заданы здесь же, в SELECTED_*_ARGS — main.cpp
-// менять при смене датчика не нужно.
+//     • u-blox M10 (UBX)           — UART
+//     • нет
 // ============================================================
+
+#include "config/Config.h"
+#include "hal/RegisterDevice.h"
 
 #define SENSOR_IMU_MPU6050   1
 #define SENSOR_IMU_ICM42688  2
 
 #define SENSOR_BARO_BME280      1
-#define SENSOR_BARO_BMP388      2
+#define SENSOR_BARO_BMP388      2   // SPI
 #define SENSOR_BARO_BMP388_I2C  3
 
 #define SENSOR_MAG_NONE      0
@@ -50,68 +53,79 @@
 // --------------------------------------------------------
 // АКТИВНЫЙ ВЫБОР — редактируйте эти 4 строки
 // (текущий стенд: GY-521 с MPU6500, BMP388 по I2C, GY-273 с QMC5883P)
+//
+// Любую можно переопределить флагом сборки без правки файла, например
+// build_flags = -D SENSOR_IMU=SENSOR_IMU_ICM42688 в platformio.ini.
 // --------------------------------------------------------
 
+#ifndef SENSOR_IMU
 #define SENSOR_IMU  SENSOR_IMU_MPU6050
+#endif
+
+#ifndef SENSOR_BARO
 #define SENSOR_BARO SENSOR_BARO_BMP388_I2C
+#endif
+
+#ifndef SENSOR_MAG
 #define SENSOR_MAG  SENSOR_MAG_QMC5883P
+#endif
+
+#ifndef SENSOR_GPS
 #define SENSOR_GPS  SENSOR_GPS_NONE
+#endif
 
 
 // ============================================================
-// РАЗРЕШЕНИЕ В КОНКРЕТНЫЕ ТИПЫ (менять не нужно, кроме адресов)
+// РАЗРЕШЕНИЕ В КОНКРЕТНЫЕ ТИПЫ (менять не нужно, кроме адресов/пинов)
 // ============================================================
 
 #if SENSOR_IMU == SENSOR_IMU_MPU6050
-    #include "MPU6050_Sensor.h"
+    #include "sensors/imu/MPU6050_Sensor.h"
     using SelectedImu = MPU6050_Sensor;
-    #define SELECTED_IMU_ARGS(board) (board).i2c(), 0x68
+    #define SELECTED_IMU_DEVICE(board) I2cRegisterDevice((board).i2c(), 0x68)
 #elif SENSOR_IMU == SENSOR_IMU_ICM42688
-    #include "ICM42688_Sensor.h"
+    #include "sensors/imu/ICM42688_Sensor.h"
     using SelectedImu = ICM42688_Sensor;
-    #define SELECTED_IMU_ARGS(board) (board).spi(), Config::PIN_SPI_CS_ICM42688
+    #define SELECTED_IMU_DEVICE(board) ICM42688_Sensor::spiDevice((board).spi(), Config::PIN_SPI_CS_ICM42688)
 #else
     #error "SensorSelection.h: не задан SENSOR_IMU"
 #endif
 
 #if SENSOR_BARO == SENSOR_BARO_BME280
-    #include "BME280_Sensor.h"
+    #include "sensors/baro/BME280_Sensor.h"
     using SelectedBaro = BME280_Sensor;
-    #define SELECTED_BARO_ARGS(board) (board).i2c(), 0x76
+    #define SELECTED_BARO_DEVICE(board) I2cRegisterDevice((board).i2c(), 0x76)
 #elif SENSOR_BARO == SENSOR_BARO_BMP388
-    #include "BMP388_Sensor.h"
+    #include "sensors/baro/BMP388_Sensor.h"
     using SelectedBaro = BMP388_Sensor;
-    #define SELECTED_BARO_ARGS(board) (board).spi(), Config::PIN_SPI_CS_BMP388
+    #define SELECTED_BARO_DEVICE(board) BMP388_Sensor::spiDevice((board).spi(), Config::PIN_SPI_CS_BMP388)
 #elif SENSOR_BARO == SENSOR_BARO_BMP388_I2C
-    #include "BMP388_I2C_Sensor.h"
-    using SelectedBaro = BMP388_I2C_Sensor;
-    #define SELECTED_BARO_ARGS(board) (board).i2c(), 0x76
+    #include "sensors/baro/BMP388_Sensor.h"
+    using SelectedBaro = BMP388_Sensor;
+    #define SELECTED_BARO_DEVICE(board) I2cRegisterDevice((board).i2c(), 0x76)
 #else
     #error "SensorSelection.h: не задан SENSOR_BARO"
 #endif
 
 #if SENSOR_MAG == SENSOR_MAG_QMC5883P
-    #include "QMC5883P_Sensor.h"
+    #include "sensors/mag/QMC5883P_Sensor.h"
     using SelectedMag = QMC5883P_Sensor;
-    #define SELECTED_MAG_ARGS(board) (board).i2c()
+    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).i2c(), QMC5883P_Sensor::DEFAULT_ADDRESS)
 #elif SENSOR_MAG == SENSOR_MAG_QMC5883L
-    #include "QMC5883L_Sensor.h"
+    #include "sensors/mag/QMC5883L_Sensor.h"
     using SelectedMag = QMC5883L_Sensor;
-    #define SELECTED_MAG_ARGS(board) (board).i2c()
+    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).i2c(), QMC5883L_Sensor::DEFAULT_ADDRESS)
 #elif SENSOR_MAG == SENSOR_MAG_NONE
-    // main.cpp оборачивает создание объекта в #if SENSOR_MAG != SENSOR_MAG_NONE,
-    // поэтому SelectedMag здесь не нужен.
+    // main.cpp оборачивает создание компаса в #if SENSOR_MAG != SENSOR_MAG_NONE.
 #else
     #error "SensorSelection.h: не задан SENSOR_MAG"
 #endif
 
 #if SENSOR_GPS == SENSOR_GPS_UBLOX_M10
-    #include "UbloxM10_Gps.h"
+    #include "sensors/gps/UbloxM10_Gps.h"
     using SelectedGps = UbloxM10_Gps;
-    #define SELECTED_GPS_ARGS(board) (board).gpsUart()
 #elif SENSOR_GPS == SENSOR_GPS_NONE
-    // main.cpp оборачивает создание объекта в #if SENSOR_GPS != SENSOR_GPS_NONE,
-    // поэтому SelectedGps здесь не нужен.
+    // main.cpp оборачивает создание GPS в #if SENSOR_GPS != SENSOR_GPS_NONE.
 #else
     #error "SensorSelection.h: не задан SENSOR_GPS"
 #endif

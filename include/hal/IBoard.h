@@ -1,9 +1,9 @@
 #pragma once
 
-#include "II2CBus.h"
-#include "ISpiBus.h"
-#include "IUartPort.h"
-#include "IServoOutput.h"
+#include "hal/II2CBus.h"
+#include "hal/ISpiBus.h"
+#include "hal/IUartPort.h"
+#include "hal/IServoOutput.h"
 
 // ============================================================
 // 🧠 АБСТРАКЦИЯ "МОЗГА" (MCU)
@@ -42,14 +42,17 @@ class IBoard
 public:
     virtual ~IBoard() = default;
 
-    // Разовая инициализация платы (выделение PWM-таймеров и т.п.).
-    // Шины (i2c/spi) и порты (rcUart/gpsUart) инициализируются
-    // отдельно, каждый своим владельцем (см. Esp32Board.h) — так
-    // же, как сегодня Wire.begin() дергают сами датчики.
+    // Разовая инициализация платы: шины I2C/SPI. UART-порты
+    // открывают их владельцы (IBusReceiver, GPS-драйвер) со своей
+    // скоростью, PWM-выходы настраивает FlightOutputs::begin().
     virtual void begin() = 0;
 
-    virtual II2CBus& i2c() = 0;
+    virtual II2CBus& i2c() = 0;          // шина датчиков
     virtual ISpiBus& spi() = 0;
+
+    // Вторая шина I2C — только для экрана, чтобы отрисовка не
+    // задерживала опрос датчиков. nullptr, если на плате её нет.
+    virtual II2CBus* displayI2c() = 0;
 
     virtual IUartPort& rcUart() = 0;   // существующий iBUS UART
     virtual IUartPort& gpsUart() = 0;  // новый UART для GPS

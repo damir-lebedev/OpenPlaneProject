@@ -5,11 +5,10 @@
 // 🔌 АБСТРАКЦИЯ ШИНЫ I2C
 //
 // По форме — тонкая обёртка над Wire (begin/beginTransmission/
-// write/endTransmission/requestFrom/read), чтобы существующие
-// датчики (MPU6050, BME280, ...) переписывались на неё почти
-// без изменений. Датчики получают ссылку на этот интерфейс в
-// конструкторе и не знают, что за ним — реальный Wire (ESP32)
-// или будущая реализация под другой MCU.
+// write/endTransmission/requestFrom/read). Датчики работают с ней
+// через I2cRegisterDevice (hal/RegisterDevice.h), OLED — напрямую;
+// никто из них не знает, что за интерфейсом — Wire/Wire1 ESP32 или
+// будущая реализация под другой MCU.
 //
 // begin()/setClock() без аргументов: пины и частота фиксируются
 // один раз, когда конкретная реализация (например Esp32I2CBus)
@@ -27,6 +26,7 @@ public:
 
     virtual void beginTransmission(uint8_t address) = 0;
     virtual size_t write(uint8_t data) = 0;
+    virtual size_t write(const uint8_t* data, size_t length) = 0;
     virtual uint8_t endTransmission(bool sendStop = true) = 0;
 
     virtual uint8_t requestFrom(uint8_t address, uint8_t quantity) = 0;

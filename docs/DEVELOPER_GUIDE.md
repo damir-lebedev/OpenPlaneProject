@@ -40,60 +40,64 @@
 
 ## Архитектура слоёв
 
-Классы почти целиком живут в заголовках (`include/*.h`). `src/main.cpp` —
-единственная точка сборки (composition root): создаёт все объекты, связывает
-их и крутит `setup()`/`loop()`. Зависимости однонаправленные — нижний слой
-ничего не знает о верхнем.
+Классы почти целиком живут в заголовках, разложенных по папкам
+`include/<слой>/`. Каждый заголовок сам подключает то, что использует
+(`#include "config/Config.h"`, `"hal/II2CBus.h"`, ... — пути от `include/`).
+`src/main.cpp` — единственная точка сборки (composition root): создаёт все
+объекты, связывает их и крутит `setup()`/`loop()`. Зависимости
+однонаправленные — нижний слой ничего не знает о верхнем.
+
+```
+include/
+├── config/      Config.h (пины, все настройки), Channels.h (имена каналов)
+├── hal/         IBoard, II2CBus, ISpiBus, IUartPort, IServoOutput,
+│   │            RegisterDevice (регистровое устройство поверх I2C/SPI)
+│   └── esp32/   Esp32Board + обёртки над Wire/SPI/HardwareSerial/LEDC
+├── rc/          RcChannelState, RcInput, IBusReceiver
+├── control/     ControlCommand, ControlMixer, FlapsController,
+│                ThrottleManager, ArmingManager, FlightOutputState,
+│                FlightOutputs, FlightController
+├── autopilot/   PidController, Autopilot, AutopilotModeSelector
+├── sensors/     SensorInterface, SensorSelection, SensorMounting
+│   ├── imu/     ImuSensorBase, AttitudeEstimator, MPU6050_Sensor, ICM42688_Sensor
+│   ├── baro/    BarometerBase, BMP388_Sensor, BME280_Sensor
+│   ├── mag/     MagnetometerBase, QMC5883P_Sensor, QMC5883L_Sensor
+│   └── gps/     UbloxM10_Gps
+└── telemetry/   DebugLogger, DebugConsole, WebDebugServer,
+                 WebDashboardPage, OledDisplay, LoopStats
+```
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│ APPLICATION  src/main.cpp                                             │
-│   composition root, консоль отладки, цикл с фиксированным периодом    │
+│ APPLICATION  src/main.cpp — сборка объектов, setup(), loop()          │
 └──────────────────────────────┬────────────────────────────────────────┘
-                               │ владеет и вызывает
                                ▼
 ┌───────────────────────────────────────────────────────────────────────┐
-│ COORDINATION                                                          │
-│   FlightController.h      — единственный оркестратор update()         │
-│   AutopilotModeSelector.h — CH7 -> режим автопилота                   │
-│   DebugLogger.h           — состояние в Serial                        │
-│   WebDebugServer.h        — веб-дашборд (своя задача, ядро 0)         │
-│   OledDisplay.h           — экран статуса (своя задача, ядро 0)       │
-│   LoopStats.h             — частота и время цикла                     │
+│ COORDINATION  control/FlightController — порядок операций за такт      │
+│ TELEMETRY     DebugLogger, DebugConsole, WebDebugServer, OledDisplay   │
 └───────┬───────────────────────┬───────────────────────┬───────────────┘
-        │                       │                       │
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
-│ FLIGHT LOGIC        │  │ FLIGHT LOGIC          │  │ FLIGHT LOGIC          │
-│ (ручное управление) │  │ (автопилот)           │  │ (общее)               │
-│ ControlMixer.h      │  │ Autopilot.h           │  │ ArmingManager.h       │
-│ ThrottleManager.h   │  │ (PID_Controller +     │  │ FlightOutputState.h   │
-│                     │  │  4 режима)            │  │ (POD-контракт)        │
-└─────────┬───────────┘  └──────────┬────────────┘  └──────────┬───────────┘
-          │ RcChannelState          │ ImuSensor* / BarometerSensor* / ...
-          ▼                         ▼                          │
-┌────────────────────────────┐  ┌──────────────────────────────┴────────┐
-│ RC                          │  │ SENSORS                               │
-│ RcChannelState.h (снимок)   │  │ SensorInterface.h — абстракции        │
-│ RcInput.h (clamp/centered)  │  │ MPU6050_Sensor (MPU6050/6500)         │
-│ IBusReceiver.h (IUartPort → │  │ ICM42688_Sensor                       │
-│   каналы + потеря связи)    │  │ BMP388_I2C / BMP388 (SPI) / BME280    │
-│ Channels.h (имена каналов)  │  │ QMC5883P / QMC5883L, UbloxM10_Gps     │
-│                             │  │ SensorSelection.h — какой чип выбран  │
-└─────────────────────────────┘  └───────────────────────────────────────┘
-          │                                       ▲
-          ▼                                       │ II2CBus / ISpiBus / IUartPort
+│ CONTROL             │  │ AUTOPILOT             │  │ RC                    │
+│ ControlMixer        │  │ Autopilot + режимы    │  │ IBusReceiver          │
+│  └ FlapsController  │  │  └ PidController      │  │ RcChannelState        │
+│ ThrottleManager     │  │ AutopilotModeSelector │  │ RcInput               │
+│ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
+│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+└─────────┬───────────┘             ▼
+          │           ┌─────────────────────────────────────────────────┐
+          │           │ SENSORS                                          │
+          │           │ ImuSensorBase ── MPU6050_Sensor, ICM42688_Sensor │
+          │           │   └ AttitudeEstimator, SensorMounting            │
+          │           │ BarometerBase ── BMP388_Sensor, BME280_Sensor    │
+          │           │ MagnetometerBase ── QMC5883P / QMC5883L          │
+          │           │ UbloxM10_Gps                                     │
+          │           └──────────────────────┬──────────────────────────┘
+          ▼                                  ▼ IRegisterDevice / IUartPort
 ┌───────────────────────────────────────────────────────────────────────┐
-│ OUTPUTS  FlightOutputs.h — порядок 5 выходов, пишет через IServoOutput │
-└──────────────────────────────┬────────────────────────────────────────┘
-                               ▼
-┌───────────────────────────────────────────────────────────────────────┐
-│ HAL — "МОЗГ"  include/hal/                                            │
-│   IBoard / II2CBus / ISpiBus / IUartPort / IServoOutput — интерфейсы  │
-│   hal/esp32/Esp32Board.h (+ Esp32I2CBus / Esp32SpiBus /               │
-│     Esp32UartPort / Esp32ServoOutput) — обёртки над                   │
-│     Wire / SPI / HardwareSerial / LEDC                                │
-│   Config.h — выбор платы (BOARD_ESP32_*), пины, все настройки         │
+│ HAL  IBoard / II2CBus / ISpiBus / IUartPort / IServoOutput             │
+│      RegisterDevice: I2cRegisterDevice, SpiRegisterDevice              │
+│      esp32/Esp32Board — Wire, Wire1, SPI, HardwareSerial, LEDC         │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -101,22 +105,24 @@
 
 - **HAL** — единственный слой, которому разрешено знать конкретный MCU
   (`Wire`, `SPI`, `HardwareSerial`, `ledc*`). Всё выше работает только с
-  интерфейсами `IBoard`/`II2CBus`/`ISpiBus`/`IUartPort`/`IServoOutput`.
-  Переход на другой MCU — это новая `hal/<mcu>/<Mcu>Board.h`, остальной код
-  не меняется.
-- **RC и Outputs** не знают про самолёт: только байты iBUS → каналы и
-  значения PWM → выходы.
-- **Sensors** не знают про автопилот: читают шину через интерфейсы HAL и
-  отдают `ImuData`/`BarometerData`/`MagData`/`GpsData`. Какой чип
-  скомпилирован — решает `sensors/SensorSelection.h`.
-- **Flight logic** (`ControlMixer`, `ThrottleManager`, `ArmingManager`,
-  `Autopilot`) — логика над данными, без UART, PWM и Wi-Fi.
-- **Coordination** — единственный слой, который видит сразу несколько нижних
-  и решает порядок операций.
+  интерфейсами. Переход на другой MCU — это новая
+  `hal/<mcu>/<Mcu>Board.h`, остальной код не меняется.
+- **Драйверы датчиков не знают про шину.** Они получают
+  `IRegisterDevice&` — I2C с адресом или SPI с CS создаётся в
+  `SensorSelection.h`. Один `BMP388_Sensor` работает и по I2C, и по SPI.
+- **Общее — в базовых классах.** Калибровка, поворот осей, знаки, фильтр
+  ориентации, высота и вертикальная скорость, хранение калибровки компаса,
+  счёт ошибок шины — в `ImuSensorBase`/`BarometerBase`/`MagnetometerBase`.
+  Драйвер чипа — только регистры и формулы из даташита.
+- **RC и Outputs** не знают про самолёт: байты iBUS → каналы, значения PWM
+  → выходы.
+- **Control и Autopilot** — логика над данными, без UART, PWM и Wi-Fi.
+  Время, где нужно (закрылки), передаётся параметром.
+- **Coordination** (`FlightController`) — единственный класс, который видит
+  сразу несколько нижних слоёв и решает порядок операций.
 - **Application** (`main.cpp`) — единственное место, где создаются
-  `Esp32Board` и конкретные датчики (через `SelectedImu`/`SelectedBaro`/
-  `SelectedMag`/`SelectedGps` и макросы `SELECTED_*_ARGS`), и где всё
-  связывается руками, без DI-фреймворка.
+  `Esp32Board`, устройства и датчики, и где всё связывается руками, без
+  DI-фреймворка.
 
 ---
 
@@ -124,17 +130,19 @@
 
 | Где | Что | Период |
 |---|---|---|
-| Ядро 1, `loop()` (Arduino loopTask) | `applyPendingCommands()` → `FlightController::update()` → `DebugLogger::update()` → консоль | `Config::LOOP_PERIOD_MS` = 2 мс (500 Гц), `vTaskDelayUntil` |
+| Ядро 1, `loop()` (Arduino loopTask) | `applyPendingCommands()` → `FlightController::update()` → `DebugLogger::update()` → `DebugConsole::update()` | `Config::LOOP_PERIOD_MS` = 2 мс (500 Гц), `vTaskDelayUntil` |
 | Ядро 0, задача `web` | `WebServer::handleClient()` | каждые 2 мс |
-| Ядро 0, задача `oled` | отрисовка SSD1306 по Wire1 | 200 мс |
+| Ядро 0, задача `oled` | отрисовка SSD1306 по второй шине I2C | 200 мс |
 | Ядро 0 | Wi-Fi стек ESP-IDF | — |
 
 - Период цикла держится `vTaskDelayUntil`, а не `delay(2)` после работы —
   частота не зависит от того, сколько длился такт. После долгой блокировки
   (калибровка из консоли) отсчёт начинается заново, пропущенные такты
   пачкой не догоняются.
-- На стенде (ESP32-S3, все датчики): 500 Гц, в среднем ~0.9 мс работы на
-  такт, худший такт ~2.1 мс. Раз в 10 с это печатается строкой `SYS:`.
+- На стенде (ESP32-S3, все датчики): 500 Гц, в среднем ~0.7 мс работы на
+  такт, худший такт ~1.4 мс. Раз в 10 с это печатается строкой `SYS:`.
+- Таймаут транзакции I2C — 5 мс (штатный у Wire — 50 мс): зависшая из-за
+  помехи транзакция не останавливает цикл надолго.
 - **Разделение данных между задачами.** Веб и OLED только *читают*
   состояние (`FlightController`/`Autopilot`/`LoopStats`) — это отдельные
   16/32-битные поля, в худшем случае видны значения соседних тактов.
@@ -148,66 +156,85 @@
 
 ## Справочник файлов
 
-### HAL (`include/hal/`)
-
-| Файл | Отвечает за | Ключевое |
-|---|---|---|
-| `IBoard.h` | Точка входа в железо | `begin()`, `i2c()`, `spi()`, `rcUart()`, `gpsUart()`, `servo(ServoChannel::*)` |
-| `II2CBus.h` | Шина I2C | Примитивы в форме `Wire` + общие помощники `writeRegister()`, `readRegisters()` (проверяет, что пришло ровно `count` байт), `readRegister()` (−1 при отсутствии ответа), `probe()` |
-| `ISpiBus.h`, `IUartPort.h` | SPI, UART | CS держит сам датчик; `IUartPort::begin(baud)` — пины фиксирует реализация |
-| `IServoOutput.h` | Один PWM-выход | `attach()`, `writeMicroseconds()`, `isAttached()`, `measurePulseUs()` — диагностика реального импульса на пине |
-| `esp32/Esp32Board.h` | Реализация `IBoard` | Создаёт шины/порты/выходы с пинами из `Config.h`; выходы — LEDC-каналы 0–4 (пин −1 = выход не разведён) |
-| `esp32/Esp32ServoOutput.h` | PWM через LEDC | 50 Гц, 14 бит (~1.2 мкс на шаг); `measurePulseUs()` включает входной буфер GPIO и меряет `pulseIn()`. Раньше здесь была библиотека ESP32Servo — см. [ограничения](#известные-ограничения) |
-| `esp32/Esp32I2CBus.h`, `Esp32SpiBus.h`, `Esp32UartPort.h` | Тонкие обёртки над `Wire`/`SPI`/`HardwareSerial` | I2C датчиков — 400 кГц |
-
-### Конфигурация и RC
-
-| Файл | Отвечает за | Ключевое |
-|---|---|---|
-| `Config.h` | Все пины и настройки | Блок пинов на плату (`BOARD_ESP32_S3/C3/CLASSIC`); iBUS и потеря связи (`RX_TIMEOUT_US`, `RX_FAILSAFE_THROTTLE_US`); ход рулей (`AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US`); закрылки (`FLAPS_SWITCH_ON_US`, `FLAPS_DEPLOYED_US`, `FLAPS_TRANSITION_MS`); реверс серво (`*_REVERSED`); установка IMU (`IMU_ROTATION_CW_DEG`); ARM (`ARM_SWITCH_ON_US`, `THROTTLE_LOW_US`); failsafe-выходы; `LOOP_PERIOD_MS`; отладка |
-| `Channels.h` | Имена каналов | `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `FLAPS`, `AUX_2..AUX_5` |
-| `RcChannelState.h` | Снимок 10 каналов | По умолчанию: всё 1500, газ 1000 |
-| `IBusReceiver.h` | iBUS → каналы | Кадр 32 байта, CRC; значение канала — **младшие 12 бит** (`& 0x0FFF`, в старших FS-iA6B передаёт служебные данные); `isSignalLost()` = `isFrameTimeout()` ∥ `isFailsafeReported()`; счётчики `getGoodFrameCount()`/`getBadFrameCount()` |
-| `RcInput.h` | Преобразования PWM | `clamp()`, `centered(us, max, reverse)` |
-
-### Логика полёта
-
-| Файл | Отвечает за | Ключевое |
-|---|---|---|
-| `ControlMixer.h` | Стики → команда → PWM | `ControlCommand fromSticks(rc, nowMs)` (плавный выпуск закрылков по времени снаружи) и `FlightOutputState mix(command)`; закрылки-флапероны: общее опускание элеронов + крен поверх; знаки — см. [соглашение](#соглашение-о-знаках-от-imu-до-сервопривода) |
-| `ThrottleManager.h` | Газ пилота | Стик CH3 → мкс; в failsafe — `FAILSAFE_THROTTLE`. Лимита и форсажа больше нет |
-| `ArmingManager.h` | ARM | Тумблер SwA: переход OFF→ON при газе внизу + предполётные проверки режима; OFF — мгновенный DISARM; failsafe ARM не снимает |
-| `Autopilot.h` | ПИД + 4 режима | `update(armed, pilotThrottle)`, `applyThrottle(pilotThrottle)`, `getRollCorrection()`/`getPitchCorrection()` (мкс команды), `getThrottleCorrection()` (%); `PID_Controller::calculate(setpoint, feedback, feedbackRate, integrate)` — D по скорости с датчика |
-| `AutopilotModeSelector.h` | CH7 → режим | Переключает только при смене зоны CH7, чтобы не затирать ALT_HOLD с дашборда |
-| `FlightOutputState.h` | POD-контракт выходов | `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (мкс) |
-| `FlightOutputs.h` | 5 физических выходов | `begin()`, `write()`, `setFailsafe()`, `printPulseSelfTest()`; руль направления необязателен (на C3 нет пина) |
-
-### Датчики (`include/sensors/`)
-
-| Файл | Чип, шина | Статус |
-|---|---|---|
-| `SensorInterface.h` | `Sensor`, `ImuSensor`, `BarometerSensor`, `MagnetometerSensor`, `GpsSensor` + структуры данных | — |
-| `MPU6050_Sensor.h` | MPU6050 **и MPU6500** (GY-521), I2C 0x68 | **На стенде.** Чип по WHO_AM_I; ±2000°/с, ±16g; DLPF ~41 Гц, 1 кГц; поворот осей `IMU_ROTATION_CW_DEG`; авиационные знаки; счётчик ошибок I2C |
-| `ICM42688_Sensor.h` | ICM-42688-P, SPI | Не проверен на железе; знаки осей и поворот ещё не приведены к соглашению `MPU6050_Sensor` |
-| `BMP388_I2C_Sensor.h` | BMP388, I2C 0x76 | **На стенде.** Компенсация Bosch; чтение по флагу готовности (50 Гц); ФНЧ вертикальной скорости |
-| `BMP388_Sensor.h` | BMP388, SPI | Та же компенсация, без опроса по флагу готовности |
-| `BME280_Sensor.h` | BME280, I2C | Приближённая компенсация |
-| `QMC5883P_Sensor.h` | QMC5883P (GY-273), I2C 0x2C | **На стенде.** Регистры сверены с даташитом и проверены вживую; калибровка hard-iron хранится в NVS |
-| `QMC5883L_Sensor.h` | QMC5883L (GY-273), I2C 0x0D | Другой чип с другой картой регистров |
-| `UbloxM10_Gps.h` | u-blox M10, UART, UBX NAV-PVT | Не подключён на текущем стенде |
-| `SensorSelection.h` | Выбор чипа | `#define SENSOR_IMU/BARO/MAG/GPS`, `using Selected*`, `SELECTED_*_ARGS(board)` — аргументы конструктора |
-
-### Координация и приложение
+### `config/`
 
 | Файл | Отвечает за |
 |---|---|
-| `FlightController.h` | Порядок операций за такт (см. [разбор](#разбор-flightcontrollerupdate)); геттеры для логгера, дашборда и OLED |
-| `DebugLogger.h` | Кадр состояния раз в 100 мс, только если что-то изменилось; строка `SYS:` раз в 10 с |
-| `WebDebugServer.h` | Точка доступа Wi-Fi + HTTP API, отдельная задача на ядре 0 |
-| `OledDisplay.h` | SSD1306 128×64 на Wire1 (U8g2 с собственной функцией передачи по Wire1), 5 кадров/с |
+| `Config.h` | Все пины (блок на плату: `BOARD_ESP32_S3/C3/CLASSIC`) и настройки: iBUS и потеря связи (`RX_TIMEOUT_US`, `RX_FAILSAFE_THROTTLE_US`); ход рулей (`AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US`); закрылки (`FLAPS_*`); реверс серво (`*_REVERSED`); установка IMU и компаса (`IMU_ROTATION_CW_DEG`, `MAG_ROTATION_CW_DEG`); ARM; failsafe-выходы и планирование (`FAILSAFE_GLIDE_ROLL_DEG`, `FAILSAFE_GLIDE_PITCH_DEG`); цикл; Wi-Fi; отладка |
+| `Channels.h` | Имена каналов: `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `FLAPS`, `AUX_2..AUX_5` |
+
+### `hal/`
+
+| Файл | Отвечает за |
+|---|---|
+| `IBoard.h` | Точка входа в железо: `i2c()`, `displayI2c()` (вторая шина под экран, может быть `nullptr`), `spi()`, `rcUart()`, `gpsUart()`, `servo(ServoChannel::*)` |
+| `II2CBus.h` | Шина I2C: примитивы в форме `Wire` + помощники `writeRegister()`, `readRegisters()` (проверяет, что пришло ровно `count` байт), `readRegister()`, `probe()` |
+| `ISpiBus.h`, `IUartPort.h`, `IServoOutput.h` | SPI, UART, один PWM-выход (`measurePulseUs()` — диагностика реального импульса) |
+| `RegisterDevice.h` | `IRegisterDevice` — «набор 8-битных регистров»; `I2cRegisterDevice` (адрес), `SpiRegisterDevice` (CS, частота, фиктивные байты перед данными) |
+| `esp32/Esp32Board.h` | Реализация `IBoard`: `Wire` (датчики), `Wire1` (экран, если у чипа два контроллера I2C), `SPI`, два `HardwareSerial`, 5 каналов LEDC |
+| `esp32/Esp32I2CBus.h` | `II2CBus` поверх любого `TwoWire`, таймаут 5 мс |
+| `esp32/Esp32ServoOutput.h` | PWM через LEDC: 50 Гц, 14 бит; пин −1 — выход не разведён. Библиотека ESP32Servo не используется — см. [ограничения](#известные-ограничения) |
+| `esp32/Esp32SpiBus.h`, `esp32/Esp32UartPort.h` | Тонкие обёртки над `SPI` и `HardwareSerial` |
+
+### `rc/`
+
+| Файл | Отвечает за |
+|---|---|
+| `RcChannelState.h` | Снимок 10 каналов |
+| `RcInput.h` | `clamp()`, `centered(us, max, reverse)` |
+| `IBusReceiver.h` | iBUS → каналы: кадр 32 байта, CRC, значение канала — младшие 12 бит (`& 0x0FFF`); `isSignalLost()` = нет кадров (или ещё не было ни одного) ∥ failsafe-значение газа; счётчики кадров |
+
+### `control/`
+
+| Файл | Отвечает за |
+|---|---|
+| `ControlCommand.h` | Команда на рули в физических знаках — общий язык стиков, автопилота и микшера |
+| `ControlMixer.h` | `fromSticks(rc, nowMs)` → `ControlCommand`; `mix(command)` → PWM с реверсом серво; флапероны: элероны `flaps ± roll` |
+| `FlapsController.h` | Плавный выпуск/уборка закрылков, время передаётся параметром |
+| `ThrottleManager.h` | Газ со стика; при потере связи — `FAILSAFE_THROTTLE` |
+| `ArmingManager.h` | ARM тумблером SwA (переход OFF→ON при газе внизу + проверки датчиков режима), мгновенный DISARM |
+| `FlightOutputState.h` | Желаемые PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` |
+| `FlightOutputs.h` | Таблица выходов (`outputInfo()`: ключ, имя, пин, обязательность, поле состояния) и всё поверх неё циклом: `begin()`, `write()`, `setFailsafe()`, статус, `printPulseSelfTest()` |
+| `FlightController.h` | Порядок операций за такт, потеря связи (`applyLinkLoss()`), геттеры для телеметрии |
+
+### `autopilot/`
+
+| Файл | Отвечает за |
+|---|---|
+| `PidController.h` | ПИД: D по скорости с датчика (гироскоп, вариометр), anti-windup, интегратор заморожен без ARM |
+| `Autopilot.h` | Режимы MANUAL/STABILIZE/AUTO_TAKEOFF/ALT_HOLD + планирование при потере связи; `update(armed, linkLost, pilotThrottle)`, `applyThrottle()`, `getRollCorrection()`/`getPitchCorrection()` (мкс команды), `isFailsafeGliding()` |
+| `AutopilotModeSelector.h` | CH7 → режим, только при смене зоны (не затирает ALT_HOLD с дашборда) |
+
+### `sensors/`
+
+| Файл | Отвечает за |
+|---|---|
+| `SensorInterface.h` | Интерфейсы `Sensor`/`ImuSensor`/`BarometerSensor`/`MagnetometerSensor`/`GpsSensor` и структуры данных |
+| `SensorSelection.h` | Какой чип скомпилирован (`#define SENSOR_*`, можно переопределить флагом сборки) и на какой шине (`SELECTED_*_DEVICE(board)`) |
+| `SensorMounting.h` | Поворот осей чипа в оси самолёта (0/90/180/270° по часовой) |
+| `imu/ImuSensorBase.h` | Общее для IMU: калибровка, масштаб, поворот, авиационные знаки, ошибки шины |
+| `imu/AttitudeEstimator.h` | Комплементарный фильтр крена/тангажа, интеграл рысканья |
+| `imu/MPU6050_Sensor.h` | MPU6050/MPU6500 (чип по WHO_AM_I): ±2000°/с, ±16g, DLPF ~41 Гц, 1 кГц. **На стенде** |
+| `imu/ICM42688_Sensor.h` | ICM-42688-P: ±2000°/с, ±16g, 1 кГц, UI-фильтр 50 Гц. Не проверен на железе |
+| `baro/BarometerBase.h` | Общее для барометров: опрос только новых отсчётов, высота, вертикальная скорость через ФНЧ, калибровка базы, ошибки |
+| `baro/BMP388_Sensor.h` | BMP388 по I2C или SPI (с фиктивным байтом SPI), компенсация Bosch, чтение по флагу готовности. **На стенде (I2C)** |
+| `baro/BME280_Sensor.h` | BME280/BMP280, компенсация Bosch §8.1. Не проверен на железе |
+| `mag/MagnetometerBase.h` | Общее для компасов: опрос 50 Гц, hard-iron калибровка в NVS, поворот осей, курс, ошибки |
+| `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C. **На стенде** |
+| `mag/QMC5883L_Sensor.h` | QMC5883L, 0x0D |
+| `gps/UbloxM10_Gps.h` | u-blox M10: настройка CFG-VALSET (115200 бод, 10 Гц, NAV-PVT, без NMEA), разбор NAV-PVT. Не подключён на стенде |
+
+### `telemetry/` и приложение
+
+| Файл | Отвечает за |
+|---|---|
+| `DebugLogger.h` | Кадр состояния раз в 100 мс, только при изменениях; строка `SYS:` раз в 10 с |
+| `DebugConsole.h` | Команды в мониторе порта (`h`/`s`/`i`/`m`/`p`) |
+| `WebDebugServer.h` | Точка доступа, маршруты, JSON `/api/status`, почтовый ящик команд; своя задача на ядре 0 |
+| `WebDashboardPage.h` | HTML/JS дашборда одним литералом; строки каналов/выходов/датчиков строит браузер по JSON |
+| `OledDisplay.h` | SSD1306 через U8g2 поверх `II2CBus`, своя задача на ядре 0 |
 | `LoopStats.h` | Частота, среднее и худшее время такта |
-| `include.h` | Общий список `#include` для `main.cpp` |
-| `src/main.cpp` | Создание объектов, `setup()`, консоль, `loop()` с `vTaskDelayUntil` |
+| `src/main.cpp` | Создание объектов, `setup()`, `loop()` с `vTaskDelayUntil` |
 
 ---
 
@@ -285,15 +312,26 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
 **Потеря связи** (`IBusReceiver::isSignalLost()`):
 
 1. Нет кадров дольше `RX_TIMEOUT_US` (500 мс) — обрыв провода/питания
-   приёмника.
+   приёмника. До первого кадра после включения связь тоже считается
+   потерянной: значения каналов по умолчанию (все 1500) не принимаются за
+   команды пульта.
 2. Газ < `RX_FAILSAFE_THROTTLE_US` (950) — failsafe, заданный в пульте.
    **FS-iA6B при потере пульта кадры не прекращает**, а повторяет последние
    значения (проверено на стенде), поэтому без настройки failsafe в пульте
    потеря связи не распознаётся. Настройка — в `PILOT_GUIDE.md`.
 
-В failsafe: рули в нейтраль, газ `FAILSAFE_THROTTLE`, режим с CH7 не
-переключается, датчики продолжают читаться. ARM не сбрасывается — после
-восстановления связи самолёт снова слушается стиков.
+Что происходит при потере связи (`FlightController::applyLinkLoss()`):
+
+- мотор — `FAILSAFE_THROTTLE` всегда;
+- **борт заармлен** (скорее всего, в воздухе) — **планирование**:
+  `Autopilot` в любом режиме, даже в MANUAL, держит крен
+  `FAILSAFE_GLIDE_ROLL_DEG` (0 — прямо, 10–20° — круг над пилотом) и тангаж
+  `FAILSAFE_GLIDE_PITCH_DEG` (−3°, чтобы без мотора не терять скорость),
+  закрылки убраны; на OLED — `GLIDE`, в логе — режим `FAILSAFE_GLIDE`;
+- **не заармлен** (на земле) или IMU не отвечает — рули в нейтраль;
+- режим с CH7 не переключается, датчики продолжают читаться. ARM не
+  сбрасывается — после восстановления связи самолёт снова слушается стиков
+  и выбранного режима (автовзлёт — только заново).
 
 ---
 
@@ -330,7 +368,7 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
 
 | Поле | Единица | Смысл |
 |---|---|---|
-| `magX`, `magY`, `magZ` | мкТл | Поле по осям чипа, после вычета hard-iron смещений |
+| `magX`, `magY`, `magZ` | мкТл | Поле после hard-iron калибровки, в осях самолёта (`MAG_ROTATION_CW_DEG`) |
 | `headingDegrees` | ° (0..360) | `atan2(magY, magX)`, без компенсации наклона; направление отсчёта ещё не проверено на собранном самолёте |
 | `timestamp` | мкс | Момент чтения (50 Гц) |
 
@@ -366,12 +404,14 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
    `pilotThrottle = throttle.update(rc, receiverFailsafe)`.
 3. **Режим** — `modeSelector->update(rc)`, только при живой связи (в
    failsafe-кадре CH7 не отражает тумблер).
-4. **Датчики и автопилот** — `autopilot->update(armed && !failsafe,
-   pilotThrottle)` **всегда**, даже в failsafe: фильтры углов не должны
+4. **Датчики и автопилот** — `autopilot->update(armed, linkLost,
+   pilotThrottle)` **всегда**, даже без связи: фильтры углов не должны
    застывать. Пока не armed, ПИД работает (рули отвечают на наклон — удобно
-   на столе), но интегратор держится на нуле.
-5. **Failsafe** — если связь потеряна: `outputs.setFailsafe()` (рули 1500,
-   газ 1000) и `return`. Абсолютный приоритет над всем ниже.
+   на столе), но интегратор держится на нуле. Без связи и в ARM автопилот
+   переключается на планирование.
+5. **Потеря связи** — `applyLinkLoss()`: мотор выключен; в ARM — рули по
+   коррекциям планирования, иначе нейтраль; `return`. Абсолютный приоритет
+   над всем ниже.
 6. **ARM** — `arming.update(rc, false)`.
 7. **Команда** — `mixer.fromSticks(rc, millis())` (стики + плавные закрылки) + `getRollCorrection()`/
    `getPitchCorrection()` автопилота, ограничение ±500.
@@ -505,29 +545,43 @@ HTML-дашборд: бары 10 каналов, ARM/связь, выходы, �
 
 ## Как добавить новый датчик
 
-### A) Ещё один чип существующей категории
+### A) Ещё один чип существующей категории (IMU, барометр, компас)
 
-1. Создайте `include/sensors/<Имя>_Sensor.h`, реализуйте методы `Sensor`
-   (`begin()`, `isAvailable()`, `update()`, `getSensorType()`,
-   `printStatus()`) и своей категории. Конструктор принимает шину из HAL
-   (`II2CBus&`, `ISpiBus&` + CS, `IUartPort&`), **не** `Wire`/`SPI` напрямую.
-2. Для I2C используйте `readRegisters()`/`writeRegister()` из `II2CBus` —
-   они проверяют ответ устройства. При сбое чтения не затирайте данные,
-   считайте ошибки, как `MPU6050_Sensor`.
-3. Данные — в соглашении о знаках проекта (для IMU — с поворотом
-   `IMU_ROTATION_CW_DEG` и авиационными знаками, см. `MPU6050_Sensor.h`).
-4. Добавьте ветку в `SensorSelection.h`: `#define SENSOR_<КАТЕГОРИЯ>_<ИМЯ>`,
-   `using Selected... = ...;` и `#define SELECTED_..._ARGS(board) ...`.
-   `main.cpp` при смене датчика не трогается.
-5. Соберите все три окружения и проверьте на железе.
+Общее уже написано в базовых классах — драйвер чипа получается маленьким:
+
+1. Создайте `include/sensors/<категория>/<Имя>_Sensor.h` и унаследуйтесь от
+   `ImuSensorBase` / `BarometerBase` / `MagnetometerBase`. Конструктор
+   принимает `IRegisterDevice&` — драйвер не знает, I2C это или SPI.
+2. Реализуйте:
+   - `begin()` — `device.begin()`, проверить chip ID, записать регистры,
+     вызвать `setAvailable(true/false)`;
+   - IMU: `readSample()` (сырые accel/gyro/temp в осях чипа),
+     `accelLsbPerG()`, `gyroLsbPerDps()`, `temperatureC()`;
+   - барометр: `isNewSampleReady()` (флаг готовности или просто `true`) и
+     `readSample()` (давление в Па, температура в °C), период опроса — в
+     конструкторе базы;
+   - компас: `readRaw()` (X/Y/Z в осях чипа) и `lsbPerMicroTesla()`, имя
+     пространства NVS для калибровки — в конструкторе базы.
+3. Если чипу по SPI нужен фиктивный байт перед данными или особая частота —
+   добавьте статическую фабрику `spiDevice(bus, cs)`, как у
+   `BMP388_Sensor`.
+4. Ветка в `SensorSelection.h`: `#define SENSOR_<КАТЕГОРИЯ>_<ИМЯ>`,
+   `using Selected... = ...;` и `#define SELECTED_..._DEVICE(board) ...`
+   (`I2cRegisterDevice(board.i2c(), адрес)` или фабрика SPI). `main.cpp`
+   при смене датчика не трогается.
+5. Проверьте сборку с новым датчиком без правки файла — флагом:
+   `PLATFORMIO_BUILD_FLAGS="-DSENSOR_BARO=SENSOR_BARO_<ИМЯ>" pio run`, затем
+   все три окружения, затем на железе.
 
 ### B) Новая категория
 
 1. Структура данных и интерфейс — в `SensorInterface.h` по образцу
    `GpsSensor`/`GpsData`.
-2. Дальше как в A, плюс nullable указатель в конструктор `Autopilot` (без
-   датчика — никаких эффектов, а не падение) и поля в `GET /api/status` с
-   парой `attached`/`available`.
+2. Если у категории есть общая логика (фильтры, калибровка) — базовый класс
+   по образцу `BarometerBase`.
+3. Nullable указатель в конструктор `Autopilot` (без датчика — никаких
+   эффектов, а не падение) и поля в `GET /api/status` с парой
+   `attached`/`available`.
 
 ### Новая шина или периферия
 
@@ -542,12 +596,13 @@ HTML-дашборд: бары 10 каналов, ARM/связь, выходы, �
    `modeToString()`.
 2. Обработчик `handle<Режим>Mode()` и ветка в `Autopilot::update()`. Без
    нужного датчика — нулевые коррекции. Интегратор копите только когда
-   `armed` (передавайте его в `PID_Controller::calculate()`).
+   `armed` (передавайте его в `PidController::calculate()`).
 3. Если режим управляет газом — ветка в `Autopilot::applyThrottle()`.
    `FlightController` при этом не меняется.
 4. Выбор с пульта — в `AutopilotModeSelector::modeFor()`; с дашборда —
-   кнопка в `WebDebugServer::handleRoot()` и проверка диапазона в
-   `handleSetMode()`; короткое имя — в `OledDisplay::shortMode()`.
+   кнопка в `WebDashboardPage.h` и проверка диапазона в
+   `WebDebugServer::handleSetMode()`; короткое имя — в
+   `OledDisplay::shortMode()`.
 5. Если режиму нужны датчики — проверка в
    `ArmingManager::checkFailureReason()`.
 6. Проверка на столе без винта: рули должны отвечать на наклон в сторону
@@ -593,18 +648,19 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev   # проверить, что со
   (наклон → коррекция в сторону выравнивания), коэффициенты ПИД — стартовые.
 - **STABILIZE — выравнивание поверх стиков**, а не «угловой режим»
   (FBWA), где стик задаёт угол крена/тангажа. Пилот и автопилот суммируются.
-- **Failsafe — рули в нейтраль и мотор в ноль.** Для самолёта лучше
-  планирование с выровненными крыльями по IMU — запланировано.
+- **Планирование при потере связи не испытано в полёте.** Углы
+  `FAILSAFE_GLIDE_*` — стартовые; тангаж −3° подбирается под конкретный
+  планер (нос не должен ни задираться до сваливания, ни пикировать).
 - **Горизонт = положение при включении.** IMU калибруется при каждом старте;
   включать нужно ровно и неподвижно. Сохранённой в NVS калибровки уровня нет.
 - **Компас:** курс без компенсации наклона, направление отсчёта не проверено
   на собранном самолёте, калибровку надо делать уже в самолёте. Ни один
   режим курс пока не использует.
 - **GPS** не используется для навигации; на ESP32-C3 — только приём.
-- **`ICM42688_Sensor.h` не приведён к соглашению о знаках** и не проверен на
-  железе — доработать при подключении.
-- **`BMP388_Sensor.h` (SPI) и `BMP388_I2C_Sensor.h`** дублируют компенсацию;
-  опрос по флагу готовности и ФНЧ есть только в I2C-версии.
+- **Не проверены на железе:** `ICM42688_Sensor` (приведён к общему
+  соглашению через `ImuSensorBase`), `BME280_Sensor` (компенсация Bosch
+  реализована заново), BMP388 по SPI, `QMC5883L_Sensor`, настройка GPS через
+  CFG-VALSET. При подключении — лог загрузки, `s` в консоли, знаки наклоном.
 - **I2C на макетке ловит помехи** от ESC/мотора (единичные ошибки видны по
   `s`). Драйверы их переживают, но в самолёте провода I2C — короткие и
   подальше от силовых.

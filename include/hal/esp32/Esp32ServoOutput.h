@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include "soc/gpio_periph.h"
 #include "soc/io_mux_reg.h"
-#include "../IServoOutput.h"
+#include "hal/IServoOutput.h"
 
 // ============================================================
 // Реализация IServoOutput для ESP32 — аппаратный LEDC напрямую

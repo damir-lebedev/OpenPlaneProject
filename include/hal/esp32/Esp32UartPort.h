@@ -1,6 +1,6 @@
 #pragma once
 #include <Arduino.h>
-#include "../IUartPort.h"
+#include "hal/IUartPort.h"
 
 // ============================================================
 // Реализация IUartPort для ESP32 (Arduino core) — обёртка над
