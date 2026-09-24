@@ -1,24 +1,28 @@
 #pragma once
 #include <Arduino.h>
+#include <Preferences.h>
 
 // ============================================================
-// QMC5883P (плата GY-273) — 3-осевой магнитометр
+// QMC5883P (плата GY-273, на чипе бывает маркировка "5883P"/
+// "HP5883") — 3-осевой магнитометр QST
 //
-// I2C. Собственная минимальная реализация через II2CBus, без
-// vendor-библиотек — по структуре аналогична MPU6050_Sensor.h.
+// I2C, адрес 0x2C (фиксированный). Собственная минимальная
+// реализация через II2CBus, без vendor-библиотек.
 //
-// ⚠️ ВАЖНО, ПРОЧИТАТЬ ПЕРЕД ПЕРВЫМ ВКЛЮЧЕНИЕМ:
-// QMC5883P — это НЕ то же самое, что более распространённый на
-// платах GY-273 чип QMC5883L. У QMC5883P другой адрес I2C и,
-// предположительно, другая раскладка регистров. Адрес (0x2C) и
-// регистры/битовые поля ниже — заготовка по типовой схеме чипов
-// семейства QMC5883 (как у QMC5883L, адрес 0x0D), а НЕ проверенные
-// по даташиту конкретно QMC5883P значения. Перед полётом сверьте:
-//   • I2C-адрес (DEFAULT_ADDRESS ниже)
-//   • регистры данных X/Y/Z и их порядок/знак
-//   • регистр(ы) режима/ODR/диапазона и их битовую раскладку
-//   • масштаб LSB -> µT (SENSITIVITY_LSB_PER_UT ниже)
-// по официальному даташиту QMC5883P.
+// Раскладка регистров сверена с даташитом QMC5883P и проверена
+// вживую на плате GY-273 (chip ID 0x80 по адресу 0x2C). Она НЕ
+// совпадает с QMC5883L (адрес 0x0D, данные с 0x00, управление в
+// 0x09) — драйверы не взаимозаменяемы:
+//   0x00      CHIP_ID = 0x80
+//   0x01-0x06 X/Y/Z, int16 little-endian
+//   0x09      STATUS: бит0 DRDY, бит1 OVFL
+//   0x0A      CONTROL1: [1:0] MODE, [3:2] ODR, [5:4] OSR1, [7:6] OSR2
+//   0x0B      CONTROL2: [1:0] SET/RESET, [3:2] RNG, [7] SOFT_RST
+//   0x29      знаки осей (даташит рекомендует 0x06)
+//
+// Калибровка hard-iron (смещения по осям) хранится в NVS и
+// переживает перезагрузку — поэтому calibrate() (15 секунд
+// вращения) не нужно запускать при каждом включении.
 // ============================================================
 
 #include "SensorInterface.h"
@@ -28,54 +32,81 @@ class QMC5883P_Sensor : public MagnetometerSensor
 {
 public:
 
-    // TODO(verify): адрес по датащиту QMC5883L — 0x0D. Для QMC5883P
-    // часто указывают 0x2C, но это НЕ подтверждено здесь — сверьте.
     static constexpr uint8_t DEFAULT_ADDRESS = 0x2C;
 
     explicit QMC5883P_Sensor(II2CBus& bus, uint8_t address = DEFAULT_ADDRESS)
         : i2c(bus),
-          i2cAddress(address),
-          available(false)
+          i2cAddress(address)
     {
         memset(&magData, 0, sizeof(magData));
-        calibration.offsetX = 0;
-        calibration.offsetY = 0;
-        calibration.offsetZ = 0;
     }
 
     bool begin() override
     {
-        delay(100);
+        const int chipId = i2c.readRegister(i2cAddress, REG_CHIP_ID);
 
-        if (!checkConnection())
+        if (chipId != CHIP_ID_VALUE)
         {
-            Serial.println("QMC5883P: датчик не отвечает на I2C, магнитометр недоступен");
+            Serial.print("QMC5883P: не отвечает (chip ID ");
+            Serial.print(chipId < 0 ? String("нет ответа") : String("0x") + String(chipId, HEX));
+            Serial.println("), магнитометр недоступен");
             available = false;
             return false;
         }
 
-        initialize();
+        i2c.writeRegister(i2cAddress, REG_CONTROL2, 0x80);  // SOFT_RST
+        delay(10);
+
+        // Инициализация по примеру из даташита: знаки осей, SET/RESET
+        // включён + диапазон ±8 Гс, режим normal, ODR 200 Гц, OSR1=8, OSR2=8.
+        const bool ok =
+            i2c.writeRegister(i2cAddress, REG_AXIS_SIGN, 0x06) &&
+            i2c.writeRegister(i2cAddress, REG_CONTROL2, 0x08) &&
+            i2c.writeRegister(i2cAddress, REG_CONTROL1, 0xCD);
+
+        if (!ok)
+        {
+            Serial.println("QMC5883P: ошибка записи регистров, магнитометр недоступен");
+            available = false;
+            return false;
+        }
+
+        loadCalibration();
 
         available = true;
-        Serial.println("QMC5883P: подключён (TODO: регистры не сверены с датащитом чипа, см. заголовок файла)");
+        Serial.print("QMC5883P: подключён, калибровка ");
+        Serial.println(calibrated ? "загружена из NVS" : "НЕ выполнена (курс будет неточным)");
 
         return true;
     }
 
     bool isAvailable() const override
     {
-        return available;
+        return available && consecutiveErrors < MAX_CONSECUTIVE_ERRORS;
     }
 
+    // Чип обновляет данные с ODR 200 Гц, но для курса хватает 50 Гц —
+    // чаще не читаем, чтобы не занимать общую с IMU шину.
     void update() override
     {
         if (!available) return;
 
-        readRawData();
+        const uint32_t now = micros();
+        if (now - lastReadUs < READ_PERIOD_US) return;
+        lastReadUs = now;
+
+        if (!readRawData())
+        {
+            if (consecutiveErrors < MAX_CONSECUTIVE_ERRORS) consecutiveErrors++;
+            errorCount++;
+            return;  // остаются прошлые данные, а не мусор
+        }
+
+        consecutiveErrors = 0;
         applyCalibration();
         calculateHeading();
 
-        magData.timestamp = micros();
+        magData.timestamp = now;
     }
 
     const MagData& getMagData() const override
@@ -83,46 +114,46 @@ public:
         return magData;
     }
 
-    // Offset-калибровка (hard-iron): вызвать и в течение ~10-20 сек
-    // вращать плату вокруг всех осей. Берёт min/max по каждой оси,
-    // offset = (min+max)/2 — компенсирует постоянные магнитные
-    // помехи рядом с датчиком (моторы, провода), но НЕ soft-iron
-    // искажения (эллипс вместо окружности) — этого намеренно нет.
+    // Hard-iron калибровка: вызвать и в течение 15 сек вращать плату
+    // вокруг всех осей. offset = (min+max)/2 по каждой оси —
+    // компенсирует постоянные магнитные помехи рядом с датчиком
+    // (моторы, провода), но НЕ soft-iron (эллипс вместо окружности).
+    // Результат сохраняется в NVS.
     void calibrate() override
     {
         if (!available) return;
 
-        Serial.println("QMC5883P: калибровка (вращайте датчик по всем осям)...");
+        Serial.println("QMC5883P: калибровка 15 сек — вращайте датчик по всем осям...");
 
-        float minX = 32767, maxX = -32768;
-        float minY = 32767, maxY = -32768;
-        float minZ = 32767, maxZ = -32768;
+        int16_t minX = INT16_MAX, maxX = INT16_MIN;
+        int16_t minY = INT16_MAX, maxY = INT16_MIN;
+        int16_t minZ = INT16_MAX, maxZ = INT16_MIN;
 
-        const uint32_t durationMs = 15000;
         const uint32_t startTime = millis();
 
-        while (millis() - startTime < durationMs)
+        while (millis() - startTime < 15000)
         {
-            readRawData();
-
-            if (rawX < minX) minX = rawX;
-            if (rawX > maxX) maxX = rawX;
-            if (rawY < minY) minY = rawY;
-            if (rawY > maxY) maxY = rawY;
-            if (rawZ < minZ) minZ = rawZ;
-            if (rawZ > maxZ) maxZ = rawZ;
+            if (readRawData())
+            {
+                minX = min(minX, rawX); maxX = max(maxX, rawX);
+                minY = min(minY, rawY); maxY = max(maxY, rawY);
+                minZ = min(minZ, rawZ); maxZ = max(maxZ, rawZ);
+            }
 
             delay(20);
         }
 
-        calibration.offsetX = (minX + maxX) / 2.0f;
-        calibration.offsetY = (minY + maxY) / 2.0f;
-        calibration.offsetZ = (minZ + maxZ) / 2.0f;
+        offsetX = (minX + maxX) / 2.0f;
+        offsetY = (minY + maxY) / 2.0f;
+        offsetZ = (minZ + maxZ) / 2.0f;
+        calibrated = true;
 
-        Serial.print("QMC5883P: калибровка завершена, offset=");
-        Serial.print(calibration.offsetX); Serial.print(",");
-        Serial.print(calibration.offsetY); Serial.print(",");
-        Serial.println(calibration.offsetZ);
+        saveCalibration();
+
+        Serial.print("QMC5883P: калибровка сохранена, offset=");
+        Serial.print(offsetX); Serial.print(",");
+        Serial.print(offsetY); Serial.print(",");
+        Serial.println(offsetZ);
     }
 
     const char* getSensorType() const override
@@ -133,7 +164,10 @@ public:
     void printStatus() const override
     {
         Serial.print("QMC5883P: available=");
-        Serial.print(available ? "YES" : "NO");
+        Serial.print(isAvailable() ? "YES" : "NO");
+        Serial.print(" calibrated=");
+        Serial.print(calibrated ? "YES" : "NO");
+        Serial.print(" errors="); Serial.print(errorCount);
         Serial.print(" mag(uT)="); Serial.print(magData.magX, 1);
         Serial.print(","); Serial.print(magData.magY, 1);
         Serial.print(","); Serial.print(magData.magZ, 1);
@@ -143,84 +177,93 @@ public:
 
 private:
 
-    // TODO(verify): регистровая раскладка по типовой схеме QMC5883L —
-    // сверить с даташитом QMC5883P (см. предупреждение в начале файла).
-    static constexpr uint8_t REG_DATA_X_LSB = 0x00;  // далее X,Y,Z по 2 байта LE
-    static constexpr uint8_t REG_STATUS     = 0x06;  // бит0 = данные готовы (не используется здесь)
-    static constexpr uint8_t REG_CONTROL1   = 0x09;  // MODE/ODR/RNG/OSR
-    static constexpr uint8_t REG_SET_RESET  = 0x0B;
+    static constexpr uint8_t REG_CHIP_ID    = 0x00;
+    static constexpr uint8_t REG_DATA_X_LSB = 0x01;  // далее X,Y,Z по 2 байта LE
+    static constexpr uint8_t REG_CONTROL1   = 0x0A;
+    static constexpr uint8_t REG_CONTROL2   = 0x0B;
+    static constexpr uint8_t REG_AXIS_SIGN  = 0x29;
+    static constexpr uint8_t CHIP_ID_VALUE  = 0x80;
 
-    // TODO(verify): масштаб для диапазона ±8 Гаусс из типовой схемы
-    // QMC5883L (3000 LSB/Гаусс = 30 LSB/µT) — сверить с датащитом.
-    static constexpr float SENSITIVITY_LSB_PER_UT = 30.0f;
+    // Диапазон ±8 Гс: 3750 LSB/Гс, 1 Гс = 100 мкТл -> 37.5 LSB/мкТл.
+    static constexpr float SENSITIVITY_LSB_PER_UT = 37.5f;
+
+    static constexpr uint32_t READ_PERIOD_US = 20000;  // 50 Гц
+    static constexpr uint8_t MAX_CONSECUTIVE_ERRORS = 25;  // ~0.5 с без ответа
 
     II2CBus& i2c;
     uint8_t i2cAddress;
-    bool available;
+    bool available = false;
+    bool calibrated = false;
 
-    int16_t rawX, rawY, rawZ;
+    int16_t rawX = 0, rawY = 0, rawZ = 0;
+    float offsetX = 0, offsetY = 0, offsetZ = 0;
 
-    struct
-    {
-        float offsetX, offsetY, offsetZ;
-    } calibration;
+    uint32_t lastReadUs = 0;
+    uint8_t consecutiveErrors = 0;
+    uint32_t errorCount = 0;
 
     MagData magData;
 
-    bool checkConnection()
+    bool readRawData()
     {
-        i2c.beginTransmission(i2cAddress);
-        return (i2c.endTransmission() == 0);
-    }
+        uint8_t b[6];
+        if (!i2c.readRegisters(i2cAddress, REG_DATA_X_LSB, b, sizeof(b))) return false;
 
-    void initialize()
-    {
-        writeRegister(REG_SET_RESET, 0x01);
-        // MODE=continuous(01), ODR=200Hz(11), RNG=8G(01), OSR=512(00) -> 0x1D
-        // (см. TODO(verify) выше — конкретно под QMC5883P не проверено).
-        writeRegister(REG_CONTROL1, 0x1D);
-    }
-
-    void readRawData()
-    {
-        i2c.beginTransmission(i2cAddress);
-        i2c.write(REG_DATA_X_LSB);
-        i2c.endTransmission(false);
-
-        i2c.requestFrom(i2cAddress, (uint8_t)6);
-
-        const uint8_t xl = i2c.read(), xh = i2c.read();
-        const uint8_t yl = i2c.read(), yh = i2c.read();
-        const uint8_t zl = i2c.read(), zh = i2c.read();
-
-        rawX = (int16_t)((xh << 8) | xl);
-        rawY = (int16_t)((yh << 8) | yl);
-        rawZ = (int16_t)((zh << 8) | zl);
+        rawX = (int16_t)((b[1] << 8) | b[0]);
+        rawY = (int16_t)((b[3] << 8) | b[2]);
+        rawZ = (int16_t)((b[5] << 8) | b[4]);
+        return true;
     }
 
     void applyCalibration()
     {
-        magData.magX = (rawX - calibration.offsetX) / SENSITIVITY_LSB_PER_UT;
-        magData.magY = (rawY - calibration.offsetY) / SENSITIVITY_LSB_PER_UT;
-        magData.magZ = (rawZ - calibration.offsetZ) / SENSITIVITY_LSB_PER_UT;
+        magData.magX = (rawX - offsetX) / SENSITIVITY_LSB_PER_UT;
+        magData.magY = (rawY - offsetY) / SENSITIVITY_LSB_PER_UT;
+        magData.magZ = (rawZ - offsetZ) / SENSITIVITY_LSB_PER_UT;
     }
 
     // 2D-курс без компенсации наклона (roll/pitch) — датчик
-    // предполагается установленным горизонтально. Тilt-компенсация
-    // потребовала бы данных IMU и сюда намеренно не добавлена.
+    // предполагается установленным горизонтально. Направление
+    // (растёт ли курс при повороте по часовой) зависит от того, как
+    // плата GY-273 повёрнута относительно самолёта, — проверить
+    // вживую перед тем, как на курс будет опираться какой-либо режим.
     void calculateHeading()
     {
-        float heading = atan2(magData.magY, magData.magX) * 57.2958f;
+        float heading = atan2f(magData.magY, magData.magX) * RAD_TO_DEG;
         if (heading < 0) heading += 360.0f;
 
         magData.headingDegrees = heading;
     }
 
-    void writeRegister(uint8_t reg, uint8_t value)
+    void loadCalibration()
     {
-        i2c.beginTransmission(i2cAddress);
-        i2c.write(reg);
-        i2c.write(value);
-        i2c.endTransmission();
+        // Открываем на запись, хотя только читаем: в режиме "только
+        // чтение" отсутствующее пространство имён (калибровку ещё ни
+        // разу не сохраняли) Preferences печатает как ошибку в лог.
+        Preferences prefs;
+        if (!prefs.begin(NVS_NAMESPACE, false)) return;
+
+        calibrated = prefs.getBool("ok", false);
+        if (calibrated)
+        {
+            offsetX = prefs.getFloat("x", 0);
+            offsetY = prefs.getFloat("y", 0);
+            offsetZ = prefs.getFloat("z", 0);
+        }
+        prefs.end();
     }
+
+    void saveCalibration()
+    {
+        Preferences prefs;
+        if (!prefs.begin(NVS_NAMESPACE, false)) return;
+
+        prefs.putFloat("x", offsetX);
+        prefs.putFloat("y", offsetY);
+        prefs.putFloat("z", offsetZ);
+        prefs.putBool("ok", true);
+        prefs.end();
+    }
+
+    static constexpr const char* NVS_NAMESPACE = "qmc5883p";
 };

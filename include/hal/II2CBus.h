@@ -32,4 +32,49 @@ public:
     virtual uint8_t requestFrom(uint8_t address, uint8_t quantity) = 0;
     virtual int available() = 0;
     virtual int read() = 0;
+
+    // --------------------------------------------------------
+    // Общие помощники поверх примитивов выше — регистровый доступ,
+    // одинаковый у всех I2C-датчиков проекта. Возвращают false, если
+    // устройство не ответило (NACK) или пришло меньше байт, чем
+    // запрошено; буфер при этом не трогается, так что драйвер может
+    // оставить прошлые данные вместо мусора (0xFF от read() на
+    // пустом буфере).
+    // --------------------------------------------------------
+
+    bool writeRegister(uint8_t address, uint8_t reg, uint8_t value)
+    {
+        beginTransmission(address);
+        write(reg);
+        write(value);
+        return endTransmission() == 0;
+    }
+
+    bool readRegisters(uint8_t address, uint8_t reg, uint8_t* buffer, uint8_t count)
+    {
+        beginTransmission(address);
+        write(reg);
+        if (endTransmission(false) != 0) return false;
+
+        if (requestFrom(address, count) != count) return false;
+
+        for (uint8_t i = 0; i < count; ++i)
+        {
+            buffer[i] = static_cast<uint8_t>(read());
+        }
+        return true;
+    }
+
+    // -1, если устройство не ответило.
+    int readRegister(uint8_t address, uint8_t reg)
+    {
+        uint8_t value;
+        return readRegisters(address, reg, &value, 1) ? value : -1;
+    }
+
+    bool probe(uint8_t address)
+    {
+        beginTransmission(address);
+        return endTransmission() == 0;
+    }
 };

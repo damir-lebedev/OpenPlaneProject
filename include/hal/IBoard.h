@@ -11,7 +11,7 @@
 // Единственная точка входа в железо для всего остального кода
 // (main.cpp, FlightOutputs, IBusReceiver, драйверы датчиков).
 // Ничего выше этого интерфейса не должно включать <Wire.h>,
-// <SPI.h>, HardwareSerial или ESP32Servo напрямую — только
+// <SPI.h>, HardwareSerial или LEDC напрямую — только
 // IBoard и его under-интерфейсы (II2CBus/ISpiBus/IUartPort/
 // IServoOutput).
 //

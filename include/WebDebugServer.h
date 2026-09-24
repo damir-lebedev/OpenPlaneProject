@@ -4,11 +4,23 @@
 // WEB DEBUG SERVER
 //
 // HTTP-дашборд для отладки по Wi-Fi (AP: OpenPlane-Debug).
-// Отдаёт один агрегированный /api/status (RC-каналы, ARM/failsafe/
-// boost, выходы с флагом attached, датчики с флагом available,
-// автопилот, каналы FeatureManager) и принимает setmode/setpid/
-// assignfeature. Явно показывает отсутствие датчика/серво, а не
-// молчит про них.
+// Отдаёт один агрегированный /api/status (RC-каналы, ARM/failsafe,
+// выходы с флагом attached, датчики с флагом available,
+// автопилот) и принимает setmode/setpid. Режим автопилота с RC
+// сейчас выбирается только через CH7 (см. AutopilotModeSelector.h) —
+// /api/setmode остаётся отдельным способом сменить режим с
+// дашборда, независимо от положения CH7. Явно показывает
+// отсутствие датчика/серво, а не молчит про них.
+//
+// Сервер крутится в отдельной FreeRTOS-задаче на ядре 0 (там же
+// Wi-Fi), а не в полётном цикле: WebServer синхронный, и медленный
+// клиент или сборка страницы (~8 КБ String) раньше задерживали
+// FlightController::update() на миллисекунды-секунды. Чтение
+// состояния для /api/status из другой задачи безопасно (отдельные
+// 16/32-битные поля, в худшем случае — значения из соседних
+// циклов), а команды setmode/setpid не применяются из веб-задачи
+// напрямую: они кладутся в "почтовый ящик" под спинлоком, и полётный
+// цикл забирает их сам (applyPendingCommands() в loop()).
 // ============================================================
 
 #include <WiFi.h>
@@ -16,7 +28,6 @@
 #include <Arduino.h>
 #include "FlightController.h"
 #include "Autopilot.h"
-#include "FeatureManager.h"
 
 #define WIFI_SSID_AP "OpenPlane-Debug"
 #define WIFI_PASSWORD_AP "12345678"
@@ -27,11 +38,9 @@ class WebDebugServer
 public:
 
     WebDebugServer(FlightController* fc = nullptr,
-                   Autopilot* ap = nullptr,
-                   FeatureManager* fm = nullptr)
+                   Autopilot* ap = nullptr)
         : flightController(fc),
           autopilot(ap),
-          featureManager(fm),
           webServer(WIFI_PORT),
           isRunning(false)
     {
@@ -63,16 +72,38 @@ public:
         webServer.begin();
         isRunning = true;
 
+        // Ядро 0, приоритет 1 — рядом с Wi-Fi, подальше от полётного
+        // цикла (loop() крутится на ядре 1).
+        xTaskCreatePinnedToCore(serverTask, "web", 8192, this, 1, nullptr, 0);
+
         Serial.println("WebDebugServer: открой http://192.168.4.1 в браузере");
 
         return true;
     }
 
-    void update()
+    // Вызывать из полётного цикла: применяет команды, пришедшие с
+    // дашборда, в контексте той задачи, которая владеет автопилотом.
+    void applyPendingCommands()
     {
-        if (isRunning)
+        if (!autopilot || (!pending.hasMode && !pending.hasPid)) return;
+
+        PendingCommands commands;
+        portENTER_CRITICAL(&pendingLock);
+        commands = pending;
+        pending.hasMode = false;
+        pending.hasPid = false;
+        portEXIT_CRITICAL(&pendingLock);
+
+        if (commands.hasMode)
         {
-            webServer.handleClient();
+            autopilot->setMode(commands.mode);
+        }
+
+        if (commands.hasPid)
+        {
+            autopilot->setPIDGains(commands.pid[0], commands.pid[1], commands.pid[2],
+                                   commands.pid[3], commands.pid[4], commands.pid[5]);
+            Serial.println("WebDebugServer: PID обновлены с дашборда");
         }
     }
 
@@ -99,10 +130,31 @@ private:
 
     FlightController* flightController;
     Autopilot* autopilot;
-    FeatureManager* featureManager;
 
     WebServer webServer;
     bool isRunning;
+
+    struct PendingCommands
+    {
+        bool hasMode = false;
+        AutopilotMode mode = MODE_MANUAL;
+        bool hasPid = false;
+        float pid[6] = {};  // kpRoll, kiRoll, kdRoll, kpPitch, kiPitch, kdPitch
+    };
+
+    PendingCommands pending;
+    portMUX_TYPE pendingLock = portMUX_INITIALIZER_UNLOCKED;
+
+    static void serverTask(void* arg)
+    {
+        WebDebugServer* self = static_cast<WebDebugServer*>(arg);
+
+        for (;;)
+        {
+            self->webServer.handleClient();
+            vTaskDelay(pdMS_TO_TICKS(2));
+        }
+    }
 
 
     void setupRoutes()
@@ -111,7 +163,6 @@ private:
         webServer.on("/api/status", [this]() { handleStatusAPI(); });
         webServer.on("/api/setmode", HTTP_POST, [this]() { handleSetMode(); });
         webServer.on("/api/setpid", HTTP_POST, [this]() { handleSetPID(); });
-        webServer.on("/api/assignfeature", HTTP_POST, [this]() { handleAssignFeature(); });
         webServer.onNotFound([this]() { handleNotFound(); });
     }
 
@@ -144,8 +195,6 @@ private:
         json += (flightController && flightController->isArmed()) ? "true" : "false";
         json += ",\"failsafe\":";
         json += (flightController && flightController->isReceiverFailsafe()) ? "true" : "false";
-        json += ",\"boost\":";
-        json += (flightController && flightController->isBoostActive()) ? "true" : "false";
 
         json += ",\"outputs\":{";
         if (flightController)
@@ -236,18 +285,6 @@ private:
         }
         json += "}";
 
-        json += ",\"features\":";
-        if (featureManager)
-        {
-            char buf[256];
-            featureManager->getConfigAsJSON(buf, sizeof(buf));
-            json += buf;
-        }
-        else
-        {
-            json += "null";
-        }
-
         json += "}";
 
         return json;
@@ -291,7 +328,11 @@ private:
             return;
         }
 
-        autopilot->setMode((AutopilotMode)mode);
+        portENTER_CRITICAL(&pendingLock);
+        pending.mode = (AutopilotMode)mode;
+        pending.hasMode = true;
+        portEXIT_CRITICAL(&pendingLock);
+
         webServer.send(200, "application/json", "{\"status\":\"ok\"}");
     }
 
@@ -324,41 +365,12 @@ private:
         const float kiPitch = extractJsonNumber(body, "kiPitch", autopilot->getPitchPid().getKi());
         const float kdPitch = extractJsonNumber(body, "kdPitch", autopilot->getPitchPid().getKd());
 
-        autopilot->setPIDGains(kpRoll, kiRoll, kdRoll, kpPitch, kiPitch, kdPitch);
+        portENTER_CRITICAL(&pendingLock);
+        pending.pid[0] = kpRoll;  pending.pid[1] = kiRoll;  pending.pid[2] = kdRoll;
+        pending.pid[3] = kpPitch; pending.pid[4] = kiPitch; pending.pid[5] = kdPitch;
+        pending.hasPid = true;
+        portEXIT_CRITICAL(&pendingLock);
 
-        webServer.send(200, "application/json", "{\"status\":\"ok\"}");
-    }
-
-
-    // ========================================================
-    // POST /api/assignfeature  {slot: 0..3, feature: 0..4}
-    // ========================================================
-
-    void handleAssignFeature()
-    {
-        if (!webServer.hasArg("plain"))
-        {
-            webServer.send(400, "application/json", "{\"error\":\"no data\"}");
-            return;
-        }
-
-        if (!featureManager)
-        {
-            webServer.send(503, "application/json", "{\"error\":\"feature manager not attached\"}");
-            return;
-        }
-
-        const String body = webServer.arg("plain");
-        const int slot = (int)extractJsonNumber(body, "slot", -1);
-        const int feature = (int)extractJsonNumber(body, "feature", -1);
-
-        if (slot < 0 || slot >= FEATURE_SLOT_COUNT || feature < FEATURE_DISABLED || feature > FEATURE_MANUAL)
-        {
-            webServer.send(400, "application/json", "{\"error\":\"invalid slot or feature\"}");
-            return;
-        }
-
-        featureManager->assignFeature((uint8_t)slot, (FeatureType)feature);
         webServer.send(200, "application/json", "{\"status\":\"ok\"}");
     }
 
@@ -370,8 +382,8 @@ private:
 
 
     // Простой парсер плоского JSON вида {"key":123.45} — без
-    // вложенности и без сторонней библиотеки (см. Autopilot.h/
-    // FeatureManager.h — весь проект решил не тащить ArduinoJson).
+    // вложенности и без сторонней библиотеки (проект намеренно не
+    // тащит ArduinoJson ради двух POST-запросов).
     static float extractJsonNumber(const String& body, const char* key, float fallback)
     {
         const String needle = String("\"") + key + "\":";
@@ -432,7 +444,6 @@ private:
             "<div class='row'>"
             "<span class='label'>Приёмник</span><span class='badge' id='rx'>--</span>"
             "<span class='label'>ARM</span><span class='badge' id='arm'>--</span>"
-            "<span class='label'>Boost</span><span class='badge' id='boost'>--</span>"
             "</div></div>"
 
             "<div class='card'><h2>RC каналы</h2>";
@@ -478,28 +489,6 @@ private:
             "<div class='row'><button class='button' onclick='applyPID()'>Применить</button></div>"
             "</div>"
 
-            "<div class='card'><h2>Каналы автопилота</h2>";
-
-        static const char* FEATURE_NAMES[] = {"DISABLED", "AUTO_TAKEOFF", "ALT_HOLD", "STABILIZE", "MANUAL"};
-
-        for (uint8_t slot = 0; slot < FEATURE_SLOT_COUNT; ++slot)
-        {
-            html += "<div class='row'><span class='label' id='feat-ch" + String(slot) + "'>CH?</span>"
-                    "<select id='feat-select" + String(slot) + "'>";
-
-            for (int f = FEATURE_DISABLED; f <= FEATURE_MANUAL; ++f)
-            {
-                html += "<option value='" + String(f) + "'>" + FEATURE_NAMES[f] + "</option>";
-            }
-
-            html += "</select>"
-                    "<button class='button' onclick='applyFeature(" + String(slot) + ")'>OK</button>"
-                    "<span class='badge' id='feat-active" + String(slot) + "'>--</span></div>";
-        }
-
-        html +=
-            "</div>"
-
             "</div><script>"
             "function setBadge(id,ok,onText,offText){var el=document.getElementById(id);if(!el)return;el.textContent=ok?onText:offText;el.className='badge '+(ok?'ok':'bad');}"
             "function setOutputRow(id,out){var v=document.getElementById(id+'-val');var b=document.getElementById(id+'-badge');if(v)v.textContent=out.us+' us';if(b){b.textContent=out.attached?'OK':'НЕ ПОДКЛЮЧЕН';b.className='badge '+(out.attached?'ok':'bad');}}"
@@ -510,7 +499,6 @@ private:
             "for(var i=0;i<s.rc.length;i++){var val=s.rc[i];var pct=Math.max(0,Math.min(100,(val-1000)/10));var bar=document.getElementById('ch'+i);if(bar)bar.style.width=pct+'%';var lab=document.getElementById('chv'+i);if(lab)lab.textContent=val;}"
             "setBadge('rx',!s.failsafe,'OK','LOST');"
             "setBadge('arm',s.armed,'ARMED','DISARMED');"
-            "setBadge('boost',s.boost,'ON','OFF');"
             "setOutputRow('ail-l',s.outputs.aileronLeft);"
             "setOutputRow('ail-r',s.outputs.aileronRight);"
             "setOutputRow('elevator',s.outputs.elevator);"
@@ -524,12 +512,10 @@ private:
             "document.getElementById('desired-pitch').textContent=s.autopilot.attached?('pitch='+s.autopilot.desiredPitch.toFixed(1)):'--';"
             "document.getElementById('target-alt').textContent=s.autopilot.attached?s.autopilot.targetAlt.toFixed(1):'--';"
             "if(s.autopilot.attached){var pidIds=['kpRoll','kiRoll','kdRoll','kpPitch','kiPitch','kdPitch'];for(var p=0;p<pidIds.length;p++){var inp=document.getElementById(pidIds[p]);if(inp&&!inp.dataset.touched)inp.value=s.autopilot[pidIds[p]];}}"
-            "if(s.features){for(var slot=0;slot<4;slot++){var chEl=document.getElementById('feat-ch'+slot);if(chEl)chEl.textContent='CH'+s.features.ch[slot];var actEl=document.getElementById('feat-active'+slot);if(actEl){actEl.textContent=s.features.active[slot]?'ON':'off';actEl.className='badge '+(s.features.active[slot]?'ok':'');}var sel=document.getElementById('feat-select'+slot);if(sel&&!sel.dataset.touched)sel.value=s.features.feature[slot];}}"
             "}catch(e){console.error(e);}"
             "}"
             "async function setMode(m){try{await fetch('/api/setmode',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:m})});}catch(e){console.error(e);}}"
             "async function applyPID(){function g(id){document.getElementById(id).dataset.touched='1';return parseFloat(document.getElementById(id).value)||0;}try{await fetch('/api/setpid',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kpRoll:g('kpRoll'),kiRoll:g('kiRoll'),kdRoll:g('kdRoll'),kpPitch:g('kpPitch'),kiPitch:g('kiPitch'),kdPitch:g('kdPitch')})});}catch(e){console.error(e);}}"
-            "async function applyFeature(slot){var sel=document.getElementById('feat-select'+slot);sel.dataset.touched='1';try{await fetch('/api/assignfeature',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slot:slot,feature:parseInt(sel.value)})});}catch(e){console.error(e);}}"
             "setInterval(updateDashboard,200);"
             "updateDashboard();"
             "</script></body></html>";

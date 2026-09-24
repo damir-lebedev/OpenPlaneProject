@@ -8,12 +8,16 @@
 // только вызывает остальные классы в правильном порядке.
 //
 // Порядок в update() и есть приоритет управления:
-//   1. FAILSAFE   — потеря сигнала важнее всего, обрывает cycle
-//   2. ARMING     — обновляем состояние ARM
-//   3. MIXER      — RC -> положения поверхностей
-//   4. AUTOPILOT  — roll/pitch коррекции поверх mixer (только если armed)
-//   5. THROTTLE   — газ + boost, затем коррекция автопилота по газу
-//                   (ALT_HOLD/AUTO_TAKEOFF, только если armed)
+//   1. ДАТЧИКИ    — Autopilot::update() читает IMU/баро всегда, даже
+//                   в failsafe, чтобы фильтры углов не застывали
+//   2. FAILSAFE   — потеря связи важнее всего: мотор в ноль, рули
+//                   в нейтраль, дальше цикл не идёт
+//   3. ARMING     — тумблер ARM (SwA)
+//   4. MIXER      — стики -> команда крена/тангажа/закрылков, к ней
+//                   прибавляются коррекции автопилота (в тех же
+//                   физических знаках), затем -> PWM каждого серво
+//   5. THROTTLE   — газ пилота -> газ режима автопилота
+//                   (AUTO_TAKEOFF/ALT_HOLD) -> 0, если не armed
 //   6. OUTPUTS    — PWM на GPIO
 // ============================================================
 
@@ -21,7 +25,7 @@ class FlightController
 {
 public:
 
-    // Autopilot/FeatureManager опциональны (nullptr = чистое
+    // Autopilot/AutopilotModeSelector опциональны (nullptr = чистое
     // ручное управление, как раньше).
     FlightController(
         IBusReceiver& receiver,
@@ -30,7 +34,7 @@ public:
         ArmingManager& arming,
         FlightOutputs& outputs,
         Autopilot* autopilot = nullptr,
-        FeatureManager* featureManager = nullptr
+        AutopilotModeSelector* modeSelector = nullptr
     )
         : receiver(receiver),
           mixer(mixer),
@@ -38,7 +42,7 @@ public:
           arming(arming),
           outputs(outputs),
           autopilot(autopilot),
-          featureManager(featureManager)
+          modeSelector(modeSelector)
     {
     }
 
@@ -53,74 +57,59 @@ public:
         receiver.update();
 
         const bool receiverFailsafe = receiver.isSignalLost();
-
-        // FeatureManager/Autopilot обновляются до failsafe-проверки:
-        // так их внутренние таймеры/фильтры продолжают идти даже
-        // если этот конкретный цикл потом обрывается по failsafe.
-        if (featureManager && !receiverFailsafe)
-        {
-            featureManager->update(receiver.getState());
-        }
-
-        if (autopilot && !receiverFailsafe)
-        {
-            autopilot->update();
-        }
-
         const RcChannelState& rc = receiver.getState();
+
+        const uint16_t pilotThrottle = throttle.update(rc, receiverFailsafe);
+
+        // Режим с RC переключаем только при живой связи: в failsafe-кадре
+        // CH7 содержит не положение тумблера, а значение failsafe.
+        if (modeSelector && !receiverFailsafe)
+        {
+            modeSelector->update(rc);
+        }
+
+        if (autopilot)
+        {
+            autopilot->update(arming.isArmed() && !receiverFailsafe, pilotThrottle);
+        }
 
         if (receiverFailsafe)
         {
-            arming.update(Config::PWM_MIN, true);
-            throttle.update(rc, true);
             outputs.setFailsafe();
-            return;  // ничего больше не делаем — самолёт в безопасном режиме
+            return;  // ничего больше не делаем — мотор выключен, рули в нейтрали
         }
 
-        arming.update(rc.get(Channels::THROTTLE), false);
+        arming.update(rc, false);
 
-        FlightOutputState output = mixer.calculate(rc);
+        ControlCommand command = mixer.fromSticks(rc);
 
-        // Коррекции автопилота применяются только когда armed —
-        // иначе на земле до вооружения система могла бы дёргать
-        // поверхности сама.
-        if (autopilot && arming.isArmed())
+        if (autopilot)
         {
-            const float rollCorr = autopilot->getRollCorrection();
-            const float pitchCorr = autopilot->getPitchCorrection();
-
-            output.aileronLeft += pitchCorr - rollCorr;
-            output.aileronRight += pitchCorr + rollCorr;
-            output.elevator += pitchCorr;
-
-            output.aileronLeft = constrain(output.aileronLeft, Config::PWM_MIN, Config::PWM_MAX);
-            output.aileronRight = constrain(output.aileronRight, Config::PWM_MIN, Config::PWM_MAX);
-            output.elevator = constrain(output.elevator, Config::PWM_MIN, Config::PWM_MAX);
+            command.roll = clampCommand(command.roll + autopilot->getRollCorrection());
+            command.pitch = clampCommand(command.pitch + autopilot->getPitchCorrection());
         }
 
-        output.throttle = throttle.update(rc, false);
+        FlightOutputState output = mixer.mix(command);
 
-        // Autopilot::getThrottleCorrection() — это проценты (-100..100,
-        // см. ALT_HOLD/AUTO_TAKEOFF в Autopilot.h), а не микросекунды, как
-        // roll/pitch выше — масштабируем на диапазон PWM_MIN..PWM_MAX
-        // перед тем, как прибавить к газу.
-        if (autopilot && arming.isArmed())
+        output.throttle = autopilot ? autopilot->applyThrottle(pilotThrottle) : pilotThrottle;
+
+        // ARM реально блокирует газ (см. ArmingManager) — ставим ПОСЛЕ
+        // автопилота, чтобы ни один режим не мог протащить газ мимо
+        // этой проверки.
+        if (!arming.isArmed())
         {
-            const int32_t throttleCorrUs =
-                static_cast<int32_t>(autopilot->getThrottleCorrection() *
-                                      (Config::PWM_MAX - Config::PWM_MIN) / 100.0f);
-
-            output.throttle = constrain(output.throttle + throttleCorrUs, Config::PWM_MIN, Config::PWM_MAX);
+            output.throttle = Config::PWM_MIN;
         }
 
         outputs.write(output);
     }
 
 
-    // Для DebugLogger/WebDebugServer.
+    // Для DebugLogger/WebDebugServer/OledDisplay.
     bool isReceiverFailsafe() const { return receiver.isSignalLost(); }
+    const IBusReceiver& getReceiver() const { return receiver; }
     bool isArmed() const { return arming.isArmed(); }
-    bool isBoostActive() const { return throttle.isBoostActive(); }
+    const ArmingManager& getArming() const { return arming; }
     const FlightOutputState& getOutputState() const { return outputs.getLastState(); }
     const RcChannelState& getRcState() const { return receiver.getState(); }
     const FlightOutputs& getOutputs() const { return outputs; }
@@ -135,5 +124,10 @@ private:
     FlightOutputs& outputs;
 
     Autopilot* autopilot;
-    FeatureManager* featureManager;
+    AutopilotModeSelector* modeSelector;
+
+    static int16_t clampCommand(float value)
+    {
+        return static_cast<int16_t>(constrain(value, -500.0f, 500.0f));
+    }
 };

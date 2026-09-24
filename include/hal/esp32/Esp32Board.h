@@ -13,7 +13,7 @@
 // 🧠 РЕАЛИЗАЦИЯ "МОЗГА" ДЛЯ ESP32
 //
 // Единственное место, которое инстанцирует конкретные ESP32-шины
-// (Wire/SPI/HardwareSerial/ESP32Servo) и знает пины из Config.h.
+// (Wire/SPI/HardwareSerial/LEDC) и знает пины из Config.h.
 // Всё остальное (FlightOutputs, IBusReceiver, драйверы датчиков,
 // main.cpp) видит только интерфейс IBoard.
 //
@@ -32,21 +32,18 @@ public:
           rcPort(rcSerial, Config::PIN_IBUS, -1),
           gpsPort(gpsSerial, Config::PIN_GPS_RX, Config::PIN_GPS_TX),
           servos{
-              Esp32ServoOutput(Config::PIN_AILERON_LEFT),
-              Esp32ServoOutput(Config::PIN_AILERON_RIGHT),
-              Esp32ServoOutput(Config::PIN_ELEVATOR),
-              Esp32ServoOutput(Config::PIN_ESC)
+              Esp32ServoOutput(Config::PIN_AILERON_LEFT, 0),  // второй аргумент — канал LEDC
+              Esp32ServoOutput(Config::PIN_AILERON_RIGHT, 1),
+              Esp32ServoOutput(Config::PIN_ELEVATOR, 2),
+              Esp32ServoOutput(Config::PIN_ESC, 3)
           }
     {
     }
 
     void begin() override
     {
-        ESP32PWM::allocateTimer(0);
-        ESP32PWM::allocateTimer(1);
-        ESP32PWM::allocateTimer(2);
-        ESP32PWM::allocateTimer(3);
-
+        // PWM-выходам (LEDC) отдельная подготовка не нужна — каждый
+        // канал настраивается в Esp32ServoOutput::attach().
         i2cBus.begin();
         spiBus.begin();
 

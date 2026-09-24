@@ -3,7 +3,7 @@
 // DEBUG LOGGER
 //
 // Периодический вывод состояния в Serial, полностью отдельно от
-// flight logic. Autopilot/FeatureManager опциональны — без них
+// flight logic. Autopilot опционален — без него
 // печатается только RC/ARM/failsafe/выходы, как раньше.
 //
 // Кадр сначала собирается в буфер и сравнивается с предыдущим —
@@ -21,11 +21,11 @@ public:
     explicit DebugLogger(
         FlightController& controller,
         Autopilot* autopilot = nullptr,
-        FeatureManager* featureManager = nullptr
+        const LoopStats* loopStats = nullptr
     )
         : controller(controller),
           autopilot(autopilot),
-          featureManager(featureManager)
+          loopStats(loopStats)
     {
     }
 
@@ -41,6 +41,15 @@ public:
         lastDebugTime = now;
 
         printState();
+
+        // Системная строка — раз в SYSTEM_INTERVAL_MS, независимо от
+        // того, менялось ли что-то (частота цикла и счётчики ошибок
+        // меняются постоянно и забили бы основной кадр).
+        if (now - lastSystemTime >= SYSTEM_INTERVAL_MS)
+        {
+            lastSystemTime = now;
+            printSystem();
+        }
     }
 
 
@@ -49,9 +58,9 @@ private:
     // Print, который просто копит текст в буфер вместо отправки в Serial —
     // так можно собрать целый кадр и сравнить его целиком с предыдущим.
     //
-    // Размер с запасом: 10 каналов + RX/ARM/BOOST/OUT (~200) + Autopilot
-    // mode/imu/baro/corr + mag + gps (~350 при всех датчиках сразу) +
-    // Features (~90) — реалистичный максимум около 650 символов.
+    // Размер с запасом: 10 каналов + RX/ARM/OUT (~220) + Autopilot
+    // mode/imu/baro/corr + mag + gps (~350 при всех датчиках сразу) —
+    // реалистичный максимум около 600 символов.
     static constexpr size_t FRAME_BUFFER_SIZE = 900;
 
     class CapturePrint : public Print
@@ -81,11 +90,14 @@ private:
         size_t length = 0;
     };
 
+    static constexpr uint32_t SYSTEM_INTERVAL_MS = 10000;
+
     FlightController& controller;
     Autopilot* autopilot;
-    FeatureManager* featureManager;
+    const LoopStats* loopStats;
 
     uint32_t lastDebugTime = 0;
+    uint32_t lastSystemTime = 0;
 
     CapturePrint capture;
     char previousFrame[FRAME_BUFFER_SIZE] = {0};
@@ -141,14 +153,24 @@ private:
             capture.print(" ");
         }
 
+        const IBusReceiver& receiver = controller.getReceiver();
+
         capture.print("| RX=");
-        capture.print(controller.isReceiverFailsafe() ? "LOST" : "OK");
+        if (receiver.isFrameTimeout())
+        {
+            capture.print("LOST(нет кадров)");
+        }
+        else if (receiver.isFailsafeReported())
+        {
+            capture.print("LOST(failsafe пульта)");
+        }
+        else
+        {
+            capture.print("OK");
+        }
 
         capture.print(" | ARM=");
         capture.print(controller.isArmed() ? "YES" : "NO");
-
-        capture.print(" | BOOST=");
-        capture.print(controller.isBoostActive() ? "ON" : "OFF");
 
         applyDeadband(output.aileronLeft, shownOutput.aileronLeft);
         applyDeadband(output.aileronRight, shownOutput.aileronRight);
@@ -169,11 +191,6 @@ private:
             autopilot->printStatus(capture);
         }
 
-        if (featureManager)
-        {
-            featureManager->printStatus(capture);
-        }
-
         const bool changed = !hasPreviousFrame || strcmp(capture.c_str(), previousFrame) != 0;
 
         if (!Config::DEBUG_ONLY_ON_CHANGE || changed)
@@ -187,5 +204,28 @@ private:
             previousFrame[sizeof(previousFrame) - 1] = '\0';
             hasPreviousFrame = true;
         }
+    }
+
+    void printSystem() const
+    {
+        const IBusReceiver& receiver = controller.getReceiver();
+
+        Serial.println();
+        Serial.print("SYS: loop ");
+        if (loopStats)
+        {
+            Serial.print(loopStats->hz); Serial.print(" Hz, avg ");
+            Serial.print(loopStats->avgUs); Serial.print(" us, max ");
+            Serial.print(loopStats->maxUs); Serial.print(" us");
+        }
+        else
+        {
+            Serial.print("n/a");
+        }
+
+        Serial.print(" | iBUS ok="); Serial.print(receiver.getGoodFrameCount());
+        Serial.print(" crc_err="); Serial.print(receiver.getBadFrameCount());
+        Serial.print(" | heap "); Serial.print(ESP.getFreeHeap() / 1024); Serial.print(" KB");
+        Serial.print(" | uptime "); Serial.print(millis() / 1000); Serial.println(" s");
     }
 };

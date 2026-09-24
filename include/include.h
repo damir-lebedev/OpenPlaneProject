@@ -1,6 +1,5 @@
 #pragma once
 #include <Arduino.h>
-#include <ESP32Servo.h>
 #include <Wire.h>
 #include <SPI.h>
 #include <WiFi.h>
@@ -37,12 +36,15 @@
 #include "../include/sensors/ICM42688_Sensor.h"
 #include "../include/sensors/BME280_Sensor.h"
 #include "../include/sensors/BMP388_Sensor.h"
+#include "../include/sensors/BMP388_I2C_Sensor.h"
 #include "../include/sensors/QMC5883P_Sensor.h"
 #include "../include/sensors/UbloxM10_Gps.h"
 #include "../include/sensors/SensorSelection.h"
+#include "../include/LoopStats.h"
 #include "../include/Autopilot.h"
-#include "../include/FeatureManager.h"
+#include "../include/AutopilotModeSelector.h"
 #include "../include/WebDebugServer.h"
 
 #include "../include/FlightController.h"
+#include "../include/OledDisplay.h"
 #include "../include/DebugLogger.h"

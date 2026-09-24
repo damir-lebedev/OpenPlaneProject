@@ -272,7 +272,9 @@ private:
     // от конкретного чипа не зависит.
     void calculateAltitude()
     {
-        float ratio = seaLevelPressure / baroData.pressure;
+        // h = 44330 * (1 - (P/P0)^(1/5.255)); раньше было P0/P — высота
+        // выходила с обратным знаком (см. BMP388_I2C_Sensor.h).
+        float ratio = baroData.pressure / seaLevelPressure;
         float altitude = 44330.0f * (1.0f - pow(ratio, 0.1903f));
 
         baroData.altitude = altitude - calibrationAltitude;
