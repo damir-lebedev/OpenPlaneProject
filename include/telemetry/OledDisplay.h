@@ -59,7 +59,7 @@ public:
             return false;
         }
 
-        bus = displayBus;
+        busSlot() = displayBus;
         u8g2_Setup_ssd1306_i2c_128x64_noname_f(display.getU8g2(), U8G2_R0,
                                                byteCallback, u8x8_gpio_and_delay_arduino);
         display.setI2CAddress(I2C_ADDRESS << 1);
@@ -84,11 +84,19 @@ private:
 
     U8G2 display;
 
-    static inline II2CBus* bus = nullptr;
+    // Шина экрана для byteCallback (C-колбэк U8g2 не знает об объекте).
+    // Статическая локальная переменная, а не static inline член: тот
+    // требует C++17, а ядро Arduino собирается с gnu++11.
+    static II2CBus*& busSlot()
+    {
+        static II2CBus* bus = nullptr;
+        return bus;
+    }
 
     // Передача байтов U8g2 поверх II2CBus.
     static uint8_t byteCallback(u8x8_t* u8x8, uint8_t msg, uint8_t argInt, void* argPtr)
     {
+        II2CBus* bus = busSlot();
         switch (msg)
         {
             case U8X8_MSG_BYTE_SEND:
