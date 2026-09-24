@@ -84,7 +84,7 @@
           │                                       ▲
           ▼                                       │ II2CBus / ISpiBus / IUartPort
 ┌───────────────────────────────────────────────────────────────────────┐
-│ OUTPUTS  FlightOutputs.h — порядок 4 выходов, пишет через IServoOutput │
+│ OUTPUTS  FlightOutputs.h — порядок 5 выходов, пишет через IServoOutput │
 └──────────────────────────────┬────────────────────────────────────────┘
                                ▼
 ┌───────────────────────────────────────────────────────────────────────┐
@@ -156,7 +156,7 @@
 | `II2CBus.h` | Шина I2C | Примитивы в форме `Wire` + общие помощники `writeRegister()`, `readRegisters()` (проверяет, что пришло ровно `count` байт), `readRegister()` (−1 при отсутствии ответа), `probe()` |
 | `ISpiBus.h`, `IUartPort.h` | SPI, UART | CS держит сам датчик; `IUartPort::begin(baud)` — пины фиксирует реализация |
 | `IServoOutput.h` | Один PWM-выход | `attach()`, `writeMicroseconds()`, `isAttached()`, `measurePulseUs()` — диагностика реального импульса на пине |
-| `esp32/Esp32Board.h` | Реализация `IBoard` | Создаёт шины/порты/выходы с пинами из `Config.h`; выходы — LEDC-каналы 0–3 |
+| `esp32/Esp32Board.h` | Реализация `IBoard` | Создаёт шины/порты/выходы с пинами из `Config.h`; выходы — LEDC-каналы 0–4 (пин −1 = выход не разведён) |
 | `esp32/Esp32ServoOutput.h` | PWM через LEDC | 50 Гц, 14 бит (~1.2 мкс на шаг); `measurePulseUs()` включает входной буфер GPIO и меряет `pulseIn()`. Раньше здесь была библиотека ESP32Servo — см. [ограничения](#известные-ограничения) |
 | `esp32/Esp32I2CBus.h`, `Esp32SpiBus.h`, `Esp32UartPort.h` | Тонкие обёртки над `Wire`/`SPI`/`HardwareSerial` | I2C датчиков — 400 кГц |
 
@@ -164,8 +164,8 @@
 
 | Файл | Отвечает за | Ключевое |
 |---|---|---|
-| `Config.h` | Все пины и настройки | Блок пинов на плату (`BOARD_ESP32_S3/C3/CLASSIC`); iBUS и потеря связи (`RX_TIMEOUT_US`, `RX_FAILSAFE_THROTTLE_US`); ход рулей (`AILERON_MAX_US`, `ELEVATOR_MAX_US`, `FLAPS_MAX_US`); реверс серво (`*_REVERSED`); установка IMU (`IMU_ROTATION_CW_DEG`); ARM (`ARM_SWITCH_ON_US`, `THROTTLE_LOW_US`); failsafe-выходы; `LOOP_PERIOD_MS`; отладка |
-| `Channels.h` | Имена каналов | `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `AUX_1..AUX_5`, `FLAPS` |
+| `Config.h` | Все пины и настройки | Блок пинов на плату (`BOARD_ESP32_S3/C3/CLASSIC`); iBUS и потеря связи (`RX_TIMEOUT_US`, `RX_FAILSAFE_THROTTLE_US`); ход рулей (`AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US`); закрылки (`FLAPS_SWITCH_ON_US`, `FLAPS_DEPLOYED_US`, `FLAPS_TRANSITION_MS`); реверс серво (`*_REVERSED`); установка IMU (`IMU_ROTATION_CW_DEG`); ARM (`ARM_SWITCH_ON_US`, `THROTTLE_LOW_US`); failsafe-выходы; `LOOP_PERIOD_MS`; отладка |
+| `Channels.h` | Имена каналов | `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `FLAPS`, `AUX_2..AUX_5` |
 | `RcChannelState.h` | Снимок 10 каналов | По умолчанию: всё 1500, газ 1000 |
 | `IBusReceiver.h` | iBUS → каналы | Кадр 32 байта, CRC; значение канала — **младшие 12 бит** (`& 0x0FFF`, в старших FS-iA6B передаёт служебные данные); `isSignalLost()` = `isFrameTimeout()` ∥ `isFailsafeReported()`; счётчики `getGoodFrameCount()`/`getBadFrameCount()` |
 | `RcInput.h` | Преобразования PWM | `clamp()`, `centered(us, max, reverse)` |
@@ -174,13 +174,13 @@
 
 | Файл | Отвечает за | Ключевое |
 |---|---|---|
-| `ControlMixer.h` | Стики → команда → PWM | `ControlCommand fromSticks(rc)` и `FlightOutputState mix(command)`; знаки — см. [соглашение](#соглашение-о-знаках-от-imu-до-сервопривода) |
+| `ControlMixer.h` | Стики → команда → PWM | `ControlCommand fromSticks(rc, nowMs)` (плавный выпуск закрылков по времени снаружи) и `FlightOutputState mix(command)`; закрылки-флапероны: общее опускание элеронов + крен поверх; знаки — см. [соглашение](#соглашение-о-знаках-от-imu-до-сервопривода) |
 | `ThrottleManager.h` | Газ пилота | Стик CH3 → мкс; в failsafe — `FAILSAFE_THROTTLE`. Лимита и форсажа больше нет |
 | `ArmingManager.h` | ARM | Тумблер SwA: переход OFF→ON при газе внизу + предполётные проверки режима; OFF — мгновенный DISARM; failsafe ARM не снимает |
 | `Autopilot.h` | ПИД + 4 режима | `update(armed, pilotThrottle)`, `applyThrottle(pilotThrottle)`, `getRollCorrection()`/`getPitchCorrection()` (мкс команды), `getThrottleCorrection()` (%); `PID_Controller::calculate(setpoint, feedback, feedbackRate, integrate)` — D по скорости с датчика |
 | `AutopilotModeSelector.h` | CH7 → режим | Переключает только при смене зоны CH7, чтобы не затирать ALT_HOLD с дашборда |
-| `FlightOutputState.h` | POD-контракт выходов | `aileronLeft`, `aileronRight`, `elevator`, `throttle` (мкс) |
-| `FlightOutputs.h` | 4 физических выхода | `begin()`, `write()`, `setFailsafe()`, `printPulseSelfTest()` |
+| `FlightOutputState.h` | POD-контракт выходов | `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (мкс) |
+| `FlightOutputs.h` | 5 физических выходов | `begin()`, `write()`, `setFailsafe()`, `printPulseSelfTest()`; руль направления необязателен (на C3 нет пина) |
 
 ### Датчики (`include/sensors/`)
 
@@ -241,14 +241,16 @@ X к носу, Y влево, Z вверх.
 |---|---|---|
 | `roll` | крен вправо (правый элерон вверх, левый вниз) | CH1: 2000 = вправо |
 | `pitch` | нос вверх (руль высоты вверх) | CH2 с обратным знаком: 2000 = от себя = нос вниз |
-| `flaps` | закрылки вниз (оба элерона вниз) | CH9 линейно, 0..`FLAPS_MAX_US` |
+| `yaw` | нос вправо (руль направления и колесо вправо) | CH4: 2000 = вправо |
+| `flaps` | закрылки вниз (оба элерона вниз) | SwB (CH6): 0 или `FLAPS_DEPLOYED_US`, плавно за `FLAPS_TRANSITION_MS` |
 
 ПИД считает `ошибка = цель − факт`: крен вправо (roll > 0) → отрицательная
 команда крена → самолёт выравнивается. Коррекции автопилота прибавляются к
 команде стиков **до** микшера, в тех же знаках.
 
 **4. Команда → PWM.** `ControlMixer::mix()` считает отклонение задней кромки
-каждой поверхности (элероны: вниз = «+»; руль высоты: вверх = «+») и
+каждой поверхности (элероны: вниз = «+», левый = `flaps + roll`, правый =
+`flaps − roll`; руль высоты: вверх = «+»; руль направления: вправо = «+») и
 переводит в PWM `1500 ± отклонение`, меняя знак для серво с
 `Config::*_REVERSED = true`. Значения по умолчанию повторяют прежнее
 поведение прошивки для стиков. Проверка на собранном самолёте — в
@@ -267,12 +269,12 @@ X к носу, Y влево, Z вверх.
 | CH1 | правый стик ←→ | `AILERON` | Крен |
 | CH2 | правый стик ↑↓ | `ELEVATOR` | Тангаж |
 | CH3 | левый стик ↑↓ | `THROTTLE` | Газ, полный ход; < 950 = failsafe приёмника |
-| CH4 | левый стик ←→ | `RUDDER` | Не используется |
+| CH4 | левый стик ←→ | `RUDDER` | Руль направления + рулевое колесо (одна серва) |
 | CH5 | SwA | `ARM` | ≥ 1750 = ARM (на FS-i6 это тумблер вниз, к себе) |
-| CH6 | SwB | `AUX_1` | Свободен |
+| CH6 | SwB | `FLAPS` | ≥ 1750 = закрылки выпущены (флапероны) |
 | CH7 | SwC (3 положения) | `AUX_2` | Режим: < 1250 MANUAL, 1250–1749 STABILIZE, ≥ 1750 AUTO_TAKEOFF |
 | CH8 | SwD | `AUX_3` | Свободен |
-| CH9 | VrA | `FLAPS` | Закрылки, линейно |
+| CH9 | VrA | `AUX_4` | Свободен |
 | CH10 | VrB | `AUX_5` | Свободен |
 
 **ARM** (`ArmingManager`): переход тумблера OFF→ON, газ < `THROTTLE_LOW_US`,
@@ -371,10 +373,10 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
 5. **Failsafe** — если связь потеряна: `outputs.setFailsafe()` (рули 1500,
    газ 1000) и `return`. Абсолютный приоритет над всем ниже.
 6. **ARM** — `arming.update(rc, false)`.
-7. **Команда** — `mixer.fromSticks(rc)` + `getRollCorrection()`/
+7. **Команда** — `mixer.fromSticks(rc, millis())` (стики + плавные закрылки) + `getRollCorrection()`/
    `getPitchCorrection()` автопилота, ограничение ±500.
-8. **Микшер** — `mixer.mix(command)` → PWM элеронов и руля высоты с учётом
-   реверса.
+8. **Микшер** — `mixer.mix(command)` → PWM элеронов (закрылки + крен), руля
+   высоты и руля направления с учётом реверса.
 9. **Газ** — `autopilot->applyThrottle(pilotThrottle)`: MANUAL/STABILIZE —
    газ пилота; ALT_HOLD — газ пилота + поправка ПИД высоты;
    AUTO_TAKEOFF — max(газ пилота, программа взлёта). Затем, если не armed, —
@@ -400,8 +402,10 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
+    "rudder":       { "us": 1500, "attached": true },
     "esc":          { "us": 1000, "attached": true }
   },
+  "flapsUs": 0,
   "imu":  { "attached": true, "available": true, "roll": 0.12, "pitch": -0.40, "yaw": 38.50 },
   "baro": { "attached": true, "available": true, "altitude": 0.05, "climb": 0.01 },
   "mag":  { "attached": true, "available": true, "heading": 41.9 },
@@ -458,7 +462,7 @@ HTML-дашборд: бары 10 каналов, ARM/связь, выходы, �
 | `s` | `printStatus()` всех датчиков: данные, счётчики ошибок I2C, состояние калибровки |
 | `i` | Калибровка IMU (2 с неподвижно) |
 | `m` | Калибровка компаса (15 с вращения), сохраняется в NVS |
-| `p` | Самопроверка выходов: реальный импульс на GPIO4–7 против ожидаемого |
+| `p` | Самопроверка выходов: реальный импульс на каждом выходе против ожидаемого |
 
 Отладочный вывод:
 
@@ -482,6 +486,7 @@ HTML-дашборд: бары 10 каналов, ARM/связь, выходы, �
 |---|---|---|---|
 | Элерон левый / правый | GPIO4 / GPIO5 | GPIO5 / GPIO4 | GPIO13 / GPIO14 |
 | Руль высоты / ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
+| Руль направления | GPIO18 | — (нет пина) | GPIO25 |
 | iBUS RX | GPIO17 | GPIO8 | GPIO16 |
 | I2C датчиков SDA / SCL | GPIO8 / GPIO9 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | I2C OLED SDA / SCL | GPIO1 / GPIO2 | — | — |
@@ -556,7 +561,8 @@ HTML-дашборд: бары 10 каналов, ARM/связь, выходы, �
 2. Блок `#elif defined(BOARD_ESP32_<ИМЯ>)` в `Config.h` со всеми пинами,
    включая `PIN_I2C2_SDA/SCL` (−1, если OLED нет). Посчитайте бюджет GPIO
    заранее: flash/PSRAM/USB/strapping.
-3. Выходам серво нужны 4 канала LEDC — есть на всех ESP32.
+3. Выходам серво нужны 5 каналов LEDC — есть на всех ESP32. Если под
+   руль направления нет пина — `PIN_RUDDER = -1`, выход просто отключится.
 4. `default_envs` не меняйте, пока плата не проверена на железе; в коммите
    явно отметьте, если распиновка не проверена.
 

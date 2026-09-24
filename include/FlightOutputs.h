@@ -7,7 +7,7 @@
 // FLIGHT OUTPUTS
 //
 // Единственный класс, который знает про порядок серво-каналов
-// (aileronLeft/Right, elevator, esc). Само железо (LEDC/PWM или
+// (aileronLeft/Right, elevator, rudder, esc). Само железо (LEDC/PWM или
 // что угодно другое) спрятано за IBoard/IServoOutput — этот файл
 // его не видит, поэтому смена MCU/драйвера сюда не проникает.
 //
@@ -27,6 +27,7 @@ public:
         : aileronLeft(board.servo(ServoChannel::AILERON_LEFT)),
           aileronRight(board.servo(ServoChannel::AILERON_RIGHT)),
           elevator(board.servo(ServoChannel::ELEVATOR)),
+          rudder(board.servo(ServoChannel::RUDDER)),
           esc(board.servo(ServoChannel::ESC))
     {
     }
@@ -36,10 +37,12 @@ public:
         aileronLeftAttached = aileronLeft.attach(Config::PWM_MIN, Config::PWM_MAX);
         aileronRightAttached = aileronRight.attach(Config::PWM_MIN, Config::PWM_MAX);
         elevatorAttached = elevator.attach(Config::PWM_MIN, Config::PWM_MAX);
+        rudderAttached = rudder.attach(Config::PWM_MIN, Config::PWM_MAX);
         escAttached = esc.attach(Config::PWM_MIN, Config::PWM_MAX);
 
         printStatus();
 
+        // Руль направления необязателен (на ESP32-C3 под него нет пина).
         return
             aileronLeftAttached &&
             aileronRightAttached &&
@@ -50,6 +53,7 @@ public:
     bool isAileronLeftAttached() const  { return aileronLeftAttached; }
     bool isAileronRightAttached() const { return aileronRightAttached; }
     bool isElevatorAttached() const     { return elevatorAttached; }
+    bool isRudderAttached() const       { return rudderAttached; }
     bool isEscAttached() const          { return escAttached; }
 
     void printStatus() const
@@ -66,6 +70,17 @@ public:
         Serial.print(Config::PIN_ELEVATOR);
         Serial.print(")="); Serial.print(elevatorAttached ? "OK" : "FAIL");
 
+        Serial.print(" rudder(");
+        if (Config::PIN_RUDDER >= 0)
+        {
+            Serial.print("GPIO"); Serial.print(Config::PIN_RUDDER);
+            Serial.print(")="); Serial.print(rudderAttached ? "OK" : "FAIL");
+        }
+        else
+        {
+            Serial.print("нет пина)");
+        }
+
         Serial.print(" esc(GPIO");
         Serial.print(Config::PIN_ESC);
         Serial.print(")="); Serial.println(escAttached ? "OK" : "FAIL");
@@ -81,6 +96,10 @@ public:
         printPulseLine("элерон L", Config::PIN_AILERON_LEFT, aileronLeft, lastState.aileronLeft);
         printPulseLine("элерон R", Config::PIN_AILERON_RIGHT, aileronRight, lastState.aileronRight);
         printPulseLine("руль выс", Config::PIN_ELEVATOR, elevator, lastState.elevator);
+        if (Config::PIN_RUDDER >= 0)
+        {
+            printPulseLine("руль нап", Config::PIN_RUDDER, rudder, lastState.rudder);
+        }
         printPulseLine("ESC     ", Config::PIN_ESC, esc, lastState.throttle);
     }
 
@@ -93,6 +112,7 @@ public:
         aileronLeft.writeMicroseconds(state.aileronLeft);
         aileronRight.writeMicroseconds(state.aileronRight);
         elevator.writeMicroseconds(state.elevator);
+        rudder.writeMicroseconds(state.rudder);
         esc.writeMicroseconds(state.throttle);
 
         lastState = state;
@@ -106,6 +126,7 @@ public:
         safe.aileronLeft = Config::FAILSAFE_AILERON;
         safe.aileronRight = Config::FAILSAFE_AILERON;
         safe.elevator = Config::FAILSAFE_ELEVATOR;
+        safe.rudder = Config::FAILSAFE_RUDDER;
         safe.throttle = Config::FAILSAFE_THROTTLE;
 
         write(safe);
@@ -122,11 +143,13 @@ private:
     IServoOutput& aileronLeft;
     IServoOutput& aileronRight;
     IServoOutput& elevator;
+    IServoOutput& rudder;
     IServoOutput& esc;
 
     bool aileronLeftAttached = false;
     bool aileronRightAttached = false;
     bool elevatorAttached = false;
+    bool rudderAttached = false;
     bool escAttached = false;
 
     FlightOutputState lastState;

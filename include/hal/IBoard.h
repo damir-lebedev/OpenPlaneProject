@@ -33,7 +33,8 @@ namespace ServoChannel
     constexpr uint8_t AILERON_RIGHT = 1;
     constexpr uint8_t ELEVATOR      = 2;
     constexpr uint8_t ESC           = 3;
-    constexpr uint8_t COUNT         = 4;
+    constexpr uint8_t RUDDER        = 4;
+    constexpr uint8_t COUNT         = 5;
 }
 
 class IBoard

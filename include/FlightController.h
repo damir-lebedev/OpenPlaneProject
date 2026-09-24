@@ -13,7 +13,7 @@
 //   2. FAILSAFE   — потеря связи важнее всего: мотор в ноль, рули
 //                   в нейтраль, дальше цикл не идёт
 //   3. ARMING     — тумблер ARM (SwA)
-//   4. MIXER      — стики -> команда крена/тангажа/закрылков, к ней
+//   4. MIXER      — стики -> команда крена/тангажа/рысканья/закрылков, к ней
 //                   прибавляются коррекции автопилота (в тех же
 //                   физических знаках), затем -> PWM каждого серво
 //   5. THROTTLE   — газ пилота -> газ режима автопилота
@@ -81,7 +81,7 @@ public:
 
         arming.update(rc, false);
 
-        ControlCommand command = mixer.fromSticks(rc);
+        ControlCommand command = mixer.fromSticks(rc, millis());
 
         if (autopilot)
         {
@@ -113,6 +113,7 @@ public:
     const FlightOutputState& getOutputState() const { return outputs.getLastState(); }
     const RcChannelState& getRcState() const { return receiver.getState(); }
     const FlightOutputs& getOutputs() const { return outputs; }
+    int16_t getFlapsUs() const { return mixer.getFlaps(); }
 
 
 private:

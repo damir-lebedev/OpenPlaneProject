@@ -195,6 +195,8 @@ private:
         json += (flightController && flightController->isArmed()) ? "true" : "false";
         json += ",\"failsafe\":";
         json += (flightController && flightController->isReceiverFailsafe()) ? "true" : "false";
+        json += ",\"flapsUs\":";
+        json += String(flightController ? flightController->getFlapsUs() : 0);
 
         json += ",\"outputs\":{";
         if (flightController)
@@ -205,6 +207,7 @@ private:
             json += outputJson("aileronLeft", state.aileronLeft, outputs.isAileronLeftAttached()) + ",";
             json += outputJson("aileronRight", state.aileronRight, outputs.isAileronRightAttached()) + ",";
             json += outputJson("elevator", state.elevator, outputs.isElevatorAttached()) + ",";
+            json += outputJson("rudder", state.rudder, outputs.isRudderAttached()) + ",";
             json += outputJson("esc", state.throttle, outputs.isEscAttached());
         }
         json += "}";
@@ -462,6 +465,8 @@ private:
             "<div class='row'><span class='label'>Left aileron</span><span class='value' id='ail-l-val'>--</span><span class='badge' id='ail-l-badge'>--</span></div>"
             "<div class='row'><span class='label'>Right aileron</span><span class='value' id='ail-r-val'>--</span><span class='badge' id='ail-r-badge'>--</span></div>"
             "<div class='row'><span class='label'>Elevator</span><span class='value' id='elevator-val'>--</span><span class='badge' id='elevator-badge'>--</span></div>"
+            "<div class='row'><span class='label'>Rudder</span><span class='value' id='rudder-val'>--</span><span class='badge' id='rudder-badge'>--</span></div>"
+            "<div class='row'><span class='label'>Закрылки</span><span class='value' id='flaps-val'>--</span></div>"
             "<div class='row'><span class='label'>ESC (мотор)</span><span class='value' id='esc-val'>--</span><span class='badge' id='esc-badge'>--</span></div>"
             "</div>"
 
@@ -502,6 +507,8 @@ private:
             "setOutputRow('ail-l',s.outputs.aileronLeft);"
             "setOutputRow('ail-r',s.outputs.aileronRight);"
             "setOutputRow('elevator',s.outputs.elevator);"
+            "setOutputRow('rudder',s.outputs.rudder);"
+            "document.getElementById('flaps-val').textContent=s.flapsUs+' us';"
             "setOutputRow('esc',s.outputs.esc);"
             "setSensorRow('imu',s.imu,['roll','pitch','yaw']);"
             "setSensorRow('baro',s.baro,['altitude','climb']);"

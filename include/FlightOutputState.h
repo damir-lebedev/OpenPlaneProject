@@ -15,5 +15,6 @@ struct FlightOutputState
     uint16_t aileronLeft  = Config::PWM_CENTER;
     uint16_t aileronRight = Config::PWM_CENTER;
     uint16_t elevator     = Config::PWM_CENTER;
+    uint16_t rudder       = Config::PWM_CENTER;
     uint16_t throttle     = Config::PWM_MIN;
 };

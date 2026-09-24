@@ -33,6 +33,7 @@ namespace Config
     constexpr uint8_t PIN_AILERON_RIGHT = 5;
     constexpr uint8_t PIN_ELEVATOR      = 6;
     constexpr uint8_t PIN_ESC           = 7;
+    constexpr int8_t  PIN_RUDDER        = 18;  // руль направления + колесо
     constexpr uint8_t PIN_IBUS          = 17;
     constexpr uint8_t PIN_I2C_SDA       = 8;   // = дефолт Wire для esp32s3
     constexpr uint8_t PIN_I2C_SCL       = 9;   // = дефолт Wire для esp32s3
@@ -66,6 +67,7 @@ namespace Config
     constexpr uint8_t PIN_AILERON_RIGHT = 14;
     constexpr uint8_t PIN_ELEVATOR      = 27;
     constexpr uint8_t PIN_ESC           = 26;
+    constexpr int8_t  PIN_RUDDER        = 25;
     constexpr uint8_t PIN_IBUS          = 16;
     constexpr uint8_t PIN_I2C_SDA       = 21;  // = дефолт Wire для esp32 classic
     constexpr uint8_t PIN_I2C_SCL       = 22;  // = дефолт Wire для esp32 classic
@@ -98,6 +100,7 @@ namespace Config
     constexpr uint8_t PIN_AILERON_RIGHT = 4;
     constexpr uint8_t PIN_ELEVATOR      = 6;
     constexpr uint8_t PIN_ESC           = 7;
+    constexpr int8_t  PIN_RUDDER        = -1;  // свободных пинов нет (см. бюджет ниже) — выход отключён
     constexpr uint8_t PIN_IBUS          = 8;
     // ВАЖНО: дефолт Wire для esp32c3 — это как раз SDA=8/SCL=9, то
     // есть SDA совпал бы с PIN_IBUS. Поэтому I2C явно уведён на
@@ -213,8 +216,35 @@ namespace Config
     constexpr int16_t AILERON_MAX_US = 500;
     constexpr int16_t ELEVATOR_MAX_US = 500;
 
-    // Максимальный выпуск закрылков (CH9, крутилка) в мкс хода элерона.
-    constexpr int16_t FLAPS_MAX_US = 100;
+    // Руль направления (CH4) — полный ход стика. На той же серве —
+    // рулевое колесо шасси, поэтому ход общий.
+    constexpr int16_t RUDDER_MAX_US = 500;
+
+
+    // --------------------------------------------------------
+    // Закрылки (флапероны): тумблер SwB, CH6
+    //
+    // Оба элерона опускаются на FLAPS_DEPLOYED_US — это новая
+    // "нейтраль", крен от стика и автопилота работает поверх неё в
+    // разные стороны, как обычно. Опускающийся элерон при полном
+    // крене упирается в край хода раньше поднимающегося — это
+    // работает как дифференциал элеронов (меньше обратного рыскания).
+    // --------------------------------------------------------
+
+    // Тумблер считается включённым выше этого значения (на FS-i6
+    // SwB вниз, к себе = 2000). Не 1500: до первого кадра iBUS все
+    // каналы по умолчанию стоят в 1500, и закрылки не должны
+    // выпускаться при включении платы.
+    constexpr uint16_t FLAPS_SWITCH_ON_US = 1750;
+
+    // Отклонение каждого элерона вниз при выпущенных закрылках, мкс
+    // хода серво. 220 мкс ≈ 20° поворота качалки MG90S; угол самой
+    // поверхности зависит от плеч качалок — подбирается здесь.
+    constexpr int16_t FLAPS_DEPLOYED_US = 220;
+
+    // Время полного выпуска/уборки. Плавно, а не рывком: резкий
+    // выпуск закрылков даёт клевок по тангажу.
+    constexpr uint32_t FLAPS_TRANSITION_MS = 1000;
 
 
     // --------------------------------------------------------
@@ -222,7 +252,8 @@ namespace Config
     //
     // ControlMixer считает отклонения в физических знаках (см.
     // ControlMixer.h): элерон "+" = задняя кромка вниз, руль высоты
-    // "+" = задняя кромка вверх (нос вверх). Как это ложится в PWM,
+    // "+" = задняя кромка вверх (нос вверх), руль направления "+" =
+    // задняя кромка вправо (нос вправо). Как это ложится в PWM,
     // зависит только от того, как серво стоит в самолёте, — это и
     // задают флаги ниже (аналог реверса каналов на пульте, но на
     // стороне платы, чтобы автопилот и стики крутили рули одинаково).
@@ -230,13 +261,15 @@ namespace Config
     // Значения по умолчанию повторяют прежнее поведение прошивки для
     // стиков. Проверка на собранном самолёте: правый стик вправо —
     // правый элерон ВВЕРХ, левый ВНИЗ; стик на себя — руль высоты
-    // ВВЕРХ; закрылки (CH9) — оба элерона ВНИЗ. Не так — поменять
+    // ВВЕРХ; левый стик вправо — руль направления и колесо ВПРАВО;
+    // закрылки (SwB) — оба элерона ВНИЗ. Не так — поменять
     // соответствующий флаг.
     // --------------------------------------------------------
 
     constexpr bool AILERON_LEFT_REVERSED  = false;
     constexpr bool AILERON_RIGHT_REVERSED = false;
     constexpr bool ELEVATOR_REVERSED      = true;
+    constexpr bool RUDDER_REVERSED        = false;
 
 
     // --------------------------------------------------------
@@ -281,6 +314,7 @@ namespace Config
 
     constexpr uint16_t FAILSAFE_AILERON  = 1500;
     constexpr uint16_t FAILSAFE_ELEVATOR = 1500;
+    constexpr uint16_t FAILSAFE_RUDDER   = 1500;
     constexpr uint16_t FAILSAFE_THROTTLE = 1000;
 
 

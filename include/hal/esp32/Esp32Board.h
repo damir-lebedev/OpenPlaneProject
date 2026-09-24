@@ -35,7 +35,8 @@ public:
               Esp32ServoOutput(Config::PIN_AILERON_LEFT, 0),  // второй аргумент — канал LEDC
               Esp32ServoOutput(Config::PIN_AILERON_RIGHT, 1),
               Esp32ServoOutput(Config::PIN_ELEVATOR, 2),
-              Esp32ServoOutput(Config::PIN_ESC, 3)
+              Esp32ServoOutput(Config::PIN_ESC, 3),
+              Esp32ServoOutput(Config::PIN_RUDDER, 4)
           }
     {
     }

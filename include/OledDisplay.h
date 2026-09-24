@@ -124,10 +124,11 @@ private:
             display.drawBox(0, 0, 128, 11);
             display.setDrawColor(0);
         }
-        snprintf(line, sizeof(line), "%s %s %s",
+        snprintf(line, sizeof(line), "%s %s %s%s",
                  rxLost ? "RX LOST" : "RX ok",
-                 armed ? "ARMED" : "disarm",
-                 autopilot ? shortMode(autopilot->getMode()) : "MAN");
+                 armed ? "ARM" : "safe",
+                 autopilot ? shortMode(autopilot->getMode()) : "MAN",
+                 controller.getFlapsUs() > 0 ? " FL" : "");
         display.drawStr(1, 9, line);
         display.setDrawColor(1);
 
@@ -159,11 +160,11 @@ private:
         const FlightOutputState& out = controller.getOutputState();
         if (mag && mag->isAvailable())
         {
-            snprintf(line, sizeof(line), "Hdg %3.0f  Thr %4u", mag->getMagData().headingDegrees, out.throttle);
+            snprintf(line, sizeof(line), "H%3.0f T%4u Y%4u", mag->getMagData().headingDegrees, out.throttle, out.rudder);
         }
         else
         {
-            snprintf(line, sizeof(line), "Hdg --   Thr %4u", out.throttle);
+            snprintf(line, sizeof(line), "H--- T%4u Y%4u", out.throttle, out.rudder);
         }
         display.drawStr(0, 43, line);
 

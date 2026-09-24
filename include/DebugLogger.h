@@ -175,6 +175,7 @@ private:
         applyDeadband(output.aileronLeft, shownOutput.aileronLeft);
         applyDeadband(output.aileronRight, shownOutput.aileronRight);
         applyDeadband(output.elevator, shownOutput.elevator);
+        applyDeadband(output.rudder, shownOutput.rudder);
         applyDeadband(output.throttle, shownOutput.throttle);
 
         capture.print(" | OUT LAIL=");
@@ -183,6 +184,8 @@ private:
         capture.print(shownOutput.aileronRight);
         capture.print(" ELE=");
         capture.print(shownOutput.elevator);
+        capture.print(" RUD=");
+        capture.print(shownOutput.rudder);
         capture.print(" ESC=");
         capture.println(shownOutput.throttle);
 

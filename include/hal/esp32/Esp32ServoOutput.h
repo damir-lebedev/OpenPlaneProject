@@ -15,18 +15,19 @@
 // (руль высоты) повторял GPIO4 (левый элерон), а GPIO7 (ESC) —
 // GPIO5 (правый элерон), то есть мотор управлялся правым стиком,
 // а стик газа ни на что не влиял. LEDC есть на всех ESP32 (S3 — 8
-// каналов, C3 — 6, classic — 16), четырём выходам его хватает.
+// каналов, C3 — 6, classic — 16), пяти выходам его хватает.
 //
 // Каждому выходу — свой канал LEDC (задаёт Esp32Board). Каналы
 // 2n и 2n+1 делят один таймер; у всех выходов одинаковые 50 Гц,
-// так что это не мешает.
+// так что это не мешает. Пин < 0 — выход на этой плате не разведён:
+// attach() вернёт false, запись будет пропускаться.
 // ============================================================
 
 class Esp32ServoOutput : public IServoOutput
 {
 public:
 
-    Esp32ServoOutput(uint8_t servoPin, uint8_t ledcChannel)
+    Esp32ServoOutput(int8_t servoPin, uint8_t ledcChannel)
         : pin(servoPin),
           channel(ledcChannel)
     {
@@ -36,6 +37,12 @@ public:
     {
         rangeMinUs = minUs;
         rangeMaxUs = maxUs;
+
+        if (pin < 0)
+        {
+            attached = false;
+            return false;
+        }
 
         // ledcSetup() возвращает реально выставленную частоту, 0 — ошибка.
         attached = ledcSetup(channel, FREQUENCY_HZ, RESOLUTION_BITS) != 0;
@@ -80,7 +87,7 @@ private:
     static constexpr uint8_t RESOLUTION_BITS = 14;
     static constexpr uint32_t MAX_DUTY = (1u << RESOLUTION_BITS);
 
-    uint8_t pin;
+    int8_t pin;
     uint8_t channel;
     uint16_t rangeMinUs = 1000;
     uint16_t rangeMaxUs = 2000;
