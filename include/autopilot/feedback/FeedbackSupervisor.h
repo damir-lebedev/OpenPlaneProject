@@ -3,7 +3,6 @@
 
 #include "autopilot/feedback/AdaptiveRateController.h"
 #include "autopilot/feedback/AirborneDetector.h"
-#include "autopilot/feedback/ControlDirectionGuard.h"
 #include "autopilot/feedback/ControlEffectivenessEstimator.h"
 #include "autopilot/feedback/FeedbackConfig.h"
 #include "autopilot/feedback/FeedbackMath.h"
@@ -31,9 +30,11 @@
 //   • сколько руля нужно, не константа: на малой скорости и на
 //     высоте руль слабее. Это измеряется прямо в полёте
 //     (ControlEffectivenessEstimator);
-//   • ось явно работает наоборот — выключить её, отдать пилоту
-//     (ControlDirectionGuard); знаки определяются на земле, в полёте
-//     ничего не переворачивается;
+//   • знаки осей и установка датчиков определяются на земле
+//     (калибровка установки IMU, предполётная проверка, проверка
+//     рулей пилотом). В полёте оси не выключаются и не
+//     переворачиваются: отрицательная оценка b — только
+//     предупреждение в логе, в регулятор она не идёт;
 //   • нос выровняли, а скорость падает — газ, нос вниз
 //     (StallGuard);
 //   • взлёт и посадка — этапами по датчикам (Takeoff/LandingSequencer).
@@ -44,8 +45,7 @@
 //   3. защита от сваливания;
 //   4. взлёт/посадка — цели по углам и газ;
 //   5. цели ← ограничения защиты от сваливания (у неё приоритет);
-//   6. проверка знаков осей;
-//   7. регуляторы осей → отклонения рулей; газ.
+//   6. регуляторы осей → отклонения рулей; газ.
 //
 // Приоритеты: не заармлен > защита от сваливания > взлёт/посадка >
 // цели режима автопилота (FlightSnapshot.target*). При потере связи
@@ -155,7 +155,6 @@ public:
                                      stall.getLevel() != StallGuard::Level::Stall;
         const float commands[] = { s.commandRollUs, s.commandPitchUs, s.commandYawUs };
         const float rates[] = { s.rollRateDps, s.pitchRateDps, s.yawRateDps };
-        const float sticks[] = { s.stickRollUs, s.stickPitchUs, s.stickYawUs };
         for (uint8_t axis = 0; axis < FeedbackConfig::AXIS_COUNT; ++axis)
         {
             estimators[axis].update(commands[axis], rates[axis], speed.effectivenessScale(),
@@ -193,30 +192,12 @@ public:
         controlled[FeedbackConfig::AXIS_YAW] = stabilizing && (holdHeading || (inAir && speed.hasSpeed()));
 
         float desiredRate[FeedbackConfig::AXIS_COUNT];
-        float angleError[FeedbackConfig::AXIS_COUNT];
-        desiredRates(s, targetRoll, targetPitch, phase, inAir, desiredRate, angleError);
+        desiredRates(s, targetRoll, targetPitch, phase, inAir, desiredRate);
 
-        // 6. Знаки осей.
+        // 6. Рули.
         for (uint8_t axis = 0; axis < FeedbackConfig::AXIS_COUNT; ++axis)
         {
-            ControlDirectionGuard::Inputs in;
-            in.angleErrorValid = controlled[axis] &&
-                                 (axis != FeedbackConfig::AXIS_YAW || holdHeading);
-            in.errorDeg = angleError[axis];
-            in.rateDps = rates[axis];
-            in.correctionUs = commands[axis] - sticks[axis];
-            in.effectiveness = estimators[axis].getEffectiveness();
-            in.estimatorConfident = estimators[axis].isConfident();
-            in.expectedEffectiveness = expectedEffectiveness(axis);
-            in.analysisAllowed = learningAllowed;
-            in.stickQuiet = fabsf(sticks[axis]) < FeedbackConfig::STICK_QUIET_US;
-            guards[axis].update(in, nowMs);
-        }
-
-        // 7. Рули.
-        for (uint8_t axis = 0; axis < FeedbackConfig::AXIS_COUNT; ++axis)
-        {
-            if (!controlled[axis] || !guards[axis].isEnabled() || !s.imuValid)
+            if (!controlled[axis] || !s.imuValid)
             {
                 controllers[axis].reset();
                 output.axisEnabled[axis] = false;
@@ -267,7 +248,6 @@ public:
     const SpeedEstimator& getSpeedEstimator() const { return speed; }
     const ControlEffectivenessEstimator& getEstimator(uint8_t axis) const { return estimators[axis]; }
     const AdaptiveRateController& getController(uint8_t axis) const { return controllers[axis]; }
-    const ControlDirectionGuard& getGuard(uint8_t axis) const { return guards[axis]; }
     const StallGuard& getStallGuard() const { return stall; }
     const TakeoffSequencer& getTakeoff() const { return takeoff; }
     const LandingSequencer& getLanding() const { return landing; }
@@ -284,10 +264,9 @@ public:
         for (uint8_t axis = 0; axis < FeedbackConfig::AXIS_COUNT; ++axis)
         {
             const ControlEffectivenessEstimator& e = estimators[axis];
-            out.printf("  %-5s b=%6.2f±%.2f%s a=%6.1f c=%6.0f %-8s I=%6.1f out=%5.0f%s\n",
+            out.printf("  %-5s b=%6.2f±%.2f%s a=%6.1f c=%6.0f I=%6.1f out=%5.0f%s\n",
                        axisName(axis), e.getEffectiveness(), e.getEffectivenessSigma(),
                        e.isConfident() ? "*" : " ", e.getDamping(), e.getBias(),
-                       guards[axis].getStateName(),
                        controllers[axis].getIntegral(), output.deflectionUs[axis],
                        output.axisEnabled[axis] ? "" : " (off)");
         }
@@ -310,7 +289,6 @@ private:
     AirborneDetector airborne;
     ControlEffectivenessEstimator estimators[FeedbackConfig::AXIS_COUNT];
     AdaptiveRateController controllers[FeedbackConfig::AXIS_COUNT];
-    ControlDirectionGuard guards[FeedbackConfig::AXIS_COUNT];
     StallGuard stall;
     TakeoffSequencer takeoff;
     LandingSequencer landing;
@@ -333,7 +311,6 @@ private:
         {
             estimators[axis].reset();
             controllers[axis].reset();
-            guards[axis].reset();
         }
         stall.reset();
         takeoff.reset();
@@ -384,16 +361,11 @@ private:
         wasAirborne = inAir;
     }
 
-    // Желаемые угловые скорости осей и ошибки углов.
+    // Желаемые угловые скорости осей.
     void desiredRates(const FlightSnapshot& s, float targetRoll, float targetPitch,
-                      const PhaseTargets& phase, bool inAir,
-                      float desiredRate[], float angleError[]) const
+                      const PhaseTargets& phase, bool inAir, float desiredRate[]) const
     {
         using namespace FeedbackConfig;
-
-        angleError[AXIS_ROLL] = targetRoll - s.rollDeg;
-        angleError[AXIS_PITCH] = targetPitch - s.pitchDeg;
-        angleError[AXIS_YAW] = 0;
 
         desiredRate[AXIS_ROLL] = controllers[AXIS_ROLL].angleToRate(targetRoll, s.rollDeg);
         desiredRate[AXIS_PITCH] = controllers[AXIS_PITCH].angleToRate(targetPitch, s.pitchDeg);
@@ -415,8 +387,7 @@ private:
         // Удержание курса на разбеге/пробеге — рулём направления и колесом.
         if (phase.active && phase.holdHeading)
         {
-            angleError[AXIS_YAW] = FeedbackMath::wrap180(phase.headingDeg - s.yawDeg);
-            desiredRate[AXIS_YAW] = HEADING_HOLD_GAIN * angleError[AXIS_YAW];
+            desiredRate[AXIS_YAW] = HEADING_HOLD_GAIN * FeedbackMath::wrap180(phase.headingDeg - s.yawDeg);
         }
     }
 
@@ -431,8 +402,8 @@ private:
 
     // Модель оси для регулятора: изученная, если ей можно верить и ось
     // работает в правильную сторону; иначе — априорная на текущей
-    // скорости. Отрицательная оценка в регулятор не идёт никогда: её
-    // разбирает ControlDirectionGuard (выключает ось).
+    // скорости. Отрицательная оценка в регулятор не идёт никогда —
+    // только предупреждение в describe().
     AxisModel axisModel(uint8_t axis) const
     {
         const ControlEffectivenessEstimator& e = estimators[axis];
@@ -464,16 +435,19 @@ private:
             snprintf(reasonBuffer, sizeof(reasonBuffer), "мало энергии: %s", stall.getReason());
             return reasonBuffer;
         }
+        if (phase.active) return phase.reason;
         for (uint8_t axis = 0; axis < FeedbackConfig::AXIS_COUNT; ++axis)
         {
-            if (!guards[axis].isEnabled())
+            // Только сообщение: ось продолжает работать по априорной
+            // модели. Причина — проверить на земле (Config, установка IMU).
+            const ControlEffectivenessEstimator& e = estimators[axis];
+            if (e.isConfident() && e.getEffectiveness() < 0)
             {
-                snprintf(reasonBuffer, sizeof(reasonBuffer), "%s ВЫКЛЮЧЕНА: %s", axisName(axis),
-                         guards[axis].getReason());
+                snprintf(reasonBuffer, sizeof(reasonBuffer),
+                         "ВНИМАНИЕ: %s реагирует на руль наоборот? проверить на земле", axisName(axis));
                 return reasonBuffer;
             }
         }
-        if (phase.active) return phase.reason;
         return stabilizing ? "стабилизация" : "ручное (обучение)";
     }
 };

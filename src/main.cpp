@@ -103,7 +103,7 @@ FlightController flightController(
 
 LoopStats loopStats;
 DebugLogger debugLogger(flightController, &autopilot, &loopStats);
-DebugConsole debugConsole(flightController, flightOutputs, autopilot);
+DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogger);
 WebDebugServer webDebugServer(flightController, &autopilot);
 OledDisplay oledDisplay(flightController, &autopilot, loopStats);
 
@@ -156,7 +156,7 @@ static void setupSensors()
 
 void setup()
 {
-    // Отладочный кадр (~600 символов) на 115200 уходит ~50 мс. Без
+    // Строки лога и меню консоли на 115200 уходят десятки мс. Без
     // буфера Serial.print() ждёт аппаратный FIFO (128 байт) и тормозит
     // полётный цикл на это время.
     Serial.setTxBufferSize(4096);
@@ -181,7 +181,8 @@ void setup()
     Serial.println("ARM: SwA вниз, к себе (CH5=2000) при газе внизу. DISARM: SwA вверх.");
     Serial.println("Режим (SwC, CH7): вверх MANUAL, середина STABILIZE, вниз AUTO_TAKEOFF.");
     Serial.println("Закрылки: SwB (CH6) вниз.");
-    debugConsole.printHelp();
+    debugLogger.begin();         // что выводить в лог — из NVS
+    debugConsole.printHint();
     Serial.println();
 }
 

@@ -4,21 +4,27 @@
 #include "autopilot/Autopilot.h"
 #include "config/Config.h"
 #include "control/FlightController.h"
+#include "telemetry/LogSettings.h"
 #include "telemetry/LoopStats.h"
 
 // ============================================================
-// DEBUG LOGGER
+// DEBUG LOGGER — вывод состояния в монитор порта по каналам
 //
-// Периодический вывод состояния в Serial, полностью отдельно от
-// flight logic. Autopilot опционален — без него
-// печатается только RC/ARM/failsafe/выходы, как раньше.
+// Каждый канал (LogSettings.h) — своя строка со своим префиксом:
+//   STAT RX=OK ARM=NO MODE=STABILIZE FLAPS=UP IMU=OK BARO=OK
+//   ATT  R +1.2 P -0.4 Y 123.0
+// и свой режим: выкл / при изменении / постоянно. "При изменении" —
+// строка печатается, только когда значения ушли дальше допуска
+// (дребезг стиков в пару мкс и шум датчиков в десятые градуса не в
+// счёт), поэтому лежащий на столе самолёт лог не засыпает, а
+// меняющийся канал не тащит за собой в лог все остальные.
 //
-// Кадр сначала собирается в буфер и сравнивается с предыдущим —
-// если ничего не изменилось (см. Config::DEBUG_ONLY_ON_CHANGE),
-// он не отправляется в Serial. Иначе VSCode Serial Monitor (и
-// любой другой простой лог-вьюер без поддержки ANSI) заваливает
-// одинаковыми строками каждые DEBUG_INTERVAL_MS, даже когда
-// самолёт просто лежит на столе.
+// Что выводить — меню консоли ('l'), настройки в NVS. Пока открыто
+// меню, лог молчит (suspend), чтобы не затирать экран; пробел —
+// пауза. После меню/паузы все включённые каналы печатаются заново —
+// видно текущее состояние.
+//
+// Полностью отдельно от полётной логики: только читает геттеры.
 // ============================================================
 
 class DebugLogger
@@ -28,49 +34,67 @@ public:
     explicit DebugLogger(
         FlightController& controller,
         Autopilot* autopilot = nullptr,
-        const LoopStats* loopStats = nullptr
+        LoopStats* loopStats = nullptr
     )
         : controller(controller),
           autopilot(autopilot),
           loopStats(loopStats)
     {
+        refresh();
+    }
+
+    // Загрузить настройки каналов из NVS.
+    void begin()
+    {
+        settings.load();
     }
 
     void update()
     {
+        if (paused || suspended) return;
+
         const uint32_t now = millis();
+        if (now - lastTickMs < Config::DEBUG_INTERVAL_MS) return;
+        lastTickMs = now;
 
-        if (now - lastDebugTime < Config::DEBUG_INTERVAL_MS)
+        for (uint8_t channel = 0; channel < LogSettings::COUNT; ++channel)
         {
-            return;
+            updateChannel(channel, now);
         }
+    }
 
-        lastDebugTime = now;
+    LogSettings& getSettings() { return settings; }
+    void saveSettings() const { settings.save(); }
 
-        printState();
+    // Меню открыто — лог молчит. После — всё включённое заново.
+    void suspend(bool isSuspended)
+    {
+        suspended = isSuspended;
+        if (!suspended) refresh();
+    }
 
-        // Системная строка — раз в SYSTEM_INTERVAL_MS, независимо от
-        // того, менялось ли что-то (частота цикла и счётчики ошибок
-        // меняются постоянно и забили бы основной кадр).
-        if (now - lastSystemTime >= SYSTEM_INTERVAL_MS)
-        {
-            lastSystemTime = now;
-            printSystem();
-        }
+    void setPaused(bool isPaused)
+    {
+        paused = isPaused;
+        if (!paused) refresh();
+    }
+
+    bool isPaused() const { return paused; }
+
+    // Следующий такт напечатает все включённые каналы, даже без изменений.
+    void refresh()
+    {
+        for (uint8_t i = 0; i < LogSettings::COUNT; ++i) refreshPending[i] = true;
     }
 
 
 private:
 
-    // Print, который просто копит текст в буфер вместо отправки в Serial —
-    // так можно собрать целый кадр и сравнить его целиком с предыдущим.
-    //
-    // Размер с запасом: 10 каналов + RX/ARM/OUT (~220) + Autopilot
-    // mode/imu/baro/corr + mag + gps (~350 при всех датчиках сразу) —
-    // реалистичный максимум около 600 символов.
-    static constexpr size_t FRAME_BUFFER_SIZE = 900;
+    static constexpr size_t LINE_SIZE = 200;
+    static constexpr uint32_t SYSTEM_INTERVAL_MS = 10000;
 
-    class CapturePrint : public Print
+    // Print в буфер строки — чтобы сравнить её с прошлой перед печатью.
+    class LineBuffer : public Print
     {
     public:
         size_t write(uint8_t c) override
@@ -80,7 +104,6 @@ private:
                 buffer[length++] = static_cast<char>(c);
                 buffer[length] = '\0';
             }
-
             return 1;
         }
 
@@ -93,149 +116,254 @@ private:
         const char* c_str() const { return buffer; }
 
     private:
-        char buffer[FRAME_BUFFER_SIZE];
+        char buffer[LINE_SIZE] = {};
         size_t length = 0;
     };
 
-    static constexpr uint32_t SYSTEM_INTERVAL_MS = 10000;
+    // Значение "для показа": держит старое, пока новое не уйдёт дальше
+    // допуска. Допуск 0 (режим "постоянно") — всегда свежее значение.
+    struct Shown
+    {
+        float value = 0;
+        bool valid = false;
+
+        float update(float raw, float band)
+        {
+            if (!valid || fabsf(raw - value) > band)
+            {
+                value = raw;
+                valid = true;
+            }
+            return value;
+        }
+    };
 
     FlightController& controller;
     Autopilot* autopilot;
-    const LoopStats* loopStats;
+    LoopStats* loopStats;
 
-    uint32_t lastDebugTime = 0;
-    uint32_t lastSystemTime = 0;
+    LogSettings settings;
+    bool paused = false;
+    bool suspended = false;
+    uint32_t lastTickMs = 0;
 
-    CapturePrint capture;
-    char previousFrame[FRAME_BUFFER_SIZE] = {0};
-    bool hasPreviousFrame = false;
+    LineBuffer line;
+    char previous[LogSettings::COUNT][LINE_SIZE] = {};
+    uint32_t lastPrintMs[LogSettings::COUNT] = {};
+    bool refreshPending[LogSettings::COUNT] = {};
 
-    // "Отображаемые" версии шумных RC/PWM величин — держат старое значение,
-    // пока разница не превысит допуск, чтобы дребезг в 1-2 мкс не считался
-    // изменением и не расталкивал кадр в Serial.
-    uint16_t shownChannels[Config::IBUS_CHANNELS] = {0};
-    FlightOutputState shownOutput;
-    bool snapshotInitialized = false;
+    Shown rc[Config::IBUS_CHANNELS];
+    Shown outputs[5];
+    Shown roll, pitch, yaw;
+    Shown wantRoll, wantPitch, corrRoll, corrPitch, corrThrottle;
+    Shown altitude, climb;
+    Shown heading;
+    Shown gpsLat, gpsLon, gpsSpeed;
+    Shown gyro[3], accel[3];
 
-    static uint16_t absDiff(uint16_t a, uint16_t b)
+    void updateChannel(uint8_t channel, uint32_t now)
     {
-        return a > b ? a - b : b - a;
+        const LogMode mode = settings.mode(channel);
+        if (mode == LogMode::Off)
+        {
+            refreshPending[channel] = false;
+            return;
+        }
+
+        const bool periodic = mode == LogMode::Periodic;
+        const uint32_t period = static_cast<LogChannel>(channel) == LogChannel::System
+                                    ? SYSTEM_INTERVAL_MS : settings.periodMs();
+        if (periodic && !refreshPending[channel] && now - lastPrintMs[channel] < period) return;
+
+        line.reset();
+        const LogChannelInfo& info = LogSettings::info(channel);
+        line.print(info.tag);
+        for (size_t i = strlen(info.tag); i < 5; ++i) line.print(' ');
+        format(static_cast<LogChannel>(channel), periodic);
+
+        if (!periodic && !refreshPending[channel] && strcmp(line.c_str(), previous[channel]) == 0) return;
+
+        Serial.println(line.c_str());
+        strncpy(previous[channel], line.c_str(), LINE_SIZE - 1);
+        previous[channel][LINE_SIZE - 1] = '\0';
+        lastPrintMs[channel] = now;
+        refreshPending[channel] = false;
     }
 
-    static void applyDeadband(uint16_t raw, uint16_t& shown)
+    void format(LogChannel channel, bool periodic)
     {
-        if (absDiff(raw, shown) > Config::DEBUG_CHANGE_DEADBAND_US)
+        // В режиме "постоянно" допуски не нужны — показываем как есть.
+        const float k = periodic ? 0.0f : 1.0f;
+
+        switch (channel)
         {
-            shown = raw;
+            case LogChannel::Status:    formatStatus(); break;
+            case LogChannel::Rc:        formatRc(k); break;
+            case LogChannel::Outputs:   formatOutputs(k); break;
+            case LogChannel::Attitude:  formatAttitude(k); break;
+            case LogChannel::Autopilot: formatAutopilot(k); break;
+            case LogChannel::Altitude:  formatAltitude(k); break;
+            case LogChannel::Heading:   formatHeading(k); break;
+            case LogChannel::Gps:       formatGps(k); break;
+            case LogChannel::Imu:       formatImu(k); break;
+            case LogChannel::System:    formatSystem(); break;
+            case LogChannel::Count:     break;
         }
     }
 
-    void printState()
+    // --- каналы ---
+
+    void formatStatus()
     {
-        const RcChannelState& rc = controller.getRcState();
-        const FlightOutputState& output = controller.getOutputState();
-
-        if (!snapshotInitialized)
-        {
-            for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i)
-            {
-                shownChannels[i] = rc.get(i);
-            }
-
-            shownOutput = output;
-            snapshotInitialized = true;
-        }
-
-        capture.reset();
-        capture.print("IBUS: ");
-
-        for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i)
-        {
-            applyDeadband(rc.get(i), shownChannels[i]);
-
-            capture.print("CH");
-            capture.print(i + 1);
-            capture.print("=");
-            capture.print(shownChannels[i]);
-            capture.print(" ");
-        }
-
         const IBusReceiver& receiver = controller.getReceiver();
+        line.print("RX=");
+        if (receiver.isFrameTimeout()) line.print("LOST(нет кадров)");
+        else if (receiver.isFailsafeReported()) line.print("LOST(failsafe пульта)");
+        else line.print("OK");
 
-        capture.print("| RX=");
-        if (receiver.isFrameTimeout())
-        {
-            capture.print("LOST(нет кадров)");
-        }
-        else if (receiver.isFailsafeReported())
-        {
-            capture.print("LOST(failsafe пульта)");
-        }
-        else
-        {
-            capture.print("OK");
-        }
+        line.print(" ARM=");
+        line.print(controller.isArmed() ? "YES" : "NO");
 
-        capture.print(" | ARM=");
-        capture.print(controller.isArmed() ? "YES" : "NO");
+        line.print(" MODE=");
+        line.print(autopilot ? autopilot->getModeName() : "-");
 
-        applyDeadband(output.aileronLeft, shownOutput.aileronLeft);
-        applyDeadband(output.aileronRight, shownOutput.aileronRight);
-        applyDeadband(output.elevator, shownOutput.elevator);
-        applyDeadband(output.rudder, shownOutput.rudder);
-        applyDeadband(output.throttle, shownOutput.throttle);
-
-        capture.print(" | OUT LAIL=");
-        capture.print(shownOutput.aileronLeft);
-        capture.print(" RAIL=");
-        capture.print(shownOutput.aileronRight);
-        capture.print(" ELE=");
-        capture.print(shownOutput.elevator);
-        capture.print(" RUD=");
-        capture.print(shownOutput.rudder);
-        capture.print(" ESC=");
-        capture.println(shownOutput.throttle);
+        const int16_t flaps = controller.getFlapsUs();
+        line.print(" FLAPS=");
+        line.print(flaps <= 0 ? "UP" : (flaps >= Config::FLAPS_DEPLOYED_US ? "DOWN" : "MOVING"));
 
         if (autopilot)
         {
-            autopilot->printStatus(capture);
-        }
+            ImuSensor* imu = autopilot->getImuSensor();
+            line.print(" IMU=");
+            if (!imu) line.print("NONE");
+            else if (!imu->isAvailable()) line.print("NO_RESPONSE");
+            else if (imu->getPreflightProblem()) line.print("CHECK_FAILED");
+            else line.print("OK");
 
-        const bool changed = !hasPreviousFrame || strcmp(capture.c_str(), previousFrame) != 0;
-
-        if (!Config::DEBUG_ONLY_ON_CHANGE || changed)
-        {
-            // Пустая строка перед кадром — чтобы соседние обновления не
-            // сливались в одну кашу, когда печать идёт не каждый тик.
-            Serial.println();
-            Serial.print(capture.c_str());
-
-            strncpy(previousFrame, capture.c_str(), sizeof(previousFrame) - 1);
-            previousFrame[sizeof(previousFrame) - 1] = '\0';
-            hasPreviousFrame = true;
+            BarometerSensor* baro = autopilot->getBarometerSensor();
+            line.print(" BARO=");
+            line.print(!baro ? "NONE" : (baro->isAvailable() ? "OK" : "NO_RESPONSE"));
         }
     }
 
-    void printSystem() const
+    void formatRc(float k)
+    {
+        const RcChannelState& state = controller.getRcState();
+        for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i)
+        {
+            line.printf("%u:%.0f ", i + 1, rc[i].update(state.get(i), k * Config::DEBUG_CHANGE_DEADBAND_US));
+        }
+    }
+
+    void formatOutputs(float k)
+    {
+        const FlightOutputState& out = controller.getOutputState();
+        const float band = k * Config::DEBUG_CHANGE_DEADBAND_US;
+        line.printf("AIL-L %.0f AIL-R %.0f ELE %.0f RUD %.0f ESC %.0f",
+                    outputs[0].update(out.aileronLeft, band), outputs[1].update(out.aileronRight, band),
+                    outputs[2].update(out.elevator, band), outputs[3].update(out.rudder, band),
+                    outputs[4].update(out.throttle, band));
+    }
+
+    bool imuReady(const char*& problem) const
+    {
+        ImuSensor* imu = autopilot ? autopilot->getImuSensor() : nullptr;
+        if (!imu) { problem = "IMU нет в схеме"; return false; }
+        if (!imu->isAvailable()) { problem = "IMU не отвечает"; return false; }
+        return true;
+    }
+
+    void formatAttitude(float k)
+    {
+        const char* problem;
+        if (!imuReady(problem)) { line.print(problem); return; }
+
+        const ImuData& d = autopilot->getImuSensor()->getImuData();
+        line.printf("R %+.1f P %+.1f Y %.1f",
+                    roll.update(d.roll, k * 0.5f), pitch.update(d.pitch, k * 0.5f),
+                    yaw.update(d.yaw, k * 1.0f));
+    }
+
+    void formatAutopilot(float k)
+    {
+        if (!autopilot) { line.print("нет"); return; }
+
+        line.printf("%s want R %+.1f P %+.1f corr R %+.0f P %+.0f THR %+.0f",
+                    autopilot->getModeName(),
+                    wantRoll.update(autopilot->getDesiredRoll(), k * 0.5f),
+                    wantPitch.update(autopilot->getDesiredPitch(), k * 0.5f),
+                    corrRoll.update(autopilot->getRollCorrection(), k * 2.0f),
+                    corrPitch.update(autopilot->getPitchCorrection(), k * 2.0f),
+                    corrThrottle.update(autopilot->getThrottleCorrection(), k * 2.0f));
+    }
+
+    void formatAltitude(float k)
+    {
+        BarometerSensor* baro = autopilot ? autopilot->getBarometerSensor() : nullptr;
+        if (!baro) { line.print("барометра нет в схеме"); return; }
+        if (!baro->isAvailable()) { line.print("барометр не отвечает"); return; }
+
+        const BarometerData& d = baro->getBarometerData();
+        line.printf("%.1f м  Vz %+.2f м/с  цель %.1f м",
+                    altitude.update(d.altitude, k * 0.3f), climb.update(d.verticalSpeed, k * 0.3f),
+                    autopilot->getTargetAltitude());
+    }
+
+    void formatHeading(float k)
+    {
+        MagnetometerSensor* mag = autopilot ? autopilot->getMagnetometerSensor() : nullptr;
+        if (!mag) { line.print("компаса нет в схеме"); return; }
+        if (!mag->isAvailable()) { line.print("компас не отвечает"); return; }
+
+        line.printf("курс %.0f°", heading.update(mag->getMagData().headingDegrees, k * 1.0f));
+    }
+
+    void formatGps(float k)
+    {
+        GpsSensor* gps = autopilot ? autopilot->getGpsSensor() : nullptr;
+        if (!gps) { line.print("GPS нет в схеме"); return; }
+        if (!gps->isAvailable()) { line.print("GPS не отвечает"); return; }
+
+        const GpsData& d = gps->getGpsData();
+        // ~1 м по координатам, 0.3 м/с по скорости.
+        line.printf("fix=%u sats=%u lat %.6f lon %.6f v %.1f м/с hacc %.1f м",
+                    d.fixType, d.numSatellites,
+                    gpsLat.update(d.latitude, k * 0.00001f), gpsLon.update(d.longitude, k * 0.00001f),
+                    gpsSpeed.update(d.groundSpeed, k * 0.3f), d.horizontalAccuracy);
+    }
+
+    void formatImu(float k)
+    {
+        const char* problem;
+        if (!imuReady(problem)) { line.print(problem); return; }
+
+        const ImuData& d = autopilot->getImuSensor()->getImuData();
+        line.printf("gyro %+.1f %+.1f %+.1f °/с  acc %+.2f %+.2f %+.2f g",
+                    gyro[0].update(d.gyroX, k * 1.0f), gyro[1].update(d.gyroY, k * 1.0f),
+                    gyro[2].update(d.gyroZ, k * 1.0f),
+                    accel[0].update(d.accelX, k * 0.03f), accel[1].update(d.accelY, k * 0.03f),
+                    accel[2].update(d.accelZ, k * 0.03f));
+    }
+
+    void formatSystem()
     {
         const IBusReceiver& receiver = controller.getReceiver();
-
-        Serial.println();
-        Serial.print("SYS: loop ");
-        if (loopStats)
+        if (!loopStats)
         {
-            Serial.print(loopStats->hz); Serial.print(" Hz, avg ");
-            Serial.print(loopStats->avgUs); Serial.print(" us, max ");
-            Serial.print(loopStats->maxUs); Serial.print(" us");
+            line.print("loop n/a");
+        }
+        else if (loopStats->hz == 0)
+        {
+            line.print("loop: статистика ещё набирается");   // первые секунды после старта
         }
         else
         {
-            Serial.print("n/a");
+            line.printf("loop %u Hz, avg %u us, max %u us (худший за 10 с)",
+                        (unsigned)loopStats->hz, (unsigned)loopStats->avgUs,
+                        (unsigned)loopStats->takePeakUs());
         }
-
-        Serial.print(" | iBUS ok="); Serial.print(receiver.getGoodFrameCount());
-        Serial.print(" crc_err="); Serial.print(receiver.getBadFrameCount());
-        Serial.print(" | heap "); Serial.print(ESP.getFreeHeap() / 1024); Serial.print(" KB");
-        Serial.print(" | uptime "); Serial.print(millis() / 1000); Serial.println(" s");
+        line.printf(" | iBUS ok=%u crc_err=%u | heap %u KB | uptime %u s",
+                    (unsigned)receiver.getGoodFrameCount(), (unsigned)receiver.getBadFrameCount(),
+                    (unsigned)(ESP.getFreeHeap() / 1024), (unsigned)(millis() / 1000));
     }
 };

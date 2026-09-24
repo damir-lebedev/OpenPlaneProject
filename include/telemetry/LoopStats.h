@@ -22,6 +22,7 @@ struct LoopStats
         count++;
         sumUs += durationUs;
         if (durationUs > windowMaxUs) windowMaxUs = durationUs;
+        if (durationUs > peakUs) peakUs = durationUs;
 
         const uint32_t now = millis();
         if (now - windowStartMs >= 1000)
@@ -37,9 +38,20 @@ struct LoopStats
         }
     }
 
+    // Худшее время цикла с прошлого вызова — для строки SYS раз в 10 с:
+    // maxUs — только за последнюю секунду, редкий затык в нём не виден.
+    // Вызывать из той же задачи, что и record() (loop).
+    uint32_t takePeakUs()
+    {
+        const uint32_t peak = peakUs;
+        peakUs = 0;
+        return peak;
+    }
+
 private:
     uint32_t count = 0;
     uint32_t sumUs = 0;
     uint32_t windowMaxUs = 0;
     uint32_t windowStartMs = 0;
+    uint32_t peakUs = 0;
 };

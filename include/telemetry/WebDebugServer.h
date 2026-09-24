@@ -44,6 +44,11 @@ public:
     bool begin()
     {
         Serial.print("WebDebugServer: запуск точки доступа... ");
+
+        // Не сохранять настройки Wi-Fi во флеш: они и так в Config, а
+        // запись во флеш останавливает оба ядра — полётный цикл вставал
+        // на ~0.3 с в первые секунды после загрузки.
+        WiFi.persistent(false);
         WiFi.mode(WIFI_AP);
 
         if (!WiFi.softAP(Config::WIFI_AP_SSID, Config::WIFI_AP_PASSWORD))

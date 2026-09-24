@@ -27,9 +27,12 @@ namespace Config
     // ESP32-S3 N16R8 (DevKitC-1-клон с двумя USB-C "USB"/"COM") —
     // основной лётный контроллер. Проверено вживую: сервы/ESC, iBUS,
     // обе I2C-шины.
-    // Не используются: GPIO0/3/45/46 (strapping), 19/20 (USB D-/D+),
+    // Не используются: GPIO0/45/46 (strapping), 19/20 (USB D-/D+),
     // 26-32 (SPI flash), 33-37 (octal PSRAM у N16R8), 43/44 (UART0 ->
     // разъём "COM", на нём Serial), 48 (RGB-светодиод на плате).
+    // GPIO3 — тоже strapping (источник JTAG), но влияет, только если
+    // это задано в eFuse (по умолчанию нет), — поэтому под вход АЦП
+    // батареи он годится.
     constexpr uint8_t PIN_AILERON_LEFT  = 4;
     constexpr uint8_t PIN_AILERON_RIGHT = 5;
     constexpr uint8_t PIN_ELEVATOR      = 6;
@@ -45,12 +48,14 @@ namespace Config
     constexpr int8_t PIN_I2C2_SDA       = 1;
     constexpr int8_t PIN_I2C2_SCL       = 2;
 
-    // SPI (ICM42688 + BMP388, общая шина, разные CS) — GPIO10-13
+    // SPI (ICM42688 + BMP388, общая шина, разные CS) — GPIO11-13
     // это дефолтная распиновка FSPI на большинстве S3-DevKitC плат.
+    // CS ICM42688 — GPIO14, а не 10: GPIO10 — АЦП1 (работает при
+    // включённом Wi-Fi), он зарезервирован под датчик тока.
     constexpr uint8_t PIN_SPI_SCK          = 12;
     constexpr uint8_t PIN_SPI_MISO         = 13;
     constexpr uint8_t PIN_SPI_MOSI         = 11;
-    constexpr uint8_t PIN_SPI_CS_ICM42688  = 10;
+    constexpr uint8_t PIN_SPI_CS_ICM42688  = 14;
     constexpr uint8_t PIN_SPI_CS_BMP388    = 21;
 
     // Второй UART — GPS (отдельно от iBUS, который на UART1/GPIO17).
@@ -59,6 +64,17 @@ namespace Config
     constexpr int8_t PIN_GPS_RX = 15;
     constexpr int8_t PIN_GPS_TX = 16;
     constexpr uint8_t UART_NUM_GPS = 2;
+
+    // РЕЗЕРВ под плату полётника (docs/FC_BOARD.md) — разъёмы
+    // разводятся сразу, прошивкой пока не используются.
+    constexpr int8_t PIN_AUX1        = 41;  // серво-выход: сброс груза
+    constexpr int8_t PIN_AUX2        = 42;  // серво-выход
+    constexpr int8_t PIN_AUX3        = 47;  // серво-выход / любой цифровой
+    constexpr int8_t PIN_BUZZER      = 38;  // пищалка через транзистор
+    constexpr int8_t PIN_VBAT_ADC    = 3;   // АЦП1: батарея через делитель 56k/10k
+    constexpr int8_t PIN_CURRENT_ADC = 10;  // АЦП1: датчик тока
+    constexpr int8_t PIN_TELEM_RX    = 39;  // радиомодем / iBUS-SENS
+    constexpr int8_t PIN_TELEM_TX    = 40;
 
 #elif defined(BOARD_ESP32_CLASSIC)
     // Обычная ESP32 38-pin (esp32dev/DOIT/NodeMCU-32S).
@@ -367,15 +383,12 @@ namespace Config
     // Debug
     // --------------------------------------------------------
 
+    // Как часто DebugLogger проверяет каналы лога. Что именно выводить
+    // и в каком режиме (выкл / при изменении / постоянно) — меню консоли
+    // ('l' в мониторе порта), хранится в NVS (telemetry/LogSettings.h).
     constexpr uint32_t DEBUG_INTERVAL_MS = 100;
 
-    // Не печатать новый кадр отладки, если он не отличается от предыдущего
-    // (с учётом допуска ниже) — иначе Serial Monitor заваливает одинаковыми
-    // строками каждые DEBUG_INTERVAL_MS, даже когда самолёт просто лежит
-    // на столе. Как только что-то реально меняется — печать возобновляется.
-    constexpr bool DEBUG_ONLY_ON_CHANGE = true;
-
-    // Допуск на дребезг RC-каналов и PWM-выходов (мкс): разница меньше
-    // этого значения не считается изменением.
+    // Допуск на дребезг RC-каналов и PWM-выходов (мкс) в режиме "при
+    // изменении": разница меньше этого значения не считается изменением.
     constexpr uint16_t DEBUG_CHANGE_DEADBAND_US = 3;
 }

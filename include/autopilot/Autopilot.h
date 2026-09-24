@@ -204,92 +204,6 @@ public:
     const PidController& getRollPid() const { return pidRoll; }
     const PidController& getPitchPid() const { return pidPitch; }
 
-    // Печатает статус в переданный Print (обычно — буфер DebugLogger'а,
-    // который потом сверяет кадр целиком и не шлёт в Serial, если ничего
-    // не изменилось).
-    //
-    // roll/pitch/yaw/alt/climb/corr печатаются через shown*-копии с
-    // допуском (applyPrintDeadband) — иначе шум датчика в десятые доли
-    // градуса/метра меняет строку каждый DEBUG_INTERVAL_MS, и
-    // DebugLogger шлёт новый кадр в Serial непрерывно, даже когда
-    // самолёт лежит неподвижно.
-    void printStatus(Print& out) const
-    {
-        out.print("Autopilot: mode=");
-        out.print(modeToString(currentMode));
-
-        if (currentMode == MODE_AUTO_TAKEOFF)
-        {
-            out.print(takeoffStarted ? "(RUN)" : "(WAIT THR>50%)");
-        }
-
-        if (!imuSensor)
-        {
-            out.print(" imu=NOT_ATTACHED");
-        }
-        else if (!imuSensor->isAvailable())
-        {
-            out.print(" imu=NO_RESPONSE");
-        }
-        else
-        {
-            const ImuData& imu = imuSensor->getImuData();
-            applyPrintDeadband(imu.roll, shownRoll, 0.3f);
-            applyPrintDeadband(imu.pitch, shownPitch, 0.3f);
-            applyPrintDeadband(imu.yaw, shownYaw, 0.3f);
-
-            out.print(" roll="); out.print(shownRoll, 1);
-            out.print("(want "); out.print(desiredRoll, 1); out.print(")");
-            out.print(" pitch="); out.print(shownPitch, 1);
-            out.print("(want "); out.print(desiredPitch, 1); out.print(")");
-            out.print(" yaw="); out.print(shownYaw, 1);
-        }
-
-        if (!baroSensor)
-        {
-            out.print(" baro=NOT_ATTACHED");
-        }
-        else if (!baroSensor->isAvailable())
-        {
-            out.print(" baro=NO_RESPONSE");
-        }
-        else
-        {
-            const BarometerData& baro = baroSensor->getBarometerData();
-            applyPrintDeadband(baro.altitude, shownAltitude, 0.3f);
-            applyPrintDeadband(baro.verticalSpeed, shownClimb, 0.5f);
-
-            out.print(" alt="); out.print(shownAltitude, 1);
-            out.print("(want "); out.print(targetAltitude, 1); out.print(")");
-            out.print(" climb="); out.print(shownClimb, 2);
-        }
-
-        applyPrintDeadband(rollCorrection, shownRollCorr, 0.5f);
-        applyPrintDeadband(pitchCorrection, shownPitchCorr, 0.5f);
-        applyPrintDeadband(throttleCorrection, shownThrottleCorr, 0.5f);
-
-        out.print(" corr(roll,pitch,thr)=");
-        out.print(shownRollCorr, 0); out.print(",");
-        out.print(shownPitchCorr, 0); out.print(",");
-        out.println(shownThrottleCorr, 0);
-
-        if (magSensor && magSensor->isAvailable())
-        {
-            applyPrintDeadband(magSensor->getMagData().headingDegrees, shownHeading, 1.0f);
-            out.print("Autopilot: mag heading=");
-            out.println(shownHeading, 0);
-        }
-
-        if (gpsSensor && gpsSensor->isAvailable())
-        {
-            const GpsData& gps = gpsSensor->getGpsData();
-            out.print("Autopilot: gps fix="); out.print(gps.fixType);
-            out.print(" numSV="); out.print(gps.numSatellites);
-            out.print(" lat="); out.print(gps.latitude, 6);
-            out.print(" lon="); out.println(gps.longitude, 6);
-        }
-    }
-
     // Перенастройка коэффициентов стабилизации крена/тангажа на ходу (веб-интерфейс).
     void setPIDGains(float kpRoll, float kiRoll, float kdRoll,
                      float kpPitch, float kiPitch, float kdPitch)
@@ -333,22 +247,6 @@ private:
     uint32_t takeoffStartTime = 0;
 
     float targetAltitude = 0;
-
-    // "Отображаемые" версии шумных полей для printStatus() — см.
-    // комментарий у printStatus(). mutable — печать не меняет
-    // логическое состояние автопилота, только сглаживает вывод.
-    mutable float shownRoll = 0, shownPitch = 0, shownYaw = 0;
-    mutable float shownAltitude = 0, shownClimb = 0;
-    mutable float shownRollCorr = 0, shownPitchCorr = 0, shownThrottleCorr = 0;
-    mutable float shownHeading = 0;
-
-    static void applyPrintDeadband(float raw, float& shown, float deadband)
-    {
-        if (fabsf(raw - shown) > deadband)
-        {
-            shown = raw;
-        }
-    }
 
     static uint16_t percentToUs(float percent)
     {

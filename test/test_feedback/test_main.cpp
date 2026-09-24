@@ -317,7 +317,6 @@ void test_estimator_learns_effectiveness_and_speed_scaling()
     run(sim, fb, 10.0f, excite);
     Serial.printf("  20 m/s, after 10 s: b=%.2f±%.2f\n", roll.getEffectiveness(), roll.getEffectivenessSigma());
     TEST_ASSERT_FLOAT_WITHIN(expected * 0.3f, expected, roll.getEffectiveness());
-    TEST_ASSERT_TRUE(fb.getGuard(AXIS_ROLL).isEnabled());
 
     // Без датчика скорости масштаба нет — b учится напрямую и всё
     // равно приходит к правде (медленнее).
@@ -330,44 +329,14 @@ void test_estimator_learns_effectiveness_and_speed_scaling()
 
 
 // ------------------------------------------------------------
-// Ось работает наоборот -> выключить (знак в полёте не переворачивается)
+// Ось работает наоборот: только предупреждение, ось не выключается
 // ------------------------------------------------------------
 
-// Элероны перепутаны, стабилизацию включили в полёте, самолёт
-// накренило: автопилот сначала валит его дальше, замечает
-// расходимость и выключает ось — крен дальше не раскручивается,
-// элероны у пилота.
-void test_reversed_aileron_is_disabled_in_flight()
-{
-    SimPlane sim;
-    sim.axes[AXIS_ROLL].sign = -1;
-    sim.stabilization = false;
-    FeedbackSupervisor fb;
-
-    run(sim, fb, 1.0f);                // в воздухе, пилот летит сам
-    sim.axes[AXIS_ROLL].angle = 15;    // порыв
-    sim.stabilization = true;
-
-    float maxBank = 0;
-    run(sim, fb, 4.0f, [&](int) { maxBank = max(maxBank, fabsf(sim.axes[AXIS_ROLL].angle)); });
-
-    const ControlDirectionGuard& guard = fb.getGuard(AXIS_ROLL);
-    Serial.printf("  guard=%s reason='%s' maxBank=%.0f roll=%.1f rate=%.1f\n",
-                  guard.getStateName(), guard.getReason(), maxBank, sim.axes[AXIS_ROLL].angle,
-                  sim.axes[AXIS_ROLL].rate);
-
-    TEST_ASSERT_FALSE(guard.isEnabled());
-    TEST_ASSERT_FALSE(fb.getOutput().axisEnabled[AXIS_ROLL]);
-    TEST_ASSERT_TRUE(fb.getOutput().axisEnabled[AXIS_PITCH]);   // остальные оси работают
-    TEST_ASSERT_LESS_THAN_FLOAT(90.0f, maxBank);
-    TEST_ASSERT_FLOAT_WITHIN(2.0f, 0.0f, sim.axes[AXIS_ROLL].rate);   // больше не раскручивает
-}
-
-// Тот же перепутанный элерон, но пилот летит в MANUAL и качает
-// крыльями: оценка b находит обратную реакцию ещё до включения
-// стабилизации — ось выключена заранее, и включение стабилизации
-// крен не трогает (хуже не становится), а тангаж работает.
-void test_estimator_finds_reversal_in_manual_flight()
+// Элероны перепутаны (не поймали на земле), пилот летит в MANUAL и
+// качает крыльями: оценка b находит обратную реакцию и пишет
+// предупреждение. Регулятору отрицательная оценка не отдаётся, ось
+// не выключается — знаки проверяются на земле.
+void test_reversed_aileron_only_warns()
 {
     SimPlane sim;
     sim.axes[AXIS_ROLL].sign = -1;
@@ -378,33 +347,23 @@ void test_estimator_finds_reversal_in_manual_flight()
         sim.stick[AXIS_ROLL] = 120.0f * sinf(2.0f * PI * 0.7f * i * SIM_DT);
     });
     sim.stick[AXIS_ROLL] = 0;
+    run(sim, fb, 0.1f);
 
-    const ControlDirectionGuard& guard = fb.getGuard(AXIS_ROLL);
-    Serial.printf("  after manual: b=%.2f guard=%s reason='%s'\n",
-                  fb.getEstimator(AXIS_ROLL).getEffectiveness(), guard.getStateName(), guard.getReason());
-    TEST_ASSERT_FALSE(guard.isEnabled());
+    const ControlEffectivenessEstimator& roll = fb.getEstimator(AXIS_ROLL);
+    Serial.printf("  b=%.2f confident=%d reason='%s'\n", roll.getEffectiveness(), roll.isConfident(),
+                  fb.getOutput().reason);
+    TEST_ASSERT_TRUE(roll.isConfident());
+    TEST_ASSERT_LESS_THAN_FLOAT(0.0f, roll.getEffectiveness());
+    TEST_ASSERT_NOT_NULL(strstr(fb.getOutput().reason, "ROLL"));
 
-    sim.axes[AXIS_ROLL].angle = 20;
-    sim.axes[AXIS_ROLL].rate = 0;
-    sim.axes[AXIS_PITCH].angle = -10;
+    // Стабилизация включена — ось крена управляется (не выключена).
     sim.stabilization = true;
-    float maxBank = 0;
-    run(sim, fb, 3.0f, [&](int) { maxBank = max(maxBank, fabsf(sim.axes[AXIS_ROLL].angle)); });
-    Serial.printf("  stabilized: maxBank=%.1f roll=%.2f rate=%.2f pitch=%.2f\n", maxBank,
-                  sim.axes[AXIS_ROLL].angle, sim.axes[AXIS_ROLL].rate, sim.axes[AXIS_PITCH].angle);
-    // Крен не раскручивается (пара градусов — остаток последнего
-    // движения стика в серво модели).
-    TEST_ASSERT_LESS_THAN_FLOAT(23.0f, maxBank);
-    TEST_ASSERT_FLOAT_WITHIN(1.0f, 0.0f, sim.axes[AXIS_ROLL].rate);
-    TEST_ASSERT_FALSE(fb.getOutput().axisEnabled[AXIS_ROLL]);
-    // Тангаж выровнялся с −10°. Остаток ~1.4° — разворотная
-    // компенсация: в крене 21° регулятор просит тангаж g·sinφ·tgφ/V,
-    // как в настоящем вираже, а в модели оси независимы.
-    TEST_ASSERT_FLOAT_WITHIN(2.0f, 0.0f, sim.axes[AXIS_PITCH].angle);
+    run(sim, fb, 0.1f);
+    TEST_ASSERT_TRUE(fb.getOutput().axisEnabled[AXIS_ROLL]);
 }
 
-// Правильные знаки и болтанка 30 с — ни одна ось не выключена зря.
-void test_no_false_disable_in_gusts()
+// Болтанка 30 с: порывы парируются, крен не уходит далеко.
+void test_gusts_are_rejected()
 {
     SimPlane sim;
     FeedbackSupervisor fb;
@@ -426,13 +385,8 @@ void test_no_false_disable_in_gusts()
         worstRoll = max(worstRoll, fabsf(sim.axes[AXIS_ROLL].angle));
     });
 
-    for (uint8_t axis = 0; axis < 3; ++axis)
-    {
-        Serial.printf("  axis %d: guard=%s reason='%s'\n", axis, fb.getGuard(axis).getStateName(),
-                      fb.getGuard(axis).getReason());
-        TEST_ASSERT_TRUE(fb.getGuard(axis).isEnabled());
-    }
     Serial.printf("  worst roll in gusts: %.1f\n", worstRoll);
+    TEST_ASSERT_LESS_THAN_FLOAT(10.0f, worstRoll);
 }
 
 
@@ -603,9 +557,8 @@ void setup()
     UNITY_BEGIN();
     RUN_TEST(test_levels_after_upset_and_trims_constant_moment);
     RUN_TEST(test_estimator_learns_effectiveness_and_speed_scaling);
-    RUN_TEST(test_reversed_aileron_is_disabled_in_flight);
-    RUN_TEST(test_estimator_finds_reversal_in_manual_flight);
-    RUN_TEST(test_no_false_disable_in_gusts);
+    RUN_TEST(test_reversed_aileron_only_warns);
+    RUN_TEST(test_gusts_are_rejected);
     RUN_TEST(test_stall_guard_with_airspeed);
     RUN_TEST(test_stall_guard_without_airspeed);
     RUN_TEST(test_takeoff_from_runway);
