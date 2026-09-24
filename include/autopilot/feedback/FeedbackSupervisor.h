@@ -31,8 +31,9 @@
 //   • сколько руля нужно, не константа: на малой скорости и на
 //     высоте руль слабее. Это измеряется прямо в полёте
 //     (ControlEffectivenessEstimator);
-//   • самолёт вращается не туда — перепутан знак, перевернуть и
-//     проверить (ControlDirectionGuard);
+//   • ось явно работает наоборот — выключить её, отдать пилоту
+//     (ControlDirectionGuard); знаки определяются на земле, в полёте
+//     ничего не переворачивается;
 //   • нос выровняли, а скорость падает — газ, нос вниз
 //     (StallGuard);
 //   • взлёт и посадка — этапами по датчикам (Takeoff/LandingSequencer).
@@ -164,8 +165,6 @@ public:
         // 3. Защита от сваливания. У самой земли (выравнивание, пробег)
         //    не работает: посадка — это и есть управляемое сваливание.
         StallGuard::ControlState control;
-        control.pitchSign = guards[FeedbackConfig::AXIS_PITCH].getSign();
-        control.rollSign = guards[FeedbackConfig::AXIS_ROLL].getSign();
         control.pitchEffectivenessKnown = estimators[FeedbackConfig::AXIS_PITCH].isConfident();
         control.pitchEffectiveness = fabsf(estimators[FeedbackConfig::AXIS_PITCH].getEffectiveness());
         stall.update(s, speed, control, inAir && !landing.isNearGround(), nowMs);
@@ -217,8 +216,6 @@ public:
         // 7. Рули.
         for (uint8_t axis = 0; axis < FeedbackConfig::AXIS_COUNT; ++axis)
         {
-            output.axisSign[axis] = guards[axis].getSign();
-
             if (!controlled[axis] || !guards[axis].isEnabled() || !s.imuValid)
             {
                 controllers[axis].reset();
@@ -287,10 +284,10 @@ public:
         for (uint8_t axis = 0; axis < FeedbackConfig::AXIS_COUNT; ++axis)
         {
             const ControlEffectivenessEstimator& e = estimators[axis];
-            out.printf("  %-5s b=%6.2f±%.2f%s a=%6.1f c=%6.0f sign=%+d %-8s I=%6.1f out=%5.0f%s\n",
+            out.printf("  %-5s b=%6.2f±%.2f%s a=%6.1f c=%6.0f %-8s I=%6.1f out=%5.0f%s\n",
                        axisName(axis), e.getEffectiveness(), e.getEffectivenessSigma(),
                        e.isConfident() ? "*" : " ", e.getDamping(), e.getBias(),
-                       guards[axis].getSign(), guards[axis].getStateName(),
+                       guards[axis].getStateName(),
                        controllers[axis].getIntegral(), output.deflectionUs[axis],
                        output.axisEnabled[axis] ? "" : " (off)");
         }
@@ -432,15 +429,16 @@ private:
         return FeedbackConfig::EFFECTIVENESS_PRIOR[axis] * scale;
     }
 
-    // Модель оси для регулятора: изученная, если ей можно верить и она
-    // согласна со знаком оси; иначе — априорная на текущей скорости.
+    // Модель оси для регулятора: изученная, если ей можно верить и ось
+    // работает в правильную сторону; иначе — априорная на текущей
+    // скорости. Отрицательная оценка в регулятор не идёт никогда: её
+    // разбирает ControlDirectionGuard (выключает ось).
     AxisModel axisModel(uint8_t axis) const
     {
         const ControlEffectivenessEstimator& e = estimators[axis];
-        const int8_t sign = guards[axis].getSign();
 
         AxisModel model;
-        if (e.isConfident() && e.getEffectiveness() * sign > 0)
+        if (e.isConfident() && e.getEffectiveness() > 0)
         {
             model.effectiveness = e.getEffectiveness();
             model.damping = FeedbackConfig::DAMPING_COMPENSATION * e.getDamping();
@@ -448,7 +446,7 @@ private:
         }
         else
         {
-            model.effectiveness = sign * expectedEffectiveness(axis);
+            model.effectiveness = expectedEffectiveness(axis);
         }
         return model;
     }
@@ -468,12 +466,10 @@ private:
         }
         for (uint8_t axis = 0; axis < FeedbackConfig::AXIS_COUNT; ++axis)
         {
-            const ControlDirectionGuard::State state = guards[axis].getState();
-            if (state == ControlDirectionGuard::State::Verifying ||
-                state == ControlDirectionGuard::State::Disabled)
+            if (!guards[axis].isEnabled())
             {
-                snprintf(reasonBuffer, sizeof(reasonBuffer), "%s %s: %s", axisName(axis),
-                         guards[axis].getStateName(), guards[axis].getLastEvent());
+                snprintf(reasonBuffer, sizeof(reasonBuffer), "%s ВЫКЛЮЧЕНА: %s", axisName(axis),
+                         guards[axis].getReason());
                 return reasonBuffer;
             }
         }

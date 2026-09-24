@@ -36,7 +36,7 @@ public:
     }
 
     explicit ICM42688_Sensor(IRegisterDevice& device)
-        : ImuSensorBase("ICM42688"),
+        : ImuSensorBase("ICM42688", "imu_icm42688"),
           device(device)
     {
     }

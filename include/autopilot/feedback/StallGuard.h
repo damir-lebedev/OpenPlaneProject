@@ -46,11 +46,9 @@ public:
 
     enum class Level : uint8_t { Normal, LowEnergy, Stall };
 
-    // Что известно о тангаже и крене от других модулей.
+    // Что известно о руле высоты от оценки эффективности.
     struct ControlState
     {
-        int8_t pitchSign = 1;            // знаки осей (ControlDirectionGuard)
-        int8_t rollSign = 1;
         bool pitchEffectivenessKnown = false;
         float pitchEffectiveness = 0;    // модуль оценки b по тангажу
     };
@@ -72,7 +70,7 @@ public:
         }
 
         const bool lowEnergy = detectLowEnergy(s, speed, control, nowMs);
-        const bool stall = detectStall(s, speed, control, lowEnergy);
+        const bool stall = detectStall(s, speed, lowEnergy);
 
         if (stall)
         {
@@ -205,8 +203,7 @@ private:
         return !speed.hasAcceleration() || speed.getAcceleration() >= 0.0f;
     }
 
-    bool detectStall(const FlightSnapshot& s, const SpeedEstimator& speed,
-                     const ControlState& control, bool lowEnergy)
+    bool detectStall(const FlightSnapshot& s, const SpeedEstimator& speed, bool lowEnergy)
     {
         if (speed.hasSpeed() && speed.getSpeed() < FeedbackConfig::STALL_SPEED_MS)
         {
@@ -215,8 +212,7 @@ private:
         }
 
         // Нос резко падает, хотя руль высоты тянет вверх.
-        const bool elevatorUp =
-            s.commandPitchUs * control.pitchSign > FeedbackConfig::STALL_NOSE_UP_COMMAND_US;
+        const bool elevatorUp = s.commandPitchUs > FeedbackConfig::STALL_NOSE_UP_COMMAND_US;
         if (elevatorUp && s.pitchRateDps < -FeedbackConfig::NOSE_DROP_RATE_DPS)
         {
             reason = "нос падает против руля высоты";
@@ -225,9 +221,8 @@ private:
 
         // Крыло резко валится против элеронов — только при малой
         // энергии: на скорости это скорее порыв.
-        const float rollCommand = s.commandRollUs * control.rollSign;
         if (lowEnergy && fabsf(s.rollRateDps) > FeedbackConfig::WING_DROP_RATE_DPS &&
-            s.rollRateDps * rollCommand < 0)
+            s.rollRateDps * s.commandRollUs < 0)
         {
             reason = "сваливание на крыло";
             return true;

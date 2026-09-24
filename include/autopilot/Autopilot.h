@@ -356,9 +356,12 @@ private:
         return static_cast<uint16_t>(Config::PWM_MIN + clamped * (Config::PWM_MAX - Config::PWM_MIN) / 100.0f);
     }
 
+    // IMU отвечает и прошёл предполётную проверку: с перевёрнутой или
+    // переставленной платой коррекции пошли бы в обратную сторону —
+    // лучше не корректировать совсем.
     bool imuReady() const
     {
-        return imuSensor && imuSensor->isAvailable();
+        return imuSensor && imuSensor->isAvailable() && !imuSensor->getPreflightProblem();
     }
 
     // Сбрасывает состояние режима, вызывается только при реальной смене режима.

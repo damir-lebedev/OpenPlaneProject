@@ -10,7 +10,8 @@
 //
 //   h — помощь
 //   s — подробный статус всех датчиков (с счётчиками ошибок шины)
-//   i — калибровка IMU (2 с, не двигать)
+//   i — калибровка гироскопа и предполётная проверка IMU (2 с, не двигать)
+//   o — калибровка установки IMU: 3 позы, плата может стоять как угодно
 //   m — калибровка компаса (15 с, вращать по всем осям)
 //   p — самопроверка выходов (реальный импульс на каждом пине)
 //
@@ -32,7 +33,8 @@ public:
     void printHelp() const
     {
         Serial.println("Команды: h — помощь, s — статус датчиков, "
-                       "i — калибровка IMU (2 с, не двигать), "
+                       "i — калибровка гироскопа (2 с, не двигать), "
+                       "o — калибровка установки IMU (3 позы), "
                        "m — калибровка компаса (15 с, вращать по всем осям), "
                        "p — проверка импульсов на выходах");
     }
@@ -55,6 +57,7 @@ public:
         {
             case 's': printSensorStatus(); break;
             case 'i': calibrate(autopilot.getImuSensor(), "IMU"); break;
+            case 'o': calibrateImuMounting(); break;
             case 'm': calibrate(autopilot.getMagnetometerSensor(), "компас"); break;
             case 'p': outputs.printPulseSelfTest(); break;
             default:  printHelp(); break;
@@ -70,7 +73,7 @@ private:
 
     static bool isBlocking(char command)
     {
-        return command == 'i' || command == 'm' || command == 'p';
+        return command == 'i' || command == 'o' || command == 'm' || command == 'p';
     }
 
     void printSensorStatus() const
@@ -86,6 +89,17 @@ private:
         {
             if (sensor) sensor->printStatus();
         }
+    }
+
+    void calibrateImuMounting()
+    {
+        ImuSensor* imu = autopilot.getImuSensor();
+        if (!imu)
+        {
+            Serial.println("Консоль: IMU не выбран в SensorSelection.h");
+            return;
+        }
+        imu->calibrateOrientation();
     }
 
     template <typename SensorType>
