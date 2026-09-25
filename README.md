@@ -139,9 +139,10 @@ header-only C++ классов с чёткими границами ответс
   конкретных имён классов.
 - **Железо MCU спрятано за HAL.** I2C/SPI/UART/PWM-выходы — это интерфейсы
   в `include/hal/` (`IBoard`, `II2CBus`, `ISpiBus`, `IUartPort`,
-  `IServoOutput`); сегодня единственная реализация — `Esp32Board`, но
-  переход на другой MCU (например STM32) не требует переписывать датчики
-  или логику полёта — только новую реализацию `IBoard`.
+  `IServoOutput`); основная реализация — `Esp32Board`. Переход на другой
+  MCU не требует переписывать датчики или логику полёта — только новую
+  реализацию `IBoard`: такая заготовка уже есть для STM32H743
+  (`include/hal/stm32/`).
 - **Новая плата — это один блок кода, а не форк прошивки.** Поддержка
   ESP32-C3 / ESP32-S3 / обычной ESP32 переключается опцией сборки
   PlatformIO; добавить ещё одну плату — значит дописать один `#elif` в
@@ -160,6 +161,7 @@ header-only C++ классов с чёткими границами ответс
 | `pio run -e esp32-s3` (по умолчанию) | ESP32-S3 N16R8 (DevKitC-1) | **Основная.** Проверена на стенде со всеми датчиками |
 | `pio run -e esp32-c3` | ESP32-C3 SuperMini | Старый прототип, летал на ручном управлении |
 | `pio run -e esp32-dev` | Обычная ESP32 38-pin | Для стенда/отладки, **не проверена на железе** |
+| `pio run -e stm32h743` | STM32H743VIT6 (WeAct MiniSTM32H743VITx) | **Заготовка** следующей платформы: HAL и bring-up (ручной полёт без автопилота, проверка шин) собираются, **на железе не проверены** — см. [`docs/reference/hal.md`](docs/reference/hal.md#реализация-для-stm32h743-заготовка) |
 
 ```
 pio run -t upload            # прошить (ESP32-S3 — через разъём "COM")
@@ -299,7 +301,8 @@ OpenPlaneProject/
 │   ├── config/        Config.h (пины и все настройки), Channels.h (имена RC-каналов)
 │   ├── hal/           абстракция "мозга": IBoard, шины I2C/SPI/UART, PWM-выходы,
 │   │   │              RegisterDevice (регистровое устройство поверх I2C/SPI)
-│   │   └── esp32/     реализация над Wire/Wire1/SPI/HardwareSerial/LEDC
+│   │   ├── esp32/     реализация над Wire/Wire1/SPI/HardwareSerial/LEDC
+│   │   └── stm32/     заготовка для STM32H743: TwoWire/SPIClass/Uart/HardwareTimer
 │   ├── rc/            приём iBUS, распознавание потери связи
 │   ├── control/       микшер (+ закрылки), газ, ARM, выходы, FlightController
 │   ├── autopilot/     ПИД, режимы, планирование при потере связи, выбор режима с CH7
@@ -313,7 +316,8 @@ OpenPlaneProject/
 │   │   └── airspeed/  интерфейс датчика воздушной скорости (реализаций пока нет)
 │   └── telemetry/     лог в Serial, консоль, веб-дашборд, OLED, статистика цикла
 ├── src/
-│   └── main.cpp                    # composition root: создаёт объекты и вызывает setup()/loop()
+│   ├── main.cpp                    # composition root: создаёт объекты и вызывает setup()/loop()
+│   └── stm32/main.cpp              # bring-up для STM32H743 (заготовка, env stm32h743)
 ├── lib/
 ├── test/
 │   ├── native/                     # тесты на ПК: фейки Arduino/ESP32 (support/) и наборы по слоям
@@ -328,7 +332,8 @@ OpenPlaneProject/
 
 ## Технологии
 
-- ESP32-S3 (а также C3 / classic) — микроконтроллер, FreeRTOS на двух ядрах
+- ESP32-S3 (а также C3 / classic) — микроконтроллер, FreeRTOS на двух ядрах;
+  заготовка HAL под STM32H743 (STM32duino, аппаратный PWM таймеров)
 - PlatformIO + Arduino framework (core 2.0.x) — сборка и загрузка прошивки
 - C++ (header-only объектная архитектура)
 - Протокол iBUS — приём команд с RC-приёмника

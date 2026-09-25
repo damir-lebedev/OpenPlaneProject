@@ -125,8 +125,8 @@ ESP-IDF и библиотек, но поверх симулированного 
 
 | Инструмент | Команда | Профиль |
 |---|---|---|
-| GCC | `PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Wshadow" pio run -e esp32-s3` (и `-c3`, `-dev`) | Нативная сборка тестов — всегда с `-Wall -Wextra -Wshadow` |
-| cppcheck | `pio check -e esp32-s3` | `check_*` в `[esp32_common]`: `include/` и `src/`, warning/style/performance/portability, встроенные подавления `// cppcheck-suppress` только для ложных срабатываний (колбэк U8g2, `setup/loop`) |
+| GCC | `PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Wshadow" pio run -e esp32-s3` (и `-c3`, `-dev`); `pio run -e stm32h743` | Нативная сборка тестов — всегда с `-Wall -Wextra -Wshadow`; `stm32h743` — с `-Wall -Wextra` (`build_src_flags`; `-Wshadow` шумит на заголовках самого STM32duino) |
+| cppcheck | `pio check -e esp32-s3`; `pio check -e stm32h743` | `check_*` в `[esp32_common]`: `include/` и `src/` (кроме `stm32/`), warning/style/performance/portability, встроенные подавления `// cppcheck-suppress` только для ложных срабатываний (колбэк U8g2, `setup/loop`). У `stm32h743` — те же флаги по `include/hal/stm32/` и `src/stm32/` |
 | clang-tidy | `tools/clang-tidy.sh` | `.clang-tidy`: bugprone, clang-analyzer, performance, `misc-include-cleaner` и др.; отключённые проверки с объяснением — в самом файле |
 
 clang-tidy запускается с фейками из `test/native/support`: заголовки ESP-IDF
@@ -135,10 +135,13 @@ clang под хост-архитектуру разобрать не может 
 проверяет). `misc-include-cleaner` следит, чтобы каждый заголовок подключал
 то, чем пользуется: «зонтичные» заголовки (`FeedbackModules.h`, API
 `IBoard.h`/`RegisterDevice.h`, макросы `SensorSelection.h`) помечены
-`// IWYU pragma: export`.
+`// IWYU pragma: export`. Код под STM32 (`include/hal/stm32/`, `src/stm32/`)
+фейками не покрыт, поэтому скрипт его пропускает — его проверяют сборка и
+cppcheck env `stm32h743`. Нативными тестами он тоже не покрыт (фейков
+STM32duino нет) и в `gcovr` не попадает: это заготовка без железа.
 
 На момент аудита все три инструмента дают **0 замечаний** по коду проекта на
-всех трёх платах, включая альтернативные наборы датчиков
+всех трёх платах ESP32 и на заготовке `stm32h743`, включая альтернативные наборы датчиков
 (`-DSENSOR_IMU=SENSOR_IMU_ICM42688 -DSENSOR_BARO=SENSOR_BARO_BME280
 -DSENSOR_MAG=SENSOR_MAG_QMC5883L -DSENSOR_GPS=SENSOR_GPS_UBLOX_M10` и
 BMP388 по SPI без компаса).

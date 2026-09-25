@@ -3,9 +3,14 @@
 [← Справочник](README.md)
 
 HAL — единственный слой, которому разрешено знать конкретный MCU. Интерфейсы
-лежат в `include/hal/`, единственная реализация — ESP32 (Arduino core 2.0.x) в
-`include/hal/esp32/`. Всё выше работает только с интерфейсами, поэтому перенос
-на другой MCU — это новая реализация `IBoard`, а не переписывание датчиков.
+лежат в `include/hal/`, реализации:
+
+- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x), **основная**;
+- `include/hal/stm32/` — STM32H743 (STM32duino 3.x), **заготовка**: собирается
+  (`pio run -e stm32h743`), на железе не проверялась.
+
+Всё выше работает только с интерфейсами, поэтому перенос на другой MCU — это
+новая реализация `IBoard`, а не переписывание датчиков.
 
 ---
 
@@ -30,7 +35,7 @@ HAL — единственный слой, которому разрешено �
 
 ## `IBoard`
 
-**Файл:** `hal/IBoard.h` · **Вид:** интерфейс · **Реализации:** `Esp32Board`
+**Файл:** `hal/IBoard.h` · **Вид:** интерфейс · **Реализации:** `Esp32Board`, `Stm32Board`
 
 Единственная точка входа в железо. Ничего выше не включает `<Wire.h>`,
 `<SPI.h>`, `HardwareSerial` и не вызывает LEDC напрямую.
@@ -50,7 +55,7 @@ HAL — единственный слой, которому разрешено �
 ## `II2CBus`
 
 **Файл:** `hal/II2CBus.h` · **Вид:** интерфейс с невиртуальными помощниками ·
-**Реализации:** `Esp32I2CBus`
+**Реализации:** `Esp32I2CBus`, `Stm32I2CBus`
 
 Абстракция шины I2C в форме `Wire`. Пины и частота фиксируются реализацией в
 конструкторе, поэтому `begin()`/`setClock()` без пинов — шина инициализируется
@@ -73,7 +78,7 @@ HAL — единственный слой, которому разрешено �
 
 ## `ISpiBus`
 
-**Файл:** `hal/ISpiBus.h` · **Вид:** интерфейс · **Реализации:** `Esp32SpiBus`
+**Файл:** `hal/ISpiBus.h` · **Вид:** интерфейс · **Реализации:** `Esp32SpiBus`, `Stm32SpiBus`
 
 Шина SPI **без управления CS**: на одной шине несколько устройств, CS
 переключает `SpiRegisterDevice`.
@@ -89,7 +94,7 @@ HAL — единственный слой, которому разрешено �
 
 ## `IUartPort`
 
-**Файл:** `hal/IUartPort.h` · **Вид:** интерфейс · **Реализации:** `Esp32UartPort`
+**Файл:** `hal/IUartPort.h` · **Вид:** интерфейс · **Реализации:** `Esp32UartPort`, `Stm32UartPort`
 
 UART в форме `HardwareSerial`, но `begin()` берёт только скорость: пины и
 формат (8N1) фиксирует реализация.
@@ -104,7 +109,7 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 
 ## `IServoOutput`
 
-**Файл:** `hal/IServoOutput.h` · **Вид:** интерфейс · **Реализации:** `Esp32ServoOutput`
+**Файл:** `hal/IServoOutput.h` · **Вид:** интерфейс · **Реализации:** `Esp32ServoOutput`, `Stm32ServoOutput`
 
 Один PWM-выход. Пин фиксируется реализацией.
 
@@ -254,3 +259,109 @@ PWM напрямую через LEDC (`ledcSetup/ledcAttachPin/ledcWrite` Arduin
 | `measurePulseUs()` | Включает входной буфер того же GPIO (`PIN_INPUT_ENABLE`, выход не трогается) и меряет `pulseIn(pin, HIGH, 30 мс)`; нет импульса → `-1` |
 
 Каналы 2n и 2n+1 делят таймер LEDC — у всех выходов 50 Гц, конфликта нет.
+
+---
+
+# Реализация для STM32H743 (заготовка)
+
+Плата следующего поколения — STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша,
+1 МБ ОЗУ). Физической платы пока нет: код **собирается** (env `stm32h743`,
+плата PlatformIO `weact_mini_h743vitx` — тот же чип) и проходит cppcheck, но
+**на железе не проверялся**. Распиновка — блок `BOARD_STM32H743` в
+[`Config.h`](config.md#stm32h743).
+
+Общие отличия от ESP32, которые прячет этот слой:
+
+- **Периферию выбирает ядро.** STM32duino сам находит контроллер (I2C1/I2C2,
+  SPI2, USART3, UART7, TIMx) по номерам пинов в таблицах `PeripheralPins`
+  варианта, поэтому номеров UART/каналов в `Config.h` нет.
+- **Номера пинов** — «Arduino-пины» варианта (`PA0`, `PD14`...), а не GPIO; у
+  аналоговых пинов это `0xC0 + N`, поэтому пины в блоке STM32 — `int16_t`.
+- **Пины UART** задаются при создании объекта `Uart(rx, tx)`, а не в `begin()`.
+
+## `Stm32Board`
+
+**Файл:** `hal/stm32/Stm32Board.h` · **Наследует:** `IBoard`
+
+То же, что `Esp32Board`, поверх STM32duino.
+
+| Поле | Тип | Что это |
+|---|---|---|
+| `displayWire` | `TwoWire` | Второй контроллер I2C (глобальный `Wire` занят датчиками). Объявлен раньше `displayBus`, который хранит ссылку на него |
+| `i2cBus` | `Stm32I2CBus` | `Wire` на `PIN_I2C_SDA/SCL` (I2C2: PB11/PB10), 400 кГц |
+| `displayBus` | `Stm32I2CBus` | `displayWire` на `PIN_I2C2_SDA/SCL` (I2C1: PB9/PB8) — вторая шина есть всегда |
+| `spiBus` | `Stm32SpiBus` | Глобальный `SPI` на `PIN_SENSOR_SPI_*` (SPI2) |
+| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | iBUS: UART7, RX `PIN_IBUS` (PE7), TX `PIN_IBUS_TX` (PE8, резерв под iBUS-SENS) |
+| `gpsSerial`, `gpsPort` | `Uart`, `Stm32UartPort` | GPS: USART3, `PIN_GPS_RX/TX` (PD9/PD8) |
+| `servos[5]` | `Stm32ServoOutput` | В порядке `ServoChannel` |
+
+| Метод | Описание |
+|---|---|
+| `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `displayBus.begin()` |
+| `displayI2c()` | Всегда `&displayBus` |
+| `static constexpr pin_size_t pinOf(int16_t)` | Перевод пина из `Config.h` в тип API ядра |
+| остальные | Возвращают соответствующие поля |
+
+## `Stm32I2CBus`
+
+**Файл:** `hal/stm32/Stm32I2CBus.h` · **Наследует:** `II2CBus`
+
+| Метод | Описание |
+|---|---|
+| `Stm32I2CBus(TwoWire& bus, pin_size_t sdaPin, pin_size_t sclPin, uint32_t frequencyHz = 400000)` | Запоминает параметры |
+| `begin()` | `setSDA()`/`setSCL()` (действуют только до `begin()`), `wire.begin()`, `wire.setClock(hz)` |
+| `requestFrom(address, n)` | `wire.requestFrom(address, size_t n)`; результат `size_t` приводится к `uint8_t` |
+| остальные | Прямое делегирование `TwoWire` |
+
+Таймаут транзакции у STM32duino — не метод, а макрос `I2C_TIMEOUT_TICK` (мс,
+по умолчанию 100). В env `stm32h743` он задан флагом `-D I2C_TIMEOUT_TICK=5` —
+по той же причине, что `TIMEOUT_MS` у `Esp32I2CBus`.
+
+## `Stm32SpiBus`
+
+**Файл:** `hal/stm32/Stm32SpiBus.h` · **Наследует:** `ISpiBus`
+
+Обёртка над `SPIClass&`. `begin()` → `setSCLK/setMISO/setMOSI` + `spi.begin()`;
+аппаратный NSS не используется — CS переключает `SpiRegisterDevice`, как на ESP32.
+`beginTransaction()` строит `SPISettings(hz, MSBFIRST, SPIMode)`; `spiModeOf()`
+переводит 0..3 в `SPI_MODEn`, неизвестное значение → `SPI_MODE0`.
+
+## `Stm32UartPort`
+
+**Файл:** `hal/stm32/Stm32UartPort.h` · **Наследует:** `IUartPort`
+
+Обёртка над `HardwareSerial&` (в STM32duino 3.x — абстрактная база
+`arduino::HardwareSerial`, конкретный объект `Uart` создаёт `Stm32Board`).
+`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`. Буферы — 256 байт
+(`SERIAL_RX/TX_BUFFER_SIZE` в env): кадр NAV-PVT — 100 байт, стандартных 64 мало.
+
+## `Stm32ServoOutput`
+
+**Файл:** `hal/stm32/Stm32ServoOutput.h` · **Наследует:** `IServoOutput`
+
+Аппаратный PWM таймера через `HardwareTimer`, 50 Гц. Импульс формирует таймер
+без прерываний и без CPU — в отличие от библиотеки `Servo` для STM32, которая
+дёргает пины из прерывания одного таймера и даёт джиттер.
+
+| Константа | Значение |
+|---|---|
+| `FREQUENCY_HZ` / `PERIOD_US` | 50 / 20 000 |
+| `MAX_TIMERS` | 4 — сколько разных таймеров могут занять выходы (сейчас заняты TIM2 и TIM4) |
+
+| Метод | Описание |
+|---|---|
+| `Stm32ServoOutput(int16_t pin)` | Пин `< 0` — выход не разведён |
+| `attach(minUs, maxUs)` | Таймер и канал — из `PinMap_TIM` по пину (`pinmap_peripheral`, `STM_PIN_CHANNEL`), как у `analogWrite()`. Нет таймера на пине или пул исчерпан → `false`. Иначе `setMode(PWM1)`, сравнение 0 (импульса нет до первой записи), `resume()` |
+| `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`. Регистр сравнения с предзагрузкой — значение вступает со следующего периода |
+| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 мс)` без перенастройки пина: на STM32 регистр IDR видит уровень и в режиме альтернативной функции |
+| `static acquireTimer(TIM_TypeDef*)` | Общий пул: **один `HardwareTimer` на TIMx**. Второй объект на тот же таймер перезаписал бы обработчик ядра (`HardwareTimer_Handle[index]`). Период задаётся при первом выходе на таймере; `setOverflow(MICROSEC_FORMAT)` подбирает делитель — шаг ~0.3 мкс при тактовой таймера 240 МГц |
+
+## Точка входа `src/stm32/main.cpp`
+
+Полная прошивка (`src/main.cpp`) на STM32 пока не собирается — не из-за HAL, а
+из-за трёх ESP32-зависимостей уровнем выше: `Preferences` (NVS) для калибровок и
+настроек лога, Wi-Fi-дашборд (`WebDebugServer`) и задачи FreeRTOS на втором ядре
+(веб, OLED). Поэтому env `stm32h743` собирает bring-up: ручной полёт
+(`FlightController` без автопилота) и проверку шин. Подробнее —
+[application.md](application.md#src-stm32-main-cpp).
+

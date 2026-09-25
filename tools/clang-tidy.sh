@@ -3,6 +3,8 @@
 # .clang-tidy в корне). Заголовки ESP-IDF clang под хост разобрать не
 # может, поэтому анализ идёт с нативными фейками Arduino/ESP32 из
 # test/native/support — как в нативных тестах (docs/TESTING.md).
+# Код под STM32 (include/hal/stm32/, src/stm32/) фейками не покрыт —
+# его проверяет сборка pio run -e stm32h743 (-Wall -Wextra).
 #
 #   tools/clang-tidy.sh            — все файлы include/ и src/
 #   tools/clang-tidy.sh FILE...    — только указанные
@@ -15,7 +17,7 @@ CLANG_TIDY="${CLANG_TIDY:-clang-tidy}"
 if [ "$#" -gt 0 ]; then
     files=("$@")
 else
-    mapfile -t files < <(find include src -name '*.h' -o -name '*.cpp' | sort)
+    mapfile -t files < <(find include src -path '*/stm32' -prune -o \( -name '*.h' -o -name '*.cpp' \) -print | sort)
 fi
 
 findings=0

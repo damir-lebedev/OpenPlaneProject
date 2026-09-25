@@ -17,13 +17,13 @@
 // IBoard и его under-интерфейсы (II2CBus/ISpiBus/IUartPort/
 // IServoOutput).
 //
-// Сегодня единственная реализация — Esp32Board (hal/esp32/).
-// Чтобы перейти на другой MCU (например STM32), нужно написать
-// Stm32Board : public IBoard в hal/stm32/, реализующий те же
-// методы поверх STM32-специфичных Wire/SPI/HardwareSerial/PWM —
-// остальной код (сенсоры, автопилот, FlightController) не
-// меняется вообще, потому что он написан против IBoard/II2CBus/
-// ISpiBus/IUartPort/IServoOutput, а не против конкретных API.
+// Реализации: Esp32Board (hal/esp32/) — основная, и Stm32Board
+// (hal/stm32/) — заготовка под STM32H743, на железе пока не
+// проверенная. Обе реализуют одни и те же методы поверх своих
+// Wire/SPI/UART/PWM — остальной код (сенсоры, автопилот,
+// FlightController) от MCU не зависит, потому что он написан против
+// IBoard/II2CBus/ISpiBus/IUartPort/IServoOutput, а не против
+// конкретных API.
 // ============================================================
 
 // Индекс серво-канала для IBoard::servo(channel). Плоский список,

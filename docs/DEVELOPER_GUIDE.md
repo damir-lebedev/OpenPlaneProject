@@ -112,7 +112,8 @@ include/
 - **HAL** — единственный слой, которому разрешено знать конкретный MCU
   (`Wire`, `SPI`, `HardwareSerial`, `ledc*`). Всё выше работает только с
   интерфейсами. Переход на другой MCU — это новая
-  `hal/<mcu>/<Mcu>Board.h`, остальной код не меняется.
+  `hal/<mcu>/<Mcu>Board.h`, остальной код не меняется (пример —
+  заготовка `hal/stm32/` под STM32H743).
 - **Драйверы датчиков не знают про шину.** Они получают
   `IRegisterDevice&` — I2C с адресом или SPI с CS создаётся в
   `SensorSelection.h`. Один `BMP388_Sensor` работает и по I2C, и по SPI.
@@ -557,6 +558,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=..
 | `pio run -e esp32-s3` | `esp32-s3-devkitc-1` + N16R8 (`qio_opi`, 16 МБ) | `BOARD_ESP32_S3` | **Основная, по умолчанию.** Проверена на стенде со всеми датчиками |
 | `pio run -e esp32-c3` | `esp32-c3-devkitm-1` | `BOARD_ESP32_C3` | Старый прототип, летал на ручном управлении |
 | `pio run -e esp32-dev` | `esp32dev` | `BOARD_ESP32_CLASSIC` | Для стенда, распиновка не проверена на железе |
+| `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | **Заготовка** STM32H743VIT6: HAL + bring-up `src/stm32/main.cpp`, на железе не проверена ([ниже](#stm32h743-заготовка)) |
 
 | Назначение | ESP32-S3 (стенд) | ESP32-C3 | ESP32 classic |
 |---|---|---|---|
@@ -577,6 +579,40 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=..
   полный комплект не хватает: CS BMP388 и GPS RX — на strapping-пинах,
   GPS без TX (только приём, без UBX-CFG). Подробности — в `Config.h`.
 
+### STM32H743 (заготовка)
+
+Следующая платформа — STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ
+ОЗУ). Платы пока нет, поэтому это **заготовка**: всё собирается и проходит
+cppcheck, но на железе не проверялось. Основная плата — по-прежнему ESP32-S3.
+
+- **HAL** — `include/hal/stm32/`: `Stm32Board` (тот же API, что у `Esp32Board`),
+  `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`, `Stm32ServoOutput`
+  (аппаратный PWM `HardwareTimer`, один таймер на несколько выходов). Подробно —
+  [reference/hal.md](reference/hal.md#реализация-для-stm32h743-заготовка).
+- **Распиновка** — блок `BOARD_STM32H743` в `Config.h`, пины выбраны из
+  свободных на WeAct MiniSTM32H743VITx и сверены с таблицами STM32duino:
+
+| Назначение | STM32H743 | Периферия |
+|---|---|---|
+| Элерон левый / правый | PA0 / PA1 | TIM2_CH1 / CH2 |
+| Руль высоты / ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
+| Руль направления | PD14 | TIM4_CH3 |
+| iBUS RX (TX — резерв) | PE7 (PE8) | UART7 |
+| I2C датчиков SDA / SCL | PB11 / PB10 | I2C2 |
+| I2C OLED SDA / SCL | PB9 / PB8 | I2C1 |
+| SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |
+| SPI CS ICM42688 / BMP388 | PB12 / PD10 | GPIO |
+| GPS RX / TX | PD9 / PD8 | USART3 |
+| Serial | PA10 / PA9 | LPUART1 |
+
+- **Точка входа** — `src/stm32/main.cpp` (в сборках ESP32 исключён через
+  `build_src_filter`): ручной полёт без автопилота и проверка шин, консоль
+  `s`/`p`/`b`. Полная прошивка упирается не в HAL, а в три ESP32-зависимости
+  выше него: `Preferences` (NVS), Wi-Fi-дашборд и задачи FreeRTOS на втором
+  ядре — что с ними делать, написано в шапке `src/stm32/main.cpp`.
+- **Первое включение платы:** `pio run -e stm32h743 -t upload` (ST-Link), монитор
+  на LPUART1 через USB-UART; `b` — видны ли датчики на шинах, `p` — идут ли
+  импульсы на выходы, затем `s` с включённым пультом.
 ---
 
 ## Как добавить новый датчик
@@ -621,7 +657,8 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=..
 
 ### Новая шина или периферия
 
-Новый интерфейс в `include/hal/`, реализация в `include/hal/esp32/`, доступ
+Новый интерфейс в `include/hal/`, реализация в `include/hal/esp32/` (и в
+`include/hal/stm32/`, чтобы заготовка STM32 продолжала собираться), доступ
 через `IBoard`.
 
 ---
@@ -822,7 +859,7 @@ pio run -t upload                        # вернуть обычную про�
 pio run                        # сборка платы по умолчанию (esp32-s3)
 pio run -t upload              # заливка
 pio device monitor             # монитор, 115200
-pio run -e esp32-s3 -e esp32-c3 -e esp32-dev   # проверить, что собираются все платы
+pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # проверить, что собираются все платы
 ```
 
 - **ESP32-S3:** заливка и Serial — через разъём «COM» (CH343). Если мост
@@ -837,8 +874,9 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev   # проверить, что со
   - `pio test -e esp32-s3` — `test_feedback/` (замкнутая симуляция обратной
     связи) и `test_imu_orientation/` на самой плате; каждый прошивает тестовую
     прошивку, после — залейте обычную `pio run -t upload`.
-- Статический анализ: `pio check -e esp32-s3` (cppcheck) и
-  `tools/clang-tidy.sh` (профиль `.clang-tidy`).
+- Статический анализ: `pio check -e esp32-s3` (cppcheck), `pio check -e
+  stm32h743` (cppcheck по `hal/stm32/` и `src/stm32/`) и `tools/clang-tidy.sh`
+  (профиль `.clang-tidy`).
 
 ---
 
@@ -891,8 +929,8 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev   # проверить, что со
 - **Маленькие коммиты:** один логический шаг — один коммит.
 - **Тесты и анализ перед коммитом:** `pio test -e native`, `pio check -e
   esp32-s3`, `tools/clang-tidy.sh` — все зелёные ([`TESTING.md`](TESTING.md)).
-- **Собирайте все три платы** после правок в общем коде — S3 основная, но C3
-  и dev не должны ломаться.
+- **Собирайте все платы** после правок в общем коде — S3 основная, но C3,
+  dev и заготовка `stm32h743` не должны ломаться.
 - **Проверяйте на железе то, что можно проверить:** знаки — наклоном,
   выходы — командой `p`, связь — выключением пульта.
 - **Не выдумывайте API.** Сверяйтесь с исходниками фреймворка в

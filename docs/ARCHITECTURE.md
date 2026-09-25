@@ -68,6 +68,7 @@ flowchart TD
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase · UbloxM10_Gps"]
     HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice"]
     ESP["HAL/esp32<br/>Esp32Board · Wire · SPI · HardwareSerial · LEDC"]
+    STM["HAL/stm32 (заготовка)<br/>Stm32Board · Wire · SPI · Uart · HardwareTimer"]
     CFG["CONFIG<br/>Config · Channels"]
 
     APP --> COORD
@@ -85,6 +86,7 @@ flowchart TD
     RC --> HAL
     SENS --> HAL
     ESP --> HAL
+    STM -.-> HAL
     FB -.-> CFG
     CTRL --> CFG
     RC --> CFG
@@ -95,7 +97,8 @@ flowchart TD
 Правила:
 
 1. **HAL — единственный слой, знающий MCU.** Только `include/hal/esp32/`
-   включает `<Wire.h>`, `<SPI.h>`, `HardwareSerial`, вызывает `ledc*`.
+   (и заготовка `include/hal/stm32/`) включает `<Wire.h>`, `<SPI.h>`,
+   `HardwareSerial`, вызывает `ledc*` / `HardwareTimer`.
    Исключение, осознанное: `SpiRegisterDevice` переключает CS стандартными
    `pinMode/digitalWrite` Arduino (одинаковы на ESP32 и STM32).
 2. **Драйверы датчиков не знают шину.** Они получают `IRegisterDevice&`
@@ -523,7 +526,7 @@ stateDiagram-v2
 
 | Что | Где | Как выбирается |
 |---|---|---|
-| Плата (пины) | `include/config/Config.h` | макрос `BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` из `[env:*]` в `platformio.ini` |
+| Плата (пины) | `include/config/Config.h` | макрос `BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` / `BOARD_STM32H743` из `[env:*]` в `platformio.ini` |
 | Все настройки (таймауты, ходы рулей, реверсы, failsafe, Wi-Fi) | `Config.h`, namespace `Config` | `constexpr`, правка файла |
 | Назначение RC-каналов | `include/config/Channels.h` | правка файла |
 | Датчики и шины | `include/sensors/SensorSelection.h` | `#define SENSOR_IMU/BARO/MAG/GPS`, можно флагом `-D` |
@@ -539,6 +542,7 @@ stateDiagram-v2
 | `esp32-s3` (по умолчанию) | Основной лётный контроллер |
 | `esp32-c3` | Старый прототип |
 | `esp32-dev` | Классическая ESP32, стенд |
+| `stm32h743` | **Заготовка** STM32H743VIT6: HAL `hal/stm32/` + bring-up `src/stm32/main.cpp` (ручной полёт без автопилота, проверка шин); на железе не проверялась — см. [reference/hal.md](reference/hal.md#реализация-для-stm32h743-заготовка) |
 | `native` | Сборка и тесты на ПК с фейками Arduino/ESP-IDF и покрытием — см. [`TESTING.md`](TESTING.md) |
 
 ---
@@ -577,7 +581,7 @@ stateDiagram-v2
 | Новый режим автопилота | `AutopilotMode`, `handle*Mode()`, `applyThrottle()`, селектор/дашборд, `ArmingManager::checkFailureReason()` | `FlightController` |
 | Новый выход (серво) | строка в `FlightOutputs::outputInfo()`, поле `FlightOutputState`, индекс `ServoChannel`, пин и канал LEDC в `Esp32Board` | цикл записи/статуса |
 | Новая плата ESP32 | `#elif` в `Config.h`, `[env:*]` в `platformio.ini` | весь остальной код |
-| Другой MCU | `hal/<mcu>/<Mcu>Board.h`, реализующий `IBoard` | датчики, логика полёта |
+| Другой MCU | `hal/<mcu>/<Mcu>Board.h`, реализующий `IBoard` (пример — `hal/stm32/`), блок пинов в `Config.h`, `[env:*]` | датчики, логика полёта |
 | Другой протокол приёмника | замена `IBusReceiver` с тем же API (`getState()`, `isSignalLost()`) | `FlightController` |
 | Новый канал лога | `LogChannel`, строка в `LogSettings::info()`, `DebugLogger::format*()`, `VERSION++` | — |
 

@@ -1,4 +1,4 @@
-# APPLICATION — `src/main.cpp`
+# APPLICATION — `src/main.cpp` и `src/stm32/main.cpp`
 
 [← Справочник](README.md)
 
@@ -45,3 +45,40 @@
 - Буфер TX `Serial` задаётся до `begin()` — иначе он не применяется.
 - Ни один объект не владеет другим: все ссылки невладеющие, время жизни всех
   объектов — вся программа.
+
+---
+
+<a id="src-stm32-main-cpp"></a>
+
+## `src/stm32/main.cpp` — bring-up для STM32H743 (заготовка)
+
+Точка входа env `stm32h743` (в сборках ESP32 каталог `src/stm32/` исключён
+через `build_src_filter`). На железе не проверялась.
+
+Полная прошивка на STM32 пока не собирается из-за трёх ESP32-зависимостей выше
+HAL: `Preferences` (NVS) — калибровки датчиков и настройки лога; Wi-Fi-дашборд
+`WebDebugServer`; задачи FreeRTOS на втором ядре (веб, OLED). Поэтому здесь
+собрано то, что от MCU уже не зависит.
+
+| Объект | Тип | Связи |
+|---|---|---|
+| `board` | `Stm32Board` | — |
+| `ibusReceiver`, `controlMixer`, `throttleManager`, `flightOutputs` | как в `src/main.cpp` | |
+| `armingManager` | `ArmingManager` | без автопилота (`nullptr`) |
+| `flightController` | `FlightController` | без автопилота и селектора режимов |
+| `imuSpi`, `baroSpi` | `SpiRegisterDevice` | те же параметры, что у `ICM42688_Sensor::spiDevice` / `BMP388_Sensor::spiDevice` — только для проверки ID |
+
+| Функция | Описание |
+|---|---|
+| `setup()` | `Serial.begin(115200)`; баннер; `board.begin()`; выходы в безопасное положение; опрос шин; `flightController.begin()` |
+| `loop()` | `flightController.update()` → консоль; фиксированный период `LOOP_PERIOD_MS` по `millis()` (без FreeRTOS); опоздание > 100 мс — отсчёт заново |
+| `printBuses()` | Скан I2C датчиков и экрана (адреса 0x08..0x77), ID чипов на SPI: ICM42688 `WHO_AM_I` (0x75 → 0x47), BMP388 `CHIP_ID` (0x00 → 0x50) |
+| `printStatus()` | Связь, кадры iBUS (хорошие/битые), ARM, текущие импульсы выходов |
+
+Консоль (`Serial`, LPUART1 PA9/PA10, 115200): `s` — состояние, `p` —
+самопроверка выходов (`FlightOutputs::printPulseSelfTest()`), `b` — опрос шин.
+
+Что нужно для полной прошивки на STM32: замена `Preferences` (EEPROM-эмуляция
+во флеше), телеметрия вместо Wi-Fi (радиомодем на `PIN_TELEM_RX/TX`), отрисовка
+OLED и телеметрия из основного цикла или отдельных задач FreeRTOS/таймеров.
+
