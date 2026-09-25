@@ -31,8 +31,8 @@ class IBusReceiver
 {
 public:
 
-    explicit IBusReceiver(IUartPort& serial)
-        : serial(serial)
+    explicit IBusReceiver(IUartPort& port)
+        : serial(port)
     {
     }
 
@@ -48,8 +48,7 @@ public:
     {
         while (serial.available())
         {
-            const uint8_t byte = serial.read();
-            processByte(byte);
+            processByte(static_cast<uint8_t>(serial.read()));
         }
     }
 
@@ -106,32 +105,34 @@ private:
 
     // Побайтовый разбор кадра: байты могут приходить порциями,
     // поэтому нельзя ждать весь кадр за один serial.available().
-    void processByte(uint8_t byte)
+    void processByte(uint8_t value)
     {
         if (frameIndex == 0)
         {
-            if (byte != Config::IBUS_HEADER_0)
+            if (value != Config::IBUS_HEADER_0)
             {
                 return;
             }
 
-            frame[frameIndex++] = byte;
+            frame[frameIndex++] = value;
             return;
         }
 
         if (frameIndex == 1)
         {
-            if (byte != Config::IBUS_HEADER_1)
+            if (value != Config::IBUS_HEADER_1)
             {
-                frameIndex = 0;  // 0x20 был случайным, начинаем заново
+                // 0x20 был случайным, начинаем заново — но этот байт сам
+                // может быть началом кадра (0x20 0x20 0x40 ...).
+                frameIndex = (value == Config::IBUS_HEADER_0) ? 1 : 0;
                 return;
             }
 
-            frame[frameIndex++] = byte;
+            frame[frameIndex++] = value;
             return;
         }
 
-        frame[frameIndex++] = byte;
+        frame[frameIndex++] = value;
 
         if (frameIndex >= Config::IBUS_FRAME_LENGTH)
         {

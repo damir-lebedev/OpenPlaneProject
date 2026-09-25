@@ -32,8 +32,10 @@
 //     • нет
 // ============================================================
 
-#include "config/Config.h"
-#include "hal/RegisterDevice.h"
+// Нужны тем, кто раскрывает SELECTED_*_DEVICE(board): макросы
+// ссылаются на I2cRegisterDevice/SpiRegisterDevice и пины Config.
+#include "config/Config.h"          // IWYU pragma: export
+#include "hal/RegisterDevice.h"     // IWYU pragma: export
 
 #define SENSOR_IMU_MPU6050   1
 #define SENSOR_IMU_ICM42688  2

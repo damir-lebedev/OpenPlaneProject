@@ -163,7 +163,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=�
 
 | Метод | Описание |
 |---|---|
-| `WebDebugServer(FlightController&, Autopilot* = nullptr)` | |
+| `explicit WebDebugServer(FlightController&, Autopilot* = nullptr)` | |
 | `bool begin()` | Wi-Fi AP (`persistent(false)` — без записи во флеш), маршруты, задача `web` на ядре 0. `false`, если точка доступа не поднялась |
 | `void applyPendingCommands()` | Вызывать из полётного цикла: забрать команды под спинлоком и применить к автопилоту |
 
@@ -179,7 +179,9 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=�
 
 `PendingCommands { hasMode, mode, hasPid, pid[6] }` — почтовый ящик под
 `portMUX`. `extractJsonNumber(body, key, fallback)` — минимальный разбор
-плоского JSON (`"key":число`), без ArduinoJson.
+плоского JSON без ArduinoJson: `"key"`, пробелы, `:`, пробелы, число в
+любой записи JSON (знак, дробь, экспонента `1e-7`); нет ключа или числа —
+`fallback`.
 
 В JSON поля `attached`/`available` есть **всегда**; данные датчика — только
 при `available: true`.

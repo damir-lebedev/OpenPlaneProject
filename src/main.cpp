@@ -31,6 +31,7 @@
 #include "control/ThrottleManager.h"
 #include "hal/esp32/Esp32Board.h"
 #include "rc/IBusReceiver.h"
+#include "sensors/SensorInterface.h"
 #include "sensors/SensorSelection.h"
 #include "telemetry/DebugConsole.h"
 #include "telemetry/DebugLogger.h"
@@ -67,9 +68,9 @@ MagnetometerSensor* const magnetometer = nullptr;
 
 #if SENSOR_GPS != SENSOR_GPS_NONE
 SelectedGps gpsSensor(board.gpsUart());
-GpsSensor* const gps = &gpsSensor;
+GpsSensor* const gpsReceiver = &gpsSensor;
 #else
-GpsSensor* const gps = nullptr;
+GpsSensor* const gpsReceiver = nullptr;
 #endif
 
 
@@ -82,7 +83,7 @@ ControlMixer controlMixer;
 ThrottleManager throttleManager;
 FlightOutputs flightOutputs(board);
 
-Autopilot autopilot(&imuSensor, &baroSensor, magnetometer, gps);
+Autopilot autopilot(&imuSensor, &baroSensor, magnetometer, gpsReceiver);
 AutopilotModeSelector modeSelector(&autopilot);
 ArmingManager armingManager(&autopilot);
 
@@ -154,6 +155,8 @@ static void setupSensors()
 }
 
 
+// Вызываются ядром Arduino (loopTask), а не из кода проекта.
+// cppcheck-suppress unusedFunction
 void setup()
 {
     // Строки лога и меню консоли на 115200 уходят десятки мс. Без
@@ -187,6 +190,7 @@ void setup()
 }
 
 
+// cppcheck-suppress unusedFunction
 void loop()
 {
     static TickType_t lastWake = xTaskGetTickCount();

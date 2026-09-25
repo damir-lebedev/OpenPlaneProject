@@ -307,7 +307,7 @@ BME280 (ID 0x60) и BMP280 (ID 0x58), I2C 0x76/0x77 или SPI без фикти
 |---|---|
 | `bool isAvailable() const` | `begin()` успешен и < 25 ошибок подряд |
 | `void update()` | 50 Гц: `readRaw()` → вычесть смещения → масштаб → поворот `MAG_ROTATION_CW_DEG` → курс `atan2(Y, X)` в 0..360 |
-| `void calibrate()` | 15 с вращения: смещение = (min + max)/2 по осям (hard-iron), сохранение в NVS |
+| `void calibrate()` | 15 с вращения: смещение = (min + max)/2 по осям (hard-iron), сохранение в NVS. Ни одного удачного чтения — калибровка отклоняется, прежняя в NVS не трогается |
 | `getMagData()`, `getSensorType()`, `printStatus()` | |
 
 Защищённое API: конструктор `(name, nvsNamespace)`,
@@ -355,7 +355,7 @@ id 0x07, 92 байта).
 | `bool isAvailable() const` | Был валидный NAV-PVT и последний не старше `GPS_TIMEOUT_US` |
 | `void update()` | Скормить парсеру всё из UART |
 | `const GpsData& getGpsData() const`, `bool hasFix() const` | `hasFix` = доступен и `fixType ≥ 2` |
-| `getSensorType()`, `printStatus()` | |
+| `getSensorType()`, `printStatus()` | `printStatus()` показывает `available` по `isAvailable()` (с учётом таймаута) |
 
 Парсер — побайтовый автомат `SYNC1 → SYNC2 → CLASS → ID → LEN1 → LEN2 →
 PAYLOAD → CK_A → CK_B`, контрольная сумма Флетчера-8 по class+id+len+payload.

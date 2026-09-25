@@ -144,7 +144,7 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 
 | Метод | Описание |
 |---|---|
-| `I2cRegisterDevice(II2CBus& bus, uint8_t address)` | Конструктор |
+| `I2cRegisterDevice(II2CBus& i2cBus, uint8_t deviceAddress)` | Конструктор |
 | `probe()`, `writeRegister()`, `readRegisters()` | → `bus.probe/writeRegister/readRegisters(address, …)` |
 | `uint8_t getAddress() const` | Адрес устройства |
 
@@ -159,7 +159,7 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 
 | Метод | Описание |
 |---|---|
-| `SpiRegisterDevice(bus, csPin, clockHz = 8 МГц, dummyReadBytes = 0, spiMode = 0)` | `dummyReadBytes` — сколько «мусорных» байт чип отдаёт после адреса перед данными (BMP388 — 1, ICM42688 — 0) |
+| `SpiRegisterDevice(ISpiBus& spiBus, uint8_t chipSelectPin, uint32_t clockFrequencyHz = 8 МГц, uint8_t dummyBytesBeforeData = 0, uint8_t mode = 0)` | `dummyBytesBeforeData` — сколько «мусорных» байт чип отдаёт после адреса перед данными (BMP388 — 1, ICM42688 — 0); `mode` — режим SPI 0..3 |
 | `begin()` | `pinMode(cs, OUTPUT)`, CS = HIGH |
 | `probe()` | Всегда `true` |
 | `writeRegister(reg, value)` | CS↓, `reg & 0x7F`, `value`, CS↑; всегда `true` |
@@ -190,7 +190,7 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 |---|---|
 | `begin()` | `i2cBus.begin()`, `spiBus.begin()`, затем `displayBus.begin()`, если вторая шина есть |
 | `displayI2c()` | `&displayBus`, если `hasDisplayBus()`, иначе `nullptr` |
-| `static constexpr bool hasDisplayBus()` | `SOC_I2C_NUM > 1` и оба пина второй шины ≥ 0 (у C3 один контроллер I2C) |
+| `static constexpr bool hasDisplayBus()` | Оба пина второй шины ≥ 0. Существует (как и поле `displayBus`) только при `SOC_I2C_NUM > 1` — у C3 один контроллер I2C |
 | остальные | Возвращают соответствующие поля |
 
 ---
@@ -203,7 +203,7 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 
 | Метод | Описание |
 |---|---|
-| `Esp32I2CBus(TwoWire& wire, int8_t sda, int8_t scl, uint32_t hz = 400000)` | Запоминает параметры |
+| `Esp32I2CBus(TwoWire& bus, int8_t sdaPin, int8_t sclPin, uint32_t frequencyHz = 400000)` | Запоминает параметры |
 | `begin()` | `wire.begin(sda, scl, hz)` и `wire.setTimeOut(TIMEOUT_MS)` — единственный вызов `wire.begin()` |
 | остальные | Прямое делегирование `TwoWire` |
 

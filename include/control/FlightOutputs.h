@@ -49,8 +49,8 @@ public:
         return table[channel];
     }
 
-    explicit FlightOutputs(IBoard& board)
-        : board(board)
+    explicit FlightOutputs(IBoard& hardware)
+        : board(hardware)
     {
     }
 

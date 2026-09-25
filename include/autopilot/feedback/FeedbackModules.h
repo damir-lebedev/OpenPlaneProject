@@ -8,16 +8,18 @@
 // подключению в FlightController.
 // ============================================================
 
-#include "autopilot/feedback/FeedbackConfig.h"
-#include "autopilot/feedback/FeedbackMath.h"
-#include "autopilot/feedback/FlightSnapshot.h"
-#include "autopilot/feedback/FeedbackOutput.h"
-#include "autopilot/feedback/PhaseTargets.h"
-#include "autopilot/feedback/SpeedEstimator.h"
+// IWYU pragma: begin_exports
+#include "autopilot/feedback/AdaptiveRateController.h"
 #include "autopilot/feedback/AirborneDetector.h"
 #include "autopilot/feedback/ControlEffectivenessEstimator.h"
-#include "autopilot/feedback/AdaptiveRateController.h"
+#include "autopilot/feedback/FeedbackConfig.h"
+#include "autopilot/feedback/FeedbackMath.h"
+#include "autopilot/feedback/FeedbackOutput.h"
+#include "autopilot/feedback/FeedbackSupervisor.h"
+#include "autopilot/feedback/FlightSnapshot.h"
+#include "autopilot/feedback/LandingSequencer.h"
+#include "autopilot/feedback/PhaseTargets.h"
+#include "autopilot/feedback/SpeedEstimator.h"
 #include "autopilot/feedback/StallGuard.h"
 #include "autopilot/feedback/TakeoffSequencer.h"
-#include "autopilot/feedback/LandingSequencer.h"
-#include "autopilot/feedback/FeedbackSupervisor.h"
+// IWYU pragma: end_exports

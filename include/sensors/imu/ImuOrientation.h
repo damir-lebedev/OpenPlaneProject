@@ -123,7 +123,7 @@ public:
         float body[3], unit[3];
         apply(chipUp, body);
         if (!normalize(body, unit)) return 180.0f;
-        return acosf(constrain(unit[2], -1.0f, 1.0f)) * RAD_TO_DEG;
+        return acosf(constrain(unit[2], -1.0f, 1.0f)) * static_cast<float>(RAD_TO_DEG);
     }
 
     // --- NVS ---
@@ -175,7 +175,7 @@ private:
     // Оценки носа по шагам 2 и 3 должны совпасть с точностью ~25°.
     static constexpr float AGREEMENT_MIN_COS = 0.9f;
 
-    float r[3][3];
+    float r[3][3] = {};
 
     static float dot(const float a[3], const float b[3])
     {
@@ -207,7 +207,7 @@ private:
 
     static bool tiltInRange(const float levelUnit[3], const float poseUnit[3])
     {
-        const float tilt = acosf(constrain(dot(levelUnit, poseUnit), -1.0f, 1.0f)) * RAD_TO_DEG;
+        const float tilt = acosf(constrain(dot(levelUnit, poseUnit), -1.0f, 1.0f)) * static_cast<float>(RAD_TO_DEG);
         return tilt >= MIN_TILT_DEG && tilt <= MAX_TILT_DEG;
     }
 

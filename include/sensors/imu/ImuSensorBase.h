@@ -63,7 +63,7 @@ public:
     {
         if (!available) return;
 
-        RawImuSample sample;
+        RawImuSample sample = {};
         if (!readSample(sample))
         {
             if (consecutiveErrors < MAX_CONSECUTIVE_ERRORS) consecutiveErrors++;
@@ -96,7 +96,7 @@ public:
 
         for (int i = 0; i < CALIBRATION_SAMPLES; i++)
         {
-            RawImuSample s;
+            RawImuSample s = {};
             if (readSample(s))
             {
                 const int16_t gyro[3] = { s.gyroX, s.gyroY, s.gyroZ };
@@ -280,11 +280,11 @@ protected:
 
     // nvsNamespace — своё пространство NVS у каждого драйвера: оси
     // разных чипов не обязаны совпадать.
-    ImuSensorBase(const char* name, const char* nvsNamespace)
-        : name(name),
-          nvsNamespace(nvsNamespace)
+    ImuSensorBase(const char* sensorName, const char* nvsName)
+        : name(sensorName),
+          nvsNamespace(nvsName),
+          imuData()
     {
-        memset(&imuData, 0, sizeof(imuData));
     }
 
     // --- то, что реализует драйвер конкретного чипа ---
@@ -442,7 +442,7 @@ private:
         {
             delay(10);
 
-            RawImuSample s;
+            RawImuSample s = {};
             if (!readSample(s)) continue;
 
             const float up[3] = { s.accelX / accelScale, s.accelY / accelScale, s.accelZ / accelScale };
@@ -482,7 +482,7 @@ private:
                                     (previous[0] * previous[0] + previous[1] * previous[1] +
                                      previous[2] * previous[2]));
         if (lengths < 1e-6f) return false;
-        const float angle = acosf(constrain(dotProduct / lengths, -1.0f, 1.0f)) * RAD_TO_DEG;
+        const float angle = acosf(constrain(dotProduct / lengths, -1.0f, 1.0f)) * static_cast<float>(RAD_TO_DEG);
         return angle >= POSE_MIN_CHANGE_DEG;
     }
 

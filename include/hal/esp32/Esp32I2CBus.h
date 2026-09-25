@@ -1,4 +1,5 @@
 #pragma once
+#include <Arduino.h>
 #include <Wire.h>
 
 #include "hal/II2CBus.h"
@@ -19,8 +20,8 @@ class Esp32I2CBus : public II2CBus
 {
 public:
 
-    Esp32I2CBus(TwoWire& wire, int8_t sdaPin, int8_t sclPin, uint32_t frequencyHz = 400000)
-        : wire(wire),
+    Esp32I2CBus(TwoWire& bus, int8_t sdaPin, int8_t sclPin, uint32_t frequencyHz = 400000)
+        : wire(bus),
           sda(sdaPin),
           scl(sclPin),
           frequency(frequencyHz)

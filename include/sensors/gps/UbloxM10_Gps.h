@@ -1,6 +1,10 @@
 #pragma once
 #include <Arduino.h>
 
+#include "config/Config.h"
+#include "hal/IUartPort.h"
+#include "sensors/SensorInterface.h"
+
 // ============================================================
 // u-blox M10 (QUESCAN, чип UBX-M10050-KB) — GPS/ГЛОНАСС/Galileo/BeiDou
 //
@@ -39,20 +43,13 @@
 // на 9600 бод, без NAV-PVT).
 // ============================================================
 
-#include "config/Config.h"
-#include "hal/IUartPort.h"
-#include "sensors/SensorInterface.h"
-
 class UbloxM10_Gps : public GpsSensor
 {
 public:
 
     explicit UbloxM10_Gps(IUartPort& port)
-        : uart(port),
-          hasValidFrame(false)
+        : uart(port)
     {
-        memset(&gpsData, 0, sizeof(gpsData));
-        resetParser();
     }
 
     bool begin() override
@@ -124,7 +121,7 @@ public:
 
     void printStatus() const override
     {
-        Serial.print("GPS: available="); Serial.print(hasValidFrame ? "YES" : "NO");
+        Serial.print("GPS: available="); Serial.print(isAvailable() ? "YES" : "NO");
         Serial.print(" fix="); Serial.print(gpsData.fixType);
         Serial.print(" numSV="); Serial.print(gpsData.numSatellites);
         Serial.print(" lat="); Serial.print(gpsData.latitude, 6);
@@ -178,8 +175,8 @@ private:
         uint16_t size() const { return length; }
 
     private:
-        uint8_t buffer[64];
-        uint16_t length;
+        uint8_t buffer[64] = {};
+        uint16_t length = 0;
 
         void addKey(uint32_t key) { put(key, 4); }
         void put(uint32_t value, uint8_t bytes)
@@ -193,23 +190,18 @@ private:
 
     IUartPort& uart;
 
-    bool hasValidFrame;
-    GpsData gpsData;
+    bool hasValidFrame = false;
+    GpsData gpsData = {};
 
     // Состояние побайтового парсера UBX-кадра.
-    ParseState state;
-    uint8_t msgClass, msgId;
-    uint16_t payloadLen;
-    uint16_t payloadIndex;
-    uint8_t ckA, ckB;           // накапливаемая контрольная сумма
-    uint8_t ckARecv, ckBRecv;
-    bool isNavPvt;
-    uint8_t payload[NAV_PVT_LEN];
-
-    void resetParser()
-    {
-        state = ParseState::SYNC1;
-    }
+    ParseState state = ParseState::SYNC1;
+    uint8_t msgClass = 0, msgId = 0;
+    uint16_t payloadLen = 0;
+    uint16_t payloadIndex = 0;
+    uint8_t ckA = 0, ckB = 0;           // накапливаемая контрольная сумма
+    uint8_t ckARecv = 0, ckBRecv = 0;
+    bool isNavPvt = false;
+    uint8_t payload[NAV_PVT_LEN] = {};
 
     // Побайтовый разбор — как в IBusReceiver::processByte(), кадры
     // приходят из UART порциями произвольного размера.

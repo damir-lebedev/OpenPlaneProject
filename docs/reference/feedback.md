@@ -111,7 +111,7 @@
 
 | Метод | Описание |
 |---|---|
-| `void update(const FlightSnapshot&)` | Шаг; `dt ≤ 0` или `> 0.5 с` — пропуск (первый вызов — всегда пропуск) |
+| `void update(const FlightSnapshot&)` | Шаг; `dt ≤ 0` или `> 0.5 с` от прошлого вызова (для первого — от `timeUs = 0`) — пропуск |
 | `bool hasSpeed() const`, `float getSpeed() const`, `Source getSource() const` | `Source::{None, Gps, Airspeed}` |
 | `bool hasAcceleration() const`, `float getAcceleration() const` | м/с², «+» — разгон; нет IMU — `hasAcceleration() == false` |
 | `float effectivenessScale() const` | `(V / REFERENCE_SPEED)²`, ограничено `0.05..4`; без скорости — 1 |

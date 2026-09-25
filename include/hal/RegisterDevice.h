@@ -1,8 +1,8 @@
 #pragma once
 #include <Arduino.h>
 
-#include "hal/II2CBus.h"
-#include "hal/ISpiBus.h"
+#include "hal/II2CBus.h"  // IWYU pragma: export
+#include "hal/ISpiBus.h"  // IWYU pragma: export
 
 // ============================================================
 // 🔌 РЕГИСТРОВОЕ УСТРОЙСТВО
@@ -52,9 +52,9 @@ class I2cRegisterDevice : public IRegisterDevice
 {
 public:
 
-    I2cRegisterDevice(II2CBus& bus, uint8_t address)
-        : bus(bus),
-          address(address)
+    I2cRegisterDevice(II2CBus& i2cBus, uint8_t deviceAddress)
+        : bus(i2cBus),
+          address(deviceAddress)
     {
     }
 
@@ -92,14 +92,14 @@ class SpiRegisterDevice : public IRegisterDevice
 {
 public:
 
-    SpiRegisterDevice(ISpiBus& bus, uint8_t chipSelectPin,
-                      uint32_t clockHz = 8000000, uint8_t dummyReadBytes = 0,
-                      uint8_t spiMode = 0)
-        : bus(bus),
+    SpiRegisterDevice(ISpiBus& spiBus, uint8_t chipSelectPin,
+                      uint32_t clockFrequencyHz = 8000000, uint8_t dummyBytesBeforeData = 0,
+                      uint8_t mode = 0)
+        : bus(spiBus),
           csPin(chipSelectPin),
-          clockHz(clockHz),
-          dummyReadBytes(dummyReadBytes),
-          spiMode(spiMode)
+          clockHz(clockFrequencyHz),
+          dummyReadBytes(dummyBytesBeforeData),
+          spiMode(mode)
     {
     }
 

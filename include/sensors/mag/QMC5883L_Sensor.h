@@ -26,9 +26,9 @@ public:
 
     static constexpr uint8_t DEFAULT_ADDRESS = 0x0D;
 
-    explicit QMC5883L_Sensor(IRegisterDevice& device)
+    explicit QMC5883L_Sensor(IRegisterDevice& registerDevice)
         : MagnetometerBase("QMC5883L", "qmc5883l"),
-          device(device)
+          device(registerDevice)
     {
     }
 

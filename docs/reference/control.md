@@ -101,7 +101,7 @@ ARM отдельным тумблером SwA (CH5). Автомат — в
 
 | Метод | Описание |
 |---|---|
-| `explicit ArmingManager(Autopilot* autopilot = nullptr)` | Без автопилота проверяется только газ |
+| `explicit ArmingManager(Autopilot* ap = nullptr)` | Без автопилота проверяется только газ |
 | `void update(const RcChannelState& rc, bool receiverFailsafe)` | При failsafe — ничего (тумблер в failsafe-кадре не отражает пилота). Тумблер OFF → DISARM, `switchSeenOff = true`. Переход OFF→ON → проверки → ARM или отказ |
 | `bool isArmed() const` | Заармлен |
 | `const char* getLastRefusalReason() const` | Причина последнего отказа или `nullptr`; сбрасывается при выключении тумблера |
@@ -171,7 +171,7 @@ PWM, не считает микшер — только вызывает оста
 
 | Метод | Описание |
 |---|---|
-| `FlightController(receiver, mixer, throttle, arming, outputs, Autopilot* = nullptr, AutopilotModeSelector* = nullptr)` | Без автопилота — чистое ручное управление |
+| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, AutopilotModeSelector* = nullptr)` | Без автопилота — чистое ручное управление |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | Один такт (см. ниже) |
 | `bool isReceiverFailsafe() const` | Связь потеряна |

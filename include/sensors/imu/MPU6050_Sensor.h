@@ -25,9 +25,9 @@ class MPU6050_Sensor : public ImuSensorBase
 {
 public:
 
-    explicit MPU6050_Sensor(IRegisterDevice& device)
+    explicit MPU6050_Sensor(IRegisterDevice& registerDevice)
         : ImuSensorBase("MPU6050", "imu_mpu6050"),
-          device(device)
+          device(registerDevice)
     {
     }
 

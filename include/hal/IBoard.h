@@ -1,9 +1,11 @@
 #pragma once
+#include <stdint.h>
 
-#include "hal/II2CBus.h"
-#include "hal/ISpiBus.h"
-#include "hal/IUartPort.h"
-#include "hal/IServoOutput.h"
+// Типы, которые возвращают методы IBoard, — часть его API.
+#include "hal/II2CBus.h"       // IWYU pragma: export
+#include "hal/IServoOutput.h"  // IWYU pragma: export
+#include "hal/ISpiBus.h"       // IWYU pragma: export
+#include "hal/IUartPort.h"     // IWYU pragma: export
 
 // ============================================================
 // 🧠 АБСТРАКЦИЯ "МОЗГА" (MCU)

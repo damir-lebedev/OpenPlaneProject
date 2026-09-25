@@ -33,11 +33,11 @@ public:
         return SpiRegisterDevice(bus, chipSelectPin, 8000000, 1);
     }
 
-    explicit BMP388_Sensor(IRegisterDevice& device)
+    explicit BMP388_Sensor(IRegisterDevice& registerDevice)
         : BarometerBase("BMP388", POLL_PERIOD_US),
-          device(device)
+          device(registerDevice),
+          calib()
     {
-        memset(&calib, 0, sizeof(calib));
     }
 
     bool begin() override

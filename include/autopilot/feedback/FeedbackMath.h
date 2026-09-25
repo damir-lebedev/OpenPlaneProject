@@ -20,7 +20,7 @@ namespace FeedbackMath
 
     inline int8_t signOf(float x)
     {
-        return x > 0.0f ? 1 : (x < 0.0f ? -1 : 0);
+        return static_cast<int8_t>(x > 0.0f ? 1 : (x < 0.0f ? -1 : 0));
     }
 
     inline float clampAbs(float x, float limit)

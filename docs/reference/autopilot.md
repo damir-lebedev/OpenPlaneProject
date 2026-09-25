@@ -11,7 +11,7 @@
 
 ## `AutopilotMode`
 
-**Файл:** `autopilot/Autopilot.h` · **Вид:** `enum` (нескоупный, значения — в JSON `/api/setmode`)
+**Файл:** `autopilot/Autopilot.h` · **Вид:** `enum AutopilotMode : uint8_t` (нескоупный, числовые коды — в JSON `/api/setmode` и `/api/status`)
 
 | Значение | Код | Что делает | Как выбрать |
 |---|---|---|---|
@@ -30,7 +30,7 @@
 
 | Метод | Описание |
 |---|---|
-| `PidController(kp = 1, ki = 0, kd = 0)` | |
+| `explicit PidController(kp = 1, ki = 0, kd = 0)` | |
 | `setGains(kp, ki, kd)`, `getKp/Ki/Kd()` | Коэффициенты |
 | `setLimits(minOut, maxOut)` | Ограничение выхода (по умолчанию ±500) |
 | `float calculate(setpoint, feedback, feedbackRate, bool integrate = true)` | Коррекция, ограниченная `[min, max]` |
@@ -66,7 +66,7 @@ out = constrain(P + I + D, min, max)
 
 | Метод | Описание |
 |---|---|
-| `Autopilot(ImuSensor* = nullptr, BarometerSensor* = nullptr, MagnetometerSensor* = nullptr, GpsSensor* = nullptr)` | Стартовые коэффициенты: крен/тангаж Kp 5, Ki 0.5, Kd 0.5, выход ±500 мкс; высота Kp 10, Ki 2, Kd 5, выход ±50 % |
+| `explicit Autopilot(ImuSensor* = nullptr, BarometerSensor* = nullptr, MagnetometerSensor* = nullptr, GpsSensor* = nullptr)` | Стартовые коэффициенты: крен/тангаж Kp 5, Ki 0.5, Kd 0.5, выход ±500 мкс; высота Kp 10, Ki 2, Kd 5, выход ±50 % |
 | `bool begin()` | `false` и сообщение, если нет IMU или барометра |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs)` | Раз за такт: `update()` всех датчиков (всегда), затем планирование или обработчик режима |
 

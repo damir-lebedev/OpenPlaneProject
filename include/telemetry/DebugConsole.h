@@ -4,6 +4,7 @@
 #include "autopilot/Autopilot.h"
 #include "control/FlightController.h"
 #include "control/FlightOutputs.h"
+#include "sensors/SensorInterface.h"
 #include "telemetry/DebugLogger.h"
 #include "telemetry/LogSettings.h"
 
@@ -35,12 +36,12 @@ class DebugConsole
 {
 public:
 
-    DebugConsole(FlightController& controller, FlightOutputs& outputs,
-                 Autopilot& autopilot, DebugLogger& logger)
-        : controller(controller),
-          outputs(outputs),
-          autopilot(autopilot),
-          logger(logger)
+    DebugConsole(FlightController& flightController, FlightOutputs& flightOutputs,
+                 Autopilot& ap, DebugLogger& debugLogger)
+        : controller(flightController),
+          outputs(flightOutputs),
+          autopilot(ap),
+          logger(debugLogger)
     {
     }
 
@@ -180,9 +181,20 @@ private:
         return channel < 9 ? static_cast<char>('1' + channel) : 's';
     }
 
+    // Обратное к channelKey(): канал по клавише или LogSettings::COUNT,
+    // если такой клавиши у каналов нет.
+    static uint8_t channelForKey(char key)
+    {
+        for (uint8_t channel = 0; channel < LogSettings::COUNT; ++channel)
+        {
+            if (channelKey(channel) == key) return channel;
+        }
+        return LogSettings::COUNT;
+    }
+
     void drawLogMenu()
     {
-        LogSettings& settings = logger.getSettings();
+        const LogSettings& settings = logger.getSettings();
 
         Serial.println();
         printRule("Лог: что выводить");
@@ -213,14 +225,8 @@ private:
     {
         LogSettings& settings = logger.getSettings();
 
-        if (key >= '1' && key <= '9' && static_cast<uint8_t>(key - '1') < LogSettings::COUNT)
-        {
-            settings.cycleMode(key - '1');
-        }
-        else if (key == 's' && LogSettings::COUNT > 9)
-        {
-            settings.cycleMode(9);
-        }
+        const uint8_t channel = channelForKey(key);
+        if (channel < LogSettings::COUNT) settings.cycleMode(channel);
         else if (key == 'p') settings.cyclePeriod();
         else if (key == 'a') settings.setAll(LogMode::OnChange);
         else if (key == 'x') settings.setAll(LogMode::Off);

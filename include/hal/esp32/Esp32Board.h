@@ -7,9 +7,9 @@
 #include "config/Config.h"
 #include "hal/IBoard.h"
 #include "hal/esp32/Esp32I2CBus.h"
+#include "hal/esp32/Esp32ServoOutput.h"
 #include "hal/esp32/Esp32SpiBus.h"
 #include "hal/esp32/Esp32UartPort.h"
-#include "hal/esp32/Esp32ServoOutput.h"
 
 // ============================================================
 // 🧠 РЕАЛИЗАЦИЯ "МОЗГА" ДЛЯ ESP32
@@ -94,10 +94,13 @@ private:
 
     Esp32ServoOutput servos[ServoChannel::COUNT];
 
+#if SOC_I2C_NUM > 1
     // Вторая шина есть, только если у чипа два контроллера I2C
-    // (у ESP32-C3 — один) и для неё заданы пины в Config.h.
+    // (у ESP32-C3 — один, там этой функции и поля displayBus нет) и
+    // для неё заданы пины в Config.h.
     static constexpr bool hasDisplayBus()
     {
-        return SOC_I2C_NUM > 1 && Config::PIN_I2C2_SDA >= 0 && Config::PIN_I2C2_SCL >= 0;
+        return Config::PIN_I2C2_SDA >= 0 && Config::PIN_I2C2_SCL >= 0;
     }
+#endif
 };

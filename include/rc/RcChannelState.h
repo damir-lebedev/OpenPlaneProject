@@ -60,5 +60,5 @@ public:
 
 private:
 
-    uint16_t channels[Config::IBUS_CHANNELS];
+    uint16_t channels[Config::IBUS_CHANNELS] = {};
 };
