@@ -26,6 +26,19 @@ enum HTTPMethod
     HTTP_OPTIONS
 };
 
+class WebServer;
+
+namespace fake
+{
+    // Все живые экземпляры WebServer: тест находит сервер, созданный
+    // внутри WebDebugServer, не заглядывая в его приватные поля.
+    inline std::vector<WebServer*>& webServers()
+    {
+        static std::vector<WebServer*> servers;
+        return servers;
+    }
+}
+
 class WebServer
 {
 public:
@@ -38,7 +51,23 @@ public:
         std::string body;
     };
 
-    explicit WebServer(int port = 80) : serverPort(port) {}
+    explicit WebServer(int port = 80) : serverPort(port) { fake::webServers().push_back(this); }
+
+    ~WebServer()
+    {
+        std::vector<WebServer*>& all = fake::webServers();
+        for (size_t i = 0; i < all.size(); ++i)
+        {
+            if (all[i] == this)
+            {
+                all.erase(all.begin() + static_cast<long>(i));
+                break;
+            }
+        }
+    }
+
+    WebServer(const WebServer&) = delete;
+    WebServer& operator=(const WebServer&) = delete;
 
     void on(const String& uri, THandlerFunction handler) { on(uri, HTTP_ANY, handler); }
     void on(const String& uri, HTTPMethod method, THandlerFunction handler)

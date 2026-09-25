@@ -316,8 +316,10 @@ OpenPlaneProject/
 │   └── main.cpp                    # composition root: создаёт объекты и вызывает setup()/loop()
 ├── lib/
 ├── test/
-│   ├── test_feedback/              # замкнутая симуляция самолёта + обратной связи (на плате)
-│   └── test_imu_orientation/       # калибровка установки IMU на синтетических позах
+│   ├── native/                     # тесты на ПК: фейки Arduino/ESP32 (support/) и наборы по слоям
+│   ├── test_feedback/              # замкнутая симуляция самолёта + обратной связи (ПК и плата)
+│   └── test_imu_orientation/       # калибровка установки IMU на синтетических позах (ПК и плата)
+├── tools/clang-tidy.sh             # статический анализ с нативными фейками
 ├── platformio.ini                   # окружения сборки под каждую плату
 └── README.md
 ```
@@ -336,7 +338,10 @@ OpenPlaneProject/
 - PWM сервоприводов и ESC — аппаратный LEDC напрямую
 - Встроенный веб-сервер ESP32 (Wi-Fi AP + HTML/JSON) — дашборд отладки
 - U8g2 — OLED-экран статуса
-- Unity (`pio test`) — замкнутая симуляция самолёта прямо на плате
+- Unity (`pio test`) — 197 тестов на ПК с фейками железа (покрытие ~99% строк,
+  `gcovr`) и замкнутая симуляция самолёта прямо на плате — см.
+  [`docs/TESTING.md`](docs/TESTING.md)
+- cppcheck (`pio check`), clang-tidy (`tools/clang-tidy.sh`) — статический анализ
 - PETG 3D-печать — конструкция планера
 
 ## Roadmap (кратко)

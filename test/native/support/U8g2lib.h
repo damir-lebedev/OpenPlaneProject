@@ -69,6 +69,18 @@ inline void u8g2_Setup_ssd1306_i2c_128x64_noname_f(u8g2_t* u8g2, const u8g2_cb_t
     u8g2->u8x8.gpio_and_delay_cb = gpio_and_delay_cb;
 }
 
+class U8G2;
+
+namespace fake
+{
+    // Все живые экраны: тест находит экран внутри OledDisplay.
+    inline std::vector<U8G2*>& displays()
+    {
+        static std::vector<U8G2*> all;
+        return all;
+    }
+}
+
 class U8G2 : public Print
 {
 public:
@@ -85,7 +97,27 @@ public:
         int x, y, w, h;
     };
 
-    U8G2() { u8g2 = u8g2_t{ { nullptr, nullptr, 0 }, nullptr }; }
+    U8G2()
+    {
+        u8g2 = u8g2_t{ { nullptr, nullptr, 0 }, nullptr };
+        fake::displays().push_back(this);
+    }
+
+    ~U8G2() override
+    {
+        std::vector<U8G2*>& all = fake::displays();
+        for (size_t i = 0; i < all.size(); ++i)
+        {
+            if (all[i] == this)
+            {
+                all.erase(all.begin() + static_cast<long>(i));
+                break;
+            }
+        }
+    }
+
+    U8G2(const U8G2&) = delete;
+    U8G2& operator=(const U8G2&) = delete;
 
     u8g2_t* getU8g2() { return &u8g2; }
     void setI2CAddress(uint8_t address) { u8g2.u8x8.i2c_address = address; }

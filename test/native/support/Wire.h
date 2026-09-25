@@ -50,6 +50,8 @@ namespace fake
         int failReads = 0;           // столько следующих чтений — NACK (-1 — всегда)
         size_t shortRead = 0;        // > 0 — отдавать не больше стольких байт
 
+        std::function<bool(uint8_t firstReg)> failReadIf;  // NACK на чтение с этого регистра
+
         std::vector<std::pair<uint8_t, uint8_t>> writes;   // журнал (регистр, значение)
         std::function<void(uint8_t reg, uint8_t value)> onRegisterWrite;
         std::function<void(uint8_t firstReg, size_t count)> beforeRead;
@@ -72,6 +74,7 @@ namespace fake
         size_t onRead(uint8_t* out, size_t count) override
         {
             if (!present) return 0;
+            if (failReadIf && failReadIf(pointer)) return 0;
             if (failReads != 0)
             {
                 if (failReads > 0) failReads--;
