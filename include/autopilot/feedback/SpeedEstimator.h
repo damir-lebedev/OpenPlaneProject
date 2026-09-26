@@ -39,7 +39,7 @@ public:
         if (s.imuValid)
         {
             const float kinematic =
-                FeedbackConfig::GRAVITY * (s.accelXg - sinf(s.pitchDeg * DEG_TO_RAD));
+                FeedbackConfig::GRAVITY * (s.accelXg - sinf(s.pitchDeg * static_cast<float>(DEG_TO_RAD)));
             const float alpha = dt / (FeedbackConfig::ACCEL_FILTER_TAU_S + dt);
             accelMs2 += alpha * (kinematic - accelMs2);
             accelValid = true;

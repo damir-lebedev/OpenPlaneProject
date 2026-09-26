@@ -7,9 +7,9 @@
 #include "config/Config.h"
 #include "hal/IBoard.h"
 #include "hal/esp32/Esp32I2CBus.h"
+#include "hal/esp32/Esp32ServoOutput.h"
 #include "hal/esp32/Esp32SpiBus.h"
 #include "hal/esp32/Esp32UartPort.h"
-#include "hal/esp32/Esp32ServoOutput.h"
 
 // ============================================================
 // 🧠 РЕАЛИЗАЦИЯ "МОЗГА" ДЛЯ ESP32
@@ -19,8 +19,9 @@
 // Всё остальное (FlightOutputs, IBusReceiver, драйверы датчиков,
 // экран, main.cpp) видит только интерфейс IBoard.
 //
-// Чтобы перейти на другой MCU — пишется hal/stm32/Stm32Board.h с
-// таким же публичным API, main.cpp меняет один тип объекта, и всё.
+// Под другой MCU — своя плата с таким же публичным API (заготовка
+// для STM32H743 — hal/stm32/Stm32Board.h); main.cpp меняет один тип
+// объекта.
 // ============================================================
 
 class Esp32Board : public IBoard
@@ -32,7 +33,7 @@ public:
 #if SOC_I2C_NUM > 1
           displayBus(Wire1, Config::PIN_I2C2_SDA, Config::PIN_I2C2_SCL),
 #endif
-          spiBus(Config::PIN_SPI_SCK, Config::PIN_SPI_MISO, Config::PIN_SPI_MOSI),
+          spiBus(Config::PIN_SENSOR_SPI_SCK, Config::PIN_SENSOR_SPI_MISO, Config::PIN_SENSOR_SPI_MOSI),
           rcSerial(1),
           gpsSerial(Config::UART_NUM_GPS),
           rcPort(rcSerial, Config::PIN_IBUS, -1),
@@ -94,10 +95,13 @@ private:
 
     Esp32ServoOutput servos[ServoChannel::COUNT];
 
+#if SOC_I2C_NUM > 1
     // Вторая шина есть, только если у чипа два контроллера I2C
-    // (у ESP32-C3 — один) и для неё заданы пины в Config.h.
+    // (у ESP32-C3 — один, там этой функции и поля displayBus нет) и
+    // для неё заданы пины в Config.h.
     static constexpr bool hasDisplayBus()
     {
-        return SOC_I2C_NUM > 1 && Config::PIN_I2C2_SDA >= 0 && Config::PIN_I2C2_SCL >= 0;
+        return Config::PIN_I2C2_SDA >= 0 && Config::PIN_I2C2_SCL >= 0;
     }
+#endif
 };

@@ -77,6 +77,7 @@ public:
 
         int16_t minV[3] = { INT16_MAX, INT16_MAX, INT16_MAX };
         int16_t maxV[3] = { INT16_MIN, INT16_MIN, INT16_MIN };
+        uint32_t samples = 0;
 
         const uint32_t start = millis();
         while (millis() - start < CALIBRATION_MS)
@@ -89,8 +90,18 @@ public:
                     minV[i] = min(minV[i], raw[i]);
                     maxV[i] = max(maxV[i], raw[i]);
                 }
+                samples++;
             }
             delay(20);
+        }
+
+        // Ни одного отсчёта — min/max остались INT16_MAX/INT16_MIN, и
+        // "смещение" из них испортило бы прежнюю калибровку в NVS.
+        if (samples == 0)
+        {
+            Serial.print(name);
+            Serial.println(": калибровка не удалась — датчик не отвечает, прежняя калибровка сохранена");
+            return;
         }
 
         for (int i = 0; i < 3; i++)
@@ -129,11 +140,11 @@ protected:
 
     // nvsNamespace — своё пространство NVS у каждого чипа: смещения
     // в единицах АЦП разных чипов несовместимы.
-    MagnetometerBase(const char* name, const char* nvsNamespace)
-        : name(name),
-          nvsNamespace(nvsNamespace)
+    MagnetometerBase(const char* sensorName, const char* nvsName)
+        : name(sensorName),
+          nvsNamespace(nvsName),
+          magData()
     {
-        memset(&magData, 0, sizeof(magData));
     }
 
     // --- то, что реализует драйвер конкретного чипа ---
@@ -191,7 +202,7 @@ private:
 
         // Оси самолёта X к носу, Y влево: нос на север — поле вдоль +X
         // (0°), нос на восток — север слева, поле вдоль +Y (90°).
-        float heading = atan2f(magData.magY, magData.magX) * RAD_TO_DEG;
+        float heading = atan2f(magData.magY, magData.magX) * static_cast<float>(RAD_TO_DEG);
         if (heading < 0) heading += 360.0f;
         magData.headingDegrees = heading;
     }

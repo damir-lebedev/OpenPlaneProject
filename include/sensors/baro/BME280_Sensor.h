@@ -26,11 +26,11 @@ class BME280_Sensor : public BarometerBase
 {
 public:
 
-    explicit BME280_Sensor(IRegisterDevice& device)
+    explicit BME280_Sensor(IRegisterDevice& registerDevice)
         : BarometerBase("BME280", POLL_PERIOD_US),
-          device(device)
+          device(registerDevice),
+          calib()
     {
-        memset(&calib, 0, sizeof(calib));
     }
 
     bool begin() override

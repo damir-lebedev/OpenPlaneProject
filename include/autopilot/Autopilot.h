@@ -31,7 +31,7 @@
 // накопилась поправка, которая дёрнет рули в момент взлёта.
 // ============================================================
 
-enum AutopilotMode
+enum AutopilotMode : uint8_t
 {
     MODE_MANUAL = 0,
     MODE_STABILIZE = 1,
@@ -43,8 +43,8 @@ class Autopilot
 {
 public:
 
-    Autopilot(ImuSensor* imu = nullptr, BarometerSensor* baro = nullptr,
-              MagnetometerSensor* mag = nullptr, GpsSensor* gps = nullptr)
+    explicit Autopilot(ImuSensor* imu = nullptr, BarometerSensor* baro = nullptr,
+                       MagnetometerSensor* mag = nullptr, GpsSensor* gps = nullptr)
         : imuSensor(imu),
           baroSensor(baro),
           magSensor(mag),

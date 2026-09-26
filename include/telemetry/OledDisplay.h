@@ -4,7 +4,9 @@
 
 #include "autopilot/Autopilot.h"
 #include "control/FlightController.h"
+#include "control/FlightOutputState.h"
 #include "hal/II2CBus.h"
+#include "sensors/SensorInterface.h"
 #include "telemetry/LoopStats.h"
 
 // ============================================================
@@ -38,10 +40,10 @@ class OledDisplay
 {
 public:
 
-    OledDisplay(FlightController& controller, Autopilot* autopilot, const LoopStats& loopStats)
-        : controller(controller),
-          autopilot(autopilot),
-          loopStats(loopStats)
+    OledDisplay(FlightController& flightController, Autopilot* ap, const LoopStats& stats)
+        : controller(flightController),
+          autopilot(ap),
+          loopStats(stats)
     {
     }
 
@@ -93,7 +95,9 @@ private:
         return bus;
     }
 
-    // Передача байтов U8g2 поверх II2CBus.
+    // Передача байтов U8g2 поверх II2CBus. Сигнатура задана U8g2
+    // (u8x8_msg_cb), поэтому u8x8 не const.
+    // cppcheck-suppress constParameterCallback
     static uint8_t byteCallback(u8x8_t* u8x8, uint8_t msg, uint8_t argInt, void* argPtr)
     {
         II2CBus* bus = busSlot();
@@ -146,9 +150,12 @@ private:
         snprintf(line, sizeof(line), "L%4u R%4u E%4u", out.aileronLeft, out.aileronRight, out.elevator);
         drawLine(54, line);
 
-        snprintf(line, sizeof(line), "Loop %3luHz max%4luus",
-                 (unsigned long)loopStats.hz, (unsigned long)loopStats.maxUs);
-        drawLine(64, line);
+        // uint32_t — до 10 цифр каждое: в худшем случае строка займёт
+        // 34 байта с нулём, поэтому буфер на 40 (экран покажет первые 21).
+        char stats[40];
+        snprintf(stats, sizeof(stats), "Loop %3uHz max%4uus",
+                 static_cast<unsigned>(loopStats.hz), static_cast<unsigned>(loopStats.maxUs));
+        drawLine(64, stats);
 
         display.sendBuffer();
     }

@@ -378,8 +378,8 @@ private:
         // приходится всё время тянуть.
         if (inAir && speed.hasSpeed() && speed.getSpeed() > 1.0f)
         {
-            const float bank = constrain(s.rollDeg, -60.0f, 60.0f) * DEG_TO_RAD;
-            const float turnRate = GRAVITY / speed.getSpeed() * RAD_TO_DEG;
+            const float bank = constrain(s.rollDeg, -60.0f, 60.0f) * static_cast<float>(DEG_TO_RAD);
+            const float turnRate = GRAVITY / speed.getSpeed() * static_cast<float>(RAD_TO_DEG);
             desiredRate[AXIS_PITCH] += turnRate * sinf(bank) * tanf(bank);
             desiredRate[AXIS_YAW] = turnRate * sinf(bank);
         }

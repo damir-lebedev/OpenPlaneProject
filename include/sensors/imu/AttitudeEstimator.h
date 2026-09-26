@@ -44,8 +44,8 @@ public:
     {
         // Нос вверх -> проекция "верха" на X положительна -> pitch > 0.
         // Правое крыло вниз -> проекция "верха" на Y (влево) > 0 -> roll > 0.
-        const float accelRoll = atan2f(ay, az) * RAD_TO_DEG;
-        const float accelPitch = atan2f(ax, sqrtf(ay * ay + az * az)) * RAD_TO_DEG;
+        const float accelRoll = atan2f(ay, az) * RAD_TO_DEG_F;
+        const float accelPitch = atan2f(ax, sqrtf(ay * ay + az * az)) * RAD_TO_DEG_F;
 
         const float dt = (nowUs - lastUpdateUs) / 1000000.0f;
         lastUpdateUs = nowUs;
@@ -78,6 +78,10 @@ private:
 
     static constexpr float ALPHA = 0.98f;
     static constexpr float MAX_DT_S = 0.1f;
+
+    // RAD_TO_DEG из Arduino.h — double: умножение на него шло бы в
+    // программной двойной точности (у ESP32 аппаратная только float).
+    static constexpr float RAD_TO_DEG_F = static_cast<float>(RAD_TO_DEG);
 
     float roll = 0;
     float pitch = 0;

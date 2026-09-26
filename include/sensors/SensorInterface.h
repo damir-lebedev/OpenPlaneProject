@@ -1,4 +1,5 @@
 #pragma once
+#include <Arduino.h>
 
 // ============================================================
 // 🔌 ABSTRACT SENSOR INTERFACE
@@ -11,8 +12,6 @@
 // sensors/SensorSelection.h. Здесь только сами интерфейсы
 // категорий (IMU/барометр/магнитометр/GPS), не конкретные чипы.
 // ============================================================
-
-#include <Arduino.h>
 
 // ============================================================
 // СТРУКТУРЫ ДАННЫХ ДЛЯ СТАНДАРТИЗИРОВАННОГО ВЫВОДА
@@ -109,7 +108,7 @@ public:
 class ImuSensor : public Sensor
 {
 public:
-    virtual ~ImuSensor() = default;
+    ~ImuSensor() override = default;
 
     // ========================================================
     // ПОЛУЧИТЬ ДАННЫЕ IMU
@@ -155,7 +154,7 @@ public:
 class BarometerSensor : public Sensor
 {
 public:
-    virtual ~BarometerSensor() = default;
+    ~BarometerSensor() override = default;
 
     // ========================================================
     // ПОЛУЧИТЬ ДАННЫЕ БАРОМЕТРА
@@ -218,7 +217,7 @@ struct MagData
 class GpsSensor : public Sensor
 {
 public:
-    virtual ~GpsSensor() = default;
+    ~GpsSensor() override = default;
 
     // Последние разобранные данные GPS.
     virtual const GpsData& getGpsData() const = 0;
@@ -234,7 +233,7 @@ public:
 class MagnetometerSensor : public Sensor
 {
 public:
-    virtual ~MagnetometerSensor() = default;
+    ~MagnetometerSensor() override = default;
 
     // Последние считанные данные магнитометра.
     virtual const MagData& getMagData() const = 0;

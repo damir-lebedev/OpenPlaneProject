@@ -174,6 +174,6 @@ private:
     // Меняется вместе со списком каналов — старые настройки сбросятся.
     static constexpr uint8_t VERSION = 1;
 
-    LogMode modes[COUNT];
+    LogMode modes[COUNT] = {};
     uint8_t periodIndex = 2;
 };

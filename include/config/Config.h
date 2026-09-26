@@ -1,6 +1,10 @@
 #pragma once
 #include <stdint.h>
 
+#if defined(BOARD_STM32H743)
+#include <Arduino.h>   // PA0...PE15 — номера пинов варианта STM32duino
+#endif
+
 // ============================================================
 // 1. CONFIGURATION
 // Все постоянные параметры проекта находятся здесь.
@@ -13,7 +17,7 @@ namespace Config
     // --------------------------------------------------------
     // Hardware pinout — выбирается платой сборки (platformio.ini
     // задаёт ровно один из макросов ниже через build_flags, env
-    // esp32-c3 / esp32-s3 / esp32-dev). Чтобы добавить новую плату:
+    // esp32-c3 / esp32-s3 / esp32-dev / stm32h743). Чтобы добавить новую плату:
     // скопируйте блок, поменяйте номера пинов, добавьте #elif
     // и одноимённый [env:...] в platformio.ini.
     //
@@ -52,11 +56,11 @@ namespace Config
     // это дефолтная распиновка FSPI на большинстве S3-DevKitC плат.
     // CS ICM42688 — GPIO14, а не 10: GPIO10 — АЦП1 (работает при
     // включённом Wi-Fi), он зарезервирован под датчик тока.
-    constexpr uint8_t PIN_SPI_SCK          = 12;
-    constexpr uint8_t PIN_SPI_MISO         = 13;
-    constexpr uint8_t PIN_SPI_MOSI         = 11;
-    constexpr uint8_t PIN_SPI_CS_ICM42688  = 14;
-    constexpr uint8_t PIN_SPI_CS_BMP388    = 21;
+    constexpr uint8_t PIN_SENSOR_SPI_SCK  = 12;
+    constexpr uint8_t PIN_SENSOR_SPI_MISO = 13;
+    constexpr uint8_t PIN_SENSOR_SPI_MOSI = 11;
+    constexpr uint8_t PIN_SPI_CS_ICM42688 = 14;
+    constexpr uint8_t PIN_SPI_CS_BMP388   = 21;
 
     // Второй UART — GPS (отдельно от iBUS, который на UART1/GPIO17).
     // У S3 всего 3 аппаратных UART (0/1/2); UART0 занят Serial
@@ -91,13 +95,13 @@ namespace Config
 
     // SPI (ICM42688 + BMP388, общая шина, разные CS) — GPIO18/19/23
     // это аппаратный дефолт VSPI на классической ESP32.
-    constexpr uint8_t PIN_SPI_SCK          = 18;
-    constexpr uint8_t PIN_SPI_MISO         = 19;
-    constexpr uint8_t PIN_SPI_MOSI         = 23;
-    constexpr uint8_t PIN_SPI_CS_ICM42688  = 32;
+    constexpr uint8_t PIN_SENSOR_SPI_SCK  = 18;
+    constexpr uint8_t PIN_SENSOR_SPI_MISO = 19;
+    constexpr uint8_t PIN_SENSOR_SPI_MOSI = 23;
+    constexpr uint8_t PIN_SPI_CS_ICM42688 = 32;
     // BMP388: CSB подключён на GPIO5 (физическая распайка модуля на
     // этой плате) — совпадает с CSB/CS-пином SPI-режима чипа.
-    constexpr uint8_t PIN_SPI_CS_BMP388    = 5;
+    constexpr uint8_t PIN_SPI_CS_BMP388 = 5;
 
     // Второй UART — GPS (UART2, отдельно от iBUS на UART1/GPIO16).
     // У классической ESP32 3 аппаратных UART, Serial висит на UART0
@@ -146,11 +150,11 @@ namespace Config
     // BMP388 (тогда PIN_SPI_CS_BMP388 не нужен), либо используйте
     // плату esp32-s3, где эта проблема не стоит.
     // --------------------------------------------------------
-    constexpr uint8_t PIN_SPI_SCK          = 0;
-    constexpr uint8_t PIN_SPI_MISO         = 10;
-    constexpr uint8_t PIN_SPI_MOSI         = 20;
-    constexpr uint8_t PIN_SPI_CS_ICM42688  = 21;
-    constexpr uint8_t PIN_SPI_CS_BMP388    = 2;   // strapping, см. примечание выше
+    constexpr uint8_t PIN_SENSOR_SPI_SCK  = 0;
+    constexpr uint8_t PIN_SENSOR_SPI_MISO = 10;
+    constexpr uint8_t PIN_SENSOR_SPI_MOSI = 20;
+    constexpr uint8_t PIN_SPI_CS_ICM42688 = 21;
+    constexpr uint8_t PIN_SPI_CS_BMP388   = 2;   // strapping, см. примечание выше
 
     constexpr int8_t PIN_GPS_RX = 9;   // strapping, см. примечание выше
     constexpr int8_t PIN_GPS_TX = -1;  // не хватило пина — приём без отправки конфигурации
@@ -167,8 +171,72 @@ namespace Config
     constexpr int8_t PIN_I2C2_SDA = -1;
     constexpr int8_t PIN_I2C2_SCL = -1;
 
+#elif defined(BOARD_STM32H743)
+    // STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) —
+    // следующая платформа. ЗАГОТОВКА: собирается (env stm32h743), на
+    // железе не проверялась — платы пока нет.
+    //
+    // Сборка идёт под WeAct MiniSTM32H743VITx (тот же чип), и пины
+    // выбраны из свободных на ней и проверены по таблицам
+    // PeripheralPins варианта STM32duino (у какого пина какой
+    // таймер/UART/I2C). Заняты на WeAct: QSPI-флеш (PB2, PB6, PD11-13,
+    // PE2), SPI-флеш (PB3, PB4, PD7), µSD (PC8-12, PD2), камера DVP,
+    // TFT-LCD (PE10-14), USB (PA11/12), SWD (PA13/14), светодиод PE3,
+    // кнопка PC13. Для своей платы — сверить со схемой.
+    //
+    // Номера — "Arduino-пины" варианта STM32duino (макросы PA0, PD14...
+    // из <Arduino.h> выше), а не номера GPIO: у аналоговых пинов это
+    // 0xC0+N, в int8_t не помещается — поэтому int16_t (−1 = не разведён).
+    //
+    // Serial (консоль) — LPUART1: TX PA9, RX PA10 (дефолт варианта).
+    // Контроллеры (TIMx, USARTx, I2Cx, SPIx) ядро выбирает по пинам само.
+
+    // Сервовыходы: четыре канала одного таймера TIM2 + TIM4 (50 Гц,
+    // см. hal/stm32/Stm32ServoOutput.h).
+    constexpr int16_t PIN_AILERON_LEFT  = PA0;   // TIM2_CH1
+    constexpr int16_t PIN_AILERON_RIGHT = PA1;   // TIM2_CH2
+    constexpr int16_t PIN_ELEVATOR      = PA2;   // TIM2_CH3
+    constexpr int16_t PIN_ESC           = PA3;   // TIM2_CH4
+    constexpr int16_t PIN_RUDDER        = PD14;  // TIM4_CH3
+
+    // iBUS — UART7. TX на приём не нужен, но UART STM32duino создаётся
+    // парой пинов; PE8 оставлен под iBUS-SENS (телеметрия в пульт).
+    constexpr int16_t PIN_IBUS    = PE7;   // UART7_RX
+    constexpr int16_t PIN_IBUS_TX = PE8;   // UART7_TX
+
+    // I2C2 — датчики (= дефолт Wire варианта).
+    constexpr int16_t PIN_I2C_SDA = PB11;
+    constexpr int16_t PIN_I2C_SCL = PB10;
+
+    // I2C1 — только экран, как вторая шина на S3. На WeAct это I2C
+    // разъёма камеры: вместе с камерой не использовать.
+    constexpr int16_t PIN_I2C2_SDA = PB9;
+    constexpr int16_t PIN_I2C2_SCL = PB8;
+
+    // SPI2 (= дефолт SPI варианта). Имена у всех плат —
+    // PIN_SENSOR_SPI_*, а не PIN_SPI_*: PIN_SPI_SCK/MISO/MOSI — макросы
+    // варианта STM32duino, они подменили бы константы Config.
+    constexpr int16_t PIN_SENSOR_SPI_SCK  = PB13;
+    constexpr int16_t PIN_SENSOR_SPI_MISO = PB14;
+    constexpr int16_t PIN_SENSOR_SPI_MOSI = PB15;
+    constexpr int16_t PIN_SPI_CS_ICM42688 = PB12;
+    constexpr int16_t PIN_SPI_CS_BMP388   = PD10;
+
+    // GPS — USART3.
+    constexpr int16_t PIN_GPS_RX = PD9;    // USART3_RX
+    constexpr int16_t PIN_GPS_TX = PD8;    // USART3_TX
+
+    // Резерв на будущее (в коде пока не используется) — как на S3.
+    constexpr int16_t PIN_AUX1        = PD15;  // TIM4_CH4 — серво-выход
+    constexpr int16_t PIN_AUX2        = PE9;   // TIM1_CH1 — серво-выход
+    constexpr int16_t PIN_BUZZER      = PE15;
+    constexpr int16_t PIN_VBAT_ADC    = PC0;   // ADC1_INP10: батарея через делитель
+    constexpr int16_t PIN_CURRENT_ADC = PC1;   // ADC1_INP11: датчик тока
+    constexpr int16_t PIN_TELEM_RX    = PD0;   // UART4 (эти же пины — FDCAN1)
+    constexpr int16_t PIN_TELEM_TX    = PD1;
+
 #else
-    #error "Не задана плата: используйте env esp32-c3/esp32-s3/esp32-dev из platformio.ini (или определите свой -D BOARD_... и добавьте ветку в Config.h)"
+    #error "Не задана плата: используйте env esp32-c3/esp32-s3/esp32-dev/stm32h743 из platformio.ini (или определите свой -D BOARD_... и добавьте ветку в Config.h)"
 #endif
 
 

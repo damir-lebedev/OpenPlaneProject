@@ -32,20 +32,18 @@ public:
     {
         input = clamp(input);
 
-        int32_t output = map(
+        int32_t output = static_cast<int32_t>(map(
             input,
             Config::PWM_MIN,
             Config::PWM_MAX,
             -maximumDeflection,
             maximumDeflection
-        );
-
+        ));
 
         if (reverse)
         {
             output = -output;
         }
-
 
         return static_cast<int16_t>(
             constrain(

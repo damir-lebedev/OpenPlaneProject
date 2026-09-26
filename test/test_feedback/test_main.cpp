@@ -8,7 +8,9 @@
 // задержка серво, демпфирование, эффективность рулей ∝ V²,
 // постоянный момент, сваливание, шасси.
 //
-// Запуск (прошивает плату тестовой прошивкой, потом залейте обычную):
+// Запуск на ПК (быстро, с покрытием):
+//   pio test -e native -f test_feedback
+// На плате (прошивает тестовую прошивку, потом залейте обычную):
 //   pio test -e esp32-s3 -f test_feedback
 // ============================================================
 
@@ -550,10 +552,8 @@ void test_disarmed_and_manual_do_not_touch_controls()
 void setUp() {}
 void tearDown() {}
 
-void setup()
+static int runAllTests()
 {
-    delay(2000);   // дать монитору порта подключиться
-
     UNITY_BEGIN();
     RUN_TEST(test_levels_after_upset_and_trims_constant_moment);
     RUN_TEST(test_estimator_learns_effectiveness_and_speed_scaling);
@@ -565,7 +565,23 @@ void setup()
     RUN_TEST(test_landing_sequence);
     RUN_TEST(test_link_loss_cancels_takeoff_and_keeps_throttle);
     RUN_TEST(test_disarmed_and_manual_do_not_touch_controls);
-    UNITY_END();
+    return UNITY_END();
+}
+
+#ifdef ARDUINO
+// На плате: pio test -e esp32-s3 -f test_feedback
+void setup()
+{
+    delay(2000);   // дать монитору порта подключиться
+    runAllTests();
 }
 
 void loop() {}
+#else
+// На ПК: pio test -e native -f test_feedback (фейки — test/native/support)
+int main()
+{
+    fake::setSerialEcho(true);   // диагностика Serial.printf — в вывод теста
+    return runAllTests();
+}
+#endif

@@ -7,9 +7,11 @@
 #include "control/ArmingManager.h"
 #include "control/ControlCommand.h"
 #include "control/ControlMixer.h"
+#include "control/FlightOutputState.h"
 #include "control/FlightOutputs.h"
 #include "control/ThrottleManager.h"
 #include "rc/IBusReceiver.h"
+#include "rc/RcChannelState.h"
 
 // ============================================================
 // FLIGHT CONTROLLER
@@ -40,21 +42,21 @@ public:
     // Autopilot/AutopilotModeSelector опциональны (nullptr = чистое
     // ручное управление, как раньше).
     FlightController(
-        IBusReceiver& receiver,
-        ControlMixer& mixer,
-        ThrottleManager& throttle,
-        ArmingManager& arming,
-        FlightOutputs& outputs,
-        Autopilot* autopilot = nullptr,
-        AutopilotModeSelector* modeSelector = nullptr
+        IBusReceiver& rcReceiver,
+        ControlMixer& controlMixer,
+        ThrottleManager& throttleManager,
+        ArmingManager& armingManager,
+        FlightOutputs& flightOutputs,
+        Autopilot* ap = nullptr,
+        AutopilotModeSelector* selector = nullptr
     )
-        : receiver(receiver),
-          mixer(mixer),
-          throttle(throttle),
-          arming(arming),
-          outputs(outputs),
-          autopilot(autopilot),
-          modeSelector(modeSelector)
+        : receiver(rcReceiver),
+          mixer(controlMixer),
+          throttle(throttleManager),
+          arming(armingManager),
+          outputs(flightOutputs),
+          autopilot(ap),
+          modeSelector(selector)
     {
     }
 

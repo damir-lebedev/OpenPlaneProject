@@ -47,8 +47,8 @@ class AdaptiveRateController
 {
 public:
 
-    explicit AdaptiveRateController(uint8_t axis = FeedbackConfig::AXIS_ROLL)
-        : axis(axis) {}
+    explicit AdaptiveRateController(uint8_t axisIndex = FeedbackConfig::AXIS_ROLL)
+        : axis(axisIndex) {}
 
     void reset()
     {
@@ -87,7 +87,7 @@ public:
         if (allowIntegral && dt > 0)
         {
             const float step = FeedbackConfig::RATE_INTEGRAL_GAIN[axis] * rateError * dt;
-            const int8_t pushDirection = FeedbackMath::signOf(step) * FeedbackMath::signOf(b);
+            const int8_t pushDirection = static_cast<int8_t>(FeedbackMath::signOf(step) * FeedbackMath::signOf(b));
             if (saturatedDirection == 0 || pushDirection != saturatedDirection)
             {
                 integral = FeedbackMath::clampAbs(integral + step, FeedbackConfig::MAX_RATE_DPS[axis]);
@@ -98,7 +98,7 @@ public:
         const float deflection = (desiredAccel - model.damping * rateDps - model.bias) / b;
 
         const float limit = FeedbackConfig::MAX_DEFLECTION_US[axis];
-        saturatedDirection = deflection > limit ? 1 : (deflection < -limit ? -1 : 0);
+        saturatedDirection = static_cast<int8_t>(deflection > limit ? 1 : (deflection < -limit ? -1 : 0));
         output = FeedbackMath::clampAbs(deflection, limit);
         return output;
     }

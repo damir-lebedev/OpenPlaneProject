@@ -4,6 +4,10 @@
 #include "autopilot/Autopilot.h"
 #include "config/Config.h"
 #include "control/FlightController.h"
+#include "control/FlightOutputState.h"
+#include "rc/IBusReceiver.h"
+#include "rc/RcChannelState.h"
+#include "sensors/SensorInterface.h"
 #include "telemetry/LogSettings.h"
 #include "telemetry/LoopStats.h"
 
@@ -32,13 +36,13 @@ class DebugLogger
 public:
 
     explicit DebugLogger(
-        FlightController& controller,
-        Autopilot* autopilot = nullptr,
-        LoopStats* loopStats = nullptr
+        FlightController& flightController,
+        Autopilot* ap = nullptr,
+        LoopStats* stats = nullptr
     )
-        : controller(controller),
-          autopilot(autopilot),
-          loopStats(loopStats)
+        : controller(flightController),
+          autopilot(ap),
+          loopStats(stats)
     {
         refresh();
     }
@@ -122,14 +126,16 @@ private:
 
     // Значение "для показа": держит старое, пока новое не уйдёт дальше
     // допуска. Допуск 0 (режим "постоянно") — всегда свежее значение.
+    // double — чтобы не терять точность координат GPS (float хранит
+    // широту с шагом ~0.4 м).
     struct Shown
     {
-        float value = 0;
+        double value = 0;
         bool valid = false;
 
-        float update(float raw, float band)
+        double update(double raw, double band)
         {
-            if (!valid || fabsf(raw - value) > band)
+            if (!valid || fabs(raw - value) > band)
             {
                 value = raw;
                 valid = true;
@@ -184,8 +190,7 @@ private:
         if (!periodic && !refreshPending[channel] && strcmp(line.c_str(), previous[channel]) == 0) return;
 
         Serial.println(line.c_str());
-        strncpy(previous[channel], line.c_str(), LINE_SIZE - 1);
-        previous[channel][LINE_SIZE - 1] = '\0';
+        snprintf(previous[channel], LINE_SIZE, "%s", line.c_str());
         lastPrintMs[channel] = now;
         refreshPending[channel] = false;
     }
@@ -233,14 +238,14 @@ private:
 
         if (autopilot)
         {
-            ImuSensor* imu = autopilot->getImuSensor();
+            const ImuSensor* imu = autopilot->getImuSensor();
             line.print(" IMU=");
             if (!imu) line.print("NONE");
             else if (!imu->isAvailable()) line.print("NO_RESPONSE");
             else if (imu->getPreflightProblem()) line.print("CHECK_FAILED");
             else line.print("OK");
 
-            BarometerSensor* baro = autopilot->getBarometerSensor();
+            const BarometerSensor* baro = autopilot->getBarometerSensor();
             line.print(" BARO=");
             line.print(!baro ? "NONE" : (baro->isAvailable() ? "OK" : "NO_RESPONSE"));
         }
@@ -267,7 +272,7 @@ private:
 
     bool imuReady(const char*& problem) const
     {
-        ImuSensor* imu = autopilot ? autopilot->getImuSensor() : nullptr;
+        const ImuSensor* imu = autopilot ? autopilot->getImuSensor() : nullptr;
         if (!imu) { problem = "IMU нет в схеме"; return false; }
         if (!imu->isAvailable()) { problem = "IMU не отвечает"; return false; }
         return true;
@@ -299,7 +304,7 @@ private:
 
     void formatAltitude(float k)
     {
-        BarometerSensor* baro = autopilot ? autopilot->getBarometerSensor() : nullptr;
+        const BarometerSensor* baro = autopilot ? autopilot->getBarometerSensor() : nullptr;
         if (!baro) { line.print("барометра нет в схеме"); return; }
         if (!baro->isAvailable()) { line.print("барометр не отвечает"); return; }
 
@@ -311,7 +316,7 @@ private:
 
     void formatHeading(float k)
     {
-        MagnetometerSensor* mag = autopilot ? autopilot->getMagnetometerSensor() : nullptr;
+        const MagnetometerSensor* mag = autopilot ? autopilot->getMagnetometerSensor() : nullptr;
         if (!mag) { line.print("компаса нет в схеме"); return; }
         if (!mag->isAvailable()) { line.print("компас не отвечает"); return; }
 
@@ -320,7 +325,7 @@ private:
 
     void formatGps(float k)
     {
-        GpsSensor* gps = autopilot ? autopilot->getGpsSensor() : nullptr;
+        const GpsSensor* gps = autopilot ? autopilot->getGpsSensor() : nullptr;
         if (!gps) { line.print("GPS нет в схеме"); return; }
         if (!gps->isAvailable()) { line.print("GPS не отвечает"); return; }
 

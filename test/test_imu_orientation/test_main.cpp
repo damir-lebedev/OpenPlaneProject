@@ -7,7 +7,8 @@
 // истинной, а ошибки пилота (нос опустил вместо подъёма, наклонил не
 // ту ось, наклонил слишком мало) отклоняются.
 //
-// Запуск: pio test -e esp32-s3 -f test_imu_orientation
+// Запуск: pio test -e native -f test_imu_orientation (на ПК)
+//         pio test -e esp32-s3 -f test_imu_orientation (на плате)
 // ============================================================
 
 #include <Arduino.h>
@@ -218,17 +219,29 @@ void test_yaw_steps_match_legacy_mounting()
 void setUp() {}
 void tearDown() {}
 
-void setup()
+static int runAllTests()
 {
-    delay(2000);
-
     UNITY_BEGIN();
     RUN_TEST(test_known_mountings);
     RUN_TEST(test_random_mountings);
     RUN_TEST(test_bias_and_sloppy_poses);
     RUN_TEST(test_pilot_mistakes_are_rejected);
     RUN_TEST(test_yaw_steps_match_legacy_mounting);
-    UNITY_END();
+    return UNITY_END();
+}
+
+#ifdef ARDUINO
+void setup()
+{
+    delay(2000);
+    runAllTests();
 }
 
 void loop() {}
+#else
+int main()
+{
+    fake::setSerialEcho(true);
+    return runAllTests();
+}
+#endif

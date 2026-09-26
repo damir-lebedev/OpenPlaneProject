@@ -26,7 +26,7 @@ struct AirspeedData
 class AirspeedSensor : public Sensor
 {
 public:
-    virtual ~AirspeedSensor() = default;
+    ~AirspeedSensor() override = default;
 
     virtual const AirspeedData& getAirspeedData() const = 0;
 

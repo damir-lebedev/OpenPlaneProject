@@ -35,9 +35,9 @@ public:
         return SpiRegisterDevice(bus, chipSelectPin, 8000000, 0);
     }
 
-    explicit ICM42688_Sensor(IRegisterDevice& device)
+    explicit ICM42688_Sensor(IRegisterDevice& registerDevice)
         : ImuSensorBase("ICM42688", "imu_icm42688"),
-          device(device)
+          device(registerDevice)
     {
     }
 

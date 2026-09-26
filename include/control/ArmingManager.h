@@ -5,6 +5,7 @@
 #include "config/Channels.h"
 #include "config/Config.h"
 #include "rc/RcChannelState.h"
+#include "sensors/SensorInterface.h"
 
 // ============================================================
 // ARMING MANAGER
@@ -54,8 +55,8 @@ class ArmingManager
 {
 public:
 
-    explicit ArmingManager(Autopilot* autopilot = nullptr)
-        : autopilot(autopilot)
+    explicit ArmingManager(Autopilot* ap = nullptr)
+        : autopilot(ap)
     {
     }
 
@@ -146,7 +147,7 @@ private:
             case MODE_STABILIZE:
             case MODE_AUTO_TAKEOFF:
             {
-                ImuSensor* imu = autopilot->getImuSensor();
+                const ImuSensor* imu = autopilot->getImuSensor();
                 if (imu && !imu->isAvailable())
                 {
                     return "IMU не отвечает, а выбранному режиму нужен гироскоп";
@@ -160,7 +161,7 @@ private:
 
             case MODE_ALT_HOLD:
             {
-                BarometerSensor* baro = autopilot->getBarometerSensor();
+                const BarometerSensor* baro = autopilot->getBarometerSensor();
                 if (baro && !baro->isAvailable())
                 {
                     return "барометр не отвечает, а ALT_HOLD нужна высота";

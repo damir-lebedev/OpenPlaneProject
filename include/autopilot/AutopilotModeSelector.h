@@ -30,8 +30,8 @@ class AutopilotModeSelector
 {
 public:
 
-    explicit AutopilotModeSelector(Autopilot* autopilot = nullptr)
-        : autopilot(autopilot)
+    explicit AutopilotModeSelector(Autopilot* ap = nullptr)
+        : autopilot(ap)
     {
     }
 

@@ -135,11 +135,11 @@ public:
 
 protected:
 
-    BarometerBase(const char* name, uint32_t pollPeriodUs)
-        : name(name),
-          pollPeriodUs(pollPeriodUs)
+    BarometerBase(const char* sensorName, uint32_t pollIntervalUs)
+        : name(sensorName),
+          pollPeriodUs(pollIntervalUs),
+          baroData()
     {
-        memset(&baroData, 0, sizeof(baroData));
     }
 
     // --- то, что реализует драйвер конкретного чипа ---

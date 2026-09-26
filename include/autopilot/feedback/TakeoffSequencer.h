@@ -140,9 +140,8 @@ private:
                 return;
 
             case State::GroundRoll:
-                if (!throttleUp) state = State::Aborted;
-                else if (rotateReached(speed, inState)) enter(State::Climb, nowMs);
-                else if (inState > FeedbackConfig::LAUNCH_TIMEOUT_MS) state = State::Aborted;
+                if (throttleUp && rotateReached(speed, inState)) enter(State::Climb, nowMs);
+                else if (!throttleUp || inState > FeedbackConfig::LAUNCH_TIMEOUT_MS) state = State::Aborted;
                 return;
 
             case State::Climb:
@@ -201,7 +200,7 @@ private:
     // Бросок: акселерометр по X минус проекция тяжести.
     bool launchDetected(const FlightSnapshot& s, uint32_t nowMs)
     {
-        const float longitudinalG = s.accelXg - sinf(s.pitchDeg * DEG_TO_RAD);
+        const float longitudinalG = s.accelXg - sinf(s.pitchDeg * static_cast<float>(DEG_TO_RAD));
         if (longitudinalG < FeedbackConfig::LAUNCH_ACCEL_G)
         {
             launchPending = false;

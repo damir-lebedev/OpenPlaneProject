@@ -22,7 +22,7 @@ class PidController
 {
 public:
 
-    PidController(float kp = 1.0f, float ki = 0.0f, float kd = 0.0f)
+    explicit PidController(float kp = 1.0f, float ki = 0.0f, float kd = 0.0f)
         : Kp(kp), Ki(ki), Kd(kd)
     {
     }

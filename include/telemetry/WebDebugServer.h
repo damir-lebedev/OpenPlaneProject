@@ -6,6 +6,10 @@
 #include "autopilot/Autopilot.h"
 #include "config/Config.h"
 #include "control/FlightController.h"
+#include "control/FlightOutputs.h"
+#include "hal/IBoard.h"
+#include "rc/RcChannelState.h"
+#include "sensors/SensorInterface.h"
 #include "telemetry/WebDashboardPage.h"
 
 // ============================================================
@@ -34,9 +38,9 @@ class WebDebugServer
 {
 public:
 
-    WebDebugServer(FlightController& controller, Autopilot* autopilot = nullptr)
-        : controller(controller),
-          autopilot(autopilot),
+    explicit WebDebugServer(FlightController& flightController, Autopilot* ap = nullptr)
+        : controller(flightController),
+          autopilot(ap),
           webServer(Config::WEB_SERVER_PORT)
     {
     }
@@ -332,21 +336,39 @@ private:
         webServer.send(200, "application/json", "{\"status\":\"ok\"}");
     }
 
-    // Минимальный разбор плоского JSON вида {"key":123.45} — проект
-    // намеренно не тащит ArduinoJson ради двух POST-запросов.
+    // Минимальный разбор плоского JSON вида {"key": 123.45} — проект
+    // намеренно не тащит ArduinoJson ради двух POST-запросов. Пробелы
+    // вокруг двоеточия допустимы; число — в любой записи JSON, включая
+    // экспоненту (JSON.stringify(0.0000001) даёт "1e-7").
     static float extractJsonNumber(const String& body, const char* key, float fallback)
     {
-        const String needle = String("\"") + key + "\":";
+        const String needle = String("\"") + key + "\"";
         const int start = body.indexOf(needle);
         if (start < 0) return fallback;
 
-        const int from = start + needle.length();
+        const int length = static_cast<int>(body.length());
+        int from = start + static_cast<int>(needle.length());
+        while (from < length && isJsonSpace(body[from])) from++;
+        if (from >= length || body[from] != ':') return fallback;
+        from++;
+        while (from < length && isJsonSpace(body[from])) from++;
+
         int to = from;
-        while (to < (int)body.length() && (isDigit(body[to]) || body[to] == '-' || body[to] == '.'))
+        while (to < length && isJsonNumberChar(body[to]))
         {
             to++;
         }
 
         return to == from ? fallback : body.substring(from, to).toFloat();
+    }
+
+    static bool isJsonSpace(char c)
+    {
+        return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+    }
+
+    static bool isJsonNumberChar(char c)
+    {
+        return isDigit(c) || c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E';
     }
 };

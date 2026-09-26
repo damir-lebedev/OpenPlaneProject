@@ -55,8 +55,8 @@ class ControlEffectivenessEstimator
 {
 public:
 
-    explicit ControlEffectivenessEstimator(uint8_t axis = FeedbackConfig::AXIS_ROLL)
-        : axis(axis)
+    explicit ControlEffectivenessEstimator(uint8_t axisIndex = FeedbackConfig::AXIS_ROLL)
+        : axis(axisIndex)
     {
         reset();
     }

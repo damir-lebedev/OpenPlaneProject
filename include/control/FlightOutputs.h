@@ -31,7 +31,7 @@ public:
     {
         const char* key;      // имя в JSON/логе
         const char* label;    // имя для человека
-        int8_t pin;           // -1 — на этой плате не разведён
+        int16_t pin;          // -1 — на этой плате не разведён (int16_t: у STM32 номера до 0xC0+N)
         bool required;        // без него борт не летит
         uint16_t FlightOutputState::* field;
     };
@@ -40,17 +40,17 @@ public:
     static const OutputInfo& outputInfo(uint8_t channel)
     {
         static const OutputInfo table[ServoChannel::COUNT] = {
-            { "aileronLeft",  "элерон L", (int8_t)Config::PIN_AILERON_LEFT,  true,  &FlightOutputState::aileronLeft },
-            { "aileronRight", "элерон R", (int8_t)Config::PIN_AILERON_RIGHT, true,  &FlightOutputState::aileronRight },
-            { "elevator",     "руль выс", (int8_t)Config::PIN_ELEVATOR,      true,  &FlightOutputState::elevator },
-            { "esc",          "ESC     ", (int8_t)Config::PIN_ESC,           true,  &FlightOutputState::throttle },
-            { "rudder",       "руль нап", Config::PIN_RUDDER,                false, &FlightOutputState::rudder },
+            { "aileronLeft",  "элерон L", static_cast<int16_t>(Config::PIN_AILERON_LEFT),  true,  &FlightOutputState::aileronLeft },
+            { "aileronRight", "элерон R", static_cast<int16_t>(Config::PIN_AILERON_RIGHT), true,  &FlightOutputState::aileronRight },
+            { "elevator",     "руль выс", static_cast<int16_t>(Config::PIN_ELEVATOR),      true,  &FlightOutputState::elevator },
+            { "esc",          "ESC     ", static_cast<int16_t>(Config::PIN_ESC),           true,  &FlightOutputState::throttle },
+            { "rudder",       "руль нап", static_cast<int16_t>(Config::PIN_RUDDER),        false, &FlightOutputState::rudder },
         };
         return table[channel];
     }
 
-    explicit FlightOutputs(IBoard& board)
-        : board(board)
+    explicit FlightOutputs(IBoard& hardware)
+        : board(hardware)
     {
     }
 
