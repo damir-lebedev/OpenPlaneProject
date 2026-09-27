@@ -28,6 +28,7 @@ test/native/support, как нативные тесты) и находит оп�
 """
 import os
 import re
+import subprocess
 import sys
 from collections import OrderedDict
 
@@ -37,12 +38,27 @@ ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 INCLUDE = os.path.join(ROOT, "include")
 OUT = os.path.join(ROOT, "src", "core")
 
+
+
+def clang_resource_args():
+    """libclang из pip не знает, где лежат stddef.h и прочие встроенные
+    заголовки компилятора, — берём каталог у системного clang."""
+    try:
+        resource = subprocess.run(["clang", "-print-resource-dir"], capture_output=True,
+                                  text=True, check=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return []
+    return ["-isystem", os.path.join(resource, "include")]
+
+
 ESP32_ARGS = ["-x", "c++", "-std=gnu++17", "-DBOARD_ESP32_S3",
               "-I" + INCLUDE, "-I" + os.path.join(ROOT, "test/native/support")]
 STM32_ARGS = ["-x", "c++", "-std=gnu++17", "-DBOARD_STM32H743",
               "-I" + os.path.join(INCLUDE, "hal/stm32/compat"), "-I" + INCLUDE,
               "-I" + os.path.join(ROOT, "test/native/support_stm32"),
               "-I" + os.path.join(ROOT, "test/native/support")]
+ESP32_ARGS += clang_resource_args()
+STM32_ARGS += clang_resource_args()
 
 # Эти заголовки — только константы, таблицы и макросы.
 SKIP = {"config/Config.h", "config/Channels.h", "config/Controls.h", "sensors/SensorSelection.h",
@@ -98,7 +114,7 @@ def matching_paren(tokens, start):
     return None
 
 
-def default_arg_ranges(cursor, text):
+def default_arg_ranges(cursor):
     """Диапазоны '= значение' в параметрах (в .cpp не повторяются)."""
     ranges = []
     for param in cursor.get_arguments():
@@ -125,8 +141,15 @@ def dedent(text, column):
     return "\n".join(out)
 
 
-def split_function(cursor, text, conditional):
-    """(замена в заголовке, определение для .cpp, пространства имён) или None."""
+def split_function(cursor, raw, conditional):
+    """(замена в заголовке, определение для .cpp, пространства имён) или None.
+
+    raw — байты файла: смещения libclang — в байтах, а в комментариях
+    кириллица (2 байта на символ).
+    """
+    def text(a, b):
+        return raw[a:b].decode("utf-8")
+
     if cursor.kind == ci.CursorKind.FUNCTION_DECL and cursor.storage_class == ci.StorageClass.STATIC:
         return None
     if cursor.spelling.startswith("operator"):
@@ -164,18 +187,19 @@ def split_function(cursor, text, conditional):
     end = ext.end.offset
     close_end = tokens[close].extent.end.offset
 
-    declaration = text[start:cut].rstrip()
+    declaration = text(start, cut).rstrip()
     if cursor.kind == ci.CursorKind.FUNCTION_DECL:
         declaration = re.sub(r"\binline\s+", "", declaration, count=1)
     header_replacement = declaration + ";"
 
-    ret = DROP_PREFIX.sub("", text[start:name_off]).strip()
-    params = text[name_off:close_end]
-    for a, b in sorted(default_arg_ranges(cursor, text), reverse=True):
-        params = params[: a - name_off].rstrip() + params[b - name_off:]
-    quals = DROP_SUFFIX.sub("", text[close_end:cut]).strip()
+    ret = DROP_PREFIX.sub("", text(start, name_off)).strip()
+    params_raw = raw[name_off:close_end]
+    for a, b in sorted(default_arg_ranges(cursor), reverse=True):
+        params_raw = params_raw[: a - name_off].rstrip() + params_raw[b - name_off:]
+    params = params_raw.decode("utf-8")
+    quals = DROP_SUFFIX.sub("", text(close_end, cut)).strip()
     quals = (" " + quals) if quals else ""
-    body = dedent(text[cut:end], ext.start.column - 1)
+    body = dedent(text(cut, end), ext.start.column - 1)
 
     if cursor.kind == ci.CursorKind.FUNCTION_DECL:
         definition = f"{ret} {params}{quals}\n{body}"
@@ -190,7 +214,8 @@ def split_function(cursor, text, conditional):
 
 def process(rel):
     path = os.path.join(INCLUDE, rel)
-    text = open(path, encoding="utf-8").read()
+    raw = open(path, "rb").read()
+    text = raw.decode("utf-8")
     args = STM32_ARGS if rel.startswith("hal/stm32/") else ESP32_ARGS
     tu = ci.Index.create().parse(path, args=args)
     errors = [d for d in tu.diagnostics if d.severity >= ci.Diagnostic.Error]
@@ -212,7 +237,7 @@ def process(rel):
         if key in seen:
             continue
         seen.add(key)
-        result = split_function(cursor, text, conditional)
+        result = split_function(cursor, raw, conditional)
         if result:
             edit, definition, namespaces = result
             edits.append(edit)
@@ -222,8 +247,8 @@ def process(rel):
         return 0
 
     for start, end, replacement in sorted(edits, reverse=True):
-        text = text[:start] + replacement + text[end:]
-    open(path, "w", encoding="utf-8").write(text)
+        raw = raw[:start] + replacement.encode("utf-8") + raw[end:]
+    open(path, "wb").write(raw)
 
     groups = OrderedDict()
     for _, namespaces, definition in sorted(defs):
