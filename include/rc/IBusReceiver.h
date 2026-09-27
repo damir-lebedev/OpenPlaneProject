@@ -31,56 +31,27 @@ class IBusReceiver
 {
 public:
 
-    explicit IBusReceiver(IUartPort& port)
-        : serial(port)
-    {
-    }
+    explicit IBusReceiver(IUartPort& port);
 
-    void begin()
-    {
-        serial.begin(Config::IBUS_BAUDRATE);
-
-        lastFrameTime = micros();
-    }
+    void begin();
 
     // Вызывать каждый цикл: вычитывает всё, что накопилось в UART-буфере.
-    void update()
-    {
-        while (serial.available())
-        {
-            processByte(static_cast<uint8_t>(serial.read()));
-        }
-    }
+    void update();
 
-    const RcChannelState& getState() const
-    {
-        return state;
-    }
+    const RcChannelState& getState() const;
 
-    bool isSignalLost() const
-    {
-        return isFrameTimeout() || failsafeReported;
-    }
+    bool isSignalLost() const;
 
     // Кадров нет дольше Config::RX_TIMEOUT_US — или не было ещё ни
     // одного: до первого кадра в каналах лежат значения по умолчанию
     // (все 1500), и принимать их за команды пульта нельзя (раньше CH7
     // = 1500 успевал включить STABILIZE до первого кадра).
-    bool isFrameTimeout() const
-    {
-        return !receivedAnyFrame || (micros() - lastFrameTime) > Config::RX_TIMEOUT_US;
-    }
+    bool isFrameTimeout() const;
 
     // Приёмник шлёт failsafe-значения (связи с пультом нет).
-    bool isFailsafeReported() const
-    {
-        return failsafeReported;
-    }
+    bool isFailsafeReported() const;
 
-    uint32_t getLastFrameTime() const
-    {
-        return lastFrameTime;
-    }
+    uint32_t getLastFrameTime() const;
 
     uint32_t getGoodFrameCount() const { return goodFrames; }
     uint32_t getBadFrameCount() const { return badFrames; }
@@ -105,85 +76,7 @@ private:
 
     // Побайтовый разбор кадра: байты могут приходить порциями,
     // поэтому нельзя ждать весь кадр за один serial.available().
-    void processByte(uint8_t value)
-    {
-        if (frameIndex == 0)
-        {
-            if (value != Config::IBUS_HEADER_0)
-            {
-                return;
-            }
+    void processByte(uint8_t value);
 
-            frame[frameIndex++] = value;
-            return;
-        }
-
-        if (frameIndex == 1)
-        {
-            if (value != Config::IBUS_HEADER_1)
-            {
-                // 0x20 был случайным, начинаем заново — но этот байт сам
-                // может быть началом кадра (0x20 0x20 0x40 ...).
-                frameIndex = (value == Config::IBUS_HEADER_0) ? 1 : 0;
-                return;
-            }
-
-            frame[frameIndex++] = value;
-            return;
-        }
-
-        frame[frameIndex++] = value;
-
-        if (frameIndex >= Config::IBUS_FRAME_LENGTH)
-        {
-            processFrame();
-            frameIndex = 0;
-        }
-    }
-
-    void processFrame()
-    {
-        uint16_t checksum = 0xFFFF;
-
-        for (uint8_t i = 0; i < 30; ++i)
-        {
-            checksum -= frame[i];
-        }
-
-        const uint16_t receivedChecksum =
-            static_cast<uint16_t>(frame[30]) |
-            (static_cast<uint16_t>(frame[31]) << 8);
-
-        if (checksum != receivedChecksum)
-        {
-            badFrames++;
-            return;  // помехи на линии — игнорируем кадр
-        }
-
-        for (uint8_t channel = 0;
-             channel < Config::IBUS_CHANNELS;
-             ++channel)
-        {
-            const uint8_t lowByte  = frame[2 + channel * 2];
-            const uint8_t highByte = frame[3 + channel * 2];
-
-            // Значение канала — только младшие 12 бит. В старших 4 битах
-            // FS-iA6B передаёт служебные данные (так кодируются каналы
-            // 15-18), и они не нулевые, например, в failsafe: на стенде
-            // CH3 = 0x2384 -> 900 мкс, а без маски читалось 9092, и
-            // failsafe по газу (< 950) не срабатывал.
-            const uint16_t value =
-                (static_cast<uint16_t>(lowByte) |
-                 (static_cast<uint16_t>(highByte) << 8)) & 0x0FFF;
-
-            state.set(channel, value);
-        }
-
-        failsafeReported =
-            state.get(Channels::THROTTLE) < Config::RX_FAILSAFE_THROTTLE_US;
-
-        goodFrames++;
-        receivedAnyFrame = true;
-        lastFrameTime = micros();
-    }
+    void processFrame();
 };

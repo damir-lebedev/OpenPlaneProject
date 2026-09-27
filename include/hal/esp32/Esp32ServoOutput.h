@@ -28,55 +28,20 @@ class Esp32ServoOutput : public IServoOutput
 {
 public:
 
-    Esp32ServoOutput(int8_t servoPin, uint8_t ledcChannel)
-        : pin(servoPin),
-          channel(ledcChannel)
-    {
-    }
+    Esp32ServoOutput(int8_t servoPin, uint8_t ledcChannel);
 
-    bool attach(uint16_t minUs, uint16_t maxUs) override
-    {
-        rangeMinUs = minUs;
-        rangeMaxUs = maxUs;
-
-        if (pin < 0)
-        {
-            attached = false;
-            return false;
-        }
-
-        // ledcSetup() возвращает реально выставленную частоту, 0 — ошибка.
-        attached = ledcSetup(channel, FREQUENCY_HZ, RESOLUTION_BITS) != 0;
-        if (attached)
-        {
-            ledcAttachPin(pin, channel);
-        }
-        return attached;
-    }
+    bool attach(uint16_t minUs, uint16_t maxUs) override;
 
     // Как и у Servo::writeMicroseconds(), значение ограничивается
     // диапазоном, заданным в attach().
-    void writeMicroseconds(uint16_t us) override
-    {
-        if (!attached) return;
-
-        const uint32_t clamped = constrain(us, rangeMinUs, rangeMaxUs);
-        ledcWrite(channel, clamped * MAX_DUTY / PERIOD_US);
-    }
+    void writeMicroseconds(uint16_t us) override;
 
     bool isAttached() const override { return attached; }
 
     // Включаем входной буфер того же GPIO (бит FUN_IE в IO_MUX) —
     // выход PWM при этом не трогается, а digitalRead()/pulseIn()
     // видят уровень, который пин реально выдаёт.
-    int32_t measurePulseUs() override
-    {
-        if (!attached) return -1;
-
-        PIN_INPUT_ENABLE(GPIO_PIN_MUX_REG[pin]);
-        const unsigned long width = pulseIn(pin, HIGH, 30000);
-        return width ? static_cast<int32_t>(width) : -1;
-    }
+    int32_t measurePulseUs() override;
 
 
 private:

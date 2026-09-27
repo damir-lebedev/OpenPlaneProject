@@ -48,92 +48,24 @@ public:
     static constexpr uint8_t DEFAULT_ADDRESS   = 0x6A;  // SA0 = GND
     static constexpr uint8_t ALTERNATE_ADDRESS = 0x6B;  // SA0 = VDD
 
-    static SpiRegisterDevice spiDevice(ISpiBus& bus, uint8_t chipSelectPin)
-    {
-        return SpiRegisterDevice(bus, chipSelectPin, 8000000, 0);
-    }
+    static SpiRegisterDevice spiDevice(ISpiBus& bus, uint8_t chipSelectPin);
 
-    explicit LSM6DSV_Sensor(IRegisterDevice& registerDevice)
-        : ImuSensorBase("LSM6DSV", "imu_lsm6dsv"),
-          device(registerDevice)
-    {
-    }
+    explicit LSM6DSV_Sensor(IRegisterDevice& registerDevice);
 
-    bool begin() override
-    {
-        device.begin();
-        delay(BOOT_TIME_MS);
-
-        const int whoAmI = device.readRegister(REG_WHO_AM_I);
-        if (whoAmI != WHO_AM_I_VALUE)
-        {
-            Serial.print("LSM6DSV: неверный WHO_AM_I ");
-            Serial.println(whoAmI < 0 ? String("(нет ответа)") : String("0x") + String(whoAmI, HEX));
-            return fail();
-        }
-
-        if (!softReset())
-        {
-            Serial.println("LSM6DSV: чип не вышел из сброса");
-            return fail();
-        }
-
-        const int ctrl8 = device.readRegister(REG_CTRL8);
-        if (ctrl8 < 0) return fail();
-        is32x = (ctrl8 & CTRL8_VARIANT_32X) != 0;
-
-        const uint8_t fsXl = is32x ? FS_XL_16G_ON_32X : FS_XL_16G_ON_16X;
-
-        const bool ok =
-            device.writeRegister(REG_CTRL3, CTRL3_BDU | CTRL3_IF_INC) &&
-            device.writeRegister(REG_CTRL6, FS_G_2000DPS | (GYRO_LPF1_BW << 4)) &&
-            device.writeRegister(REG_CTRL7, CTRL7_LPF1_G_EN) &&
-            device.writeRegister(REG_CTRL8, fsXl | (ACCEL_LPF2_BW << 5)) &&
-            device.writeRegister(REG_CTRL9, CTRL9_LPF2_XL_EN) &&
-            device.writeRegister(REG_CTRL1, ODR_960HZ) &&   // OP_MODE = 0: high performance
-            device.writeRegister(REG_CTRL2, ODR_960HZ);
-
-        if (!ok)
-        {
-            Serial.println("LSM6DSV: ошибка записи регистров");
-            return fail();
-        }
-
-        Serial.print("LSM6DSV: подключён (");
-        Serial.print(is32x ? "LSM6DSV32X" : "LSM6DSV/16X");
-        Serial.println(")");
-        setAvailable(true);
-        return true;
-    }
+    bool begin() override;
 
     bool isVariant32x() const { return is32x; }
 
 
 protected:
 
-    bool readSample(RawImuSample& s) override
-    {
-        uint8_t b[14];  // температура, gyro XYZ, accel XYZ — little-endian
-        if (!device.readRegisters(REG_OUT_TEMP_L, b, sizeof(b))) return false;
-
-        s.temperature = le16(b + 0);
-        s.gyroX       = le16(b + 2);
-        s.gyroY       = le16(b + 4);
-        s.gyroZ       = le16(b + 6);
-        s.accelX      = le16(b + 8);
-        s.accelY      = le16(b + 10);
-        s.accelZ      = le16(b + 12);
-        return true;
-    }
+    bool readSample(RawImuSample& s) override;
 
     // ±16g: 0.488 mg/LSB; ±2000 °/с: 70 mdps/LSB (lsm6dsv_reg.c).
     float accelLsbPerG() const override { return 1000.0f / 0.488f; }
     float gyroLsbPerDps() const override { return 1000.0f / 70.0f; }
 
-    float temperatureC(int16_t raw) const override
-    {
-        return raw / 256.0f + 25.0f;
-    }
+    float temperatureC(int16_t raw) const override;
 
 
 private:
@@ -174,28 +106,10 @@ private:
     IRegisterDevice& device;
     bool is32x = false;
 
-    bool fail()
-    {
-        setAvailable(false);
-        return false;
-    }
+    bool fail();
 
     // SW_RESET сбрасывается чипом сам, когда сброс завершён.
-    bool softReset()
-    {
-        if (!device.writeRegister(REG_CTRL3, CTRL3_SW_RESET)) return false;
+    bool softReset();
 
-        for (uint8_t i = 0; i < RESET_POLL_TRIES; ++i)
-        {
-            delay(1);
-            const int ctrl3 = device.readRegister(REG_CTRL3);
-            if (ctrl3 >= 0 && (ctrl3 & CTRL3_SW_RESET) == 0) return true;
-        }
-        return false;
-    }
-
-    static int16_t le16(const uint8_t* p)
-    {
-        return static_cast<int16_t>((p[1] << 8) | p[0]);
-    }
+    static int16_t le16(const uint8_t* p);
 };

@@ -17,36 +17,12 @@ struct LoopStats
     volatile uint32_t avgUs = 0;
     volatile uint32_t maxUs = 0;
 
-    void record(uint32_t durationUs)
-    {
-        count++;
-        sumUs += durationUs;
-        if (durationUs > windowMaxUs) windowMaxUs = durationUs;
-        if (durationUs > peakUs) peakUs = durationUs;
-
-        const uint32_t now = millis();
-        if (now - windowStartMs >= 1000)
-        {
-            hz = count * 1000 / (now - windowStartMs);
-            avgUs = count ? sumUs / count : 0;
-            maxUs = windowMaxUs;
-
-            count = 0;
-            sumUs = 0;
-            windowMaxUs = 0;
-            windowStartMs = now;
-        }
-    }
+    void record(uint32_t durationUs);
 
     // Худшее время цикла с прошлого вызова — для строки SYS раз в 10 с:
     // maxUs — только за последнюю секунду, редкий затык в нём не виден.
     // Вызывать из той же задачи, что и record() (loop).
-    uint32_t takePeakUs()
-    {
-        const uint32_t peak = peakUs;
-        peakUs = 0;
-        return peak;
-    }
+    uint32_t takePeakUs();
 
 private:
     uint32_t count = 0;

@@ -13,14 +13,7 @@ class RcInput
 {
 public:
 
-    static uint16_t clamp(uint16_t value)
-    {
-        return constrain(
-            value,
-            Config::PWM_MIN,
-            Config::PWM_MAX
-        );
-    }
+    static uint16_t clamp(uint16_t value);
 
     // 1000 -> -maximumDeflection, 1500 -> 0, 2000 -> +maximumDeflection.
     // reverse инвертирует направление канала.
@@ -28,29 +21,5 @@ public:
         uint16_t input,
         int16_t maximumDeflection,
         bool reverse = false
-    )
-    {
-        input = clamp(input);
-
-        int32_t output = static_cast<int32_t>(map(
-            input,
-            Config::PWM_MIN,
-            Config::PWM_MAX,
-            -maximumDeflection,
-            maximumDeflection
-        ));
-
-        if (reverse)
-        {
-            output = -output;
-        }
-
-        return static_cast<int16_t>(
-            constrain(
-                output,
-                -maximumDeflection,
-                maximumDeflection
-            )
-        );
-    }
+    );
 };

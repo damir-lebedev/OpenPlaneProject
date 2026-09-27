@@ -44,11 +44,7 @@ public:
     virtual bool readRegisters(uint8_t reg, uint8_t* buffer, uint8_t count) = 0;
 
     // Значение регистра или -1, если устройство не ответило.
-    int readRegister(uint8_t reg)
-    {
-        uint8_t value;
-        return readRegisters(reg, &value, 1) ? value : -1;
-    }
+    int readRegister(uint8_t reg);
 };
 
 
@@ -61,42 +57,17 @@ class I2cRegisterDevice : public IRegisterDevice
 {
 public:
 
-    I2cRegisterDevice(II2CBus& i2cBus, uint8_t deviceAddress, uint8_t alternateAddress = 0)
-        : bus(i2cBus),
-          address(deviceAddress),
-          alternate(alternateAddress)
-    {
-    }
+    I2cRegisterDevice(II2CBus& i2cBus, uint8_t deviceAddress, uint8_t alternateAddress = 0);
 
-    void begin() override
-    {
-        if (alternate != 0 && !bus.probe(address) && bus.probe(alternate))
-        {
-            const uint8_t primary = address;
-            address = alternate;
-            alternate = primary;
-        }
-    }
+    void begin() override;
 
-    bool probe() override
-    {
-        return bus.probe(address);
-    }
+    bool probe() override;
 
-    bool writeRegister(uint8_t reg, uint8_t value) override
-    {
-        return bus.writeRegister(address, reg, value);
-    }
+    bool writeRegister(uint8_t reg, uint8_t value) override;
 
-    bool writeRegisters(uint8_t reg, const uint8_t* data, uint8_t count) override
-    {
-        return bus.writeRegisters(address, reg, data, count);
-    }
+    bool writeRegisters(uint8_t reg, const uint8_t* data, uint8_t count) override;
 
-    bool readRegisters(uint8_t reg, uint8_t* buffer, uint8_t count) override
-    {
-        return bus.readRegisters(address, reg, buffer, count);
-    }
+    bool readRegisters(uint8_t reg, uint8_t* buffer, uint8_t count) override;
 
     uint8_t getAddress() const { return address; }
 
@@ -120,60 +91,19 @@ public:
 
     SpiRegisterDevice(ISpiBus& spiBus, uint8_t chipSelectPin,
                       uint32_t clockFrequencyHz = 8000000, uint8_t dummyBytesBeforeData = 0,
-                      uint8_t mode = 0)
-        : bus(spiBus),
-          csPin(chipSelectPin),
-          clockHz(clockFrequencyHz),
-          dummyReadBytes(dummyBytesBeforeData),
-          spiMode(mode)
-    {
-    }
+                      uint8_t mode = 0);
 
-    void begin() override
-    {
-        pinMode(csPin, OUTPUT);
-        digitalWrite(csPin, HIGH);
-    }
+    void begin() override;
 
     // По SPI нет ACK — существование чипа проверяет драйвер по
     // регистру идентификации.
-    bool probe() override
-    {
-        return true;
-    }
+    bool probe() override;
 
-    bool writeRegister(uint8_t reg, uint8_t value) override
-    {
-        return writeRegisters(reg, &value, 1);
-    }
+    bool writeRegister(uint8_t reg, uint8_t value) override;
 
-    bool writeRegisters(uint8_t reg, const uint8_t* data, uint8_t count) override
-    {
-        select();
-        bus.transfer(reg & 0x7F);
-        for (uint8_t i = 0; i < count; ++i)
-        {
-            bus.transfer(data[i]);
-        }
-        deselect();
-        return true;
-    }
+    bool writeRegisters(uint8_t reg, const uint8_t* data, uint8_t count) override;
 
-    bool readRegisters(uint8_t reg, uint8_t* buffer, uint8_t count) override
-    {
-        select();
-        bus.transfer(reg | 0x80);
-        for (uint8_t i = 0; i < dummyReadBytes; ++i)
-        {
-            bus.transfer(0x00);
-        }
-        for (uint8_t i = 0; i < count; ++i)
-        {
-            buffer[i] = bus.transfer(0x00);
-        }
-        deselect();
-        return true;
-    }
+    bool readRegisters(uint8_t reg, uint8_t* buffer, uint8_t count) override;
 
 
 private:
@@ -184,15 +114,7 @@ private:
     uint8_t dummyReadBytes;
     uint8_t spiMode;
 
-    void select()
-    {
-        bus.beginTransaction(clockHz, spiMode);
-        digitalWrite(csPin, LOW);
-    }
+    void select();
 
-    void deselect()
-    {
-        digitalWrite(csPin, HIGH);
-        bus.endTransaction();
-    }
+    void deselect();
 };

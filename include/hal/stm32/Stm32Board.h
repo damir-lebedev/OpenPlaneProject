@@ -33,38 +33,9 @@ class Stm32Board : public IBoard
 {
 public:
 
-    Stm32Board()
-        : displayWire(pinOf(Config::PIN_I2C2_SDA), pinOf(Config::PIN_I2C2_SCL)),
-          i2cBus(Wire, pinOf(Config::PIN_I2C_SDA), pinOf(Config::PIN_I2C_SCL)),
-          displayBus(displayWire, pinOf(Config::PIN_I2C2_SDA), pinOf(Config::PIN_I2C2_SCL)),
-          spiBus(SPI, pinOf(Config::PIN_SENSOR_SPI_SCK), pinOf(Config::PIN_SENSOR_SPI_MISO), pinOf(Config::PIN_SENSOR_SPI_MOSI)),
-          rcSerial(pinOf(Config::PIN_IBUS), pinOf(Config::PIN_IBUS_TX)),
-          gpsSerial(pinOf(Config::PIN_GPS_RX), pinOf(Config::PIN_GPS_TX)),
-          telemetrySerial(pinOf(Config::PIN_TELEM_RX), pinOf(Config::PIN_TELEM_TX)),
-          rcPort(rcSerial),
-          gpsPort(gpsSerial),
-          telemetryPort(telemetrySerial),
-          servos{
-              Stm32ServoOutput(Config::PIN_AILERON_LEFT),
-              Stm32ServoOutput(Config::PIN_AILERON_RIGHT),
-              Stm32ServoOutput(Config::PIN_ELEVATOR),
-              Stm32ServoOutput(Config::PIN_ESC),
-              Stm32ServoOutput(Config::PIN_RUDDER),
-              Stm32ServoOutput(Config::PIN_AUX1),
-              Stm32ServoOutput(Config::PIN_AUX2)
-          }
-    {
-    }
+    Stm32Board();
 
-    void begin() override
-    {
-        i2cBus.begin();
-        spiBus.begin();
-        displayBus.begin();
-
-        pinMode(pinOf(Config::PIN_BUZZER), OUTPUT);
-        digitalWrite(pinOf(Config::PIN_BUZZER), LOW);
-    }
+    void begin() override;
 
     II2CBus& i2c() override { return i2cBus; }
     ISpiBus& spi() override { return spiBus; }
@@ -76,10 +47,7 @@ public:
 
     IServoOutput& servo(uint8_t channel) override { return servos[channel]; }
 
-    void setBuzzer(bool on) override
-    {
-        digitalWrite(pinOf(Config::PIN_BUZZER), on ? HIGH : LOW);
-    }
+    void setBuzzer(bool on) override;
 
 
 private:

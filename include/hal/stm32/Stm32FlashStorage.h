@@ -36,68 +36,21 @@ class Stm32FlashStorage : public IFlashStorage
 {
 public:
 
-    size_t capacity() const override
-    {
-        return KeyValueStore::CAPACITY < static_cast<size_t>(E2END) + 1 ? KeyValueStore::CAPACITY
-                                                                         : static_cast<size_t>(E2END) + 1;
-    }
+    size_t capacity() const override;
 
-    void read(uint8_t* destination, size_t size) override
-    {
-        eeprom_buffer_fill();
-        for (size_t i = 0; i < size && i < capacity(); ++i)
-        {
-            destination[i] = eeprom_buffered_read_byte(static_cast<uint32_t>(i));
-        }
-    }
+    void read(uint8_t* destination, size_t size) override;
 
-    bool write(const uint8_t* source, size_t size) override
-    {
-        if (size > capacity()) return false;
-
-        noInterrupts();
-        memcpy(staged, source, size);
-        stagedSize = size;
-        pending = true;
-        interrupts();
-        return true;
-    }
+    bool write(const uint8_t* source, size_t size) override;
 
     // Перенести отложенную запись во флеш. Возвращает true, если писал.
-    bool service()
-    {
-        if (!pending) return false;
-
-        // Буфер EEPROM-эмуляции трогает только эта функция; снимок
-        // берётся под запретом прерываний (десятки мкс), чтобы write()
-        // из полётной задачи не подменил образ на середине.
-        noInterrupts();
-        for (size_t i = 0; i < stagedSize; ++i)
-        {
-            eeprom_buffered_write_byte(static_cast<uint32_t>(i), staged[i]);
-        }
-        pending = false;
-        interrupts();
-
-        eeprom_buffer_flush();
-        ++flushes;
-        return true;
-    }
+    bool service();
 
     bool hasPending() const { return pending; }
     uint32_t flushCount() const { return flushes; }
 
-    static Stm32FlashStorage& instance()
-    {
-        static Stm32FlashStorage storage;
-        return storage;
-    }
+    static Stm32FlashStorage& instance();
 
-    static KeyValueStore& store()
-    {
-        static KeyValueStore kv(instance());
-        return kv;
-    }
+    static KeyValueStore& store();
 
 
 private:

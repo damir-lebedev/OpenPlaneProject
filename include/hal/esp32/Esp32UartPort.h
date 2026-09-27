@@ -15,15 +15,9 @@
 class Esp32UartPort : public IUartPort
 {
 public:
-    Esp32UartPort(HardwareSerial& port, int8_t rxPin, int8_t txPin = -1)
-        : serial(port), rx(rxPin), tx(txPin)
-    {
-    }
+    Esp32UartPort(HardwareSerial& port, int8_t rxPin, int8_t txPin = -1);
 
-    void begin(uint32_t baud) override
-    {
-        serial.begin(baud, SERIAL_8N1, rx, tx);
-    }
+    void begin(uint32_t baud) override;
 
     int available() override { return serial.available(); }
     int read() override { return serial.read(); }

@@ -29,35 +29,16 @@ class KvPreferences
 {
 public:
 
-    explicit KvPreferences(KeyValueStore& storeRef)
-        : store(storeRef)
-    {
-    }
+    explicit KvPreferences(KeyValueStore& storeRef);
 
     ~KvPreferences() { end(); }
 
     KvPreferences(const KvPreferences&) = delete;
     KvPreferences& operator=(const KvPreferences&) = delete;
 
-    bool begin(const char* name, bool readOnly = false, const char* partitionLabel = nullptr)
-    {
-        (void)partitionLabel;
-        if (started || !name || name[0] == '\0' || strlen(name) > KeyValueStore::MAX_NAME_LENGTH) return false;
-        if (readOnly && !store.hasNamespace(name)) return false;
+    bool begin(const char* name, bool readOnly = false, const char* partitionLabel = nullptr);
 
-        strncpy(space, name, sizeof(space) - 1);
-        space[sizeof(space) - 1] = '\0';
-        readOnlyMode = readOnly;
-        started = true;
-        return true;
-    }
-
-    void end()
-    {
-        if (!started) return;
-        started = false;
-        if (!readOnlyMode) store.commit();
-    }
+    void end();
 
     bool clear() { return writable() && store.clear(space); }
     bool remove(const char* key) { return writable() && store.remove(space, key); }
@@ -69,35 +50,17 @@ public:
     size_t putUInt(const char* key, uint32_t value) { return putValue(key, value); }
     size_t putFloat(const char* key, float value) { return putValue(key, value); }
 
-    size_t putBytes(const char* key, const void* value, size_t length)
-    {
-        if (!writable() || !key || (!value && length > 0)) return 0;
-        return store.put(space, key, value, length) ? length : 0;
-    }
+    size_t putBytes(const char* key, const void* value, size_t length);
 
-    bool getBool(const char* key, bool defaultValue = false)
-    {
-        return getValue<uint8_t>(key, defaultValue ? 1 : 0) != 0;
-    }
+    bool getBool(const char* key, bool defaultValue = false);
     uint8_t getUChar(const char* key, uint8_t defaultValue = 0) { return getValue(key, defaultValue); }
     int32_t getInt(const char* key, int32_t defaultValue = 0) { return getValue(key, defaultValue); }
     uint32_t getUInt(const char* key, uint32_t defaultValue = 0) { return getValue(key, defaultValue); }
     float getFloat(const char* key, float defaultValue = NAN) { return getValue(key, defaultValue); }
 
-    size_t getBytesLength(const char* key)
-    {
-        size_t length = 0;
-        return lookup(key, &length) ? length : 0;
-    }
+    size_t getBytesLength(const char* key);
 
-    size_t getBytes(const char* key, void* buffer, size_t maxLength)
-    {
-        size_t length = 0;
-        const uint8_t* data = lookup(key, &length);
-        if (!data || !buffer || length > maxLength) return 0;
-        memcpy(buffer, data, length);
-        return length;
-    }
+    size_t getBytes(const char* key, void* buffer, size_t maxLength);
 
 
 private:
@@ -109,11 +72,7 @@ private:
 
     bool writable() const { return started && !readOnlyMode; }
 
-    const uint8_t* lookup(const char* key, size_t* length)
-    {
-        if (!started || !key) return nullptr;
-        return store.get(space, key, length);
-    }
+    const uint8_t* lookup(const char* key, size_t* length);
 
     template <typename T>
     size_t putValue(const char* key, T value)

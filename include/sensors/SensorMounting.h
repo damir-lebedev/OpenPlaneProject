@@ -19,18 +19,5 @@
 
 namespace SensorMounting
 {
-    inline void rotateToBody(uint16_t rotationCwDeg, float chipX, float chipY, float& bodyX, float& bodyY)
-    {
-        switch (rotationCwDeg)
-        {
-            case 90:   // ось X чипа вправо, ось Y чипа — к носу
-                bodyX = chipY;   bodyY = -chipX; break;
-            case 180:  // ось X чипа к хвосту
-                bodyX = -chipX;  bodyY = -chipY; break;
-            case 270:  // ось X чипа влево, ось Y чипа — к хвосту
-                bodyX = -chipY;  bodyY = chipX;  break;
-            default:   // 0: ось X чипа к носу
-                bodyX = chipX;   bodyY = chipY;  break;
-        }
-    }
+    void rotateToBody(uint16_t rotationCwDeg, float chipX, float chipY, float& bodyX, float& bodyY);
 }

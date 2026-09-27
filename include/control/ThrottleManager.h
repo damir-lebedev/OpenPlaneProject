@@ -27,13 +27,5 @@ public:
     uint16_t update(
         const RcChannelState& rc,
         bool receiverFailsafe
-    ) const
-    {
-        if (receiverFailsafe)
-        {
-            return Config::FAILSAFE_THROTTLE;
-        }
-
-        return RcInput::clamp(rc.get(Channels::THROTTLE));
-    }
+    ) const;
 };

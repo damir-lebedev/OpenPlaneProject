@@ -40,52 +40,15 @@ class DebugConsole
 public:
 
     DebugConsole(FlightController& flightController, FlightOutputs& flightOutputs,
-                 Autopilot& ap, DebugLogger& debugLogger, IBoard* boardForScan = nullptr)
-        : controller(flightController),
-          outputs(flightOutputs),
-          autopilot(ap),
-          logger(debugLogger),
-          board(boardForScan)
-    {
-    }
+                 Autopilot& ap, DebugLogger& debugLogger, IBoard* boardForScan = nullptr);
 
     // Чип по адресу I2C — подсказка для опроса шин ('b').
-    static const char* guessI2cDevice(uint8_t address)
-    {
-        switch (address)
-        {
-            case 0x0D: return "QMC5883L";
-            case 0x2C: return "QMC5883P";
-            case 0x3C: case 0x3D: return "OLED SSD1306";
-            case 0x46: case 0x47: return "BMP581 (0x47 — трубка Пито)";
-            case 0x68: case 0x69: return "MPU6050/6500, ICM-42688/45686";
-            case 0x6A: case 0x6B: return "LSM6DSV";
-            case 0x76: case 0x77: return "BME280/BMP388/SPL06";
-            case 0x7C: return "QMC6309";
-            default: return "?";
-        }
-    }
+    static const char* guessI2cDevice(uint8_t address);
 
-    void printHint() const
-    {
-        Serial.println("Консоль: h — меню, l — что выводить в лог, пробел — пауза лога.");
-    }
+    void printHint() const;
 
     // Вызывать каждый цикл: не блокирует, если ввода нет.
-    void update()
-    {
-        while (Serial.available())
-        {
-            handle(static_cast<char>(Serial.read()));
-        }
-
-        if (settingsDirty && screen == Screen::None && !controller.isArmed())
-        {
-            logger.saveSettings();
-            settingsDirty = false;
-            Serial.println("Настройки лога сохранены.");
-        }
-    }
+    void update();
 
 
 private:
@@ -104,277 +67,51 @@ private:
     Screen screen = Screen::None;
     bool settingsDirty = false;   // настройки лога изменены, в NVS ещё не записаны
 
-    void handle(char key)
-    {
-        if (key == '\r' || key == '\n') return;
-
-        switch (screen)
-        {
-            case Screen::Main: handleMainMenu(key); return;
-            case Screen::Log:  handleLogMenu(key); return;
-            case Screen::None: handleHotkey(key); return;
-        }
-    }
+    void handle(char key);
 
     // --- вне меню ---
 
-    void handleHotkey(char key)
-    {
-        switch (key)
-        {
-            case 'h': case '?': openMainMenu(); break;
-            case 'l':           openLogMenu(); break;
-            case ' ':           togglePause(); break;
-            case 's': case 'i': case 'o': case 'm': case 'p': case 'b':
-                runAction(key);
-                break;
-            default:
-                printHint();
-                break;
-        }
-    }
+    void handleHotkey(char key);
 
     // --- главное меню ---
 
-    void openMainMenu()
-    {
-        screen = Screen::Main;
-        logger.suspend(true);
-        drawMainMenu();
-    }
+    void openMainMenu();
 
-    void drawMainMenu() const
-    {
-        Serial.println();
-        printRule("OpenPlane · консоль");
-        printItem('1', "Лог: что выводить", 'l');
-        printItem('2', "Статус датчиков", 's');
-        printItem('3', "Калибровка гироскопа (2 с, не двигать)", 'i');
-        printItem('4', "Калибровка установки IMU (3 позы)", 'o');
-        printItem('5', "Калибровка компаса (15 с, вращать)", 'm');
-        printItem('6', "Проверка выходов (импульсы на пинах)", 'p');
-        if (board) printItem('7', "Опрос шин I2C (кто отвечает)", 'b');
-        Serial.println("  0  закрыть меню");
-        printRule(logger.isPaused() ? "лог на паузе — пробел, чтобы продолжить"
-                                    : "пробел — пауза лога");
-    }
+    void drawMainMenu() const;
 
-    void handleMainMenu(char key)
-    {
-        switch (key)
-        {
-            case '1': case 'l': openLogMenu(); return;
-            case '2': case 's': closeMenu(); runAction('s'); return;
-            case '3': case 'i': closeMenu(); runAction('i'); return;
-            case '4': case 'o': closeMenu(); runAction('o'); return;
-            case '5': case 'm': closeMenu(); runAction('m'); return;
-            case '6': case 'p': closeMenu(); runAction('p'); return;
-            case '7': case 'b':
-                if (!board)
-                {
-                    drawMainMenu();
-                    return;
-                }
-                closeMenu();
-                runAction('b');
-                return;
-            case '0': case 'q': case 'h':
-                closeMenu();
-                return;
-            case ' ':
-                logger.setPaused(!logger.isPaused());
-                drawMainMenu();
-                return;
-            default:
-                drawMainMenu();
-                return;
-        }
-    }
+    void handleMainMenu(char key);
 
-    void closeMenu()
-    {
-        screen = Screen::None;
-        Serial.println("Меню закрыто (h — открыть).");
-        logger.suspend(false);
-    }
+    void closeMenu();
 
     // --- меню лога ---
 
-    void openLogMenu()
-    {
-        screen = Screen::Log;
-        logger.suspend(true);
-        drawLogMenu();
-    }
+    void openLogMenu();
 
-    static char channelKey(uint8_t channel)
-    {
-        // 1..9 — первые девять каналов, NAV — 'n', SYS — 's'.
-        if (channel == static_cast<uint8_t>(LogChannel::System)) return 's';
-        if (channel == static_cast<uint8_t>(LogChannel::Nav)) return 'n';
-        return static_cast<char>('1' + channel);
-    }
+    static char channelKey(uint8_t channel);
 
     // Обратное к channelKey(): канал по клавише или LogSettings::COUNT,
     // если такой клавиши у каналов нет.
-    static uint8_t channelForKey(char key)
-    {
-        for (uint8_t channel = 0; channel < LogSettings::COUNT; ++channel)
-        {
-            if (channelKey(channel) == key) return channel;
-        }
-        return LogSettings::COUNT;
-    }
+    static uint8_t channelForKey(char key);
 
-    void drawLogMenu()
-    {
-        const LogSettings& settings = logger.getSettings();
+    void drawLogMenu();
 
-        Serial.println();
-        printRule("Лог: что выводить");
-        Serial.println("  клавиша канала: выкл -> при изменении -> постоянно");
-        for (uint8_t channel = 0; channel < LogSettings::COUNT; ++channel)
-        {
-            const LogChannelInfo& info = LogSettings::info(channel);
-            Serial.print("  ");
-            Serial.print(channelKey(channel));
-            Serial.print("  ");
-            printPadded(info.tag, 5);
-            printPadded(info.title, ITEM_WIDTH - 5);
-            Serial.print("[");
-            Serial.print(LogSettings::modeName(settings.mode(channel), info.periodicOnly));
-            Serial.println("]");
-        }
-        Serial.println();
-        Serial.print("  p  период для \"постоянно\": ");
-        Serial.print(settings.periodMs() / 1000.0f, 1);
-        Serial.println(" с");
-        Serial.println("  a  всё \"при изменении\"    x  всё выкл    d  по умолчанию");
-        Serial.println("  0  назад");
-        printRule(controller.isArmed() ? "действует сразу, сохранится после DISARM"
-                                       : "действует сразу, сохранится при выходе из меню");
-    }
-
-    void handleLogMenu(char key)
-    {
-        LogSettings& settings = logger.getSettings();
-
-        const uint8_t channel = channelForKey(key);
-        if (channel < LogSettings::COUNT) settings.cycleMode(channel);
-        else if (key == 'p') settings.cyclePeriod();
-        else if (key == 'a') settings.setAll(LogMode::OnChange);
-        else if (key == 'x') settings.setAll(LogMode::Off);
-        else if (key == 'd') settings.setDefaults();
-        else if (key == '0' || key == 'q')
-        {
-            screen = Screen::Main;
-            drawMainMenu();
-            return;
-        }
-        else if (key == 'l' || key == 'h')
-        {
-            closeMenu();
-            return;
-        }
-        else
-        {
-            drawLogMenu();
-            return;
-        }
-
-        settingsDirty = true;
-        drawLogMenu();
-    }
+    void handleLogMenu(char key);
 
     // --- действия ---
 
-    void togglePause()
-    {
-        logger.setPaused(!logger.isPaused());
-        Serial.println(logger.isPaused() ? "Лог: пауза (пробел — продолжить)." : "Лог: продолжен.");
-    }
+    void togglePause();
 
-    static bool isBlocking(char action)
-    {
-        return action == 'i' || action == 'o' || action == 'm' || action == 'p';
-    }
+    static bool isBlocking(char action);
 
-    void runAction(char action)
-    {
-        if (isBlocking(action) && controller.isArmed())
-        {
-            Serial.println("Консоль: команда недоступна, пока заармлено");
-            return;
-        }
+    void runAction(char action);
 
-        switch (action)
-        {
-            case 's': printSensorStatus(); break;
-            case 'i': calibrate(autopilot.getImuSensor(), "IMU"); break;
-            case 'o': calibrateImuMounting(); break;
-            case 'm': calibrate(autopilot.getMagnetometerSensor(), "компас"); break;
-            case 'p': outputs.printPulseSelfTest(); break;
-            case 'b': scanBuses(); break;
-            default: break;
-        }
-    }
+    void scanBuses() const;
 
-    void scanBuses() const
-    {
-        if (!board)
-        {
-            Serial.println("Консоль: опрос шин недоступен в этой сборке");
-            return;
-        }
-        scanBus("I2C датчиков", board->i2c());
-        if (II2CBus* display = board->displayI2c()) scanBus("I2C экрана", *display);
-    }
+    static void scanBus(const char* name, II2CBus& bus);
 
-    static void scanBus(const char* name, II2CBus& bus)
-    {
-        Serial.print(name);
-        Serial.println(':');
-        uint8_t found = 0;
-        // До 0x7F, а не до обычных 0x77: QMC6309 сидит на 0x7C (в
-        // диапазоне, зарезервированном стандартом под 10-битные адреса).
-        for (uint8_t address = 0x08; address <= 0x7F; ++address)
-        {
-            if (!bus.probe(address)) continue;
-            Serial.print("  0x");
-            if (address < 0x10) Serial.print('0');
-            Serial.print(address, HEX);
-            Serial.print("  ");
-            Serial.println(guessI2cDevice(address));
-            ++found;
-        }
-        if (!found) Serial.println("  никого (проверьте питание, SDA/SCL и подтяжки)");
-    }
+    void printSensorStatus() const;
 
-    void printSensorStatus() const
-    {
-        const Sensor* sensors[] = {
-            autopilot.getImuSensor(),
-            autopilot.getBarometerSensor(),
-            autopilot.getMagnetometerSensor(),
-            autopilot.getGpsSensor(),
-        };
-
-        for (const Sensor* sensor : sensors)
-        {
-            if (sensor) sensor->printStatus();
-        }
-    }
-
-    void calibrateImuMounting()
-    {
-        ImuSensor* imu = autopilot.getImuSensor();
-        if (!imu)
-        {
-            Serial.println("Консоль: IMU не выбран в SensorSelection.h");
-            return;
-        }
-        imu->calibrateOrientation();
-    }
+    void calibrateImuMounting();
 
     template <typename SensorType>
     static void calibrate(SensorType* sensor, const char* what)
@@ -393,39 +130,11 @@ private:
 
     // Ширина текста на экране: символы UTF-8, а не байты (кириллица —
     // 2 байта на букву).
-    static uint8_t displayWidth(const char* text)
-    {
-        uint8_t width = 0;
-        for (const char* p = text; *p; ++p)
-        {
-            if ((static_cast<uint8_t>(*p) & 0xC0) != 0x80) width++;
-        }
-        return width;
-    }
+    static uint8_t displayWidth(const char* text);
 
-    static void printPadded(const char* text, uint8_t width)
-    {
-        Serial.print(text);
-        for (uint8_t i = displayWidth(text); i < width; ++i) Serial.print(' ');
-    }
+    static void printPadded(const char* text, uint8_t width);
 
-    static void printRule(const char* title)
-    {
-        Serial.print("══ ");
-        Serial.print(title);
-        Serial.print(' ');
-        for (uint8_t i = displayWidth(title) + 4; i < MENU_WIDTH; ++i) Serial.print("═");
-        Serial.println();
-    }
+    static void printRule(const char* title);
 
-    static void printItem(char key, const char* title, char hotkey)
-    {
-        Serial.print("  ");
-        Serial.print(key);
-        Serial.print("  ");
-        printPadded(title, ITEM_WIDTH);
-        Serial.print("[");
-        Serial.print(hotkey);
-        Serial.println("]");
-    }
+    static void printItem(char key, const char* title, char hotkey);
 };

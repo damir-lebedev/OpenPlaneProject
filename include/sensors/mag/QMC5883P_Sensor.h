@@ -26,60 +26,14 @@ public:
 
     static constexpr uint8_t DEFAULT_ADDRESS = 0x2C;
 
-    explicit QMC5883P_Sensor(IRegisterDevice& registerDevice)
-        : MagnetometerBase("QMC5883P", "qmc5883p"),
-          device(registerDevice)
-    {
-    }
+    explicit QMC5883P_Sensor(IRegisterDevice& registerDevice);
 
-    bool begin() override
-    {
-        device.begin();
-
-        const int chipId = device.readRegister(REG_CHIP_ID);
-        if (chipId != CHIP_ID_VALUE)
-        {
-            Serial.print("QMC5883P: не отвечает (chip ID ");
-            Serial.print(chipId < 0 ? String("нет ответа") : String("0x") + String(chipId, HEX));
-            Serial.println("), компас недоступен");
-            setAvailable(false);
-            return false;
-        }
-
-        device.writeRegister(REG_CONTROL2, 0x80);  // SOFT_RST
-        delay(10);
-
-        // По примеру из датащита: знаки осей; SET/RESET включён,
-        // диапазон ±8 Гс; режим normal, ODR 200 Гц, OSR1=8, OSR2=8.
-        const bool ok =
-            device.writeRegister(REG_AXIS_SIGN, 0x06) &&
-            device.writeRegister(REG_CONTROL2, 0x08) &&
-            device.writeRegister(REG_CONTROL1, 0xCD);
-
-        if (!ok)
-        {
-            Serial.println("QMC5883P: ошибка записи регистров");
-            setAvailable(false);
-            return false;
-        }
-
-        setAvailable(true);
-        return true;
-    }
+    bool begin() override;
 
 
 protected:
 
-    bool readRaw(int16_t raw[3]) override
-    {
-        uint8_t b[6];
-        if (!device.readRegisters(REG_DATA_X_LSB, b, sizeof(b))) return false;
-
-        raw[0] = (int16_t)((b[1] << 8) | b[0]);
-        raw[1] = (int16_t)((b[3] << 8) | b[2]);
-        raw[2] = (int16_t)((b[5] << 8) | b[4]);
-        return true;
-    }
+    bool readRaw(int16_t raw[3]) override;
 
     // ±8 Гс: 3750 LSB/Гс, 1 Гс = 100 мкТл.
     float lsbPerMicroTesla() const override { return 37.5f; }

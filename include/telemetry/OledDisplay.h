@@ -44,39 +44,10 @@ class OledDisplay
 {
 public:
 
-    OledDisplay(FlightController& flightController, Autopilot* ap, const LoopStats& stats)
-        : controller(flightController),
-          autopilot(ap),
-          loopStats(stats)
-    {
-    }
+    OledDisplay(FlightController& flightController, Autopilot* ap, const LoopStats& stats);
 
     // bus == nullptr (на плате нет второй шины) — экрана просто нет.
-    bool begin(II2CBus* displayBus)
-    {
-        if (!displayBus)
-        {
-            return false;
-        }
-
-        if (!displayBus->probe(I2C_ADDRESS))
-        {
-            Serial.println("OLED: не отвечает, экран отключён");
-            return false;
-        }
-
-        busSlot() = displayBus;
-        u8g2_Setup_ssd1306_i2c_128x64_noname_f(display.getU8g2(), U8G2_R0,
-                                               byteCallback, u8x8_gpio_and_delay_arduino);
-        display.setI2CAddress(I2C_ADDRESS << 1);
-        display.begin();
-        display.setFont(u8g2_font_6x10_tr);
-
-        Rtos::startTask(displayTask, "oled", 4096, this, Rtos::PRIORITY_BACKGROUND);
-
-        Serial.println("OLED: подключён (SSD1306)");
-        return true;
-    }
+    bool begin(II2CBus* displayBus);
 
 
 private:
@@ -93,143 +64,25 @@ private:
     // Шина экрана для byteCallback (C-колбэк U8g2 не знает об объекте).
     // Статическая локальная переменная, а не static inline член: тот
     // требует C++17, а ядро Arduino собирается с gnu++11.
-    static II2CBus*& busSlot()
-    {
-        static II2CBus* bus = nullptr;
-        return bus;
-    }
+    static II2CBus*& busSlot();
 
     // Передача байтов U8g2 поверх II2CBus. Сигнатура задана U8g2
     // (u8x8_msg_cb), поэтому u8x8 не const.
     // cppcheck-suppress constParameterCallback
-    static uint8_t byteCallback(u8x8_t* u8x8, uint8_t msg, uint8_t argInt, void* argPtr)
-    {
-        II2CBus* bus = busSlot();
-        switch (msg)
-        {
-            case U8X8_MSG_BYTE_SEND:
-                bus->write(static_cast<const uint8_t*>(argPtr), argInt);
-                break;
-            case U8X8_MSG_BYTE_START_TRANSFER:
-                bus->beginTransmission(u8x8_GetI2CAddress(u8x8) >> 1);
-                break;
-            case U8X8_MSG_BYTE_END_TRANSFER:
-                bus->endTransmission();
-                break;
-            case U8X8_MSG_BYTE_INIT:      // шину уже подняла плата (IBoard::begin())
-            case U8X8_MSG_BYTE_SET_DC:
-                break;
-            default:
-                return 0;
-        }
-        return 1;
-    }
+    static uint8_t byteCallback(u8x8_t* u8x8, uint8_t msg, uint8_t argInt, void* argPtr);
 
-    static void displayTask(void* arg)
-    {
-        OledDisplay* self = static_cast<OledDisplay*>(arg);
-        TickType_t lastWake = xTaskGetTickCount();
+    static void displayTask(void* arg);
 
-        for (;;)
-        {
-            self->draw();
-            vTaskDelayUntil(&lastWake, pdMS_TO_TICKS(REFRESH_MS));
-        }
-    }
-
-    void draw()
-    {
-        display.clearBuffer();
-
-        drawStatusLine();
-        drawLine(21, attitudeText());
-        drawLine(32, baroText());
-
-        const FlightOutputState& out = controller.getOutputState();
-        char line[32];
-
-        snprintf(line, sizeof(line), "%s T%4u Y%4u", headingText().c_str(), out.throttle, out.rudder);
-        drawLine(43, line);
-
-        snprintf(line, sizeof(line), "L%4u R%4u E%4u", out.aileronLeft, out.aileronRight, out.elevator);
-        drawLine(54, line);
-
-        // uint32_t — до 10 цифр каждое: в худшем случае строка займёт
-        // 34 байта с нулём, поэтому буфер на 40 (экран покажет первые 21).
-        char stats[40];
-        snprintf(stats, sizeof(stats), "Loop %3uHz max%4uus",
-                 static_cast<unsigned>(loopStats.hz), static_cast<unsigned>(loopStats.maxUs));
-        drawLine(64, stats);
-
-        display.sendBuffer();
-    }
+    void draw();
 
     // Связь / ARM / режим / закрылки. Потеря связи — инверсией строки.
-    void drawStatusLine()
-    {
-        const bool rxLost = controller.isReceiverFailsafe();
-        char line[32];
+    void drawStatusLine();
 
-        snprintf(line, sizeof(line), "%s %s %s%s",
-                 rxLost ? "RX LOST" : "RX ok",
-                 controller.isArmed() ? "ARM" : "safe",
-                 !autopilot                        ? "MAN"
-                 : autopilot->isFailsafeGliding()   ? "GLIDE"
-                 : autopilot->isFailsafeReturning() ? "FSRTH"
-                                                    : AutopilotNames::modeShort(autopilot->getMode()),
-                 controller.getFlapsUs() > 0 ? " FL" : "");
+    void drawLine(uint8_t baselineY, const String& text);
 
-        if (rxLost)
-        {
-            display.drawBox(0, 0, 128, 11);
-            display.setDrawColor(0);
-        }
-        display.drawStr(1, 9, line);
-        display.setDrawColor(1);
-    }
+    String attitudeText() const;
 
-    void drawLine(uint8_t baselineY, const String& text)
-    {
-        display.drawStr(0, baselineY, text.c_str());
-    }
+    String baroText() const;
 
-    String attitudeText() const
-    {
-        const ImuSensor* imu = autopilot ? autopilot->getImuSensor() : nullptr;
-        if (!imu || !imu->isAvailable()) return "IMU --";
-
-        char line[32];
-        const ImuData& d = imu->getImuData();
-        snprintf(line, sizeof(line), "R%+6.1f P%+6.1f", d.roll, d.pitch);
-        return line;
-    }
-
-    String baroText() const
-    {
-        const BarometerSensor* baro = autopilot ? autopilot->getBarometerSensor() : nullptr;
-        if (!baro || !baro->isAvailable()) return "BARO --";
-
-        char line[40];
-        const BarometerData& d = baro->getBarometerData();
-        const AirspeedSensor* airspeed = autopilot->getAirspeedSensor();
-        if (airspeed && airspeed->isAvailable())
-        {
-            // С трубкой Пито — воздушная скорость в конце строки (21 символ экрана).
-            snprintf(line, sizeof(line), "Alt%+6.1f Vz%+4.1f A%2.0f", d.altitude, d.verticalSpeed,
-                     airspeed->getAirspeedData().indicatedMs);
-            return line;
-        }
-        snprintf(line, sizeof(line), "Alt%+6.1f Vz%+5.1f", d.altitude, d.verticalSpeed);
-        return line;
-    }
-
-    String headingText() const
-    {
-        const MagnetometerSensor* mag = autopilot ? autopilot->getMagnetometerSensor() : nullptr;
-        if (!mag || !mag->isAvailable()) return "H---";
-
-        char text[8];
-        snprintf(text, sizeof(text), "H%3.0f", mag->getMagData().headingDegrees);
-        return text;
-    }
+    String headingText() const;
 };

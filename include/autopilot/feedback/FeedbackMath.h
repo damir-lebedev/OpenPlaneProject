@@ -10,21 +10,9 @@ namespace FeedbackMath
 {
     // Угол в диапазон (−180, 180]: разница курсов 350° и 10° — это
     // −20°, а не 340°.
-    inline float wrap180(float deg)
-    {
-        deg = fmodf(deg, 360.0f);
-        if (deg > 180.0f) deg -= 360.0f;
-        if (deg <= -180.0f) deg += 360.0f;
-        return deg;
-    }
+    float wrap180(float deg);
 
-    inline int8_t signOf(float x)
-    {
-        return static_cast<int8_t>(x > 0.0f ? 1 : (x < 0.0f ? -1 : 0));
-    }
+    int8_t signOf(float x);
 
-    inline float clampAbs(float x, float limit)
-    {
-        return x > limit ? limit : (x < -limit ? -limit : x);
-    }
+    float clampAbs(float x, float limit);
 }

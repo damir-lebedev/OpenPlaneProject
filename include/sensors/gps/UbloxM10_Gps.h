@@ -47,43 +47,9 @@ class UbloxM10_Gps : public GpsSensor
 {
 public:
 
-    explicit UbloxM10_Gps(IUartPort& port)
-        : uart(port)
-    {
-    }
+    explicit UbloxM10_Gps(IUartPort& port);
 
-    bool begin() override
-    {
-        // Шаг 1: заводские 9600 бод -> 115200.
-        uart.begin(FACTORY_BAUD);
-        delay(100);
-
-        // Без TX-пина (ESP32-C3) модулю ничего не отправить — он
-        // остаётся на заводских 9600 бод и настройках, слушаем как есть.
-        if (Config::PIN_GPS_TX < 0)
-        {
-            return true;
-        }
-
-        ValsetBuilder baud;
-        baud.addU4(KEY_UART1_BAUDRATE, WORK_BAUD);
-        sendUbxMessage(UBX_CLASS_CFG, UBX_ID_VALSET, baud.data(), baud.size());
-        delay(50);  // дать модулю дослать ответ и переключиться
-
-        // Шаг 2: на рабочей скорости — частота и набор сообщений.
-        uart.begin(WORK_BAUD);
-        delay(50);
-
-        ValsetBuilder config;
-        config.addU2(KEY_RATE_MEAS, 100);              // 100 мс = 10 Гц
-        config.addU2(KEY_RATE_NAV, 1);                 // решение на каждое измерение
-        config.addU1(KEY_MSGOUT_NAV_PVT_UART1, 1);     // NAV-PVT на каждое решение
-        config.addU1(KEY_UART1OUTPROT_UBX, 1);
-        config.addU1(KEY_UART1OUTPROT_NMEA, 0);        // NMEA не нужен — меньше трафика
-        sendUbxMessage(UBX_CLASS_CFG, UBX_ID_VALSET, config.data(), config.size());
-
-        return true;  // best-effort: без ACK нечего проверять программно
-    }
+    bool begin() override;
 
     // hasValidFrame один раз становится true после первого разобранного
     // кадра и дальше не сбрасывается сам по себе — если модуль отключат
@@ -91,45 +57,17 @@ public:
     // врать, что GPS на связи. Поэтому дополнительно проверяем, что
     // последний кадр пришёл не более Config::GPS_TIMEOUT_US назад (тот
     // же принцип, что IBusReceiver::isSignalLost() для RC).
-    bool isAvailable() const override
-    {
-        return hasValidFrame && (micros() - gpsData.timestamp) <= Config::GPS_TIMEOUT_US;
-    }
+    bool isAvailable() const override;
 
-    void update() override
-    {
-        while (uart.available())
-        {
-            feedParser((uint8_t)uart.read());
-        }
-    }
+    void update() override;
 
-    const GpsData& getGpsData() const override
-    {
-        return gpsData;
-    }
+    const GpsData& getGpsData() const override;
 
-    bool hasFix() const override
-    {
-        return isAvailable() && gpsData.fixType >= 2;
-    }
+    bool hasFix() const override;
 
-    const char* getSensorType() const override
-    {
-        return "u-blox M10 (UBX-M10050-KB)";
-    }
+    const char* getSensorType() const override;
 
-    void printStatus() const override
-    {
-        Serial.print("GPS: available="); Serial.print(isAvailable() ? "YES" : "NO");
-        Serial.print(" fix="); Serial.print(gpsData.fixType);
-        Serial.print(" numSV="); Serial.print(gpsData.numSatellites);
-        Serial.print(" lat="); Serial.print(gpsData.latitude, 6);
-        Serial.print(" lon="); Serial.print(gpsData.longitude, 6);
-        Serial.print(" alt="); Serial.print(gpsData.altitude, 1);
-        Serial.print(" hAcc="); Serial.print(gpsData.horizontalAccuracy, 1);
-        Serial.println("m");
-    }
+    void printStatus() const override;
 
 
 private:
@@ -179,13 +117,7 @@ private:
         uint16_t length = 0;
 
         void addKey(uint32_t key) { put(key, 4); }
-        void put(uint32_t value, uint8_t bytes)
-        {
-            for (uint8_t i = 0; i < bytes && length < sizeof(buffer); ++i)
-            {
-                buffer[length++] = (uint8_t)(value >> (8 * i));
-            }
-        }
+        void put(uint32_t value, uint8_t bytes);
     };
 
     IUartPort& uart;
@@ -205,134 +137,13 @@ private:
 
     // Побайтовый разбор — как в IBusReceiver::processByte(), кадры
     // приходят из UART порциями произвольного размера.
-    void feedParser(uint8_t b)
-    {
-        switch (state)
-        {
-            case ParseState::SYNC1:
-                if (b == 0xB5) state = ParseState::SYNC2;
-                break;
+    void feedParser(uint8_t b);
 
-            case ParseState::SYNC2:
-                state = (b == 0x62) ? ParseState::CLASS : ParseState::SYNC1;
-                break;
+    void parseNavPvt();
 
-            case ParseState::CLASS:
-                msgClass = b;
-                ckA = b; ckB = b;
-                state = ParseState::ID;
-                break;
+    int32_t readI32(uint16_t offset) const;
 
-            case ParseState::ID:
-                msgId = b;
-                ckA += b; ckB += ckA;
-                state = ParseState::LEN1;
-                break;
+    uint32_t readU32(uint16_t offset) const;
 
-            case ParseState::LEN1:
-                payloadLen = b;
-                ckA += b; ckB += ckA;
-                state = ParseState::LEN2;
-                break;
-
-            case ParseState::LEN2:
-                payloadLen |= ((uint16_t)b << 8);
-                ckA += b; ckB += ckA;
-
-                payloadIndex = 0;
-                isNavPvt = (msgClass == UBX_CLASS_NAV && msgId == UBX_ID_NAV_PVT &&
-                            payloadLen == NAV_PVT_LEN);
-
-                if (payloadLen > MAX_PAYLOAD_LEN)
-                {
-                    state = ParseState::SYNC1;  // не кадр, а сбой синхронизации
-                    break;
-                }
-
-                state = (payloadLen == 0) ? ParseState::CK_A : ParseState::PAYLOAD;
-                break;
-
-            case ParseState::PAYLOAD:
-                ckA += b; ckB += ckA;
-
-                if (isNavPvt && payloadIndex < NAV_PVT_LEN)
-                {
-                    payload[payloadIndex] = b;
-                }
-                payloadIndex++;
-
-                if (payloadIndex >= payloadLen) state = ParseState::CK_A;
-                break;
-
-            case ParseState::CK_A:
-                ckARecv = b;
-                state = ParseState::CK_B;
-                break;
-
-            case ParseState::CK_B:
-                ckBRecv = b;
-
-                if (isNavPvt && ckARecv == ckA && ckBRecv == ckB)
-                {
-                    parseNavPvt();
-                }
-
-                state = ParseState::SYNC1;
-                break;
-        }
-    }
-
-    void parseNavPvt()
-    {
-        gpsData.fixType = payload[20];
-        gpsData.numSatellites = payload[23];
-
-        gpsData.longitude = readI32(24) * 1e-7;
-        gpsData.latitude  = readI32(28) * 1e-7;
-
-        gpsData.altitude = readI32(36) / 1000.0f;             // hMSL, мм -> м
-        gpsData.horizontalAccuracy = readU32(40) / 1000.0f;   // hAcc, мм -> м
-        gpsData.verticalAccuracy  = readU32(44) / 1000.0f;    // vAcc, мм -> м
-
-        gpsData.groundSpeed = readI32(60) / 1000.0f;          // gSpeed, мм/с -> м/с
-
-        float heading = readI32(64) * 1e-5f;                  // headMot, 1e-5 град
-        if (heading < 0) heading += 360.0f;
-        gpsData.heading = heading;
-
-        gpsData.timestamp = micros();
-        hasValidFrame = true;
-    }
-
-    int32_t readI32(uint16_t offset) const
-    {
-        return (int32_t)(
-            (uint32_t)payload[offset] |
-            ((uint32_t)payload[offset + 1] << 8) |
-            ((uint32_t)payload[offset + 2] << 16) |
-            ((uint32_t)payload[offset + 3] << 24));
-    }
-
-    uint32_t readU32(uint16_t offset) const
-    {
-        return (uint32_t)readI32(offset);
-    }
-
-    void sendUbxMessage(uint8_t msgClassOut, uint8_t msgIdOut, const uint8_t* msgPayload, uint16_t len)
-    {
-        uint8_t header[6] = {
-            0xB5, 0x62, msgClassOut, msgIdOut,
-            (uint8_t)(len & 0xFF), (uint8_t)(len >> 8)
-        };
-
-        uint8_t sumA = 0, sumB = 0;
-        for (uint8_t i = 2; i < 6; ++i) { sumA += header[i]; sumB += sumA; }
-        for (uint16_t i = 0; i < len; ++i) { sumA += msgPayload[i]; sumB += sumA; }
-
-        uart.write(header, 6);
-        if (len > 0) uart.write(msgPayload, len);
-
-        const uint8_t checksum[2] = { sumA, sumB };
-        uart.write(checksum, 2);
-    }
+    void sendUbxMessage(uint8_t msgClassOut, uint8_t msgIdOut, const uint8_t* msgPayload, uint16_t len);
 };

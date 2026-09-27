@@ -14,8 +14,5 @@
 class Preferences : public KvPreferences
 {
 public:
-    Preferences()
-        : KvPreferences(Stm32FlashStorage::store())
-    {
-    }
+    Preferences();
 };

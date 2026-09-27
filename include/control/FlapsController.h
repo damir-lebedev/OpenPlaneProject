@@ -23,37 +23,9 @@ class FlapsController
 public:
 
     // Возвращает текущее положение закрылков, мкс отклонения вниз.
-    int16_t update(float target, uint32_t nowMs)
-    {
+    int16_t update(float target, uint32_t nowMs);
 
-        // Первый вызов (включение платы) — сразу в целевое положение,
-        // без "выезда" закрылков на столе.
-        if (!initialized)
-        {
-            positionUs = target;
-            lastUpdateMs = nowMs;
-            initialized = true;
-            return getPosition();
-        }
-
-        // Шаг по времени ограничен: если update() долго не вызывался
-        // (failsafe, калибровка из консоли), закрылки не должны
-        // прыгнуть к цели за один цикл.
-        const uint32_t elapsedMs = min<uint32_t>(nowMs - lastUpdateMs, MAX_STEP_MS);
-        lastUpdateMs = nowMs;
-
-        const float maxStep =
-            static_cast<float>(Config::FLAPS_DEPLOYED_US) * elapsedMs / Config::FLAPS_TRANSITION_MS;
-
-        positionUs += constrain(target - positionUs, -maxStep, maxStep);
-
-        return getPosition();
-    }
-
-    int16_t getPosition() const
-    {
-        return static_cast<int16_t>(positionUs);
-    }
+    int16_t getPosition() const;
 
 
 private:

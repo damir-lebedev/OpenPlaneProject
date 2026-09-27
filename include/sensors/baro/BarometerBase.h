@@ -28,119 +28,25 @@ class BarometerBase : public BarometerSensor
 {
 public:
 
-    bool isAvailable() const override
-    {
-        return available && consecutiveErrors < MAX_CONSECUTIVE_ERRORS;
-    }
+    bool isAvailable() const override;
 
-    void update() override
-    {
-        if (!available) return;
+    void update() override;
 
-        const uint32_t now = micros();
-        if (now - lastPollUs < pollPeriodUs) return;
-        lastPollUs = now;
-
-        bool ready = false;
-        if (!isNewSampleReady(ready))
-        {
-            onReadError();
-            return;
-        }
-        if (!ready) return;
-
-        float pressurePa, temperatureC;
-        if (!readSample(pressurePa, temperatureC))
-        {
-            onReadError();
-            return;
-        }
-
-        consecutiveErrors = 0;
-        baroData.pressure = pressurePa;
-        baroData.temperature = temperatureC;
-        updateAltitude(now);
-        baroData.timestamp = now;
-    }
-
-    const BarometerData& getBarometerData() const override
-    {
-        return baroData;
-    }
+    const BarometerData& getBarometerData() const override;
 
     // На земле перед полётом: среднее из 20 отсчётов — нулевая высота.
-    void calibrateAltitude() override
-    {
-        if (!available) return;
+    void calibrateAltitude() override;
 
-        Serial.print(name);
-        Serial.println(": калибровка высоты...");
+    void setSeaLevelPressure(float pressurePa) override;
 
-        float sum = 0;
-        int samples = 0;
+    const char* getSensorType() const override;
 
-        for (int i = 0; i < CALIBRATION_SAMPLES; i++)
-        {
-            delay(CALIBRATION_INTERVAL_MS);
-
-            float pressurePa, temperatureC;
-            if (readSample(pressurePa, temperatureC))
-            {
-                sum += absoluteAltitude(pressurePa);
-                samples++;
-            }
-        }
-
-        if (samples == 0)
-        {
-            Serial.print(name);
-            Serial.println(": калибровка не удалась — датчик не отвечает");
-            return;
-        }
-
-        baseAltitude = sum / samples;
-
-        baroData.altitude = 0;
-        baroData.verticalSpeed = 0;
-        previousAltitude = 0;
-        lastSampleUs = 0;  // следующий отсчёт не считает скорость от старой базы
-
-        Serial.print(name);
-        Serial.print(": калибровка завершена, база=");
-        Serial.print(baseAltitude);
-        Serial.println(" м над уровнем моря (по стандартной атмосфере)");
-    }
-
-    void setSeaLevelPressure(float pressurePa) override
-    {
-        seaLevelPressure = pressurePa;
-    }
-
-    const char* getSensorType() const override
-    {
-        return name;
-    }
-
-    void printStatus() const override
-    {
-        Serial.print(name);
-        Serial.print(": available="); Serial.print(isAvailable() ? "YES" : "NO");
-        Serial.print(" errors="); Serial.print(errorCount);
-        Serial.print(" pressure="); Serial.print(baroData.pressure / 100.0f); Serial.print("hPa");
-        Serial.print(" altitude="); Serial.print(baroData.altitude); Serial.print("m");
-        Serial.print(" climb="); Serial.print(baroData.verticalSpeed, 2); Serial.print("m/s");
-        Serial.print(" temp="); Serial.print(baroData.temperature); Serial.println("C");
-    }
+    void printStatus() const override;
 
 
 protected:
 
-    BarometerBase(const char* sensorName, uint32_t pollIntervalUs)
-        : name(sensorName),
-          pollPeriodUs(pollIntervalUs),
-          baroData()
-    {
-    }
+    BarometerBase(const char* sensorName, uint32_t pollIntervalUs);
 
     // --- то, что реализует драйвер конкретного чипа ---
 
@@ -152,10 +58,7 @@ protected:
     // Давление, Па, и температура, °C. false — чип не ответил.
     virtual bool readSample(float& pressurePa, float& temperatureC) = 0;
 
-    void setAvailable(bool isAvailable)
-    {
-        available = isAvailable;
-    }
+    void setAvailable(bool isAvailable);
 
 
 private:
@@ -186,31 +89,9 @@ private:
 
     BarometerData baroData;
 
-    void onReadError()
-    {
-        if (consecutiveErrors < MAX_CONSECUTIVE_ERRORS) consecutiveErrors++;
-        errorCount++;
-    }
+    void onReadError();
 
-    float absoluteAltitude(float pressurePa) const
-    {
-        return 44330.0f * (1.0f - powf(pressurePa / seaLevelPressure, 0.1903f));
-    }
+    float absoluteAltitude(float pressurePa) const;
 
-    void updateAltitude(uint32_t now)
-    {
-        baroData.altitude = absoluteAltitude(baroData.pressure) - baseAltitude;
-
-        const float dt = (now - lastSampleUs) / 1000000.0f;
-
-        if (lastSampleUs != 0 && dt > 0 && dt < 0.5f)
-        {
-            const float rawClimb = (baroData.altitude - previousAltitude) / dt;
-            const float alpha = dt / (CLIMB_FILTER_TAU_S + dt);
-            baroData.verticalSpeed += alpha * (rawClimb - baroData.verticalSpeed);
-        }
-
-        previousAltitude = baroData.altitude;
-        lastSampleUs = now;
-    }
+    void updateAltitude(uint32_t now);
 };

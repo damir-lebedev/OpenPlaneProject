@@ -22,23 +22,11 @@ class PidController
 {
 public:
 
-    explicit PidController(float kp = 1.0f, float ki = 0.0f, float kd = 0.0f)
-        : Kp(kp), Ki(ki), Kd(kd)
-    {
-    }
+    explicit PidController(float kp = 1.0f, float ki = 0.0f, float kd = 0.0f);
 
-    void setGains(float kp, float ki, float kd)
-    {
-        Kp = kp;
-        Ki = ki;
-        Kd = kd;
-    }
+    void setGains(float kp, float ki, float kd);
 
-    void setLimits(float minOut, float maxOut)
-    {
-        minOutput = minOut;
-        maxOutput = maxOut;
-    }
+    void setLimits(float minOut, float maxOut);
 
     float getKp() const { return Kp; }
     float getKi() const { return Ki; }
@@ -55,44 +43,9 @@ public:
     // (используется, пока самолёт не заармлен).
     //
     // Возвращает коррекцию, ограниченную [minOutput, maxOutput].
-    float calculate(float setpoint, float feedback, float feedbackRate, bool integrate = true)
-    {
-        const uint32_t now = micros();
-        float dt = (now - lastTime) / 1000000.0f;
-        lastTime = now;
+    float calculate(float setpoint, float feedback, float feedbackRate, bool integrate = true);
 
-        // Первый вызов после reset() или долгая пауза — номинальный
-        // период цикла, чтобы I-член не получил скачок.
-        if (dt <= 0.0f || dt > 0.1f)
-        {
-            dt = Config::LOOP_PERIOD_MS / 1000.0f;
-        }
-
-        const float error = setpoint - feedback;
-
-        const float P = Kp * error;
-
-        if (integrate)
-        {
-            errorSum += error * dt;
-            errorSum = constrain(errorSum, -INTEGRAL_LIMIT, INTEGRAL_LIMIT);  // защита от раскрутки интегратора
-        }
-        else
-        {
-            errorSum = 0;
-        }
-        const float I = Ki * errorSum;
-
-        const float D = -Kd * feedbackRate;
-
-        return constrain(P + I + D, minOutput, maxOutput);
-    }
-
-    void reset()
-    {
-        errorSum = 0;
-        lastTime = micros();
-    }
+    void reset();
 
 private:
     static constexpr float INTEGRAL_LIMIT = 100.0f;

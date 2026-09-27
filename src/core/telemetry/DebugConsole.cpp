@@ -1,0 +1,350 @@
+// Реализация telemetry/DebugConsole.h: вынесена из заголовка tools/split_headers.py
+// (ветка feature/split-headers). Правки делайте в основной ветке и
+// перегенерируйте — так две раскладки кода не расходятся.
+
+#include "telemetry/DebugConsole.h"
+
+
+DebugConsole::DebugConsole(FlightController& flightController, FlightOutputs& flightOutputs,
+                 Autopilot& ap, DebugLogger& debugLogger, IBoard* boardForScan)
+: controller(flightController),
+      outputs(flightOutputs),
+      autopilot(ap),
+      logger(debugLogger),
+      board(boardForScan)
+{
+}
+
+auto DebugConsole::guessI2cDevice(uint8_t address) -> const char*
+{
+    switch (address)
+    {
+        case 0x0D: return "QMC5883L";
+        case 0x2C: return "QMC5883P";
+        case 0x3C: case 0x3D: return "OLED SSD1306";
+        case 0x46: case 0x47: return "BMP581 (0x47 — трубка Пито)";
+        case 0x68: case 0x69: return "MPU6050/6500, ICM-42688/45686";
+        case 0x6A: case 0x6B: return "LSM6DSV";
+        case 0x76: case 0x77: return "BME280/BMP388/SPL06";
+        case 0x7C: return "QMC6309";
+        default: return "?";
+    }
+}
+
+auto DebugConsole::printHint() const -> void
+{
+    Serial.println("Консоль: h — меню, l — что выводить в лог, пробел — пауза лога.");
+}
+
+auto DebugConsole::update() -> void
+{
+    while (Serial.available())
+    {
+        handle(static_cast<char>(Serial.read()));
+    }
+
+    if (settingsDirty && screen == Screen::None && !controller.isArmed())
+    {
+        logger.saveSettings();
+        settingsDirty = false;
+        Serial.println("Настройки лога сохранены.");
+    }
+}
+
+auto DebugConsole::handle(char key) -> void
+{
+    if (key == '\r' || key == '\n') return;
+
+    switch (screen)
+    {
+        case Screen::Main: handleMainMenu(key); return;
+        case Screen::Log:  handleLogMenu(key); return;
+        case Screen::None: handleHotkey(key); return;
+    }
+}
+
+auto DebugConsole::handleHotkey(char key) -> void
+{
+    switch (key)
+    {
+        case 'h': case '?': openMainMenu(); break;
+        case 'l':           openLogMenu(); break;
+        case ' ':           togglePause(); break;
+        case 's': case 'i': case 'o': case 'm': case 'p': case 'b':
+            runAction(key);
+            break;
+        default:
+            printHint();
+            break;
+    }
+}
+
+auto DebugConsole::openMainMenu() -> void
+{
+    screen = Screen::Main;
+    logger.suspend(true);
+    drawMainMenu();
+}
+
+auto DebugConsole::drawMainMenu() const -> void
+{
+    Serial.println();
+    printRule("OpenPlane · консоль");
+    printItem('1', "Лог: что выводить", 'l');
+    printItem('2', "Статус датчиков", 's');
+    printItem('3', "Калибровка гироскопа (2 с, не двигать)", 'i');
+    printItem('4', "Калибровка установки IMU (3 позы)", 'o');
+    printItem('5', "Калибровка компаса (15 с, вращать)", 'm');
+    printItem('6', "Проверка выходов (импульсы на пинах)", 'p');
+    if (board) printItem('7', "Опрос шин I2C (кто отвечает)", 'b');
+    Serial.println("  0  закрыть меню");
+    printRule(logger.isPaused() ? "лог на паузе — пробел, чтобы продолжить"
+                                : "пробел — пауза лога");
+}
+
+auto DebugConsole::handleMainMenu(char key) -> void
+{
+    switch (key)
+    {
+        case '1': case 'l': openLogMenu(); return;
+        case '2': case 's': closeMenu(); runAction('s'); return;
+        case '3': case 'i': closeMenu(); runAction('i'); return;
+        case '4': case 'o': closeMenu(); runAction('o'); return;
+        case '5': case 'm': closeMenu(); runAction('m'); return;
+        case '6': case 'p': closeMenu(); runAction('p'); return;
+        case '7': case 'b':
+            if (!board)
+            {
+                drawMainMenu();
+                return;
+            }
+            closeMenu();
+            runAction('b');
+            return;
+        case '0': case 'q': case 'h':
+            closeMenu();
+            return;
+        case ' ':
+            logger.setPaused(!logger.isPaused());
+            drawMainMenu();
+            return;
+        default:
+            drawMainMenu();
+            return;
+    }
+}
+
+auto DebugConsole::closeMenu() -> void
+{
+    screen = Screen::None;
+    Serial.println("Меню закрыто (h — открыть).");
+    logger.suspend(false);
+}
+
+auto DebugConsole::openLogMenu() -> void
+{
+    screen = Screen::Log;
+    logger.suspend(true);
+    drawLogMenu();
+}
+
+auto DebugConsole::channelKey(uint8_t channel) -> char
+{
+    // 1..9 — первые девять каналов, NAV — 'n', SYS — 's'.
+    if (channel == static_cast<uint8_t>(LogChannel::System)) return 's';
+    if (channel == static_cast<uint8_t>(LogChannel::Nav)) return 'n';
+    return static_cast<char>('1' + channel);
+}
+
+auto DebugConsole::channelForKey(char key) -> uint8_t
+{
+    for (uint8_t channel = 0; channel < LogSettings::COUNT; ++channel)
+    {
+        if (channelKey(channel) == key) return channel;
+    }
+    return LogSettings::COUNT;
+}
+
+auto DebugConsole::drawLogMenu() -> void
+{
+    const LogSettings& settings = logger.getSettings();
+
+    Serial.println();
+    printRule("Лог: что выводить");
+    Serial.println("  клавиша канала: выкл -> при изменении -> постоянно");
+    for (uint8_t channel = 0; channel < LogSettings::COUNT; ++channel)
+    {
+        const LogChannelInfo& info = LogSettings::info(channel);
+        Serial.print("  ");
+        Serial.print(channelKey(channel));
+        Serial.print("  ");
+        printPadded(info.tag, 5);
+        printPadded(info.title, ITEM_WIDTH - 5);
+        Serial.print("[");
+        Serial.print(LogSettings::modeName(settings.mode(channel), info.periodicOnly));
+        Serial.println("]");
+    }
+    Serial.println();
+    Serial.print("  p  период для \"постоянно\": ");
+    Serial.print(settings.periodMs() / 1000.0f, 1);
+    Serial.println(" с");
+    Serial.println("  a  всё \"при изменении\"    x  всё выкл    d  по умолчанию");
+    Serial.println("  0  назад");
+    printRule(controller.isArmed() ? "действует сразу, сохранится после DISARM"
+                                   : "действует сразу, сохранится при выходе из меню");
+}
+
+auto DebugConsole::handleLogMenu(char key) -> void
+{
+    LogSettings& settings = logger.getSettings();
+
+    const uint8_t channel = channelForKey(key);
+    if (channel < LogSettings::COUNT) settings.cycleMode(channel);
+    else if (key == 'p') settings.cyclePeriod();
+    else if (key == 'a') settings.setAll(LogMode::OnChange);
+    else if (key == 'x') settings.setAll(LogMode::Off);
+    else if (key == 'd') settings.setDefaults();
+    else if (key == '0' || key == 'q')
+    {
+        screen = Screen::Main;
+        drawMainMenu();
+        return;
+    }
+    else if (key == 'l' || key == 'h')
+    {
+        closeMenu();
+        return;
+    }
+    else
+    {
+        drawLogMenu();
+        return;
+    }
+
+    settingsDirty = true;
+    drawLogMenu();
+}
+
+auto DebugConsole::togglePause() -> void
+{
+    logger.setPaused(!logger.isPaused());
+    Serial.println(logger.isPaused() ? "Лог: пауза (пробел — продолжить)." : "Лог: продолжен.");
+}
+
+auto DebugConsole::isBlocking(char action) -> bool
+{
+    return action == 'i' || action == 'o' || action == 'm' || action == 'p';
+}
+
+auto DebugConsole::runAction(char action) -> void
+{
+    if (isBlocking(action) && controller.isArmed())
+    {
+        Serial.println("Консоль: команда недоступна, пока заармлено");
+        return;
+    }
+
+    switch (action)
+    {
+        case 's': printSensorStatus(); break;
+        case 'i': calibrate(autopilot.getImuSensor(), "IMU"); break;
+        case 'o': calibrateImuMounting(); break;
+        case 'm': calibrate(autopilot.getMagnetometerSensor(), "компас"); break;
+        case 'p': outputs.printPulseSelfTest(); break;
+        case 'b': scanBuses(); break;
+        default: break;
+    }
+}
+
+auto DebugConsole::scanBuses() const -> void
+{
+    if (!board)
+    {
+        Serial.println("Консоль: опрос шин недоступен в этой сборке");
+        return;
+    }
+    scanBus("I2C датчиков", board->i2c());
+    if (II2CBus* display = board->displayI2c()) scanBus("I2C экрана", *display);
+}
+
+auto DebugConsole::scanBus(const char* name, II2CBus& bus) -> void
+{
+    Serial.print(name);
+    Serial.println(':');
+    uint8_t found = 0;
+    // До 0x7F, а не до обычных 0x77: QMC6309 сидит на 0x7C (в
+    // диапазоне, зарезервированном стандартом под 10-битные адреса).
+    for (uint8_t address = 0x08; address <= 0x7F; ++address)
+    {
+        if (!bus.probe(address)) continue;
+        Serial.print("  0x");
+        if (address < 0x10) Serial.print('0');
+        Serial.print(address, HEX);
+        Serial.print("  ");
+        Serial.println(guessI2cDevice(address));
+        ++found;
+    }
+    if (!found) Serial.println("  никого (проверьте питание, SDA/SCL и подтяжки)");
+}
+
+auto DebugConsole::printSensorStatus() const -> void
+{
+    const Sensor* sensors[] = {
+        autopilot.getImuSensor(),
+        autopilot.getBarometerSensor(),
+        autopilot.getMagnetometerSensor(),
+        autopilot.getGpsSensor(),
+    };
+
+    for (const Sensor* sensor : sensors)
+    {
+        if (sensor) sensor->printStatus();
+    }
+}
+
+auto DebugConsole::calibrateImuMounting() -> void
+{
+    ImuSensor* imu = autopilot.getImuSensor();
+    if (!imu)
+    {
+        Serial.println("Консоль: IMU не выбран в SensorSelection.h");
+        return;
+    }
+    imu->calibrateOrientation();
+}
+
+auto DebugConsole::displayWidth(const char* text) -> uint8_t
+{
+    uint8_t width = 0;
+    for (const char* p = text; *p; ++p)
+    {
+        if ((static_cast<uint8_t>(*p) & 0xC0) != 0x80) width++;
+    }
+    return width;
+}
+
+auto DebugConsole::printPadded(const char* text, uint8_t width) -> void
+{
+    Serial.print(text);
+    for (uint8_t i = displayWidth(text); i < width; ++i) Serial.print(' ');
+}
+
+auto DebugConsole::printRule(const char* title) -> void
+{
+    Serial.print("══ ");
+    Serial.print(title);
+    Serial.print(' ');
+    for (uint8_t i = displayWidth(title) + 4; i < MENU_WIDTH; ++i) Serial.print("═");
+    Serial.println();
+}
+
+auto DebugConsole::printItem(char key, const char* title, char hotkey) -> void
+{
+    Serial.print("  ");
+    Serial.print(key);
+    Serial.print("  ");
+    printPadded(title, ITEM_WIDTH);
+    Serial.print("[");
+    Serial.print(hotkey);
+    Serial.println("]");
+}

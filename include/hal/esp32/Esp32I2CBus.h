@@ -20,19 +20,9 @@ class Esp32I2CBus : public II2CBus
 {
 public:
 
-    Esp32I2CBus(TwoWire& bus, int8_t sdaPin, int8_t sclPin, uint32_t frequencyHz = 400000)
-        : wire(bus),
-          sda(sdaPin),
-          scl(sclPin),
-          frequency(frequencyHz)
-    {
-    }
+    Esp32I2CBus(TwoWire& bus, int8_t sdaPin, int8_t sclPin, uint32_t frequencyHz = 400000);
 
-    void begin() override
-    {
-        wire.begin(sda, scl, frequency);
-        wire.setTimeOut(TIMEOUT_MS);
-    }
+    void begin() override;
 
     void setClock(uint32_t hz) override { wire.setClock(hz); }
 
@@ -41,10 +31,7 @@ public:
     size_t write(const uint8_t* data, size_t length) override { return wire.write(data, length); }
     uint8_t endTransmission(bool sendStop = true) override { return wire.endTransmission(sendStop); }
 
-    uint8_t requestFrom(uint8_t address, uint8_t quantity) override
-    {
-        return wire.requestFrom(address, quantity);
-    }
+    uint8_t requestFrom(uint8_t address, uint8_t quantity) override;
 
     int available() override { return wire.available(); }
     int read() override { return wire.read(); }

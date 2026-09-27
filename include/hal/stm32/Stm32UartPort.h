@@ -21,15 +21,9 @@
 class Stm32UartPort : public IUartPort
 {
 public:
-    explicit Stm32UartPort(HardwareSerial& port)
-        : serial(port)
-    {
-    }
+    explicit Stm32UartPort(HardwareSerial& port);
 
-    void begin(uint32_t baud) override
-    {
-        serial.begin(baud, SERIAL_8N1);
-    }
+    void begin(uint32_t baud) override;
 
     int available() override { return serial.available(); }
     int read() override { return serial.read(); }

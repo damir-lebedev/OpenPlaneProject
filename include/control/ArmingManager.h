@@ -55,70 +55,18 @@ class ArmingManager
 {
 public:
 
-    explicit ArmingManager(Autopilot* ap = nullptr)
-        : autopilot(ap)
-    {
-    }
+    explicit ArmingManager(Autopilot* ap = nullptr);
 
     void update(
         const RcChannelState& rc,
         bool receiverFailsafe
-    )
-    {
-        if (receiverFailsafe)
-        {
-            return;
-        }
+    );
 
-        const bool switchOn = rc.get(Channels::ARM) >= Config::ARM_SWITCH_ON_US;
-
-        if (!switchOn)
-        {
-            if (armed)
-            {
-                Serial.println("ArmingManager: DISARM (тумблер ARM выключен)");
-            }
-
-            armed = false;
-            switchSeenOff = true;
-            lastPrintedReason = nullptr;
-            return;
-        }
-
-        // Тумблер ON. Армимся только на переходе OFF -> ON.
-        if (armed || !switchSeenOff)
-        {
-            return;
-        }
-
-        switchSeenOff = false;  // эта попытка использована, дальше — только через OFF
-
-        const char* reason = checkFailureReason(rc);
-
-        if (reason)
-        {
-            Serial.print("ArmingManager: ARM отклонён — ");
-            Serial.print(reason);
-            Serial.println(" (выключите тумблер ARM и попробуйте снова)");
-            lastPrintedReason = reason;
-            return;
-        }
-
-        armed = true;
-        Serial.println("ArmingManager: ARM");
-    }
-
-    bool isArmed() const
-    {
-        return armed;
-    }
+    bool isArmed() const;
 
     // Причина последнего отказа в ARM (nullptr — отказа не было) —
     // для отладочного вывода/дашборда.
-    const char* getLastRefusalReason() const
-    {
-        return lastPrintedReason;
-    }
+    const char* getLastRefusalReason() const;
 
 
 private:
@@ -133,47 +81,7 @@ private:
 
     const char* lastPrintedReason = nullptr;
 
-    const char* checkFailureReason(const RcChannelState& rc) const
-    {
-        if (rc.get(Channels::THROTTLE) >= Config::THROTTLE_LOW_US)
-        {
-            return "газ не на минимуме";
-        }
+    const char* checkFailureReason(const RcChannelState& rc) const;
 
-        if (!autopilot) return nullptr;
-
-        const AutopilotMode mode = autopilot->getMode();
-
-        // Всем режимам, кроме MANUAL, нужны углы.
-        if (mode != MODE_MANUAL)
-        {
-            const ImuSensor* imu = autopilot->getImuSensor();
-            if (imu && !imu->isAvailable())
-            {
-                return "IMU не отвечает, а выбранному режиму нужен гироскоп";
-            }
-            if (imu && imu->getPreflightProblem())
-            {
-                return imu->getPreflightProblem();
-            }
-        }
-
-        // Режимам с удержанием высоты — барометр.
-        if (needsAltitude(mode))
-        {
-            const BarometerSensor* baro = autopilot->getBarometerSensor();
-            if (baro && !baro->isAvailable())
-            {
-                return "барометр не отвечает, а выбранному режиму нужна высота";
-            }
-        }
-
-        return nullptr;
-    }
-
-    static bool needsAltitude(AutopilotMode mode)
-    {
-        return mode == MODE_ALT_HOLD || mode == MODE_CRUISE || mode == MODE_LOITER || mode == MODE_RTH ||
-               mode == MODE_AUTO_LAND || mode == MODE_SOARING;
-    }
+    static bool needsAltitude(AutopilotMode mode);
 };

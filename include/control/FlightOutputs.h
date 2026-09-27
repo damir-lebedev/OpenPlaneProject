@@ -37,147 +37,37 @@ public:
     };
 
     // Порядок строк = индексы ServoChannel (hal/IBoard.h).
-    static const OutputInfo& outputInfo(uint8_t channel)
-    {
-        static const OutputInfo table[ServoChannel::COUNT] = {
-            { "aileronLeft",  "элерон L", static_cast<int16_t>(Config::PIN_AILERON_LEFT),  true,  &FlightOutputState::aileronLeft },
-            { "aileronRight", "элерон R", static_cast<int16_t>(Config::PIN_AILERON_RIGHT), true,  &FlightOutputState::aileronRight },
-            { "elevator",     "руль выс", static_cast<int16_t>(Config::PIN_ELEVATOR),      true,  &FlightOutputState::elevator },
-            { "esc",          "ESC     ", static_cast<int16_t>(Config::PIN_ESC),           true,  &FlightOutputState::throttle },
-            { "rudder",       "руль нап", static_cast<int16_t>(Config::PIN_RUDDER),        false, &FlightOutputState::rudder },
-            { "aux1",         "AUX1 груз", static_cast<int16_t>(Config::PIN_AUX1),         false, &FlightOutputState::aux1 },
-            { "aux2",         "AUX2 кам ", static_cast<int16_t>(Config::PIN_AUX2),         false, &FlightOutputState::aux2 },
-        };
-        return table[channel];
-    }
+    static const OutputInfo& outputInfo(uint8_t channel);
 
-    explicit FlightOutputs(IBoard& hardware)
-        : board(hardware)
-    {
-    }
+    explicit FlightOutputs(IBoard& hardware);
 
     // true, если все обязательные выходы получили канал PWM.
-    bool begin()
-    {
-        bool allRequired = true;
+    bool begin();
 
-        for (uint8_t ch = 0; ch < ServoChannel::COUNT; ++ch)
-        {
-            attached[ch] = board.servo(ch).attach(Config::PWM_MIN, Config::PWM_MAX);
-
-            if (outputInfo(ch).required && !attached[ch])
-            {
-                allRequired = false;
-            }
-        }
-
-        printStatus();
-        return allRequired;
-    }
-
-    bool isAttached(uint8_t channel) const
-    {
-        return channel < ServoChannel::COUNT && attached[channel];
-    }
+    bool isAttached(uint8_t channel) const;
 
     // Значение выхода channel в состоянии state, мкс.
-    static uint16_t valueOf(const FlightOutputState& state, uint8_t channel)
-    {
-        return state.*(outputInfo(channel).field);
-    }
+    static uint16_t valueOf(const FlightOutputState& state, uint8_t channel);
 
-    void printStatus() const
-    {
-        Serial.print("Outputs:");
-
-        for (uint8_t ch = 0; ch < ServoChannel::COUNT; ++ch)
-        {
-            const OutputInfo& info = outputInfo(ch);
-
-            Serial.print(' ');
-            Serial.print(info.key);
-
-            if (info.pin < 0)
-            {
-                Serial.print("(нет пина)");
-                continue;
-            }
-
-            Serial.print("(GPIO");
-            Serial.print(info.pin);
-            Serial.print(")=");
-            Serial.print(attached[ch] ? "OK" : "FAIL");
-        }
-
-        Serial.println();
-    }
+    void printStatus() const;
 
     // Самопроверка выходов: на каждом GPIO измеряется реальный
     // импульс и сравнивается с тем, что туда пишет прошивка. Если
     // совпадает, а серво/ESC реагирует "не на тот" стик — значит,
     // провод воткнут не в тот пин.
-    void printPulseSelfTest()
-    {
-        Serial.println("Выходы: GPIO -> измерено / ожидается (мкс)");
-
-        for (uint8_t ch = 0; ch < ServoChannel::COUNT; ++ch)
-        {
-            const OutputInfo& info = outputInfo(ch);
-            if (info.pin < 0) continue;
-
-            const int32_t measured = board.servo(ch).measurePulseUs();
-            const uint16_t expected = valueOf(lastState, ch);
-
-            Serial.print("  "); Serial.print(info.label);
-            Serial.print(" GPIO"); Serial.print(info.pin);
-            Serial.print(": ");
-            if (measured < 0) Serial.print("нет импульса"); else Serial.print(measured);
-            Serial.print(" / "); Serial.print(expected);
-
-            const bool ok = measured >= 0 && abs(measured - static_cast<int32_t>(expected)) <= 15;
-            Serial.println(ok ? "  OK" : "  НЕ СОВПАДАЕТ");
-        }
-    }
+    void printPulseSelfTest();
 
     // Применить рассчитанное состояние к физическим выходам.
-    void write(const FlightOutputState& state)
-    {
-        for (uint8_t ch = 0; ch < ServoChannel::COUNT; ++ch)
-        {
-            board.servo(ch).writeMicroseconds(valueOf(state, ch));
-        }
-
-        lastState = state;
-    }
+    void write(const FlightOutputState& state);
 
     // Немедленно выставить безопасные значения (нейтраль, газ выключен).
     // Груз и камера остаются как были: потеря связи не должна
     // сбрасывать груз.
-    void setFailsafe()
-    {
-        FlightOutputState safe;
+    void setFailsafe();
 
-        safe.aux1 = lastState.aux1;
-        safe.aux2 = lastState.aux2;
-        safe.aileronLeft = Config::FAILSAFE_AILERON;
-        safe.aileronRight = Config::FAILSAFE_AILERON;
-        safe.elevator = Config::FAILSAFE_ELEVATOR;
-        safe.rudder = Config::FAILSAFE_RUDDER;
-        safe.throttle = Config::FAILSAFE_THROTTLE;
+    const FlightOutputState& getLastState() const;
 
-        write(safe);
-    }
-
-    const FlightOutputState& getLastState() const
-    {
-        return lastState;
-    }
-
-    void setBuzzer(bool on)
-    {
-        buzzer = on;
-        board.setBuzzer(on);
-    }
+    void setBuzzer(bool on);
 
     bool isBuzzerOn() const { return buzzer; }
 

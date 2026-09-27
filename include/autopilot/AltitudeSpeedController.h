@@ -27,58 +27,16 @@ class AltitudeSpeedController
 {
 public:
 
-    void reset()
-    {
-        climbIntegral = 0;
-        speedIntegral = 0;
-        lastWantedClimb = 0;
-    }
+    void reset();
 
     // Тангаж (°), чтобы держать targetAltitude. integrate = false —
     // интеграторы не копятся (не заармлен, на земле).
-    float pitchFor(float targetAltitudeM, float altitudeM, float climbMs, float speedMs, float dtS, bool integrate)
-    {
-        lastWantedClimb = constrain((targetAltitudeM - altitudeM) * Config::NAV_ALT_GAIN,
-                                    -Config::NAV_MAX_SINK_MS, Config::NAV_MAX_CLIMB_MS);
-
-        const float error = lastWantedClimb - climbMs;
-        if (integrate)
-        {
-            climbIntegral = constrain(climbIntegral + error * Config::NAV_CLIMB_KI_DEG * dtS,
-                                      -CLIMB_INTEGRAL_LIMIT_DEG, CLIMB_INTEGRAL_LIMIT_DEG);
-        }
-
-        const float ratio = constrain(lastWantedClimb / max(speedMs, MIN_SPEED_MS), -1.0f, 1.0f);
-        const float feedForward = asinf(ratio) * RAD_PER_DEG_INV;
-
-        return constrain(feedForward + Config::NAV_CLIMB_KP_DEG * error + climbIntegral,
-                         Config::NAV_MAX_DIVE_PITCH_DEG, Config::NAV_MAX_CLIMB_PITCH_DEG);
-    }
+    float pitchFor(float targetAltitudeM, float altitudeM, float climbMs, float speedMs, float dtS, bool integrate);
 
     // Газ (%) для автоматических режимов. hasAirspeed — трубка Пито
     // жива; иначе cruisePct задаёт газ напрямую.
     float throttleFor(bool hasAirspeed, float airspeedMs, float targetAirspeedMs, float cruisePct,
-                      float dtS, bool integrate)
-    {
-        float throttle;
-        if (hasAirspeed)
-        {
-            const float error = targetAirspeedMs - airspeedMs;
-            if (integrate)
-            {
-                speedIntegral = constrain(speedIntegral + error * Config::AIRSPEED_THROTTLE_KI * dtS,
-                                          -SPEED_INTEGRAL_LIMIT_PCT, SPEED_INTEGRAL_LIMIT_PCT);
-            }
-            throttle = Config::CRUISE_THROTTLE_PCT + Config::AIRSPEED_THROTTLE_KP * error + speedIntegral;
-        }
-        else
-        {
-            throttle = cruisePct;
-        }
-
-        throttle += Config::THROTTLE_PER_CLIMB_PCT * lastWantedClimb;
-        return constrain(throttle, Config::AUTO_THROTTLE_MIN_PCT, Config::AUTO_THROTTLE_MAX_PCT);
-    }
+                      float dtS, bool integrate);
 
     float getWantedClimb() const { return lastWantedClimb; }
 

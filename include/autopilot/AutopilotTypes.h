@@ -68,79 +68,14 @@ enum class Knob : uint8_t
 
 namespace AutopilotNames
 {
-    inline const char* mode(AutopilotMode m)
-    {
-        switch (m)
-        {
-            case MODE_MANUAL:       return "MANUAL";
-            case MODE_STABILIZE:    return "STABILIZE";
-            case MODE_AUTO_TAKEOFF: return "AUTO_TAKEOFF";
-            case MODE_ALT_HOLD:     return "ALT_HOLD";
-            case MODE_ACRO:         return "ACRO";
-            case MODE_CRUISE:       return "CRUISE";
-            case MODE_LOITER:       return "LOITER";
-            case MODE_RTH:          return "RTH";
-            case MODE_LAUNCH:       return "LAUNCH";
-            case MODE_AUTO_LAND:    return "AUTO_LAND";
-            case MODE_SOARING:      return "SOARING";
-            case MODE_RESCUE:       return "RESCUE";
-            default:                return "UNKNOWN";
-        }
-    }
+    const char* mode(AutopilotMode m);
 
     // Короткое имя (до 5 символов) — для OLED.
-    inline const char* modeShort(AutopilotMode m)
-    {
-        switch (m)
-        {
-            case MODE_MANUAL:       return "MAN";
-            case MODE_STABILIZE:    return "STAB";
-            case MODE_AUTO_TAKEOFF: return "TKOFF";
-            case MODE_ALT_HOLD:     return "ALT";
-            case MODE_ACRO:         return "ACRO";
-            case MODE_CRUISE:       return "CRZ";
-            case MODE_LOITER:       return "LOIT";
-            case MODE_RTH:          return "RTH";
-            case MODE_LAUNCH:       return "LNCH";
-            case MODE_AUTO_LAND:    return "LAND";
-            case MODE_SOARING:      return "SOAR";
-            case MODE_RESCUE:       return "RESQ";
-            default:                return "?";
-        }
-    }
+    const char* modeShort(AutopilotMode m);
 
-    inline const char* feature(Feature f)
-    {
-        switch (f)
-        {
-            case Feature::FLAPS:             return "FLAPS";
-            case Feature::AIRBRAKE:          return "AIRBRAKE";
-            case Feature::AUTO_TRIM:         return "AUTO_TRIM";
-            case Feature::TURN_COORDINATION: return "TURN_COORD";
-            case Feature::MOTOR_KILL:        return "MOTOR_KILL";
-            case Feature::BEEPER:            return "BEEPER";
-            case Feature::PAYLOAD_DROP:      return "PAYLOAD_DROP";
-            case Feature::GEOFENCE:          return "GEOFENCE";
-            case Feature::HOME_RESET:        return "HOME_RESET";
-            case Feature::CAMERA_STAB:       return "CAMERA_STAB";
-            default:                         return "?";
-        }
-    }
+    const char* feature(Feature f);
 
-    inline const char* knob(Knob k)
-    {
-        switch (k)
-        {
-            case Knob::STAB_GAIN:     return "STAB_GAIN";
-            case Knob::MAX_BANK:      return "MAX_BANK";
-            case Knob::CRUISE_SPEED:  return "CRUISE_SPEED";
-            case Knob::FLAPS:         return "FLAPS";
-            case Knob::CAMERA_TILT:   return "CAMERA_TILT";
-            case Knob::RATES:         return "RATES";
-            case Knob::LOITER_RADIUS: return "LOITER_RADIUS";
-            default:                  return "?";
-        }
-    }
+    const char* knob(Knob k);
 }
 
 // Что включено тумблерами и где стоят крутилки — снимок за такт.
@@ -157,10 +92,5 @@ struct PilotInputs
     bool isBound(Knob k) const { return knobBound[static_cast<uint8_t>(k)]; }
 
     // Значение крутилки в единицах: центр — defaultValue, края — minValue/maxValue.
-    float knobValue(Knob k, float minValue, float defaultValue, float maxValue) const
-    {
-        const float x = knob(k);
-        return x >= 0 ? defaultValue + x * (maxValue - defaultValue)
-                      : defaultValue + x * (defaultValue - minValue);
-    }
+    float knobValue(Knob k, float minValue, float defaultValue, float maxValue) const;
 };

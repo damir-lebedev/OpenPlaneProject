@@ -42,49 +42,16 @@ public:
     // пустом буфере).
     // --------------------------------------------------------
 
-    bool writeRegister(uint8_t address, uint8_t reg, uint8_t value)
-    {
-        beginTransmission(address);
-        write(reg);
-        write(value);
-        return endTransmission() == 0;
-    }
+    bool writeRegister(uint8_t address, uint8_t reg, uint8_t value);
 
     // Несколько регистров подряд одной транзакцией (автоинкремент
     // адреса регистра — у всех датчиков проекта он включён).
-    bool writeRegisters(uint8_t address, uint8_t reg, const uint8_t* data, uint8_t count)
-    {
-        beginTransmission(address);
-        write(reg);
-        write(data, count);
-        return endTransmission() == 0;
-    }
+    bool writeRegisters(uint8_t address, uint8_t reg, const uint8_t* data, uint8_t count);
 
-    bool readRegisters(uint8_t address, uint8_t reg, uint8_t* buffer, uint8_t count)
-    {
-        beginTransmission(address);
-        write(reg);
-        if (endTransmission(false) != 0) return false;
-
-        if (requestFrom(address, count) != count) return false;
-
-        for (uint8_t i = 0; i < count; ++i)
-        {
-            buffer[i] = static_cast<uint8_t>(read());
-        }
-        return true;
-    }
+    bool readRegisters(uint8_t address, uint8_t reg, uint8_t* buffer, uint8_t count);
 
     // -1, если устройство не ответило.
-    int readRegister(uint8_t address, uint8_t reg)
-    {
-        uint8_t value;
-        return readRegisters(address, reg, &value, 1) ? value : -1;
-    }
+    int readRegister(uint8_t address, uint8_t reg);
 
-    bool probe(uint8_t address)
-    {
-        beginTransmission(address);
-        return endTransmission() == 0;
-    }
+    bool probe(uint8_t address);
 };
