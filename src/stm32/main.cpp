@@ -58,8 +58,8 @@ FlightController flightController(
 // Устройства на SPI — те же параметры, что у драйверов
 // (ICM42688_Sensor::spiDevice, BMP388_Sensor::spiDevice). Сами
 // драйверы сюда не подключены: они хранят калибровку в Preferences.
-SpiRegisterDevice imuSpi(board.spi(), static_cast<uint8_t>(Config::PIN_SPI_CS_ICM42688), 8000000, 0);
-SpiRegisterDevice baroSpi(board.spi(), static_cast<uint8_t>(Config::PIN_SPI_CS_BMP388), 8000000, 1);
+SpiRegisterDevice imuSpi(board.spi(), static_cast<uint8_t>(Config::PIN_SPI_CS_IMU), 8000000, 0);
+SpiRegisterDevice baroSpi(board.spi(), static_cast<uint8_t>(Config::PIN_SPI_CS_BARO), 8000000, 1);
 
 
 static void printBusAddresses(const char* name, II2CBus& bus)

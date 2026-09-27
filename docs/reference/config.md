@@ -30,8 +30,8 @@
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | Шина датчиков (`Wire`) | 8 / 9 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | Шина OLED (`Wire1`); `-1` — нет | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | Общая SPI-шина | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
-| `PIN_SPI_CS_ICM42688` | `uint8_t` | CS IMU по SPI | 14 | 21 | 32 |
-| `PIN_SPI_CS_BMP388` | `uint8_t` | CS барометра по SPI | 21 | 2 | 5 |
+| `PIN_SPI_CS_IMU` | `uint8_t` | CS IMU по SPI | 14 | 21 | 32 |
+| `PIN_SPI_CS_BARO` | `uint8_t` | CS барометра по SPI | 21 | 2 | 5 |
 | `PIN_GPS_RX` / `PIN_GPS_TX` | `int8_t` | UART GPS; TX `-1` — только приём | 15 / 16 | 9 / −1 | 4 / 17 |
 | `UART_NUM_GPS` | `uint8_t` | Номер аппаратного UART для GPS | 2 | 0 | 2 |
 | `PIN_AUX1..3`, `PIN_BUZZER`, `PIN_VBAT_ADC`, `PIN_CURRENT_ADC`, `PIN_TELEM_RX/TX` | `int8_t` | **Только S3:** резерв под плату полётника ([FC_BOARD.md](../FC_BOARD.md)), прошивкой пока не используются | 41, 42, 47, 38, 3, 10, 39/40 | — | — |
@@ -59,7 +59,7 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 — датчики |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — экран (на WeAct — разъём камеры) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
-| `PIN_SPI_CS_ICM42688` / `PIN_SPI_CS_BMP388` | PB12 / PD10 | GPIO |
+| `PIN_SPI_CS_IMU` / `PIN_SPI_CS_BARO` | PB12 / PD10 | GPIO |
 | `PIN_GPS_RX` / `PIN_GPS_TX` | PD9 / PD8 | USART3 |
 | `PIN_AUX1` / `PIN_AUX2` | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 — резерв |
 | `PIN_BUZZER`, `PIN_VBAT_ADC`, `PIN_CURRENT_ADC` | PE15, PC0, PC1 | GPIO, ADC1_INP10, ADC1_INP11 — резерв |

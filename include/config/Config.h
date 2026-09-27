@@ -59,8 +59,8 @@ namespace Config
     constexpr uint8_t PIN_SENSOR_SPI_SCK  = 12;
     constexpr uint8_t PIN_SENSOR_SPI_MISO = 13;
     constexpr uint8_t PIN_SENSOR_SPI_MOSI = 11;
-    constexpr uint8_t PIN_SPI_CS_ICM42688 = 14;
-    constexpr uint8_t PIN_SPI_CS_BMP388   = 21;
+    constexpr uint8_t PIN_SPI_CS_IMU      = 14;
+    constexpr uint8_t PIN_SPI_CS_BARO     = 21;
 
     // Второй UART — GPS (отдельно от iBUS, который на UART1/GPIO17).
     // У S3 всего 3 аппаратных UART (0/1/2); UART0 занят Serial
@@ -98,10 +98,10 @@ namespace Config
     constexpr uint8_t PIN_SENSOR_SPI_SCK  = 18;
     constexpr uint8_t PIN_SENSOR_SPI_MISO = 19;
     constexpr uint8_t PIN_SENSOR_SPI_MOSI = 23;
-    constexpr uint8_t PIN_SPI_CS_ICM42688 = 32;
+    constexpr uint8_t PIN_SPI_CS_IMU      = 32;
     // BMP388: CSB подключён на GPIO5 (физическая распайка модуля на
     // этой плате) — совпадает с CSB/CS-пином SPI-режима чипа.
-    constexpr uint8_t PIN_SPI_CS_BMP388 = 5;
+    constexpr uint8_t PIN_SPI_CS_BARO = 5;
 
     // Второй UART — GPS (UART2, отдельно от iBUS на UART1/GPIO16).
     // У классической ESP32 3 аппаратных UART, Serial висит на UART0
@@ -147,14 +147,14 @@ namespace Config
     // NAV-PVT — см. PIN_GPS_TX = -1 и комментарий в UbloxM10_Gps.h).
     // Если нужен GPS с полной настройкой на C3 — освободите пин,
     // выбрав в SensorSelection.h I2C-барометр (BME280) вместо SPI
-    // BMP388 (тогда PIN_SPI_CS_BMP388 не нужен), либо используйте
+    // BMP388 (тогда PIN_SPI_CS_BARO не нужен), либо используйте
     // плату esp32-s3, где эта проблема не стоит.
     // --------------------------------------------------------
     constexpr uint8_t PIN_SENSOR_SPI_SCK  = 0;
     constexpr uint8_t PIN_SENSOR_SPI_MISO = 10;
     constexpr uint8_t PIN_SENSOR_SPI_MOSI = 20;
-    constexpr uint8_t PIN_SPI_CS_ICM42688 = 21;
-    constexpr uint8_t PIN_SPI_CS_BMP388   = 2;   // strapping, см. примечание выше
+    constexpr uint8_t PIN_SPI_CS_IMU      = 21;
+    constexpr uint8_t PIN_SPI_CS_BARO     = 2;   // strapping, см. примечание выше
 
     constexpr int8_t PIN_GPS_RX = 9;   // strapping, см. примечание выше
     constexpr int8_t PIN_GPS_TX = -1;  // не хватило пина — приём без отправки конфигурации
@@ -219,8 +219,8 @@ namespace Config
     constexpr int16_t PIN_SENSOR_SPI_SCK  = PB13;
     constexpr int16_t PIN_SENSOR_SPI_MISO = PB14;
     constexpr int16_t PIN_SENSOR_SPI_MOSI = PB15;
-    constexpr int16_t PIN_SPI_CS_ICM42688 = PB12;
-    constexpr int16_t PIN_SPI_CS_BMP388   = PD10;
+    constexpr int16_t PIN_SPI_CS_IMU      = PB12;
+    constexpr int16_t PIN_SPI_CS_BARO     = PD10;
 
     // GPS — USART3.
     constexpr int16_t PIN_GPS_RX = PD9;    // USART3_RX
@@ -277,6 +277,32 @@ namespace Config
     // тот же принцип, что RX_TIMEOUT_US выше для iBUS. Модуль обычно
     // шлёт решения не реже 1 раза в секунду, 2с — запас на джиттер.
     constexpr uint32_t GPS_TIMEOUT_US = 2000000;
+
+
+    // --------------------------------------------------------
+    // Трубка Пито на двух барометрах (sensors/airspeed/PitotDualBaroAirspeed.h)
+    // --------------------------------------------------------
+
+    // Сколько отсчётов (BMP581 — 50 в секунду) усреднять для нуля:
+    // разность двух барометров при нулевой скорости.
+    constexpr uint16_t PITOT_ZERO_SAMPLES = 50;
+
+    // ФНЧ перепада, с. Барометры меряют не одновременно; 0.1 с убирает
+    // этот шум и почти не запаздывает для автопилота.
+    constexpr float PITOT_FILTER_TAU_S = 0.1f;
+
+    // Поправочный множитель скорости (1.0 — без поправки). Давление в
+    // фюзеляже не строго статическое, трубка может стоять под углом —
+    // подбирается полётом по GPS в безветрие туда-обратно.
+    constexpr float PITOT_SCALE = 1.0f;
+
+    // Перепад ниже −PITOT_NEGATIVE_FAULT_PA дольше этого времени —
+    // трубка неисправна (шланги перепутаны/пережаты, вода).
+    constexpr float PITOT_NEGATIVE_FAULT_PA = 30.0f;
+    constexpr uint32_t PITOT_NEGATIVE_FAULT_MS = 2000;
+
+    // Отсчёт трубки старше этого — скорость не выдаётся.
+    constexpr uint32_t PITOT_STALE_US = 200000;
 
 
     // --------------------------------------------------------
