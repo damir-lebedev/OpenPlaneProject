@@ -428,9 +428,15 @@ private:
         }
 
         // Курс: GPS (путевой) на скорости, иначе компас, иначе гироскоп.
+        // У порога скорости — гистерезис: на GPS переходим выше порога,
+        // уходим с него на 1 м/с ниже, иначе в сильный встречный ветер
+        // источник "дребезжит" и цель курса сбрасывается каждый раз.
         CourseSource source = CourseSource::NONE;
         float course = nav.courseDeg;
-        if (nav.gpsGood && gps->groundSpeed >= Config::NAV_GPS_COURSE_MIN_SPEED_MS)
+        const float gpsCourseSpeed = courseSource == CourseSource::GPS
+            ? Config::NAV_GPS_COURSE_MIN_SPEED_MS - 1.0f
+            : Config::NAV_GPS_COURSE_MIN_SPEED_MS;
+        if (nav.gpsGood && gps->groundSpeed >= gpsCourseSpeed)
         {
             source = CourseSource::GPS;
             course = gps->heading;

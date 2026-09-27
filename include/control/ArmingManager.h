@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 #include "autopilot/Autopilot.h"
+#include "autopilot/AutopilotTypes.h"
 #include "config/Channels.h"
 #include "config/Config.h"
 #include "rc/RcChannelState.h"

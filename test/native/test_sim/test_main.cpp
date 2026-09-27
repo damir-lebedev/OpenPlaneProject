@@ -143,6 +143,16 @@ void test_sim_failsafe_returns_home_or_glides()
     TEST_ASSERT_TRUE(sim.runUntil([&] { return sim.distanceHome() < 80; }, 120));
     TEST_ASSERT_EQUAL_STRING("FAILSAFE_RTH", sim.autopilot.getModeName());
     TEST_ASSERT_GREATER_THAN_FLOAT(0.2f, sim.lastControl().throttle);   // мотор работает
+    // Связи всё нет: самолёт кружит над домом, а не улетает и не снижается.
+    double farthest = 0, lowest = 1e9;
+    for (int i = 0; i < 400; ++i)
+    {
+        sim.run(0.1);
+        if (i > 100) farthest = std::max(farthest, sim.distanceHome());
+        lowest = std::min(lowest, sim.plane.s.height);
+    }
+    TEST_ASSERT_LESS_THAN_FLOAT(Config::LOITER_RADIUS_M * 2.0f, farthest);
+    TEST_ASSERT_GREATER_THAN_FLOAT(Config::RTH_ALTITUDE_M - 8.0f, lowest);
     sim.linkUp = true;                                                   // связь вернулась — снова режим пилота
     sim.run(0.5);
     TEST_ASSERT_FALSE(sim.autopilot.isFailsafeActive());

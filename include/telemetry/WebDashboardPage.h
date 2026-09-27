@@ -34,6 +34,7 @@ h1{color:#fff;text-align:center;margin:12px 0 20px}
 button{background:#667eea;color:#fff;border:none;padding:8px 16px;margin:4px;border-radius:5px;cursor:pointer}
 button:hover{background:#764ba2}
 button.manual{background:#f44336}
+button.active{box-shadow:0 0 0 3px #333}
 input[type=number]{width:64px}
 </style></head><body><div class="container">
 <h1>OpenPlane Debug Dashboard</h1>
@@ -71,7 +72,8 @@ input[type=number]{width:64px}
 
 </div><script>
 const OUTPUT_NAMES = {aileronLeft:'Элерон L', aileronRight:'Элерон R', elevator:'Руль высоты', rudder:'Руль направления', esc:'ESC (газ)', aux1:'Груз (AUX1)', aux2:'Камера (AUX2)'};
-const SENSORS = [['imu','IMU',['roll','pitch','yaw']], ['baro','Барометр',['altitude','climb']], ['mag','Компас',['heading']], ['gps','GPS',['fix','numSV','lat','lon']], ['airspeed','Трубка Пито',['ias','tas','dp']]];
+// Поле и знаков после запятой: координаты — 6 (≈ 0.1 м), счётчики — 0.
+const SENSORS = [['imu','IMU',[['roll',1],['pitch',1],['yaw',1]]], ['baro','Барометр',[['altitude',2],['climb',2]]], ['mag','Компас',[['heading',1]]], ['gps','GPS',[['fix',0],['numSV',0],['lat',6],['lon',6]]], ['airspeed','Трубка Пито',[['ias',1],['tas',1],['dp',1]]]];
 // Номер = AutopilotMode (autopilot/AutopilotTypes.h).
 const MODES = ['Manual','Stabilize','Takeoff','Alt Hold','Acro','Cruise','Loiter','RTH','Launch','Land','Soaring','Rescue'];
 const PID_FIELDS = ['kpRoll','kiRoll','kdRoll','kpPitch','kiPitch','kdPitch'];
@@ -122,12 +124,13 @@ function render(s) {
     if (!d.attached) { badge(b, false, '', 'НЕТ В СБОРКЕ'); v.textContent = '--'; return; }
     if (!d.available) { badge(b, false, '', 'НЕ ОТВЕЧАЕТ'); v.textContent = '--'; return; }
     badge(b, true, 'OK', '');
-    v.textContent = fields.map(f => f + '=' + Number(d[f]).toFixed(2)).join('  ');
+    v.textContent = fields.map(([f, digits]) => f + '=' + Number(d[f]).toFixed(digits)).join('  ');
   });
 
   const a = s.autopilot;
   if (!a.attached) { $('mode').textContent = 'НЕТ АВТОПИЛОТА'; return; }
   $('mode').textContent = a.modeName;
+  document.querySelectorAll('#modes button').forEach((b, m) => b.classList.toggle('active', m === a.mode));
   $('target').textContent = 'крен ' + a.desiredRoll.toFixed(1) + '°, тангаж ' + a.desiredPitch.toFixed(1) + '°, высота ' + a.targetAlt.toFixed(1) + ' м';
   $('corr').textContent = 'крен ' + a.rollCorr.toFixed(0) + ' мкс, тангаж ' + a.pitchCorr.toFixed(0) + ' мкс, газ ' + a.throttleCorr.toFixed(0) + '%';
   $('features').textContent = a.features.length ? a.features.join(', ') : 'нет';

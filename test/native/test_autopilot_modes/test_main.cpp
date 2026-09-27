@@ -568,6 +568,19 @@ void test_course_source_gps_compass_gyro()
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 120.0f, rig.autopilot.getNavStatus().courseDeg);
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 12.0f, rig.autopilot.getNavStatus().speedMs);   // скорость — GPS
 
+    // Гистерезис: чуть ниже порога курс остаётся по GPS, на 1 м/с ниже — компас.
+    rig.gps.data.groundSpeed = Config::NAV_GPS_COURSE_MIN_SPEED_MS - 0.5f;
+    rig.step();
+    TEST_ASSERT_EQUAL((int)Autopilot::CourseSource::GPS, (int)rig.autopilot.getCourseSource());
+    rig.gps.data.groundSpeed = Config::NAV_GPS_COURSE_MIN_SPEED_MS - 1.5f;
+    rig.step();
+    TEST_ASSERT_EQUAL((int)Autopilot::CourseSource::COMPASS, (int)rig.autopilot.getCourseSource());
+    rig.gps.data.groundSpeed = Config::NAV_GPS_COURSE_MIN_SPEED_MS - 0.5f;
+    rig.step();
+    TEST_ASSERT_EQUAL((int)Autopilot::CourseSource::COMPASS, (int)rig.autopilot.getCourseSource());
+    rig.gps.data.groundSpeed = 12;
+    rig.step();
+
     rig.airspeed.available = true;
     rig.airspeed.setSpeed(17);
     rig.step();
