@@ -184,7 +184,7 @@ flowchart LR
     AP -.-> TLM["Дашборд Wi-Fi<br/>MAVLink · OLED"]
 ```
 
-- **Header-only C++**, одна единица трансляции, никакой динамической памяти в полётном контуре. Любитель `.h/.cpp`? Для вас — параллельная ветка [`feature/split-headers`](https://github.com/damir-lebedev/OpenPlaneProject/tree/feature/split-headers).
+- **Header-only C++**, одна единица трансляции, никакой динамической памяти в полётном контуре. Любитель `.h/.cpp`? Для вас — параллельная ветка [`feature/split-headers`](https://github.com/damir-lebedev/OpenPlaneProject/tree/feature/split-headers): генерируется из этой скриптом, прошивка с LTO того же размера.
 - **HAL** — единственный слой, знающий MCU: новая плата — это новый `Board`, а не переписанный автопилот.
 - **Драйвер датчика не знает шину**: один класс работает по I2C и по SPI.
 - **Безопасность — порядком операций**: потеря связи > ARM > режим > газ; ни один режим не протащит газ мимо ARM.

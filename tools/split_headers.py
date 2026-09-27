@@ -7,9 +7,13 @@ feature/split-headers.
 реализацией в .cpp. Чтобы ветки не расходились, вторая не пишется руками,
 а генерируется этим скриптом из первой:
 
-    git checkout -B feature/split-headers <основная ветка>
+    git checkout -B feature/split-headers origin/main
+    git cherry-pick <коммит "Split layout: build config and docs">
     python3 tools/split_headers.py          # переписывает include/, создаёт src/core/
-    pio test -e native -e native-stm32 && tools/build_matrix.sh
+    pio test -e native -e native-stm32 -e native-esp32dev && tools/build_matrix.sh
+
+Второй шаг — настройки сборки ветки (platformio.ini, LTO, среда
+native-esp32dev); подробно — docs/SPLIT_HEADERS.md в самой ветке.
 
 Что делает. libclang разбирает каждый заголовок include/ (с фейками из
 test/native/support, как нативные тесты) и находит определения функций
