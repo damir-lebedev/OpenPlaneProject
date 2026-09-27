@@ -43,10 +43,11 @@
 
 | Принцип | Как реализован |
 |---|---|
-| **Header-only C++** | Все классы определены в заголовках `include/<слой>/`. Единственная единица трансляции прошивки — `src/main.cpp`. Никакой динамической памяти в полётном контуре (строки `String` — только в веб-сервере и OLED). |
-| **Composition root** | `src/main.cpp` — единственное место, где создаются объекты и связываются ссылками/указателями. Логики полёта в нём нет. |
+| **Header-only C++** | Все классы определены в заголовках `include/<слой>/`. Единственная единица трансляции прошивки — `src/main.cpp` (ESP32) или `src/stm32/main.cpp` (STM32). Никакой динамической памяти в полётном контуре (строки `String` — только в веб-сервере и OLED). Вариант с разделением на `.h/.cpp` — в отдельной ветке `feature/split-headers` (см. её README). |
+| **Composition root** | `src/main.cpp` / `src/stm32/main.cpp` — единственное место, где создаются объекты и связываются ссылками/указателями. Логики полёта в нём нет. |
+| **Одна строка — один тумблер** | Что делает каждый канал пульта — таблица `config/Controls.h` (`Bind::modes/mode/feature/knob`), проверяемая `static_assert` при сборке. |
 | **Dependency inversion** | Верхние слои зависят от интерфейсов (`IBoard`, `IRegisterDevice`, `ImuSensor*`, …), а не от конкретных чипов и MCU. |
-| **Nullable-зависимости** | Автопилот, селектор режима и все датчики передаются указателями и могут быть `nullptr`: без датчика — нулевые коррекции, а не падение. |
+| **Nullable-зависимости** | Автопилот, тумблеры (`PilotSwitches`) и все датчики передаются указателями и могут быть `nullptr`: без датчика — безопасное поведение режима, а не падение. |
 | **Безопасность по приоритету** | Порядок операций в такте и есть приоритет: потеря связи > ARM > стики/автопилот > газ. Проверка ARM на газ стоит последней. |
 | **Одна система знаков** | От IMU до сервопривода — авиационные знаки; направление каждой сервы задаётся ровно в одном месте (`Config::*_REVERSED`). |
 | **Время — параметром** | Где это возможно (закрылки, модули обратной связи), время передаётся аргументом, а не читается из `millis()` — это делает классы детерминированными и тестируемыми. |
@@ -58,22 +59,24 @@
 
 ```mermaid
 flowchart TD
-    APP["APPLICATION<br/>src/main.cpp"]
+    APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
-    TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs"]
-    AP["AUTOPILOT<br/>Autopilot · PidController · AutopilotModeSelector"]
+    TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (не подключён)<br/>FeedbackSupervisor и модули"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
-    SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase · UbloxM10_Gps"]
-    HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice"]
-    ESP["HAL/esp32<br/>Esp32Board · Wire · SPI · HardwareSerial · LEDC"]
-    STM["HAL/stm32 (заготовка)<br/>Stm32Board · Wire · SPI · Uart · HardwareTimer"]
-    CFG["CONFIG<br/>Config · Channels"]
+    SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
+    HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice · Rtos"]
+    STORE["STORAGE<br/>KeyValueStore · KvPreferences"]
+    ESP["HAL/esp32<br/>Esp32Board · Wire · SPI · HardwareSerial · LEDC · NVS"]
+    STM["HAL/stm32<br/>Stm32Board · Wire · SPI · Uart · HardwareTimer<br/>Stm32FlashStorage · compat/Preferences"]
+    CFG["CONFIG<br/>Config · Channels · Controls"]
 
     APP --> COORD
     APP --> TELE
     APP --> ESP
+    APP --> STM
     TELE --> COORD
     TELE --> AP
     COORD --> CTRL
@@ -86,8 +89,10 @@ flowchart TD
     RC --> HAL
     SENS --> HAL
     ESP --> HAL
-    STM -.-> HAL
+    STM --> HAL
+    STM --> STORE
     FB -.-> CFG
+    AP --> CFG
     CTRL --> CFG
     RC --> CFG
     SENS --> CFG
@@ -97,8 +102,11 @@ flowchart TD
 Правила:
 
 1. **HAL — единственный слой, знающий MCU.** Только `include/hal/esp32/`
-   (и заготовка `include/hal/stm32/`) включает `<Wire.h>`, `<SPI.h>`,
-   `HardwareSerial`, вызывает `ledc*` / `HardwareTimer`.
+   и `include/hal/stm32/` включают `<Wire.h>`, `<SPI.h>`,
+   `HardwareSerial`, вызывают `ledc*` / `HardwareTimer` / флеш. Задачи
+   FreeRTOS создаются через `hal/Rtos.h` (ядро 0 на ESP32, приоритет на STM32).
+   Хранилище настроек: код пишет `<Preferences.h>` — на ESP32 это NVS, на
+   STM32 — `hal/stm32/compat/Preferences.h` поверх `storage/KeyValueStore.h`.
    Исключение, осознанное: `SpiRegisterDevice` переключает CS стандартными
    `pinMode/digitalWrite` Arduino (одинаковы на ESP32 и STM32).
 2. **Драйверы датчиков не знают шину.** Они получают `IRegisterDevice&`
@@ -110,7 +118,9 @@ flowchart TD
 5. **Coordination** (`FlightController`) — единственный класс, который видит
    сразу несколько нижних слоёв и решает порядок операций.
 6. **Telemetry** только читает состояние через константные геттеры; команды с
-   дашборда проходят через «почтовый ящик» и применяются полётным циклом.
+   дашборда проходят через «почтовый ящик» и применяются полётным циклом;
+   MAVLink (`MavlinkTelemetry`) работает прямо в полётном цикле и применяет
+   команды сам.
 7. **Нижний слой никогда не включает верхний.** Если нижнему классу нужен
    верхний — логика поднимается в `FlightController`.
 
@@ -128,59 +138,72 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    board["Esp32Board board"]
-    imuDev["imuDevice<br/>I2cRegisterDevice 0x68"]
-    baroDev["baroDevice<br/>I2cRegisterDevice 0x76"]
-    magDev["magDevice<br/>I2cRegisterDevice 0x2C"]
+    board["Esp32Board / Stm32Board board"]
+    imuDev["imuDevice<br/>I2C / SPI"]
+    baroDev["baroDevice<br/>I2C / SPI"]
+    magDev["magDevice<br/>I2C"]
+    pitotDev["pitotDevice<br/>I2C 0x47"]
     imu["SelectedImu imuSensor"]
-    baro["SelectedBaro baroSensor"]
+    baro["SelectedBaro baroSensor<br/>(статика)"]
     mag["SelectedMag magSensor"]
-    gps["SelectedGps gpsSensor<br/>(если SENSOR_GPS)"]
+    gps["SelectedGps gpsSensor"]
+    pitotBaro["SelectedPitotBaro pitotBaro"]
+    pitot["PitotDualBaroAirspeed pitotSensor"]
     rx["IBusReceiver"]
     mixer["ControlMixer"]
     thr["ThrottleManager"]
     outs["FlightOutputs"]
     ap["Autopilot"]
-    sel["AutopilotModeSelector"]
+    sw["PilotSwitches<br/>(Controls::BINDINGS)"]
     arm["ArmingManager"]
     fc["FlightController"]
     stats["LoopStats"]
     log["DebugLogger"]
     con["DebugConsole"]
-    web["WebDebugServer"]
+    web["WebDebugServer (ESP32)"]
+    mav["MavlinkTelemetry (STM32)"]
     oled["OledDisplay"]
 
-    board --> imuDev & baroDev & magDev
+    board --> imuDev & baroDev & magDev & pitotDev
     imuDev --> imu
     baroDev --> baro
     magDev --> mag
+    pitotDev --> pitotBaro
+    pitotBaro & baro --> pitot
     board -- gpsUart --> gps
     board -- rcUart --> rx
+    board -- telemetryUart --> mav
     board --> outs
-    imu & baro & mag & gps --> ap
-    ap --> sel
+    imu & baro & mag & gps & pitot --> ap
+    ap --> sw
     ap --> arm
-    rx & mixer & thr & arm & outs & ap & sel --> fc
+    rx & mixer & thr & arm & outs & ap & sw --> fc
     fc & ap & stats --> log
-    fc & outs & ap & log --> con
+    fc & outs & ap & log & board --> con
     fc & ap --> web
+    fc & ap & stats --> mav
     fc & ap & stats --> oled
 ```
 
 Порядок инициализации в `setup()`:
 
 ```
-Serial (буфер TX 4 КБ, 115200) → баннер
+Serial (ESP32: буфер TX 4 КБ; STM32: SERIAL_TX_BUFFER_SIZE=1024), 115200 → баннер
 board.begin()               — шины I2C/SPI (вторая I2C — если есть)
 flightOutputs.begin()       — PWM-каналы; сразу setFailsafe()
+[STM32] настройки из флеша  — KeyValueStore::mount(), CRC образа
 setupSensors()              — begin() каждого датчика; калибровка ответивших:
                               IMU (2 с неподвижно + предполётная проверка),
-                              баро (нулевая высота), компас (начальный курс → IMU yaw)
-autopilot.begin()
+                              баро (нулевая высота), компас (начальный курс → IMU yaw),
+                              трубка Пито (ноль набирается в первую секунду цикла)
+autopilot.begin()           — триммер из NVS/флеша
 flightController.begin()    — setFailsafe() + UART iBUS
-oledDisplay.begin(board.displayI2c())  — своя задача на ядре 0
-webDebugServer.begin()                 — точка доступа + своя задача на ядре 0
-debugLogger.begin()         — настройки лога из NVS
+oledDisplay.begin(...)      — своя задача (hal/Rtos.h)
+[ESP32] webDebugServer.begin() — точка доступа + своя задача на ядре 0
+[STM32] mavlink.begin()     — UART4 радиомодема
+pilotSwitches.printBindings() — что на каком тумблере
+debugLogger.begin()         — настройки лога
+[STM32] задачи flight / storage → vTaskStartScheduler()
 ```
 
 ---
@@ -311,12 +334,22 @@ classDiagram
 
 ## 5. Потоки FreeRTOS и разделение данных
 
+**ESP32** (два ядра, FreeRTOS встроен в ядро Arduino):
+
 | Ядро | Задача | Что делает | Период |
 |---|---|---|---|
 | 1 | Arduino `loopTask` → `loop()` | `WebDebugServer::applyPendingCommands()` → `FlightController::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` | `Config::LOOP_PERIOD_MS` = 2 мс (500 Гц), `vTaskDelayUntil` |
 | 0 | `web` (8 КБ стека, приоритет 1) | `WebServer::handleClient()` | каждые 2 мс (`vTaskDelay`) |
 | 0 | `oled` (4 КБ стека, приоритет 1) | `OledDisplay::draw()` по второй шине I2C | 200 мс (`vTaskDelayUntil`) |
 | 0 | стек Wi-Fi ESP-IDF | точка доступа | — |
+
+**STM32H743** (одно ядро, STM32duino FreeRTOS, вытеснение по приоритету):
+
+| Приоритет | Задача | Что делает | Период |
+|---|---|---|---|
+| 5 | `flight` (16 КБ) | `FlightController::update()` → `MavlinkTelemetry::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` | 2 мс, `vTaskDelayUntil` |
+| 1 | `oled` (4 КБ) | `OledDisplay::draw()` по второй шине I2C | 200 мс |
+| 1 | `storage` (2 КБ) | `Stm32FlashStorage::service()` — стирание и запись сектора настроек | 100 мс |
 
 **Правила разделения данных:**
 
@@ -341,9 +374,16 @@ classDiagram
   заново — пропущенные такты пачкой не догоняются.
 - Таймаут транзакции I2C — 5 мс (штатный у `Wire` — 50 мс).
 - `Serial` с буфером передачи 4 КБ — строка лога не блокирует цикл.
-- Запись во флеш (NVS, настройки Wi-Fi) останавливает оба ядра на ~0.3–0.4 с,
-  поэтому: Wi-Fi — `persistent(false)`; настройки лога сохраняются только
-  без ARM; калибровки (запись NVS) доступны только без ARM.
+- ESP32: запись во флеш (NVS, настройки Wi-Fi) останавливает оба ядра на
+  ~0.3–0.4 с, поэтому: Wi-Fi — `persistent(false)`; настройки лога
+  сохраняются только без ARM; калибровки — только без ARM; автотриммер —
+  после DISARM и только когда самолёт стоит (`Autopilot::looksLanded()`).
+- STM32: `Preferences::end()` лишь копирует образ (микросекунды), а стирание
+  сектора (секунды) идёт в задаче `storage`. Сектор настроек — в банке 2
+  флеша, код — в банке 1: полётная задача вытесняет запись и продолжает
+  работать.
+- MAVLink не блокирует цикл: кадр отправляется, только если в буфере UART
+  есть место (`IUartPort::availableForWrite()`), иначе ждёт следующего такта.
 
 ---
 
@@ -351,53 +391,54 @@ classDiagram
 
 ```mermaid
 sequenceDiagram
-    participant L as loop()
+    participant L as flight loop
     participant FC as FlightController
     participant RX as IBusReceiver
+    participant SW as PilotSwitches
     participant TM as ThrottleManager
-    participant MS as AutopilotModeSelector
+    participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
-    participant MX as ControlMixer
     participant OUT as FlightOutputs
 
     L->>FC: update()
-    FC->>RX: update() — разбор байтов UART
-    FC->>RX: isSignalLost()
-    FC->>TM: update(rc, failsafe) → газ пилота
+    FC->>RX: update() — разбор байтов UART, isSignalLost()
     alt связь есть
-        FC->>MS: update(rc) — CH7 → режим (только при смене зоны)
+        FC->>SW: update(rc) — режим (при смене положения), функции, крутилки
     end
-    FC->>AP: update(armed, linkLost, pilotThrottle)
-    Note over AP: датчики читаются ВСЕГДА<br/>(фильтры углов не застывают)
+    FC->>TM: update(rc, failsafe) → газ пилота
+    FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(цель по функциям)
+    FC->>AP: update(armed, linkLost, газ пилота, стики)
+    Note over AP: датчики читаются ВСЕГДА;<br/>навигация, failsafe, геозабор,<br/>режим, координация, автотриммер
+    FC->>OUT: setBuzzer(Beeper)
     alt связь потеряна
-        FC->>AP: isFailsafeGliding()?
-        alt armed и IMU жив
-            FC->>MX: mix(коррекции планирования)
-            FC->>OUT: write(рули, газ = FAILSAFE)
+        alt armed и failsafe автопилота (RTH / GLIDE)
+            FC->>MX: mix(команда автопилота)
+            FC->>OUT: write(рули, газ автопилота, AUX как были)
         else
             FC->>OUT: setFailsafe()
         end
-        Note over FC: return — дальше такт не идёт
+        Note over FC: return — ARM и тумблеры не читаются
     else связь есть
         FC->>AM: update(rc) — тумблер ARM
-        FC->>MX: fromSticks(rc, millis())
-        FC->>AP: getRoll/PitchCorrection() — прибавить к стикам, ±500
+        FC->>AP: getCommand() — итоговая команда рулей
         FC->>MX: mix(command) → PWM с реверсом
-        FC->>AP: applyThrottle(pilotThrottle)
-        Note over FC: !armed → throttle = PWM_MIN (последним)
-        FC->>OUT: write(output)
+        FC->>AP: applyThrottle(газ пилота)
+        Note over FC: !armed или MOTOR_KILL → throttle = PWM_MIN (последним)
+        FC->>OUT: write(output + AUX1 груз, AUX2 камера)
     end
 ```
 
 Ключевые инварианты такта:
 
-- **Потеря связи** — мотор всегда `FAILSAFE_THROTTLE`; режим с CH7 не
-  переключается; ARM не читается и не сбрасывается.
+- **Потеря связи** — режим и функции с тумблеров не меняются; ARM не
+  читается и не сбрасывается; мотор — только по решению failsafe автопилота
+  (RTH с мотором) или `FAILSAFE_THROTTLE`.
 - **Ни один режим не протащит газ мимо ARM**: принудительный `PWM_MIN` при
-  `!armed` стоит после `Autopilot::applyThrottle()`.
-- **Коррекции автопилота и стики складываются до микшера** в одних знаках
-  (`ControlCommand`), поэтому гарантированно крутят рули в одну сторону.
+  `!armed` и `MOTOR_KILL` стоит после `Autopilot::applyThrottle()`.
+- **Автопилот выдаёт итоговую команду** (`getCommand()`), в режимах со
+  стабилизацией стики — это желаемые углы; коррекции = команда − стики
+  (для лога и дашборда). Всё в одних знаках (`ControlCommand`) до микшера.
 
 ---
 
@@ -418,28 +459,37 @@ stateDiagram-v2
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
 
-### Режимы автопилота (`Autopilot` + `AutopilotModeSelector`)
+### Режимы автопилота (`Autopilot` + `PilotSwitches`)
+
+Двенадцать режимов (`AutopilotTypes.h`), что делает каждый — в
+[AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md#режимы). Режим выбирает
+`PilotSwitches` по таблице `config/Controls.h`: тумблер режимов
+(`Bind::modes`) и тумблеры «режим поверх» (`Bind::mode`, верхняя строка
+главнее). `setMode()` вызывается только когда **изменился итог** тумблеров —
+поэтому режим, выбранный с дашборда или GCS, держится, пока пилот не щёлкнет
+тумблером.
 
 ```mermaid
 stateDiagram-v2
-    MANUAL --> STABILIZE : CH7 1250..1749
-    STABILIZE --> AUTO_TAKEOFF : CH7 ≥ 1750
-    AUTO_TAKEOFF --> MANUAL : CH7 < 1250
-    MANUAL --> ALT_HOLD : POST /api/setmode {mode:3}
-    ALT_HOLD --> STABILIZE : CH7 сменил зону
+    state "режим с тумблеров<br/>MANUAL · STABILIZE · ALT_HOLD · ACRO · CRUISE<br/>LOITER · RTH · AUTO_TAKEOFF · LAUNCH · AUTO_LAND · SOARING · RESCUE" as MODE
+    state "FAILSAFE_RTH (оверлей)" as FRTH
     state "FAILSAFE_GLIDE (оверлей)" as GLIDE
-    MANUAL --> GLIDE : linkLost && armed
-    STABILIZE --> GLIDE : linkLost && armed
-    AUTO_TAKEOFF --> GLIDE : linkLost && armed
-    ALT_HOLD --> GLIDE : linkLost && armed
-    GLIDE --> MANUAL : связь вернулась (прежний режим)
+    MODE --> MODE : тумблер / дашборд / MAVLink
+    MODE --> RTH_MODE : геозабор (вылет за радиус/высоту)
+    state "RTH" as RTH_MODE
+    MODE --> FRTH : linkLost && armed && GPS && дом
+    MODE --> GLIDE : linkLost && armed && нет GPS/дома
+    FRTH --> MODE : связь вернулась
+    GLIDE --> MODE : связь вернулась
+    GLIDE --> FRTH : GPS появился
 ```
 
-Селектор вызывает `setMode()` только при **смене зоны** CH7 — поэтому
-ALT_HOLD, выбранный с дашборда, держится, пока пилот не переключит SwC.
-`FAILSAFE_GLIDE` — не отдельный `AutopilotMode`, а флаг поверх текущего
-режима; после восстановления связи продолжается прежний режим (автовзлёт —
-только заново).
+Failsafe — не отдельный `AutopilotMode`, а флаг поверх текущего режима;
+начатый возврат не бросается в планирование от короткой потери GPS; после
+восстановления связи продолжается режим с тумблеров (автовзлёт и запуск с
+руки — только заново). Внутренние автоматы: `LaunchController`
+(IDLE → READY → THROWN → CLIMB → DONE) и `SoaringController`
+(GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
 
 **AUTO_TAKEOFF** (по времени от старта, когда armed и газ ≥ 1500 мкс):
 
@@ -542,7 +592,7 @@ stateDiagram-v2
 | `esp32-s3` (по умолчанию) | Основной лётный контроллер |
 | `esp32-c3` | Старый прототип |
 | `esp32-dev` | Классическая ESP32, стенд |
-| `stm32h743` | **Заготовка** STM32H743VIT6: HAL `hal/stm32/` + bring-up `src/stm32/main.cpp` (ручной полёт без автопилота, проверка шин); на железе не проверялась — см. [reference/hal.md](reference/hal.md#реализация-для-stm32h743-заготовка) |
+| `stm32h743` | STM32H743VIT6: полная прошивка (`src/stm32/main.cpp`), настройки во флеше, MAVLink, FreeRTOS; на железе не проверялась — см. [reference/hal.md](reference/hal.md#реализация-для-stm32h743) |
 | `native` | Сборка и тесты на ПК с фейками Arduino/ESP-IDF и покрытием — см. [`TESTING.md`](TESTING.md) |
 
 ---

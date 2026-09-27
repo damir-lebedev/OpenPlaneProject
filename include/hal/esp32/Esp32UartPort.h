@@ -29,6 +29,7 @@ public:
     int read() override { return serial.read(); }
     size_t write(uint8_t value) override { return serial.write(value); }
     size_t write(const uint8_t* buffer, size_t size) override { return serial.write(buffer, size); }
+    int availableForWrite() override { return serial.availableForWrite(); }
 
 
 private:

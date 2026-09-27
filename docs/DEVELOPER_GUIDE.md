@@ -558,7 +558,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=..
 | `pio run -e esp32-s3` | `esp32-s3-devkitc-1` + N16R8 (`qio_opi`, 16 МБ) | `BOARD_ESP32_S3` | **Основная, по умолчанию.** Проверена на стенде со всеми датчиками |
 | `pio run -e esp32-c3` | `esp32-c3-devkitm-1` | `BOARD_ESP32_C3` | Старый прототип, летал на ручном управлении |
 | `pio run -e esp32-dev` | `esp32dev` | `BOARD_ESP32_CLASSIC` | Для стенда, распиновка не проверена на железе |
-| `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | **Заготовка** STM32H743VIT6: HAL + bring-up `src/stm32/main.cpp`, на железе не проверена ([ниже](#stm32h743-заготовка)) |
+| `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | STM32H743VIT6: полная прошивка + MAVLink, на железе не проверена ([ниже](#stm32h743)) |
 
 | Назначение | ESP32-S3 (стенд) | ESP32-C3 | ESP32 classic |
 |---|---|---|---|
@@ -579,16 +579,32 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=..
   полный комплект не хватает: CS BMP388 и GPS RX — на strapping-пинах,
   GPS без TX (только приём, без UBX-CFG). Подробности — в `Config.h`.
 
-### STM32H743 (заготовка)
+### STM32H743
 
-Следующая платформа — STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ
-ОЗУ). Платы пока нет, поэтому это **заготовка**: всё собирается и проходит
-cppcheck, но на железе не проверялось. Основная плата — по-прежнему ESP32-S3.
+STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) — **полная прошивка**:
+те же датчики, автопилот, тумблеры, консоль и экран, что на ESP32-S3, плюс
+телеметрия MAVLink. Собирается, проходит cppcheck и все нативные тесты общего
+кода; **на железе пока не проверялась** (платы ещё нет). Основная лётная
+плата — ESP32-S3.
 
-- **HAL** — `include/hal/stm32/`: `Stm32Board` (тот же API, что у `Esp32Board`),
-  `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`, `Stm32ServoOutput`
-  (аппаратный PWM `HardwareTimer`, один таймер на несколько выходов). Подробно —
-  [reference/hal.md](reference/hal.md#реализация-для-stm32h743-заготовка).
+- **HAL** — `include/hal/stm32/`: `Stm32Board` (тот же API, что у `Esp32Board`,
+  плюс `telemetryUart()`), `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`,
+  `Stm32ServoOutput` (аппаратный PWM `HardwareTimer`, один таймер на несколько
+  выходов). Подробно — [reference/hal.md](reference/hal.md#реализация-для-stm32h743).
+- **Настройки и калибровки** — не NVS, а `KeyValueStore` в последнем секторе
+  флеша (`include/storage/`, `hal/stm32/Stm32FlashStorage.h`). Код проекта
+  по-прежнему пишет `#include <Preferences.h>`: в env `stm32h743` каталог
+  `include/hal/stm32/compat/` стоит в `-I`, и там лежит `Preferences` с тем же
+  API. Образ с CRC32: битый (питание пропало во время стирания) читается как
+  пустой. Запись во флеш — в фоновой задаче: стирание сектора 128 КБ идёт
+  секунды, но сектор в банке 2, а код исполняется из банка 1, и полётная
+  задача вытесняет фоновую без остановки.
+- **Задачи** — FreeRTOS из библиотеки STM32duino FreeRTOS, одно ядро,
+  вытеснение по приоритету (`hal/Rtos.h`): `flight` (5) — полётный цикл,
+  MAVLink, лог, консоль; `oled` (1) и `storage` (1) — фоном.
+- **Телеметрия** — MAVLink 2 на UART4 (`telemetry/MavlinkTelemetry.h`) вместо
+  Wi-Fi-дашборда: QGroundControl / Mission Planner, смена режима и ПИД с земли.
+  Подробно — [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md#наземная-станция-wi-fi-дашборд-и-mavlink).
 - **Распиновка** — блок `BOARD_STM32H743` в `Config.h`, пины выбраны из
   свободных на WeAct MiniSTM32H743VITx и сверены с таблицами STM32duino:
 
@@ -597,22 +613,24 @@ cppcheck, но на железе не проверялось. Основная �
 | Элерон левый / правый | PA0 / PA1 | TIM2_CH1 / CH2 |
 | Руль высоты / ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
 | Руль направления | PD14 | TIM4_CH3 |
+| AUX1 (груз) / AUX2 (камера) | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
 | iBUS RX (TX — резерв) | PE7 (PE8) | UART7 |
 | I2C датчиков SDA / SCL | PB11 / PB10 | I2C2 |
 | I2C OLED SDA / SCL | PB9 / PB8 | I2C1 |
 | SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |
-| SPI CS ICM42688 / BMP388 | PB12 / PD10 | GPIO |
+| SPI CS IMU / барометра | PB12 / PD10 | GPIO |
 | GPS RX / TX | PD9 / PD8 | USART3 |
+| Радиомодем MAVLink RX / TX | PD0 / PD1 | UART4 |
+| Пищалка | PE15 | GPIO |
 | Serial | PA10 / PA9 | LPUART1 |
 
 - **Точка входа** — `src/stm32/main.cpp` (в сборках ESP32 исключён через
-  `build_src_filter`): ручной полёт без автопилота и проверка шин, консоль
-  `s`/`p`/`b`. Полная прошивка упирается не в HAL, а в три ESP32-зависимости
-  выше него: `Preferences` (NVS), Wi-Fi-дашборд и задачи FreeRTOS на втором
-  ядре — что с ними делать, написано в шапке `src/stm32/main.cpp`.
+  `build_src_filter`). Объекты те же, что в `src/main.cpp`; вместо `loop()` —
+  задачи, `vTaskStartScheduler()` в конце `setup()`.
 - **Первое включение платы:** `pio run -e stm32h743 -t upload` (ST-Link), монитор
-  на LPUART1 через USB-UART; `b` — видны ли датчики на шинах, `p` — идут ли
-  импульсы на выходы, затем `s` с включённым пультом.
+  на LPUART1 через USB-UART; `b` — видны ли датчики на шинах, `s` — статус
+  датчиков, `p` — импульсы на выходах (пропеллер снять), затем пульт и
+  QGroundControl через радиомодем.
 ---
 
 ## Как добавить новый датчик
@@ -657,29 +675,35 @@ cppcheck, но на железе не проверялось. Основная �
 
 ### Новая шина или периферия
 
-Новый интерфейс в `include/hal/`, реализация в `include/hal/esp32/` (и в
-`include/hal/stm32/`, чтобы заготовка STM32 продолжала собираться), доступ
-через `IBoard`.
+Новый интерфейс в `include/hal/`, реализация в `include/hal/esp32/` и в
+`include/hal/stm32/`, доступ через `IBoard`.
 
 ---
 
 ## Как добавить новый режим автопилота
 
-1. Новое значение в `enum AutopilotMode` (`Autopilot.h`) и строка в
-   `modeToString()`.
-2. Обработчик `handle<Режим>Mode()` и ветка в `Autopilot::update()`. Без
-   нужного датчика — нулевые коррекции. Интегратор копите только когда
-   `armed` (передавайте его в `PidController::calculate()`).
-3. Если режим управляет газом — ветка в `Autopilot::applyThrottle()`.
+1. Значение в `enum AutopilotMode` (`autopilot/AutopilotTypes.h`, перед
+   `MODE_COUNT`), имя и короткое имя (до 5 символов, для OLED) в
+   `AutopilotNames::mode()` / `modeShort()`.
+2. Обработчик `run<Режим>()` и ветка в `Autopilot::runMode()`; начальные цели
+   (курс, высота, центр кругов) — в `initializeMode()`. Режим задаёт
+   `desiredRoll`/`desiredPitch` и зовёт `stabilizeOrManual()` (без IMU рули у
+   пилота) или `stabilizeOrNeutral()` (без IMU — нейтраль). Без нужного
+   датчика — безопасное поведение, а не падение. Интегратор копится только
+   при `armed`.
+3. Газ: `throttleMode` (`PILOT` / `AUTO` / `AT_LEAST`) и `autoThrottlePct`, или
+   `autoThrottle()` — газ круиза с крутилки / по трубке Пито.
    `FlightController` при этом не меняется.
-4. Выбор с пульта — в `AutopilotModeSelector::modeFor()`; с дашборда —
-   кнопка в `WebDashboardPage.h` и проверка диапазона в
-   `WebDebugServer::handleSetMode()`; короткое имя — в
-   `OledDisplay::shortMode()`.
-5. Если режиму нужны датчики — проверка в
-   `ArmingManager::checkFailureReason()`.
-6. Проверка на столе без винта: рули должны отвечать на наклон в сторону
-   выравнивания.
+4. На пульт — одна строка в `config/Controls.h`
+   (`Bind::mode(Channels::SWD, MODE_НОВЫЙ)`). Дашборд и MAVLink подхватят режим
+   по номеру; для MAVLink — ближайший режим ArduPlane в
+   `MavlinkModes::toCustomMode()` / `fromCustomMode()`.
+5. Если режиму нужны датчики для ARM — `ArmingManager`.
+6. Тесты: реакция на каждый датчик — `test/native/test_autopilot_modes`,
+   замкнутый полёт — сценарий в `test/native/test_sim` (модель самолёта
+   `helpers/PlaneSim.h`, стенд `helpers/SimHarness.h`). Затем — стол без
+   винта: рули должны отвечать на наклон в сторону выравнивания.
+7. Раздел в [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 ---
 

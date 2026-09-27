@@ -22,7 +22,7 @@
 #include <Arduino.h>
 
 #include "autopilot/Autopilot.h"
-#include "autopilot/AutopilotModeSelector.h"
+#include "autopilot/PilotSwitches.h"
 #include "config/Config.h"
 #include "control/ArmingManager.h"
 #include "control/ControlMixer.h"
@@ -73,6 +73,17 @@ GpsSensor* const gpsReceiver = &gpsSensor;
 GpsSensor* const gpsReceiver = nullptr;
 #endif
 
+// Самодельная трубка Пито: барометр в трубке (полное давление) +
+// основной барометр в фюзеляже (статика).
+#if SENSOR_AIRSPEED != SENSOR_AIRSPEED_NONE
+auto pitotDevice = SELECTED_PITOT_DEVICE(board);
+SelectedPitotBaro pitotBaro(pitotDevice, "PITOT-BMP581");
+PitotDualBaroAirspeed pitotSensor(pitotBaro, baroSensor);
+AirspeedSensor* const airspeedSensor = &pitotSensor;
+#else
+AirspeedSensor* const airspeedSensor = nullptr;
+#endif
+
 
 // ------------------------------------------------------------
 // Управление полётом.
@@ -83,8 +94,8 @@ ControlMixer controlMixer;
 ThrottleManager throttleManager;
 FlightOutputs flightOutputs(board);
 
-Autopilot autopilot(&imuSensor, &baroSensor, magnetometer, gpsReceiver);
-AutopilotModeSelector modeSelector(&autopilot);
+Autopilot autopilot(&imuSensor, &baroSensor, magnetometer, gpsReceiver, airspeedSensor);
+PilotSwitches pilotSwitches(&autopilot);   // тумблеры и крутилки — config/Controls.h
 ArmingManager armingManager(&autopilot);
 
 FlightController flightController(
@@ -94,7 +105,7 @@ FlightController flightController(
     armingManager,
     flightOutputs,
     &autopilot,
-    &modeSelector
+    &pilotSwitches
 );
 
 
@@ -104,7 +115,7 @@ FlightController flightController(
 
 LoopStats loopStats;
 DebugLogger debugLogger(flightController, &autopilot, &loopStats);
-DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogger);
+DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogger, &board);
 WebDebugServer webDebugServer(flightController, &autopilot);
 OledDisplay oledDisplay(flightController, &autopilot, loopStats);
 
@@ -151,6 +162,12 @@ static void setupSensors()
     gpsSensor.begin();
 #endif
 
+#if SENSOR_AIRSPEED != SENSOR_AIRSPEED_NONE
+    // Ноль трубки набирается ~1 с в полётном цикле — самолёт стоит,
+    // трубка накрыта или развёрнута по ветру.
+    pitotSensor.begin();
+#endif
+
     autopilot.begin();
 }
 
@@ -182,8 +199,7 @@ void setup()
     Serial.println();
     Serial.println("Готово. iBUS 115200 бод, 10 каналов.");
     Serial.println("ARM: SwA вниз, к себе (CH5=2000) при газе внизу. DISARM: SwA вверх.");
-    Serial.println("Режим (SwC, CH7): вверх MANUAL, середина STABILIZE, вниз AUTO_TAKEOFF.");
-    Serial.println("Закрылки: SwB (CH6) вниз.");
+    pilotSwitches.printBindings();   // что на каком тумблере — config/Controls.h
     debugLogger.begin();         // что выводить в лог — из NVS
     debugConsole.printHint();
     Serial.println();

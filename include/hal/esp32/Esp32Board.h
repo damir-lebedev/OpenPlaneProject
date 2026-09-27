@@ -44,7 +44,9 @@ public:
               Esp32ServoOutput(Config::PIN_AILERON_RIGHT, 1),
               Esp32ServoOutput(Config::PIN_ELEVATOR, 2),
               Esp32ServoOutput(Config::PIN_ESC, 3),
-              Esp32ServoOutput(Config::PIN_RUDDER, 4)
+              Esp32ServoOutput(Config::PIN_RUDDER, 4),
+              Esp32ServoOutput(Config::PIN_AUX1, 5),
+              Esp32ServoOutput(Config::PIN_AUX2, 6)
           }
     {
     }
@@ -53,6 +55,12 @@ public:
     {
         i2cBus.begin();
         spiBus.begin();
+
+        if (Config::PIN_BUZZER >= 0)
+        {
+            pinMode(Config::PIN_BUZZER, OUTPUT);
+            digitalWrite(Config::PIN_BUZZER, LOW);
+        }
 
 #if SOC_I2C_NUM > 1
         if (hasDisplayBus())
@@ -78,6 +86,11 @@ public:
     IUartPort& gpsUart() override { return gpsPort; }
 
     IServoOutput& servo(uint8_t channel) override { return servos[channel]; }
+
+    void setBuzzer(bool on) override
+    {
+        if (Config::PIN_BUZZER >= 0) digitalWrite(Config::PIN_BUZZER, on ? HIGH : LOW);
+    }
 
 
 private:

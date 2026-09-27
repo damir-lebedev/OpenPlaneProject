@@ -115,6 +115,10 @@ public:
 
     using Print::write;
 
+    // Свободное место в буфере передачи: тесты ограничивают его
+    // (txRoom), чтобы проверить, что телеметрия не блокирует цикл.
+    int availableForWrite() { return txRoom; }
+
     explicit operator bool() const { return true; }
 
     // --- управление из тестов ---
@@ -156,7 +160,10 @@ public:
         started = false;
         beginCalls = 0;
         txBufferSize = 0;
+        txRoom = 4096;
     }
+
+    int txRoom = 4096;
 
 private:
     int number;

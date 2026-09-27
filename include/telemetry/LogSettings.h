@@ -28,6 +28,7 @@ enum class LogChannel : uint8_t
     Heading,    // курс по компасу
     Gps,        // спутники, координаты
     Imu,        // гироскоп и акселерометр
+    Nav,        // дом, курс, скорость, трубка Пито, тумблеры
     System,     // частота цикла, память (раз в 10 с)
     Count
 };
@@ -63,6 +64,7 @@ public:
             { "MAG",  "курс по компасу",                  false, LogMode::Off },
             { "GPS",  "спутники, координаты",             false, LogMode::Off },
             { "IMU",  "гироскоп и акселерометр",          false, LogMode::Off },
+            { "NAV",  "дом, курс, скорость, функции",     false, LogMode::Off },
             { "SYS",  "цикл, память (раз в 10 с)",        true,  LogMode::Periodic },
         };
         return table[channel];
@@ -172,7 +174,7 @@ private:
     static constexpr const char* NVS_NAMESPACE = "debuglog";
 
     // Меняется вместе со списком каналов — старые настройки сбросятся.
-    static constexpr uint8_t VERSION = 1;
+    static constexpr uint8_t VERSION = 2;   // 2: канал NAV
 
     LogMode modes[COUNT] = {};
     uint8_t periodIndex = 2;

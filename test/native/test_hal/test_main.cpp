@@ -335,7 +335,7 @@ void test_board_servo_channels_follow_servo_channel_order()
     Esp32Board board;
     const int8_t pins[ServoChannel::COUNT] = {
         Config::PIN_AILERON_LEFT, Config::PIN_AILERON_RIGHT, Config::PIN_ELEVATOR,
-        Config::PIN_ESC, Config::PIN_RUDDER,
+        Config::PIN_ESC, Config::PIN_RUDDER, Config::PIN_AUX1, Config::PIN_AUX2,
     };
     for (uint8_t ch = 0; ch < ServoChannel::COUNT; ++ch)
     {

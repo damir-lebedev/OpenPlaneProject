@@ -10,7 +10,7 @@
 #include <unity.h>
 
 #include "autopilot/Autopilot.h"
-#include "autopilot/AutopilotModeSelector.h"
+#include "autopilot/PilotSwitches.h"
 #include "control/ArmingManager.h"
 #include "control/ControlMixer.h"
 #include "control/FlightController.h"
@@ -44,7 +44,7 @@ namespace
         ThrottleManager throttle;
         FlightOutputs outputs{ board };
         Autopilot autopilot{ &imu, &baro, &mag, &gps };
-        AutopilotModeSelector selector{ &autopilot };
+        PilotSwitches selector{ &autopilot };
         ArmingManager arming{ &autopilot };
         FlightController controller{ receiver, mixer, throttle, arming, outputs, &autopilot, &selector };
         LoopStats stats;
@@ -285,7 +285,7 @@ void test_logger_channel_contents_with_all_sensors()
     plane.stats.avgUs = 700;
 
     RcChannels rc;
-    rc.set(Channels::AILERON, 1750).set(Channels::AUX_2, 1500);
+    rc.set(Channels::AILERON, 1750).set(Channels::SWC, 1500);
     plane.tick(rc);
 
     DebugLogger logger(plane.controller, &plane.autopilot, &plane.stats);
@@ -298,7 +298,9 @@ void test_logger_channel_contents_with_all_sensors()
     TEST_ASSERT_TRUE(contains(log, "RC   1:1750 2:1500 3:1000"));
     TEST_ASSERT_TRUE(contains(log, "OUT  AIL-L "));
     TEST_ASSERT_TRUE(contains(log, "ATT  R +1.2 P -0.4 Y 123.0"));
-    TEST_ASSERT_TRUE(contains(log, "AP   STABILIZE want R +0.0 P +0.0 corr R -7 P +2"));
+    // STABILIZE — угол по стику: CH1 = 1750 — половина хода -> крен 22.5°;
+    // коррекция = итоговая команда минус стик.
+    TEST_ASSERT_TRUE(contains(log, "AP   STABILIZE want R +22.5 P +0.0 corr R -145 P +2"));
     TEST_ASSERT_TRUE(contains(log, "ALT  12.3 м  Vz +0.50 м/с"));
     TEST_ASSERT_TRUE(contains(log, "MAG  курс 271°"));
     // Координаты не теряют 6-й знак (раньше хранились во float).
@@ -362,7 +364,7 @@ void test_logger_status_reports_failsafe_arm_and_flaps()
     Plane plane;
     plane.arm();
     RcChannels rc;
-    rc.set(Channels::ARM, 2000).set(Channels::FLAPS, 2000);
+    rc.set(Channels::ARM, 2000).set(Channels::SWB, 2000);
     for (int i = 0; i < 50; ++i) plane.tick(rc);   // закрылки в пути
 
     DebugLogger logger(plane.controller, &plane.autopilot);
@@ -495,6 +497,49 @@ void test_console_hotkeys_run_actions()
     TEST_ASSERT_TRUE(contains(c.type(" "), "Лог: пауза"));
     TEST_ASSERT_TRUE(c.logger.isPaused());
     TEST_ASSERT_TRUE(contains(c.type(" "), "Лог: продолжен"));
+}
+
+void test_console_scans_i2c_buses()
+{
+    ConsoleRig c;
+    // Без платы — команды нет, в меню пункта нет.
+    TEST_ASSERT_TRUE(contains(c.type("b"), "недоступен в этой сборке"));
+    TEST_ASSERT_FALSE(contains(c.type("h"), "Опрос шин"));
+    c.type("0");
+
+    c.plane.board.sensorBus.devices = { 0x6A, 0x7C, 0x47, 0x77 };
+    c.plane.board.screenBus.devices = { 0x3C };
+    DebugConsole withBoard(c.plane.controller, c.plane.outputs, c.plane.autopilot, c.logger, &c.plane.board);
+
+    Serial.pushRx("b");
+    withBoard.update();
+    const std::string out = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(out, "0x6A  LSM6DSV"), out.c_str());
+    TEST_ASSERT_TRUE(contains(out, "0x7C  QMC6309"));
+    TEST_ASSERT_TRUE(contains(out, "0x47  BMP581"));
+    TEST_ASSERT_TRUE(contains(out, "0x77  BME280/BMP388/SPL06"));
+    TEST_ASSERT_TRUE(contains(out, "I2C экрана"));
+    TEST_ASSERT_TRUE(contains(out, "0x3C  OLED"));
+
+    // Пункт меню 7 и пустая шина.
+    c.plane.board.sensorBus.devices = { 0x01 };   // ниже диапазона опроса (0x00..0x07 — служебные)
+    c.plane.board.hasScreen = false;
+    Serial.pushRx("h");
+    withBoard.update();
+    TEST_ASSERT_TRUE(contains(takeSerial(), "Опрос шин I2C"));
+    Serial.pushRx("7");
+    withBoard.update();
+    const std::string empty = takeSerial();
+    TEST_ASSERT_TRUE(contains(empty, "никого"));
+    TEST_ASSERT_FALSE(contains(empty, "I2C экрана"));
+
+    // Меню без платы: '7' просто перерисовывает меню.
+    c.type("h");
+    TEST_ASSERT_TRUE(contains(c.type("7"), "OpenPlane · консоль"));
+    TEST_ASSERT_EQUAL_STRING("?", DebugConsole::guessI2cDevice(0x50));
+    TEST_ASSERT_EQUAL_STRING("QMC5883L", DebugConsole::guessI2cDevice(0x0D));
+    TEST_ASSERT_EQUAL_STRING("QMC5883P", DebugConsole::guessI2cDevice(0x2C));
+    TEST_ASSERT_EQUAL_STRING("MPU6050/6500, ICM-42688/45686", DebugConsole::guessI2cDevice(0x68));
 }
 
 void test_console_blocks_calibrations_while_armed()
@@ -726,7 +771,7 @@ void test_web_set_mode_goes_through_mailbox()
     WebRig web;
     TEST_ASSERT_EQUAL(400, web.post("/api/setmode", nullptr).code);
     TEST_ASSERT_TRUE(contains(web.http->lastResponse().body, "no data"));
-    TEST_ASSERT_EQUAL(400, web.post("/api/setmode", "{\"mode\":9}").code);
+    TEST_ASSERT_EQUAL(400, web.post("/api/setmode", "{\"mode\":12}").code);   // MODE_COUNT
     TEST_ASSERT_EQUAL(400, web.post("/api/setmode", "{\"speed\":1}").code);
 
     TEST_ASSERT_EQUAL(200, web.post("/api/setmode", "{\"mode\":3}").code);
@@ -858,7 +903,7 @@ void test_oled_sends_bytes_over_bus_and_draws_status()
     // Связь есть, ARM, STABILIZE, закрылки.
     rig.plane.arm();
     RcChannels rc;
-    rc.set(Channels::ARM, 2000).set(Channels::AUX_2, 1500).set(Channels::FLAPS, 2000);
+    rc.set(Channels::ARM, 2000).set(Channels::SWC, 1500).set(Channels::SWB, 2000);
     for (int i = 0; i < 20; ++i) rig.plane.tick(rc);
     lines = drawFrame(*rig.display);
     TEST_ASSERT_EQUAL_STRING("RX ok ARM STAB FL", lines[0].c_str());
@@ -877,8 +922,10 @@ void test_oled_mode_names_glide_and_missing_sensors()
     TEST_ASSERT_TRUE(contains(drawFrame(*rig.display)[0], "TKOFF"));
     rig.plane.autopilot.setMode(MODE_ALT_HOLD);
     TEST_ASSERT_TRUE(contains(drawFrame(*rig.display)[0], "ALT"));
-    rig.plane.autopilot.setMode(static_cast<AutopilotMode>(7));
-    TEST_ASSERT_TRUE(contains(drawFrame(*rig.display)[0], "?"));
+    rig.plane.autopilot.setMode(MODE_RTH);
+    TEST_ASSERT_TRUE(contains(drawFrame(*rig.display)[0], "RTH"));
+    rig.plane.autopilot.setMode(MODE_SOARING);
+    TEST_ASSERT_TRUE(contains(drawFrame(*rig.display)[0], "SOAR"));
 
     rig.plane.autopilot.setMode(MODE_MANUAL);
     rig.plane.arm();
@@ -922,6 +969,7 @@ int main()
     RUN_TEST(test_console_log_menu_edits_and_saves_when_disarmed);
     RUN_TEST(test_console_defers_saving_until_disarm);
     RUN_TEST(test_console_reports_sensors_missing_from_build);
+    RUN_TEST(test_console_scans_i2c_buses);
     RUN_TEST(test_web_server_starts_access_point_and_task);
     RUN_TEST(test_web_server_reports_failed_access_point);
     RUN_TEST(test_web_root_serves_dashboard_page);

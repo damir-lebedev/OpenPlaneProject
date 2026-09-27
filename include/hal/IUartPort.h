@@ -24,4 +24,8 @@ public:
     virtual int read() = 0;
     virtual size_t write(uint8_t value) = 0;
     virtual size_t write(const uint8_t* buffer, size_t size) = 0;
+
+    // Свободно в буфере передачи, байт; −1 — неизвестно (запись
+    // может ждать). Телеметрия по нему решает, не отложить ли кадр.
+    virtual int availableForWrite() { return -1; }
 };

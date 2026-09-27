@@ -56,44 +56,44 @@ void test_command_and_output_state_defaults()
 void test_flaps_first_call_jumps_to_target()
 {
     FlapsController deployedAtBoot;
-    TEST_ASSERT_EQUAL_INT16(Config::FLAPS_DEPLOYED_US, deployedAtBoot.update(true, 5000));
+    TEST_ASSERT_EQUAL_INT16(Config::FLAPS_DEPLOYED_US, deployedAtBoot.update(Config::FLAPS_DEPLOYED_US, 5000));
 
     FlapsController retractedAtBoot;
-    TEST_ASSERT_EQUAL_INT16(0, retractedAtBoot.update(false, 5000));
+    TEST_ASSERT_EQUAL_INT16(0, retractedAtBoot.update(0, 5000));
 }
 
 void test_flaps_move_at_limited_rate()
 {
     FlapsController flaps;
-    flaps.update(false, 0);
+    flaps.update(0, 0);
 
     // Полный ход за FLAPS_TRANSITION_MS: за 100 мс — десятая часть.
     uint32_t now = 0;
     for (int i = 0; i < 10; ++i)
     {
         now += 10;
-        flaps.update(true, now);
+        flaps.update(Config::FLAPS_DEPLOYED_US, now);
     }
     TEST_ASSERT_INT16_WITHIN(1, Config::FLAPS_DEPLOYED_US / 10, flaps.getPosition());
 
     for (int i = 0; i < 200; ++i)
     {
         now += 10;
-        flaps.update(true, now);
+        flaps.update(Config::FLAPS_DEPLOYED_US, now);
     }
     TEST_ASSERT_EQUAL_INT16(Config::FLAPS_DEPLOYED_US, flaps.getPosition());   // не дальше цели
 
     now += 10;
-    flaps.update(false, now);
+    flaps.update(0, now);
     TEST_ASSERT_LESS_THAN_INT16(Config::FLAPS_DEPLOYED_US, flaps.getPosition());
 }
 
 void test_flaps_do_not_jump_after_long_pause()
 {
     FlapsController flaps;
-    flaps.update(false, 0);
+    flaps.update(0, 0);
     // 10 с без вызовов (калибровка из консоли) — один шаг не больше 20 мс хода.
-    const int16_t position = flaps.update(true, 10000);
+    const int16_t position = flaps.update(Config::FLAPS_DEPLOYED_US, 10000);
     TEST_ASSERT_INT16_WITHIN(1, Config::FLAPS_DEPLOYED_US * 20 / Config::FLAPS_TRANSITION_MS, position);
 }
 
@@ -105,38 +105,52 @@ void test_sticks_to_command_signs()
 {
     ControlMixer mixer;
 
-    ControlCommand c = mixer.fromSticks(rcWith(Channels::AILERON, 2000), 0);
+    ControlCommand c = mixer.fromSticks(rcWith(Channels::AILERON, 2000));
     TEST_ASSERT_EQUAL_INT16(500, c.roll);          // стик вправо — крен вправо
 
-    c = mixer.fromSticks(rcWith(Channels::ELEVATOR, 2000), 0);
+    c = mixer.fromSticks(rcWith(Channels::ELEVATOR, 2000));
     TEST_ASSERT_EQUAL_INT16(-500, c.pitch);        // от себя — нос вниз
 
-    c = mixer.fromSticks(rcWith(Channels::RUDDER, 1000), 0);
+    c = mixer.fromSticks(rcWith(Channels::RUDDER, 1000));
     TEST_ASSERT_EQUAL_INT16(-500, c.yaw);          // влево — нос влево
 
-    c = mixer.fromSticks(RcChannelState(), 0);
+    c = mixer.fromSticks(RcChannelState());
     TEST_ASSERT_EQUAL_INT16(0, c.roll);
     TEST_ASSERT_EQUAL_INT16(0, c.pitch);
     TEST_ASSERT_EQUAL_INT16(0, c.yaw);
     TEST_ASSERT_EQUAL_INT16(0, c.flaps);
 }
 
-void test_flaps_switch_threshold_and_smooth_deploy()
+void test_mixer_moves_flaps_smoothly_to_any_target()
 {
     ControlMixer mixer;
-    // Середина (1500, значение до первого кадра) — закрылки не выпускаются.
-    TEST_ASSERT_EQUAL_INT16(0, mixer.fromSticks(rcWith(Channels::FLAPS, 1500), 0).flaps);
+    TEST_ASSERT_EQUAL_INT16(0, mixer.updateFlaps(0, 0));   // включение — убраны
 
-    const RcChannelState down = rcWith(Channels::FLAPS, Config::FLAPS_SWITCH_ON_US);
     uint32_t now = 0;
     int16_t flaps = 0;
     for (int i = 0; i < 150; ++i)
     {
         now += 10;
-        flaps = mixer.fromSticks(down, now).flaps;
+        flaps = mixer.updateFlaps(Config::FLAPS_DEPLOYED_US, now);
     }
     TEST_ASSERT_EQUAL_INT16(Config::FLAPS_DEPLOYED_US, flaps);
     TEST_ASSERT_EQUAL_INT16(Config::FLAPS_DEPLOYED_US, mixer.getFlaps());
+
+    // Воздушный тормоз — цель ниже нуля: элероны вверх, тот же темп.
+    for (int i = 0; i < 300; ++i)
+    {
+        now += 10;
+        flaps = mixer.updateFlaps(-Config::AIRBRAKE_US, now);
+    }
+    TEST_ASSERT_EQUAL_INT16(-Config::AIRBRAKE_US, flaps);
+
+    ControlCommand c;
+    c.flaps = flaps;
+    const FlightOutputState out = mixer.mix(c);
+    TEST_ASSERT_EQUAL_UINT16(Config::AILERON_LEFT_REVERSED ? 1500 + Config::AIRBRAKE_US : 1500 - Config::AIRBRAKE_US,
+                             out.aileronLeft);   // левый вверх
+    TEST_ASSERT_EQUAL_UINT16(Config::AILERON_RIGHT_REVERSED ? 1500 + Config::AIRBRAKE_US : 1500 - Config::AIRBRAKE_US,
+                             out.aileronRight);  // и правый вверх
 }
 
 void test_mix_applies_physical_signs_and_servo_reversal()
@@ -349,6 +363,10 @@ void test_output_table_matches_servo_channels()
     TEST_ASSERT_EQUAL_STRING("esc", FlightOutputs::outputInfo(ServoChannel::ESC).key);
     TEST_ASSERT_EQUAL_STRING("rudder", FlightOutputs::outputInfo(ServoChannel::RUDDER).key);
     TEST_ASSERT_FALSE(FlightOutputs::outputInfo(ServoChannel::RUDDER).required);
+    TEST_ASSERT_EQUAL_STRING("aux1", FlightOutputs::outputInfo(ServoChannel::AUX1).key);
+    TEST_ASSERT_EQUAL_STRING("aux2", FlightOutputs::outputInfo(ServoChannel::AUX2).key);
+    TEST_ASSERT_FALSE(FlightOutputs::outputInfo(ServoChannel::AUX1).required);
+    TEST_ASSERT_FALSE(FlightOutputs::outputInfo(ServoChannel::AUX2).required);
 
     FlightOutputState s;
     s.aileronLeft = 1001;
@@ -356,6 +374,8 @@ void test_output_table_matches_servo_channels()
     s.elevator = 1003;
     s.throttle = 1004;
     s.rudder = 1005;
+    s.aux1 = 1006;
+    s.aux2 = 1007;
     for (uint8_t ch = 0; ch < ServoChannel::COUNT; ++ch)
     {
         TEST_ASSERT_EQUAL_UINT16(1001 + ch, FlightOutputs::valueOf(s, ch));
@@ -440,7 +460,7 @@ int main()
     RUN_TEST(test_flaps_move_at_limited_rate);
     RUN_TEST(test_flaps_do_not_jump_after_long_pause);
     RUN_TEST(test_sticks_to_command_signs);
-    RUN_TEST(test_flaps_switch_threshold_and_smooth_deploy);
+    RUN_TEST(test_mixer_moves_flaps_smoothly_to_any_target);
     RUN_TEST(test_mix_applies_physical_signs_and_servo_reversal);
     RUN_TEST(test_mix_clamps_commands_and_outputs);
     RUN_TEST(test_flaperons_add_roll_on_top_of_flaps);

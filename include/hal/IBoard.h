@@ -36,7 +36,9 @@ namespace ServoChannel
     constexpr uint8_t ELEVATOR      = 2;
     constexpr uint8_t ESC           = 3;
     constexpr uint8_t RUDDER        = 4;
-    constexpr uint8_t COUNT         = 5;
+    constexpr uint8_t AUX1          = 5;   // сброс груза (Feature::PAYLOAD_DROP)
+    constexpr uint8_t AUX2          = 6;   // камера (Knob::CAMERA_TILT, Feature::CAMERA_STAB)
+    constexpr uint8_t COUNT         = 7;
 }
 
 class IBoard
@@ -59,5 +61,13 @@ public:
     virtual IUartPort& rcUart() = 0;   // существующий iBUS UART
     virtual IUartPort& gpsUart() = 0;  // новый UART для GPS
 
+    // UART радиомодема (MAVLink, Config::PIN_TELEM_RX/TX). nullptr —
+    // на плате свободного UART нет (ESP32: там дашборд по Wi-Fi).
+    virtual IUartPort* telemetryUart() { return nullptr; }
+
     virtual IServoOutput& servo(uint8_t channel) = 0;  // см. ServoChannel::*
+
+    // Пищалка (Config::PIN_BUZZER через транзистор). Платам без неё
+    // реализовывать не нужно.
+    virtual void setBuzzer(bool on) { (void)on; }
 };
