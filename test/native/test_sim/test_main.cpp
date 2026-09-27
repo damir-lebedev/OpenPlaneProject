@@ -365,6 +365,62 @@ void test_sim_auto_trim_learns_crooked_plane()
     TEST_ASSERT_LESS_THAN_FLOAT(5.0f, worst);                                      // летит ровно сам
 }
 
+// Датчики отказывают по одному прямо в круизе — самолёт должен лететь
+// дальше без резких движений, откатываясь на то, что осталось.
+void test_sim_sensor_failures_in_flight()
+{
+    Sim sim(TABLE, true, true, "failures");
+    sim.run(1.5);   // ноль трубки на земле
+    startCruising(sim, 60, 15, 90);
+    sim.rc.set(Channels::SWC, SWITCH_DOWN);   // CRUISE по воздушной скорости
+    sim.run(20);
+    TEST_ASSERT_TRUE(sim.pitot.isAvailable());
+    TEST_ASSERT_EQUAL((int)Autopilot::CourseSource::GPS, (int)sim.autopilot.getCourseSource());
+
+    double worstRoll = 0, minSpeed = 99, minHeight = 1e9;
+    auto fly = [&](double seconds) {
+        for (int i = 0; i < static_cast<int>(seconds * 10); ++i)
+        {
+            sim.run(0.1);
+            worstRoll = std::max(worstRoll, fabs(sim.rollDeg()));
+            minSpeed = std::min(minSpeed, sim.plane.s.speed);
+            minHeight = std::min(minHeight, sim.plane.s.height);
+        }
+    };
+
+    // 1. GPS пропал — курс по компасу, прямо и без рывков.
+    sim.gpsWorking = false;
+    fly(15);
+    TEST_ASSERT_EQUAL((int)Autopilot::CourseSource::COMPASS, (int)sim.autopilot.getCourseSource());
+    TEST_ASSERT_FLOAT_WITHIN(15.0f, 90.0f, sim.headingDeg());
+
+    // 2. Шланги трубки перепутаны — трубка признаётся неисправной,
+    //    газ — по крутилке круиза, самолёт не сваливается.
+    sim.pitotReversed = true;
+    fly(15);
+    TEST_ASSERT_TRUE(sim.pitot.hasFault());
+    TEST_ASSERT_FALSE(sim.pitot.isAvailable());
+    TEST_ASSERT_TRUE(sim.autopilot.isAutoThrottle());
+
+    // 3. Барометр замолчал — высоту держать нечем, руль высоты у пилота
+    //    (стик в центре — нос по горизонту): летит ровно, не пикирует.
+    sim.baro.available = false;
+    fly(15);
+
+    TEST_ASSERT_LESS_THAN_FLOAT(35.0f, worstRoll);
+    TEST_ASSERT_GREATER_THAN_FLOAT(Config::STALL_SPEED_MS, minSpeed);
+    TEST_ASSERT_GREATER_THAN_FLOAT(30.0f, minHeight);
+
+    // 4. IMU отказал — рули целиком у пилота (стики проходят как в MANUAL).
+    sim.imu.available = false;
+    sim.sticks(200, 0);
+    sim.run(0.2);
+    TEST_ASSERT_FLOAT_WITHIN(0.02, 200.0 / 500.0, sim.lastControl().aileron);
+    sim.sticks(0, 0);
+    sim.run(0.2);
+    TEST_ASSERT_FLOAT_WITHIN(0.02, 0.0, sim.lastControl().aileron);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -382,5 +438,6 @@ int main()
     RUN_TEST(test_sim_airspeed_hold_and_stall_protection);
     RUN_TEST(test_sim_real_pitot_in_the_loop);
     RUN_TEST(test_sim_auto_trim_learns_crooked_plane);
+    RUN_TEST(test_sim_sensor_failures_in_flight);
     return UNITY_END();
 }

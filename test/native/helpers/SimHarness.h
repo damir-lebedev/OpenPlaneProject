@@ -69,6 +69,7 @@ public:
     double throwAccelG = 0;   // бросок с руки: перегрузка вперёд, пока > 0
     double throwUntil = 0;
     bool frozen = false;      // самолёт в руке: физика стоит
+    bool pitotReversed = false;   // шланги трубки перепутаны: трубка видит меньше статики
 
     SimHarness(const Binding (&table)[N], bool withAirspeed, bool useRealPitot = false, const char* traceName = nullptr)
         : autopilot(&imu, &baro, &mag, &gps,
@@ -259,7 +260,8 @@ private:
             if (time >= nextTube)
             {
                 nextTube = time + 0.02;
-                pitotTotal.data.pressure = static_cast<float>(staticPa + 0.5 * rho * s.speed * s.speed + 150.0) + tubeNoise(rng);
+                const double q = 0.5 * rho * s.speed * s.speed;
+                pitotTotal.data.pressure = static_cast<float>(staticPa + (pitotReversed ? -q : q) + 150.0) + tubeNoise(rng);
                 pitotTotal.data.temperature = 15.0f;
                 pitotTotal.data.timestamp = now;
             }
