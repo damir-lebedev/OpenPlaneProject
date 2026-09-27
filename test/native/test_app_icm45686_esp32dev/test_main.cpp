@@ -5,14 +5,16 @@
 //   ICM-45686 (I2C 0x68) + QMC6309 (0x7C),
 //   SPL06-001 (0x76) — статика, BMP581 (0x47) — трубка Пито,
 //   u-blox M10 — UART2. Второй шины I2C нет — экрана нет.
-// Сборка среды native — под S3, поэтому плата переключается здесь,
-// до первого #include: распиновка из блока BOARD_ESP32_CLASSIC.
+// Ветка feature/split-headers: пины компилируются в src/core/*.cpp,
+// поэтому плата задаётся средой сборки (-D BOARD_ESP32_CLASSIC),
+// а не #define в тесте, как в header-only ветке.
 //
-// Запуск: pio test -e native -f native/test_app_icm45686_esp32dev
+// Запуск: pio test -e native-esp32dev
 // ============================================================
 
-#undef BOARD_ESP32_S3
-#define BOARD_ESP32_CLASSIC
+#if !defined(BOARD_ESP32_CLASSIC) || defined(BOARD_ESP32_S3)
+#error "Этот тест собирается в среде native-esp32dev"
+#endif
 #define SENSOR_KIT SENSOR_KIT_ICM45686_PITOT
 #include "../../../src/main.cpp"
 

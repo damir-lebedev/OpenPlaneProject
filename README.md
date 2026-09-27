@@ -2,6 +2,9 @@
   <img src="docs/images/banner.svg" alt="OpenPlane — открытый автопилот для самолётов" width="100%">
 </p>
 
+> [!NOTE]
+> **Это ветка `feature/split-headers`** — та же прошивка в раскладке `.h` + `.cpp`: реализация вынесена из `include/` в `src/core/`. Ветка генерируется из основной скриптом `tools/split_headers.py`, прошивка с LTO того же размера, что header-only. Отличия, цифры и как обновить ветку — [docs/SPLIT_HEADERS.md](docs/SPLIT_HEADERS.md).
+
 <p align="center">
   <img src="https://img.shields.io/badge/tests-330%20passing-3fb950?style=for-the-badge" alt="330 тестов">
   <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="покрытие 98%">
@@ -165,7 +168,7 @@ constexpr Binding BINDINGS[] = {
 | **Эталоны, а не копии кода** | формулы датчиков — по датащитам (Bosch, ST, TDK, Goertek), MAVLink — по pymavlink |
 
 ```bash
-pio test -e native -e native-stm32   # все тесты, ~1.5 минуты, железо не нужно
+pio test -e native -e native-stm32 -e native-esp32dev   # все тесты, железо не нужно
 ```
 
 Подробно — [TESTING.md](docs/TESTING.md).
@@ -184,7 +187,7 @@ flowchart LR
     AP -.-> TLM["Дашборд Wi-Fi<br/>MAVLink · OLED"]
 ```
 
-- **Header-only C++**, одна единица трансляции, никакой динамической памяти в полётном контуре. Любитель `.h/.cpp`? Для вас — параллельная ветка [`feature/split-headers`](https://github.com/damir-lebedev/OpenPlaneProject/tree/feature/split-headers): генерируется из этой скриптом, прошивка с LTO того же размера.
+- **Раскладка `.h` + `.cpp`** (эта ветка): реализация — в `src/core/`, LTO для кода проекта, никакой динамической памяти в полётном контуре. Основная ветка — та же прошивка header-only, одной единицей трансляции.
 - **HAL** — единственный слой, знающий MCU: новая плата — это новый `Board`, а не переписанный автопилот.
 - **Драйвер датчика не знает шину**: один класс работает по I2C и по SPI.
 - **Безопасность — порядком операций**: потеря связи > ARM > режим > газ; ни один режим не протащит газ мимо ARM.

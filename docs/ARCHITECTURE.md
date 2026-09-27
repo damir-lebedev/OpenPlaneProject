@@ -43,7 +43,7 @@
 
 | Принцип | Как реализован |
 |---|---|
-| **Header-only C++** | Все классы определены в заголовках `include/<слой>/`. Единственная единица трансляции прошивки — `src/main.cpp` (ESP32) или `src/stm32/main.cpp` (STM32). Никакой динамической памяти в полётном контуре (строки `String` — только в веб-сервере и OLED). Вариант с разделением на `.h/.cpp` — в отдельной ветке `feature/split-headers`: её генерирует `tools/split_headers.py`, отличия и размеры прошивки — в её `docs/SPLIT_HEADERS.md`. |
+| **`.h` + `.cpp` (ветка `feature/split-headers`)** | В заголовках `include/<слой>/` — объявления классов, однострочные геттеры, шаблоны и `constexpr`; реализация — в `src/core/<слой>/` (генерирует `tools/split_headers.py` из основной ветки, где всё header-only, см. [`SPLIT_HEADERS.md`](SPLIT_HEADERS.md)). Точка входа прошивки — `src/main.cpp` (ESP32) или `src/stm32/main.cpp` (STM32). Никакой динамической памяти в полётном контуре (строки `String` — только в веб-сервере и OLED). |
 | **Composition root** | `src/main.cpp` / `src/stm32/main.cpp` — единственное место, где создаются объекты и связываются ссылками/указателями. Логики полёта в нём нет. |
 | **Одна строка — один тумблер** | Что делает каждый канал пульта — таблица `config/Controls.h` (`Bind::modes/mode/feature/knob`), проверяемая `static_assert` при сборке. |
 | **Dependency inversion** | Верхние слои зависят от интерфейсов (`IBoard`, `IRegisterDevice`, `ImuSensor*`, …), а не от конкретных чипов и MCU. |

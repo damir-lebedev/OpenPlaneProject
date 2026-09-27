@@ -4,7 +4,8 @@
 
 | Где | Команда | Что |
 |---|---|---|
-| **ПК (native)** | `pio test -e native` | Заголовки прошивки собираются на ПК без изменений, железо заменено управляемыми фейками: модули, драйверы, замкнутые симуляции полёта, прошивка ESP32 целиком (S3 и 38-pin) с каждым набором датчиков. Считается покрытие |
+| **ПК (native)** | `pio test -e native` | Код прошивки (`include/` + `src/core/`) собирается на ПК без изменений, железо заменено управляемыми фейками: модули, драйверы, замкнутые симуляции полёта, прошивка ESP32-S3 целиком с каждым набором датчиков. Считается покрытие |
+| **ПК (native-esp32dev)** | `pio test -e native-esp32dev` | Прошивка ESP32 38-pin (`BOARD_ESP32_CLASSIC`) целиком: своя среда, потому что в ветке `.h` + `.cpp` пины компилируются в `src/core/` ([`SPLIT_HEADERS.md`](SPLIT_HEADERS.md)) |
 | **ПК (native-stm32)** | `pio test -e native-stm32` | Прошивка STM32H743 целиком (`src/stm32/main.cpp`) поверх слоя фейков STM32duino: задачи FreeRTOS, флеш, MAVLink, датчики на I2C и SPI |
 | **Матрица сборок** | `tools/build_matrix.sh` | 4 платы × 6 наборов датчиков с `-Wall -Wextra (-Wshadow)`; любое предупреждение в коде проекта — ошибка |
 | **Плата** | `pio test -e esp32-s3` | `test_feedback` и `test_imu_orientation` на реальном ESP32-S3 (прошивает тестовую прошивку; потом верните обычную: `pio run -t upload`) |
@@ -17,7 +18,7 @@
 
 ```bash
 pip install platformio gcovr        # один раз
-pio test -e native -e native-stm32  # все нативные тесты (~1.5 мин)
+pio test -e native -e native-stm32 -e native-esp32dev  # все нативные тесты (~4 мин)
 gcovr                               # покрытие по файлам (настройки — gcovr.cfg)
 tools/build_matrix.sh               # все платы × все датчики (~25 мин)
 gcovr --html-details -o coverage/index.html   # HTML-отчёт (coverage/ в .gitignore)
@@ -127,7 +128,7 @@ STM32duino. `<Preferences.h>` в этой среде — **настоящий**
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743 с ICM-45686 и BMP581 **по SPI** + QMC6309: испорченный флеш при включении, ALT_HOLD из GCS держит высоту, потеря связи → RTH, видно в MAVLink; перезапись битого образа |
 | `test_feedback` | 10 | Замкнутая симуляция самолёта с контуром обратной связи (на ПК и на плате) |
 | `test_imu_orientation` | 5 | Калибровка установки IMU на 300 случайных установках (на ПК и на плате) |
-| **Всего** | **330** | 317 в `native` + 13 в `native-stm32` |
+| **Всего** | **330** | 312 в `native` + 13 в `native-stm32` + 5 в `native-esp32dev` |
 
 ---
 
@@ -135,7 +136,7 @@ STM32duino. `<Preferences.h>` в этой среде — **настоящий**
 
 Считается `gcovr` по `include/` и `src/` (всё, что входит в прошивку), по
 обеим нативным средам вместе:
-`gcovr -r . --filter include/ --filter src/ .pio/build/native .pio/build/native-stm32`.
+`gcovr -r . --filter include/ --filter src/ .pio/build/native .pio/build/native-stm32 .pio/build/native-esp32dev`.
 
 | Слой | Строки | Ветвления |
 |---|---|---|
