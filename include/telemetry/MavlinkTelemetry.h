@@ -4,9 +4,11 @@
 
 #include "autopilot/Autopilot.h"
 #include "autopilot/AutopilotTypes.h"
+#include "autopilot/PidController.h"
 #include "config/Config.h"
 #include "control/FlightController.h"
 #include "control/FlightOutputs.h"
+#include "hal/IBoard.h"
 #include "hal/IUartPort.h"
 #include "rc/RcChannelState.h"
 #include "sensors/SensorInterface.h"
@@ -814,7 +816,7 @@ private:
 
     static float wrap360(float degrees)
     {
-        float d = fmodf(degrees, 360.0f);
+        const float d = fmodf(degrees, 360.0f);
         return d < 0 ? d + 360.0f : d;
     }
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "autopilot/AutopilotTypes.h"
 #include "autopilot/ControlBinding.h"
 #include "config/Channels.h"
 

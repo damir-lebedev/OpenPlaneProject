@@ -1,4 +1,4 @@
-# CONFIG — `Config` и `Channels`
+# CONFIG — `Config`, `Channels`, `Controls`
 
 [← Справочник](README.md)
 
@@ -34,7 +34,9 @@
 | `PIN_SPI_CS_BARO` | `uint8_t` | CS барометра по SPI | 21 | 2 | 5 |
 | `PIN_GPS_RX` / `PIN_GPS_TX` | `int8_t` | UART GPS; TX `-1` — только приём | 15 / 16 | 9 / −1 | 4 / 17 |
 | `UART_NUM_GPS` | `uint8_t` | Номер аппаратного UART для GPS | 2 | 0 | 2 |
-| `PIN_AUX1..3`, `PIN_BUZZER`, `PIN_VBAT_ADC`, `PIN_CURRENT_ADC`, `PIN_TELEM_RX/TX` | `int8_t` | **Только S3:** резерв под плату полётника ([FC_BOARD.md](../FC_BOARD.md)), прошивкой пока не используются | 41, 42, 47, 38, 3, 10, 39/40 | — | — |
+| `PIN_AUX1`, `PIN_AUX2` | `int8_t` | серво-выходы: сброс груза, камера; `-1` — нет | 41, 42 | −1, −1 | 33, 15 |
+| `PIN_BUZZER` | `int8_t` | пищалка через транзистор; `-1` — нет | 38 | −1 | 2 |
+| `PIN_AUX3`, `PIN_VBAT_ADC`, `PIN_CURRENT_ADC`, `PIN_TELEM_RX/TX` | `int8_t` | **Только S3:** резерв под плату полётника ([FC_BOARD.md](../FC_BOARD.md)) | 47, 3, 10, 39/40 | — | — |
 
 SPI-шина датчиков называется `PIN_SENSOR_SPI_*`, а не `PIN_SPI_*`: в ядре
 STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — макросы варианта,
@@ -42,9 +44,9 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 
 <a id="stm32h743"></a>
 
-#### STM32H743VIT6 — заготовка (`BOARD_STM32H743`)
+#### STM32H743VIT6 (`BOARD_STM32H743`)
 
-Платы пока нет: распиновка **не проверена на железе**. Пины выбраны из свободных
+Платы пока нет: распиновка **не проверена на железе** (прошивка гоняется на ПК, env `native-stm32`). Пины выбраны из свободных
 на WeAct MiniSTM32H743VITx (плата PlatformIO env `stm32h743`) и сверены с
 таблицами `PeripheralPins` варианта STM32duino. Значения — макросы варианта
 (`PA0`…), поэтому в начале `Config.h` под `#if defined(BOARD_STM32H743)`
@@ -61,9 +63,10 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
 | `PIN_SPI_CS_IMU` / `PIN_SPI_CS_BARO` | PB12 / PD10 | GPIO |
 | `PIN_GPS_RX` / `PIN_GPS_TX` | PD9 / PD8 | USART3 |
-| `PIN_AUX1` / `PIN_AUX2` | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 — резерв |
-| `PIN_BUZZER`, `PIN_VBAT_ADC`, `PIN_CURRENT_ADC` | PE15, PC0, PC1 | GPIO, ADC1_INP10, ADC1_INP11 — резерв |
-| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4 (эти же пины — FDCAN1) — резерв |
+| `PIN_AUX1` / `PIN_AUX2` | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 — груз / камера |
+| `PIN_BUZZER` | PE15 | GPIO — пищалка |
+| `PIN_VBAT_ADC`, `PIN_CURRENT_ADC` | PC0, PC1 | ADC1_INP10, ADC1_INP11 — резерв |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4 — радиомодем MAVLink (эти же пины — FDCAN1) |
 
 Консоль `Serial` — LPUART1 (PA9 TX / PA10 RX), дефолт варианта.
 
@@ -128,6 +131,32 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `FAILSAFE_THROTTLE` | 1000 | Мотор выключен |
 | `FAILSAFE_GLIDE_ROLL_DEG` | 0.0 | Крен планирования при потере связи в воздухе |
 | `FAILSAFE_GLIDE_PITCH_DEG` | −3.0 | Тангаж планирования (чуть ниже горизонта) |
+| `FAILSAFE_RTH` | `true` | При GPS и доме потеря связи в воздухе — домой с мотором, а не планирование |
+
+### Тумблеры, трубка Пито, автопилот
+
+Числа всех режимов и функций — в `Config.h` рядом с подробными комментариями;
+что они значат для пилота — [AUTOPILOT_GUIDE.md](../AUTOPILOT_GUIDE.md).
+
+| Группа | Константы |
+|---|---|
+| Тумблеры | `SWITCH_ON_US` = 1750 (канал выше — тумблер включён; не 1500, чтобы до первого кадра ничего не включилось) |
+| Трубка Пито | `PITOT_ZERO_SAMPLES` 50, `PITOT_FILTER_TAU_S` 0.1, `PITOT_SCALE` 1.0, `PITOT_NEGATIVE_FAULT_PA/MS` 30/2000, `PITOT_STALE_US` 200 000 |
+| Стабилизация | `MAX_BANK_DEG` 45 (крутилка 15…60), `STAB_MAX_PITCH_DEG` 25, `STAB_INTEGRATOR_ZONE_DEG` 10, `STAB_GAIN_MIN/MAX` 0.25/2 |
+| ACRO | `ACRO_MAX_RATE_DPS` 180, `ACRO_RATE_GAIN_US_PER_DPS` 1.5 |
+| Навигация | `NAV_COURSE_GAIN`, `NAV_BANK_LIMIT_DEG` 40, `NAV_GPS_COURSE_MIN_SPEED_MS` 3, `NAV_ASSUMED_SPEED_MS` 15 |
+| Высота | `NAV_ALT_GAIN`, `NAV_MAX_CLIMB/SINK_MS` 3/3, `NAV_CLIMB_KP/KI_DEG`, `NAV_MAX_CLIMB/DIVE_PITCH_DEG` 15/−12 |
+| Газ и скорость | `CRUISE_THROTTLE_PCT` 55 (30…85), `CRUISE_AIRSPEED_MS` 14 (10…22), `AIRSPEED_THROTTLE_KP/KI`, `THROTTLE_PER_CLIMB_PCT`, `AUTO_THROTTLE_MIN/MAX_PCT` |
+| Сваливание | `STALL_SPEED_MS` 8, `STALL_MARGIN_MS` 2, `STALL_BANK_LIMIT_DEG` 20 |
+| Круги и дом | `LOITER_RADIUS_M` 50 (25…150), `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
+| Геозабор | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
+| Запуск с руки | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| Посадка | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
+| Парение | `SOAR_*`: планирование −3°, термик > 0.5 м/с за 1.5 с, круг 25°, выход < −0.2 м/с за 8 с, мотор ниже 30 м до 100 м, домой дальше 400 м |
+| RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |
+| Автотриммер | `AUTOTRIM_RATE` 0.2, `AUTOTRIM_MAX_US` 120, `AUTOTRIM_MAX_ROLL_DEG` 15, `AUTOTRIM_MAX_RATE_DPS` 30, запись на земле: `AUTOTRIM_SAVE_MAX_ALT_M` 3, `_CLIMB_MS` 0.5, `_SPEED_MS` 3 |
+| Координация | `TURN_COORD_RUDDER_MIX` 0.3, `TURN_COORD_PITCH_US` 150, `TURN_COORD_IN_NAV_MODES` true |
+| Функции | `AIRBRAKE_US` 250, `PAYLOAD_CLOSED/OPEN_US` 1000/2000, `CAMERA_TILT_MIN/MAX_DEG` −90/30, `CAMERA_US_PER_DEG`, `RATES_MIN/MAX_PCT` 30/100, `LOST_MODEL_BEEP_DELAY_MS` 10 000 |
 
 ### Цикл, Wi-Fi, отладка
 
@@ -136,6 +165,8 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `LOOP_PERIOD_MS` | 2 | Период полётного цикла (500 Гц); также номинальный `dt` для `PidController` |
 | `WIFI_AP_SSID` / `WIFI_AP_PASSWORD` | `"OpenPlane-Debug"` / `"12345678"` | Точка доступа дашборда (пароль слабый — инструмент стенда) |
 | `WEB_SERVER_PORT` | 80 | Порт HTTP |
+| `TELEM_BAUDRATE` | 57600 | Скорость радиомодема MAVLink (дефолт SiK) |
+| `MAVLINK_SYSTEM_ID` / `MAVLINK_COMPONENT_ID` | 1 / 1 | Адрес борта в MAVLink |
 | `DEBUG_INTERVAL_MS` | 100 | Как часто `DebugLogger` проверяет каналы лога |
 | `DEBUG_CHANGE_DEADBAND_US` | 3 | Допуск на дребезг RC/PWM в режиме «при изменении» |
 
@@ -154,9 +185,23 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `ELEVATOR` | 1 | CH2 | правый стик ↑↓ | Тангаж (2000 = от себя = нос вниз) |
 | `THROTTLE` | 2 | CH3 | левый стик ↑↓ | Газ |
 | `RUDDER` | 3 | CH4 | левый стик ←→ | Руль направления + колесо |
-| `ARM` | 4 | CH5 | SwA | Тумблер ARM |
-| `FLAPS` | 5 | CH6 | SwB | Закрылки |
-| `AUX_2` | 6 | CH7 | SwC (3 поз.) | Режим автопилота |
-| `AUX_3` | 7 | CH8 | SwD | Свободен |
-| `AUX_4` | 8 | CH9 | VrA | Свободен |
-| `AUX_5` | 9 | CH10 | VrB | Свободен |
+| `ARM` | 4 | CH5 | SwA | Тумблер ARM (переназначить нельзя) |
+| `SWB` | 5 | CH6 | SwB | по таблице `Controls.h` (по умолчанию — закрылки) |
+| `SWC` | 6 | CH7 | SwC (3 поз.) | по умолчанию — режим MANUAL / STABILIZE / AUTO_TAKEOFF |
+| `SWD` | 7 | CH8 | SwD | по умолчанию — RTH |
+| `VRA` | 8 | CH9 | VrA | по умолчанию — `STAB_GAIN` |
+| `VRB` | 9 | CH10 | VrB | по умолчанию — `CRUISE_SPEED` |
+| `COUNT` | 10 | | | число каналов |
+
+---
+
+## namespace `Controls`
+
+**Файл:** `include/config/Controls.h` · **Зависит от:** `ControlBinding.h`, `Channels`
+
+`constexpr Binding BINDINGS[]` — что делает каждый тумблер и крутилка,
+**одна строка на канал** (`Bind::modes/mode/feature/knob`, см.
+[autopilot.md](autopilot.md#binding-bind-bindingcheck)). Рядом — закомментированные
+готовые идеи. Три `static_assert` ловят ошибки таблицы при сборке: стик или
+ARM в таблице, канал вне диапазона, повтор канала, больше одного тумблера
+выбора режима.

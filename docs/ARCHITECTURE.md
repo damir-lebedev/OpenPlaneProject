@@ -645,6 +645,14 @@ stateDiagram-v2
 - **Нативные тесты** (`pio test -e native`) собирают заголовки прошивки на ПК с
   фейками Arduino, FreeRTOS, Wire/SPI/UART/LEDC, Preferences, WebServer/WiFi и
   U8g2 (`test/native/support/`). Покрытие считается `gcovr`.
+- **Прошивка целиком на ПК** — `src/main.cpp` на распиновке S3 и 38-pin с
+  каждым набором датчиков (регистровые эмуляторы чипов), `src/stm32/main.cpp`
+  (`pio test -e native-stm32`) поверх слоя фейков STM32duino.
+- **Замкнутые симуляции полёта** (`test/native/test_sim`): вся прошивка
+  управляет моделью самолёта — каждый режим автопилота летает, а не только
+  «выдаёт числа».
+- **Матрица сборок** (`tools/build_matrix.sh`): все платы × все датчики, без
+  предупреждений.
 - **Тесты на плате** (`pio test -e esp32-s3`): те же `test_feedback` и
   `test_imu_orientation` запускаются и на реальном ESP32-S3.
 

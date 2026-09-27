@@ -16,8 +16,13 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <SPI.h>
-#include <WiFi.h>
 #include <Wire.h>
+#if defined(BOARD_STM32H743)
+#include <EEPROM.h>
+#include <STM32FreeRTOS.h>
+#else
+#include <WiFi.h>
+#endif
 
 #include <deque>
 #include <set>
@@ -28,16 +33,25 @@
 #include "config/Config.h"
 #include "hal/IBoard.h"
 #include "hal/RegisterDevice.h"
+#if !defined(BOARD_STM32H743)
 #include "hal/esp32/Esp32I2CBus.h"
 #include "hal/esp32/Esp32SpiBus.h"
+#endif
 #include "sensors/SensorInterface.h"
 #include "sensors/airspeed/AirspeedSensor.h"
 
 inline void resetWorld()
 {
     fake::resetHal();
+#if defined(BOARD_STM32H743)
+    // Среда native-stm32: настройки — во "флеше" EEPROM-эмуляции, Wi-Fi нет.
+    fake::resetEeprom();
+    fake::timerPulses().clear();
+    fake::schedulerStarted() = false;
+#else
     fake::resetNvs();
     fake::wifi() = fake::WifiState();
+#endif
     fake::setSerialEcho(false);
     Serial.resetFake();
     Wire.resetFake();
@@ -246,6 +260,7 @@ public:
     }
 };
 
+#if !defined(BOARD_STM32H743)
 // Драйвер поверх настоящего I2C-стека: TwoWire (фейк) -> Esp32I2CBus
 // -> I2cRegisterDevice, чип — fake::RegisterMapDevice.
 struct I2cRig
@@ -278,6 +293,7 @@ struct SpiRig
         bus.begin();
     }
 };
+#endif
 
 // ------------------------------------------------------------
 // Дублёры датчиков (для автопилота, ARM, телеметрии)

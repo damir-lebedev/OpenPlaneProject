@@ -4,7 +4,9 @@
 
 | Где | Команда | Что |
 |---|---|---|
-| **ПК (native)** | `pio test -e native` | Все наборы: заголовки прошивки собираются на ПК без изменений, железо заменено управляемыми фейками. Считается покрытие |
+| **ПК (native)** | `pio test -e native` | Заголовки прошивки собираются на ПК без изменений, железо заменено управляемыми фейками: модули, драйверы, замкнутые симуляции полёта, прошивка ESP32 целиком (S3 и 38-pin) с каждым набором датчиков. Считается покрытие |
+| **ПК (native-stm32)** | `pio test -e native-stm32` | Прошивка STM32H743 целиком (`src/stm32/main.cpp`) поверх слоя фейков STM32duino: задачи FreeRTOS, флеш, MAVLink, датчики на I2C и SPI |
+| **Матрица сборок** | `tools/build_matrix.sh` | 4 платы × 6 наборов датчиков с `-Wall -Wextra (-Wshadow)`; любое предупреждение в коде проекта — ошибка |
 | **Плата** | `pio test -e esp32-s3` | `test_feedback` и `test_imu_orientation` на реальном ESP32-S3 (прошивает тестовую прошивку; потом верните обычную: `pio run -t upload`) |
 
 Архитектурный контекст — [`ARCHITECTURE.md §12`](ARCHITECTURE.md#12-тестируемость).
@@ -15,12 +17,19 @@
 
 ```bash
 pip install platformio gcovr        # один раз
-pio test -e native                  # все нативные тесты (~40 с)
+pio test -e native -e native-stm32  # все нативные тесты (~1.5 мин)
 gcovr                               # покрытие по файлам (настройки — gcovr.cfg)
+tools/build_matrix.sh               # все платы × все датчики (~25 мин)
 gcovr --html-details -o coverage/index.html   # HTML-отчёт (coverage/ в .gitignore)
 
 pio test -e native -f native/test_rc          # один набор
 pio test -e native -f test_feedback           # симуляция обратной связи на ПК
+
+# Траектории замкнутых симуляций в CSV (для графиков):
+OPENPLANE_SIM_DIR=/tmp/sim pio test -e native -f native/test_sim
+# Поток MAVLink — на проверку эталонным декодером (pip install pymavlink):
+OPENPLANE_MAVLINK_DUMP=/tmp/tlm.bin pio test -e native -f native/test_mavlink
+python3 tools/check_mavlink.py /tmp/tlm.bin
 ```
 
 Перед подсчётом покрытия после изменений в тестах полезно начать с чистой
@@ -54,6 +63,31 @@ ESP-IDF и библиотек, но поверх симулированного 
 | `U8g2lib.h` | U8g2 | Вместо пикселей — список нарисованных строк и прямоугольников; `begin()/sendBuffer()` гоняют байты через пользовательский byte-callback; `fake::displays()` |
 | `soc/*.h` | ESP-IDF | `SOC_I2C_NUM = 2`, `GPIO_PIN_MUX_REG`, `PIN_INPUT_ENABLE` |
 
+### Слой STM32duino — `test/native/support_stm32/` (env `native-stm32`)
+
+Лежит в `-I` раньше `support/` и дополняет те же фейки тем, что есть только у
+STM32duino. `<Preferences.h>` в этой среде — **настоящий**
+`include/hal/stm32/compat/Preferences.h` поверх `KeyValueStore`.
+
+| Файл | Заменяет | Что умеет |
+|---|---|---|
+| `Arduino.h` | ядро STM32duino | пины `PA0..PE15` (порт·16 + номер), `pin_size_t`, `PinMap_TIM` для пинов сервовыходов, `HardwareTimer` (импульс виден `fake::timerPulseUs(pin)` и `pulseIn()`), `Uart`, `noInterrupts()` |
+| `STM32FreeRTOS.h` | STM32duino FreeRTOS | `xTaskCreate` в общий реестр задач (стек в словах), `vTaskStartScheduler()` возвращается — задачи тест крутит сам (`fake::runTask`), `xPortGetFreeHeapSize` |
+| `EEPROM.h` | EEPROM-эмуляция | «флеш» 8 КБ (стёрт = 0xFF) и буфер, `fake::eeprom()` — счётчики и порча образа |
+| `SPI.h` | | `SPIMode` |
+
+В общих фейках для STM32 добавлено: `TwoWire(sda, scl)`, `setSDA/SCL` и
+`fake::wireWithSda(pin)` (найти вторую шину платы), `HardwareSerial(rx, tx)` и
+`fake::uartByRx(pin)`, `SPIClass::setSCLK/MISO/MOSI`.
+
+### Эмуляторы чипов и модель самолёта — `test/native/helpers/`
+
+| Файл | Что это |
+|---|---|
+| `ChipEmulators.h` | LSM6DSV, ICM-45686 (с косвенными регистрами IPREG), QMC6309, SPL06-001, BMP581, кадры NAV-PVT u-blox — регистровые карты на I2C или SPI, данные из «мира» `World` (углы и скорости, высота, воздушная скорость, курс, координаты), в осях чипа с учётом `IMU_ROTATION_CW_DEG` |
+| `PlaneSim.h` | модель самолёта ~1.2 кг: точка с массой + вращение по крену/тангажу, CL(α) со сваливанием, сопротивление, тяга, ветер, термики, земля |
+| `SimHarness.h` | замкнутый контур: пульт → кадр iBUS → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → ШИМ → отклонения рулей → `PlaneSim` → датчики (в том числе трубка Пито на двух шумных барометрах). CSV-траектория при `OPENPLANE_SIM_DIR` |
+
 `test/native/helpers/TestSupport.h` — общее для наборов: `resetWorld()`
 (вызывается из `setUp()`), дублёры `FakeUart`/`FakeServo`/`FakeBoard` и
 датчиков (`FakeImu`, `FakeBaro`, `FakeMag`, `FakeGps`), сборщик кадров
@@ -70,39 +104,51 @@ ESP-IDF и библиотек, но поверх симулированного 
 
 | Набор | Тестов | Что проверяет |
 |---|---|---|
-| `native/test_hal` | 17 | Помощники `II2CBus` (NACK, короткое чтение — буфер не трогается), `I2cRegisterDevice`, `SpiRegisterDevice` (бит чтения, фиктивный байт BMP388), `Esp32I2CBus` (таймаут 5 мс), `Esp32SpiBus` (режимы 0–3), `Esp32UartPort` (8N1, пины), `Esp32ServoOutput` (50 Гц/14 бит, ограничение импульса, отказ LEDC, измерение через входной буфер), `Esp32Board` (шины, UART, порядок каналов) |
+| `native/test_hal` | 17 | Помощники `II2CBus` (NACK, короткое чтение — буфер не трогается), `I2cRegisterDevice`, `SpiRegisterDevice` (бит чтения, фиктивный байт BMP388), `Esp32I2CBus` (таймаут 5 мс), `Esp32SpiBus` (режимы 0–3), `Esp32UartPort` (8N1, пины), `Esp32ServoOutput` (50 Гц/14 бит, ограничение импульса, отказ LEDC, измерение через входной буфер), `Esp32Board` (шины, UART, порядок каналов, AUX, пищалка) |
 | `native/test_rc` | 16 | `RcChannelState`, `RcInput`, разбор iBUS: кадры по частям, CRC, 12-битные значения, failsafe пульта, таймаут 500 мс (и через переполнение `micros()`), мусор, пересинхронизация |
 | `native/test_control` | 21 | Закрылки (скорость, первый вызов, паузы), микшер (знаки, реверс, флапероны), газ, автомат ARM и проверки датчиков режима, таблица выходов и самопроверка импульсов |
-| `native/test_autopilot` | 22 | ПИД (D по скорости датчика, интеграл, anti-windup, `dt`), все режимы, автовзлёт по времени, ALT_HOLD, планирование при потере связи, селектор CH7 |
-| `native/test_flight_controller` | 12 | Полный такт `FlightController` на настоящих классах: приоритеты потеря связи > ARM > стики/автопилот > газ |
-| `native/test_imu` | 21 | MPU6050/6500/9250 и ICM-42688: опознание, регистры, масштабы, поворот осей и авиационные знаки, ошибки шины, калибровка гироскопа и предполётная проверка (движение, не 1g, плата перевёрнута, установка сменилась), калибровка установки по трём позам на симулированном времени, NVS, фильтр ориентации |
-| `native/test_baro_mag_gps` | 23 | `BarometerBase` (опрос, высота, вертикальная скорость, ошибки), BMP388 по I2C и SPI, BME280/BMP280 по эталону Bosch (25.08 °C, 100653.27 Па), компасы (курс, hard-iron калибровка в NVS), u-blox M10 (байты CFG-VALSET, NAV-PVT, битые кадры, таймаут), `SensorSelection` |
-| `native/test_telemetry` | 27 | `LoopStats`, `LogSettings` (NVS, версия), `DebugLogger` (все каналы, допуски, периоды, пауза), `DebugConsole` (меню, горячие клавиши, запрет при ARM, сохранение только без ARM), `WebDebugServer` (маршруты, JSON, почтовый ящик, пробелы и экспонента в JSON), `OledDisplay` (байты по I2C, кадр, инверсия при потере связи) |
-| `native/test_feedback_units` | 14 | Модули обратной связи по отдельности: источники скорости, в воздухе/на земле, RLS-оценка (пропуски, триммер), регулятор (anti-windup), все признаки сваливания, отмены взлёта/посадки, `printStatus` |
-| `native/test_app` | 9 | `src/main.cpp` целиком на виртуальном стенде: `setup()` с симулированными MPU6500/BMP388/QMC5883P/OLED, фиксированный период `loop()`, пульт → сервы, ARM и газ, режимы, потеря связи в воздухе, консоль, дашборд, экран |
+| `native/test_autopilot` | 22 | ПИД (D по скорости датчика, интеграл, anti-windup, `dt`), STABILIZE как режим углов, автовзлёт по времени, ALT_HOLD рулём высоты, планирование при потере связи |
+| `native/test_autopilot_modes` | 31 | Все 12 режимов и реакция каждого на отсутствие датчика, таблица привязок и `static_assert`, функции и крутилки, навигация (курс, круг, дом, геозабор), failsafe RTH/планирование, запуск с руки, парение, автотриммер (запись только на земле) |
+| `native/test_flight_controller` | 12 | Полный такт `FlightController` на настоящих классах: приоритеты потеря связи > ARM > стики/автопилот > газ; AUX, `MOTOR_KILL`, пищалка |
+| `native/test_imu` | 21 | MPU6050/6500/9250 и ICM-42688: опознание, регистры, масштабы, поворот осей и авиационные знаки, ошибки шины, калибровка гироскопа и предполётная проверка, калибровка установки по трём позам, NVS, фильтр ориентации |
+| `native/test_baro_mag_gps` | 23 | `BarometerBase`, BMP388 по I2C и SPI, BME280/BMP280 по эталону Bosch, компасы (курс, hard-iron калибровка в NVS), u-blox M10 (CFG-VALSET, NAV-PVT, битые кадры, таймаут), `SensorSelection` |
+| `native/test_sensors_new` | 23 | LSM6DSV (16X/32X, запасной адрес, SPI), ICM-45686 (косвенные регистры), QMC6309, SPL06-001 (формулы датащита), BMP581 (DRDY и запасной путь), трубка Пито (ноль, фильтр, плотность, перепутанные шланги, устаревшие данные, «полёт» с шумом двух барометров) |
+| `native/test_storage` | 16 | `KeyValueStore` (перезагрузка, износ — одинаковое не пишется, переполнение без потери данных, CRC, пропажа питания при стирании, мусор, версия формата), `KvPreferences` (поведение как у NVS ESP32) |
+| `native/test_mavlink` | 20 | Кодек против эталонных кадров pymavlink (v1, v2, подписанный), CRC, пересинхронизация; телеметрия: частоты потоков, HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS, параметры ПИД (список, чтение, запись, отказ плохих значений), смена режима с земли, ARM с земли — отказ, миссии — 0, переполненный буфер UART не блокирует цикл |
+| `native/test_telemetry` | 28 | `LoopStats`, `LogSettings` (NVS, версия), `DebugLogger` (все каналы, NAV), `DebugConsole` (меню, горячие клавиши, опрос шин `b`, запрет при ARM, сохранение только без ARM), `WebDebugServer` (маршруты, JSON, почтовый ящик), `OledDisplay` (байты по I2C, кадр, инверсия при потере связи) |
+| `native/test_sim` | 14 | Замкнутые полёты всей прошивки с моделью самолёта: выход из крена, CRUISE в боковой ветер, LOITER, RTH, failsafe RTH/планирование, геозабор, автовзлёт с полосы, запуск с руки, автопосадка, термик, RESCUE из спирали, удержание скорости и защита от сваливания, настоящая трубка Пито в контуре, автотриммер «кривого» самолёта |
+| `native/test_feedback_units` | 14 | Модули обратной связи по отдельности: источники скорости, в воздухе/на земле, RLS-оценка, регулятор, признаки сваливания, отмены взлёта/посадки |
+| `native/test_app` | 9 | `src/main.cpp` на ESP32-S3 со стендовым набором MPU6500/BMP388/QMC5883P/OLED: период `loop()`, пульт → сервы, ARM, режимы, потеря связи, консоль, дашборд, экран |
+| `native/test_app_lsm6dsv_pitot` | 9 | `src/main.cpp` на ESP32-S3 с лётным набором: LSM6DSV + QMC6309 + SPL06 + BMP581 в трубке + GPS — опознание всех чипов, ноль трубки и скорость, высота, дом по GPS, STABILIZE по углам с чипа, RTH на дом, опрос шин, дашборд |
+| `native/test_app_icm45686_esp32dev` | 5 | `src/main.cpp` на **ESP32 38-pin** (`BOARD_ESP32_CLASSIC`) с набором ICM-45686 + QMC6309 + SPL06 + BMP581: распиновка платы, фильтры IPREG, запуск с руки, стабилизация и скорость, опрос одной шины |
+| `native_stm32/test_app_stm32_lsm6dsv_pitot` | 9 | `src/stm32/main.cpp` на **STM32H743** с лётным набором: задачи и приоритеты, период 2 мс, трубка, таймеры ШИМ и `pulseIn`, MAVLink в полёте, смена режима из GCS, запись настроек фоновой задачей во «флеш», экран на I2C1, консоль |
+| `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743 с ICM-45686 и BMP581 **по SPI** + QMC6309: испорченный флеш при включении, ALT_HOLD из GCS держит высоту, потеря связи → RTH, видно в MAVLink; перезапись битого образа |
 | `test_feedback` | 10 | Замкнутая симуляция самолёта с контуром обратной связи (на ПК и на плате) |
 | `test_imu_orientation` | 5 | Калибровка установки IMU на 300 случайных установках (на ПК и на плате) |
-| **Всего** | **197** | |
+| **Всего** | **329** | 316 в `native` + 13 в `native-stm32` |
 
 ---
 
 ## Покрытие
 
-Считается `gcovr` по `include/` и `src/` (всё, что входит в прошивку).
-Состояние на момент добавления тестов:
+Считается `gcovr` по `include/` и `src/` (всё, что входит в прошивку), по
+обеим нативным средам вместе:
+`gcovr -r . --filter include/ --filter src/ .pio/build/native .pio/build/native-stm32`.
 
 | Слой | Строки | Ветвления |
 |---|---|---|
-| `autopilot` | 211/211 (100%) | 95/99 (96.0%) |
+| `autopilot` | 920/943 (97.6%) | 645/731 (88.2%) |
 | `autopilot/feedback` | 683/702 (97.3%) | 501/570 (87.9%) |
-| `control` | 210/212 (99.1%) | 120/128 (93.8%) |
-| `hal` | 75/75 (100%) | 16/16 (100%) |
-| `hal/esp32` | 96/96 (100%) | 18/20 (90.0%) |
+| `control` | 252/256 (98.4%) | 171/189 (90.5%) |
+| `hal` | 98/102 (96.1%) | 26/26 (100%) |
+| `hal/esp32` | 101/102 (99.0%) | 21/22 (95.5%) |
+| `hal/stm32` | 149/158 (94.3%) | 35/52 (67.3%) |
 | `rc` | 92/92 (100%) | 41/42 (97.6%) |
-| `sensors` (все) | 1039/1040 (99.9%) | 486/541 (89.8%) |
-| `telemetry` | 745/748 (99.6%) | 546/570 (95.8%) |
-| `src` (`main.cpp`) | 52/52 (100%) | 8/12 (66.7%) |
-| **Итого** | **3203/3228 (99.2%)** | **1831/1998 (91.6%)**; функции 510/511 (99.8%) |
+| `sensors` (все) | 1444/1446 (99.9%) | 716/835 (85.7%) |
+| `storage` | 220/220 (100%) | 158/178 (88.8%) |
+| `telemetry` | 1413/1440 (98.1%) | 1123/1269 (88.5%) |
+| `src` (`main.cpp`, `stm32/main.cpp`) | 118/123 (95.9%) | 20/29 (69.0%) |
+| **Итого** | **5490/5584 (98.3%)** | **3457/3943 (87.7%)**; функции 877/902 (97.2%) |
 
 Что осталось непокрытым и почему:
 
@@ -110,7 +156,11 @@ ESP-IDF и библиотек, но поверх симулированного 
   при `FeedbackConfig::TAKEOFF_HAND_LAUNCH = false` недостижим; появится в
   тестах, когда константа станет настраиваемой (переезд в `Config.h`).
 - **Зависимое от платы:** выход без пина (`PIN_RUDDER = -1` бывает только на
-  C3), GPS без TX-пина (C3) — нативная сборка использует распиновку S3.
+  C3), GPS без TX-пина (C3) — нативные тесты гоняют распиновку S3, 38-pin и
+  STM32, но не C3 (C3 проверяется матрицей сборок).
+- **STM32:** ветки ошибок ядра (нет таймера на пине, пул таймеров исчерпан),
+  сообщение «FreeRTOS не запустился» — на ПК `vTaskStartScheduler()` всегда
+  возвращается.
 - **Защитные ветки**, до которых нельзя дойти через публичный API:
   `default`/`Count` в `switch` по перечислениям, `return "?"`.
 - Файлы без исполняемых строк (`Config.h`, `Channels.h`, `FeedbackConfig.h`,
@@ -125,7 +175,7 @@ ESP-IDF и библиотек, но поверх симулированного 
 
 | Инструмент | Команда | Профиль |
 |---|---|---|
-| GCC | `PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Wshadow" pio run -e esp32-s3` (и `-c3`, `-dev`); `pio run -e stm32h743` | Нативная сборка тестов — всегда с `-Wall -Wextra -Wshadow`; `stm32h743` — с `-Wall -Wextra` (`build_src_flags`; `-Wshadow` шумит на заголовках самого STM32duino) |
+| GCC | `tools/build_matrix.sh` (или `PLATFORMIO_BUILD_SRC_FLAGS="-Wall -Wextra -Wshadow" pio run -e esp32-s3`) | Все платы × все наборы датчиков. Нативная сборка тестов — всегда с `-Wall -Wextra -Wshadow`; `stm32h743` — с `-Wall -Wextra` (`build_src_flags`; `-Wshadow` шумит на заголовках самого STM32duino) |
 | cppcheck | `pio check -e esp32-s3`; `pio check -e stm32h743` | `check_*` в `[esp32_common]`: `include/` и `src/` (кроме `stm32/`), warning/style/performance/portability, встроенные подавления `// cppcheck-suppress` только для ложных срабатываний (колбэк U8g2, `setup/loop`). У `stm32h743` — те же флаги по `include/hal/stm32/` и `src/stm32/` |
 | clang-tidy | `tools/clang-tidy.sh` | `.clang-tidy`: bugprone, clang-analyzer, performance, `misc-include-cleaner` и др.; отключённые проверки с объяснением — в самом файле |
 
@@ -136,15 +186,19 @@ clang под хост-архитектуру разобрать не может 
 то, чем пользуется: «зонтичные» заголовки (`FeedbackModules.h`, API
 `IBoard.h`/`RegisterDevice.h`, макросы `SensorSelection.h`) помечены
 `// IWYU pragma: export`. Код под STM32 (`include/hal/stm32/`, `src/stm32/`)
-фейками не покрыт, поэтому скрипт его пропускает — его проверяют сборка и
-cppcheck env `stm32h743`. Нативными тестами он тоже не покрыт (фейков
-STM32duino нет) и в `gcovr` не попадает: это заготовка без железа.
+скрипт пропускает — его проверяют сборка, cppcheck env `stm32h743` и тесты
+env `native-stm32`.
 
-На момент аудита все три инструмента дают **0 замечаний** по коду проекта на
-всех трёх платах ESP32 и на заготовке `stm32h743`, включая альтернативные наборы датчиков
-(`-DSENSOR_IMU=SENSOR_IMU_ICM42688 -DSENSOR_BARO=SENSOR_BARO_BME280
--DSENSOR_MAG=SENSOR_MAG_QMC5883L -DSENSOR_GPS=SENSOR_GPS_UBLOX_M10` и
-BMP388 по SPI без компаса).
+Матрица сборок на момент последнего прохода — **24/24 без предупреждений**:
+
+| Плата | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c |
+|---|---|---|---|---|---|---|
+| esp32-s3 | OK | OK | OK | OK | OK | OK |
+| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK |
+| esp32-c3 | OK | OK | OK | OK | OK | OK |
+| stm32h743 | OK | OK | OK | OK | OK | OK |
+
+cppcheck (`esp32-s3`, `stm32h743`) — 0 замечаний по коду проекта.
 
 ---
 
@@ -156,8 +210,13 @@ BMP388 по SPI без компаса).
    проверка записанных значений (`chip.lastWrite(reg)`) и разбора данных.
    Для формул — эталон из даташита или независимый расчёт, а не копия кода.
 3. Классы с бесконечными задачами FreeRTOS — `fake::findTask("имя")` +
-   `fake::runTask(task, n)`.
-4. Новый набор — папка `test/native/test_<имя>/test_main.cpp` с `main()`;
+   `fake::runTask(task, n)`; так же крутится полётная задача STM32.
+4. Прошивка целиком с другим набором датчиков или другой платой — отдельный
+   набор, который до `#include "../../../src/main.cpp"` задаёт
+   `SENSOR_KIT` (или `#undef BOARD_ESP32_S3` + `#define BOARD_ESP32_CLASSIC`);
+   чипы — `helpers/ChipEmulators.h`. Для STM32 — `test/native_stm32/`.
+5. Новый режим автопилота — сценарий замкнутого полёта в `test_sim`.
+6. Новый набор — папка `test/native/test_<имя>/test_main.cpp` с `main()`;
    `setUp()` зовёт `resetWorld()`, если набору не нужно состояние между
    тестами.
-5. Нашли баг — сначала тест, который его ловит, потом исправление.
+7. Нашли баг — сначала тест, который его ловит, потом исправление.

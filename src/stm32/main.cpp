@@ -39,6 +39,7 @@
 #include "rc/IBusReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/SensorSelection.h"
+#include "sensors/airspeed/AirspeedSensor.h"
 #include "telemetry/DebugConsole.h"
 #include "telemetry/DebugLogger.h"
 #include "telemetry/LoopStats.h"
@@ -224,8 +225,19 @@ void setup()
     KeyValueStore& settings = Stm32FlashStorage::store();
     settings.mount();
     Serial.print("Настройки во флеше: ");
-    Serial.print(static_cast<unsigned>(settings.bytesUsed()));
-    Serial.println(settings.wasCorrupt() ? " байт (образ был повреждён — значения по умолчанию)" : " байт");
+    if (settings.wasCorrupt())
+    {
+        Serial.println("образ повреждён — значения по умолчанию, калибровки повторить");
+    }
+    else if (settings.bytesUsed() <= KeyValueStore::HEADER_SIZE)
+    {
+        Serial.println("пусто — значения по умолчанию");
+    }
+    else
+    {
+        Serial.print(static_cast<unsigned>(settings.bytesUsed()));
+        Serial.println(" байт");
+    }
 
     setupSensors();
 

@@ -13,6 +13,7 @@
 #include "control/FlightOutputs.h"
 #include "control/ThrottleManager.h"
 #include "rc/IBusReceiver.h"
+#include "sensors/SensorInterface.h"
 #include "rc/RcChannelState.h"
 
 // ============================================================

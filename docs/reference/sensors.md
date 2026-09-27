@@ -66,11 +66,30 @@
 
 ## `AirspeedSensor`
 
-**Файл:** `sensors/airspeed/AirspeedSensor.h` · **Вид:** интерфейс · **Статус:** заготовка, реализаций нет
+**Файл:** `sensors/airspeed/AirspeedSensor.h` · **Вид:** интерфейс · **Реализация:** `PitotDualBaroAirspeed`
 
-`AirspeedData { differentialPressurePa, indicatedMs, timestamp }`.
-Методы: `getAirspeedData()`, `calibrateZero()` (текущий перепад = 0, трубка
-закрыта). Нужен контуру обратной связи; кандидаты — MS4525DO, MPXV7002DP.
+`AirspeedData { differentialPressurePa, indicatedMs, trueMs, airDensity, timestamp }`:
+перепад после нуля и фильтра, приборная скорость (ρ0 = 1.225), истинная (ρ
+по статике и температуре), плотность. Методы: `getAirspeedData()`,
+`calibrateZero()` (начать обнуление заново), `isZeroing()`.
+
+## `PitotDualBaroAirspeed`
+
+**Файл:** `sensors/airspeed/PitotDualBaroAirspeed.h` · **Наследует:** `AirspeedSensor` · **Статус:** проверена в замкнутой симуляции с шумом, не облётана
+
+Самодельная трубка Пито на **двух абсолютных барометрах**: `total` —
+BMP581 внутри трубки (полное давление), `stat` — основной барометр фюзеляжа
+(статика). Руководство по сборке — [AUTOPILOT_GUIDE.md](../AUTOPILOT_GUIDE.md#трубка-пито-своими-руками).
+
+| Метод | Описание |
+|---|---|
+| `PitotDualBaroAirspeed(BarometerSensor& total, BarometerSensor& stat)` | |
+| `begin()` | `begin()` барометра трубки (статика уже запущена), начать обнуление |
+| `update()` | новый отсчёт трубки → перепад − ноль, ФНЧ `PITOT_FILTER_TAU_S`; первые `PITOT_ZERO_SAMPLES` отсчётов — усреднение нуля; скорость `√(2·Δp/ρ)·PITOT_SCALE` |
+| `isAvailable()` | оба барометра живы, ноль набран, нет неисправности, отсчёт свежее `PITOT_STALE_US` |
+| `hasFault()` | перепад ниже −`PITOT_NEGATIVE_FAULT_PA` дольше `PITOT_NEGATIVE_FAULT_MS` (шланги, вода) |
+| `getZeroOffset()`, `printStatus()` | диагностика |
+| `static speedFrom(Δp, ρ)`, `static densityOf(p, T)` | формулы |
 
 ---
 
@@ -97,15 +116,27 @@ Y влево). `rotationCwDeg` — куда смотрит ось X чипа, п
 
 **Файл:** `sensors/SensorSelection.h` · **Вид:** препроцессорная конфигурация
 
-Единственное место смены физического датчика. Любой выбор можно переопределить
-флагом сборки (`-D SENSOR_IMU=SENSOR_IMU_ICM42688`).
+Единственное место смены физического датчика: готовый набор одной строкой
+(`SENSOR_KIT`) или каждый датчик отдельно. Любой выбор можно переопределить
+флагом сборки (`-D SENSOR_KIT=SENSOR_KIT_LSM6DSV_PITOT`,
+`-D SENSOR_IMU=SENSOR_IMU_ICM45686_SPI`).
 
-| Макрос выбора | Варианты | По умолчанию |
-|---|---|---|
-| `SENSOR_IMU` | `SENSOR_IMU_MPU6050` (1), `SENSOR_IMU_ICM42688` (2) | MPU6050 |
-| `SENSOR_BARO` | `SENSOR_BARO_BME280` (1), `SENSOR_BARO_BMP388` (2, SPI), `SENSOR_BARO_BMP388_I2C` (3) | BMP388_I2C |
-| `SENSOR_MAG` | `SENSOR_MAG_NONE` (0), `SENSOR_MAG_QMC5883P` (1), `SENSOR_MAG_QMC5883L` (2) | QMC5883P |
-| `SENSOR_GPS` | `SENSOR_GPS_NONE` (0), `SENSOR_GPS_UBLOX_M10` (1) | NONE |
+| Набор `SENSOR_KIT` | IMU | Барометр | Компас | Воздушная скорость | GPS |
+|---|---|---|---|---|---|
+| `SENSOR_KIT_BENCH_GY521` (1, по умолчанию) | MPU6500 | BMP388 I2C | QMC5883P | — | — |
+| `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (фюзеляж) | QMC6309 | BMP581 в трубке | M10 |
+| `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (фюзеляж) | QMC6309 | BMP581 в трубке | M10 |
+| `SENSOR_KIT_CUSTOM` (0) | задать все пять макросов ниже | | | | |
+
+| Макрос выбора | Варианты |
+|---|---|
+| `SENSOR_IMU` | `MPU6050` (1), `ICM42688` (2, SPI), `LSM6DSV` (3), `LSM6DSV_SPI` (4), `ICM45686` (5), `ICM45686_SPI` (6) |
+| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7) |
+| `SENSOR_MAG` | `NONE` (0), `QMC5883P` (1), `QMC5883L` (2), `QMC6309` (3) |
+| `SENSOR_AIRSPEED` | `NONE` (0), `PITOT_BMP581` (1) — BMP581 I2C 0x47 в трубке |
+| `SENSOR_GPS` | `NONE` (0), `UBLOX_M10` (1) |
+
+Все сочетания собираются на всех платах — `tools/build_matrix.sh`.
 
 Результат — псевдонимы типов и фабрики устройств:
 
@@ -113,10 +144,13 @@ Y влево). `rotationCwDeg` — куда смотрит ось X чипа, п
 |---|---|
 | `SelectedImu`, `SELECTED_IMU_DEVICE(board)` | `MPU6050_Sensor` + `I2cRegisterDevice(i2c, 0x68)` / `ICM42688_Sensor` + `spiDevice(spi, PIN_SPI_CS_IMU)` |
 | `SelectedBaro`, `SELECTED_BARO_DEVICE(board)` | `BME280_Sensor` + I2C 0x76 / `BMP388_Sensor` + SPI (CS `PIN_SPI_CS_BARO`) / `BMP388_Sensor` + I2C 0x76 |
-| `SelectedMag`, `SELECTED_MAG_DEVICE(board)` | `QMC5883P_Sensor` + I2C 0x2C / `QMC5883L_Sensor` + I2C 0x0D (для NONE не определены) |
+| `SelectedMag`, `SELECTED_MAG_DEVICE(board)` | `QMC5883P_Sensor` + I2C 0x2C / `QMC5883L_Sensor` + I2C 0x0D / `QMC6309_Sensor` + I2C 0x7C (для NONE не определены) |
+| новые IMU | `LSM6DSV_Sensor` + I2C 0x6A (запасной 0x6B) или SPI; `ICM45686_Sensor` + I2C 0x68 (0x69) или SPI |
+| новые барометры | `SPL06_Sensor` + I2C 0x76 (0x77) или SPI; `BMP581_Sensor` + I2C 0x46 (0x47) или SPI |
+| `SelectedPitotBaro`, `SELECTED_PITOT_DEVICE(board)` | `BMP581_Sensor` + I2C 0x47 (для NONE не определены) |
 | `SelectedGps` | `UbloxM10_Gps` (для NONE не определён) |
 
-`main.cpp` оборачивает создание компаса и GPS в `#if SENSOR_* != SENSOR_*_NONE`.
+`main.cpp` оборачивает создание компаса, GPS и трубки в `#if SENSOR_* != SENSOR_*_NONE`.
 
 ---
 
@@ -245,6 +279,34 @@ SPI. Чип определяется по `WHO_AM_I` (0x68 — MPU6050, инач
 
 ---
 
+## `LSM6DSV_Sensor`
+
+**Файл:** `sensors/imu/LSM6DSV_Sensor.h` · **Наследует:** `ImuSensorBase` · **NVS:** `imu_lsm6dsv` · **Статус:** не проверен на железе
+
+LSM6DSV / LSM6DSV16X / LSM6DSV32X (ST). Регистры сверены с ST `lsm6dsv-pid` и ArduPilot.
+
+- `begin()`: `WHO_AM_I` (0x0F) = 0x70; `SW_RESET` (CTRL3 бит 0) и ожидание;
+  32X — по биту варианта в CTRL8 (у него свой код ±16 g); BDU + автоинкремент,
+  ±2000 °/с с LPF1, ±16 g с LPF2, 960 Гц high-performance.
+- `readSample()`: 14 байт с 0x20, little-endian: temp, gyro XYZ, accel XYZ.
+- Масштабы: 1000/0.488 LSB/g, 1000/70 LSB/(°/с); температура `raw/256 + 25`.
+- `static spiDevice(bus, cs)` — SPI режим 0, без фиктивного байта.
+
+## `ICM45686_Sensor`
+
+**Файл:** `sensors/imu/ICM45686_Sensor.h` · **Наследует:** `ImuSensorBase` · **NVS:** `imu_icm45686` · **Статус:** не проверен на железе
+
+ICM-45686 (TDK). Регистры сверены с драйвером TDK, Zephyr и ArduPilot.
+
+- `begin()`: сброс `REG_MISC2` (0x7F), `WHO_AM_I` (0x72) = 0xE9; ±2000 °/с и ±16 g
+  на 1.6 кГц (`GYRO/ACCEL_CONFIG0` = 0x15), Low Noise (`PWR_MGMT0` = 0x0F); ФНЧ
+  ODR/32 — чтение-модификация-запись **косвенных** регистров IPREG
+  (0xA4AC, 0xA583) через окно 0x7C..0x7E; 45 мс на запуск гироскопа.
+- `readSample()`: 14 байт с 0x00, little-endian: accel XYZ, gyro XYZ, temp.
+- Масштабы: 2048 LSB/g, 16.4 LSB/(°/с); температура `raw/132.48 + 25`.
+
+---
+
 ## `BarometerBase`
 
 **Файл:** `sensors/baro/BarometerBase.h` · **Наследует:** `BarometerSensor` · **Вид:** абстрактный
@@ -299,6 +361,35 @@ BME280 (ID 0x60) и BMP280 (ID 0x58), I2C 0x76/0x77 или SPI без фикти
 
 ---
 
+## `SPL06_Sensor`
+
+**Файл:** `sensors/baro/SPL06_Sensor.h` · **Наследует:** `BarometerBase` · **Статус:** не проверен на железе
+
+SPL06-001 (Goertek). Формулы — датащит §4.9.
+
+- `begin()`: `ID` (0x0D) = 0x10 (0x11 — SPA06, другой набор коэффициентов —
+  отвергается); сброс, ожидание `COEF_RDY | SENSOR_RDY`; 18 байт коэффициентов
+  (знаковые 12/20/16-битные поля); источник температуры — по `COEF_SRCE`;
+  давление 16× (32 Гц), температура 1×, непрерывный режим.
+- `isNewSampleReady()` — бит `PRS_RDY`; `readSample()` — 24-битные
+  big-endian отсчёты, `kP = 253952`, `kT = 524288`.
+
+## `BMP581_Sensor`
+
+**Файл:** `sensors/baro/BMP581_Sensor.h` · **Наследует:** `BarometerBase` · **Статус:** не проверен на железе
+
+BMP581 (Bosch). Последовательность — официальный BMP5_SensorAPI.
+
+- `begin()`: фиктивное чтение (для SPI), `CHIP_ID` (0x01) = 0x50/0x51;
+  программный сброс, `INT_STATUS` POR и `STATUS` NVM готова без ошибок;
+  standby → OSR (давление 16×, температура 2×), IIR, DRDY; проверка
+  выполнимости ODR (`OSR_EFF`); непрерывный режим.
+- Отсчёт — по DRDY или раз в 40 мс, если флаг потерян; температура
+  `int24/65536`, давление `uint24/64`.
+- Два экземпляра в сборке с трубкой: основной барометр и `PITOT-BMP581`.
+
+---
+
 ## `MagnetometerBase`
 
 **Файл:** `sensors/mag/MagnetometerBase.h` · **Наследует:** `MagnetometerSensor` · **Вид:** абстрактный
@@ -338,6 +429,19 @@ little-endian. 37.5 LSB/мкТл.
 `SET/RESET = 0x01`, `CONTROL1 = 0x1D` (continuous, 200 Гц, ±8 Гс, OSR 512).
 Данные — 6 байт с `0x00`, little-endian. 30 LSB/мкТл. Регистры **не совместимы**
 с QMC5883P.
+
+---
+
+## `QMC6309_Sensor`
+
+**Файл:** `sensors/mag/QMC6309_Sensor.h` · **Наследует:** `MagnetometerBase` · **NVS:** `qmc6309` · **Статус:** не проверен на железе
+
+QMC6309 (QST), I2C 0x7C — адрес за пределами обычного диапазона 0x08..0x77
+(опрос шин консоли `b` проходит до 0x7F).
+
+- `begin()`: `CHIP_ID` (0x00) = 0x90; сброс (CTRL2 0x80 → 0x00), ожидание
+  `NVM_RDY | NVM_LOAD_DONE`; ±8 Гс, 200 Гц, set/reset; LPF 16, OSR 8, normal.
+- `readRaw()`: X/Y/Z little-endian с 0x01; 40.96 LSB/мкТл.
 
 ---
 

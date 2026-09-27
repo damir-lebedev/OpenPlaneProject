@@ -33,6 +33,7 @@
 #include "rc/IBusReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/SensorSelection.h"
+#include "sensors/airspeed/AirspeedSensor.h"
 #include "telemetry/DebugConsole.h"
 #include "telemetry/DebugLogger.h"
 #include "telemetry/LoopStats.h"

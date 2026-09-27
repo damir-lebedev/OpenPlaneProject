@@ -53,57 +53,66 @@
 
 ```
 include/
-├── config/      Config.h (пины, все настройки), Channels.h (имена каналов)
+├── config/      Config.h (пины, все настройки), Channels.h (имена каналов),
+│                Controls.h (что делает каждый тумблер — одна строка на канал)
 ├── hal/         IBoard, II2CBus, ISpiBus, IUartPort, IServoOutput,
-│   │            RegisterDevice (регистровое устройство поверх I2C/SPI)
-│   └── esp32/   Esp32Board + обёртки над Wire/SPI/HardwareSerial/LEDC
+│   │            RegisterDevice (регистровое устройство поверх I2C/SPI), Rtos
+│   ├── esp32/   Esp32Board + обёртки над Wire/SPI/HardwareSerial/LEDC
+│   └── stm32/   Stm32Board + Wire/SPI/Uart/HardwareTimer, Stm32FlashStorage,
+│                compat/Preferences.h (настройки во флеше вместо NVS)
+├── storage/     KeyValueStore, KvPreferences — хранилище настроек без NVS
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
 │                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, FlightController
-├── autopilot/   PidController, Autopilot, AutopilotModeSelector
+│                FlightOutputs, Beeper, FlightController
+├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
+│   │            Navigation, AltitudeSpeedController, LaunchController,
+│   │            SoaringController, AutoTrim, PidController
 │   └── feedback/  заготовка обратной связи — НЕ подключена (см. раздел ниже)
 ├── sensors/     SensorInterface, SensorSelection, SensorMounting
-│   ├── imu/     ImuSensorBase, AttitudeEstimator, MPU6050_Sensor, ICM42688_Sensor
-│   ├── baro/    BarometerBase, BMP388_Sensor, BME280_Sensor
-│   ├── mag/     MagnetometerBase, QMC5883P_Sensor, QMC5883L_Sensor
+│   ├── imu/     ImuSensorBase, AttitudeEstimator, MPU6050, ICM42688, LSM6DSV, ICM45686
+│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, BMP581
+│   ├── mag/     MagnetometerBase, QMC5883P, QMC5883L, QMC6309
 │   ├── gps/     UbloxM10_Gps
-│   └── airspeed/ AirspeedSensor — интерфейс, реализаций пока нет
-└── telemetry/   DebugLogger, DebugConsole, WebDebugServer,
-                 WebDashboardPage, OledDisplay, LoopStats
+│   └── airspeed/ AirspeedSensor, PitotDualBaroAirspeed (трубка на двух барометрах)
+└── telemetry/   DebugLogger, DebugConsole, WebDebugServer, WebDashboardPage,
+                 OledDisplay, LoopStats, MavlinkCodec, MavlinkTelemetry
+src/main.cpp        — прошивка ESP32 (S3, C3, 38-pin)
+src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLink)
 ```
 
 ```
 ┌───────────────────────────────────────────────────────────────────────┐
-│ APPLICATION  src/main.cpp — сборка объектов, setup(), loop()          │
+│ APPLICATION  src/main.cpp / src/stm32/main.cpp — сборка объектов      │
 └──────────────────────────────┬────────────────────────────────────────┘
                                ▼
 ┌───────────────────────────────────────────────────────────────────────┐
 │ COORDINATION  control/FlightController — порядок операций за такт      │
-│ TELEMETRY     DebugLogger, DebugConsole, WebDebugServer, OledDisplay   │
+│ TELEMETRY     DebugLogger, DebugConsole, Web (ESP32) / MAVLink, OLED   │
 └───────┬───────────────────────┬───────────────────────┬───────────────┘
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │ CONTROL             │  │ AUTOPILOT             │  │ RC                    │
-│ ControlMixer        │  │ Autopilot + режимы    │  │ IBusReceiver          │
-│  └ FlapsController  │  │  └ PidController      │  │ RcChannelState        │
-│ ThrottleManager     │  │ AutopilotModeSelector │  │ RcInput               │
+│ ControlMixer        │  │ Autopilot: 12 режимов │  │ IBusReceiver          │
+│  └ FlapsController  │  │  └ навигация, ПИД     │  │ RcChannelState        │
+│ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
 │ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORS                                          │
-          │           │ ImuSensorBase ── MPU6050_Sensor, ICM42688_Sensor │
-          │           │   └ AttitudeEstimator, SensorMounting            │
-          │           │ BarometerBase ── BMP388_Sensor, BME280_Sensor    │
-          │           │ MagnetometerBase ── QMC5883P / QMC5883L          │
-          │           │ UbloxM10_Gps                                     │
+          │           │ ImuSensorBase ── MPU6050, ICM42688, LSM6DSV,     │
+          │           │   └ AttitudeEstimator     ICM45686               │
+          │           │ BarometerBase ── BMP388, BME280, SPL06, BMP581   │
+          │           │ MagnetometerBase ── QMC5883P / L, QMC6309        │
+          │           │ UbloxM10_Gps, PitotDualBaroAirspeed              │
           │           └──────────────────────┬──────────────────────────┘
           ▼                                  ▼ IRegisterDevice / IUartPort
 ┌───────────────────────────────────────────────────────────────────────┐
 │ HAL  IBoard / II2CBus / ISpiBus / IUartPort / IServoOutput             │
 │      RegisterDevice: I2cRegisterDevice, SpiRegisterDevice              │
 │      esp32/Esp32Board — Wire, Wire1, SPI, HardwareSerial, LEDC         │
+│      stm32/Stm32Board — Wire, I2C1, SPI, Uart, HardwareTimer, флеш     │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -113,7 +122,7 @@ include/
   (`Wire`, `SPI`, `HardwareSerial`, `ledc*`). Всё выше работает только с
   интерфейсами. Переход на другой MCU — это новая
   `hal/<mcu>/<Mcu>Board.h`, остальной код не меняется (пример —
-  заготовка `hal/stm32/` под STM32H743).
+  `hal/stm32/` под STM32H743).
 - **Драйверы датчиков не знают про шину.** Они получают
   `IRegisterDevice&` — I2C с адресом или SPI с CS создаётся в
   `SensorSelection.h`. Один `BMP388_Sensor` работает и по I2C, и по SPI.
@@ -167,14 +176,16 @@ include/
 
 | Файл | Отвечает за |
 |---|---|
-| `Config.h` | Все пины (блок на плату: `BOARD_ESP32_S3/C3/CLASSIC`) и настройки: iBUS и потеря связи (`RX_TIMEOUT_US`, `RX_FAILSAFE_THROTTLE_US`); ход рулей (`AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US`); закрылки (`FLAPS_*`); реверс серво (`*_REVERSED`); установка IMU и компаса (`IMU_ROTATION_CW_DEG`, `MAG_ROTATION_CW_DEG`); ARM; failsafe-выходы и планирование (`FAILSAFE_GLIDE_ROLL_DEG`, `FAILSAFE_GLIDE_PITCH_DEG`); цикл; Wi-Fi; отладка |
-| `Channels.h` | Имена каналов: `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `FLAPS`, `AUX_2..AUX_5` |
+| `Config.h` | Все пины (блок на плату: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) и настройки: iBUS и потеря связи; ход рулей; закрылки; реверс серво; установка IMU и компаса; ARM; failsafe (RTH или планирование); трубка Пито (`PITOT_*`); все числа режимов автопилота и функций; цикл; Wi-Fi; MAVLink; отладка |
+| `Channels.h` | Имена каналов: `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `SWB`, `SWC`, `SWD`, `VRA`, `VRB` |
+| `Controls.h` | Таблица `BINDINGS`: что делает каждый тумблер и крутилка, одна строка на канал, проверки `static_assert` |
 
 ### `hal/`
 
 | Файл | Отвечает за |
 |---|---|
-| `IBoard.h` | Точка входа в железо: `i2c()`, `displayI2c()` (вторая шина под экран, может быть `nullptr`), `spi()`, `rcUart()`, `gpsUart()`, `servo(ServoChannel::*)` |
+| `IBoard.h` | Точка входа в железо: `i2c()`, `displayI2c()` (вторая шина под экран, может быть `nullptr`), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()` (MAVLink, может быть `nullptr`), `servo(ServoChannel::*)` (7 выходов с AUX1/AUX2), `setBuzzer()` |
+| `Rtos.h` | Задачи FreeRTOS одинаково на ESP32 (ядро 0) и STM32 (приоритеты), свободная куча |
 | `II2CBus.h` | Шина I2C: примитивы в форме `Wire` + помощники `writeRegister()`, `readRegisters()` (проверяет, что пришло ровно `count` байт), `readRegister()`, `probe()` |
 | `ISpiBus.h`, `IUartPort.h`, `IServoOutput.h` | SPI, UART, один PWM-выход (`measurePulseUs()` — диагностика реального импульса) |
 | `RegisterDevice.h` | `IRegisterDevice` — «набор 8-битных регистров»; `I2cRegisterDevice` (адрес), `SpiRegisterDevice` (CS, частота, фиктивные байты перед данными) |
@@ -182,6 +193,14 @@ include/
 | `esp32/Esp32I2CBus.h` | `II2CBus` поверх любого `TwoWire`, таймаут 5 мс |
 | `esp32/Esp32ServoOutput.h` | PWM через LEDC: 50 Гц, 14 бит; пин −1 — выход не разведён. Библиотека ESP32Servo не используется — см. [ограничения](#известные-ограничения) |
 | `esp32/Esp32SpiBus.h`, `esp32/Esp32UartPort.h` | Тонкие обёртки над `SPI` и `HardwareSerial` |
+| `stm32/*` | STM32H743: `Stm32Board` (+ UART4 радиомодема), шины, таймеры PWM, `Stm32FlashStorage` (настройки в секторе флеша, запись фоновой задачей), `compat/Preferences.h` |
+
+### `storage/`
+
+| Файл | Отвечает за |
+|---|---|
+| `KeyValueStore.h` | Образ «пространство/ключ → байты» с CRC32 в ОЗУ поверх любого носителя (`IFlashStorage`); одинаковое значение не перезаписывается |
+| `KvPreferences.h` | API `Preferences` ESP32 поверх `KeyValueStore` |
 
 ### `rc/`
 
@@ -196,11 +215,12 @@ include/
 | Файл | Отвечает за |
 |---|---|
 | `ControlCommand.h` | Команда на рули в физических знаках — общий язык стиков, автопилота и микшера |
-| `ControlMixer.h` | `fromSticks(rc, nowMs)` → `ControlCommand`; `mix(command)` → PWM с реверсом серво; флапероны: элероны `flaps ± roll` |
+| `ControlMixer.h` | `fromSticks(rc)` → `ControlCommand`; `updateFlaps(цель, now)`; `mix(command)` → PWM с реверсом серво; флапероны: элероны `flaps ± roll` (минус — воздушный тормоз) |
 | `FlapsController.h` | Плавный выпуск/уборка закрылков, время передаётся параметром |
 | `ThrottleManager.h` | Газ со стика; при потере связи — `FAILSAFE_THROTTLE` |
 | `ArmingManager.h` | ARM тумблером SwA (переход OFF→ON при газе внизу + проверки датчиков режима), мгновенный DISARM |
-| `FlightOutputState.h` | Желаемые PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` |
+| `FlightOutputState.h` | Желаемые PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`, `aux1` (груз), `aux2` (камера) |
+| `Beeper.h` | Пищалка: по функции `BEEPER` или «модель потеряна» на земле |
 | `FlightOutputs.h` | Таблица выходов (`outputInfo()`: ключ, имя, пин, обязательность, поле состояния) и всё поверх неё циклом: `begin()`, `write()`, `setFailsafe()`, статус, `printPulseSelfTest()` |
 | `FlightController.h` | Порядок операций за такт, потеря связи (`applyLinkLoss()`), геттеры для телеметрии |
 
@@ -208,9 +228,15 @@ include/
 
 | Файл | Отвечает за |
 |---|---|
+| `AutopilotTypes.h` | `AutopilotMode` (12 режимов), `Feature`, `Knob`, `PilotInputs`, имена |
+| `ControlBinding.h` | `Binding`, фабрики `Bind::modes/mode/feature/knob`, проверки `BindingCheck` |
+| `PilotSwitches.h` | Таблица привязок → режим, функции, крутилки каждого такта; раскладка при включении |
+| `Autopilot.h` | 12 режимов, failsafe RTH/планирование, геозабор, дом, координация разворота, автотриммер; `update(armed, linkLost, газ, стики)` → `getCommand()`, `applyThrottle()` |
+| `Navigation.h` | `Geo` (расстояние, пеленг, смещение), `Guidance` (крен на курс, векторное поле круга) |
+| `AltitudeSpeedController.h` | Тангаж на высоту, газ на воздушную скорость (TECS-lite) |
+| `LaunchController.h`, `SoaringController.h` | Автоматы запуска с руки и парения |
+| `AutoTrim.h` | Автотриммер, хранение в NVS/флеше |
 | `PidController.h` | ПИД: D по скорости с датчика (гироскоп, вариометр), anti-windup, интегратор заморожен без ARM |
-| `Autopilot.h` | Режимы MANUAL/STABILIZE/AUTO_TAKEOFF/ALT_HOLD + планирование при потере связи; `update(armed, linkLost, pilotThrottle)`, `applyThrottle()`, `getRollCorrection()`/`getPitchCorrection()` (мкс команды), `isFailsafeGliding()` |
-| `AutopilotModeSelector.h` | CH7 → режим, только при смене зоны (не затирает ALT_HOLD с дашборда) |
 | `feedback/*` | **Заготовка, не подключена:** адаптивная обратная связь, взлёт и посадка — см. [Обратная связь](#обратная-связь-заготовка-не-подключена) |
 
 ### `sensors/`
@@ -225,27 +251,35 @@ include/
 | `imu/AttitudeEstimator.h` | Комплементарный фильтр крена/тангажа, интеграл рысканья |
 | `imu/MPU6050_Sensor.h` | MPU6050/MPU6500 (чип по WHO_AM_I): ±2000°/с, ±16g, DLPF ~41 Гц, 1 кГц. **На стенде** |
 | `imu/ICM42688_Sensor.h` | ICM-42688-P: ±2000°/с, ±16g, 1 кГц, UI-фильтр 50 Гц. Не проверен на железе |
+| `imu/LSM6DSV_Sensor.h` | LSM6DSV/16X/32X: ±2000°/с, ±16g, 960 Гц, LPF1/LPF2; I2C 0x6A/0x6B или SPI. Не проверен на железе |
+| `imu/ICM45686_Sensor.h` | ICM-45686: ±2000°/с, ±16g, 1.6 кГц, ФНЧ через косвенные регистры IPREG; I2C 0x68/0x69 или SPI. Не проверен на железе |
 | `baro/BarometerBase.h` | Общее для барометров: опрос только новых отсчётов, высота, вертикальная скорость через ФНЧ, калибровка базы, ошибки |
 | `baro/BMP388_Sensor.h` | BMP388 по I2C или SPI (с фиктивным байтом SPI), компенсация Bosch, чтение по флагу готовности. **На стенде (I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280, компенсация Bosch §8.1. Не проверен на железе |
+| `baro/SPL06_Sensor.h` | SPL06-001: коэффициенты и формулы датащита, 32 Гц ×16; I2C 0x76/0x77 или SPI. Не проверен на железе |
+| `baro/BMP581_Sensor.h` | BMP581: последовательность BMP5_SensorAPI, 16×/2×, IIR; I2C 0x46/0x47 или SPI; и основной барометр, и трубка Пито. Не проверен на железе |
 | `mag/MagnetometerBase.h` | Общее для компасов: опрос 50 Гц, hard-iron калибровка в NVS, поворот осей, курс, ошибки |
 | `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C. **На стенде** |
 | `mag/QMC5883L_Sensor.h` | QMC5883L, 0x0D |
+| `mag/QMC6309_Sensor.h` | QMC6309, 0x7C: ±8 Гс, 200 Гц. Не проверен на железе |
 | `gps/UbloxM10_Gps.h` | u-blox M10: настройка CFG-VALSET (115200 бод, 10 Гц, NAV-PVT, без NMEA), разбор NAV-PVT. Не подключён на стенде |
-| `airspeed/AirspeedSensor.h` | Интерфейс датчика воздушной скорости (трубка Пито) для обратной связи. **Заготовка:** реализаций нет, в `SensorSelection.h` категории нет |
+| `airspeed/AirspeedSensor.h` | Интерфейс датчика воздушной скорости: перепад, IAS, TAS, плотность |
+| `airspeed/PitotDualBaroAirspeed.h` | Самодельная трубка Пито: BMP581 в трубке + барометр фюзеляжа; ноль на земле, ФНЧ, плотность по статике, обнаружение неисправности |
 
 ### `telemetry/` и приложение
 
 | Файл | Отвечает за |
 |---|---|
 | `DebugLogger.h` | Лог по каналам (`LogSettings.h`): у каждого своя строка, свой допуск на дребезг и режим; молчит, пока открыто меню |
-| `DebugConsole.h` | Текстовое меню в мониторе порта (`h`) и горячие клавиши (`l`/пробел/`s`/`i`/`o`/`m`/`p`); настройки лога пишет в NVS при выходе из меню и только без ARM |
-| `LogSettings.h` | Каналы лога (STAT, RC, OUT, ATT, AP, ALT, MAG, GPS, IMU, SYS) и их режимы: выкл / при изменении / постоянно; хранение в NVS |
+| `DebugConsole.h` | Текстовое меню в мониторе порта (`h`) и горячие клавиши (`l`/пробел/`s`/`i`/`o`/`m`/`p`/`b`); настройки лога пишет в NVS при выходе из меню и только без ARM |
+| `LogSettings.h` | Каналы лога (STAT, RC, OUT, ATT, AP, ALT, MAG, GPS, IMU, NAV, SYS) и их режимы: выкл / при изменении / постоянно; хранение в NVS |
 | `WebDebugServer.h` | Точка доступа, маршруты, JSON `/api/status`, почтовый ящик команд; своя задача на ядре 0 |
 | `WebDashboardPage.h` | HTML/JS дашборда одним литералом; строки каналов/выходов/датчиков строит браузер по JSON |
-| `OledDisplay.h` | SSD1306 через U8g2 поверх `II2CBus`, своя задача на ядре 0 |
+| `OledDisplay.h` | SSD1306 через U8g2 поверх `II2CBus`, своя задача (`Rtos`) |
+| `MavlinkCodec.h`, `MavlinkTelemetry.h` | MAVLink 2 для QGroundControl / Mission Planner: кадры, потоки, параметры ПИД, смена режима с земли |
 | `LoopStats.h` | Частота, среднее и худшее время такта за секунду (OLED) и худшее с прошлого чтения (`takePeakUs()`, строка SYS) |
-| `src/main.cpp` | Создание объектов, `setup()`, `loop()` с `vTaskDelayUntil` |
+| `src/main.cpp` | ESP32: создание объектов, `setup()`, `loop()` с `vTaskDelayUntil` |
+| `src/stm32/main.cpp` | STM32H743: те же объекты, MAVLink, задачи `flight`/`storage`/`oled` |
 
 ---
 
@@ -326,11 +360,14 @@ include/
 | CH3 | левый стик ↑↓ | `THROTTLE` | Газ, полный ход; < 950 = failsafe приёмника |
 | CH4 | левый стик ←→ | `RUDDER` | Руль направления + рулевое колесо (одна серва) |
 | CH5 | SwA | `ARM` | ≥ 1750 = ARM (на FS-i6 это тумблер вниз, к себе) |
-| CH6 | SwB | `FLAPS` | ≥ 1750 = закрылки выпущены (флапероны) |
-| CH7 | SwC (3 положения) | `AUX_2` | Режим: < 1250 MANUAL, 1250–1749 STABILIZE, ≥ 1750 AUTO_TAKEOFF |
-| CH8 | SwD | `AUX_3` | Свободен |
-| CH9 | VrA | `AUX_4` | Свободен |
-| CH10 | VrB | `AUX_5` | Свободен |
+| CH6 | SwB | `SWB` | по умолчанию — закрылки (≥ 1750 — выпущены) |
+| CH7 | SwC (3 положения) | `SWC` | по умолчанию — режим: < 1250 MANUAL, 1250–1749 STABILIZE, ≥ 1750 AUTO_TAKEOFF |
+| CH8 | SwD | `SWD` | по умолчанию — RTH |
+| CH9 | VrA | `VRA` | по умолчанию — сила стабилизации |
+| CH10 | VrB | `VRB` | по умолчанию — скорость круиза |
+
+CH6–CH10 назначаются одной строкой в `include/config/Controls.h`
+([AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md#назначить-функцию-одной-строкой)).
 
 **ARM** (`ArmingManager`): переход тумблера OFF→ON, газ < `THROTTLE_LOW_US`,
 пройдены проверки датчиков для текущего режима. Иначе — отказ с причиной в
@@ -350,16 +387,18 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
 
 Что происходит при потере связи (`FlightController::applyLinkLoss()`):
 
-- мотор — `FAILSAFE_THROTTLE` всегда;
-- **борт заармлен** (скорее всего, в воздухе) — **планирование**:
+- **борт заармлен, GPS и дом есть** (`FAILSAFE_RTH`) — **возврат домой** с
+  мотором, над домом — круги; на OLED — `FSRTH`, в логе — `FAILSAFE_RTH`;
+- **борт заармлен, GPS нет** — **планирование**, мотор `FAILSAFE_THROTTLE`:
   `Autopilot` в любом режиме, даже в MANUAL, держит крен
   `FAILSAFE_GLIDE_ROLL_DEG` (0 — прямо, 10–20° — круг над пилотом) и тангаж
   `FAILSAFE_GLIDE_PITCH_DEG` (−3°, чтобы без мотора не терять скорость),
   закрылки убраны; на OLED — `GLIDE`, в логе — режим `FAILSAFE_GLIDE`;
 - **не заармлен** (на земле) или IMU не отвечает — рули в нейтраль;
-- режим с CH7 не переключается, датчики продолжают читаться. ARM не
-  сбрасывается — после восстановления связи самолёт снова слушается стиков
-  и выбранного режима (автовзлёт — только заново).
+- режим и функции с тумблеров не переключаются, датчики продолжают
+  читаться. ARM не сбрасывается — после восстановления связи самолёт снова
+  слушается стиков и выбранного режима (автовзлёт и запуск с руки — только
+  заново).
 
 ---
 
@@ -428,29 +467,32 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
 Вызывается из `loop()` каждые 2 мс. Порядок и есть приоритет:
 
 1. **`receiver.update()`** — разбор накопившихся байтов iBUS.
-2. **Потеря связи и газ пилота.** `receiverFailsafe = receiver.isSignalLost()`,
-   `pilotThrottle = throttle.update(rc, receiverFailsafe)`.
-3. **Режим** — `modeSelector->update(rc)`, только при живой связи (в
-   failsafe-кадре CH7 не отражает тумблер).
-4. **Датчики и автопилот** — `autopilot->update(armed, linkLost,
-   pilotThrottle)` **всегда**, даже без связи: фильтры углов не должны
-   застывать. Пока не armed, ПИД работает (рули отвечают на наклон — удобно
-   на столе), но интегратор держится на нуле. Без связи и в ARM автопилот
-   переключается на планирование.
-5. **Потеря связи** — `applyLinkLoss()`: мотор выключен; в ARM — рули по
-   коррекциям планирования, иначе нейтраль; `return`. Абсолютный приоритет
-   над всем ниже.
-6. **ARM** — `arming.update(rc, false)`.
-7. **Команда** — `mixer.fromSticks(rc, millis())` (стики + плавные закрылки) + `getRollCorrection()`/
-   `getPitchCorrection()` автопилота, ограничение ±500.
-8. **Микшер** — `mixer.mix(command)` → PWM элеронов (закрылки + крен), руля
-   высоты и руля направления с учётом реверса.
-9. **Газ** — `autopilot->applyThrottle(pilotThrottle)`: MANUAL/STABILIZE —
-   газ пилота; ALT_HOLD — газ пилота + поправка ПИД высоты;
-   AUTO_TAKEOFF — max(газ пилота, программа взлёта). Затем, если не armed, —
-   принудительно `PWM_MIN`. Эта проверка стоит последней, чтобы ни один
-   режим не протащил газ мимо ARM.
-10. **`outputs.write(output)`** — PWM на 4 выхода.
+2. **Тумблеры** — `switches->update(rc)`, только при живой связи (в
+   failsafe-кадре каналы не отражают тумблеры): режим (только при смене),
+   функции, крутилки.
+3. **Газ пилота** — `throttle.update(rc, receiverFailsafe)`.
+4. **Стики** — `mixer.fromSticks(rc)` × `Knob::RATES`; закрылки —
+   `mixer.updateFlaps(цель)` (тормоз, тумблер, крутилка; без связи — 0).
+5. **Датчики и автопилот** — `autopilot->update(armed, linkLost,
+   pilotThrottle, sticks)` **всегда**, даже без связи: фильтры углов не
+   должны застывать. Пока не armed, ПИД работает (рули отвечают на наклон —
+   удобно на столе), но интегратор держится на нуле. Без связи и в ARM —
+   failsafe RTH или планирование.
+6. **Пищалка** — `Beeper`.
+7. **Потеря связи** — `applyLinkLoss()`: в ARM — рули и газ по команде
+   failsafe автопилота, иначе нейтраль и мотор выключен; `return`.
+   Абсолютный приоритет над всем ниже.
+8. **ARM** — `arming.update(rc, false)`.
+9. **Команда** — `autopilot->getCommand()`: в режимах со стабилизацией стик —
+   это желаемый угол, автопилот выдаёт итоговые рули.
+10. **Микшер** — `mixer.mix(command)` → PWM элеронов (закрылки + крен), руля
+    высоты и руля направления с учётом реверса.
+11. **Газ** — `autopilot->applyThrottle(pilotThrottle)`: газ пилота, газ
+    автопилота или max из двух (автовзлёт). Затем, если не armed или
+    `MOTOR_KILL`, — принудительно `PWM_MIN`. Эта проверка стоит последней,
+    чтобы ни один режим не протащил газ мимо ARM.
+12. **AUX** — груз (`PAYLOAD_DROP`) и камера (`CAMERA_TILT`, `CAMERA_STAB`).
+13. **`outputs.write(output)`** — PWM на 7 выходов.
 
 ---
 
@@ -471,19 +513,25 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true }
+    "esc":          { "us": 1000, "attached": true },
+    "aux1":         { "us": 1000, "attached": true },
+    "aux2":         { "us": 1500, "attached": true }
   },
   "flapsUs": 0,
   "imu":  { "attached": true, "available": true, "roll": 0.12, "pitch": -0.40, "yaw": 38.50 },
   "baro": { "attached": true, "available": true, "altitude": 0.05, "climb": 0.01 },
   "mag":  { "attached": true, "available": true, "heading": 41.9 },
-  "gps":  { "attached": false, "available": false },
+  "gps":  { "attached": true, "available": true, "fix": 3, "numSV": 12, "lat": 55.750000, "lon": 37.610000, "alt": 150.0 },
+  "airspeed": { "attached": true, "available": true, "ias": 14.2, "tas": 14.3, "dp": 123.4 },
   "autopilot": {
-    "attached": true, "mode": 0, "modeName": "MANUAL",
+    "attached": true, "mode": 1, "modeName": "STABILIZE",
     "desiredRoll": 0.0, "desiredPitch": 0.0, "targetAlt": 0.0,
     "rollCorr": 0.0, "pitchCorr": 0.0, "throttleCorr": 0.0,
     "kpRoll": 5.000, "kiRoll": 0.500, "kdRoll": 0.500,
-    "kpPitch": 5.000, "kiPitch": 0.500, "kdPitch": 0.500
+    "kpPitch": 5.000, "kiPitch": 0.500, "kdPitch": 0.500,
+    "nav": { "gps": true, "home": true, "homeDist": 120, "homeBearing": 185,
+             "course": 90, "targetCourse": 90, "speed": 14.3, "fence": false, "stall": false },
+    "features": ["FLAPS"]
   }
 }
 ```
@@ -493,15 +541,18 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
 - `outputs.*.attached` — MCU выделил канал LEDC и пин; подключён ли
   физический серво, программно не видно (для проверки импульса — консоль,
   команда `p`).
-- `rollCorr`/`pitchCorr` — мкс команды, прибавляются к стикам.
-  `throttleCorr` — % (ALT_HOLD: поправка −50..50; AUTO_TAKEOFF: программный
-  газ 0..100).
+- `rollCorr`/`pitchCorr` — итоговая команда автопилота минус стики, мкс.
+  `throttleCorr` — газ автопилота, % (0, пока газ у пилота).
+- `nav` — навигация: дом, расстояние и пеленг на него, курс и целевой курс,
+  скорость для навигации (трубка / GPS), геозабор, сваливание;
+  `features` — включённые функции тумблеров.
 
 ### `POST /api/setmode`
 
-`{ "mode": 1 }` — `0` MANUAL, `1` STABILIZE, `2` AUTO_TAKEOFF, `3` ALT_HOLD.
-Режим держится, пока CH7 не перейдёт в другую зону. ALT_HOLD с пульта не
-выбирается — только отсюда.
+`{ "mode": 1 }` — номер `AutopilotMode`: `0` MANUAL, `1` STABILIZE, `2`
+AUTO_TAKEOFF, `3` ALT_HOLD, `4` ACRO, `5` CRUISE, `6` LOITER, `7` RTH, `8`
+LAUNCH, `9` AUTO_LAND, `10` SOARING, `11` RESCUE. Режим держится, пока пилот
+не щёлкнет тумблером режима.
 
 ### `POST /api/setpid`
 
@@ -951,10 +1002,12 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # проверить
 ## Как вносить изменения
 
 - **Маленькие коммиты:** один логический шаг — один коммит.
-- **Тесты и анализ перед коммитом:** `pio test -e native`, `pio check -e
-  esp32-s3`, `tools/clang-tidy.sh` — все зелёные ([`TESTING.md`](TESTING.md)).
+- **Тесты и анализ перед коммитом:** `pio test -e native -e native-stm32`,
+  `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
+  все зелёные ([`TESTING.md`](TESTING.md)).
 - **Собирайте все платы** после правок в общем коде — S3 основная, но C3,
-  dev и заготовка `stm32h743` не должны ломаться.
+  38-pin и `stm32h743` не должны ломаться; перед релизом —
+  `tools/build_matrix.sh` (все платы × все датчики).
 - **Проверяйте на железе то, что можно проверить:** знаки — наклоном,
   выходы — командой `p`, связь — выключением пульта.
 - **Не выдумывайте API.** Сверяйтесь с исходниками фреймворка в

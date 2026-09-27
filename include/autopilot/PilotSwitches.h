@@ -5,6 +5,7 @@
 #include "autopilot/Autopilot.h"
 #include "autopilot/AutopilotTypes.h"
 #include "autopilot/ControlBinding.h"
+#include "config/Channels.h"
 #include "config/Config.h"
 #include "config/Controls.h"
 #include "rc/RcChannelState.h"

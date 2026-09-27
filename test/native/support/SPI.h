@@ -119,6 +119,12 @@ class SPIClass
 public:
     explicit SPIClass(uint8_t spiBus = 0) : bus(spiBus) {}
 
+    // STM32duino: пины до begin().
+    void setSCLK(uint32_t pin) { stm32Pins[0] = pin; }
+    void setMISO(uint32_t pin) { stm32Pins[1] = pin; }
+    void setMOSI(uint32_t pin) { stm32Pins[2] = pin; }
+    uint32_t stm32Pins[3] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu };
+
     void begin(int8_t sckPin = -1, int8_t misoPin = -1, int8_t mosiPin = -1, int8_t ssPin = -1)
     {
         sck = sckPin;

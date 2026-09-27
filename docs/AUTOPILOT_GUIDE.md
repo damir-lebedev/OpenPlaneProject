@@ -62,11 +62,11 @@ FS-i6 + FS-iA6B, iBUS, 10 каналов (`config/Channels.h`).
 При включении платы в монитор порта печатается фактическая раскладка — то, что реально прошито:
 
 ```
-SwC: MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
-SwB: FLAPS, пока включён
-SwD: RTH, пока включён
-VrA: крутилка STAB_GAIN
-VrB: крутилка CRUISE_SPEED
+SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
+SwB (CH6): FLAPS, пока включён
+SwD (CH8): RTH, пока включён
+VrA (CH9): крутилка STAB_GAIN
+VrB (CH10): крутилка CRUISE_SPEED
 ```
 
 > Каналы 7–10 на FS-i6 по умолчанию не выведены. Меню пульта: **Functions setup → Aux. channels**, назначить SwC, SwD, VrA, VrB.

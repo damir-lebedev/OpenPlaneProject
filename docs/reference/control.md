@@ -20,7 +20,7 @@
 | `int16_t roll` | крен вправо (правый элерон вверх, левый вниз) |
 | `int16_t pitch` | нос вверх (руль высоты вверх) |
 | `int16_t yaw` | нос вправо (руль направления и колесо вправо) |
-| `int16_t flaps` | закрылки вниз (оба элерона вниз) |
+| `int16_t flaps` | закрылки вниз (оба элерона вниз); «−» — воздушный тормоз (оба вверх) |
 
 Все поля по умолчанию 0.
 
@@ -36,6 +36,8 @@
 |---|---|
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
+| `aux1` | `PAYLOAD_CLOSED_US` — сброс груза закрыт |
+| `aux2` | `PWM_CENTER` — камера |
 
 ---
 
@@ -43,13 +45,13 @@
 
 **Файл:** `control/FlapsController.h` · **Зависит от:** `Config`
 
-Плавный выпуск/уборка закрылков: положение идёт к цели (0 или
-`FLAPS_DEPLOYED_US`) не быстрее полного хода за `FLAPS_TRANSITION_MS`. Время —
-параметром.
+Плавный выпуск/уборка закрылков: положение идёт к цели (любое значение —
+закрылки с тумблера, с крутилки, воздушный тормоз вверх) не быстрее полного
+хода `FLAPS_DEPLOYED_US` за `FLAPS_TRANSITION_MS`. Время — параметром.
 
 | Метод | Описание |
 |---|---|
-| `int16_t update(bool deployed, uint32_t nowMs)` | Шаг к цели; возвращает текущее положение, мкс вниз |
+| `int16_t update(float targetUs, uint32_t nowMs)` | Шаг к цели; возвращает текущее положение, мкс (+ вниз, − вверх) |
 | `int16_t getPosition() const` | Текущее положение |
 
 Инварианты:
@@ -69,7 +71,8 @@
 
 | Метод | Описание |
 |---|---|
-| `ControlCommand fromSticks(const RcChannelState& rc, uint32_t nowMs)` | CH1 → `roll` (2000 = вправо); CH2 → `pitch` **с обратным знаком** (2000 = от себя = нос вниз); CH4 → `yaw`; CH6 ≥ `FLAPS_SWITCH_ON_US` → цель закрылков, `flaps` = плавное положение |
+| `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 → `roll` (2000 = вправо); CH2 → `pitch` **с обратным знаком** (2000 = от себя = нос вниз); CH4 → `yaw` |
+| `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | цель закрылков выбирает `FlightController` (тормоз → тумблер закрылков → крутилка), здесь — плавный ход |
 | `FlightOutputState mix(const ControlCommand& c) const` | Команда → PWM. Крен/тангаж/рысканье ограничиваются ходом (`*_MAX_US`); элероны: левый = `flaps + roll`, правый = `flaps − roll` (вниз = «+»); PWM = `1500 ± отклонение` со знаком из `Config::*_REVERSED`, ограничение 1000..2000. `throttle` не заполняется |
 | `int16_t getFlaps() const` | Текущее положение закрылков, мкс |
 
@@ -111,13 +114,14 @@ ARM отдельным тумблером SwA (CH5). Автомат — в
 | Условие | Причина отказа |
 |---|---|
 | Газ ≥ `THROTTLE_LOW_US` | «газ не на минимуме» |
-| Режим STABILIZE/AUTO_TAKEOFF, IMU есть, но не отвечает | «IMU не отвечает…» |
-| Режим STABILIZE/AUTO_TAKEOFF, у IMU проблема предполётной проверки | текст `ImuSensor::getPreflightProblem()` |
-| Режим ALT_HOLD, барометр есть, но не отвечает | «барометр не отвечает…» |
+| Любой режим, кроме MANUAL, IMU есть, но не отвечает | «IMU не отвечает…» |
+| Любой режим, кроме MANUAL, у IMU проблема предполётной проверки | текст `ImuSensor::getPreflightProblem()` |
+| Режим с высотой (`needsAltitude`: ALT_HOLD, CRUISE, LOITER, RTH, AUTO_LAND, SOARING), барометр есть, но не отвечает | «барометр не отвечает…» |
 
 Датчик, которого нет в сборке (`nullptr`), ARM не блокирует; в MANUAL борт
-армится вообще без датчиков. GPS-фикс в проверки намеренно не входит — ни один
-режим пока не использует GPS.
+армится вообще без датчиков. GPS-фикс в проверки намеренно не входит: без GPS
+навигационные режимы ведут себя безопасно (круг на месте), а дом запишется,
+когда GPS поймает спутники.
 
 Инварианты: включение платы с тумблером в ON не армит; одна попытка на один
 переход OFF→ON; потеря связи ARM не снимает.
@@ -136,7 +140,7 @@ ARM отдельным тумблером SwA (CH5). Автомат — в
 
 | Поле | Описание |
 |---|---|
-| `const char* key` | Имя в JSON/логе (`aileronLeft`, …, `esc`, `rudder`) |
+| `const char* key` | Имя в JSON/логе (`aileronLeft`, …, `esc`, `rudder`, `aux1`, `aux2`) |
 | `const char* label` | Имя для человека |
 | `int16_t pin` | Номер пина; `-1` — не разведён. `int16_t`, потому что у STM32 номера аналоговых пинов — `0xC0 + N` |
 | `bool required` | Без него борт не летит (руль направления — необязательный) |
@@ -152,7 +156,8 @@ ARM отдельным тумблером SwA (CH5). Автомат — в
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | Измеренный импульс против ожидаемого на каждом разведённом пине; «OK» при расхождении ≤ 15 мкс |
 | `void write(const FlightOutputState&)` | Записать все выходы и запомнить состояние |
-| `void setFailsafe()` | Нейтраль рулей (`FAILSAFE_*`), газ `FAILSAFE_THROTTLE` |
+| `void setFailsafe()` | Нейтраль рулей (`FAILSAFE_*`), газ `FAILSAFE_THROTTLE`; AUX — как были (груз не сбрасывается от потери связи) |
+| `void setBuzzer(bool on)` | пищалка платы (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | Последнее записанное состояние |
 
 Добавить выход: строка таблицы + поле в `FlightOutputState` + индекс в
@@ -163,7 +168,7 @@ ARM отдельным тумблером SwA (CH5). Автомат — в
 ## `FlightController`
 
 **Файл:** `control/FlightController.h` · **Слой:** COORDINATION ·
-**Зависит от:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `AutopilotModeSelector*`
+**Зависит от:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`
 
 Единственный координатор цикла управления: сам не парсит UART, не трогает
 PWM, не считает микшер — только вызывает остальных в правильном порядке.
@@ -171,7 +176,7 @@ PWM, не считает микшер — только вызывает оста
 
 | Метод | Описание |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, AutopilotModeSelector* = nullptr)` | Без автопилота — чистое ручное управление |
+| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Без автопилота — чистое ручное управление; без тумблеров — только стики |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | Один такт (см. ниже) |
 | `bool isReceiverFailsafe() const` | Связь потеряна |
@@ -181,21 +186,38 @@ PWM, не считает микшер — только вызывает оста
 | `const RcChannelState& getRcState() const` | Каналы |
 | `const FlightOutputs& getOutputs() const` | Таблица выходов и `attached` |
 | `int16_t getFlapsUs() const` | Положение закрылков |
+| `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | Тумблеры и крутилки этого такта |
+| `bool isLostModelBeeping() const` | Пищалка «я здесь» работает |
 
 Порядок `update()`:
 
 1. `receiver.update()`; `failsafe = receiver.isSignalLost()`;
-2. `pilotThrottle = throttle.update(rc, failsafe)`;
-3. при живой связи — `modeSelector->update(rc)`;
-4. `autopilot->update(armed, failsafe, pilotThrottle)` — **всегда**;
-5. связь потеряна → `applyLinkLoss()` и выход из такта;
-6. `arming.update(rc, false)`;
-7. `command = mixer.fromSticks(rc, millis())` + коррекции автопилота, ограничение ±500 (`clampCommand`);
-8. `output = mixer.mix(command)`;
-9. `output.throttle = autopilot->applyThrottle(pilotThrottle)`; если не armed — `PWM_MIN`;
-10. `outputs.write(output)`.
+2. при живой связи — `switches->update(rc)` (режим, функции, крутилки);
+3. `pilotThrottle = throttle.update(rc, failsafe)`;
+4. стики `mixer.fromSticks(rc)` (при живой связи) × `Knob::RATES`; закрылки
+   `mixer.updateFlaps(цель)`: `AIRBRAKE` → −`AIRBRAKE_US`, `FLAPS` →
+   `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → плавно, при потере связи — 0;
+5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)` — **всегда**;
+6. пищалка: `Beeper::update(BEEPER, armed, failsafe, now)`;
+7. связь потеряна → `applyLinkLoss()` и выход из такта;
+8. `arming.update(rc, false)`;
+9. `command = autopilot->getCommand()` (или стики без автопилота), закрылки — свои;
+10. `output = mixer.mix(command)`; `output.throttle = autopilot->applyThrottle(pilotThrottle)`;
+11. не armed или `MOTOR_KILL` → `throttle = PWM_MIN` (последним);
+12. AUX1 — груз (`PAYLOAD_DROP`), AUX2 — камера (`Knob::CAMERA_TILT`, `CAMERA_STAB` вычитает тангаж);
+13. `outputs.write(output)`.
 
-`applyLinkLoss()`: если автопилот в режиме планирования
-(`isFailsafeGliding()`: armed и связь потеряна) — рули по коррекциям
-планирования (закрылки убраны), газ `FAILSAFE_THROTTLE`; иначе
-`outputs.setFailsafe()`.
+`applyLinkLoss()`: если автопилот в failsafe (armed: RTH или планирование) —
+рули и газ по команде автопилота (закрылки плавно убираются, `MOTOR_KILL`
+по-прежнему глушит мотор, AUX — как были); иначе `outputs.setFailsafe()`.
+
+---
+
+## `Beeper`
+
+**Файл:** `control/Beeper.h` · **Зависит от:** `Config`
+
+| Метод | Описание |
+|---|---|
+| `bool update(bool requested, bool armed, bool linkLost, uint32_t nowMs)` | состояние пищалки: 2 Гц, если `Feature::BEEPER` или «модель потеряна» (не заармлен, связи нет дольше `LOST_MODEL_BEEP_DELAY_MS`) |
+| `bool isLostModel() const` | режим «ищите меня в траве» |
