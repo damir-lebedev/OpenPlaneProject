@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <map>
 #include <utility>
+#include <functional>
 #include <vector>
 
 #include "Arduino.h"
@@ -55,6 +56,8 @@ namespace fake
         uint8_t regs[256] = {};
         uint8_t dummyBytes = 0;
         std::vector<std::pair<uint8_t, uint8_t>> writes;
+        std::function<void(uint8_t reg, uint8_t value)> onRegisterWrite;
+        std::function<void(uint8_t reg)> beforeRead;   // перед выдачей каждого байта
 
         void select() override
         {
@@ -78,6 +81,7 @@ namespace fake
                     {
                         regs[address] = mosi;
                         writes.emplace_back(address, mosi);
+                        if (onRegisterWrite) onRegisterWrite(address, mosi);
                         address++;
                         return 0xFF;
                     }
@@ -86,6 +90,7 @@ namespace fake
                         dummyLeft--;
                         return 0xA5;   // "мусор" перед данными
                     }
+                    if (beforeRead) beforeRead(address);
                     return regs[address++];
             }
             return 0xFF;
@@ -113,6 +118,12 @@ class SPIClass
 {
 public:
     explicit SPIClass(uint8_t spiBus = 0) : bus(spiBus) {}
+
+    // STM32duino: пины до begin().
+    void setSCLK(uint32_t pin) { stm32Pins[0] = pin; }
+    void setMISO(uint32_t pin) { stm32Pins[1] = pin; }
+    void setMOSI(uint32_t pin) { stm32Pins[2] = pin; }
+    uint32_t stm32Pins[3] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu };
 
     void begin(int8_t sckPin = -1, int8_t misoPin = -1, int8_t mosiPin = -1, int8_t ssPin = -1)
     {

@@ -14,10 +14,10 @@
 //
 // Аэродинамическая логика в два шага, без UART, Servo и failsafe:
 //
-//   1. fromSticks(): RC-каналы -> ControlCommand (знаки — см.
-//      ControlCommand.h). FlightController прибавляет к ней
-//      коррекции автопилота в тех же знаках, поэтому автопилот и
-//      стики гарантированно крутят рули в одну сторону.
+//   1. fromSticks(): RC-каналы стиков -> ControlCommand (знаки — см.
+//      ControlCommand.h). Автопилот получает её и отдаёт итоговую
+//      команду в тех же знаках, поэтому автопилот и стики
+//      гарантированно крутят рули в одну сторону.
 //   2. mix(): ControlCommand -> FlightOutputState (PWM на каждый
 //      серво) с учётом реверса серво из Config.h.
 //
@@ -25,36 +25,29 @@
 // элероны: при выпуске оба опускаются на одинаковый угол (новая
 // "нейтраль" элеронов, растёт подъёмная сила), а крен от стика и
 // автопилота добавляется поверх неё, как обычно, в разные стороны.
-// Выпуск — тумблером SwB, плавно (см. FlapsController.h).
+// Отрицательное положение — воздушный тормоз (оба элерона вверх).
+// Цель задаёт FlightController по привязкам, микшер ведёт к ней
+// плавно (FlapsController.h).
 // ============================================================
 
 class ControlMixer
 {
 public:
 
-    // nowMs — текущее время (millis()), нужно только для плавного
-    // выпуска закрылков; передаётся снаружи, чтобы микшер не зависел
-    // от системных часов.
-    ControlCommand fromSticks(
-        const RcChannelState& rc,
-        uint32_t nowMs
-    )
+    ControlCommand fromSticks(const RcChannelState& rc) const
     {
         ControlCommand command;
-
-        // CH1: 2000 = стик вправо = крен вправо.
         command.roll = RcInput::centered(rc.get(Channels::AILERON), Config::AILERON_MAX_US, false);
-
-        // CH2: 2000 = стик от себя = нос вниз, поэтому знак обратный.
         command.pitch = RcInput::centered(rc.get(Channels::ELEVATOR), Config::ELEVATOR_MAX_US, true);
-
-        // CH4: 2000 = левый стик вправо = нос вправо.
         command.yaw = RcInput::centered(rc.get(Channels::RUDDER), Config::RUDDER_MAX_US, false);
-
-        const bool flapsDeployed = rc.get(Channels::FLAPS) >= Config::FLAPS_SWITCH_ON_US;
-        command.flaps = flaps.update(flapsDeployed, nowMs);
-
         return command;
+    }
+
+    // Закрылки к цели targetUs (мкс вниз; < 0 — тормоз), плавно.
+    // nowMs передаётся снаружи, чтобы микшер не зависел от часов.
+    int16_t updateFlaps(float targetUs, uint32_t nowMs)
+    {
+        return flaps.update(targetUs, nowMs);
     }
 
     FlightOutputState mix(const ControlCommand& command) const

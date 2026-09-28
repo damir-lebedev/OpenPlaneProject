@@ -34,6 +34,11 @@ public:
 
     virtual bool writeRegister(uint8_t reg, uint8_t value) = 0;
 
+    // Запись count байт подряд, начиная с reg, одной транзакцией. Нужна
+    // чипам, у которых смысл имеет именно пакет (ICM-45686: адрес
+    // косвенного регистра + данные в IREG_ADDR/IREG_DATA).
+    virtual bool writeRegisters(uint8_t reg, const uint8_t* data, uint8_t count) = 0;
+
     // Читает count байт подряд, начиная с reg. false — устройство не
     // ответило; буфер в этом случае не трогается.
     virtual bool readRegisters(uint8_t reg, uint8_t* buffer, uint8_t count) = 0;
@@ -47,15 +52,30 @@ public:
 };
 
 
-// Устройство на шине I2C по 7-битному адресу.
+// Устройство на шине I2C по 7-битному адресу. alternateAddress — второй
+// адрес того же чипа (выбирается ногой SDO/SA0/AD0, и у модулей разных
+// производителей она подтянута по-разному): если по основному адресу
+// никто не ответил, а по запасному ответили — begin() переключается на
+// запасной. 0 — запасного нет.
 class I2cRegisterDevice : public IRegisterDevice
 {
 public:
 
-    I2cRegisterDevice(II2CBus& i2cBus, uint8_t deviceAddress)
+    I2cRegisterDevice(II2CBus& i2cBus, uint8_t deviceAddress, uint8_t alternateAddress = 0)
         : bus(i2cBus),
-          address(deviceAddress)
+          address(deviceAddress),
+          alternate(alternateAddress)
     {
+    }
+
+    void begin() override
+    {
+        if (alternate != 0 && !bus.probe(address) && bus.probe(alternate))
+        {
+            const uint8_t primary = address;
+            address = alternate;
+            alternate = primary;
+        }
     }
 
     bool probe() override
@@ -66,6 +86,11 @@ public:
     bool writeRegister(uint8_t reg, uint8_t value) override
     {
         return bus.writeRegister(address, reg, value);
+    }
+
+    bool writeRegisters(uint8_t reg, const uint8_t* data, uint8_t count) override
+    {
+        return bus.writeRegisters(address, reg, data, count);
     }
 
     bool readRegisters(uint8_t reg, uint8_t* buffer, uint8_t count) override
@@ -80,6 +105,7 @@ private:
 
     II2CBus& bus;
     uint8_t address;
+    uint8_t alternate;
 };
 
 
@@ -118,9 +144,17 @@ public:
 
     bool writeRegister(uint8_t reg, uint8_t value) override
     {
+        return writeRegisters(reg, &value, 1);
+    }
+
+    bool writeRegisters(uint8_t reg, const uint8_t* data, uint8_t count) override
+    {
         select();
         bus.transfer(reg & 0x7F);
-        bus.transfer(value);
+        for (uint8_t i = 0; i < count; ++i)
+        {
+            bus.transfer(data[i]);
+        }
         deselect();
         return true;
     }

@@ -13,8 +13,8 @@
 // ============================================================
 // 🧠 РЕАЛИЗАЦИЯ "МОЗГА" ДЛЯ STM32H743 (STM32duino 3.x)
 //
-// ЗАГОТОВКА: собирается (env stm32h743), на железе не проверялась.
-// Основная плата по-прежнему ESP32-S3 (Esp32Board).
+// Собирается полная прошивка (env stm32h743, src/stm32/main.cpp); на
+// железе пока не проверялась — основная лётная плата ESP32-S3.
 //
 // Тот же публичный API, что у Esp32Board: единственное место, которое
 // создаёт конкретные шины STM32 (TwoWire/SPIClass/Uart/HardwareTimer)
@@ -22,7 +22,7 @@
 // видит только IBoard.
 //
 // Отличия от ESP32, спрятанные здесь:
-//   - периферию (I2C1/I2C2, SPI2, USART3, UART7, TIMx) ядро выбирает
+//   - периферию (I2C1/I2C2, SPI2, USART3, UART4, UART7, TIMx) ядро выбирает
 //     само по номерам пинов — номеров контроллеров в Config.h нет;
 //   - пины UART задаются при создании Uart, а не в begin();
 //   - PWM — аппаратные таймеры, общие для выходов на одном TIMx
@@ -40,14 +40,18 @@ public:
           spiBus(SPI, pinOf(Config::PIN_SENSOR_SPI_SCK), pinOf(Config::PIN_SENSOR_SPI_MISO), pinOf(Config::PIN_SENSOR_SPI_MOSI)),
           rcSerial(pinOf(Config::PIN_IBUS), pinOf(Config::PIN_IBUS_TX)),
           gpsSerial(pinOf(Config::PIN_GPS_RX), pinOf(Config::PIN_GPS_TX)),
+          telemetrySerial(pinOf(Config::PIN_TELEM_RX), pinOf(Config::PIN_TELEM_TX)),
           rcPort(rcSerial),
           gpsPort(gpsSerial),
+          telemetryPort(telemetrySerial),
           servos{
               Stm32ServoOutput(Config::PIN_AILERON_LEFT),
               Stm32ServoOutput(Config::PIN_AILERON_RIGHT),
               Stm32ServoOutput(Config::PIN_ELEVATOR),
               Stm32ServoOutput(Config::PIN_ESC),
-              Stm32ServoOutput(Config::PIN_RUDDER)
+              Stm32ServoOutput(Config::PIN_RUDDER),
+              Stm32ServoOutput(Config::PIN_AUX1),
+              Stm32ServoOutput(Config::PIN_AUX2)
           }
     {
     }
@@ -57,6 +61,9 @@ public:
         i2cBus.begin();
         spiBus.begin();
         displayBus.begin();
+
+        pinMode(pinOf(Config::PIN_BUZZER), OUTPUT);
+        digitalWrite(pinOf(Config::PIN_BUZZER), LOW);
     }
 
     II2CBus& i2c() override { return i2cBus; }
@@ -65,8 +72,14 @@ public:
 
     IUartPort& rcUart() override { return rcPort; }
     IUartPort& gpsUart() override { return gpsPort; }
+    IUartPort* telemetryUart() override { return &telemetryPort; }
 
     IServoOutput& servo(uint8_t channel) override { return servos[channel]; }
+
+    void setBuzzer(bool on) override
+    {
+        digitalWrite(pinOf(Config::PIN_BUZZER), on ? HIGH : LOW);
+    }
 
 
 private:
@@ -82,8 +95,10 @@ private:
 
     Uart rcSerial;
     Uart gpsSerial;
+    Uart telemetrySerial;   // UART4: радиомодем MAVLink
     Stm32UartPort rcPort;
     Stm32UartPort gpsPort;
+    Stm32UartPort telemetryPort;
 
     Stm32ServoOutput servos[ServoChannel::COUNT];
 

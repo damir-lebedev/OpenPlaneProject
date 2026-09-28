@@ -379,11 +379,11 @@ namespace
 
 void test_icm42688_over_spi_is_configured_and_read()
 {
-    SpiRig rig(Config::PIN_SPI_CS_ICM42688, 0);
+    SpiRig rig(Config::PIN_SPI_CS_IMU, 0);
     rig.chip.regs[0x75] = 0x47;
     setIcm(rig.chip.regs, 0, 0, 1, 0, 0);
 
-    SpiRegisterDevice device = ICM42688_Sensor::spiDevice(rig.bus, Config::PIN_SPI_CS_ICM42688);
+    SpiRegisterDevice device = ICM42688_Sensor::spiDevice(rig.bus, Config::PIN_SPI_CS_IMU);
     ICM42688_Sensor icm(device);
     TEST_ASSERT_TRUE(icm.begin());
     TEST_ASSERT_EQUAL_STRING("ICM42688", icm.getSensorType());
@@ -404,9 +404,9 @@ void test_icm42688_over_spi_is_configured_and_read()
 
 void test_icm42688_rejects_wrong_or_missing_chip()
 {
-    SpiRig rig(Config::PIN_SPI_CS_ICM42688, 0);
+    SpiRig rig(Config::PIN_SPI_CS_IMU, 0);
     rig.chip.regs[0x75] = 0x12;
-    SpiRegisterDevice device = ICM42688_Sensor::spiDevice(rig.bus, Config::PIN_SPI_CS_ICM42688);
+    SpiRegisterDevice device = ICM42688_Sensor::spiDevice(rig.bus, Config::PIN_SPI_CS_IMU);
     ICM42688_Sensor wrong(device);
     TEST_ASSERT_FALSE(wrong.begin());
     TEST_ASSERT_TRUE(contains(takeSerial(), "неверный WHO_AM_I 0x12"));

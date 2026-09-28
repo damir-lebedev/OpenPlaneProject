@@ -45,7 +45,7 @@ namespace fake
     // GPIO
     // --------------------------------------------------------
 
-    constexpr uint8_t GPIO_COUNT = 64;
+    constexpr uint8_t GPIO_COUNT = 96;   // ESP32 — до 48, фейк STM32 — порты A..E (0x00..0x4F)
 
     struct GpioState
     {

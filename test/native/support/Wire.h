@@ -118,15 +118,56 @@ namespace fake
     };
 }
 
+class TwoWire;
+
+namespace fake
+{
+    // Шины STM32duino, созданные парой пинов (TwoWire(sda, scl)) —
+    // чтобы тест нашёл шину, спрятанную в плате, по пину SDA.
+    inline std::vector<TwoWire*>& pinWires()
+    {
+        static std::vector<TwoWire*> wires;
+        return wires;
+    }
+}
+
 class TwoWire : public Stream
 {
 public:
     explicit TwoWire(uint8_t busNumber) : number(busNumber) {}
 
+    // STM32duino: шина создаётся парой пинов, контроллер ядро находит само.
+    TwoWire(uint32_t sdaPin, uint32_t sclPin)
+        : number(0xFF), sda(static_cast<int>(sdaPin)), scl(static_cast<int>(sclPin))
+    {
+        fake::pinWires().push_back(this);
+    }
+
+    ~TwoWire() override
+    {
+        auto& wires = fake::pinWires();
+        for (size_t i = 0; i < wires.size(); ++i)
+        {
+            if (wires[i] == this)
+            {
+                wires.erase(wires.begin() + static_cast<long>(i));
+                break;
+            }
+        }
+    }
+
+    TwoWire(const TwoWire&) = delete;
+    TwoWire& operator=(const TwoWire&) = delete;
+
+    // STM32duino: пины до begin().
+    void setSDA(uint32_t pin) { sda = static_cast<int>(pin); }
+    void setSCL(uint32_t pin) { scl = static_cast<int>(pin); }
+
+    // Без пинов (STM32duino) — остаются заданные setSDA()/setSCL().
     bool begin(int sdaPin = -1, int sclPin = -1, uint32_t frequencyHz = 0)
     {
-        sda = sdaPin;
-        scl = sclPin;
+        if (sdaPin >= 0) sda = sdaPin;
+        if (sclPin >= 0) scl = sclPin;
         frequency = frequencyHz;
         started = true;
         beginCalls++;
@@ -250,3 +291,15 @@ private:
 
 inline TwoWire Wire(0);
 inline TwoWire Wire1(1);
+
+namespace fake
+{
+    inline TwoWire* wireWithSda(int sdaPin)
+    {
+        for (TwoWire* w : pinWires())
+        {
+            if (w->sdaPin() == sdaPin) return w;
+        }
+        return nullptr;
+    }
+}

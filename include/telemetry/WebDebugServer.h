@@ -4,12 +4,14 @@
 #include <WiFi.h>
 
 #include "autopilot/Autopilot.h"
+#include "autopilot/AutopilotTypes.h"
 #include "config/Config.h"
 #include "control/FlightController.h"
 #include "control/FlightOutputs.h"
 #include "hal/IBoard.h"
 #include "rc/RcChannelState.h"
 #include "sensors/SensorInterface.h"
+#include "sensors/airspeed/AirspeedSensor.h"
 #include "telemetry/WebDashboardPage.h"
 
 // ============================================================
@@ -174,6 +176,7 @@ private:
         appendBaro(json);
         appendMag(json);
         appendGps(json);
+        appendAirspeed(json);
         appendAutopilot(json);
 
         json += '}';
@@ -249,6 +252,20 @@ private:
         json += '}';
     }
 
+    void appendAirspeed(String& json) const
+    {
+        const AirspeedSensor* airspeed = autopilot ? autopilot->getAirspeedSensor() : nullptr;
+        openSensor(json, "airspeed", airspeed);
+        if (airspeed && airspeed->isAvailable())
+        {
+            const AirspeedData& d = airspeed->getAirspeedData();
+            field(json, "ias", d.indicatedMs, 1);
+            field(json, "tas", d.trueMs, 1);
+            field(json, "dp", d.differentialPressurePa, 1);
+        }
+        json += '}';
+    }
+
     void appendAutopilot(String& json) const
     {
         json += ",\"autopilot\":{\"attached\":";
@@ -269,6 +286,31 @@ private:
             field(json, "kpPitch", autopilot->getPitchPid().getKp(), 3);
             field(json, "kiPitch", autopilot->getPitchPid().getKi(), 3);
             field(json, "kdPitch", autopilot->getPitchPid().getKd(), 3);
+
+            const NavStatus& nav = autopilot->getNavStatus();
+            json += ",\"nav\":{\"gps\":"; json += nav.gpsGood ? "true" : "false";
+            json += ",\"home\":"; json += nav.homeValid ? "true" : "false";
+            field(json, "homeDist", nav.distanceHomeM, 0);
+            field(json, "homeBearing", nav.bearingHomeDeg, 0);
+            field(json, "course", nav.courseDeg, 0);
+            field(json, "targetCourse", nav.targetCourseDeg, 0);
+            field(json, "speed", nav.speedMs, 1);
+            json += ",\"fence\":"; json += nav.fenceBreached ? "true" : "false";
+            json += ",\"stall\":"; json += nav.stallWarning ? "true" : "false";
+            json += '}';
+
+            // Включённые функции тумблеров — именами.
+            const PilotInputs& in = autopilot->getInputs();
+            json += ",\"features\":[";
+            bool first = true;
+            for (uint8_t f = 0; f < static_cast<uint8_t>(Feature::COUNT); ++f)
+            {
+                if (!in.features[f]) continue;
+                if (!first) json += ',';
+                first = false;
+                json += '"'; json += AutopilotNames::feature(static_cast<Feature>(f)); json += '"';
+            }
+            json += ']';
         }
         json += '}';
     }
@@ -296,7 +338,7 @@ private:
         if (!requireBodyAndAutopilot()) return;
 
         const int mode = (int)extractJsonNumber(webServer.arg("plain"), "mode", -1);
-        if (mode < MODE_MANUAL || mode > MODE_ALT_HOLD)
+        if (mode < MODE_MANUAL || mode >= MODE_COUNT)
         {
             webServer.send(400, "application/json", "{\"error\":\"invalid mode\"}");
             return;

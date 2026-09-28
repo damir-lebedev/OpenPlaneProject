@@ -3,10 +3,13 @@
 #include <U8g2lib.h>
 
 #include "autopilot/Autopilot.h"
+#include "autopilot/AutopilotTypes.h"
 #include "control/FlightController.h"
 #include "control/FlightOutputState.h"
 #include "hal/II2CBus.h"
+#include "hal/Rtos.h"
 #include "sensors/SensorInterface.h"
+#include "sensors/airspeed/AirspeedSensor.h"
 #include "telemetry/LoopStats.h"
 
 // ============================================================
@@ -15,7 +18,8 @@
 // Отладочный экран состояния на отдельной шине I2C
 // (IBoard::displayI2c()), чтобы отрисовка кадра (~25 мс на 400 кГц)
 // не задерживала опрос датчиков. Рисуется в своей FreeRTOS-задаче
-// на ядре 0 раз в REFRESH_MS; данные только читает
+// раз в REFRESH_MS (ESP32 — ядро 0; STM32 — низкий приоритет, полётная
+// задача её вытесняет, см. hal/Rtos.h); данные только читает
 // (FlightController/Autopilot/LoopStats), ничего в них не меняет.
 //
 // U8g2 передаёт байты через собственную функцию поверх II2CBus
@@ -68,7 +72,7 @@ public:
         display.begin();
         display.setFont(u8g2_font_6x10_tr);
 
-        xTaskCreatePinnedToCore(displayTask, "oled", 4096, this, 1, nullptr, 0);
+        Rtos::startTask(displayTask, "oled", 4096, this, Rtos::PRIORITY_BACKGROUND);
 
         Serial.println("OLED: подключён (SSD1306)");
         return true;
@@ -169,7 +173,10 @@ private:
         snprintf(line, sizeof(line), "%s %s %s%s",
                  rxLost ? "RX LOST" : "RX ok",
                  controller.isArmed() ? "ARM" : "safe",
-                 !autopilot ? "MAN" : autopilot->isFailsafeGliding() ? "GLIDE" : shortMode(autopilot->getMode()),
+                 !autopilot                        ? "MAN"
+                 : autopilot->isFailsafeGliding()   ? "GLIDE"
+                 : autopilot->isFailsafeReturning() ? "FSRTH"
+                                                    : AutopilotNames::modeShort(autopilot->getMode()),
                  controller.getFlapsUs() > 0 ? " FL" : "");
 
         if (rxLost)
@@ -202,8 +209,16 @@ private:
         const BarometerSensor* baro = autopilot ? autopilot->getBarometerSensor() : nullptr;
         if (!baro || !baro->isAvailable()) return "BARO --";
 
-        char line[32];
+        char line[40];
         const BarometerData& d = baro->getBarometerData();
+        const AirspeedSensor* airspeed = autopilot->getAirspeedSensor();
+        if (airspeed && airspeed->isAvailable())
+        {
+            // С трубкой Пито — воздушная скорость в конце строки (21 символ экрана).
+            snprintf(line, sizeof(line), "Alt%+6.1f Vz%+4.1f A%2.0f", d.altitude, d.verticalSpeed,
+                     airspeed->getAirspeedData().indicatedMs);
+            return line;
+        }
         snprintf(line, sizeof(line), "Alt%+6.1f Vz%+5.1f", d.altitude, d.verticalSpeed);
         return line;
     }
@@ -216,17 +231,5 @@ private:
         char text[8];
         snprintf(text, sizeof(text), "H%3.0f", mag->getMagData().headingDegrees);
         return text;
-    }
-
-    static const char* shortMode(AutopilotMode mode)
-    {
-        switch (mode)
-        {
-            case MODE_MANUAL:       return "MAN";
-            case MODE_STABILIZE:    return "STAB";
-            case MODE_AUTO_TAKEOFF: return "TKOFF";
-            case MODE_ALT_HOLD:     return "ALT";
-            default:                return "?";
-        }
     }
 };

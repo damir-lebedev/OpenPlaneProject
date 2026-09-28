@@ -100,7 +100,7 @@ void test_valid_frame_updates_channels_and_counters()
     receiver.begin();
 
     RcChannels rc;
-    rc.set(Channels::AILERON, 1900).set(Channels::THROTTLE, 1200).set(Channels::AUX_5, 1100);
+    rc.set(Channels::AILERON, 1900).set(Channels::THROTTLE, 1200).set(Channels::VRB, 1100);
     fake::advanceMs(5);
     uart.push(ibusFrame(rc));
     receiver.update();
@@ -108,7 +108,7 @@ void test_valid_frame_updates_channels_and_counters()
     TEST_ASSERT_FALSE(receiver.isSignalLost());
     TEST_ASSERT_EQUAL_UINT16(1900, receiver.getState().get(Channels::AILERON));
     TEST_ASSERT_EQUAL_UINT16(1200, receiver.getState().get(Channels::THROTTLE));
-    TEST_ASSERT_EQUAL_UINT16(1100, receiver.getState().get(Channels::AUX_5));
+    TEST_ASSERT_EQUAL_UINT16(1100, receiver.getState().get(Channels::VRB));
     TEST_ASSERT_EQUAL_UINT32(1, receiver.getGoodFrameCount());
     TEST_ASSERT_EQUAL_UINT32(0, receiver.getBadFrameCount());
     TEST_ASSERT_EQUAL_UINT32(micros(), receiver.getLastFrameTime());

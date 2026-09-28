@@ -50,6 +50,16 @@ public:
         return endTransmission() == 0;
     }
 
+    // Несколько регистров подряд одной транзакцией (автоинкремент
+    // адреса регистра — у всех датчиков проекта он включён).
+    bool writeRegisters(uint8_t address, uint8_t reg, const uint8_t* data, uint8_t count)
+    {
+        beginTransmission(address);
+        write(reg);
+        write(data, count);
+        return endTransmission() == 0;
+    }
+
     bool readRegisters(uint8_t address, uint8_t reg, uint8_t* buffer, uint8_t count)
     {
         beginTransmission(address);

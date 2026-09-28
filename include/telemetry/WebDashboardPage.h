@@ -34,6 +34,7 @@ h1{color:#fff;text-align:center;margin:12px 0 20px}
 button{background:#667eea;color:#fff;border:none;padding:8px 16px;margin:4px;border-radius:5px;cursor:pointer}
 button:hover{background:#764ba2}
 button.manual{background:#f44336}
+button.active{box-shadow:0 0 0 3px #333}
 input[type=number]{width:64px}
 </style></head><body><div class="container">
 <h1>OpenPlane Debug Dashboard</h1>
@@ -52,12 +53,16 @@ input[type=number]{width:64px}
 <div class="row"><span class="label">Режим</span><span class="value" id="mode">--</span></div>
 <div class="row"><span class="label">Цели</span><span class="value" id="target">--</span></div>
 <div class="row"><span class="label">Коррекции</span><span class="value" id="corr">--</span></div>
-<div class="row">
-<button class="manual" onclick="setMode(0)">Manual</button>
-<button onclick="setMode(1)">Stabilize</button>
-<button onclick="setMode(2)">Takeoff</button>
-<button onclick="setMode(3)">Alt Hold</button>
-</div></div>
+<div class="row"><span class="label">Функции</span><span class="value" id="features">--</span></div>
+<div class="row" id="modes"></div></div>
+
+<div class="card"><h2>Навигация</h2>
+<div class="row"><span class="label">GPS / дом</span><span class="badge" id="gpsState">--</span><span class="badge" id="homeState">--</span>
+<span class="badge" id="fence"></span><span class="badge" id="stall"></span></div>
+<div class="row"><span class="label">До дома</span><span class="value" id="home">--</span></div>
+<div class="row"><span class="label">Курс / цель</span><span class="value" id="course">--</span></div>
+<div class="row"><span class="label">Скорость</span><span class="value" id="speed">--</span></div>
+</div>
 
 <div class="card"><h2>PID (крен / тангаж)</h2>
 <div class="row">Крен: Kp<input type="number" step="0.01" id="kpRoll"> Ki<input type="number" step="0.01" id="kiRoll"> Kd<input type="number" step="0.01" id="kdRoll"></div>
@@ -66,8 +71,11 @@ input[type=number]{width:64px}
 </div>
 
 </div><script>
-const OUTPUT_NAMES = {aileronLeft:'Элерон L', aileronRight:'Элерон R', elevator:'Руль высоты', rudder:'Руль направления', esc:'ESC (газ)'};
-const SENSORS = [['imu','IMU',['roll','pitch','yaw']], ['baro','Барометр',['altitude','climb']], ['mag','Компас',['heading']], ['gps','GPS',['fix','numSV','lat','lon']]];
+const OUTPUT_NAMES = {aileronLeft:'Элерон L', aileronRight:'Элерон R', elevator:'Руль высоты', rudder:'Руль направления', esc:'ESC (газ)', aux1:'Груз (AUX1)', aux2:'Камера (AUX2)'};
+// Поле и знаков после запятой: координаты — 6 (≈ 0.1 м), счётчики — 0.
+const SENSORS = [['imu','IMU',[['roll',1],['pitch',1],['yaw',1]]], ['baro','Барометр',[['altitude',2],['climb',2]]], ['mag','Компас',[['heading',1]]], ['gps','GPS',[['fix',0],['numSV',0],['lat',6],['lon',6]]], ['airspeed','Трубка Пито',[['ias',1],['tas',1],['dp',1]]]];
+// Номер = AutopilotMode (autopilot/AutopilotTypes.h).
+const MODES = ['Manual','Stabilize','Takeoff','Alt Hold','Acro','Cruise','Loiter','RTH','Launch','Land','Soaring','Rescue'];
 const PID_FIELDS = ['kpRoll','kiRoll','kdRoll','kpPitch','kiPitch','kdPitch'];
 const $ = id => document.getElementById(id);
 
@@ -116,14 +124,24 @@ function render(s) {
     if (!d.attached) { badge(b, false, '', 'НЕТ В СБОРКЕ'); v.textContent = '--'; return; }
     if (!d.available) { badge(b, false, '', 'НЕ ОТВЕЧАЕТ'); v.textContent = '--'; return; }
     badge(b, true, 'OK', '');
-    v.textContent = fields.map(f => f + '=' + Number(d[f]).toFixed(2)).join('  ');
+    v.textContent = fields.map(([f, digits]) => f + '=' + Number(d[f]).toFixed(digits)).join('  ');
   });
 
   const a = s.autopilot;
   if (!a.attached) { $('mode').textContent = 'НЕТ АВТОПИЛОТА'; return; }
   $('mode').textContent = a.modeName;
+  document.querySelectorAll('#modes button').forEach((b, m) => b.classList.toggle('active', m === a.mode));
   $('target').textContent = 'крен ' + a.desiredRoll.toFixed(1) + '°, тангаж ' + a.desiredPitch.toFixed(1) + '°, высота ' + a.targetAlt.toFixed(1) + ' м';
   $('corr').textContent = 'крен ' + a.rollCorr.toFixed(0) + ' мкс, тангаж ' + a.pitchCorr.toFixed(0) + ' мкс, газ ' + a.throttleCorr.toFixed(0) + '%';
+  $('features').textContent = a.features.length ? a.features.join(', ') : 'нет';
+  const n = a.nav;
+  badge($('gpsState'), n.gps, 'GPS OK', 'НЕТ GPS');
+  badge($('homeState'), n.home, 'ДОМ', 'ДОМА НЕТ');
+  $('fence').textContent = n.fence ? 'ГЕОЗАБОР' : ''; $('fence').className = 'badge bad';
+  $('stall').textContent = n.stall ? 'МАЛАЯ СКОРОСТЬ' : ''; $('stall').className = 'badge bad';
+  $('home').textContent = n.homeDist < 0 ? '--' : (n.homeDist.toFixed(0) + ' м, пеленг ' + n.homeBearing.toFixed(0) + '°');
+  $('course').textContent = n.course.toFixed(0) + '° → ' + n.targetCourse.toFixed(0) + '°';
+  $('speed').textContent = n.speed.toFixed(1) + ' м/с';
   PID_FIELDS.forEach(f => { const el = $(f); if (!el.dataset.touched) el.value = a[f]; });
 }
 
@@ -147,6 +165,14 @@ function applyPid() {
 
 // Поле, которое пользователь начал править, опрос больше не перезаписывает.
 PID_FIELDS.forEach(f => $(f).addEventListener('input', () => { $(f).dataset.touched = '1'; }));
+
+MODES.forEach((name, m) => {
+  const b = document.createElement('button');
+  b.textContent = name;
+  if (m === 0) b.className = 'manual';
+  b.onclick = () => setMode(m);
+  $('modes').appendChild(b);
+});
 
 setInterval(poll, 200);
 poll();

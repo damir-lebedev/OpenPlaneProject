@@ -6,8 +6,10 @@ HAL — единственный слой, которому разрешено �
 лежат в `include/hal/`, реализации:
 
 - `include/hal/esp32/` — ESP32 (Arduino core 2.0.x), **основная**;
-- `include/hal/stm32/` — STM32H743 (STM32duino 3.x), **заготовка**: собирается
-  (`pio run -e stm32h743`), на железе не проверялась.
+- `include/hal/stm32/` — STM32H743 (STM32duino 3.x): полная прошивка
+  собирается (`pio run -e stm32h743`) и гоняется на ПК (`pio test -e
+  native-stm32`), на железе пока не проверялась;
+- `hal/Rtos.h` — задачи FreeRTOS одинаково на обеих платформах.
 
 Всё выше работает только с интерфейсами, поэтому перенос на другой MCU — это
 новая реализация `IBoard`, а не переписывание датчиков.
@@ -29,7 +31,9 @@ HAL — единственный слой, которому разрешено �
 | `ELEVATOR` | 2 |
 | `ESC` | 3 |
 | `RUDDER` | 4 |
-| `COUNT` | 5 |
+| `AUX1` | 5 — сброс груза (`Feature::PAYLOAD_DROP`) |
+| `AUX2` | 6 — камера (`Knob::CAMERA_TILT`, `Feature::CAMERA_STAB`) |
+| `COUNT` | 7 |
 
 ---
 
@@ -48,7 +52,9 @@ HAL — единственный слой, которому разрешено �
 | `virtual II2CBus* displayI2c()` | Вторая шина I2C только для экрана; `nullptr`, если её нет |
 | `virtual IUartPort& rcUart()` | UART приёмника iBUS |
 | `virtual IUartPort& gpsUart()` | UART GPS |
+| `virtual IUartPort* telemetryUart()` | UART радиомодема MAVLink; по умолчанию `nullptr` (у ESP32 свободного UART нет) |
 | `virtual IServoOutput& servo(uint8_t channel)` | PWM-выход по индексу `ServoChannel::*` |
+| `virtual void setBuzzer(bool on)` | пищалка `PIN_BUZZER`; по умолчанию ничего |
 
 ---
 
@@ -104,6 +110,7 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 | `begin(baud)` | Открыть порт |
 | `int available()`, `int read()` | Приём |
 | `size_t write(byte)`, `size_t write(buffer, size)` | Передача |
+| `virtual int availableForWrite()` | свободно в буфере передачи; `-1` — неизвестно (по умолчанию). Телеметрия по нему откладывает кадр, а не ждёт |
 
 ---
 
@@ -135,6 +142,7 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 | `virtual void begin()` | Подготовить линии устройства (для SPI — CS). По умолчанию ничего |
 | `virtual bool probe()` | Устройство отозвалось (для SPI всегда `true` — ACK нет, проверяется ID-регистр) |
 | `virtual bool writeRegister(reg, value)` | Запись регистра |
+| `virtual bool writeRegisters(reg, data, count)` | Запись подряд (автоинкремент адреса) |
 | `virtual bool readRegisters(reg, buffer, count)` | Чтение `count` байт подряд; при `false` буфер не трогается |
 | `int readRegister(reg)` | Значение или `-1` (невиртуальный помощник) |
 
@@ -149,9 +157,10 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 
 | Метод | Описание |
 |---|---|
-| `I2cRegisterDevice(II2CBus& i2cBus, uint8_t deviceAddress)` | Конструктор |
-| `probe()`, `writeRegister()`, `readRegisters()` | → `bus.probe/writeRegister/readRegisters(address, …)` |
-| `uint8_t getAddress() const` | Адрес устройства |
+| `I2cRegisterDevice(II2CBus& i2cBus, uint8_t deviceAddress, uint8_t alternateAddress = 0)` | `alternateAddress` — второй адрес чипа (ножка SDO/SA0): LSM6DSV 0x6A/0x6B, ICM-45686 0x68/0x69, SPL06 0x76/0x77, BMP581 0x46/0x47 |
+| `begin()` | основной не отвечает, а запасной отвечает — дальше работать по запасному |
+| `probe()`, `writeRegister()`, `writeRegisters()`, `readRegisters()` | → помощники `II2CBus(address, …)` |
+| `uint8_t getAddress() const` | текущий адрес устройства |
 
 ---
 
@@ -189,11 +198,12 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 | `spiBus` | `Esp32SpiBus` | Глобальный `SPI` |
 | `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | iBUS на `PIN_IBUS`, только RX |
 | `gpsSerial`, `gpsPort` | `HardwareSerial(UART_NUM_GPS)`, `Esp32UartPort` | GPS на `PIN_GPS_RX/TX` |
-| `servos[5]` | `Esp32ServoOutput` | Каналы LEDC 0..4 в порядке `ServoChannel` |
+| `servos[7]` | `Esp32ServoOutput` | Каналы LEDC 0..6 в порядке `ServoChannel` (AUX1/AUX2 — `PIN_AUX1/2`, если разведены) |
 
 | Метод | Описание |
 |---|---|
-| `begin()` | `i2cBus.begin()`, `spiBus.begin()`, затем `displayBus.begin()`, если вторая шина есть |
+| `begin()` | `i2cBus.begin()`, `spiBus.begin()`, затем `displayBus.begin()`, если вторая шина есть; пин пищалки |
+| `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)`, если пин разведён |
 | `displayI2c()` | `&displayBus`, если `hasDisplayBus()`, иначе `nullptr` |
 | `static constexpr bool hasDisplayBus()` | Оба пина второй шины ≥ 0. Существует (как и поле `displayBus`) только при `SOC_I2C_NUM > 1` — у C3 один контроллер I2C |
 | остальные | Возвращают соответствующие поля |
@@ -262,18 +272,19 @@ PWM напрямую через LEDC (`ledcSetup/ledcAttachPin/ledcWrite` Arduin
 
 ---
 
-# Реализация для STM32H743 (заготовка)
+# Реализация для STM32H743
 
 Плата следующего поколения — STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша,
-1 МБ ОЗУ). Физической платы пока нет: код **собирается** (env `stm32h743`,
-плата PlatformIO `weact_mini_h743vitx` — тот же чип) и проходит cppcheck, но
-**на железе не проверялся**. Распиновка — блок `BOARD_STM32H743` в
+1 МБ ОЗУ). Полная прошивка **собирается** (env `stm32h743`, плата PlatformIO
+`weact_mini_h743vitx` — тот же чип), проходит cppcheck и тесты на ПК (env
+`native-stm32` со слоем фейков STM32duino), но **на железе не проверялась** —
+физической платы пока нет. Распиновка — блок `BOARD_STM32H743` в
 [`Config.h`](config.md#stm32h743).
 
 Общие отличия от ESP32, которые прячет этот слой:
 
 - **Периферию выбирает ядро.** STM32duino сам находит контроллер (I2C1/I2C2,
-  SPI2, USART3, UART7, TIMx) по номерам пинов в таблицах `PeripheralPins`
+  SPI2, USART3, UART4, UART7, TIMx) по номерам пинов в таблицах `PeripheralPins`
   варианта, поэтому номеров UART/каналов в `Config.h` нет.
 - **Номера пинов** — «Arduino-пины» варианта (`PA0`, `PD14`...), а не GPIO; у
   аналоговых пинов это `0xC0 + N`, поэтому пины в блоке STM32 — `int16_t`.
@@ -293,11 +304,14 @@ PWM напрямую через LEDC (`ledcSetup/ledcAttachPin/ledcWrite` Arduin
 | `spiBus` | `Stm32SpiBus` | Глобальный `SPI` на `PIN_SENSOR_SPI_*` (SPI2) |
 | `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | iBUS: UART7, RX `PIN_IBUS` (PE7), TX `PIN_IBUS_TX` (PE8, резерв под iBUS-SENS) |
 | `gpsSerial`, `gpsPort` | `Uart`, `Stm32UartPort` | GPS: USART3, `PIN_GPS_RX/TX` (PD9/PD8) |
-| `servos[5]` | `Stm32ServoOutput` | В порядке `ServoChannel` |
+| `telemetrySerial`, `telemetryPort` | `Uart`, `Stm32UartPort` | радиомодем MAVLink: UART4, `PIN_TELEM_RX/TX` (PD0/PD1) |
+| `servos[7]` | `Stm32ServoOutput` | В порядке `ServoChannel` (AUX1 — PD15/TIM4, AUX2 — PE9/TIM1) |
 
 | Метод | Описание |
 |---|---|
-| `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `displayBus.begin()` |
+| `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `displayBus.begin()`, пин пищалки |
+| `telemetryUart()` | `&telemetryPort` |
+| `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
 | `displayI2c()` | Всегда `&displayBus` |
 | `static constexpr pin_size_t pinOf(int16_t)` | Перевод пина из `Config.h` в тип API ядра |
 | остальные | Возвращают соответствующие поля |
@@ -332,8 +346,10 @@ PWM напрямую через LEDC (`ledcSetup/ledcAttachPin/ledcWrite` Arduin
 
 Обёртка над `HardwareSerial&` (в STM32duino 3.x — абстрактная база
 `arduino::HardwareSerial`, конкретный объект `Uart` создаёт `Stm32Board`).
-`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`. Буферы — 256 байт
-(`SERIAL_RX/TX_BUFFER_SIZE` в env): кадр NAV-PVT — 100 байт, стандартных 64 мало.
+`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`; `availableForWrite()` —
+от `HardwareSerial`. Буферы (`SERIAL_RX/TX_BUFFER_SIZE` в env): приём 256
+байт (кадр NAV-PVT — 100, стандартных 64 мало), передача 1024 (строки лога и
+кадры MAVLink без ожидания).
 
 ## `Stm32ServoOutput`
 
@@ -356,12 +372,45 @@ PWM напрямую через LEDC (`ledcSetup/ledcAttachPin/ledcWrite` Arduin
 | `measurePulseUs()` | `pulseIn(pin, HIGH, 30 мс)` без перенастройки пина: на STM32 регистр IDR видит уровень и в режиме альтернативной функции |
 | `static acquireTimer(TIM_TypeDef*)` | Общий пул: **один `HardwareTimer` на TIMx**. Второй объект на тот же таймер перезаписал бы обработчик ядра (`HardwareTimer_Handle[index]`). Период задаётся при первом выходе на таймере; `setOverflow(MICROSEC_FORMAT)` подбирает делитель — шаг ~0.3 мкс при тактовой таймера 240 МГц |
 
+## `Stm32FlashStorage`
+
+**Файл:** `hal/stm32/Stm32FlashStorage.h` · **Наследует:** `IFlashStorage` ([storage.md](storage.md))
+
+Носитель `KeyValueStore` на STM32: последний сектор флеша (банк 2) через
+EEPROM-эмуляцию STM32duino (`eeprom_buffer_fill/flush`, буфер 8 КБ, из
+которого используются первые `KeyValueStore::CAPACITY` байт).
+
+| Метод | Описание |
+|---|---|
+| `capacity()` | `min(KeyValueStore::CAPACITY, E2END + 1)` |
+| `read(dst, n)` | `eeprom_buffer_fill()` + побайтное чтение буфера |
+| `write(src, n)` | **быстро**: копия образа в свой буфер под `noInterrupts()`, флаг «есть запись». Вызывается из `KvPreferences::end()` в полётной задаче |
+| `bool service()` | **медленно**: снимок в буфер эмуляции (под `noInterrupts()`) и `eeprom_buffer_flush()` — стирание сектора 128 КБ (секунды) и запись. Только из фоновой задачи `storage` |
+| `hasPending()`, `flushCount()` | диагностика |
+| `static instance()`, `static store()` | носитель и общий `KeyValueStore` прошивки |
+
+Почему полёт не замирает: сектор настроек в банке 2, код — в банке 1, флеш H7
+читает один банк, пока пишется другой; полётная задача вытесняет фоновую.
+
+## `compat/Preferences.h`
+
+**Файл:** `hal/stm32/compat/Preferences.h` — в env `stm32h743` (и
+`native-stm32`) каталог `compat/` стоит в `-I` раньше библиотек, и
+`#include <Preferences.h>` драйверов датчиков, автотриммера и настроек лога
+находит его. `class Preferences : public KvPreferences` поверх
+`Stm32FlashStorage::store()` — API как у NVS ESP32 ([storage.md](storage.md#kvpreferences)).
+
+## `Rtos`
+
+**Файл:** `hal/Rtos.h` · namespace
+
+| Член | Описание |
+|---|---|
+| `PRIORITY_BACKGROUND` (1), `PRIORITY_TELEMETRY` (2), `PRIORITY_FLIGHT` (5) | приоритеты задач |
+| `bool startTask(fn, name, stackBytes, arg, priority)` | ESP32 — `xTaskCreatePinnedToCore(..., ядро 0)`, стек в байтах; STM32 — `xTaskCreate`, стек переводится в слова |
+| `uint32_t freeHeapBytes()` | ESP32 — `ESP.getFreeHeap()`; STM32 — `xPortGetFreeHeapSize()` |
+
 ## Точка входа `src/stm32/main.cpp`
 
-Полная прошивка (`src/main.cpp`) на STM32 пока не собирается — не из-за HAL, а
-из-за трёх ESP32-зависимостей уровнем выше: `Preferences` (NVS) для калибровок и
-настроек лога, Wi-Fi-дашборд (`WebDebugServer`) и задачи FreeRTOS на втором ядре
-(веб, OLED). Поэтому env `stm32h743` собирает bring-up: ручной полёт
-(`FlightController` без автопилота) и проверку шин. Подробнее —
-[application.md](application.md#src-stm32-main-cpp).
-
+Полная прошивка: те же объекты, что `src/main.cpp`, телеметрия MAVLink вместо
+Wi-Fi, задачи FreeRTOS вместо `loop()` — [application.md](application.md#srcstm32maincpp--stm32h743).

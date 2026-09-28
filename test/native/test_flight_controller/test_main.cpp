@@ -1,7 +1,7 @@
 // ============================================================
 // FlightController: полный такт на настоящих IBusReceiver,
 // ControlMixer, ThrottleManager, ArmingManager, FlightOutputs,
-// Autopilot и AutopilotModeSelector; железо — FakeBoard, датчики —
+// Autopilot и PilotSwitches; железо — FakeBoard, датчики —
 // фейки. Проверяется порядок приоритетов: потеря связи > ARM > стики
 // и автопилот > газ.
 //
@@ -12,7 +12,7 @@
 #include <unity.h>
 
 #include "autopilot/Autopilot.h"
-#include "autopilot/AutopilotModeSelector.h"
+#include "autopilot/PilotSwitches.h"
 #include "control/ArmingManager.h"
 #include "control/ControlMixer.h"
 #include "control/FlightController.h"
@@ -36,7 +36,7 @@ namespace
         ThrottleManager throttle;
         FlightOutputs outputs{ board };
         Autopilot autopilot{ &imu, &baro };
-        AutopilotModeSelector selector{ &autopilot };
+        PilotSwitches selector{ &autopilot };
         ArmingManager arming{ &autopilot };
         FlightController controller{ receiver, mixer, throttle, arming, outputs, &autopilot, &selector };
 
@@ -138,7 +138,7 @@ void test_link_loss_in_air_glides_with_motor_off()
     Plane plane;
     plane.arm();
     RcChannels rc;
-    rc.set(Channels::ARM, 2000).set(Channels::THROTTLE, 1700).set(Channels::FLAPS, 2000);
+    rc.set(Channels::ARM, 2000).set(Channels::THROTTLE, 1700).set(Channels::SWB, 2000);
     for (int i = 0; i < 10; ++i) plane.tick(rc);
 
     plane.imu.data.roll = 20;   // правое крыло вниз
@@ -175,11 +175,11 @@ void test_mode_switch_is_ignored_during_link_loss()
     TEST_ASSERT_EQUAL(MODE_MANUAL, plane.autopilot.getMode());
 
     RcChannels lost;
-    lost.set(Channels::THROTTLE, 900).set(Channels::AUX_2, 2000);   // CH7 в failsafe-кадре
+    lost.set(Channels::THROTTLE, 900).set(Channels::SWC, 2000);   // CH7 в failsafe-кадре
     plane.tick(lost);
     TEST_ASSERT_EQUAL(MODE_MANUAL, plane.autopilot.getMode());
 
-    rc.set(Channels::AUX_2, 1500);
+    rc.set(Channels::SWC, 1500);
     plane.tick(rc);
     TEST_ASSERT_EQUAL(MODE_STABILIZE, plane.autopilot.getMode());
 }
@@ -189,7 +189,7 @@ void test_autopilot_corrections_are_added_to_sticks_and_clamped()
     Plane plane;
     plane.imu.data.pitch = -10;   // нос вниз -> коррекция "нос вверх"
     RcChannels rc;
-    rc.set(Channels::AUX_2, 1500);
+    rc.set(Channels::SWC, 1500);
     plane.tick(rc);
     TEST_ASSERT_EQUAL(MODE_STABILIZE, plane.autopilot.getMode());
 
@@ -197,8 +197,9 @@ void test_autopilot_corrections_are_added_to_sticks_and_clamped()
     // Нос вверх = руль высоты вверх; в PWM знак зависит от реверса.
     TEST_ASSERT_TRUE(Config::ELEVATOR_REVERSED ? elevator < 1500 : elevator > 1500);
 
-    // Стик до упора + коррекция в ту же сторону — не дальше хода.
-    plane.imu.data.pitch = -60;
+    // STABILIZE — угол по стику: стик на себя до упора задаёт +25°, а
+    // нос опущен на 90° — ошибка больше хода руля, но не дальше упора.
+    plane.imu.data.pitch = -90;
     rc.set(Channels::ELEVATOR, 1000);   // на себя — нос вверх
     plane.tick(rc);
     TEST_ASSERT_EQUAL_UINT16(Config::ELEVATOR_REVERSED ? 1000 : 2000, plane.pwm(ServoChannel::ELEVATOR));
@@ -208,7 +209,7 @@ void test_takeoff_throttle_still_requires_arm()
 {
     Plane plane;
     RcChannels rc;
-    rc.set(Channels::AUX_2, 2000).set(Channels::THROTTLE, 1000);
+    rc.set(Channels::SWC, 2000).set(Channels::THROTTLE, 1000);
     plane.tick(rc);
     TEST_ASSERT_EQUAL(MODE_AUTO_TAKEOFF, plane.autopilot.getMode());
 
@@ -229,7 +230,7 @@ void test_flaps_follow_switch_smoothly()
     Plane plane;
     RcChannels rc;
     plane.tick(rc);   // первый такт — закрылки убраны
-    rc.set(Channels::FLAPS, 2000);
+    rc.set(Channels::SWB, 2000);
     for (int i = 0; i < 10; ++i) plane.tick(rc);   // 20 мс — ~4 мкс хода
     const int16_t first = plane.controller.getFlapsUs();
     TEST_ASSERT_GREATER_THAN_INT16(0, first);

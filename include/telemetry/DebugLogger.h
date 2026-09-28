@@ -2,12 +2,15 @@
 #include <Arduino.h>
 
 #include "autopilot/Autopilot.h"
+#include "autopilot/AutopilotTypes.h"
 #include "config/Config.h"
 #include "control/FlightController.h"
 #include "control/FlightOutputState.h"
+#include "hal/Rtos.h"
 #include "rc/IBusReceiver.h"
 #include "rc/RcChannelState.h"
 #include "sensors/SensorInterface.h"
+#include "sensors/airspeed/AirspeedSensor.h"
 #include "telemetry/LogSettings.h"
 #include "telemetry/LoopStats.h"
 
@@ -163,6 +166,7 @@ private:
     Shown roll, pitch, yaw;
     Shown wantRoll, wantPitch, corrRoll, corrPitch, corrThrottle;
     Shown altitude, climb;
+    Shown homeDistance, navSpeed, airspeedShown;
     Shown heading;
     Shown gpsLat, gpsLon, gpsSpeed;
     Shown gyro[3], accel[3];
@@ -210,6 +214,7 @@ private:
             case LogChannel::Altitude:  formatAltitude(k); break;
             case LogChannel::Heading:   formatHeading(k); break;
             case LogChannel::Gps:       formatGps(k); break;
+            case LogChannel::Nav:       formatNav(k); break;
             case LogChannel::Imu:       formatImu(k); break;
             case LogChannel::System:    formatSystem(); break;
             case LogChannel::Count:     break;
@@ -302,6 +307,41 @@ private:
                     corrThrottle.update(autopilot->getThrottleCorrection(), k * 2.0f));
     }
 
+    // NAV: дом, курс -> цель, скорость (и чем меряна), воздушная
+    // скорость трубки, включённые функции тумблеров.
+    void formatNav(float k)
+    {
+        if (!autopilot) { line.print("нет"); return; }
+
+        const NavStatus& nav = autopilot->getNavStatus();
+        if (nav.homeValid && nav.distanceHomeM >= 0)
+        {
+            line.printf("дом %.0f м %.0f°", homeDistance.update(nav.distanceHomeM, k * 2.0f), nav.bearingHomeDeg);
+        }
+        else
+        {
+            line.print(nav.gpsGood ? "дома нет" : "GPS нет");
+        }
+        line.printf("  курс %.0f->%.0f°  V %.1f м/с", nav.courseDeg, nav.targetCourseDeg,
+                    navSpeed.update(nav.speedMs, k * 0.3f));
+
+        const AirspeedSensor* airspeed = autopilot->getAirspeedSensor();
+        if (airspeed && airspeed->isAvailable())
+        {
+            line.printf("  Пито %.1f м/с", airspeedShown.update(airspeed->getAirspeedData().indicatedMs, k * 0.3f));
+        }
+        if (nav.fenceBreached) line.print("  ГЕОЗАБОР");
+        if (nav.stallWarning) line.print("  МАЛАЯ СКОРОСТЬ");
+
+        const PilotInputs& in = autopilot->getInputs();
+        for (uint8_t f = 0; f < static_cast<uint8_t>(Feature::COUNT); ++f)
+        {
+            if (!in.features[f]) continue;
+            line.print("  +");
+            line.print(AutopilotNames::feature(static_cast<Feature>(f)));
+        }
+    }
+
     void formatAltitude(float k)
     {
         const BarometerSensor* baro = autopilot ? autopilot->getBarometerSensor() : nullptr;
@@ -369,6 +409,6 @@ private:
         }
         line.printf(" | iBUS ok=%u crc_err=%u | heap %u KB | uptime %u s",
                     (unsigned)receiver.getGoodFrameCount(), (unsigned)receiver.getBadFrameCount(),
-                    (unsigned)(ESP.getFreeHeap() / 1024), (unsigned)(millis() / 1000));
+                    (unsigned)(Rtos::freeHeapBytes() / 1024), (unsigned)(millis() / 1000));
     }
 };

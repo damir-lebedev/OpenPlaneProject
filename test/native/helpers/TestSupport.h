@@ -16,10 +16,16 @@
 #include <Arduino.h>
 #include <Preferences.h>
 #include <SPI.h>
-#include <WiFi.h>
 #include <Wire.h>
+#if defined(BOARD_STM32H743)
+#include <EEPROM.h>
+#include <STM32FreeRTOS.h>
+#else
+#include <WiFi.h>
+#endif
 
 #include <deque>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -27,15 +33,25 @@
 #include "config/Config.h"
 #include "hal/IBoard.h"
 #include "hal/RegisterDevice.h"
+#if !defined(BOARD_STM32H743)
 #include "hal/esp32/Esp32I2CBus.h"
 #include "hal/esp32/Esp32SpiBus.h"
+#endif
 #include "sensors/SensorInterface.h"
+#include "sensors/airspeed/AirspeedSensor.h"
 
 inline void resetWorld()
 {
     fake::resetHal();
+#if defined(BOARD_STM32H743)
+    // Среда native-stm32: настройки — во "флеше" EEPROM-эмуляции, Wi-Fi нет.
+    fake::resetEeprom();
+    fake::timerPulses().clear();
+    fake::schedulerStarted() = false;
+#else
     fake::resetNvs();
     fake::wifi() = fake::WifiState();
+#endif
     fake::setSerialEcho(false);
     Serial.resetFake();
     Wire.resetFake();
@@ -67,8 +83,8 @@ struct RcChannels
         for (uint16_t& v : value) v = Config::PWM_CENTER;
         value[Channels::THROTTLE] = Config::PWM_MIN;
         value[Channels::ARM] = Config::PWM_MIN;
-        value[Channels::FLAPS] = Config::PWM_MIN;
-        value[Channels::AUX_2] = Config::PWM_MIN;
+        value[Channels::SWB] = Config::PWM_MIN;
+        value[Channels::SWC] = Config::PWM_MIN;
     }
 
     RcChannels& set(uint8_t channel, uint16_t us)
@@ -112,6 +128,7 @@ public:
     unsigned beginCalls = 0;
     std::deque<uint8_t> rx;
     std::vector<uint8_t> tx;
+    int room = -1;   // availableForWrite(): −1 — без ограничения
 
     void begin(uint32_t baudRate) override
     {
@@ -141,9 +158,16 @@ public:
         return size;
     }
 
+    int availableForWrite() override { return room; }
+
     void push(const std::string& bytes)
     {
         for (char c : bytes) rx.push_back(static_cast<uint8_t>(c));
+    }
+
+    void push(const std::vector<uint8_t>& bytes)
+    {
+        rx.insert(rx.end(), bytes.begin(), bytes.end());
     }
 };
 
@@ -178,15 +202,21 @@ public:
 class FakeI2cBus : public II2CBus
 {
 public:
+    // Пусто — отвечает любой адрес; иначе — только перечисленные.
+    std::set<uint8_t> devices;
+
     void begin() override {}
     void setClock(uint32_t) override {}
-    void beginTransmission(uint8_t) override {}
+    void beginTransmission(uint8_t address) override { current = address; }
     size_t write(uint8_t) override { return 1; }
     size_t write(const uint8_t*, size_t length) override { return length; }
-    uint8_t endTransmission(bool) override { return 0; }
+    uint8_t endTransmission(bool) override { return devices.empty() || devices.count(current) ? 0 : 2; }
     uint8_t requestFrom(uint8_t, uint8_t quantity) override { return quantity; }
     int available() override { return 0; }
     int read() override { return 0; }
+
+private:
+    uint8_t current = 0;
 };
 
 class FakeSpiBus : public ISpiBus
@@ -204,6 +234,8 @@ public:
     FakeServo servos[ServoChannel::COUNT];
     FakeUart rc;
     FakeUart gps;
+    FakeUart telemetry;
+    bool hasTelemetry = false;
     FakeI2cBus sensorBus;
     FakeI2cBus screenBus;
     FakeSpiBus spiBus;
@@ -216,9 +248,19 @@ public:
     II2CBus* displayI2c() override { return hasScreen ? &screenBus : nullptr; }
     IUartPort& rcUart() override { return rc; }
     IUartPort& gpsUart() override { return gps; }
+    IUartPort* telemetryUart() override { return hasTelemetry ? &telemetry : nullptr; }
     IServoOutput& servo(uint8_t channel) override { return servos[channel]; }
+
+    bool buzzer = false;
+    unsigned buzzerChanges = 0;
+    void setBuzzer(bool on) override
+    {
+        if (on != buzzer) buzzerChanges++;
+        buzzer = on;
+    }
 };
 
+#if !defined(BOARD_STM32H743)
 // Драйвер поверх настоящего I2C-стека: TwoWire (фейк) -> Esp32I2CBus
 // -> I2cRegisterDevice, чип — fake::RegisterMapDevice.
 struct I2cRig
@@ -251,6 +293,7 @@ struct SpiRig
         bus.begin();
     }
 };
+#endif
 
 // ------------------------------------------------------------
 // Дублёры датчиков (для автопилота, ARM, телеметрии)
@@ -315,6 +358,31 @@ public:
     void printStatus() const override { Serial.println("FakeMag status"); }
     const MagData& getMagData() const override { return data; }
     void calibrate() override { calibrations++; }
+};
+
+class FakeAirspeed : public AirspeedSensor
+{
+public:
+    AirspeedData data = {};
+    bool available = true;
+    unsigned updates = 0, zeroCalls = 0;
+
+    bool begin() override { return true; }
+    bool isAvailable() const override { return available; }
+    void update() override { updates++; }
+    const char* getSensorType() const override { return "FakeAirspeed"; }
+    void printStatus() const override { Serial.println("FakeAirspeed status"); }
+    const AirspeedData& getAirspeedData() const override { return data; }
+    void calibrateZero() override { zeroCalls++; }
+
+    void setSpeed(float ms)
+    {
+        data.indicatedMs = ms;
+        data.trueMs = ms;
+        data.airDensity = 1.225f;
+        data.differentialPressurePa = 0.5f * 1.225f * ms * ms;
+        data.timestamp = micros();
+    }
 };
 
 class FakeGps : public GpsSensor

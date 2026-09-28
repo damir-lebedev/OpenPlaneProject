@@ -45,6 +45,8 @@ public:
             { "elevator",     "руль выс", static_cast<int16_t>(Config::PIN_ELEVATOR),      true,  &FlightOutputState::elevator },
             { "esc",          "ESC     ", static_cast<int16_t>(Config::PIN_ESC),           true,  &FlightOutputState::throttle },
             { "rudder",       "руль нап", static_cast<int16_t>(Config::PIN_RUDDER),        false, &FlightOutputState::rudder },
+            { "aux1",         "AUX1 груз", static_cast<int16_t>(Config::PIN_AUX1),         false, &FlightOutputState::aux1 },
+            { "aux2",         "AUX2 кам ", static_cast<int16_t>(Config::PIN_AUX2),         false, &FlightOutputState::aux2 },
         };
         return table[channel];
     }
@@ -149,10 +151,14 @@ public:
     }
 
     // Немедленно выставить безопасные значения (нейтраль, газ выключен).
+    // Груз и камера остаются как были: потеря связи не должна
+    // сбрасывать груз.
     void setFailsafe()
     {
         FlightOutputState safe;
 
+        safe.aux1 = lastState.aux1;
+        safe.aux2 = lastState.aux2;
         safe.aileronLeft = Config::FAILSAFE_AILERON;
         safe.aileronRight = Config::FAILSAFE_AILERON;
         safe.elevator = Config::FAILSAFE_ELEVATOR;
@@ -167,10 +173,19 @@ public:
         return lastState;
     }
 
+    void setBuzzer(bool on)
+    {
+        buzzer = on;
+        board.setBuzzer(on);
+    }
+
+    bool isBuzzerOn() const { return buzzer; }
+
 
 private:
 
     IBoard& board;
     bool attached[ServoChannel::COUNT] = {};
     FlightOutputState lastState;
+    bool buzzer = false;
 };

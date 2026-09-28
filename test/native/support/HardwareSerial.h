@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <string>
 
 #include "Stream.h"
@@ -41,6 +42,19 @@ namespace fake
     }
 
     inline void setSerialEcho(bool echo) { uarts().echoSerial0 = echo; }
+
+    // UART STM32duino, созданные парой пинов: найти по пину RX.
+    inline std::map<uint32_t, HardwareSerial*>& uartsByRx()
+    {
+        static std::map<uint32_t, HardwareSerial*> ports;
+        return ports;
+    }
+
+    inline HardwareSerial* uartByRx(uint32_t rxPin)
+    {
+        auto it = uartsByRx().find(rxPin);
+        return it == uartsByRx().end() ? nullptr : it->second;
+    }
 }
 
 class HardwareSerial : public Stream
@@ -52,8 +66,20 @@ public:
         if (number >= 0 && number < fake::UART_COUNT) fake::uarts().port[number] = this;
     }
 
+    // STM32duino: Uart(rx, tx) — периферию ядро находит по пинам.
+    HardwareSerial(uint32_t rxPin, uint32_t txPin)
+        : number(-1), pinRx(rxPin), rx(static_cast<int8_t>(rxPin)), tx(static_cast<int8_t>(txPin))
+    {
+        fake::uartsByRx()[rxPin] = this;
+    }
+
     ~HardwareSerial() override
     {
+        if (number < 0)
+        {
+            auto it = fake::uartsByRx().find(pinRx);
+            if (it != fake::uartsByRx().end() && it->second == this) fake::uartsByRx().erase(it);
+        }
         if (number >= 0 && number < fake::UART_COUNT && fake::uarts().port[number] == this)
         {
             fake::uarts().port[number] = nullptr;
@@ -115,6 +141,10 @@ public:
 
     using Print::write;
 
+    // Свободное место в буфере передачи: тесты ограничивают его
+    // (txRoom), чтобы проверить, что телеметрия не блокирует цикл.
+    int availableForWrite() { return txRoom; }
+
     explicit operator bool() const { return true; }
 
     // --- управление из тестов ---
@@ -156,10 +186,14 @@ public:
         started = false;
         beginCalls = 0;
         txBufferSize = 0;
+        txRoom = 4096;
     }
+
+    int txRoom = 4096;
 
 private:
     int number;
+    uint32_t pinRx = 0xFFFFFFFFu;
     std::string rxData;
     size_t rxPosition = 0;
     std::string txData;

@@ -1,7 +1,8 @@
 // ============================================================
 // AUTOPILOT: ПИД (D по скорости датчика, anti-windup, заморозка
 // интегратора, dt), режимы автопилота с фейковыми датчиками и выбор
-// режима тумблером CH7.
+// режима тумблером SwC (PilotSwitches, таблица config/Controls.h).
+// Новые режимы и функции — в test_autopilot_modes, полёты — в test_sim.
 //
 // Запуск: pio test -e native -f native/test_autopilot
 // ============================================================
@@ -10,7 +11,7 @@
 #include <unity.h>
 
 #include "autopilot/Autopilot.h"
-#include "autopilot/AutopilotModeSelector.h"
+#include "autopilot/PilotSwitches.h"
 #include "autopilot/PidController.h"
 #include "helpers/TestSupport.h"
 
@@ -162,14 +163,14 @@ void test_integrator_only_accumulates_when_armed()
 {
     Rig rig;
     rig.autopilot.setMode(MODE_STABILIZE);
-    rig.imu.data.roll = 10;
+    rig.imu.data.roll = 8;
     for (int i = 0; i < 100; ++i)
     {
         fake::advanceMs(10);
         rig.autopilot.update(false, false, 1000);
     }
     const float disarmed = rig.autopilot.getRollCorrection();
-    TEST_ASSERT_FLOAT_WITHIN(1e-3f, -50.0f, disarmed);   // только P
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, -40.0f, disarmed);   // только P
 
     for (int i = 0; i < 100; ++i)
     {
@@ -177,6 +178,19 @@ void test_integrator_only_accumulates_when_armed()
         rig.autopilot.update(true, false, 1000);
     }
     TEST_ASSERT_LESS_THAN_FLOAT(disarmed - 1.0f, rig.autopilot.getRollCorrection());
+
+    // Далеко от цели (за Config::STAB_INTEGRATOR_ZONE_DEG) — интегратор стоит.
+    Rig far;
+    far.autopilot.setMode(MODE_STABILIZE);
+    far.imu.data.roll = 30;
+    far.autopilot.update(true, false, 1000);
+    const float first = far.autopilot.getRollCorrection();
+    for (int i = 0; i < 100; ++i)
+    {
+        fake::advanceMs(10);
+        far.autopilot.update(true, false, 1000);
+    }
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, first, far.autopilot.getRollCorrection());
 }
 
 void test_no_corrections_without_ready_imu()
@@ -247,21 +261,29 @@ void test_alt_hold_holds_altitude_at_mode_entry()
     rig.autopilot.setMode(MODE_ALT_HOLD);
     TEST_ASSERT_EQUAL_FLOAT(12.0f, rig.autopilot.getTargetAltitude());
 
-    // Ниже цели на 2 м — газ добавляется (Kp 10 %/м).
+    // Ниже цели — нос вверх (высоту держит руль высоты), газ — пилота.
     rig.baro.data.altitude = 10.0f;
     rig.autopilot.update(false, false, 1500);
-    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 20.0f, rig.autopilot.getThrottleCorrection());
-    TEST_ASSERT_EQUAL_UINT16(1700, rig.autopilot.applyThrottle(1500));
+    TEST_ASSERT_GREATER_THAN_FLOAT(2.0f, rig.autopilot.getDesiredPitch());
+    TEST_ASSERT_EQUAL_UINT16(1500, rig.autopilot.applyThrottle(1500));
+    TEST_ASSERT_FALSE(rig.autopilot.isAutoThrottle());
 
-    // Выше цели — газ убирается, но не ниже PWM_MIN; поправка ≤ 50 %.
-    rig.baro.data.altitude = 30.0f;
+    // Выше цели — нос вниз, не круче NAV_MAX_DIVE_PITCH_DEG.
+    rig.baro.data.altitude = 60.0f;
     rig.autopilot.update(false, false, 1500);
-    TEST_ASSERT_EQUAL_FLOAT(-50.0f, rig.autopilot.getThrottleCorrection());
-    TEST_ASSERT_EQUAL_UINT16(1000, rig.autopilot.applyThrottle(1200));
+    TEST_ASSERT_EQUAL_FLOAT(Config::NAV_MAX_DIVE_PITCH_DEG, rig.autopilot.getDesiredPitch());
 
+    // Стик тангажа — вручную; отпустил — держит новую высоту.
+    ControlCommand sticks;
+    sticks.pitch = 250;
+    rig.autopilot.update(false, false, 1500, sticks);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, Config::STAB_MAX_PITCH_DEG / 2, rig.autopilot.getDesiredPitch());
+    TEST_ASSERT_EQUAL_FLOAT(60.0f, rig.autopilot.getTargetAltitude());
+
+    // Без барометра — тангаж по стику, как STABILIZE.
     rig.baro.available = false;
     rig.autopilot.update(false, false, 1500);
-    TEST_ASSERT_EQUAL_FLOAT(0.0f, rig.autopilot.getThrottleCorrection());
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, rig.autopilot.getDesiredPitch());
 
     Autopilot noBaro;
     noBaro.setMode(MODE_ALT_HOLD);
@@ -341,30 +363,31 @@ void test_set_pid_gains_from_dashboard()
     TEST_ASSERT_EQUAL_FLOAT(6.0f, rig.autopilot.getPitchPid().getKd());
 }
 
-void test_unknown_mode_value_is_reported_as_unknown()
+void test_unknown_mode_value_is_ignored()
 {
     Rig rig;
-    rig.autopilot.setMode(static_cast<AutopilotMode>(7));
-    TEST_ASSERT_EQUAL_STRING("UNKNOWN", rig.autopilot.getModeName());
-    rig.autopilot.update(true, false, 1000);   // неизвестный режим — ничего не делает
-    TEST_ASSERT_EQUAL_UINT16(1234, rig.autopilot.applyThrottle(1234));
+    rig.autopilot.setMode(MODE_STABILIZE);
+    rig.autopilot.setMode(static_cast<AutopilotMode>(200));   // с дашборда пришёл мусор
+    TEST_ASSERT_EQUAL(MODE_STABILIZE, rig.autopilot.getMode());
+    TEST_ASSERT_EQUAL_STRING("UNKNOWN", AutopilotNames::mode(static_cast<AutopilotMode>(200)));
+    TEST_ASSERT_EQUAL_STRING("?", AutopilotNames::modeShort(static_cast<AutopilotMode>(200)));
 }
 
 // ------------------------------------------------------------
-// AutopilotModeSelector
+// PilotSwitches: тумблер режимов по умолчанию (SwC)
 // ------------------------------------------------------------
 
 static RcChannelState ch7(uint16_t us)
 {
     RcChannelState rc;
-    rc.set(Channels::AUX_2, us);
+    rc.set(Channels::SWC, us);
     return rc;
 }
 
 void test_selector_zones()
 {
     Autopilot autopilot;
-    AutopilotModeSelector selector(&autopilot);
+    PilotSwitches selector(&autopilot);
 
     selector.update(ch7(1300));
     TEST_ASSERT_EQUAL(MODE_STABILIZE, autopilot.getMode());
@@ -380,7 +403,7 @@ void test_selector_zones()
 void test_selector_changes_mode_only_on_zone_transition()
 {
     Autopilot autopilot;
-    AutopilotModeSelector selector(&autopilot);
+    PilotSwitches selector(&autopilot);
     selector.update(ch7(1000));
     autopilot.setMode(MODE_ALT_HOLD);
 
@@ -393,7 +416,7 @@ void test_selector_changes_mode_only_on_zone_transition()
 
 void test_selector_without_autopilot_is_noop()
 {
-    AutopilotModeSelector selector;
+    PilotSwitches selector;
     selector.update(ch7(2000));   // не падает
     TEST_PASS();
 }
@@ -419,7 +442,7 @@ int main()
     RUN_TEST(test_link_loss_on_ground_does_not_glide);
     RUN_TEST(test_glide_restarts_takeoff_only_anew);
     RUN_TEST(test_set_pid_gains_from_dashboard);
-    RUN_TEST(test_unknown_mode_value_is_reported_as_unknown);
+    RUN_TEST(test_unknown_mode_value_is_ignored);
     RUN_TEST(test_selector_zones);
     RUN_TEST(test_selector_changes_mode_only_on_zone_transition);
     RUN_TEST(test_selector_without_autopilot_is_noop);

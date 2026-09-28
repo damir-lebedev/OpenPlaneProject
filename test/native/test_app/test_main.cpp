@@ -151,7 +151,7 @@ void test_arm_then_throttle_reaches_esc()
 void test_mode_switch_and_stabilisation_react_to_tilt()
 {
     RcChannels rc = armedSticks();
-    rc.set(Channels::AUX_2, 1500).set(Channels::THROTTLE, 1200);
+    rc.set(Channels::SWC, 1500).set(Channels::THROTTLE, 1200);
     fly(rc, 3);
     TEST_ASSERT_EQUAL(MODE_STABILIZE, autopilot.getMode());
 
@@ -166,7 +166,7 @@ void test_mode_switch_and_stabilisation_react_to_tilt()
 
     imuChip.setBigEndian16(0x3B, 0);
     imuChip.setBigEndian16(0x3F, 2048);
-    rc.set(Channels::AUX_2, 1000);
+    rc.set(Channels::SWC, 1000);
     fly(rc, 3);
     TEST_ASSERT_EQUAL(MODE_MANUAL, autopilot.getMode());
     takeSerial();

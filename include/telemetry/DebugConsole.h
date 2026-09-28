@@ -4,6 +4,7 @@
 #include "autopilot/Autopilot.h"
 #include "control/FlightController.h"
 #include "control/FlightOutputs.h"
+#include "hal/IBoard.h"
 #include "sensors/SensorInterface.h"
 #include "telemetry/DebugLogger.h"
 #include "telemetry/LogSettings.h"
@@ -20,6 +21,8 @@
 //   o      — калибровка установки IMU (3 позы)
 //   m      — калибровка компаса (15 с, вращать)
 //   p      — проверка выходов (реальный импульс на каждом пине)
+//   b      — опрос шин I2C: кто отвечает и что это за чип (если
+//            консоли передана плата) — первое, что делать с новой платой
 //
 // Пока открыто меню, лог молчит (DebugLogger::suspend), чтобы меню
 // не уезжало вверх; после закрытия все включённые каналы лога
@@ -37,12 +40,30 @@ class DebugConsole
 public:
 
     DebugConsole(FlightController& flightController, FlightOutputs& flightOutputs,
-                 Autopilot& ap, DebugLogger& debugLogger)
+                 Autopilot& ap, DebugLogger& debugLogger, IBoard* boardForScan = nullptr)
         : controller(flightController),
           outputs(flightOutputs),
           autopilot(ap),
-          logger(debugLogger)
+          logger(debugLogger),
+          board(boardForScan)
     {
+    }
+
+    // Чип по адресу I2C — подсказка для опроса шин ('b').
+    static const char* guessI2cDevice(uint8_t address)
+    {
+        switch (address)
+        {
+            case 0x0D: return "QMC5883L";
+            case 0x2C: return "QMC5883P";
+            case 0x3C: case 0x3D: return "OLED SSD1306";
+            case 0x46: case 0x47: return "BMP581 (0x47 — трубка Пито)";
+            case 0x68: case 0x69: return "MPU6050/6500, ICM-42688/45686";
+            case 0x6A: case 0x6B: return "LSM6DSV";
+            case 0x76: case 0x77: return "BME280/BMP388/SPL06";
+            case 0x7C: return "QMC6309";
+            default: return "?";
+        }
     }
 
     void printHint() const
@@ -78,6 +99,7 @@ private:
     FlightOutputs& outputs;
     Autopilot& autopilot;
     DebugLogger& logger;
+    IBoard* board;
 
     Screen screen = Screen::None;
     bool settingsDirty = false;   // настройки лога изменены, в NVS ещё не записаны
@@ -103,7 +125,7 @@ private:
             case 'h': case '?': openMainMenu(); break;
             case 'l':           openLogMenu(); break;
             case ' ':           togglePause(); break;
-            case 's': case 'i': case 'o': case 'm': case 'p':
+            case 's': case 'i': case 'o': case 'm': case 'p': case 'b':
                 runAction(key);
                 break;
             default:
@@ -131,6 +153,7 @@ private:
         printItem('4', "Калибровка установки IMU (3 позы)", 'o');
         printItem('5', "Калибровка компаса (15 с, вращать)", 'm');
         printItem('6', "Проверка выходов (импульсы на пинах)", 'p');
+        if (board) printItem('7', "Опрос шин I2C (кто отвечает)", 'b');
         Serial.println("  0  закрыть меню");
         printRule(logger.isPaused() ? "лог на паузе — пробел, чтобы продолжить"
                                     : "пробел — пауза лога");
@@ -146,6 +169,15 @@ private:
             case '4': case 'o': closeMenu(); runAction('o'); return;
             case '5': case 'm': closeMenu(); runAction('m'); return;
             case '6': case 'p': closeMenu(); runAction('p'); return;
+            case '7': case 'b':
+                if (!board)
+                {
+                    drawMainMenu();
+                    return;
+                }
+                closeMenu();
+                runAction('b');
+                return;
             case '0': case 'q': case 'h':
                 closeMenu();
                 return;
@@ -177,8 +209,10 @@ private:
 
     static char channelKey(uint8_t channel)
     {
-        // 1..9 — первые девять каналов, SYS — 's'.
-        return channel < 9 ? static_cast<char>('1' + channel) : 's';
+        // 1..9 — первые девять каналов, NAV — 'n', SYS — 's'.
+        if (channel == static_cast<uint8_t>(LogChannel::System)) return 's';
+        if (channel == static_cast<uint8_t>(LogChannel::Nav)) return 'n';
+        return static_cast<char>('1' + channel);
     }
 
     // Обратное к channelKey(): канал по клавише или LogSettings::COUNT,
@@ -280,8 +314,40 @@ private:
             case 'o': calibrateImuMounting(); break;
             case 'm': calibrate(autopilot.getMagnetometerSensor(), "компас"); break;
             case 'p': outputs.printPulseSelfTest(); break;
+            case 'b': scanBuses(); break;
             default: break;
         }
+    }
+
+    void scanBuses() const
+    {
+        if (!board)
+        {
+            Serial.println("Консоль: опрос шин недоступен в этой сборке");
+            return;
+        }
+        scanBus("I2C датчиков", board->i2c());
+        if (II2CBus* display = board->displayI2c()) scanBus("I2C экрана", *display);
+    }
+
+    static void scanBus(const char* name, II2CBus& bus)
+    {
+        Serial.print(name);
+        Serial.println(':');
+        uint8_t found = 0;
+        // До 0x7F, а не до обычных 0x77: QMC6309 сидит на 0x7C (в
+        // диапазоне, зарезервированном стандартом под 10-битные адреса).
+        for (uint8_t address = 0x08; address <= 0x7F; ++address)
+        {
+            if (!bus.probe(address)) continue;
+            Serial.print("  0x");
+            if (address < 0x10) Serial.print('0');
+            Serial.print(address, HEX);
+            Serial.print("  ");
+            Serial.println(guessI2cDevice(address));
+            ++found;
+        }
+        if (!found) Serial.println("  никого (проверьте питание, SDA/SCL и подтяжки)");
     }
 
     void printSensorStatus() const

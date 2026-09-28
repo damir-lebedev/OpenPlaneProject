@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 #include "autopilot/Autopilot.h"
+#include "autopilot/AutopilotTypes.h"
 #include "config/Channels.h"
 #include "config/Config.h"
 #include "rc/RcChannelState.h"
@@ -45,10 +46,9 @@
 // (ImuSensor::getPreflightProblem(): неподвижность при калибровке,
 // установка платы совпадает с сохранённой).
 //
-// GPS-фикс в проверки намеренно НЕ включён: сегодня ни один
-// AutopilotMode фактически не использует GPS (см. Фазу 3/4 в
-// docs/ROADMAP.md) — добавить её нужно вместе с первым режимом,
-// которому GPS реально нужен (waypoint/RTH).
+// GPS-фикс в проверки намеренно НЕ включён: LOITER и RTH без GPS
+// не опасны — они кружат на месте с удержанием высоты (см.
+// Autopilot::orbit()), а дом записывается при первом хорошем фиксе.
 // ============================================================
 
 class ArmingManager
@@ -142,38 +142,38 @@ private:
 
         if (!autopilot) return nullptr;
 
-        switch (autopilot->getMode())
+        const AutopilotMode mode = autopilot->getMode();
+
+        // Всем режимам, кроме MANUAL, нужны углы.
+        if (mode != MODE_MANUAL)
         {
-            case MODE_STABILIZE:
-            case MODE_AUTO_TAKEOFF:
+            const ImuSensor* imu = autopilot->getImuSensor();
+            if (imu && !imu->isAvailable())
             {
-                const ImuSensor* imu = autopilot->getImuSensor();
-                if (imu && !imu->isAvailable())
-                {
-                    return "IMU не отвечает, а выбранному режиму нужен гироскоп";
-                }
-                if (imu && imu->getPreflightProblem())
-                {
-                    return imu->getPreflightProblem();
-                }
-                break;
+                return "IMU не отвечает, а выбранному режиму нужен гироскоп";
             }
-
-            case MODE_ALT_HOLD:
+            if (imu && imu->getPreflightProblem())
             {
-                const BarometerSensor* baro = autopilot->getBarometerSensor();
-                if (baro && !baro->isAvailable())
-                {
-                    return "барометр не отвечает, а ALT_HOLD нужна высота";
-                }
-                break;
+                return imu->getPreflightProblem();
             }
+        }
 
-            case MODE_MANUAL:
-            default:
-                break;
+        // Режимам с удержанием высоты — барометр.
+        if (needsAltitude(mode))
+        {
+            const BarometerSensor* baro = autopilot->getBarometerSensor();
+            if (baro && !baro->isAvailable())
+            {
+                return "барометр не отвечает, а выбранному режиму нужна высота";
+            }
         }
 
         return nullptr;
+    }
+
+    static bool needsAltitude(AutopilotMode mode)
+    {
+        return mode == MODE_ALT_HOLD || mode == MODE_CRUISE || mode == MODE_LOITER || mode == MODE_RTH ||
+               mode == MODE_AUTO_LAND || mode == MODE_SOARING;
     }
 };

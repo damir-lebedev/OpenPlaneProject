@@ -236,9 +236,9 @@ void test_bmp388_i2c_configuration_and_compensation()
 
 void test_bmp388_spi_skips_dummy_byte()
 {
-    SpiRig rig(Config::PIN_SPI_CS_BMP388, 1);   // чип отдаёт мусорный байт перед данными
+    SpiRig rig(Config::PIN_SPI_CS_BARO, 1);   // чип отдаёт мусорный байт перед данными
     loadBmp388(rig.chip.regs);
-    SpiRegisterDevice device = BMP388_Sensor::spiDevice(rig.bus, Config::PIN_SPI_CS_BMP388);
+    SpiRegisterDevice device = BMP388_Sensor::spiDevice(rig.bus, Config::PIN_SPI_CS_BARO);
     BMP388_Sensor bmp(device);
     TEST_ASSERT_TRUE(bmp.begin());
     fake::advanceMs(10);
