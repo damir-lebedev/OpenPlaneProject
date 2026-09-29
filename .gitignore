@@ -11,3 +11,6 @@
 .claude/settings.local.json
 # Отчёты покрытия нативных тестов (gcovr --html-details)
 coverage/
+
+# Выгруженные полёты чёрного ящика (tools/blackbox.py download)
+blackbox/

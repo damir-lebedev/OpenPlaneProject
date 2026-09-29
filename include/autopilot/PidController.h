@@ -44,6 +44,12 @@ public:
     float getKi() const { return Ki; }
     float getKd() const { return Kd; }
 
+    // Составляющие последнего calculate() — для чёрного ящика (до
+    // ограничения выхода).
+    float getLastP() const { return lastP; }
+    float getLastI() const { return lastI; }
+    float getLastD() const { return lastD; }
+
     // setpoint/feedback в одних единицах (например, градусы),
     // feedbackRate — скорость изменения feedback (град/с с гироскопа,
     // м/с с барометра). D-член берётся по ней, а не по производной
@@ -85,6 +91,9 @@ public:
 
         const float D = -Kd * feedbackRate;
 
+        lastP = P;
+        lastI = I;
+        lastD = D;
         return constrain(P + I + D, minOutput, maxOutput);
     }
 
@@ -92,6 +101,7 @@ public:
     {
         errorSum = 0;
         lastTime = micros();
+        lastP = lastI = lastD = 0;
     }
 
 private:
@@ -101,4 +111,5 @@ private:
     float errorSum = 0;
     uint32_t lastTime = 0;
     float minOutput = -500, maxOutput = 500;
+    float lastP = 0, lastI = 0, lastD = 0;
 };

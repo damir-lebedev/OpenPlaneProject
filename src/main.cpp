@@ -13,10 +13,14 @@
 // приёмника) — абсолютный приоритет: мотор в ноль, рули в нейтраль.
 // ARM — тумблер SwA при газе внизу. Режим автопилота — SwC (CH7).
 //
+// Чёрный ящик (BlackBox) пишет полёт во флеш: с ARM и газа до
+// посадки — все датчики, стики, выходы, решения автопилота.
+//
 // Задачи FreeRTOS:
 //   ядро 1 — loop(): полётный цикл с фиксированным периодом
 //            Config::LOOP_PERIOD_MS (vTaskDelayUntil);
-//   ядро 0 — Wi-Fi, веб-дашборд (WebDebugServer), OLED (OledDisplay).
+//   ядро 0 — Wi-Fi, веб-дашборд (WebDebugServer), OLED (OledDisplay),
+//            запись чёрного ящика во флеш (сразу после каждого такта).
 // ============================================================
 
 #include <Arduino.h>
@@ -30,10 +34,13 @@
 #include "control/FlightOutputs.h"
 #include "control/ThrottleManager.h"
 #include "hal/esp32/Esp32Board.h"
+#include "hal/esp32/Esp32FlashPartition.h"
 #include "rc/IBusReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/SensorSelection.h"
 #include "sensors/airspeed/AirspeedSensor.h"
+#include "telemetry/BlackBox.h"
+#include "telemetry/BlackBoxStorage.h"
 #include "telemetry/DebugConsole.h"
 #include "telemetry/DebugLogger.h"
 #include "telemetry/LoopStats.h"
@@ -115,8 +122,15 @@ FlightController flightController(
 // ------------------------------------------------------------
 
 LoopStats loopStats;
+
+// Раздел "blackbox" — partitions_blackbox.csv; на платах без него
+// чёрный ящик просто выключен.
+Esp32FlashPartition blackBoxFlash("blackbox");
+BlackBoxStorage blackBoxStorage(blackBoxFlash);
+BlackBox blackBox(flightController, autopilot, loopStats, blackBoxStorage, &pilotSwitches);
+
 DebugLogger debugLogger(flightController, &autopilot, &loopStats);
-DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogger, &board);
+DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogger, &board, &blackBox);
 WebDebugServer webDebugServer(flightController, &autopilot);
 OledDisplay oledDisplay(flightController, &autopilot, loopStats);
 
@@ -197,6 +211,11 @@ void setup()
     oledDisplay.begin(board.displayI2c());
     webDebugServer.begin();
 
+    // Последним: задача записи начинает стирать место под полёт, а
+    // стирание останавливает оба ядра — калибровки выше уже прошли.
+    blackBoxFlash.begin();
+    blackBox.begin();
+
     Serial.println();
     Serial.println("Готово. iBUS 115200 бод, 10 каналов.");
     Serial.println("ARM: SwA вниз, к себе (CH5=2000) при газе внизу. DISARM: SwA вверх.");
@@ -219,7 +238,9 @@ void loop()
     debugLogger.update();
     debugConsole.update();
 
-    loopStats.record(micros() - start);
+    const uint32_t workUs = micros() - start;
+    loopStats.record(workUs);
+    blackBox.update(workUs);   // снимок в очередь; флеш пишет задача на ядре 0
 
     // После долгой блокировки (калибровка из консоли) не "догоняем"
     // пропущенные такты пачкой — просто начинаем отсчёт заново.

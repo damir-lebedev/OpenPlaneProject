@@ -1,4 +1,4 @@
-# TELEMETRY — лог, консоль, веб-дашборд, OLED
+# TELEMETRY — лог, консоль, веб-дашборд, OLED, чёрный ящик
 
 [← Справочник](README.md)
 
@@ -223,6 +223,34 @@ Loop 500Hz max1100us    частота и худший такт за секун�
 Короткие имена режимов — `AutopilotNames::modeShort()` (`MAN`, `STAB`,
 `TKOFF`, `ALT`, `ACRO`, `CRZ`, `LOIT`, `RTH`, `LNCH`, `LAND`, `SOAR`, `RESQ`);
 при потере связи в воздухе — `GLIDE` или `FSRTH`.
+
+---
+
+## `BlackBox`
+
+**Файл:** `telemetry/BlackBox.h` · **Зависит от:** `FlightController`, `Autopilot`, `LoopStats`, `BlackBoxStorage`, `PilotSwitches*`
+
+Запись полёта во флеш (ESP32-S3). Что, когда и как выгружать — [BLACKBOX.md](../BLACKBOX.md).
+
+| Метод | Описание |
+|---|---|
+| `bool begin(bool startTask = true)` | Читает раздел (`BlackBoxStorage::begin()`), выделяет очередь в PSRAM, сверяет стёртое место (до 0.3 с), запускает задачу `bbox` на ядре 0. Нет раздела — `false`, ящик выключен |
+| `void update(uint32_t workUs)` | Из `loop()` после каждого такта: события, старт/стоп, снимки в очередь, будит задачу записи |
+| `void writerStep()` | Шаг задачи записи: одна-две страницы во флеш или одно стирание на земле |
+| `requestManualStart()` / `requestManualStop()` | Запись вручную (консоль `k` → `r`) |
+| `State getState()` / `bool isRecording()` | `Off`, `Idle`, `Recording`, `Stopping` (дописывает очередь до записи END) |
+| `printStatus(Print&)` / `printFlights(Print&)` / `eraseAll()` | Для консоли |
+| `void handleHostCommand(const char*)` | `bb list`, `bb get <n> [бод]` — для `tools/blackbox.py` |
+
+## `BlackBoxStorage`
+
+**Файл:** `telemetry/BlackBoxStorage.h` · **Зависит от:** `IFlashRegion`
+
+Кольцо секторов 4 КБ: голова и список полётов — по заголовкам секторов при `begin()`; `openFlight()`/`append()`/`flush()`/`closeFlight()` — запись страницами (CRC-8 к каждой записи); `eraseStep(target, protect, allowErase)` — один шаг сверки/стирания впереди головы: мусор — всегда, полёты — целиком и только пока свободно меньше `target`; `protect` не трогается никогда.
+
+## `BlackBoxRing`, `BlackBoxFormat`
+
+`BlackBoxRing` — байтовая очередь записей между ядрами под спинлоком; переполнилась — выбрасывает самые старые. `BlackBoxFormat` — заголовок сектора, типы и структуры записей, строки схем (размер сверяется `static_assert`), CRC-8 и CRC-32.
 
 ---
 

@@ -106,34 +106,35 @@ public:
     }
 
     // Подсказка при включении: что на каком тумблере (из таблицы привязок).
-    void printBindings() const
+    // Чёрный ящик пишет её же в параметры полёта.
+    void printBindings(Print& out = Serial) const
     {
         for (size_t i = 0; i < count; ++i)
         {
             const Binding& b = bindings[i];
-            Serial.print(channelName(b.channel));
-            Serial.print(": ");
+            out.print(channelName(b.channel));
+            out.print(": ");
             switch (b.kind)
             {
                 case Binding::Kind::MODES:
                     for (uint8_t m = 0; m < b.modeCount; ++m)
                     {
-                        if (m) Serial.print(" / ");
-                        Serial.print(AutopilotNames::mode(b.modes[m]));
+                        if (m) out.print(" / ");
+                        out.print(AutopilotNames::mode(b.modes[m]));
                     }
-                    Serial.println(b.modeCount == 3 ? " (вверх / середина / вниз)" : " (вверх / вниз)");
+                    out.println(b.modeCount == 3 ? " (вверх / середина / вниз)" : " (вверх / вниз)");
                     break;
                 case Binding::Kind::MODE:
-                    Serial.print(AutopilotNames::mode(b.modes[0]));
-                    Serial.println(", пока включён");
+                    out.print(AutopilotNames::mode(b.modes[0]));
+                    out.println(", пока включён");
                     break;
                 case Binding::Kind::FEATURE:
-                    Serial.print(AutopilotNames::feature(b.feature));
-                    Serial.println(", пока включён");
+                    out.print(AutopilotNames::feature(b.feature));
+                    out.println(", пока включён");
                     break;
                 case Binding::Kind::KNOB:
-                    Serial.print("крутилка ");
-                    Serial.println(AutopilotNames::knob(b.knob));
+                    out.print("крутилка ");
+                    out.println(AutopilotNames::knob(b.knob));
                     break;
             }
         }

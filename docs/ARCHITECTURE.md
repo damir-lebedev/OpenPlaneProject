@@ -163,6 +163,7 @@ flowchart LR
     web["WebDebugServer (ESP32)"]
     mav["MavlinkTelemetry (STM32)"]
     oled["OledDisplay"]
+    bb["BlackBox (ESP32)"]
 
     board --> imuDev & baroDev & magDev & pitotDev
     imuDev --> imu
@@ -183,6 +184,7 @@ flowchart LR
     fc & ap --> web
     fc & ap & stats --> mav
     fc & ap & stats --> oled
+    fc & ap & stats & sw --> bb
 ```
 
 Порядок инициализации в `setup()`:
@@ -200,6 +202,7 @@ autopilot.begin()           — триммер из NVS/флеша
 flightController.begin()    — setFailsafe() + UART iBUS
 oledDisplay.begin(...)      — своя задача (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — точка доступа + своя задача на ядре 0
+[ESP32] blackBox.begin()   — раздел blackbox, очередь в PSRAM, задача bbox на ядре 0
 [STM32] mavlink.begin()     — UART4 радиомодема
 pilotSwitches.printBindings() — что на каком тумблере
 debugLogger.begin()         — настройки лога
@@ -338,9 +341,10 @@ classDiagram
 
 | Ядро | Задача | Что делает | Период |
 |---|---|---|---|
-| 1 | Arduino `loopTask` → `loop()` | `WebDebugServer::applyPendingCommands()` → `FlightController::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` | `Config::LOOP_PERIOD_MS` = 2 мс (500 Гц), `vTaskDelayUntil` |
+| 1 | Arduino `loopTask` → `loop()` | `WebDebugServer::applyPendingCommands()` → `FlightController::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` → `BlackBox::update()` | `Config::LOOP_PERIOD_MS` = 2 мс (500 Гц), `vTaskDelayUntil` |
 | 0 | `web` (8 КБ стека, приоритет 1) | `WebServer::handleClient()` | каждые 2 мс (`vTaskDelay`) |
 | 0 | `oled` (4 КБ стека, приоритет 1) | `OledDisplay::draw()` по второй шине I2C | 200 мс (`vTaskDelayUntil`) |
+| 0 | `bbox` (6 КБ стека, приоритет 2) | `BlackBox::writerStep()`: страница из очереди во флеш; на земле — стирание | уведомление из `loop()` после каждого такта (иначе раз в 20 мс) |
 | 0 | стек Wi-Fi ESP-IDF | точка доступа | — |
 
 **STM32H743** (одно ядро, STM32duino FreeRTOS, вытеснение по приоритету):
@@ -374,6 +378,10 @@ classDiagram
   заново — пропущенные такты пачкой не догоняются.
 - Таймаут транзакции I2C — 5 мс (штатный у `Wire` — 50 мс).
 - `Serial` с буфером передачи 4 КБ — строка лога не блокирует цикл.
+- Чёрный ящик: цикл только кладёт снимок в очередь (спинлок, микросекунды);
+  страницу во флеш (останов обоих ядер на ~0.6–0.9 мс) пишет задача `bbox`
+  сразу после такта — в паузе цикла. Стирание флеша — только без ARM и
+  без записи, в воздухе никогда.
 - ESP32: запись во флеш (NVS, настройки Wi-Fi) останавливает оба ядра на
   ~0.3–0.4 с, поэтому: Wi-Fi — `persistent(false)`; настройки лога
   сохраняются только без ARM; калибровки — только без ARM; автотриммер —
@@ -584,6 +592,7 @@ stateDiagram-v2
 | Установка IMU | NVS (`imu_mpu6050` / `imu_icm42688`) или `Config::IMU_ROTATION_CW_DEG` | команда консоли `o` |
 | Калибровка компаса | NVS (`qmc5883p` / `qmc5883l`) | команда консоли `m` |
 | Настройки лога | NVS (`debuglog`) | меню консоли `l` |
+| Чёрный ящик | `Config.h` (`BLACKBOX_*`), раздел `blackbox` в `partitions_blackbox.csv` | полёты — `tools/blackbox.py`, меню консоли `k` |
 
 Окружения PlatformIO:
 

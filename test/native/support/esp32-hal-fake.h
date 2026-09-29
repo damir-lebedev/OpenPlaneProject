@@ -15,6 +15,7 @@
 // ============================================================
 
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <string>
 #include <vector>
@@ -55,6 +56,8 @@ namespace fake
         uint32_t writes[GPIO_COUNT] = {};
         // pulseIn(): >= 0 — вернуть это значение вместо измерения по LEDC.
         long pulseOverride[GPIO_COUNT];
+        uint32_t analogMv[GPIO_COUNT] = {};   // напряжение на пине для АЦП
+        uint32_t analogReads[GPIO_COUNT] = {};
 
         GpioState()
         {
@@ -135,6 +138,7 @@ namespace fake
         uint32_t delayCalls = 0;
         int criticalDepth = 0;
         uint32_t criticalEntries = 0;
+        uint32_t notifications = 0;   // xTaskNotifyGive()
     };
 
     inline TaskState& tasks()
@@ -183,6 +187,8 @@ namespace fake
     struct SystemState
     {
         uint32_t freeHeap = 200 * 1024;
+        bool psram = true;            // psramFound(): N16R8 — 8 МБ
+        int resetReason = 1;          // esp_reset_reason(): ESP_RST_POWERON
     };
 
     inline SystemState& chip()
@@ -255,6 +261,14 @@ inline unsigned long pulseIn(uint8_t pin, uint8_t state, unsigned long timeout =
     }
     fake::advanceUs(20000);
     return static_cast<unsigned long>(width);
+}
+
+// Arduino core ESP32 2.x: АЦП, напряжение на пине в мВ.
+inline uint32_t analogReadMilliVolts(uint8_t pin)
+{
+    if (pin >= fake::GPIO_COUNT) return 0;
+    fake::gpio().analogReads[pin]++;
+    return fake::gpio().analogMv[pin];
 }
 
 // ------------------------------------------------------------
@@ -339,8 +353,63 @@ inline BaseType_t xTaskCreatePinnedToCore(TaskFunction_t function, const char* n
     record.priority = priority;
     record.core = core;
     fake::tasks().created.push_back(record);
-    if (handle) *handle = nullptr;
+    // Ненулевой и у каждой задачи свой — как настоящий хэндл.
+    if (handle) *handle = reinterpret_cast<TaskHandle_t>(fake::tasks().created.size());
     return pdPASS;
+}
+
+#define pdTRUE 1
+#define pdFALSE 0
+#define portMAX_DELAY 0xFFFFFFFFu
+
+// Уведомления задач: в фейке — счётчик; ожидание — как задержка
+// (fake::runTask() считает проходы цикла задачи по ним).
+inline void xTaskNotifyGive(TaskHandle_t handle)
+{
+    if (handle) fake::tasks().notifications++;
+}
+
+inline uint32_t ulTaskNotifyTake(BaseType_t clearOnExit, TickType_t ticks)
+{
+    (void)clearOnExit;
+    (void)ticks;
+    fake::consumeDelay();
+    return 1;
+}
+
+// Мьютекс FreeRTOS: в однопоточном фейке — флаг "занят".
+namespace fake
+{
+    struct Mutex
+    {
+        bool taken = false;
+        uint32_t takes = 0;
+    };
+}
+
+typedef fake::Mutex* SemaphoreHandle_t;
+
+inline SemaphoreHandle_t xSemaphoreCreateMutex()
+{
+    static std::vector<fake::Mutex*> all;   // живут до конца теста, как у задач
+    all.push_back(new fake::Mutex());
+    return all.back();
+}
+
+inline BaseType_t xSemaphoreTake(SemaphoreHandle_t mutex, TickType_t ticks)
+{
+    (void)ticks;
+    if (!mutex || mutex->taken) return pdFALSE;
+    mutex->taken = true;
+    mutex->takes++;
+    return pdTRUE;
+}
+
+inline BaseType_t xSemaphoreGive(SemaphoreHandle_t mutex)
+{
+    if (!mutex || !mutex->taken) return pdFALSE;
+    mutex->taken = false;
+    return pdTRUE;
 }
 
 struct portMUX_TYPE
@@ -381,3 +450,10 @@ public:
 };
 
 inline EspClass ESP;
+
+// ------------------------------------------------------------
+// PSRAM (esp32-hal-psram.h)
+// ------------------------------------------------------------
+
+inline bool psramFound() { return fake::chip().psram; }
+inline void* ps_malloc(size_t size) { return fake::chip().psram ? malloc(size) : nullptr; }

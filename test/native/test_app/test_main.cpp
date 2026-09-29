@@ -12,6 +12,7 @@
 
 #include "../../../src/main.cpp"
 
+#include <esp_partition.h>
 #include <unity.h>
 
 #include "helpers/TestSupport.h"
@@ -46,6 +47,8 @@ namespace
         Wire.attach(0x2C, &magChip);
 
         Wire1.attach(0x3C, &screenChip);      // SSD1306 на второй шине
+
+        fake::addPartition("blackbox", 256 * 4096);   // 1 МБ — чёрный ящик
     }
 
     // Импульс выхода ServoChannel ch (канал LEDC = индекс), мкс.
@@ -95,6 +98,7 @@ void test_setup_brings_up_the_whole_bench()
     TEST_ASSERT_TRUE(contains(log, "Autopilot: инициализирован"));
     TEST_ASSERT_TRUE(contains(log, "OLED: подключён (SSD1306)"));
     TEST_ASSERT_TRUE(contains(log, "WebDebugServer: запуск точки доступа... OK"));
+    TEST_ASSERT_TRUE(contains(log, "BlackBox: ждёт ARM и газ | стёрто впереди 1.0 МБ из 1.0 МБ | полётов 0"));
     TEST_ASSERT_TRUE(contains(log, "Готово. iBUS 115200 бод"));
 
     // Выходы — в безопасном положении до всякого пульта.
@@ -106,6 +110,8 @@ void test_setup_brings_up_the_whole_bench()
     TEST_ASSERT_FLOAT_WITHIN(0.5f, 0.0f, imuSensor.getImuData().yaw);
     TEST_ASSERT_NOT_NULL(fake::findTask("web"));
     TEST_ASSERT_NOT_NULL(fake::findTask("oled"));
+    TEST_ASSERT_NOT_NULL(fake::findTask("bbox"));
+    TEST_ASSERT_EQUAL(0, fake::findTask("bbox")->core);
 }
 
 void test_loop_keeps_fixed_period_and_does_not_catch_up()
@@ -142,10 +148,16 @@ void test_arm_then_throttle_reaches_esc()
     TEST_ASSERT_TRUE(flightController.isArmed());
     TEST_ASSERT_TRUE(contains(takeSerial(), "ArmingManager: ARM"));
 
+    const uint32_t kicks = fake::tasks().notifications;
     RcChannels rc = armedSticks();
     rc.set(Channels::THROTTLE, 1500);
     fly(rc, 3);
     TEST_ASSERT_UINT32_WITHIN(2, 1500, pulseUs(ServoChannel::ESC));
+
+    // Газ при ARM — чёрный ящик пишет; задачу записи будит каждый такт.
+    TEST_ASSERT_EQUAL(BlackBox::State::Recording, blackBox.getState());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "BlackBox: запись полёта #1 — ARM и газ"));
+    TEST_ASSERT_EQUAL_UINT32(kicks + 3, fake::tasks().notifications);
 }
 
 void test_mode_switch_and_stabilisation_react_to_tilt()
@@ -226,6 +238,23 @@ void test_dashboard_status_and_mode_command()
     takeSerial();
 }
 
+void test_black_box_keeps_the_session_after_disarm()
+{
+    // Самолёт разармлен в test_link_loss_...; через 10 с запись кончается.
+    for (int i = 0; i < 5100; ++i) fly(RcChannels(), 1);
+    TEST_ASSERT_EQUAL(BlackBox::State::Stopping, blackBox.getState());
+    fake::runTask(*fake::findTask("bbox"), 20000);   // задача дописывает очередь
+    TEST_ASSERT_EQUAL(BlackBox::State::Idle, blackBox.getState());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "BlackBox: полёт #1 записан"));
+
+    Serial.pushRx(std::string("\x02") + "bb list\n");
+    loop();
+    const std::string list = takeSerial();
+    TEST_ASSERT_TRUE(contains(list, "BB:FLIGHT n=1"));
+    TEST_ASSERT_TRUE(contains(list, "BB:END"));
+    TEST_ASSERT_EQUAL(0u, fake::partition("blackbox")->bitRaises);
+}
+
 void test_oled_task_draws_live_state()
 {
     fly(RcChannels(), 2);
@@ -248,6 +277,7 @@ int main()
     RUN_TEST(test_link_loss_in_air_cuts_motor_and_glides);
     RUN_TEST(test_console_commands_over_serial);
     RUN_TEST(test_dashboard_status_and_mode_command);
+    RUN_TEST(test_black_box_keeps_the_session_after_disarm);
     RUN_TEST(test_oled_task_draws_live_state);
     return UNITY_END();
 }

@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <map>
 #include <string>
+#include <vector>
 
 #include "Stream.h"
 
@@ -95,7 +96,7 @@ public:
         (void)invert;
         (void)timeoutMs;
         (void)rxfifoFullThreshold;
-        baudRate = baud;
+        baudValue = baud;
         frameConfig = config;
         rx = rxPin;
         tx = txPin;
@@ -104,6 +105,17 @@ public:
     }
 
     void end() { started = false; }
+
+    // Как в Arduino core ESP32 2.x: скорость на ходу (выгрузка чёрного ящика).
+    uint32_t baudRate() { return static_cast<uint32_t>(baudValue); }
+    void updateBaudRate(unsigned long baud)
+    {
+        baudValue = baud;
+        baudHistory.push_back(baud);
+    }
+
+    // Дождаться отправки буфера — в фейке всё уже "отправлено".
+    void flush() { flushCalls++; }
 
     // Как в Arduino core: после begin() размер буфера менять нельзя.
     size_t setTxBufferSize(size_t size)
@@ -167,7 +179,9 @@ public:
     void clearTx() { txData.clear(); }
 
     int uartNumber() const { return number; }
-    unsigned long baud() const { return baudRate; }
+    unsigned long baud() const { return baudValue; }
+    const std::vector<unsigned long>& baudChanges() const { return baudHistory; }
+    unsigned flushCount() const { return flushCalls; }
     uint32_t config() const { return frameConfig; }
     int8_t rxPin() const { return rx; }
     int8_t txPin() const { return tx; }
@@ -180,7 +194,9 @@ public:
         rxData.clear();
         rxPosition = 0;
         txData.clear();
-        baudRate = 0;
+        baudValue = 0;
+        baudHistory.clear();
+        flushCalls = 0;
         frameConfig = 0;
         rx = tx = -1;
         started = false;
@@ -197,7 +213,9 @@ private:
     std::string rxData;
     size_t rxPosition = 0;
     std::string txData;
-    unsigned long baudRate = 0;
+    unsigned long baudValue = 0;
+    std::vector<unsigned long> baudHistory;
+    unsigned flushCalls = 0;
     uint32_t frameConfig = 0;
     int8_t rx = -1;
     int8_t tx = -1;

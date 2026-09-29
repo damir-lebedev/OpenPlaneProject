@@ -7,6 +7,7 @@
 #include "hal/IBoard.h"
 #include "sensors/SensorInterface.h"
 #include "telemetry/DebugLogger.h"
+#include "telemetry/IFlightRecorder.h"
 #include "telemetry/LogSettings.h"
 
 // ============================================================
@@ -23,6 +24,10 @@
 //   p      — проверка выходов (реальный импульс на каждом пине)
 //   b      — опрос шин I2C: кто отвечает и что это за чип (если
 //            консоли передана плата) — первое, что делать с новой платой
+//   k      — чёрный ящик: полёты, запись вручную, стереть всё
+//
+// Команды от ПК (tools/blackbox.py): байт STX (0x02), затем строка
+// "bb ..." до '\n' — передаётся чёрному ящику (выгрузка полётов).
 //
 // Пока открыто меню, лог молчит (DebugLogger::suspend), чтобы меню
 // не уезжало вверх; после закрытия все включённые каналы лога
@@ -40,12 +45,14 @@ class DebugConsole
 public:
 
     DebugConsole(FlightController& flightController, FlightOutputs& flightOutputs,
-                 Autopilot& ap, DebugLogger& debugLogger, IBoard* boardForScan = nullptr)
+                 Autopilot& ap, DebugLogger& debugLogger, IBoard* boardForScan = nullptr,
+                 IFlightRecorder* flightRecorder = nullptr)
         : controller(flightController),
           outputs(flightOutputs),
           autopilot(ap),
           logger(debugLogger),
-          board(boardForScan)
+          board(boardForScan),
+          blackBox(flightRecorder)
     {
     }
 
@@ -90,7 +97,7 @@ public:
 
 private:
 
-    enum class Screen : uint8_t { None, Main, Log };
+    enum class Screen : uint8_t { None, Main, Log, BlackBox };
 
     static constexpr uint8_t MENU_WIDTH = 64;
     static constexpr uint8_t ITEM_WIDTH = 44;
@@ -100,20 +107,54 @@ private:
     Autopilot& autopilot;
     DebugLogger& logger;
     IBoard* board;
+    IFlightRecorder* blackBox;
 
     Screen screen = Screen::None;
     bool settingsDirty = false;   // настройки лога изменены, в NVS ещё не записаны
+    bool confirmErase = false;    // в меню ящика нажато 'e', ждём 'y'
+
+    static constexpr char STX = 0x02;
+    bool hostLine = false;        // после STX: собирается строка команды ПК
+    char hostBuffer[48] = {};
+    size_t hostLength = 0;
 
     void handle(char key)
     {
+        if (key == STX || hostLine)
+        {
+            collectHostCommand(key);
+            return;
+        }
         if (key == '\r' || key == '\n') return;
 
         switch (screen)
         {
-            case Screen::Main: handleMainMenu(key); return;
-            case Screen::Log:  handleLogMenu(key); return;
-            case Screen::None: handleHotkey(key); return;
+            case Screen::Main:     handleMainMenu(key); return;
+            case Screen::Log:      handleLogMenu(key); return;
+            case Screen::BlackBox: handleBlackBoxMenu(key); return;
+            case Screen::None:     handleHotkey(key); return;
         }
+    }
+
+    void collectHostCommand(char key)
+    {
+        if (key == STX)
+        {
+            hostLine = true;
+            hostLength = 0;
+            return;
+        }
+        if (key == '\r') return;
+        if (key != '\n')
+        {
+            if (hostLength + 1 < sizeof(hostBuffer)) hostBuffer[hostLength++] = key;
+            return;
+        }
+
+        hostLine = false;
+        hostBuffer[hostLength] = '\0';
+        if (blackBox) blackBox->handleHostCommand(hostBuffer);
+        else Serial.println("BB:ERR чёрного ящика нет в этой сборке");
     }
 
     // --- вне меню ---
@@ -124,6 +165,7 @@ private:
         {
             case 'h': case '?': openMainMenu(); break;
             case 'l':           openLogMenu(); break;
+            case 'k':           openBlackBoxMenu(); break;
             case ' ':           togglePause(); break;
             case 's': case 'i': case 'o': case 'm': case 'p': case 'b':
                 runAction(key);
@@ -154,6 +196,7 @@ private:
         printItem('5', "Калибровка компаса (15 с, вращать)", 'm');
         printItem('6', "Проверка выходов (импульсы на пинах)", 'p');
         if (board) printItem('7', "Опрос шин I2C (кто отвечает)", 'b');
+        if (blackBox) printItem('8', "Чёрный ящик: полёты, запись", 'k');
         Serial.println("  0  закрыть меню");
         printRule(logger.isPaused() ? "лог на паузе — пробел, чтобы продолжить"
                                     : "пробел — пауза лога");
@@ -177,6 +220,9 @@ private:
                 }
                 closeMenu();
                 runAction('b');
+                return;
+            case '8': case 'k':
+                openBlackBoxMenu();
                 return;
             case '0': case 'q': case 'h':
                 closeMenu();
@@ -284,6 +330,81 @@ private:
 
         settingsDirty = true;
         drawLogMenu();
+    }
+
+    // --- меню чёрного ящика ---
+
+    void openBlackBoxMenu()
+    {
+        if (!blackBox)
+        {
+            Serial.println("Консоль: чёрного ящика нет в этой сборке");
+            return;
+        }
+        screen = Screen::BlackBox;
+        confirmErase = false;
+        logger.suspend(true);
+        drawBlackBoxMenu();
+    }
+
+    void drawBlackBoxMenu()
+    {
+        Serial.println();
+        printRule("Чёрный ящик");
+        Serial.print("  ");
+        blackBox->printStatus(Serial);
+        blackBox->printFlights(Serial);
+        Serial.println();
+        Serial.println(blackBox->isRecording() ? "  r  остановить запись" : "  r  начать запись вручную (стенд)");
+        Serial.println("  e  стереть все полёты");
+        Serial.println("  0  назад");
+        printRule("выгрузка на ПК: python tools/blackbox.py download");
+    }
+
+    void handleBlackBoxMenu(char key)
+    {
+        if (confirmErase)
+        {
+            confirmErase = false;
+            if (key != 'y')
+            {
+                Serial.println("Стирание отменено.");
+                drawBlackBoxMenu();
+                return;
+            }
+            if (controller.isArmed() || blackBox->isRecording())
+            {
+                Serial.println("Консоль: нельзя, пока заармлено или идёт запись");
+                return;
+            }
+            Serial.println("Стираю весь раздел (до ~40 с)...");
+            Serial.println(blackBox->eraseAll() ? "Стёрто." : "Не удалось стереть.");
+            drawBlackBoxMenu();
+            return;
+        }
+
+        switch (key)
+        {
+            case 'r':
+                if (blackBox->isRecording()) blackBox->requestManualStop();
+                else blackBox->requestManualStart();
+                closeMenu();
+                return;
+            case 'e':
+                confirmErase = true;
+                Serial.println("Стереть ВСЕ полёты? y — да, любая другая клавиша — нет.");
+                return;
+            case '0': case 'q':
+                screen = Screen::Main;
+                drawMainMenu();
+                return;
+            case 'k': case 'h':
+                closeMenu();
+                return;
+            default:
+                drawBlackBoxMenu();
+                return;
+        }
     }
 
     // --- действия ---

@@ -205,6 +205,9 @@ public:
         return AutopilotNames::mode(currentMode);
     }
 
+    // Стики пилота этого такта (мкс, до автопилота).
+    const ControlCommand& getPilotCommand() const { return pilot; }
+
     // Итоговая команда минус стики пилота (мкс) — "что добавил автопилот".
     float getRollCorrection() const { return static_cast<float>(output.roll - pilot.roll); }
     float getPitchCorrection() const { return static_cast<float>(output.pitch - pilot.pitch); }

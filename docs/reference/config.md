@@ -170,6 +170,22 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `DEBUG_INTERVAL_MS` | 100 | Как часто `DebugLogger` проверяет каналы лога |
 | `DEBUG_CHANGE_DEADBAND_US` | 3 | Допуск на дребезг RC/PWM в режиме «при изменении» |
 
+### Чёрный ящик
+
+Подробно — [BLACKBOX.md](../BLACKBOX.md).
+
+| Константа | Значение | Смысл |
+|---|---|---|
+| `BLACKBOX_RING_BYTES` / `_NO_PSRAM_BYTES` | 4 МБ / 32 КБ | Очередь записей в PSRAM (без PSRAM — во внутренней памяти) |
+| `BLACKBOX_PREROLL_MS` / `_POSTROLL_MS` | 10 000 / 10 000 | Запись до старта (ARM + газ) и после DISARM |
+| `BLACKBOX_LANDED_STOP_MS` | 30 000 | Заармлено, мотор стоит, самолёт неподвижен столько — стоп |
+| `BLACKBOX_LANDED_GYRO_DPS` / `_ACCEL_G` / `_CLIMB_MS` / `_SPEED_MS` | 5 / 0.1 / 0.5 / 2 | Что считается «неподвижен» |
+| `BLACKBOX_RESET_HOLD_MS` | 60 000 | После сбойной перезагрузки — запись не короче |
+| `BLACKBOX_MIN_FREE_BYTES` | 10 МБ | Стёртого места наготове; старые полёты стираются целиком на земле |
+| `BLACKBOX_ERASE_PAUSE_MS` | 100 | Пауза между стираниями |
+| `BLACKBOX_IMU_DIVIDER` | 1 | IMU каждый N-й такт (1 — 500 Гц) |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | Делители батареи (56k/10k) и датчика тока (10k/15k) на плате полётника |
+
 ---
 
 ## namespace `Channels`
