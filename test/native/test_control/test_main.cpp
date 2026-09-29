@@ -112,7 +112,7 @@ void test_sticks_to_command_signs()
     TEST_ASSERT_EQUAL_INT16(-500, c.pitch);        // от себя — нос вниз
 
     c = mixer.fromSticks(rcWith(Channels::RUDDER, 1000));
-    TEST_ASSERT_EQUAL_INT16(-500, c.yaw);          // влево — нос влево
+    TEST_ASSERT_EQUAL_INT16(-Config::RUDDER_MAX_US, c.yaw);   // влево — нос влево
 
     c = mixer.fromSticks(RcChannelState());
     TEST_ASSERT_EQUAL_INT16(0, c.roll);
@@ -186,7 +186,9 @@ void test_mix_clamps_commands_and_outputs()
     const FlightOutputState out = mixer.mix(c);
     TEST_ASSERT_EQUAL_UINT16(Config::AILERON_LEFT_REVERSED ? 1000 : 2000, out.aileronLeft);
     TEST_ASSERT_EQUAL_UINT16(Config::ELEVATOR_REVERSED ? 2000 : 1000, out.elevator);
-    TEST_ASSERT_EQUAL_UINT16(Config::RUDDER_REVERSED ? 1000 : 2000, out.rudder);
+    // Руль направления упирается в свой ход (на той же серве — колесо).
+    TEST_ASSERT_EQUAL_UINT16(Config::PWM_CENTER + (Config::RUDDER_REVERSED ? -Config::RUDDER_MAX_US : Config::RUDDER_MAX_US),
+                             out.rudder);
 }
 
 // Флапероны: при полном крене опускающийся элерон упирается в край,
