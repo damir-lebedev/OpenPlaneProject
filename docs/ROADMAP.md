@@ -119,7 +119,7 @@ ARM отдельным тумблером; failsafe при выключенно�
 
 | Окружение (`pio run -e ...`) | Плата | Статус | aileron L / R | elevator | esc | ibus_rx | i2c sda / scl |
 |---|---|---|---|---|---|---|---|
-| `esp32-s3` (default) | ESP32-S3 N16R8 (DevKitC-1) | **Основная, проверена на стенде со всеми датчиками** | GPIO4 / GPIO5 | GPIO6 | GPIO7 | GPIO17 | GPIO8 / GPIO9 |
+| `esp32-s3` (default) | ESP32-S3 N16R8 (DevKitC-1) | **Основная, проверена на стенде со всеми датчиками** | GPIO4 / GPIO5 | GPIO6 | GPIO7 | GPIO17 | GPIO41 / GPIO42 |
 | `esp32-c3` | ESP32-C3 SuperMini | Первый прототип, летал на ручном управлении | GPIO5 / GPIO4 | GPIO6 | GPIO7 | GPIO8 | GPIO1 / GPIO3 |
 | `esp32-dev` | классическая ESP32 38-pin | Для стенда, **не проверена на железе** (прошивка целиком — в тестах) | GPIO13 / GPIO14 | GPIO27 | GPIO26 | GPIO16 | GPIO21 / GPIO22 |
 | `stm32h743` | STM32H743VIT6 (WeAct Mini) | Полная прошивка + MAVLink, **платы пока нет** (прошивка целиком — в тестах на ПК) | PA0 / PA1 | PA2 | PA3 | PE7 | PB11 / PB10 |

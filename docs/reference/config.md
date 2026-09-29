@@ -27,16 +27,16 @@
 | `PIN_ESC` | `uint8_t` | Регулятор мотора | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | Руль направления + колесо; `-1` — выход отключён | 18 | −1 | 25 |
 | `PIN_IBUS` | `uint8_t` | RX приёмника iBUS (UART1) | 17 | 8 | 16 |
-| `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | Шина датчиков (`Wire`) | 8 / 9 | 1 / 3 | 21 / 22 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | Шина датчиков (`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | Шина OLED (`Wire1`); `-1` — нет | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | Общая SPI-шина | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
 | `PIN_SPI_CS_IMU` | `uint8_t` | CS IMU по SPI | 14 | 21 | 32 |
 | `PIN_SPI_CS_BARO` | `uint8_t` | CS барометра по SPI | 21 | 2 | 5 |
-| `PIN_GPS_RX` / `PIN_GPS_TX` | `int8_t` | UART GPS; TX `-1` — только приём | 15 / 16 | 9 / −1 | 4 / 17 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | `int8_t` | UART GPS; TX `-1` — только приём | 39 / 40 | 9 / −1 | 4 / 17 |
 | `UART_NUM_GPS` | `uint8_t` | Номер аппаратного UART для GPS | 2 | 0 | 2 |
-| `PIN_AUX1`, `PIN_AUX2` | `int8_t` | серво-выходы: сброс груза, камера; `-1` — нет | 41, 42 | −1, −1 | 33, 15 |
+| `PIN_AUX1`, `PIN_AUX2` | `int8_t` | серво-выходы: сброс груза, закрылки; `-1` — нет | 15, 16 | −1, −1 | 33, 15 |
 | `PIN_BUZZER` | `int8_t` | пищалка через транзистор; `-1` — нет | 38 | −1 | 2 |
-| `PIN_AUX3`, `PIN_VBAT_ADC`, `PIN_CURRENT_ADC`, `PIN_TELEM_RX/TX` | `int8_t` | **Только S3:** резерв под плату полётника ([FC_BOARD.md](../FC_BOARD.md)) | 47, 3, 10, 39/40 | — | — |
+| `PIN_AUX3`, `PIN_LIGHT`, `PIN_VBAT_ADC`, `PIN_CURRENT_ADC`, `PIN_TELEM_TX/RX` | `int8_t` | **Только S3:** резерв под плату полётника ([FC_BOARD.md](../FC_BOARD.md)) | 47, 21, 8, 3, 9/10 | — | — |
 
 SPI-шина датчиков называется `PIN_SENSOR_SPI_*`, а не `PIN_SPI_*`: в ядре
 STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — макросы варианта,

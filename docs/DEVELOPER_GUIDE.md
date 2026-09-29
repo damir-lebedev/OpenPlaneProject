@@ -617,11 +617,11 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=..
 | Руль высоты / ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
 | Руль направления | GPIO18 | — (нет пина) | GPIO25 |
 | iBUS RX | GPIO17 | GPIO8 | GPIO16 |
-| I2C датчиков SDA / SCL | GPIO8 / GPIO9 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
+| I2C датчиков SDA / SCL | GPIO41 / GPIO42 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | I2C OLED SDA / SCL | GPIO1 / GPIO2 | — | — |
 | SPI SCK / MISO / MOSI | GPIO12 / 13 / 11 | GPIO0 / 10 / 20 | GPIO18 / 19 / 23 |
 | SPI CS ICM42688 / BMP388 | GPIO14 / GPIO21 | GPIO21 / GPIO2 ⚠️ | GPIO32 / GPIO5 |
-| GPS RX / TX | GPIO15 / GPIO16 (UART2) | GPIO9 ⚠️ / нет (UART0) | GPIO4 / GPIO17 (UART2) |
+| GPS RX / TX | GPIO39 / GPIO40 (UART2) | GPIO9 ⚠️ / нет (UART0) | GPIO4 / GPIO17 (UART2) |
 | Serial | UART0 → разъём «COM» | USB-CDC | UART0 |
 
 - **ESP32-S3 N16R8:** GPIO33–37 заняты octal PSRAM, 26–32 — флешем, 19/20 —

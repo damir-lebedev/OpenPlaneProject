@@ -30,21 +30,28 @@ namespace Config
 #if defined(BOARD_ESP32_S3)
     // ESP32-S3 N16R8 (DevKitC-1-клон с двумя USB-C "USB"/"COM") —
     // основной лётный контроллер. Проверено вживую: сервы/ESC, iBUS,
-    // обе I2C-шины.
+    // обе I2C-шины (шина датчиков — ещё на GPIO8/9, см. ниже).
     // Не используются: GPIO0/45/46 (strapping), 19/20 (USB D-/D+),
     // 26-32 (SPI flash), 33-37 (octal PSRAM у N16R8), 43/44 (UART0 ->
     // разъём "COM", на нём Serial), 48 (RGB-светодиод на плате).
     // GPIO3 — тоже strapping (источник JTAG), но влияет, только если
     // это задано в eFuse (по умолчанию нет), — поэтому под вход АЦП
-    // батареи он годится.
+    // датчика тока он годится.
+    //
+    // Раскладка подогнана под плату полётника (docs/FC_BOARD.md): пины
+    // каждого блока разъёмов идут подряд по гребёнке DevKit, чтобы
+    // плата разводилась в один слой без пересечений.
     constexpr uint8_t PIN_AILERON_LEFT  = 4;
     constexpr uint8_t PIN_AILERON_RIGHT = 5;
     constexpr uint8_t PIN_ELEVATOR      = 6;
     constexpr uint8_t PIN_ESC           = 7;
     constexpr int8_t  PIN_RUDDER        = 18;  // руль направления + колесо
     constexpr uint8_t PIN_IBUS          = 17;
-    constexpr uint8_t PIN_I2C_SDA       = 8;   // = дефолт Wire для esp32s3
-    constexpr uint8_t PIN_I2C_SCL       = 9;   // = дефолт Wire для esp32s3
+    // Шина датчиков — правый ряд DevKit, рядом с OLED: там же 3V3-зона
+    // платы. На стенде проверена на GPIO8/9 — переезд на 41/42 это
+    // только другие пины той же шины Wire.
+    constexpr uint8_t PIN_I2C_SDA       = 41;
+    constexpr uint8_t PIN_I2C_SCL       = 42;
 
     // Вторая I2C-шина (Wire1) — только OLED-дисплей. Отдельно от
     // датчиков, чтобы отрисовка кадра (~25 мс на 400 кГц) не
@@ -54,8 +61,10 @@ namespace Config
 
     // SPI (ICM42688 + BMP388, общая шина, разные CS) — GPIO11-13
     // это дефолтная распиновка FSPI на большинстве S3-DevKitC плат.
-    // CS ICM42688 — GPIO14, а не 10: GPIO10 — АЦП1 (работает при
-    // включённом Wi-Fi), он зарезервирован под датчик тока.
+    // Только для стенда: на плате полётника SPI не разведён (датчики
+    // там на I2C), GPIO11-14 остаются свободными. GPIO21 на плате —
+    // выход LIGHT (ниже); CS барометра трогается, только если в
+    // SensorSelection.h выбран барометр по SPI.
     constexpr uint8_t PIN_SENSOR_SPI_SCK  = 12;
     constexpr uint8_t PIN_SENSOR_SPI_MISO = 13;
     constexpr uint8_t PIN_SENSOR_SPI_MOSI = 11;
@@ -65,20 +74,23 @@ namespace Config
     // Второй UART — GPS (отдельно от iBUS, который на UART1/GPIO17).
     // У S3 всего 3 аппаратных UART (0/1/2); UART0 занят Serial
     // (GPIO43/44 -> разъём "COM", см. platformio.ini) — GPS на UART2.
-    constexpr int8_t PIN_GPS_RX = 15;
-    constexpr int8_t PIN_GPS_TX = 16;
+    // Правый ряд DevKit, сразу под шиной датчиков: разъём GPS и
+    // I2C-разъём его компаса стоят рядом.
+    constexpr int8_t PIN_GPS_RX = 39;
+    constexpr int8_t PIN_GPS_TX = 40;
     constexpr uint8_t UART_NUM_GPS = 2;
 
     // РЕЗЕРВ под плату полётника (docs/FC_BOARD.md) — разъёмы
     // разводятся сразу, прошивкой пока не используются.
-    constexpr int8_t PIN_AUX1        = 41;  // серво-выход: сброс груза
-    constexpr int8_t PIN_AUX2        = 42;  // серво-выход
-    constexpr int8_t PIN_AUX3        = 47;  // серво-выход / любой цифровой
+    constexpr int8_t PIN_AUX1        = 15;  // серво-выход: сброс груза
+    constexpr int8_t PIN_AUX2        = 16;  // серво-выход: закрылки (через Y-кабель)
+    constexpr int8_t PIN_AUX3        = 47;  // любой цифровой, питание 5V логики (не сервы)
     constexpr int8_t PIN_BUZZER      = 38;  // пищалка через транзистор
-    constexpr int8_t PIN_VBAT_ADC    = 3;   // АЦП1: батарея через делитель 56k/10k
-    constexpr int8_t PIN_CURRENT_ADC = 10;  // АЦП1: датчик тока
-    constexpr int8_t PIN_TELEM_RX    = 39;  // радиомодем / iBUS-SENS
-    constexpr int8_t PIN_TELEM_TX    = 40;
+    constexpr int8_t PIN_LIGHT       = 21;  // ключ Si2302: огни / фара / электромагнит
+    constexpr int8_t PIN_VBAT_ADC    = 8;   // АЦП1: батарея через делитель 56k/10k
+    constexpr int8_t PIN_CURRENT_ADC = 3;   // АЦП1: датчик тока через делитель 10k/15k
+    constexpr int8_t PIN_TELEM_TX    = 9;   // радиомодем / iBUS-SENS
+    constexpr int8_t PIN_TELEM_RX    = 10;
 
 #elif defined(BOARD_ESP32_CLASSIC)
     // Обычная ESP32 38-pin (esp32dev/DOIT/NodeMCU-32S).
