@@ -195,17 +195,22 @@ void test_mix_clamps_commands_and_outputs()
 // а поднимающийся продолжает — дифференциал элеронов.
 void test_flaperons_add_roll_on_top_of_flaps()
 {
+    // Импульс для "задняя кромка вниз на down мкс" с учётом реверса серво.
+    auto pwm = [](int32_t down, bool reversed) {
+        return static_cast<uint16_t>(constrain(1500 + (reversed ? -down : down), 1000, 2000));
+    };
+
     ControlMixer mixer;
     ControlCommand c;
     c.flaps = Config::FLAPS_DEPLOYED_US;
     FlightOutputState out = mixer.mix(c);
-    TEST_ASSERT_EQUAL_UINT16(1500 + Config::FLAPS_DEPLOYED_US, out.aileronLeft);
-    TEST_ASSERT_EQUAL_UINT16(1500 + Config::FLAPS_DEPLOYED_US, out.aileronRight);
+    TEST_ASSERT_EQUAL_UINT16(pwm(Config::FLAPS_DEPLOYED_US, Config::AILERON_LEFT_REVERSED), out.aileronLeft);
+    TEST_ASSERT_EQUAL_UINT16(pwm(Config::FLAPS_DEPLOYED_US, Config::AILERON_RIGHT_REVERSED), out.aileronRight);
 
     c.roll = 500;
     out = mixer.mix(c);
-    TEST_ASSERT_EQUAL_UINT16(2000, out.aileronLeft);                                 // упор
-    TEST_ASSERT_EQUAL_UINT16(1500 + Config::FLAPS_DEPLOYED_US - 500, out.aileronRight);
+    TEST_ASSERT_EQUAL_UINT16(Config::AILERON_LEFT_REVERSED ? 1000 : 2000, out.aileronLeft);   // упор
+    TEST_ASSERT_EQUAL_UINT16(pwm(Config::FLAPS_DEPLOYED_US - 500, Config::AILERON_RIGHT_REVERSED), out.aileronRight);
 }
 
 // ------------------------------------------------------------
