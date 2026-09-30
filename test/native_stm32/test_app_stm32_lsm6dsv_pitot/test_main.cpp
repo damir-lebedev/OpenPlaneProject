@@ -201,9 +201,9 @@ void test_sticks_and_stabilize_drive_timer_outputs()
     fly(rc, 1.0);
     TEST_ASSERT_EQUAL(MODE_STABILIZE, autopilot.getMode());
     TEST_ASSERT_LESS_THAN_FLOAT(-20.0f, autopilot.getRollCorrection());
-    TEST_ASSERT_EQUAL(1400, fake::timerPulseUs(Config::PIN_ESC));
+    TEST_ASSERT_EQUAL(1200, fake::timerPulseUs(Config::PIN_ESC));   // ограничен THROTTLE_LIMIT_PCT
     // Выход реально читается обратно (самопроверка 'p' на STM32 — pulseIn()).
-    TEST_ASSERT_EQUAL(1400, pulseIn(static_cast<uint8_t>(Config::PIN_ESC), HIGH));
+    TEST_ASSERT_EQUAL(1200, pulseIn(static_cast<uint8_t>(Config::PIN_ESC), HIGH));
     world.rollDeg = 0;
     takeSerial();
 }
@@ -233,7 +233,7 @@ void test_mavlink_shows_the_flight_to_ground_station()
     TEST_ASSERT_FLOAT_WITHIN(0.8f, 18.0f, hud->f32(0));   // скорость — по трубке
     TEST_ASSERT_FLOAT_WITHIN(0.1f, 16.0f, hud->f32(4));   // путевая — GPS
     TEST_ASSERT_FLOAT_WITHIN(2.0f, 25.0f, hud->f32(8));   // высота — барометр
-    TEST_ASSERT_EQUAL(40, hud->u16(18));                  // газ 40 %
+    TEST_ASSERT_EQUAL(20, hud->u16(18));                  // газ 20 % (стик 1400, ограничен THROTTLE_LIMIT_PCT)
 
     const Mavlink::Message* status = last(msgs, Mavlink::Msg::SYS_STATUS);
     TEST_ASSERT_NOT_NULL(status);

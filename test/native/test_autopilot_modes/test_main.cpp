@@ -1026,7 +1026,7 @@ void test_motor_kill_payload_camera_and_rates()
 
     rc.set(Channels::ARM, 2000).set(Channels::THROTTLE, 1600);
     plane.tick(rc);
-    TEST_ASSERT_EQUAL_UINT16(1600, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(1300, plane.pwm(ServoChannel::ESC));   // ограничен THROTTLE_LIMIT_PCT
     rc.set(Channels::SWB, 2000);   // мотор-килл
     plane.tick(rc);
     TEST_ASSERT_EQUAL_UINT16(1000, plane.pwm(ServoChannel::ESC));

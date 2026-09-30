@@ -152,7 +152,7 @@ void test_arm_then_throttle_reaches_esc()
     RcChannels rc = armedSticks();
     rc.set(Channels::THROTTLE, 1500);
     fly(rc, 3);
-    TEST_ASSERT_UINT32_WITHIN(2, 1500, pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_UINT32_WITHIN(2, 1250, pulseUs(ServoChannel::ESC));   // ограничен THROTTLE_LIMIT_PCT
 
     // Газ при ARM — чёрный ящик пишет; задачу записи будит каждый такт.
     TEST_ASSERT_EQUAL(BlackBox::State::Recording, blackBox.getState());
@@ -189,7 +189,7 @@ void test_link_loss_in_air_cuts_motor_and_glides()
     RcChannels rc = armedSticks();
     rc.set(Channels::THROTTLE, 1700);
     fly(rc, 3);
-    TEST_ASSERT_UINT32_WITHIN(2, 1700, pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_UINT32_WITHIN(2, 1350, pulseUs(ServoChannel::ESC));   // ограничен THROTTLE_LIMIT_PCT
 
     for (int i = 0; i < 300; ++i) loop();   // 600 мс без кадров
     TEST_ASSERT_TRUE(flightController.isReceiverFailsafe());
@@ -199,7 +199,7 @@ void test_link_loss_in_air_cuts_motor_and_glides()
 
     fly(rc, 3);   // связь вернулась
     TEST_ASSERT_FALSE(autopilot.isFailsafeGliding());
-    TEST_ASSERT_UINT32_WITHIN(2, 1700, pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_UINT32_WITHIN(2, 1350, pulseUs(ServoChannel::ESC));   // ограничен THROTTLE_LIMIT_PCT
 
     RcChannels disarm;
     fly(disarm, 2);

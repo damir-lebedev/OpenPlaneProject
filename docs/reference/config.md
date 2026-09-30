@@ -93,6 +93,7 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 |---|---|---|
 | `PWM_MIN` / `PWM_CENTER` / `PWM_MAX` | 1000 / 1500 / 2000 | Стандартный импульс RC, мкс |
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Отклонение от центра при полном ходе стика, мкс. Руль направления — меньше: на той же серве колесо шасси |
+| `THROTTLE_LIMIT_PCT` | 50 | Потолок газа на ESC, %, одинаково для стика и автопилота (`FlightController::capThrottle`). Сейчас занижен под слабую сборку 3S1P — вернуть на 100 перед полётными тестами автопилота на нормальном аккумуляторе |
 
 ### Закрылки (флапероны)
 
@@ -104,7 +105,7 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 
 ### Направление серво
 
-`AILERON_LEFT_REVERSED`, `AILERON_RIGHT_REVERSED`, `ELEVATOR_REVERSED` (`true`),
+`AILERON_LEFT_REVERSED`, `AILERON_RIGHT_REVERSED` (`true` — серво элеронов зеркальные), `ELEVATOR_REVERSED` (`true`),
 `RUDDER_REVERSED` — единственное место, где задаётся реверс. `ControlMixer`
 считает в физических знаках и меняет знак только здесь, поэтому стики и
 автопилот не могут разойтись. Реверс на пульте делать **нельзя**.

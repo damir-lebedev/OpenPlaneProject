@@ -541,7 +541,7 @@ void test_arm_and_throttle_start_recording_with_preroll_and_disarm_stops_it()
     {
         if (r.type != REC_CTRL) continue;
         const CtrlRecord c = r.as<CtrlRecord>();
-        if (c.out[4] == 1600 && (c.flags & Flag::ARMED)) sawThrottle = true;
+        if (c.out[4] == 1300 && (c.flags & Flag::ARMED)) sawThrottle = true;   // стик 1600, ограничен THROTTLE_LIMIT_PCT
     }
     TEST_ASSERT_TRUE(sawThrottle);
 

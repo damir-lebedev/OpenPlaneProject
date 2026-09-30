@@ -114,7 +114,7 @@ void test_armed_passes_pilot_throttle()
     RcChannels rc;
     rc.set(Channels::ARM, 2000).set(Channels::THROTTLE, 1650);
     plane.tick(rc);
-    TEST_ASSERT_EQUAL_UINT16(1650, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(1325, plane.pwm(ServoChannel::ESC));   // ограничен THROTTLE_LIMIT_PCT
 }
 
 void test_link_loss_on_ground_neutralises_everything()
@@ -218,7 +218,7 @@ void test_takeoff_throttle_still_requires_arm()
     TEST_ASSERT_TRUE(plane.controller.isArmed());
     rc.set(Channels::THROTTLE, 1600);
     for (int i = 0; i < 600; ++i) plane.tick(rc);   // 1.2 с программы
-    TEST_ASSERT_EQUAL_UINT16(2000, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(1500, plane.pwm(ServoChannel::ESC));   // 100% программы, но ограничен THROTTLE_LIMIT_PCT
 
     rc.set(Channels::ARM, 1000);   // DISARM — газ сразу в ноль, хотя режим хочет 100 %
     plane.tick(rc);
@@ -262,7 +262,7 @@ void test_manual_only_controller_without_autopilot()
     rc.set(Channels::THROTTLE, 1400);
     board.rc.push(ibusFrame(rc));
     controller.update();
-    TEST_ASSERT_EQUAL_UINT16(1400, board.servos[ServoChannel::ESC].lastUs);
+    TEST_ASSERT_EQUAL_UINT16(1200, board.servos[ServoChannel::ESC].lastUs);   // ограничен THROTTLE_LIMIT_PCT
 
     fake::advanceMs(600);
     controller.update();

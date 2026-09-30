@@ -243,7 +243,11 @@ void test_sim_hand_launch()
     TEST_ASSERT_EQUAL(0, sim.plane.touchdowns);                 // не коснулся земли
     TEST_ASSERT_GREATER_THAN_FLOAT(1.0f, minHeight);
     TEST_ASSERT_GREATER_THAN_FLOAT(PlaneSim::V_REF * 0.5, minSpeed);
-    TEST_ASSERT_GREATER_THAN_FLOAT(15.0f, sim.plane.s.height);
+    // Config::THROTTLE_LIMIT_PCT сейчас 50% (наземный тест 3S1P) — тяги на
+    // разгон меньше, чем на полном газу, высота набирается медленнее. Порог
+    // ниже прежних 15 м на время действия лимита; вернуть на 15, когда
+    // лимит снимут для полётных тестов автопилота.
+    TEST_ASSERT_GREATER_THAN_FLOAT(10.0f, sim.plane.s.height);
 }
 
 void test_sim_auto_land()

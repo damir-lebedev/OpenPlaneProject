@@ -36,9 +36,11 @@
 //                   выключен), на земле — рули в нейтраль; дальше цикл
 //                   не идёт
 //   5. ARMING     — тумблер ARM (SwA)
-//   6. ВЫХОДЫ     — команда -> PWM каждого серво; газ -> 0, если не
-//                   armed или включён Feature::MOTOR_KILL; AUX1 —
-//                   груз, AUX2 — камера; пищалка
+//   6. ВЫХОДЫ     — команда -> PWM каждого серво; газ ограничен
+//                   Config::THROTTLE_LIMIT_PCT (стик и автопилот
+//                   одинаково), затем -> 0, если не armed или
+//                   включён Feature::MOTOR_KILL; AUX1 — груз,
+//                   AUX2 — камера; пищалка
 // ============================================================
 
 class FlightController
@@ -112,6 +114,7 @@ public:
 
         FlightOutputState output = mixer.mix(command);
         output.throttle = autopilot ? autopilot->applyThrottle(pilotThrottle) : pilotThrottle;
+        output.throttle = capThrottle(output.throttle);
 
         // ARM реально блокирует газ (см. ArmingManager) — ставим ПОСЛЕ
         // автопилота, чтобы ни один режим не мог протащить газ мимо
@@ -171,6 +174,22 @@ private:
         sticks.yaw = static_cast<int16_t>(sticks.yaw * scale);
     }
 
+    // Ход стика/автопилота остаётся пропорциональным на всём диапазоне,
+    // просто верх ниже: PWM_MIN..PWM_MAX -> PWM_MIN..(PWM_MIN + ход% лимита).
+    // Один выбор на всех — и ручной газ, и автопилотный (CRUISE/RTH/LAUNCH
+    // и т.п.), чтобы слабая сборка 3S1P не получила предельный ток ни
+    // оттуда, ни оттуда.
+    static uint16_t capThrottle(uint16_t us)
+    {
+        return static_cast<uint16_t>(map(
+            us,
+            Config::PWM_MIN,
+            Config::PWM_MAX,
+            Config::PWM_MIN,
+            Config::PWM_MIN + (Config::PWM_MAX - Config::PWM_MIN) * Config::THROTTLE_LIMIT_PCT / 100
+        ));
+    }
+
     // Куда ехать закрылкам: тормоз важнее закрылков, тумблер — крутилки.
     static float flapsTarget(const PilotInputs& in)
     {
@@ -214,6 +233,7 @@ private:
 
         FlightOutputState output = mixer.mix(command);
         output.throttle = autopilot->applyThrottle(Config::FAILSAFE_THROTTLE);
+        output.throttle = capThrottle(output.throttle);
         if (in.has(Feature::MOTOR_KILL)) output.throttle = Config::PWM_MIN;
         output.aux1 = outputs.getLastState().aux1;
         output.aux2 = outputs.getLastState().aux2;
