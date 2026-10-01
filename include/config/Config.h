@@ -360,7 +360,7 @@ namespace Config
     // остаётся пропорциональным, но верх смаппирован в THROTTLE_LIMIT_PCT
     // (1000 мкс = 0%, 2000 мкс на стике = THROTTLE_LIMIT_PCT% газа).
     // На батарее помощнее — поднять до 100.
-    constexpr uint16_t THROTTLE_LIMIT_PCT = 50;
+    constexpr uint16_t THROTTLE_LIMIT_PCT = 100;
 
 
     // --------------------------------------------------------
