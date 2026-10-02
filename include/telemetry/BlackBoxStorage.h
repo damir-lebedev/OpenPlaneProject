@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <iterator>
+#include <vector>
 
 #include "hal/IFlashRegion.h"
 #include "telemetry/BlackBoxFormat.h"
@@ -18,6 +19,18 @@
 // снова голова. При включении голова находится по заголовкам: сектор
 // после сектора с наибольшим seq. Карты в NVS нет — после пропажи
 // питания в любой момент всё восстанавливается по самим секторам.
+//
+// Сверка при включении. Маленькая область (флеш ESP32, ~3.4 тыс. секторов,
+// чтение ~0.1 мс) читается вся: заголовок каждого сектора. На SD-карте
+// чтение случайного блока стоит ~0.6 мс, а область — десятки тысяч секторов:
+// полная сверка 64 МБ шла бы 20 секунд. Поэтому большая область сверяется
+// выборочно, по устройству кольца: настоящие сектора — одна непрерывная дуга
+// (старые полёты стираются с её начала, запись идёт к её концу), остальное —
+// стёртое место. Читается каждый S-й сектор (~500 проб), границы дуги и
+// границы полётов внутри неё уточняются делением пополам. Результат тот же,
+// что у полной сверки; если картина не сходится (дуг несколько, номера секторов
+// не идут подряд, ни одной пробы не попало в дугу короче S секторов) —
+// выполняется полная сверка.
 //
 // Стирание (eraseStep) — отдельно от записи, шагами, и только когда
 // разрешил вызывающий (на земле без ARM): на ESP32 оно останавливает
@@ -54,7 +67,20 @@ public:
     {
     }
 
-    // Прочитать заголовки всех секторов: голова, номера, список полётов.
+    // Области не меньше стольких секторов сверяются выборочно (см. выше).
+    static constexpr uint32_t SPARSE_MIN_SECTORS = 4096;
+    // Сколько проб берётся на область при выборочной сверке.
+    static constexpr uint32_t SPARSE_PROBES = 512;
+
+    // Для тестов: порог и шаг проб. 0 — по умолчанию.
+    uint32_t sparseMinSectors = SPARSE_MIN_SECTORS;
+    uint32_t sparseStride = 0;
+
+    // Сколько заголовков прочитала последняя сверка и была ли она выборочной.
+    uint32_t scanReads = 0;
+    bool scanWasSparse = false;
+
+    // Найти голову, номера и список полётов по заголовкам секторов.
     bool begin()
     {
         sectorCount = flash.size() / BlackBoxFormat::SECTOR_SIZE;
@@ -63,11 +89,48 @@ public:
         evicting = 0;
         flightOpen = false;
         sectorOpen = false;
+        scanReads = 0;
+        scanWasSparse = false;
         if (sectorCount < 2)
         {
             sectorCount = 0;
             return false;
         }
+
+        markPresent = false;
+        if (flash.ringMarkedEmpty())
+        {
+            // Кольцо пусто по метке — сверять нечего (стёртое впереди проверит eraseStep).
+            head = 0;
+            nextSeq = 1;
+            nextFlight = 1;
+            markPresent = true;
+            scanReads = 1;
+            return true;
+        }
+
+        if (sectorCount >= sparseMinSectors && scanSparse())
+        {
+            scanWasSparse = true;
+            return true;
+        }
+        flightTotal = 0;
+        scanFull();
+        if (flightTotal == 0)
+        {
+            flash.markRingEmpty();   // следующая загрузка — без прохода по области
+            markPresent = true;
+        }
+        return true;
+    }
+
+    // Прочитать заголовки всех секторов: голова, номера, список полётов.
+    void scanFull()
+    {
+        // Первый проход читает заголовок каждого сектора и запоминает, какие
+        // из них настоящие: второй проход (полёты) не тратит чтение на пустые.
+        // На SD-карте чтение — десятки-сотни мкс, и область — десятки тысяч секторов.
+        validMap.assign((sectorCount + 7) / 8, 0);
 
         bool any = false;
         uint32_t maxSeq = 0;
@@ -77,6 +140,7 @@ public:
         {
             BlackBoxFormat::SectorHeader h;
             if (!readHeader(i, h)) continue;
+            validMap[i / 8] |= static_cast<uint8_t>(1u << (i % 8));
             if (!any || h.seq > maxSeq)
             {
                 maxSeq = h.seq;
@@ -94,10 +158,10 @@ public:
         for (uint32_t k = 0; k < sectorCount; ++k)
         {
             const uint32_t index = (head + k) % sectorCount;
+            if (!(validMap[index / 8] & (1u << (index % 8)))) continue;
             BlackBoxFormat::SectorHeader h;
             if (readHeader(index, h)) noteSector(index, h, /*fromScan*/ true);
         }
-        return true;
     }
 
     bool isReady() const { return sectorCount > 0; }
@@ -248,6 +312,11 @@ public:
         freeCount = ok ? sectorCount : 0;
         flightTotal = 0;
         evicting = 0;
+        if (ok)
+        {
+            flash.markRingEmpty();
+            markPresent = true;
+        }
         return ok;
     }
 
@@ -287,6 +356,7 @@ private:
 
     IFlashRegion& flash;
     uint32_t sectorCount = 0;
+    bool markPresent = false;   // метка "кольцо пусто" стоит
     uint32_t head = 0;
     uint32_t freeCount = 0;
     uint32_t nextSeq = 1;
@@ -306,6 +376,7 @@ private:
     uint8_t page[BlackBoxFormat::PAGE_SIZE] = {};
 
     uint8_t scratch[BlackBoxFormat::SECTOR_SIZE] = {};
+    std::vector<uint8_t> validMap;   // бит на сектор: заголовок настоящий (только внутри begin())
 
     static uint32_t min32(uint32_t a, uint32_t b) { return a < b ? a : b; }
     static uint16_t nextNumber(uint16_t n) { return n >= 0xFFFE ? 1 : static_cast<uint16_t>(n + 1); }
@@ -315,6 +386,7 @@ private:
 
     bool readHeader(uint32_t index, BlackBoxFormat::SectorHeader& h)
     {
+        scanReads++;
         return flash.read(index * BlackBoxFormat::SECTOR_SIZE, &h, sizeof(h)) && BlackBoxFormat::isValid(h);
     }
 
@@ -343,6 +415,153 @@ private:
         return true;
     }
 
+    // ----- выборочная сверка -----
+
+    using Header = BlackBoxFormat::SectorHeader;
+
+    struct Sample
+    {
+        uint32_t t;   // позиция в дуге настоящих секторов (0 — самый старый)
+        Header h;
+    };
+
+    struct Run
+    {
+        Sample first;
+        Sample last;
+    };
+
+    struct SparseScan
+    {
+        uint32_t arcStart = 0;
+        std::vector<Run> runs;
+        bool haveRun = false;
+        Sample runStart = {};
+    };
+
+    uint32_t arcIndex(const SparseScan& scan, uint32_t t) const { return (scan.arcStart + t) % sectorCount; }
+
+    // Между отсчётами t0 и t1 (оба настоящие) найти границы полётов.
+    bool splitRange(SparseScan& scan, const Sample& a, const Sample& b)
+    {
+        if (a.h.flight == b.h.flight) return b.h.seq - a.h.seq == b.t - a.t;   // подряд — иначе картина не сходится
+        if (b.t - a.t == 1)
+        {
+            scan.runs.push_back({ scan.runStart, a });
+            scan.runStart = b;
+            return true;
+        }
+        Sample mid;
+        mid.t = (a.t + b.t) / 2;
+        if (!readHeader(arcIndex(scan, mid.t), mid.h)) return false;
+        return splitRange(scan, a, mid) && splitRange(scan, mid, b);
+    }
+
+    bool scanSparse()
+    {
+        const uint32_t N = sectorCount;
+        const uint32_t S = sparseStride ? sparseStride : (N + SPARSE_PROBES - 1) / SPARSE_PROBES;
+        const uint32_t K = (N + S - 1) / S;   // пробы в секторах 0, S, 2S...
+        if (S < 2 || K < 4) return false;
+
+        // 1. Пробы. Настоящие должны идти одной непрерывной дугой (по кругу).
+        std::vector<Header> probe(K);
+        std::vector<uint8_t> ok(K, 0);
+        uint32_t valids = 0;
+        for (uint32_t k = 0; k < K; ++k)
+        {
+            ok[k] = readHeader(k * S, probe[k]) ? 1 : 0;
+            valids += ok[k];
+        }
+        if (valids == 0 || valids == K) return false;   // пусто (или короче S — не видно) / заполнено целиком
+
+        uint32_t starts = 0, ends = 0, kFirst = 0, kLast = 0;
+        for (uint32_t k = 0; k < K; ++k)
+        {
+            if (ok[k] && !ok[(k + K - 1) % K])
+            {
+                starts++;
+                kFirst = k;
+            }
+            if (ok[k] && !ok[(k + 1) % K])
+            {
+                ends++;
+                kLast = k;
+            }
+        }
+        if (starts != 1 || ends != 1) return false;
+
+        // 2. Края дуги — делением пополам между крайней настоящей пробой и соседней пустой.
+        const uint32_t before = ((kFirst + K - 1) % K) * S;
+        const uint32_t after = ((kLast + 1) % K) * S;
+        Header h;
+        uint32_t lo = 0, hi = (kFirst * S + N - before) % N;   // lo — пусто, hi — настоящий
+        while (hi - lo > 1)
+        {
+            const uint32_t mid = (lo + hi) / 2;
+            if (readHeader((before + mid) % N, h)) hi = mid;
+            else lo = mid;
+        }
+        const uint32_t arcFirst = (before + hi) % N;
+
+        lo = 0;
+        hi = (after + N - kLast * S) % N;   // lo — настоящий, hi — пусто
+        while (hi - lo > 1)
+        {
+            const uint32_t mid = (lo + hi) / 2;
+            if (readHeader((kLast * S + mid) % N, h)) lo = mid;
+            else hi = mid;
+        }
+        const uint32_t arcLast = (kLast * S + lo) % N;
+
+        const uint32_t length = (arcLast + N - arcFirst) % N + 1;
+        SparseScan scan;
+        scan.arcStart = arcFirst;
+        Sample oldest = { 0, {} };
+        Sample newest = { length - 1, {} };
+        if (!readHeader(arcFirst, oldest.h) || !readHeader(arcLast, newest.h)) return false;
+        if (newest.h.seq - oldest.h.seq != length - 1) return false;   // номера секторов дуги идут подряд
+
+        // 3. Полёты внутри дуги: между пробами смотрим номер полёта и ход seq.
+        std::vector<Sample> samples;
+        samples.push_back(oldest);
+        for (uint32_t k = kFirst;; k = (k + 1) % K)
+        {
+            const uint32_t t = (k * S + N - arcFirst) % N;
+            if (t > 0 && t < length - 1) samples.push_back({ t, probe[k] });
+            if (k == kLast) break;
+        }
+        samples.push_back(newest);
+
+        scan.runStart = oldest;
+        for (size_t i = 0; i + 1 < samples.size(); ++i)
+        {
+            if (samples[i + 1].t <= samples[i].t) return false;
+            if (!splitRange(scan, samples[i], samples[i + 1])) return false;
+        }
+        scan.runs.push_back({ scan.runStart, newest });
+
+        // 4. Результат — как у полной сверки.
+        const size_t keep = scan.runs.size() < MAX_FLIGHTS ? scan.runs.size() : MAX_FLIGHTS;
+        flightTotal = 0;
+        for (size_t i = scan.runs.size() - keep; i < scan.runs.size(); ++i)
+        {
+            const Run& run = scan.runs[i];
+            Flight& f = flights[flightTotal++];
+            const uint32_t index = arcIndex(scan, run.first.t);
+            f.number = run.first.h.flight;
+            f.firstSector = index;
+            f.sectors = run.last.t - run.first.t + 1;
+            f.startMs = run.first.h.startMs;
+            f.lastMs = run.last.h.startMs;
+            f.hasStart = !sameFlightBefore(index, run.first.h);
+        }
+        head = (arcLast + 1) % N;
+        nextSeq = newest.h.seq + 1;
+        nextFlight = nextNumber(newest.h.flight);
+        return true;
+    }
+
     bool isErased(uint32_t first, uint32_t count)
     {
         for (uint32_t k = 0; k < count; ++k)
@@ -356,6 +575,12 @@ private:
     bool openSector(uint32_t nowMs)
     {
         if (freeCount == 0) return false;
+
+        if (markPresent)
+        {
+            flash.clearRingMark();   // до первой записи в кольцо: иначе обрыв питания оставил бы метку "пусто" над данными
+            markPresent = false;
+        }
 
         sector = head;
         head = (head + 1) % sectorCount;

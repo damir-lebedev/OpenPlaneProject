@@ -78,6 +78,12 @@ public:
         Serial.println("Консоль: h — меню, l — что выводить в лог, пробел — пауза лога.");
     }
 
+    // Что делает клавиша 'D' (заглавная): перезагрузить плату в системный
+    // загрузчик USB DFU, чтобы перепрошить без кнопки BOOT0. Задаёт только
+    // прошивка STM32 (src/stm32/bootloader.cpp); без хука клавиша молчит.
+    // Не работает при ARM.
+    void setBootloaderHook(void (*hook)()) { bootloaderHook = hook; }
+
     // Вызывать каждый цикл: не блокирует, если ввода нет.
     void update()
     {
@@ -108,6 +114,7 @@ private:
     DebugLogger& logger;
     IBoard* board;
     IFlightRecorder* blackBox;
+    void (*bootloaderHook)() = nullptr;
 
     Screen screen = Screen::None;
     bool settingsDirty = false;   // настройки лога изменены, в NVS ещё не записаны
@@ -126,6 +133,11 @@ private:
             return;
         }
         if (key == '\r' || key == '\n') return;
+        if (key == 'D')   // из любого меню: перепрошивка не должна зависеть от того, где консоль
+        {
+            rebootToBootloader();
+            return;
+        }
 
         switch (screen)
         {
@@ -174,6 +186,18 @@ private:
                 printHint();
                 break;
         }
+    }
+
+    void rebootToBootloader()
+    {
+        if (!bootloaderHook) return;
+        if (controller.isArmed())
+        {
+            Serial.println("Консоль: загрузчик недоступен, пока заармлено.");
+            return;
+        }
+        Serial.println("Перезагрузка в загрузчик USB DFU...");
+        bootloaderHook();
     }
 
     // --- главное меню ---

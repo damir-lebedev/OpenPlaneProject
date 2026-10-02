@@ -54,6 +54,61 @@ inline void noInterrupts() { ++fake::tasks().criticalEntries; }
 inline void interrupts() {}
 
 // ------------------------------------------------------------
+// RCC->RSR: причина перезагрузки (hal/ResetCause.h). Биты — как в CMSIS H7.
+// Тест выставляет fake::rcc().RSR; запись RMVF в фейке ничего не сбрасывает.
+// ------------------------------------------------------------
+
+#define RCC_RSR_RMVF (1UL << 16)
+#define RCC_RSR_BORRSTF (1UL << 21)
+#define RCC_RSR_PINRSTF (1UL << 22)
+#define RCC_RSR_PORRSTF (1UL << 23)
+#define RCC_RSR_SFTRSTF (1UL << 24)
+#define RCC_RSR_IWDG1RSTF (1UL << 26)
+#define RCC_RSR_WWDG1RSTF (1UL << 28)
+
+struct RCC_TypeDef
+{
+    uint32_t RSR = RCC_RSR_PORRSTF | RCC_RSR_PINRSTF;
+};
+
+namespace fake
+{
+    inline RCC_TypeDef& rcc()
+    {
+        static RCC_TypeDef regs;
+        return regs;
+    }
+}
+#define RCC (&::fake::rcc())
+
+// ------------------------------------------------------------
+// АЦП STM32duino: analogRead() в counts заданной разрядности (по
+// умолчанию 10 бит), опорное 3.3 В; напряжение на пине — fake::gpio().analogMv.
+// ------------------------------------------------------------
+
+namespace fake
+{
+    inline uint8_t& adcBits()
+    {
+        static uint8_t bits = 10;
+        return bits;
+    }
+}
+
+inline void analogReadResolution(uint8_t bits) { fake::adcBits() = bits; }
+
+inline int analogRead(uint32_t pin)
+{
+    if (pin >= fake::GPIO_COUNT) return 0;
+    fake::gpio().analogReads[pin]++;
+    const uint32_t full = (1u << fake::adcBits()) - 1;
+    return static_cast<int>(static_cast<uint64_t>(fake::gpio().analogMv[pin]) * full / 3300);
+}
+
+// Карта SD и HAL_SD_* (STM32H7).
+#include "hal_sd_fake.h"
+
+// ------------------------------------------------------------
 // Таймеры и таблица PinMap_TIM
 // ------------------------------------------------------------
 

@@ -1,19 +1,20 @@
 #pragma once
 #include <Arduino.h>
 
+#include "hal/Rtos.h"
 #include "telemetry/BlackBoxFormat.h"
 
 // ============================================================
 // ЧЁРНЫЙ ЯЩИК: очередь записей между ядрами
 //
-// Полётный цикл (ядро 1) кладёт готовые записи, задача записи на
-// флеш (ядро 0) забирает их по одной. Байтовое кольцо в PSRAM
-// (мегабайты) — запас и на предзапись перед стартом, и на время,
-// когда флеш не успевает или кончилось стёртое место.
+// Полётный цикл кладёт готовые записи, задача записи (на ESP32 — на
+// ядре 0) забирает их по одной. Байтовое кольцо в PSRAM на ESP32 или
+// в ОЗУ на STM32 — запас и на предзапись перед стартом, и на время,
+// когда носитель не успевает или кончилось стёртое место.
 //
 // Переполнилась — выбрасываются САМЫЕ СТАРЫЕ записи: при падении
 // важнее последние секунды, чем середина полёта. Каждая операция —
-// короткая критическая секция (спинлок между ядрами), флеш под ней
+// короткая критическая секция (спинлок между ядрами), носитель под ней
 // не трогается.
 // ============================================================
 
@@ -35,9 +36,9 @@ public:
 
     void clear()
     {
-        portENTER_CRITICAL(&lock);
+        lock.enter();
         head = tail = usedBytes = 0;
-        portEXIT_CRITICAL(&lock);
+        lock.exit();
     }
 
     // Положить запись; места нет — выбросить старые. false — запись
@@ -46,7 +47,7 @@ public:
     {
         if (length > capacity || length < BlackBoxFormat::RECORD_HEADER) return false;
 
-        portENTER_CRITICAL(&lock);
+        lock.enter();
         while (capacity - usedBytes < length)
         {
             dropOldest();
@@ -55,7 +56,7 @@ public:
         copyIn(head, record, length);
         head = (head + length) % capacity;
         usedBytes += length;
-        portEXIT_CRITICAL(&lock);
+        lock.exit();
         return true;
     }
 
@@ -63,7 +64,7 @@ public:
     // 0 — очередь пуста.
     size_t pop(uint8_t* out)
     {
-        portENTER_CRITICAL(&lock);
+        lock.enter();
         size_t length = 0;
         if (usedBytes > 0)
         {
@@ -72,19 +73,19 @@ public:
             tail = (tail + length) % capacity;
             usedBytes -= length;
         }
-        portEXIT_CRITICAL(&lock);
+        lock.exit();
         return length;
     }
 
     // Предзапись: выбросить записи старше maxAgeUs (по t_us записи).
     void trimOlderThan(uint32_t nowUs, uint32_t maxAgeUs)
     {
-        portENTER_CRITICAL(&lock);
+        lock.enter();
         while (usedBytes > 0 && nowUs - timestampAt(tail) > maxAgeUs)
         {
             dropOldest();
         }
-        portEXIT_CRITICAL(&lock);
+        lock.exit();
     }
 
 
@@ -96,7 +97,7 @@ private:
     uint32_t tail = 0;
     volatile uint32_t usedBytes = 0;
     volatile uint32_t droppedRecords = 0;
-    portMUX_TYPE lock = portMUX_INITIALIZER_UNLOCKED;
+    Rtos::CriticalSection lock;
 
     uint8_t byteAt(uint32_t index) const { return buffer[index % capacity]; }
 

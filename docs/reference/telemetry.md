@@ -230,27 +230,32 @@ Loop 500Hz max1100us    частота и худший такт за секун�
 
 **Файл:** `telemetry/BlackBox.h` · **Зависит от:** `FlightController`, `Autopilot`, `LoopStats`, `BlackBoxStorage`, `PilotSwitches*`
 
-Запись полёта во флеш (ESP32-S3). Что, когда и как выгружать — [BLACKBOX.md](../BLACKBOX.md).
+Запись полёта на флеш (ESP32-S3) или SD-карту (STM32H743). Что, когда и как выгружать — [BLACKBOX.md](../BLACKBOX.md).
 
 | Метод | Описание |
 |---|---|
-| `bool begin(bool startTask = true)` | Читает раздел (`BlackBoxStorage::begin()`), выделяет очередь в PSRAM, сверяет стёртое место (до 0.3 с), запускает задачу `bbox` на ядре 0. Нет раздела — `false`, ящик выключен |
+| `bool begin(bool startTask = true)` | Читает носитель (`BlackBoxStorage::begin()`), выделяет очередь (PSRAM у ESP32, `malloc` у STM32), сверяет стёртое место (до 0.3 с), запускает задачу `bbox` (`Rtos::startTask`). Нет места для записи (раздела, карты, файла) — `false`, ящик выключен |
 | `void update(uint32_t workUs)` | Из `loop()` после каждого такта: события, старт/стоп, снимки в очередь, будит задачу записи |
 | `void writerStep()` | Шаг задачи записи: одна-две страницы во флеш или одно стирание на земле |
 | `requestManualStart()` / `requestManualStop()` | Запись вручную (консоль `k` → `r`) |
 | `State getState()` / `bool isRecording()` | `Off`, `Idle`, `Recording`, `Stopping` (дописывает очередь до записи END) |
 | `printStatus(Print&)` / `printFlights(Print&)` / `eraseAll()` | Для консоли |
-| `void handleHostCommand(const char*)` | `bb list`, `bb get <n> [бод]` — для `tools/blackbox.py` |
+| `void handleHostCommand(const char*)` | `bb list`, `bb get <n> [бод]` — для `tools/blackbox.py` (на USB CDC скорость ни на что не влияет) |
+
+Платформенные места: причина перезагрузки — `readResetCause()`; батарея и ток —
+АЦП (`analogReadMilliVolts` у S3, `analogRead` 12 бит у STM32); ошибки носителя
+(`BlackBoxStorage::writeErrors`/`eraseErrors`) раз в секунду попадают в журнал
+событием «носитель: ошибок записи …» и полёту не мешают.
 
 ## `BlackBoxStorage`
 
 **Файл:** `telemetry/BlackBoxStorage.h` · **Зависит от:** `IFlashRegion`
 
-Кольцо секторов 4 КБ: голова и список полётов — по заголовкам секторов при `begin()`; `openFlight()`/`append()`/`flush()`/`closeFlight()` — запись страницами (CRC-8 к каждой записи); `eraseStep(target, protect, allowErase)` — один шаг сверки/стирания впереди головы: мусор — всегда, полёты — целиком и только пока свободно меньше `target`; `protect` не трогается никогда.
+Кольцо секторов 4 КБ: голова и список полётов — по заголовкам секторов при `begin()` (первый проход читает заголовок каждого сектора и запоминает настоящие, второй — только их: пустая область читается один раз); `openFlight()`/`append()`/`flush()`/`closeFlight()` — запись страницами (CRC-8 к каждой записи); `eraseStep(target, protect, allowErase)` — один шаг сверки/стирания впереди головы: мусор — всегда, полёты — целиком и только пока свободно меньше `target`; `protect` не трогается никогда.
 
 ## `BlackBoxRing`, `BlackBoxFormat`
 
-`BlackBoxRing` — байтовая очередь записей между ядрами под спинлоком; переполнилась — выбрасывает самые старые. `BlackBoxFormat` — заголовок сектора, типы и структуры записей, строки схем (размер сверяется `static_assert`), CRC-8 и CRC-32.
+`BlackBoxRing` — байтовая очередь записей между задачами/ядрами под `Rtos::CriticalSection`; переполнилась — выбрасывает самые старые. `BlackBoxFormat` — заголовок сектора, типы и структуры записей, строки схем (размер сверяется `static_assert`), CRC-8 и CRC-32.
 
 ---
 

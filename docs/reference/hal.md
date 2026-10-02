@@ -8,7 +8,8 @@ HAL — единственный слой, которому разрешено �
 - `include/hal/esp32/` — ESP32 (Arduino core 2.0.x), **основная**;
 - `include/hal/stm32/` — STM32H743 (STM32duino 3.x): полная прошивка
   собирается (`pio run -e stm32h743`) и гоняется на ПК (`pio test -e
-  native-stm32`), на железе пока не проверялась;
+  native-stm32`); на железе проверена голая плата DevEBox (SD-карта, чёрный
+  ящик), датчики и серво — ещё нет;
 - `hal/Rtos.h` — задачи FreeRTOS одинаково на обеих платформах.
 
 Всё выше работает только с интерфейсами, поэтому перенос на другой MCU — это
@@ -131,7 +132,7 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 
 ## `IFlashRegion`
 
-**Файл:** `hal/IFlashRegion.h` · **Вид:** интерфейс · **Реализации:** `Esp32FlashPartition`
+**Файл:** `hal/IFlashRegion.h` · **Вид:** интерфейс · **Реализации:** `Esp32FlashPartition`, `SdFileRegion`
 
 Область NOR-флеша под журнал (чёрный ящик): стирание — только секторами 4 КБ
 (стёртое читается как `0xFF`), запись только опускает биты — писать можно в
@@ -150,6 +151,35 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 раздела нет — `false` и `size() == 0`.
 
 ---
+
+## `IBlockDevice`
+
+**Файл:** `hal/IBlockDevice.h` · **Вид:** интерфейс · **Реализации:** `Stm32SdCard` (в тестах — `fake::SdCardModel`)
+
+SD-карта как массив блоков по 512 байт. Стирания нет: блок можно перезаписывать.
+
+| Метод | Описание |
+|---|---|
+| `uint32_t blockCount() const` | Размер в блоках; 0 — карты нет |
+| `bool read(block, data, count)` / `write(...)` | `count` блоков подряд, `data` — любой адрес |
+
+## `SdFileRegion`
+
+**Файл:** `hal/SdFileRegion.h` · **Наследует:** `IFlashRegion` · **Зависит от:** `IBlockDevice`, `Fat32::locate`
+
+Область чёрного ящика на SD-карте: файл в корне FAT32 (по умолчанию
+`BLACKBOX.BIN`), созданный заранее на ПК одним куском (`tools/blackbox.py
+sd-prepare`) и заполненный `0xFF`. Файл только **находится** (таблицы FAT и
+каталог не трогаются), дальше пишутся сырые блоки внутри него. Для
+`BlackBoxStorage` это тот же `IFlashRegion`, что раздел флеша ESP32.
+
+| Метод | Описание |
+|---|---|
+| `SdFileRegion(device, fileName, maxBytes)` | `maxBytes` — потолок области: время сверки секторов при включении растёт вместе с ней |
+| `Fat32::Result begin()` | Найти файл. `Ok` — `size() > 0`; иначе причина (`Fat32::describe()`): карты нет, не FAT32, файла нет, разбросан, пустой |
+| `size()` | Файл (не больше `maxBytes`), округлённый вниз до сектора 4 КБ; 0 — области нет |
+| `read` / `write` | Любые смещение и длина. Неполный блок читается, дополняется и пишется целиком; блок, который только что писали, помнится (сквозной кэш): страницы по 256 байт подряд не читают карту заново. Пропажа питания не теряет ничего, что уже вернулось из `write()` |
+| `erase(offset, length)` | Кратно 4096; пишет `0xFF` (у карты своё стирание внутри, снаружи оно не нужно) |
 
 ## `IRegisterDevice`
 
@@ -297,11 +327,13 @@ PWM напрямую через LEDC (`ledcSetup/ledcAttachPin/ledcWrite` Arduin
 # Реализация для STM32H743
 
 Плата следующего поколения — STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша,
-1 МБ ОЗУ). Полная прошивка **собирается** (env `stm32h743`, плата PlatformIO
-`weact_mini_h743vitx` — тот же чип), проходит cppcheck и тесты на ПК (env
-`native-stm32` со слоем фейков STM32duino), но **на железе не проверялась** —
-физической платы пока нет. Распиновка — блок `BOARD_STM32H743` в
-[`Config.h`](config.md#stm32h743).
+1 МБ ОЗУ). Полная прошивка собирается (env `stm32h743` — плата PlatformIO
+`weact_mini_h743vitx`, и `stm32h743-devebox` — DevEBox H743, консоль через
+USB CDC), проходит cppcheck и тесты на ПК (env `native-stm32` со слоем фейков
+STM32duino). На **голой плате DevEBox** (без датчиков и серв) проверено:
+загрузка, SD-карта, чёрный ящик — [тесты на плате](../TESTING.md#тесты-на-плате-stm32).
+Остальное (датчики, ШИМ на серво, iBUS) на железе ещё не проверялось.
+Распиновка — блок `BOARD_STM32H743` в [`Config.h`](config.md#stm32h743).
 
 Общие отличия от ESP32, которые прячет этот слой:
 
@@ -422,6 +454,37 @@ EEPROM-эмуляцию STM32duino (`eeprom_buffer_fill/flush`, буфер 8 К�
 находит его. `class Preferences : public KvPreferences` поверх
 `Stm32FlashStorage::store()` — API как у NVS ESP32 ([storage.md](storage.md#kvpreferences)).
 
+## `Stm32SdCard`
+
+**Файл:** `hal/stm32/Stm32SdCard.h` · **Наследует:** `IBlockDevice` · **Выводы:** `src/stm32/sd_msp.cpp`
+
+SD-карта на SDMMC1: 4-битная шина, `HAL_SD` в режиме опроса (без DMA и
+прерываний) **с аппаратным управлением потоком**: полётная задача вытесняет
+задачу записи посреди блока, и без него FIFO переполнялся
+(`HAL_SD_ERROR_RX_OVERRUN`, 0x20) — на плате это были замершие на секунды
+консоль и запись. Выводы PC8..PC11 (D0..D3), PC12 (CK), PD2 (CMD) — слот µSD
+DevEBox и WeAct. Ядро SDMMC тактируется от PLL1Q = 48 МГц, `ClockDiv = 1` →
+**24 МГц**; если на 24 МГц первое чтение не прошло, пробуются 12 и 6.
+
+| Член | Описание |
+|---|---|
+| `bool begin()` | Поднять шину, опознать карту, пробное чтение. `false` — карты нет; `initError()` — код |
+| `read` / `write` | Кусками не больше 4 КБ (короткие паузы), адрес не кратный 4 копируется через выровненный буфер (HAL читает FIFO словами). Сбой — одна повторная попытка |
+| ожидание | Перед обращением после записи ждёт возврата карты в состояние передачи (`Rtos::sleepMs(1)`: фоновые задачи не голодают), до 1 с. После чтения лишний запрос состояния не шлётся — сверка при включении читает десятки тысяч секторов |
+| `blockCount()`, `cardType()`, `clockDivider()`, `lastErrorCode()` | Для строки состояния |
+| `readOps`, `writeOps`, `errors`, `retries` | Счётчики |
+
+## `ResetCause`
+
+**Файл:** `hal/ResetCause.h` · `readResetCause()`, `isCrashReset()`, `resetCauseName()`
+
+Причина перезагрузки одинаково на обеих платах. ESP32 — `esp_reset_reason()`;
+STM32 — флаги `RCC->RSR` (читаются один раз и сбрасываются; `PINRSTF` у H7
+стоит при любом сбросе, поэтому сначала проверяются более конкретные
+причины: сторожевой таймер → включение → просадка → программный сброс).
+Паника, сторожевые таймеры и просадка питания — «сбой»: чёрный ящик по ним
+начинает запись сразу.
+
 ## `Rtos`
 
 **Файл:** `hal/Rtos.h` · namespace
@@ -429,7 +492,9 @@ EEPROM-эмуляцию STM32duino (`eeprom_buffer_fill/flush`, буфер 8 К�
 | Член | Описание |
 |---|---|
 | `PRIORITY_BACKGROUND` (1), `PRIORITY_TELEMETRY` (2), `PRIORITY_FLIGHT` (5) | приоритеты задач |
-| `bool startTask(fn, name, stackBytes, arg, priority)` | ESP32 — `xTaskCreatePinnedToCore(..., ядро 0)`, стек в байтах; STM32 — `xTaskCreate`, стек переводится в слова |
+| `bool startTask(fn, name, stackBytes, arg, priority, handle)` | ESP32 — `xTaskCreatePinnedToCore(..., ядро 0)`, стек в байтах; STM32 — `xTaskCreate`, стек переводится в слова; `handle` — для `xTaskNotifyGive` |
+| `void sleepMs(ms)` | `vTaskDelay`; до запуска планировщика (STM32 `setup()`) — `delay()` |
+| `class CriticalSection` | `enter()`/`exit()`: ESP32 — спинлок `portMUX`, STM32 — `taskENTER_CRITICAL()`. Внутри — только копирование байт (очередь чёрного ящика) |
 | `uint32_t freeHeapBytes()` | ESP32 — `ESP.getFreeHeap()`; STM32 — `xPortGetFreeHeapSize()` |
 
 ## Точка входа `src/stm32/main.cpp`

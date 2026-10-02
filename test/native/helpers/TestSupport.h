@@ -40,6 +40,15 @@
 #include "sensors/SensorInterface.h"
 #include "sensors/airspeed/AirspeedSensor.h"
 
+// Что выйдет на ESC при стике газа stickUs: верх хода ограничен
+// Config::THROTTLE_LIMIT_PCT (FlightController::capThrottle) — тесты не
+// привязаны к текущему значению лимита.
+inline uint16_t cappedThrottleUs(uint16_t stickUs)
+{
+    const long top = Config::PWM_MIN + (Config::PWM_MAX - Config::PWM_MIN) * Config::THROTTLE_LIMIT_PCT / 100;
+    return static_cast<uint16_t>(map(stickUs, Config::PWM_MIN, Config::PWM_MAX, Config::PWM_MIN, top));
+}
+
 inline void resetWorld()
 {
     fake::resetHal();
@@ -48,6 +57,9 @@ inline void resetWorld()
     fake::resetEeprom();
     fake::timerPulses().clear();
     fake::schedulerStarted() = false;
+    fake::resetSdCard();
+    fake::rcc().RSR = RCC_RSR_PORRSTF | RCC_RSR_PINRSTF;
+    fake::adcBits() = 10;
 #else
     fake::resetNvs();
     fake::wifi() = fake::WifiState();

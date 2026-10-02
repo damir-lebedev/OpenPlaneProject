@@ -16,11 +16,16 @@
 //                FlightController, MAVLink, лог, консоль;
 //       oled    (1) — экран раз в 200 мс (OledDisplay);
 //       storage (1) — запись настроек во флеш: стирание сектора
-//                длится секунды, полётная задача его вытесняет.
+//                длится секунды, полётная задача его вытесняет;
+//       bbox    (2) — чёрный ящик: снимки полётного цикла пишутся на
+//                SD-карту (SDMMC1) блоками по 512 байт.
 //
-// На железе пока не проверялась (платы ещё нет). Первое включение:
-// консоль 115200 (LPUART1, PA9/PA10), 'b' — опрос шин I2C, 's' —
-// датчики, 'p' — импульсы на выходах (пропеллер снять!).
+// На железе проверена голая плата DevEBox H743 (без датчиков и серв):
+// загрузка, консоль по USB, SD-карта и чёрный ящик. Датчики, ШИМ на серво
+// и iBUS на STM32 ещё ждут стенда. Первое включение с датчиками: консоль
+// (env stm32h743-devebox — USB CDC; stm32h743 — LPUART1 115200, PA9/PA10),
+// 'b' — опрос шин I2C, 's' — датчики, 'p' — импульсы на выходах (пропеллер
+// снять!), 'D' — перезагрузка в загрузчик USB DFU.
 // ============================================================
 
 #include <Arduino.h>
@@ -34,12 +39,16 @@
 #include "control/FlightOutputs.h"
 #include "control/ThrottleManager.h"
 #include "hal/Rtos.h"
+#include "hal/SdFileRegion.h"
 #include "hal/stm32/Stm32Board.h"
 #include "hal/stm32/Stm32FlashStorage.h"
+#include "hal/stm32/Stm32SdCard.h"
 #include "rc/IBusReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/SensorSelection.h"
 #include "sensors/airspeed/AirspeedSensor.h"
+#include "telemetry/BlackBox.h"
+#include "telemetry/BlackBoxStorage.h"
 #include "telemetry/DebugConsole.h"
 #include "telemetry/DebugLogger.h"
 #include "telemetry/LoopStats.h"
@@ -52,6 +61,10 @@
 // ------------------------------------------------------------
 
 Stm32Board board;
+
+#if defined(ARDUINO_ARCH_STM32)
+void stm32RebootToBootloader();   // src/stm32/bootloader.cpp
+#endif
 
 
 // ------------------------------------------------------------
@@ -118,8 +131,16 @@ FlightController flightController(
 // ------------------------------------------------------------
 
 LoopStats loopStats;
+
+// Чёрный ящик: файл BLACKBOX.BIN в корне FAT32-карты, заранее созданный на
+// ПК (tools/blackbox.py sd-prepare). Нет карты или файла — ящик выключен.
+Stm32SdCard sdCard;
+SdFileRegion blackBoxFile(sdCard, Config::BLACKBOX_SD_FILE, Config::BLACKBOX_SD_MAX_BYTES);
+BlackBoxStorage blackBoxStorage(blackBoxFile);
+BlackBox blackBox(flightController, autopilot, loopStats, blackBoxStorage, &pilotSwitches);
+
 DebugLogger debugLogger(flightController, &autopilot, &loopStats);
-DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogger, &board);
+DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogger, &board, &blackBox);
 MavlinkTelemetry mavlink(*board.telemetryUart(), flightController, &autopilot, &loopStats);
 OledDisplay oledDisplay(flightController, &autopilot, loopStats);
 
@@ -132,6 +153,36 @@ static void printBanner()
     Serial.println(" STM32H743 / FreeRTOS");
     Serial.println("=================================");
     Serial.println();
+}
+
+// SD-карта и файл чёрного ящика: что нашлось — в консоль, дальше BlackBox
+// сам сверяет сектора и выключается, если места для записи нет.
+static void setupBlackBox()
+{
+    Serial.print("SD-карта: ");
+    if (!sdCard.begin())
+    {
+        Serial.print("нет ответа (код ");
+        Serial.print(static_cast<unsigned long>(sdCard.initError()));
+        Serial.println(") — карта не вставлена или не опознана");
+    }
+    else
+    {
+        Serial.print(static_cast<unsigned long>(sdCard.blockCount() / 2048));
+        Serial.print(" МБ, SDMMC ");
+        Serial.print(static_cast<unsigned long>(48 / (2 * sdCard.clockDivider())));   // ядро SDMMC — 48 МГц
+        Serial.print(" МГц, 4 бита; файл ");
+        Serial.print(Config::BLACKBOX_SD_FILE);
+        Serial.print(": ");
+        const Fat32::Result found = blackBoxFile.begin();
+        Serial.println(Fat32::describe(found));
+    }
+
+    const uint32_t start = millis();
+    blackBox.begin();   // сверка стёртого места, очередь, задача записи
+    Serial.print("BlackBox: готов за ");
+    Serial.print(static_cast<unsigned long>(millis() - start));
+    Serial.println(" мс");
 }
 
 // Как на ESP32: опознать датчики и откалибровать ответившие (самолёт
@@ -186,7 +237,9 @@ static void flightTask(void*)
         debugLogger.update();
         debugConsole.update();
 
-        loopStats.record(micros() - start);
+        const uint32_t workUs = micros() - start;
+        loopStats.record(workUs);
+        blackBox.update(workUs);   // снимок в очередь; на карту пишет задача bbox
 
         // После долгой блокировки (калибровка из консоли) не догоняем
         // пропущенные такты пачкой.
@@ -244,12 +297,16 @@ void setup()
     flightController.begin();    // приёмник iBUS
     mavlink.begin();             // радиомодем
     oledDisplay.begin(board.displayI2c());
+    setupBlackBox();             // последним: задача записи начинает готовить место
 
     Serial.println();
     Serial.println("Готово. iBUS 115200 бод, 10 каналов; MAVLink 57600 бод на UART4 (PD0/PD1).");
     Serial.println("ARM: SwA вниз, к себе (CH5=2000) при газе внизу. DISARM: SwA вверх.");
     pilotSwitches.printBindings();
     debugLogger.begin();
+#if defined(ARDUINO_ARCH_STM32)
+    debugConsole.setBootloaderHook(stm32RebootToBootloader);   // 'D' — перепрошивка без BOOT0
+#endif
     debugConsole.printHint();
     Serial.println();
 

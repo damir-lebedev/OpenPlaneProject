@@ -279,7 +279,8 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
 | `MavlinkCodec.h`, `MavlinkTelemetry.h` | MAVLink 2 для QGroundControl / Mission Planner: кадры, потоки, параметры ПИД, смена режима с земли |
 | `LoopStats.h` | Частота, среднее и худшее время такта за секунду (OLED) и худшее с прошлого чтения (`takePeakUs()`, строка SYS) |
 | `src/main.cpp` | ESP32: создание объектов, `setup()`, `loop()` с `vTaskDelayUntil` |
-| `src/stm32/main.cpp` | STM32H743: те же объекты, MAVLink, задачи `flight`/`storage`/`oled` |
+| `src/stm32/main.cpp` | STM32H743: те же объекты, MAVLink, чёрный ящик на SD, задачи `flight`/`storage`/`oled`/`bbox` |
+| `src/stm32/sd_msp.cpp`, `src/stm32/bootloader.cpp` | STM32H743: выводы и тактирование SDMMC1 для `HAL_SD_Init`; клавиша `D` консоли — перезагрузка в загрузчик USB DFU |
 
 ---
 
@@ -609,7 +610,8 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=..
 | `pio run -e esp32-s3` | `esp32-s3-devkitc-1` + N16R8 (`qio_opi`, 16 МБ) | `BOARD_ESP32_S3` | **Основная, по умолчанию.** Проверена на стенде со всеми датчиками |
 | `pio run -e esp32-c3` | `esp32-c3-devkitm-1` | `BOARD_ESP32_C3` | Старый прототип, летал на ручном управлении |
 | `pio run -e esp32-dev` | `esp32dev` | `BOARD_ESP32_CLASSIC` | Для стенда, распиновка не проверена на железе |
-| `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | STM32H743VIT6: полная прошивка + MAVLink, на железе не проверена ([ниже](#stm32h743)) |
+| `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | STM32H743VIT6: полная прошивка + MAVLink + чёрный ящик на SD; на голой плате проверена ([ниже](#stm32h743)) |
+| `pio run -e stm32h743-devebox` | `devebox_h743vitx` | `BOARD_STM32H743` | То же на DevEBox H743: консоль — USB CDC, прошивка по DFU |
 
 | Назначение | ESP32-S3 (стенд) | ESP32-C3 | ESP32 classic |
 |---|---|---|---|
@@ -634,9 +636,11 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=..
 
 STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) — **полная прошивка**:
 те же датчики, автопилот, тумблеры, консоль и экран, что на ESP32-S3, плюс
-телеметрия MAVLink. Собирается, проходит cppcheck и все нативные тесты общего
-кода; **на железе пока не проверялась** (платы ещё нет). Основная лётная
-плата — ESP32-S3.
+телеметрия MAVLink и чёрный ящик на SD-карте. Собирается, проходит cppcheck и
+все нативные тесты общего кода. На железе проверена **голая плата DevEBox H743**
+(без датчиков и серв): загрузка, консоль по USB, SD-карта, чёрный ящик —
+[TESTING.md](TESTING.md#тесты-на-плате-stm32). Датчики, ШИМ на серво и iBUS на
+STM32 ещё ждут стенда. Основная лётная плата — ESP32-S3.
 
 - **HAL** — `include/hal/stm32/`: `Stm32Board` (тот же API, что у `Esp32Board`,
   плюс `telemetryUart()`), `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`,
@@ -652,7 +656,13 @@ STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) — **п�
   задача вытесняет фоновую без остановки.
 - **Задачи** — FreeRTOS из библиотеки STM32duino FreeRTOS, одно ядро,
   вытеснение по приоритету (`hal/Rtos.h`): `flight` (5) — полётный цикл,
-  MAVLink, лог, консоль; `oled` (1) и `storage` (1) — фоном.
+  MAVLink, лог, консоль; `oled` (1) и `storage` (1) — фоном; `bbox` (2) —
+  запись чёрного ящика на SD-карту.
+- **Чёрный ящик на SD-карте** — SDMMC1, 4 бита, 24 МГц (`hal/stm32/Stm32SdCard.h`,
+  выводы — `src/stm32/sd_msp.cpp`). Карта остаётся обычной FAT32: на ней лежит
+  заранее созданный файл `BLACKBOX.BIN`, внутри него прошивка пишет сырые блоки,
+  а саму файловую систему не трогает (`storage/Fat32File.h` — только чтение).
+  Подготовка карты и выгрузка — [BLACKBOX.md](BLACKBOX.md#sd-карта-stm32h743).
 - **Телеметрия** — MAVLink 2 на UART4 (`telemetry/MavlinkTelemetry.h`) вместо
   Wi-Fi-дашборда: QGroundControl / Mission Planner, смена режима и ПИД с земли.
   Подробно — [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md#наземная-станция-wi-fi-дашборд-и-mavlink).
@@ -675,6 +685,22 @@ STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) — **п�
 | Пищалка | PE15 | GPIO |
 | Serial | PA10 / PA9 | LPUART1 |
 
+- **DevEBox H743 (MCUDEV)** — env `stm32h743-devebox`: тот же код, свой
+  вариант ядра, консоль через USB-C как виртуальный COM-порт (CDC) — USB-UART
+  не нужен. Первая прошивка — по USB через встроенный загрузчик (DFU):
+  1. Windows: один раз поставить драйвер WinUSB для «STM32 BOOTLOADER»
+     ([Zadig](https://zadig.akeo.ie): DFU in FS Mode → WinUSB → Install Driver).
+  2. Соединить пин **BT0** (BOOT0) с **3V3** проводом, нажать и отпустить
+     **RST**: плата в режиме DFU (на DevEBox нет кнопки BOOT0).
+  3. `pio run -e stm32h743-devebox -t upload` (`upload_protocol = dfu`).
+  4. Провод BT0 можно убрать — прошивка запускается сама.
+
+  Дальше провод не нужен: клавиша **`D`** в консоли (из любого меню, не при
+  ARM) перезагружает плату в загрузчик: метка в ОЗУ → сброс → прыжок в
+  системную память до настройки тактирования (`src/stm32/bootloader.cpp`).
+  Прыжок прямо из работающей прошивки на H7 зависает — проверено на плате,
+  поэтому в два шага. Нужна открытая консоль (USB CDC); если плата не
+  отвечает — RST при проводе BT0.
 - **Точка входа** — `src/stm32/main.cpp` (в сборках ESP32 исключён через
   `build_src_filter`). Объекты те же, что в `src/main.cpp`; вместо `loop()` —
   задачи, `vTaskStartScheduler()` в конце `setup()`.

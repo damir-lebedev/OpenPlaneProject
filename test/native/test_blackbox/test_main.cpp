@@ -541,7 +541,7 @@ void test_arm_and_throttle_start_recording_with_preroll_and_disarm_stops_it()
     {
         if (r.type != REC_CTRL) continue;
         const CtrlRecord c = r.as<CtrlRecord>();
-        if (c.out[4] == 1300 && (c.flags & Flag::ARMED)) sawThrottle = true;   // стик 1600, ограничен THROTTLE_LIMIT_PCT
+        if (c.out[4] == cappedThrottleUs(1600) && (c.flags & Flag::ARMED)) sawThrottle = true;
     }
     TEST_ASSERT_TRUE(sawThrottle);
 
@@ -922,7 +922,7 @@ void test_no_partition_leaves_the_box_off()
     BlackBoxStorage storage(flash);
     BlackBox box(controller, autopilot, stats, storage);
     TEST_ASSERT_FALSE(box.begin(false));
-    TEST_ASSERT_TRUE(contains(takeSerial(), "нет раздела blackbox"));
+    TEST_ASSERT_TRUE(contains(takeSerial(), "нет места для записи"));
 
     box.update(100);
     box.writerStep();

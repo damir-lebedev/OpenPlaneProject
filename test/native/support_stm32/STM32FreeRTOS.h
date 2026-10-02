@@ -33,10 +33,19 @@ inline BaseType_t xTaskCreate(TaskFunction_t function, const char* name, configS
     record.priority = priority;
     record.core = -1;
     fake::tasks().created.push_back(record);
-    if (handle) *handle = nullptr;
+    // Ненулевой и у каждой задачи свой — как настоящий хэндл.
+    if (handle) *handle = reinterpret_cast<TaskHandle_t>(fake::tasks().created.size());
     return pdPASS;
 }
 
 inline void vTaskStartScheduler() { fake::schedulerStarted() = true; }
+
+#define taskSCHEDULER_RUNNING 2
+#define taskSCHEDULER_NOT_STARTED 1
+inline BaseType_t xTaskGetSchedulerState() { return fake::schedulerStarted() ? taskSCHEDULER_RUNNING : taskSCHEDULER_NOT_STARTED; }
+
+// Критические секции STM32 FreeRTOS — без аргумента (у ESP32 — portMUX).
+#define taskENTER_CRITICAL() (++::fake::tasks().criticalEntries, ++::fake::tasks().criticalDepth)
+#define taskEXIT_CRITICAL() (--::fake::tasks().criticalDepth)
 
 inline size_t xPortGetFreeHeapSize() { return fake::chip().freeHeap; }

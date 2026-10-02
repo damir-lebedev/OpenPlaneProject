@@ -27,17 +27,65 @@ namespace Rtos
     constexpr UBaseType_t PRIORITY_TELEMETRY = 2;    // радиомодем
     constexpr UBaseType_t PRIORITY_FLIGHT = 5;       // полётный цикл (только STM32)
 
+    // handle — куда положить хэндл задачи (для xTaskNotifyGive), можно nullptr.
     inline bool startTask(TaskFunction_t function, const char* name, uint32_t stackBytes, void* arg,
-                          UBaseType_t priority = PRIORITY_BACKGROUND)
+                          UBaseType_t priority = PRIORITY_BACKGROUND, TaskHandle_t* handle = nullptr)
     {
 #if defined(BOARD_STM32H743)
         const uint32_t words = stackBytes / sizeof(StackType_t);
-        return xTaskCreate(function, name, static_cast<configSTACK_DEPTH_TYPE>(words), arg, priority, nullptr) == pdPASS;
+        return xTaskCreate(function, name, static_cast<configSTACK_DEPTH_TYPE>(words), arg, priority, handle) == pdPASS;
 #else
         // Ядро 0: ядро 1 целиком у полётного цикла (loopTask).
-        return xTaskCreatePinnedToCore(function, name, stackBytes, arg, priority, nullptr, 0) == pdPASS;
+        return xTaskCreatePinnedToCore(function, name, stackBytes, arg, priority, handle, 0) == pdPASS;
 #endif
     }
+
+    // Подождать ms, отдав процессор другим задачам. До запуска планировщика
+    // (setup() на STM32) — обычный delay().
+    inline void sleepMs(uint32_t ms)
+    {
+#if defined(BOARD_STM32H743)
+        if (xTaskGetSchedulerState() == taskSCHEDULER_RUNNING)
+        {
+            vTaskDelay(pdMS_TO_TICKS(ms));
+        }
+        else
+        {
+            delay(ms);
+        }
+#else
+        vTaskDelay(pdMS_TO_TICKS(ms));
+#endif
+    }
+
+    // Короткая критическая секция между задачами (и ядрами ESP32): внутри —
+    // только копирование нескольких байт, никакого ввода-вывода.
+    class CriticalSection
+    {
+    public:
+        void enter()
+        {
+#if defined(BOARD_STM32H743)
+            taskENTER_CRITICAL();
+#else
+            portENTER_CRITICAL(&mux);
+#endif
+        }
+
+        void exit()
+        {
+#if defined(BOARD_STM32H743)
+            taskEXIT_CRITICAL();
+#else
+            portEXIT_CRITICAL(&mux);
+#endif
+        }
+
+#if !defined(BOARD_STM32H743)
+    private:
+        portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+#endif
+    };
 
     // Свободная куча, байт — для строки состояния в логе.
     inline uint32_t freeHeapBytes()

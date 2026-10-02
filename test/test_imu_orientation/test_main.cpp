@@ -14,6 +14,10 @@
 #include <Arduino.h>
 #include <unity.h>
 
+#if defined(BOARD_STM32H743)
+#include "../../src/stm32/bootloader.cpp"   // перезагрузка в DFU по клавише 'D'
+#endif
+
 #include "sensors/imu/ImuOrientation.h"
 
 namespace
@@ -233,11 +237,21 @@ static int runAllTests()
 #ifdef ARDUINO
 void setup()
 {
-    delay(2000);
+#if defined(BOARD_STM32H743) && defined(USBCON) && defined(USBD_USE_CDC)
+    // Консоль STM32 — USB CDC: после сброса порт переоткрывается, ждём ПК (до 60 с).
+    for (const uint32_t waitStart = millis(); !Serial && millis() - waitStart < 60000;) {}
+#endif
+    delay(2000);   // дать монитору порта подключиться
     runAllTests();
 }
 
-void loop() {}
+void loop()
+{
+#if defined(BOARD_STM32H743) && defined(USBCON) && defined(USBD_USE_CDC)
+    // После тестов: клавиша 'D' — перезагрузка в загрузчик DFU, кнопки BOOT0 не нужны.
+    if (Serial.available() && Serial.read() == 'D') stm32RebootToBootloader();
+#endif
+}
 #else
 int main()
 {

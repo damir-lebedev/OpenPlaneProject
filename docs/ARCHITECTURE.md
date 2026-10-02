@@ -204,6 +204,7 @@ oledDisplay.begin(...)      — своя задача (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — точка доступа + своя задача на ядре 0
 [ESP32] blackBox.begin()   — раздел blackbox, очередь в PSRAM, задача bbox на ядре 0
 [STM32] mavlink.begin()     — UART4 радиомодема
+[STM32] setupBlackBox()    — SD-карта, файл BLACKBOX.BIN, blackBox.begin(), задача bbox
 pilotSwitches.printBindings() — что на каком тумблере
 debugLogger.begin()         — настройки лога
 [STM32] задачи flight / storage → vTaskStartScheduler()
@@ -354,6 +355,7 @@ classDiagram
 | 5 | `flight` (16 КБ) | `FlightController::update()` → `MavlinkTelemetry::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` | 2 мс, `vTaskDelayUntil` |
 | 1 | `oled` (4 КБ) | `OledDisplay::draw()` по второй шине I2C | 200 мс |
 | 1 | `storage` (2 КБ) | `Stm32FlashStorage::service()` — стирание и запись сектора настроек | 100 мс |
+| 2 | `bbox` (8 КБ) | `BlackBox::writerStep()`: страница из очереди на SD-карту; на земле — стирание. Вытесняется полётной задачей | уведомление после каждого такта (иначе раз в 20 мс) |
 
 **Правила разделения данных:**
 
@@ -601,7 +603,8 @@ stateDiagram-v2
 | `esp32-s3` (по умолчанию) | Основной лётный контроллер |
 | `esp32-c3` | Старый прототип |
 | `esp32-dev` | Классическая ESP32, стенд |
-| `stm32h743` | STM32H743VIT6: полная прошивка (`src/stm32/main.cpp`), настройки во флеше, MAVLink, FreeRTOS; на железе не проверялась — см. [reference/hal.md](reference/hal.md#реализация-для-stm32h743) |
+| `stm32h743` | STM32H743VIT6: полная прошивка (`src/stm32/main.cpp`), настройки во флеше, MAVLink, чёрный ящик на SD, FreeRTOS; на голой плате проверена — см. [reference/hal.md](reference/hal.md#реализация-для-stm32h743) |
+| `stm32h743-devebox` | DevEBox H743: то же, консоль — USB CDC, прошивка по DFU ([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
 | `native` | Сборка и тесты на ПК с фейками Arduino/ESP-IDF и покрытием — см. [`TESTING.md`](TESTING.md) |
 
 ---

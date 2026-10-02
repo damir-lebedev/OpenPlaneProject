@@ -61,3 +61,20 @@ API класса `Preferences` ESP32 поверх `KeyValueStore` — подмн
 
 На STM32 `class Preferences : public KvPreferences` —
 `hal/stm32/compat/Preferences.h`.
+
+---
+
+## `Fat32::locate`
+
+**Файл:** `storage/Fat32File.h` · namespace `Fat32`
+
+FAT32 **только для чтения**: найти файл в корне карты и сказать, где он лежит.
+Прошивка ничего не создаёт и не меняет в файловой системе.
+
+| Функция | Описание |
+|---|---|
+| `Result locate(IBlockDevice&, const char* name, Extent& out)` | MBR с разделом FAT32 (тип 0x0B/0x0C) или FAT32 без таблицы разделов; сектор 512 байт; имя 8.3. Идёт по цепочке кластеров корня, пропуская метку тома, каталоги, LFN и удалённые записи, и проверяет, что кластеры файла идут **подряд** |
+| `Extent` | `firstBlock` — блок карты, с которого начинаются данные; `bytes` — размер файла |
+| `Result` | `Ok`, `NoCard`, `ReadError`, `NotFat32`, `NotFound`, `Fragmented`, `Empty` |
+| `const char* describe(Result)` | Причина по-русски, с подсказкой что делать |
+| `bool shortName(name, out[11])` | `blackbox.bin` → `BLACKBOXBIN ` |

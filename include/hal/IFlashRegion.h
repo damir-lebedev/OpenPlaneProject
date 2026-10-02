@@ -28,4 +28,14 @@ public:
     virtual bool read(uint32_t offset, void* data, size_t length) = 0;
     virtual bool write(uint32_t offset, const void* data, size_t length) = 0;
     virtual bool erase(uint32_t offset, uint32_t length) = 0;
+
+    // Метка "кольцо пусто". Область, которая её умеет (SdFileRegion), хранит её
+    // в служебном секторе вне кольца: при включении пустое кольцо опознаётся
+    // одним чтением, а не проходом по всей области (на SD-карте — секунды).
+    // BlackBoxStorage ставит метку, когда убедился, что полётов нет (стёрто всё /
+    // полная сверка ничего не нашла), и снимает перед первой записью в кольцо.
+    // По умолчанию области метки не умеют: метка не ставится и не читается.
+    virtual bool ringMarkedEmpty() { return false; }
+    virtual void markRingEmpty() {}
+    virtual void clearRingMark() {}
 };

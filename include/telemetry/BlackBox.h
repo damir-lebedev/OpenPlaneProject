@@ -1,6 +1,5 @@
 #pragma once
 #include <Arduino.h>
-#include <esp_system.h>
 
 #include "autopilot/Autopilot.h"
 #include "autopilot/AutopilotTypes.h"
@@ -8,6 +7,7 @@
 #include "config/Channels.h"
 #include "config/Config.h"
 #include "control/FlightController.h"
+#include "hal/ResetCause.h"
 #include "hal/Rtos.h"
 #include "rc/IBusReceiver.h"
 #include "sensors/SensorInterface.h"
@@ -19,7 +19,8 @@
 #include "telemetry/LoopStats.h"
 
 // ============================================================
-// ЧЁРНЫЙ ЯЩИК — запись полёта во встроенный флеш
+// ЧЁРНЫЙ ЯЩИК — запись полёта на встроенный флеш (ESP32-S3) или на
+// SD-карту (STM32H743)
 //
 // Что пишется (формат — BlackBoxFormat.h, частоты при цикле 500 Гц):
 //   IMU   каждый такт — гироскоп, акселерометр, время работы такта;
@@ -34,14 +35,16 @@
 //   Config, датчики, привязки тумблеров, причина перезагрузки).
 //
 // Как устроено:
-//   • полётный цикл (ядро 1) каждый такт вызывает update(): снимок
-//     кладётся в очередь в PSRAM (BlackBoxRing) — микросекунды, флеш
-//     не трогается;
-//   • задача "bbox" (ядро 0) после каждого такта пишет во флеш одну
-//     страницу (256 байт). Запись флеша останавливает оба ядра на
-//     ~0.5 мс — поэтому она идёт сразу после такта, в паузе цикла;
+//   • полётный цикл каждый такт вызывает update(): снимок кладётся в
+//     очередь (BlackBoxRing: PSRAM у ESP32, ОЗУ у STM32) — микросекунды,
+//     носитель не трогается;
+//   • задача "bbox" после каждого такта пишет одну страницу (256 байт).
+//     ESP32: запись флеша останавливает оба ядра на ~0.5 мс — поэтому
+//     она идёт сразу после такта, в паузе цикла (ядро 0). STM32: задача
+//     с приоритетом ниже полётной вытесняется циклом сама; карта пишет
+//     блок за единицы мс, иногда за десятки — очередь это переживает;
 //   • стирание — только в покое на земле: не записывается и не
-//     заармлено (BlackBoxStorage::eraseStep). В воздухе флеш не
+//     заармлено (BlackBoxStorage::eraseStep). В воздухе носитель не
 //     стирается никогда.
 //
 // Когда пишет: ARM + газ (стик или ESC выше THROTTLE_LOW_US), с
@@ -78,19 +81,25 @@ public:
     {
     }
 
-    // Прочитать флеш, выделить очередь, запустить задачу записи.
-    // Раздела нет — ящик выключен, полёту это не мешает.
+    // Прочитать носитель, выделить очередь, запустить задачу записи.
+    // Места под запись нет (раздела флеша нет, файла на карте нет) —
+    // ящик выключен, полёту это не мешает.
     bool begin(bool startTask = true)
     {
-        resetReason = esp_reset_reason();
+        resetReason = readResetCause();
         resetStartPending = isCrashReset(resetReason);
 
         if (!storage.begin())
         {
-            Serial.println("BlackBox: нет раздела blackbox — запись выключена (partitions_blackbox.csv)");
+            Serial.println("BlackBox: нет места для записи — выключен (ESP32: раздел blackbox, "
+                           "partitions_blackbox.csv; STM32: файл на SD-карте, tools/blackbox.py sd-prepare)");
             return false;
         }
 
+#if defined(BOARD_STM32H743)
+        uint32_t size = Config::BLACKBOX_RING_STM32_BYTES;
+        uint8_t* memory = static_cast<uint8_t*>(malloc(size));
+#else
         uint32_t size = Config::BLACKBOX_RING_BYTES;
         uint8_t* memory = psramFound() ? static_cast<uint8_t*>(ps_malloc(size)) : nullptr;
         if (!memory)
@@ -98,6 +107,7 @@ public:
             size = Config::BLACKBOX_RING_NO_PSRAM_BYTES;
             memory = static_cast<uint8_t*>(malloc(size));
         }
+#endif
         if (!memory)
         {
             Serial.println("BlackBox: нет памяти под очередь — запись выключена");
@@ -109,6 +119,9 @@ public:
         state = State::Idle;
 #if defined(BOARD_ESP32_S3)
         analogReadMilliVolts(Config::PIN_VBAT_ADC);   // первое чтение — калибровка АЦП, мс
+#elif defined(BOARD_STM32H743)
+        analogReadResolution(12);
+        analogRead(Config::PIN_VBAT_ADC);
 #endif
 
         // Стёртое впереди — сверить сразу (только чтение, ~0.1 мс на
@@ -123,13 +136,13 @@ public:
         if (resetStartPending)
         {
             Serial.print("BlackBox: перезагрузка из-за сбоя (");
-            Serial.print(resetName(resetReason));
+            Serial.print(resetCauseName(resetReason));
             Serial.println(") — запись включается сразу");
         }
 
         if (startTask)
         {
-            xTaskCreatePinnedToCore(writerTask, "bbox", 6144, this, Rtos::PRIORITY_TELEMETRY, &writerHandle, 0);
+            Rtos::startTask(writerTask, "bbox", WRITER_STACK_BYTES, this, Rtos::PRIORITY_TELEMETRY, &writerHandle);
         }
         return true;
     }
@@ -176,6 +189,7 @@ public:
     void writerStep()
     {
         if (state == State::Off || !takeLock(0)) return;
+        writerSteps++;
 
         const State s = state;
         if (s == State::Recording || s == State::Stopping) writeSome();
@@ -216,7 +230,13 @@ public:
 
     void printFlights(Print& out) override
     {
-        takeLock(portMAX_DELAY);
+        // Консоль работает в полётной задаче: задача записи держит замок на время
+        // обращения к карте (иногда десятки мс), поэтому ждём недолго, а не вечно.
+        if (!takeLock(pdMS_TO_TICKS(PRINT_LOCK_WAIT_MS)))
+        {
+            out.println("  носитель занят записью — список позже");
+            return;
+        }
         if (storage.flightCount() == 0) out.println("  полётов нет");
         for (size_t i = 0; i < storage.flightCount(); ++i)
         {
@@ -227,6 +247,10 @@ public:
                        (unsigned long)(seconds / 60), (unsigned long)(seconds % 60),
                        f.hasStart ? "" : "  (начало стёрто)");
         }
+        out.printf("  носитель: страниц записано %lu, стираний %lu, ошибок записи/стирания %lu/%lu, шагов задачи %lu\n",
+                   (unsigned long)storage.pageWrites, (unsigned long)storage.eraseOps,
+                   (unsigned long)storage.writeErrors, (unsigned long)storage.eraseErrors,
+                   (unsigned long)writerSteps);
         giveLock();
     }
 
@@ -254,7 +278,7 @@ public:
         }
         else if (sscanf(line, "bb get %u %lu", &flight, &baud) >= 1)
         {
-            sendFlight(static_cast<uint16_t>(flight), baud ? baud : Serial.baudRate());
+            sendFlight(static_cast<uint16_t>(flight), baud ? baud : consoleBaud());
         }
         else
         {
@@ -272,8 +296,14 @@ private:
     static constexpr uint32_t MAG_MIN_US = 20000;
     static constexpr uint32_t AIR_MIN_US = 20000;
 
+#if defined(BOARD_STM32H743)
+    static constexpr uint32_t WRITER_STACK_BYTES = 8192;   // printf с float и заголовок полёта
+#else
+    static constexpr uint32_t WRITER_STACK_BYTES = 6144;
+#endif
     static constexpr size_t HEADER_BUFFER = 8192;
     static constexpr uint32_t BOOT_VERIFY_MS = 300;
+    static constexpr uint32_t PRINT_LOCK_WAIT_MS = 300;
     static constexpr uint8_t FRAME_MAGIC_0 = 0xA5;
     static constexpr uint8_t FRAME_MAGIC_1 = 0x5A;
 
@@ -290,12 +320,13 @@ private:
     volatile State state = State::Off;
     volatile bool armedFlag = false;
     volatile uint16_t flashMaxUs = 0;
+    volatile uint32_t writerSteps = 0;   // сколько шагов сделала задача записи: жива ли она
 
     // --- сторона полётного цикла ---
     uint32_t nowUs = 0;
     uint32_t nowMs = 0;
     uint32_t cycle = 0;
-    esp_reset_reason_t resetReason = ESP_RST_UNKNOWN;
+    ResetCause resetReason = ResetCause::Unknown;
     bool resetStartPending = false;
     bool resetRecording = false;
     bool manualStartRequested = false;
@@ -340,6 +371,8 @@ private:
     uint8_t carry[BlackBoxFormat::MAX_RECORD] = {};
     size_t carryLength = 0;
     bool fullReported = false;
+    uint32_t reportedMediaErrors = 0;
+    uint32_t mediaReportMs = 0;
     uint32_t lastEraseMs = 0;
     bool erasing = false;
     uint32_t eraseOpsAtStart = 0;
@@ -348,30 +381,6 @@ private:
     // ========================================================
     // Старт и остановка
     // ========================================================
-
-    static bool isCrashReset(esp_reset_reason_t r)
-    {
-        return r == ESP_RST_PANIC || r == ESP_RST_INT_WDT || r == ESP_RST_TASK_WDT || r == ESP_RST_WDT ||
-               r == ESP_RST_BROWNOUT;
-    }
-
-    static const char* resetName(esp_reset_reason_t r)
-    {
-        switch (r)
-        {
-            case ESP_RST_POWERON:  return "POWERON";
-            case ESP_RST_EXT:      return "EXT";
-            case ESP_RST_SW:       return "SW";
-            case ESP_RST_PANIC:    return "PANIC";
-            case ESP_RST_INT_WDT:  return "INT_WDT";
-            case ESP_RST_TASK_WDT: return "TASK_WDT";
-            case ESP_RST_WDT:      return "WDT";
-            case ESP_RST_DEEPSLEEP:return "DEEPSLEEP";
-            case ESP_RST_BROWNOUT: return "BROWNOUT";
-            case ESP_RST_SDIO:     return "SDIO";
-            default:               return "UNKNOWN";
-        }
-    }
 
     bool motorOn() const
     {
@@ -931,13 +940,25 @@ private:
         pushRecord(BlackBoxFormat::REC_NAV, r);
     }
 
-    void samplePower()
+#if defined(BOARD_ESP32_S3) || defined(BOARD_STM32H743)
+    // Напряжение на пине АЦП, мВ.
+    static uint32_t pinMillivolts(int16_t pin)
     {
 #if defined(BOARD_ESP32_S3)
+        return analogReadMilliVolts(pin);
+#else
+        return static_cast<uint32_t>(analogRead(pin)) * 3300u / 4095u;   // STM32: 12 бит, опорное 3.3 В
+#endif
+    }
+#endif
+
+    void samplePower()
+    {
+#if defined(BOARD_ESP32_S3) || defined(BOARD_STM32H743)
         BlackBoxFormat::PowerRecord r;
         r.tUs = nowUs;
-        r.vbatMv = u16(analogReadMilliVolts(Config::PIN_VBAT_ADC) * Config::BLACKBOX_VBAT_DIVIDER);
-        r.currentMv = u16(analogReadMilliVolts(Config::PIN_CURRENT_ADC) * Config::BLACKBOX_CURRENT_DIVIDER);
+        r.vbatMv = u16(pinMillivolts(Config::PIN_VBAT_ADC) * Config::BLACKBOX_VBAT_DIVIDER);
+        r.currentMv = u16(pinMillivolts(Config::PIN_CURRENT_ADC) * Config::BLACKBOX_CURRENT_DIVIDER);
         pushRecord(BlackBoxFormat::REC_POWER, r);
 #endif
     }
@@ -984,7 +1005,8 @@ private:
     }
 
     bool takeLock(TickType_t wait) { return lock && xSemaphoreTake(lock, wait) == pdTRUE; }
-    void giveLock() { if (lock) xSemaphoreGive(lock); }
+    // cppcheck-suppress cstyleCast
+    void giveLock() { if (lock) xSemaphoreGive(lock); }   // макрос FreeRTOS STM32 раскрывается в приведение в стиле C
 
     // Одна-две страницы за шаг: запись флеша останавливает оба ядра,
     // и шаг должен уложиться в паузу между тактами цикла.
@@ -1014,6 +1036,7 @@ private:
                 if (spent > flashMaxUs) flashMaxUs = static_cast<uint16_t>(min(spent, static_cast<uint32_t>(65535)));
             }
             writes += result;
+            reportMediaErrors();
 
             const bool end = carry[0] == BlackBoxFormat::REC_END;
             carryLength = 0;
@@ -1023,6 +1046,24 @@ private:
                 return;
             }
         }
+    }
+
+    // Носитель отказал (карту вынуло вибрацией, сбой шины): записать в
+    // журнал — не чаще раза в секунду; полёту это не мешает.
+    void reportMediaErrors()
+    {
+        const uint32_t errors = storage.writeErrors + storage.eraseErrors;
+        if (errors == reportedMediaErrors) return;
+        const uint32_t ms = millis();
+        if (mediaReportMs && ms - mediaReportMs < 1000) return;
+
+        char text[BlackBoxFormat::MAX_PAYLOAD];
+        snprintf(text, sizeof(text), "носитель: ошибок записи %lu, стирания %lu",
+                 static_cast<unsigned long>(storage.writeErrors), static_cast<unsigned long>(storage.eraseErrors));
+        uint8_t record[BlackBoxFormat::MAX_RECORD];
+        ring.push(record, textRecord(record, BlackBoxFormat::REC_EVENT, text));
+        reportedMediaErrors = errors;
+        mediaReportMs = ms ? ms : 1;
     }
 
     // Следующая запись: сначала заголовок полёта, потом очередь.
@@ -1203,7 +1244,7 @@ private:
         info("firmware=%s %s", __DATE__, __TIME__);
         info("board=%s", boardName());
         info("start=%s", startReason);
-        info("reset_reason=%s", resetName(resetReason));
+        info("reset_reason=%s", resetCauseName(resetReason));
         info("uptime_ms=%lu", (unsigned long)ms);
         info("loop_period_ms=%lu", (unsigned long)Config::LOOP_PERIOD_MS);
         info("rate.imu_hz=%lu", (unsigned long)(1000 / Config::LOOP_PERIOD_MS / Config::BLACKBOX_IMU_DIVIDER));
@@ -1242,7 +1283,7 @@ private:
         info("trim.pitch_us=%.1f", autopilot.getAutoTrim().getPitch());
 
         infoConfig();
-#if defined(BOARD_ESP32_S3)
+#if defined(BOARD_ESP32_S3) || defined(BOARD_STM32H743)
         info("power.vbat_divider=%.4f", static_cast<double>(Config::BLACKBOX_VBAT_DIVIDER));
         info("power.current_divider=%.4f", static_cast<double>(Config::BLACKBOX_CURRENT_DIVIDER));
 #endif
@@ -1263,6 +1304,8 @@ private:
         return "ESP32-C3";
 #elif defined(BOARD_ESP32_CLASSIC)
         return "ESP32";
+#elif defined(BOARD_STM32H743)
+        return "STM32H743";
 #else
         return "?";
 #endif
@@ -1340,9 +1383,35 @@ private:
         giveLock();
     }
 
+#if defined(BOARD_STM32H743)
+    // Скорость консоли. STM32duino не умеет её спрашивать — помним сами.
+    static unsigned long& consoleBaudStore()
+    {
+        static unsigned long baud = 115200;
+        return baud;
+    }
+#endif
+
+    static unsigned long consoleBaud()
+    {
+#if defined(BOARD_STM32H743)
+        return consoleBaudStore();
+#else
+        return Serial.baudRate();
+#endif
+    }
+
     static void setSerialBaud(unsigned long baud)
     {
-#if ARDUINO_USB_CDC_ON_BOOT
+#if defined(BOARD_STM32H743)
+#if defined(USBCON) && defined(USBD_USE_CDC)
+        (void)baud;   // Serial — USB CDC: скорость ни на что не влияет
+#else
+        Serial.end();
+        Serial.begin(baud);
+        consoleBaudStore() = baud;
+#endif
+#elif ARDUINO_USB_CDC_ON_BOOT
         (void)baud;   // Serial — USB CDC (ESP32-C3): скорость ни на что не влияет
 #else
         Serial.updateBaudRate(baud);
@@ -1374,7 +1443,7 @@ private:
 
         Serial.printf("BB:SEND n=%u sectors=%lu baud=%lu\n", f.number, (unsigned long)f.sectors, baud);
         Serial.flush();
-        const unsigned long oldBaud = Serial.baudRate();
+        const unsigned long oldBaud = consoleBaud();
         if (baud != oldBaud) setSerialBaud(baud);
 
         bool go = false;

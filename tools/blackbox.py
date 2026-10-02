@@ -7,8 +7,12 @@
     python tools/blackbox.py download --flight 3
     python tools/blackbox.py decode blackbox/flight_003_....bbl
 
-Порт находится сам (мост CH343/CH340/CP210x), иначе --port COM10.
-Монитор порта (pio device monitor) перед выгрузкой нужно закрыть.
+SD-карта (STM32H743):
+    python tools/blackbox.py sd-prepare E:            # создать файл BLACKBOX.BIN на пустой FAT32-карте
+    python tools/blackbox.py ring E:/BLACKBOX.BIN     # полёты прямо из файла на карте -> CSV
+
+Порт находится сам (мост CH343/CH340/CP210x, USB CDC платы STM32), иначе
+--port COM10. Монитор порта (pio device monitor) перед выгрузкой нужно закрыть.
 
 Выгрузка идёт на 2 Мбод (--baud), плата переключается сама и
 возвращает 115200 после. Каждый сектор — с CRC-32; битый — ошибка.
@@ -29,6 +33,7 @@ import csv
 import datetime
 import math
 import os
+import shutil
 import struct
 import sys
 import time
@@ -349,7 +354,7 @@ def open_port(port):
 
     if not port:
         bridges = [p for p in serial.tools.list_ports.comports()
-                   if p.vid in (0x1A86, 0x10C4, 0x0403, 0x303A)]
+                   if p.vid in (0x1A86, 0x10C4, 0x0403, 0x303A, 0x0483)]
         if len(bridges) != 1:
             names = ", ".join(p.device for p in serial.tools.list_ports.comports()) or "нет"
             sys.exit(f"Укажите порт: --port (найдено: {names})")
@@ -359,7 +364,10 @@ def open_port(port):
     s.port = port
     s.baudrate = 115200
     s.timeout = 0.2
-    s.dtr = False   # без сброса платы (как monitor_dtr/rts = 0)
+    # ESP32: без DTR/RTS — иначе плата сбрасывается (как monitor_dtr/rts = 0).
+    # STM32 USB CDC (VID 0x0483): наоборот, пишет в порт только при поднятом DTR.
+    stm32 = any(p.device == port and p.vid == 0x0483 for p in serial.tools.list_ports.comports())
+    s.dtr = stm32
     s.rts = False
     try:
         s.open()
@@ -477,6 +485,99 @@ def download(s, number, baud, out_dir):
     return path
 
 
+# ----------------------------------------------------------------
+# SD-карта
+# ----------------------------------------------------------------
+
+def sd_prepare(target, size_mb, name, force):
+    """Файл чёрного ящика на карте: целиком 0xFF (первый сектор — метка "кольцо
+    пусто"), кластеры подряд (файл создаётся одним куском на пустой карте). Прошивка находит его в корне
+    FAT32 и пишет сырыми блоками внутрь; сама файловую систему не трогает."""
+    folder = target if os.path.isdir(target) else target + os.sep
+    if not os.path.isdir(folder):
+        sys.exit(f"{target}: нет такой папки или диска")
+    path = os.path.join(folder, name)
+    size = size_mb * 1024 * 1024
+    if os.path.exists(path) and not force:
+        sys.exit(f"{path} уже есть. Чтобы создать заново (старые полёты пропадут): --force")
+    other = [f for f in os.listdir(folder) if f.upper() not in (name.upper(), "SYSTEM VOLUME INFORMATION")]
+    if other:
+        print(f"Внимание: на карте есть другие файлы ({', '.join(other[:5])}). Файл ящика должен лечь подряд — "
+              "надёжнее всего на пустой, свежеотформатированной в FAT32 карте.")
+    free = shutil.disk_usage(folder).free + (os.path.getsize(path) if os.path.exists(path) else 0)
+    if free < size:
+        sys.exit(f"Мало места: нужно {size_mb} МБ, свободно {free // (1024 * 1024)} МБ")
+    if os.path.exists(path):
+        os.remove(path)
+
+    started = time.time()
+    chunk = b"\xFF" * (1 << 20)
+    with open(path, "wb") as f:
+        f.truncate(size)        # занять кластеры сразу и подряд
+        f.seek(0)
+        for i in range(size_mb):
+            f.write(chunk)
+            print(f"\r  {i + 1}/{size_mb} МБ", end="", flush=True)
+        # Служебный первый сектор: метка "кольцо пусто" (SdFileRegion) — плата не
+        # сверяет пустую область при включении.
+        mark = b"OPEM"
+        f.seek(0)
+        f.write(mark + bytes(~c & 0xFF for c in mark) + b"\xFF" * (SECTOR - 2 * len(mark)))
+        f.flush()
+        os.fsync(f.fileno())
+    print(f"\nГотово: {path}, {size_mb} МБ, {time.time() - started:.0f} с. "
+          "Достаньте карту безопасным способом и вставьте в плату.")
+
+
+def ring_flights(path):
+    """Полёты в файле-кольце: [(номер, [индексы секторов по порядку])]. Порядок —
+    по сквозному seq; полёт — подряд идущие seq с одним номером."""
+    sectors = []
+    with open(path, "rb") as f:
+        index = 0
+        while True:
+            raw = f.read(SECTOR)
+            if len(raw) < SECTOR:
+                break
+            magic, seq, _ms, flight, version, _check = HEADER.unpack_from(raw)
+            if magic == MAGIC and header_ok(raw[:16]) and version == FORMAT_VERSION:
+                sectors.append((seq, flight, index))
+            index += 1
+    sectors.sort()
+    flights = []
+    for seq, flight, index in sectors:
+        if flights and flights[-1][0] == flight and flights[-1][2] + 1 == seq:
+            flights[-1][1].append(index)
+            flights[-1][2] = seq
+        else:
+            flights.append([flight, [index], seq])
+    return [(n, idx) for n, idx, _ in flights]
+
+
+def ring_extract(path, out_dir, do_decode, list_only):
+    flights = ring_flights(path)
+    if not flights:
+        sys.exit("В файле нет полётов.")
+    print(f"Полётов в файле: {len(flights)}")
+    with open(path, "rb") as f:
+        for number, indices in flights:
+            data = bytearray()
+            for index in indices:
+                f.seek(index * SECTOR)
+                data += f.read(SECTOR)
+            seconds = (HEADER.unpack_from(data[-SECTOR:])[2] - HEADER.unpack_from(data)[2]) // 1000
+            print(f"  #{number:<4} {len(indices) * SECTOR // 1024:>6} КБ  {seconds // 60:2d}:{seconds % 60:02d}")
+            if list_only:
+                continue
+            os.makedirs(out_dir, exist_ok=True)
+            out = os.path.join(out_dir, f"flight_{number:03d}.bbl")
+            with open(out, "wb") as g:
+                g.write(data)
+            if do_decode:
+                decode_file(out, quiet=True)
+                print(f"      -> {os.path.splitext(out)[0]}/summary.txt")
+
+
 def main():
     # Кириллица в выводе: при перенаправлении в файл Windows иначе берёт cp1252.
     for stream in (sys.stdout, sys.stderr):
@@ -499,6 +600,18 @@ def main():
     p.add_argument("-o", "--out", default="blackbox", help="папка (по умолчанию ./blackbox)")
     p.add_argument("--no-decode", action="store_true")
 
+    p = sub.add_parser("sd-prepare", help="создать файл чёрного ящика на SD-карте (STM32)")
+    p.add_argument("target", help="диск или папка карты, например E: или /media/sd")
+    p.add_argument("--size", type=int, default=64, help="размер, МБ (по умолчанию 64)")
+    p.add_argument("--name", default="BLACKBOX.BIN", help="имя файла 8.3 в корне (по умолчанию BLACKBOX.BIN)")
+    p.add_argument("--force", action="store_true", help="пересоздать, если файл уже есть")
+
+    p = sub.add_parser("ring", help="полёты из файла BLACKBOX.BIN с карты -> CSV")
+    p.add_argument("file")
+    p.add_argument("-o", "--out", default="blackbox", help="папка (по умолчанию ./blackbox)")
+    p.add_argument("--list", action="store_true", help="только перечислить полёты")
+    p.add_argument("--no-decode", action="store_true")
+
     p = sub.add_parser("decode", help="разобрать .bbl в CSV")
     p.add_argument("file")
     p.add_argument("-o", "--out", help="папка (по умолчанию — рядом с файлом)")
@@ -507,6 +620,12 @@ def main():
 
     if args.cmd == "decode":
         decode_file(args.file, args.out)
+        return
+    if args.cmd == "sd-prepare":
+        sd_prepare(args.target, args.size, args.name, args.force)
+        return
+    if args.cmd == "ring":
+        ring_extract(args.file, args.out, not args.no_decode, args.list)
         return
 
     s = open_port(args.port)
