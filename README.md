@@ -1,3 +1,31 @@
+<!-- i18n-bar:start -->
+  <p align="center">
+    <img src="docs/images/flags/ru.svg" width="20" height="20" align="absmiddle" alt="🇷🇺"> <b>Читать на русском</b>
+    &nbsp;·&nbsp;
+    <a href="docs/i18n/en/README.md"><img src="docs/images/flags/gb.svg" width="20" height="20" align="absmiddle" alt="🇬🇧"> Read this in English</a>
+    &nbsp;·&nbsp;
+    <a href="docs/i18n/zh-CN/README.md"><img src="docs/images/flags/cn.svg" width="20" height="20" align="absmiddle" alt="🇨🇳"> 阅读中文版</a>
+    &nbsp;·&nbsp;
+    <a href="docs/i18n/es/README.md"><img src="docs/images/flags/es.svg" width="20" height="20" align="absmiddle" alt="🇪🇸"> Lee esto en español</a>
+  </p>
+  <p align="center">
+    <a href="docs/i18n/hi/README.md"><img src="docs/images/flags/in.svg" width="20" height="20" align="absmiddle" alt="🇮🇳"> हिन्दी में पढ़ें</a>
+    &nbsp;·&nbsp;
+    <a href="docs/i18n/ar/README.md"><img src="docs/images/flags/sa.svg" width="20" height="20" align="absmiddle" alt="🇸🇦"> اقرأ بالعربية</a>
+    &nbsp;·&nbsp;
+    <a href="docs/i18n/pt-BR/README.md"><img src="docs/images/flags/br.svg" width="20" height="20" align="absmiddle" alt="🇧🇷"> Leia em português</a>
+    &nbsp;·&nbsp;
+    <a href="docs/i18n/fr/README.md"><img src="docs/images/flags/fr.svg" width="20" height="20" align="absmiddle" alt="🇫🇷"> Lire en français</a>
+  </p>
+  <p align="center">
+    <a href="docs/i18n/de/README.md"><img src="docs/images/flags/de.svg" width="20" height="20" align="absmiddle" alt="🇩🇪"> Auf Deutsch lesen</a>
+    &nbsp;·&nbsp;
+    <a href="docs/i18n/ja/README.md"><img src="docs/images/flags/jp.svg" width="20" height="20" align="absmiddle" alt="🇯🇵"> 日本語で読む</a>
+    &nbsp;·&nbsp;
+    <a href="docs/i18n/ko/README.md"><img src="docs/images/flags/kr.svg" width="20" height="20" align="absmiddle" alt="🇰🇷"> 한국어로 읽기</a>
+  </p>
+<!-- i18n-bar:end -->
+
 <p align="center">
   <img src="docs/images/banner.svg" alt="OpenPlane — открытый автопилот для самолётов" width="100%">
 </p>
@@ -10,7 +38,7 @@
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
   <img src="https://img.shields.io/badge/STM32H743-flies%20from%20the%20RC-39d0ff?style=for-the-badge&logo=stmicroelectronics&logoColor=white" alt="STM32H743: управляется с пульта">
   <img src="https://img.shields.io/badge/MAVLink-QGroundControl-a371f7?style=for-the-badge" alt="MAVLink">
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT%20%2B%20credit%20the%20author-f0883e?style=for-the-badge" alt="MIT, с обязательным указанием автора"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-OpenPlane%20License-f0883e?style=for-the-badge" alt="Лицензия OpenPlane: MIT с условиями — указать автора, без военного применения"></a>
 </p>
 
 <h3 align="center">Выключили пульт — самолёт сам вернулся домой и кружит над вами.</h3>
@@ -285,6 +313,7 @@ DevEBox: на плате нет кнопки BOOT0 — перед первой �
 | [TESTING.md](docs/TESTING.md) | тесты, симуляции, покрытие, анализ |
 | [reference/](docs/reference/README.md) | справочник по каждому классу |
 | [FC_BOARD.md](docs/FC_BOARD.md) · [ROADMAP.md](docs/ROADMAP.md) | плата полётника · куда движется проект |
+| [airframe/](airframe/README.md) | планер Astro-Cargo: проект Fusion 360 и STL для печати, известные недостатки версии v2 |
 
 > **Связанный проект:** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) — пульт FS-i6 как USB-джойстик для симулятора на той же ESP32-S3: сначала налетать часы в симуляторе, потом — в поле.
 
@@ -296,7 +325,16 @@ DevEBox: на плате нет кнопки BOOT0 — перед первой �
 
 ## 📜 Лицензия
 
-[MIT](LICENSE) с обязательным указанием автора. Использовать, копировать, менять и продавать — можно кому угодно и для чего угодно, в том числе в коммерческих продуктах. Единственное условие: **явно указать автора — Damir Lebedev (Damn / Проклятый)** — и оставить текст лицензии вместе с кодом. Если вы выпускаете на основе OpenPlane свой продукт, имя автора должно быть там, где его увидят пользователи: в документации, README или на странице «О проекте».
+[OpenPlane License](LICENSE) — лицензия на основе MIT с дополнительными условиями. Код, документацию и файлы модели можно использовать, копировать, менять и продавать, в том числе в коммерческих продуктах. Условия такие:
+
+1. **Укажите автора — Damir Lebedev (Damn / Проклятый).** Имя должно стоять там, где его увидят пользователи вашего продукта: в документации, README или на странице «О проекте». Текст лицензии оставляйте вместе с кодом.
+2. **Военное применение запрещено.** Нельзя использовать проект для армий и военизированных организаций, на войне, при создании оружия, боеприпасов, систем доставки и наведения.
+3. **Нельзя намеренно вредить людям и имуществу без их предварительного письменного согласия на этот вред.** Свою собственную технику ломать можно, если это никому не угрожает: например, стрелять из пневматического пистолета по собственному дрону. Калечить и убивать людей нельзя.
+4. **Соблюдайте технику безопасности и законы** при сборке, испытаниях и полётах.
+
+Если условия нарушены, разрешение на использование прекращается. Из-за запретов на отдельные виды использования это не «открытая» лицензия в понимании OSI: код доступен для чтения, копирования и изменения, но формально проект относится к source-available, а не к open source.
+
+Юридическую силу имеет только английский текст в файле [LICENSE](LICENSE): переводы лицензии на другие языки даны для удобства.
 
 Прошивка управляет летательным аппаратом и не сертифицирована. Всё, что вы с ней делаете, — на ваш страх и риск; автор ответственности не несёт.
 

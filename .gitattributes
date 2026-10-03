@@ -1,0 +1,8 @@
+# Модель планера: бинарные файлы. Git не должен менять в них переводы строк
+# и пытаться показывать построчные различия.
+airframe/**/*.stl binary
+airframe/**/*.f3d binary
+airframe/**/*.f3z binary
+airframe/**/*.step binary
+airframe/**/*.stp binary
+airframe/**/*.3mf binary

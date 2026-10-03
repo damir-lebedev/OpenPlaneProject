@@ -1,19 +1,48 @@
-MIT License
+OpenPlane License
+(based on the MIT License, with attribution and use restrictions)
 
 Copyright (c) 2026 Damir Lebedev (Damn / Проклятый), https://github.com/damir-lebedev
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+of this software and the associated documentation, design files (including
+hardware and airframe models) and other materials in this repository (the
+"Software"), to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software. Any use of the Software, in
-source or binary form, including derivative works and products built with it,
-must credit the original author, Damir Lebedev, in a place where users of the
-result can see it (documentation, README, "about" page or equivalent).
+1. Attribution. The above copyright notice and this permission notice shall
+   be included in all copies or substantial portions of the Software. Any use
+   of the Software, in source or binary form, including derivative works and
+   products built with it, must credit the original author, Damir Lebedev, in
+   a place where users of the result can see it (documentation, README,
+   "about" page or equivalent).
+
+2. No military use. The Software, derivative works and products built with or
+   incorporating it must not be used for military purposes. This includes use
+   by or for armed forces or other military or paramilitary organizations;
+   use in warfare, combat or other hostilities; and use in the development,
+   production, testing or operation of weapons, munitions, or weapon-delivery
+   or targeting systems.
+
+3. No harm to people or property without consent. The Software, derivative
+   works and products built with or incorporating it must not be used to
+   intentionally injure or kill any person, or to intentionally damage or
+   destroy any property, unless every person who would be harmed and every
+   owner of the property that would be damaged has given prior written consent
+   to that specific harm. Harm to your own property, or to property whose
+   owner has given such consent, is not a violation as long as it endangers no
+   one else. For example, shooting at your own drone with an air pistol is
+   allowed.
+
+4. Safety and law. You must observe all applicable safety rules and
+   precautions (including those for aircraft, radio equipment and batteries)
+   and comply with all applicable laws when building, testing and operating
+   anything that uses the Software. Nothing in this license permits unlawful
+   conduct, and consent given under condition 3 does not make an unlawful act
+   lawful.
+
+5. Compliance. If you do not comply with these conditions, you have no
+   permission to use, copy, modify or distribute the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

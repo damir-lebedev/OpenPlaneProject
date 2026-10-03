@@ -1,0 +1,19 @@
+# OpenPlane License
+
+(basada en la licencia MIT, con obligación de atribución y restricciones de uso)
+
+⚠️ Traducción no oficial, solo para facilitar la lectura. Únicamente el texto en inglés de [LICENSE](../../../LICENSE) tiene validez jurídica.
+
+Copyright (c) 2026 Damir Lebedev (Damn / Проклятый), https://github.com/damir-lebedev
+
+Por la presente se concede permiso, libre de cargo, a cualquier persona que obtenga una copia de este software y de la documentación, los archivos de diseño (incluidos los modelos de hardware y de la estructura del avión) y demás materiales asociados de este repositorio (el «Software»), para usar, copiar, modificar, fusionar, publicar, distribuir, sublicenciar y/o vender copias del Software, y para permitir que hagan lo mismo las personas a quienes se les proporcione el Software, con sujeción a las siguientes condiciones:
+
+1. **Atribución.** El aviso de copyright anterior y este aviso de permiso se incluirán en todas las copias o partes sustanciales del Software. Todo uso del Software, en forma de código fuente o binaria, incluidas las obras derivadas y los productos creados con él, debe reconocer al autor original, Damir Lebedev, en un lugar visible para los usuarios del resultado (documentación, README, página «Acerca de» o equivalente).
+2. **Prohibido el uso militar.** El Software, las obras derivadas y los productos creados con él o que lo incorporen no podrán utilizarse con fines militares. Esto incluye el uso por parte de fuerzas armadas u otras organizaciones militares o paramilitares, o en su nombre; el uso en guerra, combate u otras hostilidades; y el uso en el desarrollo, la producción, las pruebas o el funcionamiento de armas, municiones o sistemas de entrega de armas o de designación de objetivos.
+3. **Prohibido causar daño a personas o bienes sin consentimiento.** El Software, las obras derivadas y los productos creados con él o que lo incorporen no podrán utilizarse para lesionar o matar intencionadamente a ninguna persona, ni para dañar o destruir intencionadamente ningún bien, salvo que cada persona que sufriría el daño y cada propietario del bien que resultaría dañado hayan dado previamente su consentimiento por escrito a ese daño concreto. El daño a bienes propios, o a bienes cuyo propietario haya dado dicho consentimiento, no constituye una infracción siempre que no ponga en peligro a nadie más. Por ejemplo, disparar con una pistola de aire comprimido a un dron propio está permitido.
+4. **Seguridad y legalidad.** Al construir, probar y operar cualquier cosa que utilice el Software, debe observar todas las normas y precauciones de seguridad aplicables (incluidas las relativas a aeronaves, equipos de radio y baterías) y cumplir todas las leyes aplicables. Nada de lo dispuesto en esta licencia permite una conducta ilícita, y el consentimiento otorgado conforme a la condición 3 no convierte en lícito un acto ilícito.
+5. **Cumplimiento.** Si no cumple estas condiciones, no tiene permiso para usar, copiar, modificar ni distribuir el Software.
+
+EL SOFTWARE SE PROPORCIONA «TAL CUAL», SIN GARANTÍA DE NINGÚN TIPO, EXPRESA O IMPLÍCITA, INCLUIDAS, ENTRE OTRAS, LAS GARANTÍAS DE COMERCIABILIDAD, IDONEIDAD PARA UN FIN PARTICULAR Y NO INFRACCIÓN. EN NINGÚN CASO LOS AUTORES O TITULARES DEL COPYRIGHT SERÁN RESPONSABLES DE NINGUNA RECLAMACIÓN, DAÑO U OTRA RESPONSABILIDAD, YA SEA EN UNA ACCIÓN CONTRACTUAL, EXTRACONTRACTUAL O DE OTRO TIPO, DERIVADA DEL SOFTWARE, DE SU USO O DE OTRAS OPERACIONES CON EL SOFTWARE, O RELACIONADA CON ELLOS.
+
+**ESTE SOFTWARE CONTROLA AERONAVES.** No ha sido certificado para ningún fin. Volar se hace exclusivamente bajo su propio riesgo.

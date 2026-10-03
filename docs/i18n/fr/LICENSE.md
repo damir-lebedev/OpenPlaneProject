@@ -1,0 +1,19 @@
+# OpenPlane License
+
+(fondée sur la licence MIT, avec obligation de mentionner l’auteur et restrictions d’usage)
+
+⚠️ Traduction non officielle, fournie uniquement pour faciliter la lecture. Seul le texte anglais du fichier [LICENSE](../../../LICENSE) a une valeur juridique.
+
+Copyright (c) 2026 Damir Lebedev (Damn / Проклятый), https://github.com/damir-lebedev
+
+L’autorisation est accordée, gracieusement, à toute personne obtenant une copie de ce logiciel ainsi que de la documentation, des fichiers de conception (y compris les modèles matériels et de cellule d’avion) et des autres éléments associés de ce dépôt (le « Logiciel »), d’utiliser, copier, modifier, fusionner, publier, distribuer, sous-licencier et/ou vendre des copies du Logiciel, et de permettre aux personnes à qui le Logiciel est fourni d’en faire autant, sous réserve des conditions suivantes :
+
+1. **Mention de l’auteur.** L’avis de droit d’auteur ci-dessus et le présent avis d’autorisation doivent être inclus dans toutes les copies ou parties substantielles du Logiciel. Toute utilisation du Logiciel, sous forme de code source ou binaire, y compris les œuvres dérivées et les produits fabriqués avec lui, doit mentionner l’auteur d’origine, Damir Lebedev, à un endroit visible des utilisateurs du résultat (documentation, README, page « À propos » ou équivalent).
+2. **Aucun usage militaire.** Le Logiciel, les œuvres dérivées et les produits fabriqués avec lui ou l’intégrant ne doivent pas être utilisés à des fins militaires. Cela comprend l’usage par des forces armées ou d’autres organisations militaires ou paramilitaires, ou pour leur compte ; l’usage dans la guerre, le combat ou d’autres hostilités ; et l’usage dans le développement, la production, l’essai ou l’exploitation d’armes, de munitions ou de systèmes de largage ou de ciblage d’armes.
+3. **Aucun dommage aux personnes ou aux biens sans consentement.** Le Logiciel, les œuvres dérivées et les produits fabriqués avec lui ou l’intégrant ne doivent pas être utilisés pour blesser ou tuer intentionnellement une personne, ni pour endommager ou détruire intentionnellement un bien, sauf si chaque personne qui subirait le dommage et chaque propriétaire du bien qui serait endommagé ont donné au préalable, par écrit, leur consentement à ce dommage précis. Le dommage causé à vos propres biens, ou à des biens dont le propriétaire a donné un tel consentement, ne constitue pas une violation tant qu’il ne met personne d’autre en danger. Par exemple, tirer sur votre propre drone avec un pistolet à air comprimé est autorisé.
+4. **Sécurité et légalité.** Lorsque vous construisez, testez et utilisez quoi que ce soit qui emploie le Logiciel, vous devez respecter toutes les règles et précautions de sécurité applicables (y compris celles relatives aux aéronefs, aux équipements radio et aux batteries) et toutes les lois applicables. Rien dans la présente licence n’autorise un comportement illégal, et le consentement donné au titre de la condition 3 ne rend pas licite un acte illicite.
+5. **Respect des conditions.** Si vous ne respectez pas ces conditions, vous n’avez aucune autorisation d’utiliser, de copier, de modifier ou de distribuer le Logiciel.
+
+LE LOGICIEL EST FOURNI « EN L’ÉTAT », SANS GARANTIE D’AUCUNE SORTE, EXPRESSE OU IMPLICITE, Y COMPRIS, SANS LIMITATION, LES GARANTIES DE QUALITÉ MARCHANDE, D’ADÉQUATION À UN USAGE PARTICULIER ET D’ABSENCE DE CONTREFAÇON. EN AUCUN CAS LES AUTEURS OU TITULAIRES DU DROIT D’AUTEUR NE POURRONT ÊTRE TENUS RESPONSABLES DE TOUTE RÉCLAMATION, DE TOUT DOMMAGE OU DE TOUTE AUTRE RESPONSABILITÉ, QUE CE SOIT DANS LE CADRE D’UNE ACTION CONTRACTUELLE, DÉLICTUELLE OU AUTRE, DÉCOULANT DU LOGICIEL, DE SON UTILISATION OU D’AUTRES OPÉRATIONS DANS LE LOGICIEL, OU EN LIEN AVEC EUX.
+
+**CE LOGICIEL PILOTE DES AÉRONEFS.** Il n’a été certifié pour aucun usage. Voler se fait entièrement à vos propres risques.

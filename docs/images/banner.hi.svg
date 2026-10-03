@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-label="OpenPlane — открытый автопилот для самолётов">
+<svg xmlns="http://www.w3.org/2000/svg" lang="hi" xml:lang="hi" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-label="OpenPlane — हवाई जहाज़ों के लिए खुला ऑटोपायलट">
   <defs>
     <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#0b1020"/>
@@ -53,22 +53,22 @@
   </g>
 
   <!-- Текст -->
-  <g font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+  <g font-family="Segoe UI, Roboto, Helvetica, Arial, 'Nirmala UI', 'Noto Sans Devanagari', 'Kohinoor Devanagari', sans-serif">
     <text x="60" y="118" font-size="76" font-weight="800" fill="url(#title)" letter-spacing="1">OpenPlane</text>
-    <text x="62" y="162" font-size="25" fill="#c9d1d9">Открытый автопилот для самолётов — от ESP32 за $10</text>
-    <text x="62" y="194" font-size="25" fill="#c9d1d9">до STM32H743 уровня полётных контроллеров</text>
+    <text x="62" y="162" font-size="25" fill="#c9d1d9">हवाई जहाज़ों के लिए खुला ऑटोपायलट — $10 के ESP32 से</text>
+    <text x="62" y="194" font-size="25" fill="#c9d1d9">STM32H743 स्तर के फ़्लाइट कंट्रोलर तक</text>
 
     <g font-size="17" font-weight="600">
-      <rect x="60" y="226" width="216" height="38" rx="19" fill="#39d0ff" fill-opacity="0.14" stroke="#39d0ff" stroke-opacity="0.6"/>
-      <text x="168" y="251" text-anchor="middle" fill="#9fe7ff">12 режимов полёта</text>
-      <rect x="288" y="226" width="236" height="38" rx="19" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.6"/>
-      <text x="406" y="251" text-anchor="middle" fill="#7ee787">387 тестов · 98% кода</text>
-      <rect x="60" y="276" width="264" height="38" rx="19" fill="#a371f7" fill-opacity="0.14" stroke="#a371f7" stroke-opacity="0.6"/>
-      <text x="192" y="301" text-anchor="middle" fill="#d2a8ff">MAVLink · QGroundControl</text>
-      <rect x="336" y="276" width="260" height="38" rx="19" fill="#ff9f43" fill-opacity="0.14" stroke="#ff9f43" stroke-opacity="0.6"/>
-      <text x="466" y="301" text-anchor="middle" fill="#ffc38a">Пито из двух барометров</text>
-      <rect x="60" y="326" width="410" height="38" rx="19" fill="#f2cc60" fill-opacity="0.12" stroke="#f2cc60" stroke-opacity="0.6"/>
-      <text x="265" y="351" text-anchor="middle" fill="#f2cc60">Тумблер пульта = функция, одной строкой</text>
+      <rect x="60" y="226" width="165" height="38" rx="19" fill="#39d0ff" fill-opacity="0.14" stroke="#39d0ff" stroke-opacity="0.6"/>
+      <text x="142" y="251" text-anchor="middle" fill="#9fe7ff">12 उड़ान मोड</text>
+      <rect x="237" y="226" width="267" height="38" rx="19" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.6"/>
+      <text x="370" y="251" text-anchor="middle" fill="#7ee787">387 टेस्ट · 98% कोड कवर</text>
+      <rect x="60" y="276" width="291" height="38" rx="19" fill="#a371f7" fill-opacity="0.14" stroke="#a371f7" stroke-opacity="0.6"/>
+      <text x="205" y="301" text-anchor="middle" fill="#d2a8ff">MAVLink · QGroundControl</text>
+      <rect x="363" y="276" width="244" height="38" rx="19" fill="#ff9f43" fill-opacity="0.14" stroke="#ff9f43" stroke-opacity="0.6"/>
+      <text x="485" y="301" text-anchor="middle" fill="#ffc38a">दो बैरोमीटर से पिटो ट्यूब</text>
+      <rect x="60" y="326" width="367" height="38" rx="19" fill="#f2cc60" fill-opacity="0.12" stroke="#f2cc60" stroke-opacity="0.6"/>
+      <text x="243" y="351" text-anchor="middle" fill="#f2cc60">रिमोट का स्विच = फ़ंक्शन, एक पंक्ति में</text>
     </g>
   </g>
 </svg>
