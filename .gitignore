@@ -14,3 +14,7 @@ coverage/
 
 # Выгруженные полёты чёрного ящика (tools/blackbox.py download)
 blackbox/
+
+# Образ SD-карты чёрного ящика (BLACKBOX.BIN, 64 МБ), копия с карты
+BLACKBOX.BIN
+*.bbl
