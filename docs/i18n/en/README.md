@@ -133,7 +133,7 @@ Not "a function returned a number", but a **flight**: transmitter → iBUS frame
 
 ## 🌬️ A pitot tube for pennies
 
-A proper airspeed sensor costs about as much as half a flight controller. Here there are **two barometers**: a BMP581 in the tube (total pressure) and the main barometer in the fuselage (static pressure). The firmware zeroes the difference between the chips on the ground, filters, computes air density from altitude and temperature, and notices swapped hoses. What this gives: CRUISE holds **air**speed, not throttle; stall protection; an honest speed in telemetry. The build is described in the [reference](AUTOPILOT_GUIDE.md#трубка-пито-своими-руками).
+A proper airspeed sensor costs about as much as half a flight controller. Here there are **two barometers**: a BMP581 in the tube (total pressure) and the main barometer in the fuselage (static pressure). The firmware zeroes the difference between the chips on the ground, filters, computes air density from altitude and temperature, and notices swapped hoses. What this gives: CRUISE holds **air**speed, not throttle; stall protection; an honest speed in telemetry. The build is described in the [reference](AUTOPILOT_GUIDE.md#a-diy-pitot-tube).
 
 ---
 

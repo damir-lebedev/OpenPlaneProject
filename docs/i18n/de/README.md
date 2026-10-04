@@ -133,7 +133,7 @@ Nicht „eine Funktion hat eine Zahl zurückgegeben“, sondern ein **Flug**: Se
 
 ## 🌬️ Ein Pitotrohr für ein paar Cent
 
-Ein ordentlicher Fahrtmesser kostet so viel wie eine halbe Flugsteuerung. Hier sind es **zwei Barometer**: ein BMP581 im Rohr (Gesamtdruck) und das Hauptbarometer im Rumpf (statischer Druck). Die Firmware gleicht den Unterschied zwischen den Chips am Boden selbst auf null ab, filtert, berechnet die Luftdichte aus Höhe und Temperatur und bemerkt vertauschte Schläuche. Das bringt: CRUISE hält die **Luft**geschwindigkeit statt des Gases; Überziehschutz; eine ehrliche Geschwindigkeit in der Telemetrie. Der Aufbau steht in der [Referenz](AUTOPILOT_GUIDE.md#трубка-пито-своими-руками).
+Ein ordentlicher Fahrtmesser kostet so viel wie eine halbe Flugsteuerung. Hier sind es **zwei Barometer**: ein BMP581 im Rohr (Gesamtdruck) und das Hauptbarometer im Rumpf (statischer Druck). Die Firmware gleicht den Unterschied zwischen den Chips am Boden selbst auf null ab, filtert, berechnet die Luftdichte aus Höhe und Temperatur und bemerkt vertauschte Schläuche. Das bringt: CRUISE hält die **Luft**geschwindigkeit statt des Gases; Überziehschutz; eine ehrliche Geschwindigkeit in der Telemetrie. Der Aufbau steht in der [Referenz](AUTOPILOT_GUIDE.md#ein-pitotrohr-zum-selberbauen).
 
 ---
 

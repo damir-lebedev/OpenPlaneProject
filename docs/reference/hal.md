@@ -229,7 +229,7 @@ sd-prepare`) и заполненный `0xFF`. Файл только **нахо�
 | `begin()` | `pinMode(cs, OUTPUT)`, CS = HIGH |
 | `probe()` | Всегда `true` |
 | `writeRegister(reg, value)` | CS↓, `reg & 0x7F`, `value`, CS↑; всегда `true` |
-| `readRegisters(reg, buf, n)` | CS↓, `reg | 0x80`, пропуск `dummyReadBytes`, `n` байт, CS↑; всегда `true` |
+| `readRegisters(reg, buf, n)` | CS↓, `reg \| 0x80`, пропуск `dummyReadBytes`, `n` байт, CS↑; всегда `true` |
 
 Каждая операция — отдельная транзакция `beginTransaction(clockHz, spiMode)` …
 `endTransaction()`.

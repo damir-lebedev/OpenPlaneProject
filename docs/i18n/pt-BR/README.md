@@ -133,7 +133,7 @@ Não é "a função devolveu um número", e sim um **voo**: rádio → quadro iB
 
 ## 🌬️ Tubo de Pitot por uns trocados
 
-Um sensor de velocidade do ar decente custa quase metade de uma controladora de voo. Aqui são **dois barômetros**: um BMP581 no tubo (pressão total) e o barômetro principal na fuselagem (pressão estática). O firmware zera a diferença entre os chips no solo, filtra, calcula a densidade do ar pela altitude e pela temperatura e percebe quando as mangueiras estão trocadas. O que isso entrega: o CRUISE mantém a velocidade **do ar**, e não o acelerador; proteção contra estol; uma velocidade honesta na telemetria. A montagem está na [referência](AUTOPILOT_GUIDE.md#трубка-пито-своими-руками).
+Um sensor de velocidade do ar decente custa quase metade de uma controladora de voo. Aqui são **dois barômetros**: um BMP581 no tubo (pressão total) e o barômetro principal na fuselagem (pressão estática). O firmware zera a diferença entre os chips no solo, filtra, calcula a densidade do ar pela altitude e pela temperatura e percebe quando as mangueiras estão trocadas. O que isso entrega: o CRUISE mantém a velocidade **do ar**, e não o acelerador; proteção contra estol; uma velocidade honesta na telemetria. A montagem está na [referência](AUTOPILOT_GUIDE.md#tubo-de-pitot-caseiro).
 
 ---
 

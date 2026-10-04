@@ -133,7 +133,7 @@ No es «una función devolvió un número», sino un **vuelo**: emisora → tram
 
 ## 🌬️ Un tubo de Pitot por cuatro duros
 
-Un buen sensor de velocidad del aire cuesta como la mitad de un controlador de vuelo. Aquí hay **dos barómetros**: un BMP581 en el tubo (presión total) y el barómetro principal en el fuselaje (presión estática). El firmware pone a cero en tierra la diferencia entre los chips, filtra, calcula la densidad del aire a partir de la altitud y la temperatura y detecta si las mangueras están intercambiadas. Qué se consigue: CRUISE mantiene la velocidad **del aire**, no el acelerador; protección contra la pérdida de sustentación; una velocidad fiable en la telemetría. El montaje se explica en la [referencia](AUTOPILOT_GUIDE.md#трубка-пито-своими-руками).
+Un buen sensor de velocidad del aire cuesta como la mitad de un controlador de vuelo. Aquí hay **dos barómetros**: un BMP581 en el tubo (presión total) y el barómetro principal en el fuselaje (presión estática). El firmware pone a cero en tierra la diferencia entre los chips, filtra, calcula la densidad del aire a partir de la altitud y la temperatura y detecta si las mangueras están intercambiadas. Qué se consigue: CRUISE mantiene la velocidad **del aire**, no el acelerador; protección contra la pérdida de sustentación; una velocidad fiable en la telemetría. El montaje se explica en la [referencia](AUTOPILOT_GUIDE.md#un-tubo-de-pitot-casero).
 
 ---
 

@@ -14,7 +14,7 @@ Ce dossier contient l’**Astro-Cargo v2**. Il n’y aura pas de v1 dans le dép
 Les fichiers portent ces noms pour que le nom indique d’emblée ce qui ne va pas dans cette version (détails ci-dessous).
 
 > [!WARNING]
-> **Des défauts de conception critiques ont été trouvés dans la v2 :**
+> **Des défauts de conception critiques ont été trouvés dans la v2 :**
 >
 > 1. **La fixation du train d’atterrissage au fuselage est trop faible.** Elle ne supporte pas le poids de l’avion, et le fuselage se déchire au niveau de la fixation.
 > 2. **Il n’y a aucun support pour la sangle Velcro qui retient la batterie.**

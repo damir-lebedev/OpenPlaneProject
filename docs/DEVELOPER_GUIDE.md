@@ -971,7 +971,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # проверить
 - Пока открыт монитор порта, заливка на тот же порт не пройдёт.
 - `lib_deps`: `olikraus/U8g2` (OLED) — единственная внешняя библиотека.
 - `test/` — подробно в [`TESTING.md`](TESTING.md):
-  - `pio test -e native` — 197 тестов на ПК (фейки железа в
+  - `pio test -e native -e native-stm32` — 387 тестов на ПК (фейки железа в
     `test/native/support/`), покрытие — `gcovr`;
   - `pio test -e esp32-s3` — `test_feedback/` (замкнутая симуляция обратной
     связи) и `test_imu_orientation/` на самой плате; каждый прошивает тестовую

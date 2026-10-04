@@ -56,7 +56,7 @@
 
 | | |
 |---|---|
-| **Ce que c’est** | Un contrôleur de vol et pilote automatique ouverts pour avions radiocommandés. Aujourd’hui, c’est un ESP32-S3 à environ 10 $ ; la prochaine étape est le STM32H743 (une carte de la classe Pixhawk) : le firmware complet passe les tests et, sur une carte DevEBox, il **tourne déjà et se pilote avec la radio** — [il y a une vidéo](#-le-stm32h743-sanime-sur-la-carte). |
+| **Ce que c’est** | Un contrôleur de vol et pilote automatique ouverts pour avions radiocommandés. Aujourd’hui, c’est un ESP32-S3 à environ 10 $ ; la prochaine étape est le STM32H743 (une carte de la classe Pixhawk) : le firmware complet passe les tests et, sur une carte DevEBox, il **tourne déjà et se pilote avec la radio** — [il y a une vidéo](#-le-stm32h743sanime-sur-la-carte). |
 | **Ce qu’il sait faire** | 12 modes de vol, de la stabilisation au retour à la maison, en passant par les cercles au GPS, le lancer à la main, l’atterrissage automatique et le **vol à voile en thermiques**. Un tube de Pitot fait de deux baromètres bon marché. Télémétrie MAVLink vers QGroundControl et Mission Planner. |
 | **L’atout principal** | N’importe quel interrupteur ou potentiomètre de la radio = n’importe quelle fonction. **Une seule ligne** dans `Controls.h`, et SwD n’est plus un RTH mais un largage de charge. |
 | **Pourquoi lui faire confiance** | 387 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 98 % du code couvert par les tests, 24 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
@@ -133,7 +133,7 @@ Pas « une fonction a renvoyé un nombre », mais un **vol** : radio → tram
 
 ## 🌬️ Un tube de Pitot pour trois fois rien
 
-Un bon capteur de vitesse air coûte à peu près la moitié d’un contrôleur de vol. Ici, il y a **deux baromètres** : un BMP581 dans le tube (pression totale) et le baromètre principal dans le fuselage (pression statique). Le firmware remet à zéro, au sol, l’écart entre les puces, filtre, calcule la densité de l’air à partir de l’altitude et de la température, et repère les durites inversées. Ce que cela apporte : CRUISE maintient la vitesse **air** et non les gaz ; une protection contre le décrochage ; une vitesse fiable dans la télémétrie. Le montage est décrit dans la [référence](AUTOPILOT_GUIDE.md#трубка-пито-своими-руками).
+Un bon capteur de vitesse air coûte à peu près la moitié d’un contrôleur de vol. Ici, il y a **deux baromètres** : un BMP581 dans le tube (pression totale) et le baromètre principal dans le fuselage (pression statique). Le firmware remet à zéro, au sol, l’écart entre les puces, filtre, calcule la densité de l’air à partir de l’altitude et de la température, et repère les durites inversées. Ce que cela apporte : CRUISE maintient la vitesse **air** et non les gaz ; une protection contre le décrochage ; une vitesse fiable dans la télémétrie. Le montage est décrit dans la [référence](AUTOPILOT_GUIDE.md#un-tube-de-pitot-fait-maison).
 
 ---
 
@@ -317,7 +317,7 @@ Ce qui a déjà été fait avec nos propres moyens : une architecture qui se tr
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | la carte du contrôleur de vol · où va le projet |
 | [airframe/](airframe/README.md) | la cellule Astro-Cargo : projet Fusion 360 et fichiers STL à imprimer, défauts connus de la version v2 |
 
-> **Projet associé :** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) — la radio FS-i6 en joystick USB pour simulateur, sur le même ESP32-S3 : d’abord accumuler des heures de vol en simulateur, ensuite sur le terrain.
+> **Projet associé :** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) — la radio FS-i6 en joystick USB pour simulateur, sur le même ESP32-S3 : d’abord accumuler des heures de vol en simulateur, ensuite sur le terrain.
 
 ---
 

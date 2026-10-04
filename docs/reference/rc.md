@@ -56,7 +56,7 @@
 | `void begin()` | `serial.begin(IBUS_BAUDRATE)`, отсчёт таймаута от «сейчас» |
 | `void update()` | Вычитать всё, что накопилось в UART; вызывать каждый такт |
 | `const RcChannelState& getState() const` | Последние принятые каналы |
-| `bool isSignalLost() const` | `isFrameTimeout() || isFailsafeReported()` |
+| `bool isSignalLost() const` | `isFrameTimeout() \|\| isFailsafeReported()` |
 | `bool isFrameTimeout() const` | Ещё не было ни одного кадра **или** последний старше `RX_TIMEOUT_US` |
 | `bool isFailsafeReported() const` | В последнем кадре газ < `RX_FAILSAFE_THROTTLE_US` |
 | `uint32_t getLastFrameTime() const` | `micros()` последнего корректного кадра |
