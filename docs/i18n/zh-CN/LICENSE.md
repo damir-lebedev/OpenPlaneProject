@@ -2,7 +2,7 @@
 
 （基于 MIT 许可证，附加署名要求和使用限制）
 
-⚠️ 本文为便于阅读的非官方译文。只有英文原文 [LICENSE](../../../LICENSE) 具有法律效力。
+⚠️ 本文为便于阅读的非官方译文。只有英文原文 [LICENSE](../../../LICENSE) 具有法律效力。 本译文由 AI 完成，未经母语者审校。如发现错误，请联系 [Damir Lebedev](https://github.com/damir-lebedev)，或在[问题追踪页](https://github.com/damir-lebedev/OpenPlaneProject/issues)中提出。
 
 版权所有 (c) 2026 Damir Lebedev (Damn / Проклятый)，https://github.com/damir-lebedev
 

@@ -1,6 +1,6 @@
 # Placa da controladora de voo: blocos de conectores
 
-> 🌐 Esta página é uma tradução do [original em russo](../../FC_BOARD.md). Se a tradução e o original divergirem, vale o original. O firmware exibe as mensagens do console em russo, por isso elas são citadas como estão.
+> 🌐 Esta página é uma tradução do [original em russo](../../FC_BOARD.md). Se a tradução e o original divergirem, vale o original. O firmware exibe as mensagens do console em russo, por isso elas são citadas como estão. A tradução foi feita por uma IA e não foi revisada por falantes nativos. Se encontrar erros, escreva para [Damir Lebedev](https://github.com/damir-lebedev) ou abra uma [issue](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 Uma placa portadora para a ESP32-S3 DevKitC-1 (N16R8): a DevKit se encaixa em duas barras de soquetes fêmea, e em volta ficam blocos de conectores JST-XH. Este documento responde a três perguntas: quais conectores montar em blocos, onde colocar os capacitores e o que ligar em cada lugar. Os pinos coincidem com o `include/config/Config.h` (o bloco `BOARD_ESP32_S3`).
 

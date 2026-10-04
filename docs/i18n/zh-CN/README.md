@@ -26,7 +26,7 @@
   </p>
 <!-- i18n-bar:end -->
 
-<p align="center"><sub>🌐 这是<a href="../../../README.md">俄语版 README</a> 的译文。详细文档也已翻译，下文链接指向译文页面。译文与原文如有出入，以原文为准。控制台信息、截图和图表上的文字仍为俄语。</sub></p>
+<p align="center"><sub>🌐 这是<a href="../../../README.md">俄语版 README</a> 的译文。详细文档也已翻译，下文链接指向译文页面。译文与原文如有出入，以原文为准。控制台信息、截图和图表上的文字仍为俄语。 本译文由 AI 完成，未经母语者审校。如发现错误，请联系 <a href="https://github.com/damir-lebedev">Damir Lebedev</a>，或在<a href="https://github.com/damir-lebedev/OpenPlaneProject/issues">问题追踪页</a>中提出。</sub></p>
 
 <p align="center">
   <img src="../../images/banner.zh-CN.svg" alt="OpenPlane — 开放式固定翼自动驾驶仪" width="100%">

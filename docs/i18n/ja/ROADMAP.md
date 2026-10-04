@@ -1,6 +1,6 @@
 # OpenPlaneProject — 投資家・パートナー向けのロードマップとピッチ
 
-> 🌐 このページは[ロシア語の原文](../../ROADMAP.md)の翻訳です。翻訳と原文に違いがある場合は、原文が優先されます。ファームウェアはコンソールメッセージをロシア語で出力するため、そのまま引用しています。
+> 🌐 このページは[ロシア語の原文](../../ROADMAP.md)の翻訳です。翻訳と原文に違いがある場合は、原文が優先されます。ファームウェアはコンソールメッセージをロシア語で出力するため、そのまま引用しています。 この翻訳は AI によるもので、ネイティブスピーカーによる確認は行っていません。誤りを見つけたら、[Damir Lebedev](https://github.com/damir-lebedev) までご連絡いただくか、[Issue](https://github.com/damir-lebedev/OpenPlaneProject/issues) でお知らせください。
 
 > リポジトリ：[github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject)、ブランチ `main`。この文書は README の紹介文をさらに掘り下げたもので、プロジェクトへの資金・時間・提携を検討している方に向けています。プロジェクトがいまどこにいるのか、どこへ、なぜ向かっているのか、そして書き上げたコードのどこがこの道筋を、掲げただけのものではなく現実的なものにしているのかを説明します。
 

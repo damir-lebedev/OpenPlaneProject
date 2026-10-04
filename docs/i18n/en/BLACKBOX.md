@@ -1,6 +1,6 @@
 # Black box
 
-> 🌐 This page is a translation of the [Russian original](../../BLACKBOX.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is.
+> 🌐 This page is a translation of the [Russian original](../../BLACKBOX.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is. The translation was made by AI and has not been checked by native speakers. Please report mistakes to [Damir Lebedev](https://github.com/damir-lebedev) or in the [issue tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 The firmware records every flight by itself into the board's built-in flash: sensors, sticks, servo outputs, autopilot decisions, events. After the flight the recording is downloaded over USB and decoded into CSV tables.
 

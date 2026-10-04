@@ -1,6 +1,6 @@
 # Flugsteuerungsplatine: Steckverbinderblöcke
 
-> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../FC_BOARD.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert.
+> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../FC_BOARD.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert. Die Übersetzung wurde von einer KI erstellt und nicht von Muttersprachlern geprüft. Fehler bitte an [Damir Lebedev](https://github.com/damir-lebedev) melden oder im [Issue-Tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues) eintragen.
 
 Eine Trägerplatine für den ESP32-S3 DevKitC-1 (N16R8): Das DevKit wird in zwei Buchsenleisten gesteckt, und ringsherum sitzen Blöcke von JST-XH-Steckverbindern. Dieses Dokument beantwortet drei Fragen: welche Steckverbinder zu Blöcken zusammengefasst werden, wohin die Kondensatoren kommen und was wohin gesteckt wird. Die Pins stimmen mit `include/config/Config.h` überein (dem Block `BOARD_ESP32_S3`).
 

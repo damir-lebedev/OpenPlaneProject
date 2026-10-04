@@ -1,6 +1,6 @@
 # Cellule Astro-Cargo : modèle et fichiers d’impression
 
-> 🌐 Cette page est la traduction de l’[original en russe](../../../../airframe/README.md). En cas de divergence entre la traduction et l’original, c’est l’original qui fait foi. Le firmware affiche les messages de la console en russe ; ils sont donc cités tels quels.
+> 🌐 Cette page est la traduction de l’[original en russe](../../../../airframe/README.md). En cas de divergence entre la traduction et l’original, c’est l’original qui fait foi. Le firmware affiche les messages de la console en russe ; ils sont donc cités tels quels. La traduction a été réalisée par une IA et n’a pas été relue par des locuteurs natifs. Pour signaler une erreur, écrivez à [Damir Lebedev](https://github.com/damir-lebedev) ou ouvrez un [ticket](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 Voici l’avion lui-même : le projet Fusion 360 et les fichiers STL pour l’impression 3D. L’électronique et la carte du contrôleur de vol sont décrites dans [FC_BOARD.md](../FC_BOARD.md), le montage et le premier vol dans le [guide du pilote](../PILOT_GUIDE.md).
 

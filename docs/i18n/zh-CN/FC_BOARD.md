@@ -1,6 +1,6 @@
 # 飞控板：接口分组
 
-> 🌐 本页是[俄语原文](../../FC_BOARD.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。
+> 🌐 本页是[俄语原文](../../FC_BOARD.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。 本译文由 AI 完成，未经母语者审校。如发现错误，请联系 [Damir Lebedev](https://github.com/damir-lebedev)，或在[问题追踪页](https://github.com/damir-lebedev/OpenPlaneProject/issues)中提出。
 
 这是一块 ESP32-S3 DevKitC-1（N16R8）的载板：DevKit 插在两排母座排针上，周围是成组的 JST-XH 接口。本文回答三个问题：把哪些接口焊成一组，电容放在哪里，以及什么插到哪里。引脚与 `include/config/Config.h`（`BOARD_ESP32_S3` 部分）一致。
 

@@ -26,7 +26,7 @@
   </p>
 <!-- i18n-bar:end -->
 
-<p align="center"><sub>🌐 <a href="../../../README.md">러시아어 README</a>를 번역한 것입니다. 상세 문서도 번역되어 있으며, 아래 링크는 번역된 페이지로 연결됩니다. 번역과 원문이 다를 경우 원문이 우선합니다. 콘솔 메시지, 스크린샷, 그래프의 글자는 아직 러시아어입니다.</sub></p>
+<p align="center"><sub>🌐 <a href="../../../README.md">러시아어 README</a>를 번역한 것입니다. 상세 문서도 번역되어 있으며, 아래 링크는 번역된 페이지로 연결됩니다. 번역과 원문이 다를 경우 원문이 우선합니다. 콘솔 메시지, 스크린샷, 그래프의 글자는 아직 러시아어입니다. 이 번역은 AI가 작성했으며 원어민의 검수를 거치지 않았습니다. 오류를 발견하면 <a href="https://github.com/damir-lebedev">Damir Lebedev</a>에게 알려 주시거나 <a href="https://github.com/damir-lebedev/OpenPlaneProject/issues">이슈</a>로 남겨 주세요.</sub></p>
 
 <p align="center">
   <img src="../../images/banner.ko.svg" alt="OpenPlane — 비행기용 개방형 오토파일럿" width="100%">

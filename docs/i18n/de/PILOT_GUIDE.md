@@ -1,6 +1,6 @@
 # Pilotenleitfaden für OpenPlaneProject
 
-> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../PILOT_GUIDE.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert.
+> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../PILOT_GUIDE.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert. Die Übersetzung wurde von einer KI erstellt und nicht von Muttersprachlern geprüft. Fehler bitte an [Damir Lebedev](https://github.com/damir-lebedev) melden oder im [Issue-Tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues) eintragen.
 
 Das ist ein praktischer Leitfaden dazu, „was wohin angeschlossen wird und wie man fliegt“, für alle, die einen Lötkolben und einen Sender in der Hand halten und nicht den Quellcode lesen. Wer die Architektur des Codes verstehen will, findet sie in den anderen Dokumenten des Repositorys. Hier geht es nur um Hardware, Kanäle, Firmware und Flüge.
 

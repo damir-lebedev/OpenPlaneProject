@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — l’architecture du firmware d’OpenPlaneProject
 
-> 🌐 Cette page est la traduction de l’[original en russe](../../ARCHITECTURE.md). En cas de divergence entre la traduction et l’original, c’est l’original qui fait foi. Le firmware affiche les messages de la console en russe ; ils sont donc cités tels quels.
+> 🌐 Cette page est la traduction de l’[original en russe](../../ARCHITECTURE.md). En cas de divergence entre la traduction et l’original, c’est l’original qui fait foi. Le firmware affiche les messages de la console en russe ; ils sont donc cités tels quels. La traduction a été réalisée par une IA et n’a pas été relue par des locuteurs natifs. Pour signaler une erreur, écrivez à [Damir Lebedev](https://github.com/damir-lebedev) ou ouvrez un [ticket](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 Ce document décrit **comment est organisé le firmware dans son ensemble** : les couches et les règles de dépendance entre elles, le graphe d’objets, le modèle de tâches FreeRTOS, l’ordre des opérations à chaque cycle, les machines à états, la stratégie de tolérance aux pannes des capteurs et les points d’extension. Une référence détaillée de chaque classe (API publique, champs, invariants) se trouve dans [`reference/`](reference/README.md).
 

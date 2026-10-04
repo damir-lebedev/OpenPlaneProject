@@ -1,6 +1,6 @@
 # Referência do piloto automático do OpenPlane
 
-> 🌐 Esta página é uma tradução do [original em russo](../../AUTOPILOT_GUIDE.md). Se a tradução e o original divergirem, vale o original. O firmware exibe as mensagens do console em russo, por isso elas são citadas como estão.
+> 🌐 Esta página é uma tradução do [original em russo](../../AUTOPILOT_GUIDE.md). Se a tradução e o original divergirem, vale o original. O firmware exibe as mensagens do console em russo, por isso elas são citadas como estão. A tradução foi feita por uma IA e não foi revisada por falantes nativos. Se encontrar erros, escreva para [Damir Lebedev](https://github.com/damir-lebedev) ou abra uma [issue](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 O que o piloto automático sabe fazer, como ativar cada função e como atribuí-la a qualquer chave ou potenciômetro do rádio **com uma única linha**.
 

@@ -1,6 +1,6 @@
 # Astro-Cargo 机体：模型与打印文件
 
-> 🌐 本页是[俄语原文](../../../../airframe/README.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。
+> 🌐 本页是[俄语原文](../../../../airframe/README.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。 本译文由 AI 完成，未经母语者审校。如发现错误，请联系 [Damir Lebedev](https://github.com/damir-lebedev)，或在[问题追踪页](https://github.com/damir-lebedev/OpenPlaneProject/issues)中提出。
 
 这里存放飞机本体：Fusion 360 项目和用于 3D 打印的 STL 文件。电子部分和飞控板见 [FC_BOARD.md](../FC_BOARD.md)，组装和首飞见[飞手指南](../PILOT_GUIDE.md)。
 

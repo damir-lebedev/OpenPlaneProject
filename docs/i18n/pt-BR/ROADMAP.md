@@ -1,6 +1,6 @@
 # OpenPlaneProject — roteiro e apresentação para investidores e parceiros
 
-> 🌐 Esta página é uma tradução do [original em russo](../../ROADMAP.md). Se a tradução e o original divergirem, vale o original. O firmware exibe as mensagens do console em russo, por isso elas são citadas como estão.
+> 🌐 Esta página é uma tradução do [original em russo](../../ROADMAP.md). Se a tradução e o original divergirem, vale o original. O firmware exibe as mensagens do console em russo, por isso elas são citadas como estão. A tradução foi feita por uma IA e não foi revisada por falantes nativos. Se encontrar erros, escreva para [Damir Lebedev](https://github.com/damir-lebedev) ou abra uma [issue](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 > Repositório: [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject), ramo `main`.
 > Este documento é uma versão mais aprofundada do teaser do README, dirigida a quem está avaliando investir dinheiro,

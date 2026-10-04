@@ -1,6 +1,6 @@
 # OpenPlaneProject – Roadmap und Pitch für Investoren und Partner
 
-> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../ROADMAP.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert.
+> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../ROADMAP.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert. Die Übersetzung wurde von einer KI erstellt und nicht von Muttersprachlern geprüft. Fehler bitte an [Damir Lebedev](https://github.com/damir-lebedev) melden oder im [Issue-Tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues) eintragen.
 
 > Repository: [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject), Branch `main`.
 > Dieses Dokument ist die ausführlichere Fassung des README-Teasers und richtet sich an alle, die erwägen, Geld, Zeit

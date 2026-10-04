@@ -1,6 +1,6 @@
 # Blackbox
 
-> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../BLACKBOX.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert.
+> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../BLACKBOX.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert. Die Übersetzung wurde von einer KI erstellt und nicht von Muttersprachlern geprüft. Fehler bitte an [Damir Lebedev](https://github.com/damir-lebedev) melden oder im [Issue-Tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues) eintragen.
 
 Die Firmware schreibt jeden Flug selbst in den eingebauten Flash des Boards: Sensoren, Knüppel, Ausgänge zu den Servos, Entscheidungen des Autopiloten, Ereignisse. Nach dem Flug wird die Aufzeichnung per USB heruntergeladen und in CSV-Tabellen ausgewertet.
 

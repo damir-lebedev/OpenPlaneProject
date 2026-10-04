@@ -1,6 +1,6 @@
 # Aeromodelo Astro-Cargo: modelo e arquivos para impressão
 
-> 🌐 Esta página é uma tradução do [original em russo](../../../../airframe/README.md). Se a tradução e o original divergirem, vale o original. O firmware exibe as mensagens do console em russo, por isso elas são citadas como estão.
+> 🌐 Esta página é uma tradução do [original em russo](../../../../airframe/README.md). Se a tradução e o original divergirem, vale o original. O firmware exibe as mensagens do console em russo, por isso elas são citadas como estão. A tradução foi feita por uma IA e não foi revisada por falantes nativos. Se encontrar erros, escreva para [Damir Lebedev](https://github.com/damir-lebedev) ou abra uma [issue](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 Aqui está o próprio avião: o projeto do Fusion 360 e os arquivos STL para impressão 3D. A eletrônica e a placa da controladora de voo estão descritas em [FC_BOARD.md](../FC_BOARD.md); a montagem e o primeiro voo, no [guia do piloto](../PILOT_GUIDE.md).
 

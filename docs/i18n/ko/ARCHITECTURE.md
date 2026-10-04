@@ -1,6 +1,6 @@
 # ARCHITECTURE.md — OpenPlaneProject 펌웨어의 아키텍처
 
-> 🌐 이 문서는 [러시아어 원문](../../ARCHITECTURE.md)을 번역한 것입니다. 번역과 원문이 다를 경우 원문이 우선합니다. 펌웨어는 콘솔 메시지를 러시아어로 출력하므로 그대로 인용했습니다.
+> 🌐 이 문서는 [러시아어 원문](../../ARCHITECTURE.md)을 번역한 것입니다. 번역과 원문이 다를 경우 원문이 우선합니다. 펌웨어는 콘솔 메시지를 러시아어로 출력하므로 그대로 인용했습니다. 이 번역은 AI가 작성했으며 원어민의 검수를 거치지 않았습니다. 오류를 발견하면 [Damir Lebedev](https://github.com/damir-lebedev)에게 알려 주시거나 [이슈](https://github.com/damir-lebedev/OpenPlaneProject/issues)로 남겨 주세요.
 
 이 문서는 **펌웨어 전체가 어떻게 구성되어 있는지** 설명합니다. 계층과 계층 사이의 의존 규칙, 객체 그래프, FreeRTOS 스레드 모델, 한 주기 동안의 연산 순서, 상태 머신, 센서 내결함성 전략, 그리고 확장 지점입니다. 각 클래스의 상세한 참조(공개 API, 필드, 불변 조건)는 [`reference/`](reference/README.md)에 있습니다.
 

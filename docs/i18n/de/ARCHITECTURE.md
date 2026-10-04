@@ -1,6 +1,6 @@
 # ARCHITECTURE.md – die Architektur der OpenPlaneProject-Firmware
 
-> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../ARCHITECTURE.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert.
+> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../ARCHITECTURE.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert. Die Übersetzung wurde von einer KI erstellt und nicht von Muttersprachlern geprüft. Fehler bitte an [Damir Lebedev](https://github.com/damir-lebedev) melden oder im [Issue-Tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues) eintragen.
 
 Dieses Dokument beschreibt, **wie die gesamte Firmware aufgebaut ist**: die Schichten und die Abhängigkeitsregeln zwischen ihnen, den Objektgraphen, das FreeRTOS-Threadmodell, die Reihenfolge der Operationen pro Zyklus, die Zustandsautomaten, die Strategie zur Ausfallsicherheit der Sensoren und die Erweiterungspunkte. Eine ausführliche Referenz zu jeder Klasse (öffentliche API, Felder, Invarianten) steht in [`reference/`](reference/README.md).
 

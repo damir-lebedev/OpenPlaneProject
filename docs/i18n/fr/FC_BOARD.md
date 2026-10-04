@@ -1,6 +1,6 @@
 # Carte du contrôleur de vol : blocs de connecteurs
 
-> 🌐 Cette page est la traduction de l’[original en russe](../../FC_BOARD.md). En cas de divergence entre la traduction et l’original, c’est l’original qui fait foi. Le firmware affiche les messages de la console en russe ; ils sont donc cités tels quels.
+> 🌐 Cette page est la traduction de l’[original en russe](../../FC_BOARD.md). En cas de divergence entre la traduction et l’original, c’est l’original qui fait foi. Le firmware affiche les messages de la console en russe ; ils sont donc cités tels quels. La traduction a été réalisée par une IA et n’a pas été relue par des locuteurs natifs. Pour signaler une erreur, écrivez à [Damir Lebedev](https://github.com/damir-lebedev) ou ouvrez un [ticket](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 Une carte porteuse pour l’ESP32-S3 DevKitC-1 (N16R8) : le DevKit s’enfiche dans deux barrettes femelles, et tout autour se trouvent des blocs de connecteurs JST-XH. Ce document répond à trois questions : quels connecteurs assembler en blocs, où placer les condensateurs et ce qu’il faut brancher où. Les broches correspondent à `include/config/Config.h` (le bloc `BOARD_ESP32_S3`).
 

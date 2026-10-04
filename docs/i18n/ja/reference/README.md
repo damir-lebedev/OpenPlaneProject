@@ -1,6 +1,6 @@
 # クラスリファレンス
 
-> 🌐 このページは[ロシア語の原文](../../../reference/README.md)の翻訳です。翻訳と原文に違いがある場合は、原文が優先されます。ファームウェアはコンソールメッセージをロシア語で出力するため、そのまま引用しています。
+> 🌐 このページは[ロシア語の原文](../../../reference/README.md)の翻訳です。翻訳と原文に違いがある場合は、原文が優先されます。ファームウェアはコンソールメッセージをロシア語で出力するため、そのまま引用しています。 この翻訳は AI によるもので、ネイティブスピーカーによる確認は行っていません。誤りを見つけたら、[Damir Lebedev](https://github.com/damir-lebedev) までご連絡いただくか、[Issue](https://github.com/damir-lebedev/OpenPlaneProject/issues) でお知らせください。
 
 ファームウェアのすべてのクラス、構造体、列挙型、名前空間を、レイヤーごとにまとめた一覧です。全体像（レイヤー、データの流れ、ステートマシン）は [`../ARCHITECTURE.md`](../ARCHITECTURE.md)、実践的な手順は [`../DEVELOPER_GUIDE.md`](../DEVELOPER_GUIDE.md) にあります。
 

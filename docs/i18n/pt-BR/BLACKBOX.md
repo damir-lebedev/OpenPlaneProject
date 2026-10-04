@@ -1,6 +1,6 @@
 # Caixa-preta
 
-> 🌐 Esta página é uma tradução do [original em russo](../../BLACKBOX.md). Se a tradução e o original divergirem, vale o original. O firmware exibe as mensagens do console em russo, por isso elas são citadas como estão.
+> 🌐 Esta página é uma tradução do [original em russo](../../BLACKBOX.md). Se a tradução e o original divergirem, vale o original. O firmware exibe as mensagens do console em russo, por isso elas são citadas como estão. A tradução foi feita por uma IA e não foi revisada por falantes nativos. Se encontrar erros, escreva para [Damir Lebedev](https://github.com/damir-lebedev) ou abra uma [issue](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 O firmware grava sozinho cada voo na flash integrada da placa: sensores, sticks, saídas para os servos, decisões do piloto automático, eventos. Depois do voo, a gravação é baixada por USB e decodificada em tabelas CSV.
 

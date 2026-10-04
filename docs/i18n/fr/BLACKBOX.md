@@ -1,6 +1,6 @@
 # Boîte noire
 
-> 🌐 Cette page est la traduction de l’[original en russe](../../BLACKBOX.md). En cas de divergence entre la traduction et l’original, c’est l’original qui fait foi. Le firmware affiche les messages de la console en russe ; ils sont donc cités tels quels.
+> 🌐 Cette page est la traduction de l’[original en russe](../../BLACKBOX.md). En cas de divergence entre la traduction et l’original, c’est l’original qui fait foi. Le firmware affiche les messages de la console en russe ; ils sont donc cités tels quels. La traduction a été réalisée par une IA et n’a pas été relue par des locuteurs natifs. Pour signaler une erreur, écrivez à [Damir Lebedev](https://github.com/damir-lebedev) ou ouvrez un [ticket](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 Le firmware enregistre lui-même chaque vol dans la mémoire flash intégrée de la carte : capteurs, sticks, sorties vers les servos, décisions du pilote automatique, événements. Après le vol, l’enregistrement est téléchargé par USB et décodé en tableaux CSV.
 

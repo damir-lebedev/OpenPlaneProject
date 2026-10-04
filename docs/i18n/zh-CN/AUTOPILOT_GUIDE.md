@@ -1,6 +1,6 @@
 # OpenPlane 自动驾驶仪参考手册
 
-> 🌐 本页是[俄语原文](../../AUTOPILOT_GUIDE.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。
+> 🌐 本页是[俄语原文](../../AUTOPILOT_GUIDE.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。 本译文由 AI 完成，未经母语者审校。如发现错误，请联系 [Damir Lebedev](https://github.com/damir-lebedev)，或在[问题追踪页](https://github.com/damir-lebedev/OpenPlaneProject/issues)中提出。
 
 自动驾驶仪能做什么、如何启用每项功能，以及如何**只用一行代码**把它挂到遥控器的任意开关或旋钮上。
 

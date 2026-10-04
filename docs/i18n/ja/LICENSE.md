@@ -2,7 +2,7 @@
 
 （MIT ライセンスをもとに、著作者表示の義務と利用制限を加えたもの）
 
-⚠️ これは読みやすさのための非公式な翻訳です。法的な効力を持つのは、英語の原文である [LICENSE](../../../LICENSE) のみです。
+⚠️ これは読みやすさのための非公式な翻訳です。法的な効力を持つのは、英語の原文である [LICENSE](../../../LICENSE) のみです。 この翻訳は AI によるもので、ネイティブスピーカーによる確認は行っていません。誤りを見つけたら、[Damir Lebedev](https://github.com/damir-lebedev) までご連絡いただくか、[Issue](https://github.com/damir-lebedev/OpenPlaneProject/issues) でお知らせください。
 
 Copyright (c) 2026 Damir Lebedev (Damn / Проклятый), https://github.com/damir-lebedev
 

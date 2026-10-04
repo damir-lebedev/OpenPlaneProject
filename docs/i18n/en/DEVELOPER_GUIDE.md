@@ -1,6 +1,6 @@
 # DEVELOPER_GUIDE.md — the OpenPlaneProject developer guide
 
-> 🌐 This page is a translation of the [Russian original](../../DEVELOPER_GUIDE.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is.
+> 🌐 This page is a translation of the [Russian original](../../DEVELOPER_GUIDE.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is. The translation was made by AI and has not been checked by native speakers. Please report mistakes to [Damir Lebedev](https://github.com/damir-lebedev) or in the [issue tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 A technical map of the firmware: which file is responsible for what, how data flows from the receiver and sensors to the servos, which sign conventions hold the whole chain together, how the web API is organized and how to extend the project. It is meant for a developer who writes C++ and wants to get oriented quickly in this repository (the `main` branch), not for learning the basics of the language or PlatformIO.
 

@@ -1,6 +1,6 @@
 # OpenPlaneProject pilot's guide
 
-> 🌐 This page is a translation of the [Russian original](../../PILOT_GUIDE.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is.
+> 🌐 This page is a translation of the [Russian original](../../PILOT_GUIDE.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is. The translation was made by AI and has not been checked by native speakers. Please report mistakes to [Damir Lebedev](https://github.com/damir-lebedev) or in the [issue tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 This is a practical "what to connect where and how to fly" guide for people who hold a soldering iron and a transmitter rather than read source code. If you want to understand the architecture of the code, see the other documents in the repository. Here there is only hardware, channels, firmware and flying.
 

@@ -1,6 +1,6 @@
 # OpenPlane autopilot reference
 
-> 🌐 This page is a translation of the [Russian original](../../AUTOPILOT_GUIDE.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is.
+> 🌐 This page is a translation of the [Russian original](../../AUTOPILOT_GUIDE.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is. The translation was made by AI and has not been checked by native speakers. Please report mistakes to [Damir Lebedev](https://github.com/damir-lebedev) or in the [issue tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 What the autopilot can do, how to enable each feature, and how to hang it on any switch or knob of the transmitter **with a single line**.
 

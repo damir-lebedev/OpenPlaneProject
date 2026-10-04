@@ -2,7 +2,7 @@
 
 (auf Grundlage der MIT-Lizenz, mit Pflicht zur Namensnennung und Nutzungsbeschränkungen)
 
-⚠️ Inoffizielle Übersetzung, nur zur besseren Lesbarkeit. Rechtlich verbindlich ist ausschließlich der englische Text in der Datei [LICENSE](../../../LICENSE).
+⚠️ Inoffizielle Übersetzung, nur zur besseren Lesbarkeit. Rechtlich verbindlich ist ausschließlich der englische Text in der Datei [LICENSE](../../../LICENSE). Die Übersetzung wurde von einer KI erstellt und nicht von Muttersprachlern geprüft. Fehler bitte an [Damir Lebedev](https://github.com/damir-lebedev) melden oder im [Issue-Tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues) eintragen.
 
 Copyright (c) 2026 Damir Lebedev (Damn / Проклятый), https://github.com/damir-lebedev
 

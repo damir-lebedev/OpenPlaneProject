@@ -1,6 +1,6 @@
 # Flight controller board: connector blocks
 
-> 🌐 This page is a translation of the [Russian original](../../FC_BOARD.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is.
+> 🌐 This page is a translation of the [Russian original](../../FC_BOARD.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is. The translation was made by AI and has not been checked by native speakers. Please report mistakes to [Damir Lebedev](https://github.com/damir-lebedev) or in the [issue tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 A carrier board for the ESP32-S3 DevKitC-1 (N16R8): the DevKit plugs into two female pin-header strips, with blocks of JST-XH connectors around it. This document answers three questions: which connectors to assemble into blocks, where to put the capacitors, and what plugs in where. The pins match `include/config/Config.h` (the `BOARD_ESP32_S3` block).
 

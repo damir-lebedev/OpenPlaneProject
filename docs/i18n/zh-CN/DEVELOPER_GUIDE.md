@@ -1,6 +1,6 @@
 # DEVELOPER_GUIDE.md——OpenPlaneProject 开发者指南
 
-> 🌐 本页是[俄语原文](../../DEVELOPER_GUIDE.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。
+> 🌐 本页是[俄语原文](../../DEVELOPER_GUIDE.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。 本译文由 AI 完成，未经母语者审校。如发现错误，请联系 [Damir Lebedev](https://github.com/damir-lebedev)，或在[问题追踪页](https://github.com/damir-lebedev/OpenPlaneProject/issues)中提出。
 
 固件的技术地图：每个文件负责什么，数据如何从接收机和传感器流向舵机，哪些符号约定把整条链路连在一起，Web API 是怎样组织的，以及如何扩展项目。本文面向会写 C++、想在这个仓库（`main` 分支）里快速找到方向的开发者，而不是用来学习语言或 PlatformIO 的基础知识。
 

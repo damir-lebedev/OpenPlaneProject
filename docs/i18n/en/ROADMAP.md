@@ -1,6 +1,6 @@
 # OpenPlaneProject — roadmap and pitch for investors and partners
 
-> 🌐 This page is a translation of the [Russian original](../../ROADMAP.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is.
+> 🌐 This page is a translation of the [Russian original](../../ROADMAP.md). If the translation and the original differ, the original is authoritative. The firmware prints its console messages in Russian, so they are quoted as is. The translation was made by AI and has not been checked by native speakers. Please report mistakes to [Damir Lebedev](https://github.com/damir-lebedev) or in the [issue tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 > Repository: [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject), branch `main`.
 > This document is a deeper version of the README teaser, addressed to those

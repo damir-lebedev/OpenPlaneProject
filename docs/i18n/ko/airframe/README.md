@@ -1,6 +1,6 @@
 # Astro-Cargo 기체: 모델과 출력용 파일
 
-> 🌐 이 문서는 [러시아어 원문](../../../../airframe/README.md)을 번역한 것입니다. 번역과 원문이 다를 경우 원문이 우선합니다. 펌웨어는 콘솔 메시지를 러시아어로 출력하므로 그대로 인용했습니다.
+> 🌐 이 문서는 [러시아어 원문](../../../../airframe/README.md)을 번역한 것입니다. 번역과 원문이 다를 경우 원문이 우선합니다. 펌웨어는 콘솔 메시지를 러시아어로 출력하므로 그대로 인용했습니다. 이 번역은 AI가 작성했으며 원어민의 검수를 거치지 않았습니다. 오류를 발견하면 [Damir Lebedev](https://github.com/damir-lebedev)에게 알려 주시거나 [이슈](https://github.com/damir-lebedev/OpenPlaneProject/issues)로 남겨 주세요.
 
 이곳에는 비행기 본체가 있습니다. Fusion 360 프로젝트와 3D 프린팅용 STL 파일입니다. 전자 부품과 비행 컨트롤러 보드는 [FC_BOARD.md](../FC_BOARD.md)에, 조립과 첫 비행은 [파일럿 가이드](../PILOT_GUIDE.md)에 설명되어 있습니다.
 

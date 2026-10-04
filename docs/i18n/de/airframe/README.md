@@ -1,6 +1,6 @@
 # Astro-Cargo-Flugzeugzelle: Modell und Druckdateien
 
-> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../../../airframe/README.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert.
+> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../../../airframe/README.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert. Die Übersetzung wurde von einer KI erstellt und nicht von Muttersprachlern geprüft. Fehler bitte an [Damir Lebedev](https://github.com/damir-lebedev) melden oder im [Issue-Tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues) eintragen.
 
 Hier liegt das Flugzeug selbst: das Fusion-360-Projekt und die STL-Dateien für den 3D-Druck. Die Elektronik und die Flugsteuerungsplatine sind in [FC_BOARD.md](../FC_BOARD.md) beschrieben, Aufbau und Erstflug im [Pilotenleitfaden](../PILOT_GUIDE.md).
 

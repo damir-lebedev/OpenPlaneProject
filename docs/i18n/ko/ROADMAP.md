@@ -1,6 +1,6 @@
 # OpenPlaneProject — 투자자와 파트너를 위한 로드맵과 소개
 
-> 🌐 이 문서는 [러시아어 원문](../../ROADMAP.md)을 번역한 것입니다. 번역과 원문이 다를 경우 원문이 우선합니다. 펌웨어는 콘솔 메시지를 러시아어로 출력하므로 그대로 인용했습니다.
+> 🌐 이 문서는 [러시아어 원문](../../ROADMAP.md)을 번역한 것입니다. 번역과 원문이 다를 경우 원문이 우선합니다. 펌웨어는 콘솔 메시지를 러시아어로 출력하므로 그대로 인용했습니다. 이 번역은 AI가 작성했으며 원어민의 검수를 거치지 않았습니다. 오류를 발견하면 [Damir Lebedev](https://github.com/damir-lebedev)에게 알려 주시거나 [이슈](https://github.com/damir-lebedev/OpenPlaneProject/issues)로 남겨 주세요.
 
 > 저장소: [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject), 브랜치 `main`.
 > 이 문서는 README 소개글을 더 깊이 있게 풀어 쓴 것으로, 프로젝트에 자금, 시간 또는 협력을 투입하는 일을 고려하는 분들을 위한 것입니다.

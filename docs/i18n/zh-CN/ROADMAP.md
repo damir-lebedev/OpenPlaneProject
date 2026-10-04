@@ -1,6 +1,6 @@
 # OpenPlaneProject——面向投资人与合作伙伴的路线图与项目介绍
 
-> 🌐 本页是[俄语原文](../../ROADMAP.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。
+> 🌐 本页是[俄语原文](../../ROADMAP.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。 本译文由 AI 完成，未经母语者审校。如发现错误，请联系 [Damir Lebedev](https://github.com/damir-lebedev)，或在[问题追踪页](https://github.com/damir-lebedev/OpenPlaneProject/issues)中提出。
 
 > 仓库：[github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject)，分支 `main`。本文是 README 简介的深入版，写给正在考虑向项目投入资金、时间或建立合作的人。它说明项目现在处于什么位置、朝哪里走以及为什么，并说明已经写好的代码中究竟有什么，让这条路线是现实可行的，而不只是口头宣称。
 

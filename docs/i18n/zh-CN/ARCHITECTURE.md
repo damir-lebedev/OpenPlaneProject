@@ -1,6 +1,6 @@
 # ARCHITECTURE.md——OpenPlaneProject 固件架构
 
-> 🌐 本页是[俄语原文](../../ARCHITECTURE.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。
+> 🌐 本页是[俄语原文](../../ARCHITECTURE.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。 本译文由 AI 完成，未经母语者审校。如发现错误，请联系 [Damir Lebedev](https://github.com/damir-lebedev)，或在[问题追踪页](https://github.com/damir-lebedev/OpenPlaneProject/issues)中提出。
 
 本文说明**整套固件是如何构成的**：各层及层间的依赖规则、对象图、FreeRTOS 线程模型、每个控制周期内的操作顺序、状态机、传感器容错策略和扩展点。每个类的详细参考（公开 API、字段、不变式）见 [`reference/`](reference/README.md)。
 

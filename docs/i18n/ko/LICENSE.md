@@ -2,7 +2,7 @@
 
 (MIT 라이선스를 바탕으로 저작자 표시 의무와 사용 제한을 더한 것)
 
-⚠️ 이 문서는 읽기 편하도록 제공하는 비공식 번역입니다. 법적 효력은 영어 원문인 [LICENSE](../../../LICENSE)에만 있습니다.
+⚠️ 이 문서는 읽기 편하도록 제공하는 비공식 번역입니다. 법적 효력은 영어 원문인 [LICENSE](../../../LICENSE)에만 있습니다. 이 번역은 AI가 작성했으며 원어민의 검수를 거치지 않았습니다. 오류를 발견하면 [Damir Lebedev](https://github.com/damir-lebedev)에게 알려 주시거나 [이슈](https://github.com/damir-lebedev/OpenPlaneProject/issues)로 남겨 주세요.
 
 Copyright (c) 2026 Damir Lebedev (Damn / Проклятый), https://github.com/damir-lebedev
 

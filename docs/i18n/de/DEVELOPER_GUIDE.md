@@ -1,6 +1,6 @@
 # DEVELOPER_GUIDE.md – Entwicklerhandbuch zu OpenPlaneProject
 
-> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../DEVELOPER_GUIDE.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert.
+> 🌐 Diese Seite ist die Übersetzung des [russischen Originals](../../DEVELOPER_GUIDE.md). Weichen Übersetzung und Original voneinander ab, gilt das Original. Die Firmware gibt ihre Konsolenmeldungen auf Russisch aus; sie werden daher unverändert zitiert. Die Übersetzung wurde von einer KI erstellt und nicht von Muttersprachlern geprüft. Fehler bitte an [Damir Lebedev](https://github.com/damir-lebedev) melden oder im [Issue-Tracker](https://github.com/damir-lebedev/OpenPlaneProject/issues) eintragen.
 
 Eine technische Karte der Firmware: welche Datei wofür zuständig ist, wie die Daten vom Empfänger und von den Sensoren zu den Servos fließen, welche Vorzeichenkonventionen die ganze Kette zusammenhalten, wie die Web-API aufgebaut ist und wie man das Projekt erweitert. Sie ist für Entwickler gedacht, die C++ schreiben und sich in diesem Repository (Branch `main`) schnell zurechtfinden wollen – nicht zum Erlernen der Grundlagen der Sprache oder von PlatformIO.
 

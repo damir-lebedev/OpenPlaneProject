@@ -1,6 +1,6 @@
 # OpenPlaneProject 飞手指南
 
-> 🌐 本页是[俄语原文](../../PILOT_GUIDE.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。
+> 🌐 本页是[俄语原文](../../PILOT_GUIDE.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。 本译文由 AI 完成，未经母语者审校。如发现错误，请联系 [Damir Lebedev](https://github.com/damir-lebedev)，或在[问题追踪页](https://github.com/damir-lebedev/OpenPlaneProject/issues)中提出。
 
 这是一份实用指南，讲“什么接到哪里、怎么飞”，写给手里拿着烙铁和遥控器、而不是读源码的人。如果想弄清代码的架构，请看仓库里的其他文档。这里只讲硬件、通道、固件和飞行。
 

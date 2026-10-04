@@ -2,7 +2,7 @@
 
 (baseada na Licença MIT, com exigência de atribuição e restrições de uso)
 
-⚠️ Tradução não oficial, apenas para facilitar a leitura. Somente o texto em inglês do arquivo [LICENSE](../../../LICENSE) tem validade jurídica.
+⚠️ Tradução não oficial, apenas para facilitar a leitura. Somente o texto em inglês do arquivo [LICENSE](../../../LICENSE) tem validade jurídica. A tradução foi feita por uma IA e não foi revisada por falantes nativos. Se encontrar erros, escreva para [Damir Lebedev](https://github.com/damir-lebedev) ou abra uma [issue](https://github.com/damir-lebedev/OpenPlaneProject/issues).
 
 Copyright (c) 2026 Damir Lebedev (Damn / Проклятый), https://github.com/damir-lebedev
 

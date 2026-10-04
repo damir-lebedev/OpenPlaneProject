@@ -1,6 +1,6 @@
 # TELEMETRY — 日志、控制台、网页仪表盘、OLED、黑匣子
 
-> 🌐 本页是[俄语原文](../../../reference/telemetry.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。
+> 🌐 本页是[俄语原文](../../../reference/telemetry.md)的译文。译文与原文如有出入，以原文为准。固件的控制台信息以俄语输出，因此文中照原样引用。 本译文由 AI 完成，未经母语者审校。如发现错误，请联系 [Damir Lebedev](https://github.com/damir-lebedev)，或在[问题追踪页](https://github.com/damir-lebedev/OpenPlaneProject/issues)中提出。
 
 [← 参考](README.md)
 
