@@ -228,7 +228,7 @@ The rules that keep the architecture clean:
 | `baro/BMP388_Sensor.h` | BMP388 over I2C or SPI (with the SPI dummy byte), Bosch compensation, reading on the data-ready flag. **On the bench (I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280, Bosch compensation §8.1. Not tested on hardware |
 | `baro/SPL06_Sensor.h` | SPL06-001: coefficients and formulas from the datasheet, 32 Hz ×16; I2C 0x76/0x77 or SPI. Not tested on hardware |
-| `baro/BMP581_Sensor.h` | BMP581: the BMP5_SensorAPI sequence, 16×/2×, IIR; I2C 0x46/0x47 or SPI; works as both the main barometer and the pitot tube. Not tested on hardware |
+| `baro/BMP581_Sensor.h` | BMP581: the BMP5_SensorAPI sequence, 16×/2×, IIR; I2C 0x46/0x47 or SPI; works as both the main barometer (the default bench kit) and the pitot tube. Not tested on hardware |
 | `mag/MagnetometerBase.h` | Common compass code: 50 Hz polling, hard-iron calibration in NVS, axis rotation, heading, errors |
 | `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C. **On the bench** |
 | `mag/QMC5883L_Sensor.h` | QMC5883L, 0x0D |

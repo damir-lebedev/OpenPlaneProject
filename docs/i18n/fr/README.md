@@ -172,7 +172,7 @@ La carte enregistre chaque vol : IMU à 500 Hz, angles et décisions du pilote
 | **LSM6DSV** + **QMC6309** | IMU + boussole (module) | I2C / SPI |
 | **ICM-45686** + **QMC6309** | IMU + boussole (alternative) | I2C / SPI |
 | **SPL06-001** | baromètre du fuselage | I2C / SPI |
-| **BMP581** | baromètre du tube de Pitot (ou principal) | I2C / SPI |
+| **BMP581** | baromètre principal et baromètre du tube de Pitot | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | de banc et anciens | I2C / SPI |
 | **u-blox M10** | GPS, 10 Hz, UBX | UART |
 

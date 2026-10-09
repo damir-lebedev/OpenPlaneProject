@@ -184,10 +184,11 @@ Essa é a ordem dos pinos do módulo OLED (GND VCC SCL SDA) de trás para a fren
 - **C2** — a bússola: um GY-273 em um mastro (um cabo direto, com a mesma ordem do módulo) ou a bússola de um módulo GPS. No GPS só se crimpam GND, SCL e SDA: a bússola recebe a alimentação pelo cabo do GPS.
 - **C3** — o reserva: um sensor de velocidade do ar (MS4525DO), um telêmetro e assim por diante.
 
-**C4 BARO — um soquete 1×4 para um módulo BMP388:** 1 — VCC, 2 — GND, 3 — SCL, 4 — SDA.
+**C4 BARO — um soquete 1×4 para um módulo BMP581:** 1 — VCC, 2 — GND, 3 — SCL, 4 — SDA.
 
-- No próprio módulo, solde jumpers de fio **CSB→VCC** e **SDO→GND**, o que hoje, na bancada, é feito com fios. Sem CSB→VCC o chip vai para o modo SPI. Os demais pinos do módulo ficam soltos no ar.
-- A ordem dos pinos varia entre os módulos BMP388: confira o seu. Se não coincidir, o módulo vai em um cabo para o C3 e o soquete não é montado.
+- No próprio módulo, solde jumpers de fio **CSB→VCC** e **SDO→GND** (endereço 0x46; o 0x47 fica para o tubo de Pitot). Sem CSB→VCC o chip vai para o modo SPI; com o SDO solto, o endereço fica instável. Os demais pinos do módulo ficam soltos no ar.
+- Só 3V3 do trilho: muitos módulos BMP581 não têm regulador próprio.
+- A ordem dos pinos varia entre os módulos: confira o seu. Se não coincidir, o módulo vai em um cabo para o C3 e o soquete não é montado.
 - Por cima, um pedaço de espuma de poros abertos (contra o fluxo de ar e a luz).
 
 **C5 IMU — um soquete 1×8 para um GY-521:**
@@ -203,6 +204,8 @@ Essa é a ordem dos pinos do módulo OLED (GND VCC SCL SDA) de trás para a fren
 | 8 | INT | para nada |
 
 Como o IMU está girado na placa não importa: a instalação é definida pela calibração `o` (PILOT_GUIDE, "Instalação do IMU").
+
+Um módulo MPU-6500 avulso (10 pinos: VCC GND SCL SDA EDA ECL AD0 INT NCS FSYNC) não encaixa neste soquete: a ordem dos pinos é outra. Ele vai em um cabo para o C3 (VCC, GND, SCL, SDA), com jumpers no módulo: **NCS→VCC** (senão o chip vai para o modo SPI), **AD0→GND** (endereço 0x68) e **FSYNC→GND**.
 
 Os capacitores do bloco: **10 µF + 100 nF** no trilho junto ao C1 (onde começa o 3V3), **100 nF** entre os contatos 1 e 2 em C2–C5. Os pull-ups do I2C já estão nos módulos; não os coloque na placa.
 
@@ -306,7 +309,7 @@ Pontos de teste: **5VS** (o barramento dos servos), **5VL** (5V lógica), **3V3*
 | O receptor FS-iA6B | A7 | a porta iBUS SERVO, um cabo comum de 3 fios |
 | O servo de lançamento de carga, os flaps | A5, A6 | |
 | GY-521 (MPU6500) | C5, soquete | |
-| BMP388 | C4, soquete | jumpers no módulo CSB→VCC, SDO→GND |
+| BMP581 | C4, soquete | jumpers no módulo CSB→VCC, SDO→GND (0x46) |
 | GY-273 (bússola) ou a bússola do GPS | C2 | longe dos fios de potência, de preferência em um mastro |
 | OLED 128×64 | C1 | |
 | Sensor de velocidade do ar e semelhantes | C3 | |

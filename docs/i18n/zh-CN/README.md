@@ -172,7 +172,7 @@ constexpr Binding BINDINGS[] = {
 | **LSM6DSV** + **QMC6309** | IMU + 罗盘（模块） | I2C / SPI |
 | **ICM-45686** + **QMC6309** | IMU + 罗盘（替代方案） | I2C / SPI |
 | **SPL06-001** | 机身气压计 | I2C / SPI |
-| **BMP581** | 空速管里的气压计（或主气压计） | I2C / SPI |
+| **BMP581** | 主气压计和空速管里的气压计 | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | 台架用和旧款 | I2C / SPI |
 | **u-blox M10** | GPS，10 Hz，UBX | UART |
 

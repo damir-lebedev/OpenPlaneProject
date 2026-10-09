@@ -127,7 +127,7 @@ BMP581 داخل الأنبوب (الضغط الكلي)، و`stat` هو مقيا�
 
 | الطقم `SENSOR_KIT` | IMU | مقياس الضغط | البوصلة | سرعة الهواء | GPS |
 |---|---|---|---|---|---|
-| `SENSOR_KIT_BENCH_GY521` (1، الافتراضي) | MPU6500 | BMP388 I2C | QMC5883P | — | — |
+| `SENSOR_KIT_BENCH_GY521` (1، الافتراضي) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (الجسم) | QMC6309 | BMP581 في الأنبوب | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (الجسم) | QMC6309 | BMP581 في الأنبوب | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | حدّد الماكرو الخمسة التالية كلها | | | | |
@@ -384,7 +384,7 @@ rightWingDown العمودية على Z، وX₂ = Y × Z؛ X = norm(X₁ + X₂
 
 ## ‏`BMP581_Sensor`
 
-**الملف:** `sensors/baro/BMP581_Sensor.h` · **يرث من:** `BarometerBase` · **الحالة:** لم يُتحقق منه على العتاد
+**الملف:** `sensors/baro/BMP581_Sensor.h` · **يرث من:** `BarometerBase` · **الحالة:** مقياس الضغط الرئيسي في الطقم الافتراضي، لم يُتحقق منه على العتاد
 
 ‏BMP581 (من Bosch). يتبع التسلسل مكتبة BMP5_SensorAPI الرسمية.
 

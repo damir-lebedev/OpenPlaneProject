@@ -184,10 +184,11 @@ Das ist die Pin-Reihenfolge des OLED-Moduls (GND VCC SCL SDA) von hinten nach vo
 - **C2** – der Kompass: ein GY-273 auf einem Mast (ein gerades Kabel, die Reihenfolge wie am Modul) oder der Kompass eines GPS-Moduls. Beim GPS werden nur GND, SCL und SDA gecrimpt: Der Kompass erhält seine Versorgung über das GPS-Kabel.
 - **C3** – der Reserveanschluss: ein Fluggeschwindigkeitssensor (MS4525DO), ein Entfernungsmesser und Ähnliches.
 
-**C4 BARO – eine 1×4-Buchse für ein BMP388-Modul:** 1 – VCC, 2 – GND, 3 – SCL, 4 – SDA.
+**C4 BARO – eine 1×4-Buchse für ein BMP581-Modul:** 1 – VCC, 2 – GND, 3 – SCL, 4 – SDA.
 
-- Löten Sie auf dem Modul selbst Drahtbrücken **CSB→VCC** und **SDO→GND** – was jetzt auf dem Prüfstand mit Leitungen gemacht ist. Ohne CSB→VCC geht der Chip in den SPI-Modus. Die übrigen Pins des Moduls hängen in der Luft.
-- Die Pin-Reihenfolge ist bei den BMP388-Modulen verschieden – prüfen Sie Ihres. Passt sie nicht, kommt das Modul an einem Kabel an C3, und die Buchse wird nicht bestückt.
+- Löten Sie auf dem Modul selbst Drahtbrücken **CSB→VCC** und **SDO→GND** (Adresse 0x46; 0x47 bleibt für das Pitotrohr frei). Ohne CSB→VCC geht der Chip in den SPI-Modus, bei offenem SDO wandert die Adresse. Die übrigen Pins des Moduls hängen in der Luft.
+- Nur 3V3 von der Schiene: Viele BMP581-Module haben keinen eigenen Spannungsregler.
+- Die Pin-Reihenfolge ist bei den Modulen verschieden – prüfen Sie Ihres. Passt sie nicht, kommt das Modul an einem Kabel an C3, und die Buchse wird nicht bestückt.
 - Obenauf ein Stück offenporiger Schaumstoff (gegen Luftzug und Licht).
 
 **C5 IMU – eine 1×8-Buchse für ein GY-521:**
@@ -203,6 +204,8 @@ Das ist die Pin-Reihenfolge des OLED-Moduls (GND VCC SCL SDA) von hinten nach vo
 | 8 | INT | nirgendwohin |
 
 Wie die IMU auf der Platine gedreht ist, spielt keine Rolle: Den Einbau bestimmt die Kalibrierung `o` (PILOT_GUIDE, „IMU-Einbau“).
+
+Ein separates MPU-6500-Modul (10 Pins: VCC GND SCL SDA EDA ECL AD0 INT NCS FSYNC) passt nicht in diese Buchse – die Pin-Reihenfolge ist anders. Es kommt an einem Kabel an C3 (VCC, GND, SCL, SDA), auf dem Modul mit den Brücken **NCS→VCC** (sonst geht der Chip in den SPI-Modus), **AD0→GND** (Adresse 0x68) und **FSYNC→GND**.
 
 Die Kondensatoren des Blocks: **10 µF + 100 nF** auf der Schiene bei C1 (dort beginnt 3V3), **100 nF** zwischen den Kontakten 1 und 2 bei C2–C5. Die I2C-Pull-ups sitzen schon auf den Modulen; setzen Sie sie nicht auf die Platine.
 
@@ -306,7 +309,7 @@ Testpunkte: **5VS** (der Servobus), **5VL** (Logik-5V), **3V3**, **GND**. An ihn
 | Der Empfänger FS-iA6B | A7 | der Port iBUS SERVO, ein gewöhnliches 3-adriges Kabel |
 | Das Servo für den Lastabwurf, Klappen | A5, A6 | |
 | GY-521 (MPU6500) | C5, Buchse | |
-| BMP388 | C4, Buchse | Brücken auf dem Modul CSB→VCC, SDO→GND |
+| BMP581 | C4, Buchse | Brücken auf dem Modul CSB→VCC, SDO→GND (0x46) |
 | GY-273 (Kompass) oder der Kompass des GPS | C2 | weg von den Leistungsleitungen, am besten auf einem Mast |
 | OLED 128×64 | C1 | |
 | Fluggeschwindigkeitssensor und Ähnliches | C3 | |

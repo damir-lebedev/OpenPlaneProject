@@ -172,7 +172,7 @@ The board records every flight: IMU at 500 Hz, angles and autopilot decisions, P
 | **LSM6DSV** + **QMC6309** | IMU + compass (module) | I2C / SPI |
 | **ICM-45686** + **QMC6309** | IMU + compass (alternative) | I2C / SPI |
 | **SPL06-001** | fuselage barometer | I2C / SPI |
-| **BMP581** | barometer in the pitot tube (or the main one) | I2C / SPI |
+| **BMP581** | main barometer and the pitot tube barometer | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | bench and legacy | I2C / SPI |
 | **u-blox M10** | GPS, 10 Hz, UBX | UART |
 

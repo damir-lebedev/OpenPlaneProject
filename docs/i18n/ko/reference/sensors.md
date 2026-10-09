@@ -125,7 +125,7 @@ Y는 왼쪽)으로 변환합니다. `rotationCwDeg`는 칩의 X축이 향하는 
 
 | `SENSOR_KIT` 세트 | IMU | 기압계 | 나침반 | 대기속도 | GPS |
 |---|---|---|---|---|---|
-| `SENSOR_KIT_BENCH_GY521` (1, 기본값) | MPU6500 | BMP388 I2C | QMC5883P | — | — |
+| `SENSOR_KIT_BENCH_GY521` (1, 기본값) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (동체) | QMC6309 | 관 안의 BMP581 | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (동체) | QMC6309 | 관 안의 BMP581 | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | 아래 다섯 매크로를 모두 지정 | | | | |
@@ -378,7 +378,7 @@ SPL06-001 (Goertek). 공식은 데이터시트 §4.9에 따랐습니다.
 
 ## `BMP581_Sensor`
 
-**파일:** `sensors/baro/BMP581_Sensor.h` · **상속:** `BarometerBase` · **상태:** 하드웨어에서는 확인하지 않음
+**파일:** `sensors/baro/BMP581_Sensor.h` · **상속:** `BarometerBase` · **상태:** 기본 세트의 주 기압계, 하드웨어에서는 확인하지 않음
 
 BMP581 (Bosch). 순서는 공식 BMP5_SensorAPI를 따랐습니다.
 

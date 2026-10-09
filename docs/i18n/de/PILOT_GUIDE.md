@@ -43,7 +43,7 @@ Der Bausatz des aktuellen Aufbaus (die Firmware wurde darauf geprüft):
 Sensoren des Autopiloten (alle über I2C; ohne sie fliegt das Flugzeug im manuellen Modus):
 
 - **GY-521** – Gyroskop + Beschleunigungssensor (auf der Platine kann ein MPU6050 oder, wie bei uns, ein MPU6500 sitzen – beide werden unterstützt).
-- **BMP388** – Barometer.
+- **BMP581** – Barometer (der frühere BMP388 wird ebenfalls unterstützt).
 - **GY-273** – Kompass (bei uns sitzt darauf ein QMC5883P; der QMC5883L wird ebenfalls unterstützt).
 - Optional ein **OLED 128×64 SSD1306** (I2C) – ein Statusdisplay an Bord.
 
@@ -69,7 +69,7 @@ Die Firmware unterstützt drei Boards; umgeschaltet wird mit einem einzigen Buil
 | ESC (Gas) | GPIO7 |
 | Seitenruder + Lenkrad | GPIO18 |
 | iBUS vom Empfänger (RX) | GPIO17 |
-| I2C der Sensoren SDA / SCL (MPU, BMP388, Kompass) | GPIO41 / GPIO42 |
+| I2C der Sensoren SDA / SCL (MPU, BMP581, Kompass) | GPIO41 / GPIO42 |
 | I2C des OLED SDA / SCL (eigener Bus) | GPIO1 / GPIO2 |
 | Reserve: GPS RX / TX | GPIO39 / GPIO40 |
 | Reserve: AUX1 / AUX2 (Servos), AUX3, Summer, LIGHT | GPIO15 / 16, 47, 38, 21 |
@@ -85,8 +85,8 @@ Anschluss der Sensoren auf dem Prüfstand (alle Module laufen mit **3,3 V**, nic
 
 | Modul | Pins |
 |---|---|
-| MPU-6050 / GY-521 (auf der Platine kann ein MPU6500 sitzen – das ist normal) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, AD0–GND, INT/XDA/XCL – nicht anschließen. Chip nach oben, X-Pfeil zur Nase; die Drehung der Chipachsen wird mit `IMU_ROTATION_CW_DEG` in `Config.h` eingestellt (bei unserem Klon 90) |
-| BMP388 | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, SDO–GND (Adresse 0x76), **CSB–3.3V** (sonst wechselt der Chip auf SPI), INT – nicht anschließen |
+| MPU-6050 / GY-521 (auf der Platine kann ein MPU6500 sitzen – das ist normal) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, AD0–GND, INT/XDA/XCL – nicht anschließen. Separates MPU-6500-Modul (10 Pins): dasselbe, dazu **NCS–3.3V** (sonst wechselt der Chip auf SPI) und FSYNC–GND; EDA/ECL – nicht anschließen. Chip nach oben, X-Pfeil zur Nase; die Drehung der Chipachsen wird mit `IMU_ROTATION_CW_DEG` in `Config.h` eingestellt (bei unserem Klon 90) |
+| BMP581 | VCC–3.3V (**nur 3.3V**: viele Module haben keinen eigenen Spannungsregler), GND–GND, SCL–GPIO42, SDA–GPIO41, **SDO–GND** (Adresse 0x46; nicht offen lassen), **CSB–3.3V** (sonst wechselt der Chip auf SPI), INT – nicht anschließen |
 | GY-273 (QMC5883P) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, DRDY – nicht anschließen. Möglichst weit weg von den Leitungen der Servos, des ESC und des Motors |
 | OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–GPIO2, SDA–GPIO1 |
 
@@ -436,7 +436,7 @@ Lesen Sie diesen Abschnitt vollständig **vor** dem ersten Einschalten, nicht er
 Prüfen Sie, dass die Datenleitung des Empfängers genau am iBUS-RX-Pin aus der Tabelle Ihres Boards hängt (GPIO8/GPIO17/GPIO16), nicht mit Masse oder Versorgung vertauscht ist und dass die Massen von Empfänger und Board verbunden sind. Stimmt die Pinbelegung und sind die Leitungen intakt, es kommt aber trotzdem kein Signal, prüfen Sie, ob der Empfänger überhaupt mit dem Sender gebunden (Bind) ist und ob der Ausgang des Empfängers auf iBUS eingestellt ist und nicht auf PPM/SBUS.
 
 **Ein Sensor (IMU, Barometer, Kompass) zeigt „antwortet nicht“ / NO_RESPONSE**
-Die Firmware meldet ehrlich, dass der Sensor nicht antwortet, statt Nullen auszugeben. Prüfen Sie: (1) die Versorgung des Moduls – 3.3V und Masse des Boards; (2) SDA/SCL – an den I2C-Pins genau Ihres Boards; (3) die Adresse auf der Leitung: MPU 0x68 (AD0 an GND), BMP388 0x76 (SDO an GND, **CSB an 3.3V** – sonst befindet sich der Chip im SPI-Modus), QMC5883P 0x2C, QMC5883L 0x0D. Antwortet der Sensor mal ja, mal nein (oder meldet er sich unter einer fremden Adresse), ist es ein Wackelkontakt auf dem Steckbrett: Drücken Sie VCC/GND/SDA/SCL fest, und versorgen Sie jedes Modul am besten direkt aus 3.3V/GND des Boards. Der Befehl `s` in der Konsole zeigt die I2C-Fehlerzähler für jeden Sensor.
+Die Firmware meldet ehrlich, dass der Sensor nicht antwortet, statt Nullen auszugeben. Prüfen Sie: (1) die Versorgung des Moduls – 3.3V und Masse des Boards; (2) SDA/SCL – an den I2C-Pins genau Ihres Boards; (3) die Adresse auf der Leitung: MPU 0x68 (AD0 an GND), BMP581 0x46 (SDO an GND, CSB an 3.3V; 0x47, wenn SDO an 3.3V liegt), BMP388 0x76 (SDO an GND, **CSB an 3.3V** – sonst befindet sich der Chip im SPI-Modus), QMC5883P 0x2C, QMC5883L 0x0D. Antwortet der Sensor mal ja, mal nein (oder meldet er sich unter einer fremden Adresse), ist es ein Wackelkontakt auf dem Steckbrett: Drücken Sie VCC/GND/SDA/SCL fest, und versorgen Sie jedes Modul am besten direkt aus 3.3V/GND des Boards. Der Befehl `s` in der Konsole zeigt die I2C-Fehlerzähler für jeden Sensor.
 
 **Die Winkel auf dem OLED sind vertauscht (Nase hoch ändert R statt P) oder haben das falsche Vorzeichen**
 Führen Sie die Kalibrierung des IMU-Einbaus durch (`o`, siehe „IMU-Einbau“) – sie hängt nicht davon ab, wie der Chip auf dem Modul verlötet ist und wie das Modul im Flugzeug sitzt. Ohne sie: Bei Klonen des GY-521 ist der Chip manchmal gegenüber den aufgedruckten Pfeilen gedreht verlötet – drehen Sie die Achsen in `Config.h` → `IMU_ROTATION_CW_DEG` (0/90/180/270). Kontrolle: Nase hoch → P wird positiv, rechter Flügel nach unten → R wird positiv.
@@ -464,7 +464,7 @@ Damit die Erwartungen ehrlich bleiben:
 
 - Der erste Prototyp **ist bereits geflogen**. Dabei wurden Probleme festgestellt: **unzureichende Festigkeit der Motorbefestigung** und **unzureichende Festigkeit der Tragfläche** – die Tragfläche braucht eine Carbonverstärkung. Außerdem müssen die Servos weiter abgestimmt werden. Berücksichtigen Sie das bei der Planung Ihrer eigenen Flüge – das ist kein abstrakter Vorbehalt, sondern ein realer Ausfall, der an diesem Prototyp bereits aufgetreten ist.
 - **Der Prüfstand mit dem esp32-s3 ist mit allen Sensoren aufgebaut** (GY-521 mit MPU6500, BMP388 über I2C, GY-273 mit QMC5883P, OLED) – alle antworten, die Schleife läuft mit 500 Hz. Die Autopilot-Modi wurden am Tisch geprüft, aber **noch nicht im Flug erprobt**.
-- Das Barometer BMP388 wird nach der vollständigen Kompensationsformel von Bosch berechnet; die Höhe ist relativ zum Einschaltpunkt. Die absolute Höhe über dem Meer ergibt sich aus der Standardatmosphäre, ohne Wetterkorrektur.
+- Standardbarometer ist jetzt der BMP581 (der BMP388 des Prüfstands ist live geprüft, der BMP581 auf Hardware noch nicht). Die Höhe ist relativ zum Einschaltpunkt. Die absolute Höhe über dem Meer ergibt sich aus der Standardatmosphäre, ohne Wetterkorrektur.
 - Der Kompass QMC5883P muss (mit `m` in der Konsole) am bereits zusammengebauten Flugzeug kalibriert werden – neben Motor und Leitungen sind die Offsets anders als auf dem Steckbrett. Der Kurs hat noch keine Neigungskompensation und wird von keinem Modus verwendet.
 - Die Lizenz ist die OpenPlane License: MIT mit verpflichtender Nennung des Autors (Damir Lebedev), Verbot der militärischen Nutzung und Verbot, Menschen und Sachen ohne deren Einwilligung vorsätzlich zu schaden, siehe [LICENSE](LICENSE.md).
 

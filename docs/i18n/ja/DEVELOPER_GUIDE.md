@@ -217,7 +217,7 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
 | `baro/BMP388_Sensor.h` | I2C または SPI（SPI のダミーバイト付き）の BMP388、Bosch の補正、データ準備完了フラグによる読み出し。**テストベンチで確認済み（I2C）** |
 | `baro/BME280_Sensor.h` | BME280/BMP280、Bosch の補正（§8.1）。実機では未確認 |
 | `baro/SPL06_Sensor.h` | SPL06-001：データシートの係数と式、32 Hz ×16。I2C 0x76/0x77 または SPI。実機では未確認 |
-| `baro/BMP581_Sensor.h` | BMP581：BMP5_SensorAPI の手順、16×/2×、IIR。I2C 0x46/0x47 または SPI。メインの気圧計としてもピトー管としても使える。実機では未確認 |
+| `baro/BMP581_Sensor.h` | BMP581：BMP5_SensorAPI の手順、16×/2×、IIR。I2C 0x46/0x47 または SPI。メインの気圧計（既定のベンチセット）としてもピトー管としても使える。実機では未確認 |
 | `mag/MagnetometerBase.h` | コンパスに共通の処理：50 Hz のポーリング、NVS への hard-iron 校正、軸の回転、方位、エラー |
 | `mag/QMC5883P_Sensor.h` | QMC5883P、0x2C。**テストベンチで確認済み** |
 | `mag/QMC5883L_Sensor.h` | QMC5883L、0x0D |

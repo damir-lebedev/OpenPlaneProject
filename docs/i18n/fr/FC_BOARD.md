@@ -184,10 +184,11 @@ C’est l’ordre des broches du module OLED (GND VCC SCL SDA) à l’envers, do
 - **C2** — la boussole : un GY-273 sur un mât (câble droit, l’ordre est celui du module) ou la boussole d’un module GPS. Sur le GPS, seuls GND, SCL et SDA sont sertis : la boussole reçoit son alimentation par le câble du GPS.
 - **C3** — le port de réserve : un capteur de vitesse air (MS4525DO), un télémètre, etc.
 
-**C4 BARO — une embase 1×4 pour un module BMP388 :** 1 — VCC, 2 — GND, 3 — SCL, 4 — SDA.
+**C4 BARO — une embase 1×4 pour un module BMP581 :** 1 — VCC, 2 — GND, 3 — SCL, 4 — SDA.
 
-- Sur le module lui-même, soudez des straps en fil **CSB→VCC** et **SDO→GND** — ce qui est fait avec des fils sur le banc en ce moment. Sans CSB→VCC, la puce passe en mode SPI. Les autres broches du module restent en l’air.
-- L’ordre des broches diffère selon les modules BMP388 : vérifiez le vôtre. S’il ne correspond pas, le module va sur un câble vers C3 et l’embase n’est pas montée.
+- Sur le module lui-même, soudez des straps en fil **CSB→VCC** et **SDO→GND** (adresse 0x46 ; 0x47 reste libre pour le tube de Pitot). Sans CSB→VCC, la puce passe en mode SPI ; avec SDO en l’air, l’adresse flotte. Les autres broches du module restent en l’air.
+- Uniquement le 3V3 du rail : beaucoup de modules BMP581 n’ont pas leur propre régulateur.
+- L’ordre des broches diffère selon les modules : vérifiez le vôtre. S’il ne correspond pas, le module va sur un câble vers C3 et l’embase n’est pas montée.
 - Par-dessus, un morceau de mousse à pores ouverts (contre le flux d’air et la lumière).
 
 **C5 IMU — une embase 1×8 pour un GY-521 :**
@@ -203,6 +204,8 @@ C’est l’ordre des broches du module OLED (GND VCC SCL SDA) à l’envers, do
 | 8 | INT | rien |
 
 La façon dont l’IMU est tourné sur la carte n’a pas d’importance : le montage est déterminé par la calibration `o` (PILOT_GUIDE, « Montage de l’IMU »).
+
+Un module MPU-6500 seul (10 broches : VCC GND SCL SDA EDA ECL AD0 INT NCS FSYNC) ne rentre pas dans cette embase — l’ordre des broches est différent. Il va sur un câble vers C3 (VCC, GND, SCL, SDA), avec des straps sur le module : **NCS→VCC** (sinon la puce passe en mode SPI), **AD0→GND** (adresse 0x68) et **FSYNC→GND**.
 
 Les condensateurs du bloc : **10 µF + 100 nF** sur le rail à hauteur de C1 (c’est là que commence le 3V3), **100 nF** entre les contacts 1 et 2 en C2–C5. Les résistances de rappel (pull-up) de l’I2C sont déjà sur les modules ; ne les placez pas sur la carte.
 
@@ -306,7 +309,7 @@ Points de test : **5VS** (le bus des servos), **5VL** (5V logique), **3V3**, **
 | Le récepteur FS-iA6B | A7 | le port iBUS SERVO, un câble ordinaire à 3 fils |
 | Le servo de largage de charge, les volets | A5, A6 | |
 | GY-521 (MPU6500) | C5, embase | |
-| BMP388 | C4, embase | straps sur le module CSB→VCC, SDO→GND |
+| BMP581 | C4, embase | straps sur le module CSB→VCC, SDO→GND (0x46) |
 | GY-273 (boussole) ou la boussole du GPS | C2 | loin des fils de puissance, de préférence sur un mât |
 | OLED 128×64 | C1 | |
 | Capteur de vitesse air et similaires | C3 | |

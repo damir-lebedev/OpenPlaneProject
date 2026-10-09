@@ -217,7 +217,7 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
 | `baro/BMP388_Sensor.h` | 通过 I2C 或 SPI 连接的 BMP388（SPI 带哑字节），Bosch 补偿，按就绪标志读取。**已在试验台上验证（I2C）** |
 | `baro/BME280_Sensor.h` | BME280/BMP280，Bosch 补偿（§8.1）。未在硬件上验证 |
 | `baro/SPL06_Sensor.h` | SPL06-001：系数和公式取自数据手册，32 Hz ×16；I2C 0x76/0x77 或 SPI。未在硬件上验证 |
-| `baro/BMP581_Sensor.h` | BMP581：遵循 BMP5_SensorAPI 的流程，16×/2×，IIR；I2C 0x46/0x47 或 SPI；既可作主气压计，也可用作皮托管。未在硬件上验证 |
+| `baro/BMP581_Sensor.h` | BMP581：遵循 BMP5_SensorAPI 的流程，16×/2×，IIR；I2C 0x46/0x47 或 SPI；既可作主气压计（默认台架套件），也可用作皮托管。未在硬件上验证 |
 | `mag/MagnetometerBase.h` | 电子罗盘的通用部分：50 Hz 轮询，硬铁校准存于 NVS，坐标轴旋转，航向，错误 |
 | `mag/QMC5883P_Sensor.h` | QMC5883P，0x2C。**已在试验台上验证** |
 | `mag/QMC5883L_Sensor.h` | QMC5883L，0x0D |

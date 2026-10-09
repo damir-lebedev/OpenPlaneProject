@@ -119,7 +119,7 @@ Y 向左）。`rotationCwDeg` 是芯片 X 轴的指向，从上方看顺时针�
 
 | `SENSOR_KIT` 套装 | IMU | 气压计 | 指南针 | 空速 | GPS |
 |---|---|---|---|---|---|
-| `SENSOR_KIT_BENCH_GY521`（1，默认） | MPU6500 | BMP388 I2C | QMC5883P | — | — |
+| `SENSOR_KIT_BENCH_GY521`（1，默认） | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT`（2） | LSM6DSV | SPL06（机身） | QMC6309 | 管内的 BMP581 | M10 |
 | `SENSOR_KIT_ICM45686_PITOT`（3） | ICM-45686 | SPL06（机身） | QMC6309 | 管内的 BMP581 | M10 |
 | `SENSOR_KIT_CUSTOM`（0） | 设定下面全部五个宏 | | | | |
@@ -360,7 +360,7 @@ SPL06-001（Goertek）。公式出自数据手册 §4.9。
 
 ## `BMP581_Sensor`
 
-**文件：** `sensors/baro/BMP581_Sensor.h` · **继承：** `BarometerBase` · **状态：** 未在硬件上验证
+**文件：** `sensors/baro/BMP581_Sensor.h` · **继承：** `BarometerBase` · **状态：** 默认套件的主气压计，未在硬件上验证
 
 BMP581（Bosch）。流程遵循官方的 BMP5_SensorAPI。
 

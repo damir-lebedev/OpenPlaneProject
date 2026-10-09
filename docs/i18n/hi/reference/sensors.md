@@ -125,7 +125,7 @@ Y बाएँ) में घुमाता है। `rotationCwDeg` बता
 
 | `SENSOR_KIT` सेट | IMU | बैरोमीटर | कंपास | वायु-गति | GPS |
 |---|---|---|---|---|---|
-| `SENSOR_KIT_BENCH_GY521` (1, डिफ़ॉल्ट) | MPU6500 | BMP388 I2C | QMC5883P | — | — |
+| `SENSOR_KIT_BENCH_GY521` (1, डिफ़ॉल्ट) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (धड़) | QMC6309 | नली में BMP581 | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (धड़) | QMC6309 | नली में BMP581 | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | नीचे के पाँचों मैक्रो तय करें | | | | |
@@ -378,7 +378,7 @@ SPL06-001 (Goertek)। सूत्र डेटाशीट §4.9 से है
 
 ## `BMP581_Sensor`
 
-**फ़ाइल:** `sensors/baro/BMP581_Sensor.h` · **इनहेरिट करता है:** `BarometerBase` · **स्थिति:** हार्डवेयर पर जाँचा नहीं गया
+**फ़ाइल:** `sensors/baro/BMP581_Sensor.h` · **इनहेरिट करता है:** `BarometerBase` · **स्थिति:** डिफ़ॉल्ट किट का मुख्य बैरोमीटर, हार्डवेयर पर जाँचा नहीं गया
 
 BMP581 (Bosch)। क्रम आधिकारिक BMP5_SensorAPI का है।
 

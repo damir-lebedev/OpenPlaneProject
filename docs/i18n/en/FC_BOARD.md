@@ -184,10 +184,11 @@ This is the pin order of the OLED module (GND VCC SCL SDA) back to front, so the
 - **C2** — the compass: a GY-273 on a mast (a straight cable, the order is the same as on the module) or the compass from a GPS module. For the GPS only GND, SCL and SDA are crimped: the compass gets power over the GPS cable.
 - **C3** — the spare: an airspeed sensor (MS4525DO), a rangefinder, and so on.
 
-**C4 BARO — a 1×4 socket for a BMP388 module:** 1 — VCC, 2 — GND, 3 — SCL, 4 — SDA.
+**C4 BARO — a 1×4 socket for a BMP581 module:** 1 — VCC, 2 — GND, 3 — SCL, 4 — SDA.
 
-- On the module itself, solder wire jumpers **CSB→VCC** and **SDO→GND** — what is done with wires on the bench right now. Without CSB→VCC the chip goes into SPI mode. The module's other pins hang in the air.
-- The pin order differs between BMP388 modules — check yours. If it does not match, the module goes on a cable to C3 and the socket is not fitted.
+- On the module itself, solder wire jumpers **CSB→VCC** and **SDO→GND** (address 0x46; 0x47 stays free for the pitot tube). Without CSB→VCC the chip goes into SPI mode; with SDO floating the address wanders. The module's other pins hang in the air.
+- 3V3 from the rail only: many BMP581 modules have no regulator of their own.
+- The pin order differs between modules — check yours. If it does not match, the module goes on a cable to C3 and the socket is not fitted.
 - On top — a piece of open-cell foam (against airflow and light).
 
 **C5 IMU — a 1×8 socket for a GY-521:**
@@ -203,6 +204,8 @@ This is the pin order of the OLED module (GND VCC SCL SDA) back to front, so the
 | 8 | INT | nothing |
 
 How the IMU is rotated on the board does not matter: the mounting is set by the `o` calibration (PILOT_GUIDE, "IMU mounting").
+
+A standalone MPU-6500 module (10 pins: VCC GND SCL SDA EDA ECL AD0 INT NCS FSYNC) does not fit this socket — the pin order is different. It goes on a cable to C3 (VCC, GND, SCL, SDA), with jumpers on the module: **NCS→VCC** (otherwise the chip goes into SPI mode), **AD0→GND** (address 0x68) and **FSYNC→GND**.
 
 The block's capacitors: **10 µF + 100 nF** on the rail at C1 (that is where 3V3 starts), **100 nF** between pins 1 and 2 at C2–C5. The I2C pull-ups are already on the modules; do not fit them on the board.
 
@@ -306,7 +309,7 @@ Test points: **5VS** (the servo bus), **5VL** (logic 5V), **3V3**, **GND**. They
 | The FS-iA6B receiver | A7 | the iBUS SERVO port, an ordinary 3-wire cable |
 | The payload-drop servo, flaps | A5, A6 | |
 | GY-521 (MPU6500) | C5, socket | |
-| BMP388 | C4, socket | jumpers on the module CSB→VCC, SDO→GND |
+| BMP581 | C4, socket | jumpers on the module CSB→VCC, SDO→GND (0x46) |
 | GY-273 (compass) or the GPS compass | C2 | away from the power wires, preferably on a mast |
 | OLED 128×64 | C1 | |
 | Airspeed sensor and the like | C3 | |

@@ -43,7 +43,7 @@ The kit of the current build (the firmware has been verified on it):
 Autopilot sensors (all on I2C; without them the aircraft flies in manual mode):
 
 - **GY-521** — gyroscope + accelerometer (the board may carry an MPU6050 or, as in our case, an MPU6500 — both are supported).
-- **BMP388** — barometer.
+- **BMP581** — barometer (the former BMP388 is supported too).
 - **GY-273** — compass (ours has a QMC5883P on it; the QMC5883L is supported too).
 - Optionally an **OLED 128×64 SSD1306** (I2C) — an on-board status screen.
 
@@ -69,7 +69,7 @@ The firmware supports three boards; switching takes one build parameter (`pio ru
 | ESC (throttle) | GPIO7 |
 | Rudder + steering wheel | GPIO18 |
 | iBUS from the receiver (RX) | GPIO17 |
-| Sensor I2C SDA / SCL (MPU, BMP388, compass) | GPIO41 / GPIO42 |
+| Sensor I2C SDA / SCL (MPU, BMP581, compass) | GPIO41 / GPIO42 |
 | OLED I2C SDA / SCL (separate bus) | GPIO1 / GPIO2 |
 | Reserved: GPS RX / TX | GPIO39 / GPIO40 |
 | Reserved: AUX1 / AUX2 (servos), AUX3, buzzer, LIGHT | GPIO15 / 16, 47, 38, 21 |
@@ -85,8 +85,8 @@ Connecting the sensors on the bench (all modules run from **3.3 V**, not 5 V):
 
 | Module | Pins |
 |---|---|
-| MPU-6050 / GY-521 (the board may carry an MPU6500 — that is fine) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, AD0–GND, INT/XDA/XCL — leave unconnected. Chip facing up, the X arrow pointing to the nose; the rotation of the chip's axes is `IMU_ROTATION_CW_DEG` in `Config.h` (90 on our clone) |
-| BMP388 | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, SDO–GND (address 0x76), **CSB–3.3V** (otherwise the chip switches to SPI), INT — leave unconnected |
+| MPU-6050 / GY-521 (the board may carry an MPU6500 — that is fine) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, AD0–GND, INT/XDA/XCL — leave unconnected. A standalone MPU-6500 module (10 pins): the same, plus **NCS–3.3V** (otherwise the chip switches to SPI) and FSYNC–GND; EDA/ECL — leave unconnected. Chip facing up, the X arrow pointing to the nose; the rotation of the chip's axes is `IMU_ROTATION_CW_DEG` in `Config.h` (90 on our clone) |
+| BMP581 | VCC–3.3V (**3.3V only**: many modules have no regulator of their own), GND–GND, SCL–GPIO42, SDA–GPIO41, **SDO–GND** (address 0x46; do not leave it floating), **CSB–3.3V** (otherwise the chip switches to SPI), INT — leave unconnected |
 | GY-273 (QMC5883P) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, DRDY — leave unconnected. Keep it away from the servo, ESC and motor wires |
 | OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–GPIO2, SDA–GPIO1 |
 
@@ -436,7 +436,7 @@ Read this section in full **before** the first power-up, not after an incident.
 Check that the receiver's data wire is connected exactly to the iBUS RX pin from your board's table (GPIO8/GPIO17/GPIO16), not mixed up with ground or power, and that the receiver and board grounds are joined. If the pinout matches and the wires are intact but there is still no signal, check that the receiver is bound to the transmitter at all and that the receiver's output is configured for iBUS, not PPM/SBUS.
 
 **A sensor (IMU, barometer, compass) shows "not responding" / NO_RESPONSE**
-The firmware honestly reports that the sensor does not respond instead of outputting zeros. Check: (1) the module's power — 3.3V and the board's ground; (2) SDA/SCL — on the I2C pins of your particular board; (3) the address on the line: MPU 0x68 (AD0 to GND), BMP388 0x76 (SDO to GND, **CSB to 3.3V** — otherwise the chip is in SPI mode), QMC5883P 0x2C, QMC5883L 0x0D. If a sensor responds sometimes and sometimes not (or answers at someone else's address), it is a bad contact on the breadboard: press down on VCC/GND/SDA/SCL, and it is best to power each module straight from the board's 3.3V/GND. The `s` command in the console shows the I2C error counters for each sensor.
+The firmware honestly reports that the sensor does not respond instead of outputting zeros. Check: (1) the module's power — 3.3V and the board's ground; (2) SDA/SCL — on the I2C pins of your particular board; (3) the address on the line: MPU 0x68 (AD0 to GND), BMP581 0x46 (SDO to GND, CSB to 3.3V; 0x47 if SDO is on 3.3V), BMP388 0x76 (SDO to GND, **CSB to 3.3V** — otherwise the chip is in SPI mode), QMC5883P 0x2C, QMC5883L 0x0D. If a sensor responds sometimes and sometimes not (or answers at someone else's address), it is a bad contact on the breadboard: press down on VCC/GND/SDA/SCL, and it is best to power each module straight from the board's 3.3V/GND. The `s` command in the console shows the I2C error counters for each sensor.
 
 **The angles on the OLED are mixed up (nose up changes R, not P) or have the wrong sign**
 Do the IMU mounting calibration (`o`, see "IMU mounting") — it does not depend on how the chip is soldered on the module or how the module sits in the airplane. Without it: on GY-521 clones the chip is sometimes soldered rotated relative to the printed arrows — rotate the axes in `Config.h` → `IMU_ROTATION_CW_DEG` (0/90/180/270). Check: nose up → P goes positive, right wing down → R goes positive.
@@ -464,7 +464,7 @@ To keep expectations honest:
 
 - The first prototype **has already flown**. Problems were found: **insufficient strength of the motor mount** and **insufficient strength of the wing** — the wing needs carbon reinforcement. The servos also need further tuning. Take this into account when planning your own flights — this is not an abstract disclaimer but a real failure that has already happened on this prototype.
 - **The esp32-s3 bench is built with all the sensors** (GY-521 with an MPU6500, a BMP388 on I2C, a GY-273 with a QMC5883P, an OLED) — all of them respond, and the loop runs at 500 Hz. The autopilot modes have been verified on the table but **have not yet been tested in flight**.
-- The BMP388 barometer is computed with the full Bosch compensation formula; altitude is relative to the power-up point. Absolute altitude above sea level is computed from the standard atmosphere, without a weather correction.
+- The default barometer is now the BMP581 (the bench BMP388 was verified live; the BMP581 has not been tested on hardware yet). Altitude is relative to the power-up point. Absolute altitude above sea level is computed from the standard atmosphere, without a weather correction.
 - The QMC5883P compass needs calibration (`m` in the console) on the assembled airplane — next to the motor and wires the offsets differ from those on the breadboard. The heading has no tilt compensation yet and is not used by any mode.
 - The license is the OpenPlane License: MIT with mandatory credit to the author (Damir Lebedev), a ban on military use, and a ban on intentionally harming people or property without their consent, see [LICENSE](../../../LICENSE).
 

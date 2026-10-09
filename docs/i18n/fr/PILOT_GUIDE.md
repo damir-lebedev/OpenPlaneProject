@@ -43,7 +43,7 @@ Le kit de la version actuelle (le firmware a été vérifié dessus) :
 Capteurs du pilote automatique (tous en I2C ; sans eux, l’appareil vole en mode manuel) :
 
 - **GY-521** — gyroscope + accéléromètre (la carte peut porter un MPU6050 ou, comme chez nous, un MPU6500 — les deux sont pris en charge).
-- **BMP388** — baromètre.
+- **BMP581** — baromètre (l’ancien BMP388 reste pris en charge).
 - **GY-273** — boussole (chez nous, elle porte un QMC5883P ; le QMC5883L est lui aussi pris en charge).
 - En option, un **écran OLED 128×64 SSD1306** (I2C) — un écran d’état embarqué.
 
@@ -69,7 +69,7 @@ Le firmware prend en charge trois cartes ; pour passer de l’une à l’autre,
 | ESC (gaz) | GPIO7 |
 | Gouverne de direction + roue directrice | GPIO18 |
 | iBUS du récepteur (RX) | GPIO17 |
-| I2C des capteurs SDA / SCL (MPU, BMP388, boussole) | GPIO41 / GPIO42 |
+| I2C des capteurs SDA / SCL (MPU, BMP581, boussole) | GPIO41 / GPIO42 |
 | I2C de l’OLED SDA / SCL (bus séparé) | GPIO1 / GPIO2 |
 | Réserve : GPS RX / TX | GPIO39 / GPIO40 |
 | Réserve : AUX1 / AUX2 (servos), AUX3, buzzer, LIGHT | GPIO15 / 16, 47, 38, 21 |
@@ -85,8 +85,8 @@ Branchement des capteurs sur le banc (tous les modules fonctionnent en **3,3 V*
 
 | Module | Broches |
 |---|---|
-| MPU-6050 / GY-521 (la carte peut porter un MPU6500 — c’est normal) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, AD0–GND, INT/XDA/XCL — ne pas brancher. Puce vers le haut, flèche X vers le nez ; la rotation des axes de la puce se règle avec `IMU_ROTATION_CW_DEG` dans `Config.h` (90 sur notre clone) |
-| BMP388 | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, SDO–GND (adresse 0x76), **CSB–3.3V** (sinon la puce passe en SPI), INT — ne pas brancher |
+| MPU-6050 / GY-521 (la carte peut porter un MPU6500 — c’est normal) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, AD0–GND, INT/XDA/XCL — ne pas brancher. Module MPU-6500 seul (10 broches) : pareil, plus **NCS–3.3V** (sinon la puce passe en SPI) et FSYNC–GND ; EDA/ECL — ne pas brancher. Puce vers le haut, flèche X vers le nez ; la rotation des axes de la puce se règle avec `IMU_ROTATION_CW_DEG` dans `Config.h` (90 sur notre clone) |
+| BMP581 | VCC–3.3V (**3.3V uniquement** : beaucoup de modules n’ont pas leur propre régulateur), GND–GND, SCL–GPIO42, SDA–GPIO41, **SDO–GND** (adresse 0x46 ; ne pas la laisser en l’air), **CSB–3.3V** (sinon la puce passe en SPI), INT — ne pas brancher |
 | GY-273 (QMC5883P) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, DRDY — ne pas brancher. À l’écart des fils des servos, de l’ESC et du moteur |
 | OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–GPIO2, SDA–GPIO1 |
 
@@ -436,7 +436,7 @@ Lisez cette section en entier **avant** la première mise sous tension, et non a
 Vérifiez que le fil de données du récepteur est branché exactement sur la broche RX iBUS du tableau de votre carte (GPIO8/GPIO17/GPIO16), qu’il n’est pas confondu avec la masse ou l’alimentation, et que les masses du récepteur et de la carte sont reliées. Si le brochage correspond et que les fils sont intacts, mais qu’il n’y a toujours pas de signal, vérifiez que le récepteur est bien associé (bind) à la radio et que sa sortie est réglée sur iBUS, et non sur PPM/SBUS.
 
 **Un capteur (IMU, baromètre, boussole) affiche « ne répond pas » / NO_RESPONSE**
-Le firmware indique honnêtement que le capteur ne répond pas, au lieu de sortir des zéros. Vérifiez : (1) l’alimentation du module — 3.3V et la masse de la carte ; (2) SDA/SCL — sur les broches I2C de votre carte précisément ; (3) l’adresse sur la ligne : MPU 0x68 (AD0 à GND), BMP388 0x76 (SDO à GND, **CSB à 3.3V** — sinon la puce est en mode SPI), QMC5883P 0x2C, QMC5883L 0x0D. Si le capteur répond tantôt oui, tantôt non (ou répond à une adresse étrangère), c’est un mauvais contact sur la plaque d’essai : appuyez sur VCC/GND/SDA/SCL et, de préférence, alimentez chaque module directement depuis le 3.3V/GND de la carte. La commande `s` de la console affiche les compteurs d’erreurs I2C de chaque capteur.
+Le firmware indique honnêtement que le capteur ne répond pas, au lieu de sortir des zéros. Vérifiez : (1) l’alimentation du module — 3.3V et la masse de la carte ; (2) SDA/SCL — sur les broches I2C de votre carte précisément ; (3) l’adresse sur la ligne : MPU 0x68 (AD0 à GND), BMP581 0x46 (SDO à GND, CSB à 3.3V ; 0x47 si SDO est à 3.3V), BMP388 0x76 (SDO à GND, **CSB à 3.3V** — sinon la puce est en mode SPI), QMC5883P 0x2C, QMC5883L 0x0D. Si le capteur répond tantôt oui, tantôt non (ou répond à une adresse étrangère), c’est un mauvais contact sur la plaque d’essai : appuyez sur VCC/GND/SDA/SCL et, de préférence, alimentez chaque module directement depuis le 3.3V/GND de la carte. La commande `s` de la console affiche les compteurs d’erreurs I2C de chaque capteur.
 
 **Les angles sur l’OLED sont mélangés (nez en haut change R et non P) ou ont le mauvais signe**
 Faites la calibration du montage de l’IMU (`o`, voir « Montage de l’IMU ») — elle ne dépend ni de la façon dont la puce est soudée sur le module, ni de la position du module dans l’avion. Sans elle : sur les clones du GY-521, la puce est parfois soudée tournée par rapport aux flèches imprimées — tournez les axes dans `Config.h` → `IMU_ROTATION_CW_DEG` (0/90/180/270). Vérification : nez en haut → P devient positif, aile droite vers le bas → R devient positif.
@@ -464,7 +464,7 @@ Pour que les attentes restent honnêtes :
 
 - Le premier prototype **a déjà volé**. Des problèmes ont été relevés : **résistance insuffisante de la fixation du moteur** et **résistance insuffisante de l’aile** — l’aile doit être renforcée au carbone. Les servos demandent aussi un réglage supplémentaire. Tenez-en compte en planifiant vos propres vols — ce n’est pas une réserve abstraite, mais une défaillance réelle, déjà survenue sur ce prototype.
 - **Le banc esp32-s3 est monté avec tous les capteurs** (GY-521 avec un MPU6500, BMP388 en I2C, GY-273 avec un QMC5883P, OLED) — tous répondent, et la boucle tourne à 500 Hz. Les modes du pilote automatique ont été vérifiés sur la table, mais **pas encore éprouvés en vol**.
-- Le baromètre BMP388 est calculé avec la formule de compensation complète de Bosch ; l’altitude est relative au point de mise sous tension. L’altitude absolue au-dessus de la mer se calcule d’après l’atmosphère standard, sans correction météo.
+- Le baromètre par défaut est désormais le BMP581 (le BMP388 du banc a été vérifié en réel ; le BMP581 n’a pas encore été testé sur le matériel). L’altitude est relative au point de mise sous tension. L’altitude absolue au-dessus de la mer se calcule d’après l’atmosphère standard, sans correction météo.
 - La boussole QMC5883P doit être calibrée (`m` dans la console) sur l’avion déjà assemblé — près du moteur et des fils, les décalages diffèrent de ceux de la plaque d’essai. Le cap n’a pas encore de compensation d’inclinaison et n’est utilisé par aucun mode.
 - La licence est l’OpenPlane License : MIT avec mention obligatoire de l’auteur (Damir Lebedev), interdiction de l’usage militaire et interdiction de nuire intentionnellement aux personnes et aux biens sans leur consentement, voir [LICENSE](LICENSE.md).
 

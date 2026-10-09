@@ -184,10 +184,11 @@ Es el orden de los pines del módulo OLED (GND VCC SCL SDA) al revés, así que 
 - **C2** — la brújula: un GY-273 en un mástil (un cable directo, con el mismo orden que el módulo) o la brújula de un módulo GPS. En el GPS solo se crimpan GND, SCL y SDA: la brújula recibe la alimentación por el cable del GPS.
 - **C3** — de reserva: un sensor de velocidad aerodinámica (MS4525DO), un telémetro, etc.
 
-**C4 BARO — un zócalo 1×4 para un módulo BMP388:** 1 — VCC, 2 — GND, 3 — SCL, 4 — SDA.
+**C4 BARO — un zócalo 1×4 para un módulo BMP581:** 1 — VCC, 2 — GND, 3 — SCL, 4 — SDA.
 
-- En el propio módulo suelda puentes de alambre **CSB→VCC** y **SDO→GND**, lo que ahora mismo se hace con cables en el banco. Sin CSB→VCC el chip pasa a modo SPI. Los demás pines del módulo quedan al aire.
-- El orden de los pines varía de un módulo BMP388 a otro: comprueba el tuyo. Si no coincide, el módulo va con un cable a C3 y el zócalo no se monta.
+- En el propio módulo suelda puentes de alambre **CSB→VCC** y **SDO→GND** (dirección 0x46; la 0x47 queda para el tubo de Pitot). Sin CSB→VCC el chip pasa a modo SPI; con SDO al aire, la dirección baila. Los demás pines del módulo quedan al aire.
+- Solo 3V3 del riel: muchos módulos BMP581 no llevan regulador propio.
+- El orden de los pines varía de un módulo a otro: comprueba el tuyo. Si no coincide, el módulo va con un cable a C3 y el zócalo no se monta.
 - Encima, un trozo de espuma de poro abierto (contra el flujo de aire y la luz).
 
 **C5 IMU — un zócalo 1×8 para un GY-521:**
@@ -203,6 +204,8 @@ Es el orden de los pines del módulo OLED (GND VCC SCL SDA) al revés, así que 
 | 8 | INT | a nada |
 
 Cómo esté girado el IMU en la placa no importa: la instalación la fija la calibración `o` (PILOT_GUIDE, «Instalación del IMU»).
+
+Un módulo MPU-6500 suelto (10 pines: VCC GND SCL SDA EDA ECL AD0 INT NCS FSYNC) no entra en este zócalo: el orden de los pines es otro. Va con un cable a C3 (VCC, GND, SCL, SDA) y en el módulo lleva los puentes **NCS→VCC** (si no, el chip pasa a modo SPI), **AD0→GND** (dirección 0x68) y **FSYNC→GND**.
 
 Los condensadores del bloque: **10 µF + 100 nF** en el riel junto a C1 (donde empieza el 3V3), **100 nF** entre los contactos 1 y 2 en C2–C5. Las resistencias de pull-up del I2C ya están en los módulos; no las pongas en la placa.
 
@@ -306,7 +309,7 @@ Puntos de prueba: **5VS** (el bus de servos), **5VL** (5V lógica), **3V3**, **G
 | El receptor FS-iA6B | A7 | el puerto iBUS SERVO, un cable normal de 3 hilos |
 | El servo de lanzamiento de carga, los flaps | A5, A6 | |
 | GY-521 (MPU6500) | C5, zócalo | |
-| BMP388 | C4, zócalo | puentes en el módulo CSB→VCC, SDO→GND |
+| BMP581 | C4, zócalo | puentes en el módulo CSB→VCC, SDO→GND (0x46) |
 | GY-273 (brújula) o la brújula del GPS | C2 | lejos de los cables de potencia, mejor en un mástil |
 | OLED 128×64 | C1 | |
 | Sensor de velocidad aerodinámica y similares | C3 | |

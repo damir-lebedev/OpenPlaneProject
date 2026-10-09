@@ -43,7 +43,7 @@ O kit da montagem atual (o firmware foi verificado nele):
 Sensores do piloto automático (todos por I2C; sem eles a aeronave voa no modo manual):
 
 - **GY-521**: giroscópio + acelerômetro (na placa pode haver um MPU6050 ou, como no nosso caso, um MPU6500; os dois são aceitos).
-- **BMP388**: barômetro.
+- **BMP581**: barômetro (o BMP388 anterior também é suportado).
 - **GY-273**: bússola (a nossa tem um QMC5883P; o QMC5883L também é aceito).
 - Opcionalmente, um **OLED 128×64 SSD1306** (I2C): tela de status a bordo.
 
@@ -69,7 +69,7 @@ O firmware suporta três placas; para trocar de uma para outra basta um parâmet
 | ESC (acelerador) | GPIO7 |
 | Leme + roda direcional | GPIO18 |
 | iBUS do receptor (RX) | GPIO17 |
-| I2C dos sensores SDA / SCL (MPU, BMP388, bússola) | GPIO41 / GPIO42 |
+| I2C dos sensores SDA / SCL (MPU, BMP581, bússola) | GPIO41 / GPIO42 |
 | I2C do OLED SDA / SCL (barramento separado) | GPIO1 / GPIO2 |
 | Reserva: GPS RX / TX | GPIO39 / GPIO40 |
 | Reserva: AUX1 / AUX2 (servos), AUX3, buzzer, LIGHT | GPIO15 / 16, 47, 38, 21 |
@@ -85,8 +85,8 @@ Ligação dos sensores na bancada (todos os módulos funcionam com **3,3 V**, e 
 
 | Módulo | Pinos |
 |---|---|
-| MPU-6050 / GY-521 (na placa pode haver um MPU6500, e isso é normal) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, AD0–GND, INT/XDA/XCL: não ligar. Com o chip para cima e a seta X apontando para o nariz; a rotação dos eixos do chip é definida por `IMU_ROTATION_CW_DEG` em `Config.h` (90 no nosso clone) |
-| BMP388 | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, SDO–GND (endereço 0x76), **CSB–3.3V** (senão o chip passa para SPI), INT: não ligar |
+| MPU-6050 / GY-521 (na placa pode haver um MPU6500, e isso é normal) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, AD0–GND, INT/XDA/XCL: não ligar. Módulo MPU-6500 avulso (10 pinos): o mesmo, mais **NCS–3.3V** (senão o chip passa para SPI) e FSYNC–GND; EDA/ECL: não ligar. Com o chip para cima e a seta X apontando para o nariz; a rotação dos eixos do chip é definida por `IMU_ROTATION_CW_DEG` em `Config.h` (90 no nosso clone) |
+| BMP581 | VCC–3.3V (**só 3.3V**: muitos módulos não têm regulador próprio), GND–GND, SCL–GPIO42, SDA–GPIO41, **SDO–GND** (endereço 0x46; não deixar solto), **CSB–3.3V** (senão o chip passa para SPI), INT: não ligar |
 | GY-273 (QMC5883P) | VCC–3.3V, GND–GND, SCL–GPIO42, SDA–GPIO41, DRDY: não ligar. Longe dos fios dos servos, do ESC e do motor |
 | OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–GPIO2, SDA–GPIO1 |
 
@@ -436,7 +436,7 @@ Leia esta seção inteira **antes** de ligar pela primeira vez, e não depois de
 Verifique se o fio de dados do receptor está ligado exatamente no pino RX do iBUS da tabela da sua placa (GPIO8/GPIO17/GPIO16), sem ter sido trocado com o terra ou a alimentação, e se o terra do receptor e o da placa estão unidos. Se a pinagem confere e os fios estão íntegros, mas ainda assim não há sinal, verifique se o receptor está de fato pareado (bind) com o rádio e se a saída do receptor está configurada para iBUS, e não para PPM/SBUS.
 
 **Um sensor (IMU, barômetro, bússola) mostra "não responde" / NO_RESPONSE**
-O firmware informa com honestidade que o sensor não responde, em vez de entregar zeros. Verifique: (1) a alimentação do módulo (3.3V e o terra da placa); (2) SDA/SCL, nos pinos I2C da sua placa em particular; (3) o endereço na linha: MPU 0x68 (AD0 no GND), BMP388 0x76 (SDO no GND, **CSB no 3.3V**; senão o chip fica em modo SPI), QMC5883P 0x2C, QMC5883L 0x0D. Se o sensor às vezes responde e às vezes não (ou atende em um endereço alheio), é mau contato na protoboard: aperte VCC/GND/SDA/SCL e, de preferência, alimente cada módulo direto do 3.3V/GND da placa. O comando `s` no console mostra os contadores de erros de I2C de cada sensor.
+O firmware informa com honestidade que o sensor não responde, em vez de entregar zeros. Verifique: (1) a alimentação do módulo (3.3V e o terra da placa); (2) SDA/SCL, nos pinos I2C da sua placa em particular; (3) o endereço na linha: MPU 0x68 (AD0 no GND), BMP581 0x46 (SDO no GND, CSB no 3.3V; 0x47 se o SDO estiver no 3.3V), BMP388 0x76 (SDO no GND, **CSB no 3.3V**; senão o chip fica em modo SPI), QMC5883P 0x2C, QMC5883L 0x0D. Se o sensor às vezes responde e às vezes não (ou atende em um endereço alheio), é mau contato na protoboard: aperte VCC/GND/SDA/SCL e, de preferência, alimente cada módulo direto do 3.3V/GND da placa. O comando `s` no console mostra os contadores de erros de I2C de cada sensor.
 
 **Os ângulos no OLED estão trocados (nariz para cima muda o R, não o P) ou com o sinal invertido**
 Faça a calibração da instalação do IMU (`o`, veja "Instalação do IMU"): ela não depende de como o chip está soldado no módulo nem de como o módulo está posicionado no avião. Sem ela: nos clones do GY-521, o chip às vezes vem soldado girado em relação às setas impressas; gire os eixos em `Config.h` → `IMU_ROTATION_CW_DEG` (0/90/180/270). Verificação: nariz para cima → o P fica positivo; asa direita para baixo → o R fica positivo.
@@ -464,7 +464,7 @@ Para que as expectativas sejam honestas:
 
 - O primeiro protótipo **já voou**. Foram identificados problemas: **resistência insuficiente da fixação do motor** e **resistência insuficiente da asa**; a asa precisa de reforço com carbono. Também é preciso afinar mais os servos. Leve isso em conta ao planejar seus próprios voos: não é uma ressalva abstrata, e sim uma falha real que já aconteceu com este protótipo.
 - **A bancada com a esp32-s3 está montada com todos os sensores** (GY-521 com um MPU6500, BMP388 por I2C, GY-273 com um QMC5883P, OLED): todos respondem, e o laço roda a 500 Hz. Os modos do piloto automático foram verificados na mesa, mas **ainda não foram testados em voo**.
-- O barômetro BMP388 é calculado pela fórmula completa de compensação da Bosch; a altitude é relativa ao ponto de ligação. A altitude absoluta acima do mar vem da atmosfera padrão, sem correção para o tempo.
+- O barômetro padrão agora é o BMP581 (o BMP388 da bancada foi verificado ao vivo; o BMP581 ainda não foi testado no hardware). A altitude é relativa ao ponto de ligação. A altitude absoluta acima do mar vem da atmosfera padrão, sem correção para o tempo.
 - A bússola QMC5883P precisa de calibração (`m` no console) já no avião montado: perto do motor e dos fios, os desvios são diferentes dos da protoboard. O rumo ainda não tem compensação de inclinação e não é usado por nenhum modo.
 - A licença é a OpenPlane License: MIT com atribuição obrigatória ao autor (Damir Lebedev), proibição de uso militar e proibição de causar dano intencional a pessoas e bens sem o consentimento delas, veja [LICENSE](LICENSE.md).
 

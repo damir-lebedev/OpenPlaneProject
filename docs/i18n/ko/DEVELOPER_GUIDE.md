@@ -217,7 +217,7 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
 | `baro/BMP388_Sensor.h` | I2C 또는 SPI(SPI 더미 바이트 포함)로 연결하는 BMP388, Bosch 보정, 데이터 준비 플래그로 읽기. **테스트 벤치에서 확인(I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280, Bosch 보정 §8.1. 실제 하드웨어에서는 확인하지 않음 |
 | `baro/SPL06_Sensor.h` | SPL06-001: 데이터시트의 계수와 수식, 32 Hz ×16. I2C 0x76/0x77 또는 SPI. 실제 하드웨어에서는 확인하지 않음 |
-| `baro/BMP581_Sensor.h` | BMP581: BMP5_SensorAPI의 절차, 16×/2×, IIR. I2C 0x46/0x47 또는 SPI. 주 기압계로도 피토관으로도 쓸 수 있음. 실제 하드웨어에서는 확인하지 않음 |
+| `baro/BMP581_Sensor.h` | BMP581: BMP5_SensorAPI의 절차, 16×/2×, IIR. I2C 0x46/0x47 또는 SPI. 주 기압계(기본 벤치 세트)로도 피토관으로도 쓸 수 있음. 실제 하드웨어에서는 확인하지 않음 |
 | `mag/MagnetometerBase.h` | 나침반의 공통 부분: 50 Hz 폴링, NVS의 hard-iron 보정, 축 회전, 방위, 오류 |
 | `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C. **테스트 벤치에서 확인** |
 | `mag/QMC5883L_Sensor.h` | QMC5883L, 0x0D |

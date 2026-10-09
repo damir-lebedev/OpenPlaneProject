@@ -217,7 +217,7 @@ As regras que mantêm a arquitetura limpa:
 | `baro/BMP388_Sensor.h` | BMP388 por I2C ou SPI (com o byte fictício do SPI), compensação da Bosch, leitura pelo flag de dado pronto. **Na bancada (I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280, compensação da Bosch §8.1. Não testado no hardware |
 | `baro/SPL06_Sensor.h` | SPL06-001: coeficientes e fórmulas do datasheet, 32 Hz ×16; I2C 0x76/0x77 ou SPI. Não testado no hardware |
-| `baro/BMP581_Sensor.h` | BMP581: a sequência do BMP5_SensorAPI, 16×/2×, IIR; I2C 0x46/0x47 ou SPI; serve tanto de barômetro principal quanto de tubo de Pitot. Não testado no hardware |
+| `baro/BMP581_Sensor.h` | BMP581: a sequência do BMP5_SensorAPI, 16×/2×, IIR; I2C 0x46/0x47 ou SPI; serve tanto de barômetro principal (conjunto padrão da bancada) quanto de tubo de Pitot. Não testado no hardware |
 | `mag/MagnetometerBase.h` | O que é comum às bússolas: leitura a 50 Hz, calibração hard-iron no NVS, rotação dos eixos, rumo, erros |
 | `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C. **Na bancada** |
 | `mag/QMC5883L_Sensor.h` | QMC5883L, 0x0D |

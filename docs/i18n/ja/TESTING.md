@@ -110,7 +110,7 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 | `native/test_telemetry` | 28 | `LoopStats`、`LogSettings`（NVS、バージョン）、`DebugLogger`（すべてのチャンネル、NAV）、`DebugConsole`（メニュー、ホットキー、バスの探索 `b`、ARM 中は禁止、保存は ARM していないときのみ）、`WebDebugServer`（ルート、JSON、メールボックス）、`OledDisplay`（I2C 上のバイト列、フレーム、信号喪失時の反転） |
 | `native/test_sim` | 15 | 機体モデルを使った、ファームウェア全体の閉ループ飛行：バンクからの回復、横風の中の CRUISE、LOITER、RTH、failsafe RTH/滑空、ジオフェンス、滑走路からの自動離陸、手投げ発進、自動着陸、サーマル、スパイラルからの RESCUE、速度保持と失速防止、ループ内の本物のピトー管、「ゆがんだ」機体のオートトリム、飛行中のセンサー故障（IMU、気圧センサー、ピトー管、GPS） |
 | `native/test_feedback_units` | 14 | フィードバックの各モジュール単体：速度の取得元、空中/地上の判定、RLS 推定、コントローラー、失速の兆候、離陸/着陸の中止 |
-| `native/test_app` | 10 | ESP32-S3 上の `src/main.cpp`、ベンチ用セット MPU6500/BMP388/QMC5883P/OLED：`loop()` の周期、送信機 → サーボ、ARM、モード、信号喪失、コンソール、ダッシュボード、画面、ブラックボックス（コア 0 のタスク、スロットルでの記録、DISARM 後のフライト、`bb list`） |
+| `native/test_app` | 10 | ESP32-S3 上の `src/main.cpp`、ベンチ用セット MPU6500/BMP581/QMC5883P/OLED：`loop()` の周期、送信機 → サーボ、ARM、モード、信号喪失、コンソール、ダッシュボード、画面、ブラックボックス（コア 0 のタスク、スロットルでの記録、DISARM 後のフライト、`bb list`） |
 | `native/test_app_lsm6dsv_pitot` | 9 | ESP32-S3 上の `src/main.cpp`、飛行用セット：LSM6DSV + QMC6309 + SPL06 + ピトー管内の BMP581 + GPS：すべてのチップの識別、ピトー管のゼロ点と速度、高度、GPS によるホーム地点、チップの角度による STABILIZE、ホーム地点への RTH、バスの探索、ダッシュボード |
 | `native/test_app_icm45686_esp32dev` | 5 | **ESP32 38 ピン**（`BOARD_ESP32_CLASSIC`）上の `src/main.cpp`、ICM-45686 + QMC6309 + SPL06 + BMP581 のセット：ボードのピン配置、IPREG フィルター、手投げ発進、安定化と速度、1 本のバスの探索 |
 | `native_stm32/test_app_stm32_lsm6dsv_pitot` | 9 | **STM32H743** 上の `src/stm32/main.cpp`、飛行用セット：タスクと優先度、2 ms の周期、ピトー管、PWM タイマーと `pulseIn`、飛行中の MAVLink、GCS からのモード変更、バックグラウンドタスクによる設定の「フラッシュ」への書き込み、I2C1 の画面、コンソール |

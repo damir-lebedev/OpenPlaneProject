@@ -172,7 +172,7 @@ Das Board zeichnet jeden Flug auf: IMU mit 500 Hz, Winkel und Entscheidungen des
 | **LSM6DSV** + **QMC6309** | IMU + Kompass (Modul) | I2C / SPI |
 | **ICM-45686** + **QMC6309** | IMU + Kompass (Ersatz) | I2C / SPI |
 | **SPL06-001** | Rumpfbarometer | I2C / SPI |
-| **BMP581** | Barometer im Pitotrohr (oder das Hauptbarometer) | I2C / SPI |
+| **BMP581** | Hauptbarometer und Barometer im Pitotrohr | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | Prüfstands- und ältere Sensoren | I2C / SPI |
 | **u-blox M10** | GPS, 10 Hz, UBX | UART |
 

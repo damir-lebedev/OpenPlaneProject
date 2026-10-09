@@ -1,6 +1,6 @@
 // ============================================================
 // Прошивка целиком (src/main.cpp) на виртуальном стенде: на шинах —
-// симулированные MPU6500, BMP388, QMC5883P и OLED, на UART1 —
+// симулированные MPU6500, BMP581, QMC5883P и OLED, на UART1 —
 // приёмник iBUS, выходы — LEDC. Тесты идут по порядку, как день на
 // поле: включение, первый кадр пульта, ARM, газ, режимы, потеря
 // связи, консоль, дашборд и экран. Состояние прошивки (глобальные
@@ -33,14 +33,13 @@ namespace
         imuChip.setBigEndian16(0x3F, 2048);   // лежит ровно, 1g по Z
         Wire.attach(0x68, &imuChip);
 
-        baroChip.regs[0x00] = 0x50;           // BMP388
-        const uint8_t nvm[21] = { 0x15, 0x6A, 0x60, 0x49, 0xF9, 0x3A, 0x0A, 0x21, 0x04, 0x07, 0xF1,
-                                  0x28, 0x4A, 0xF8, 0x5A, 0x03, 0xF9, 0xF2, 0x0F, 0x06, 0xF1 };
-        memcpy(&baroChip.regs[0x31], nvm, sizeof(nvm));
-        baroChip.regs[0x03] = 0x20;
-        const uint8_t data[6] = { 0x40, 0x2F, 0x63, 0x40, 0x1E, 0x7D };
-        memcpy(&baroChip.regs[0x04], data, sizeof(data));
-        Wire.attach(0x76, &baroChip);
+        baroChip.regs[0x01] = 0x50;           // BMP581, SDO на GND
+        baroChip.regs[0x27] = 0x11;           // сброс завершён | drdy
+        baroChip.regs[0x28] = 0x02;           // NVM готова
+        baroChip.regs[0x38] = 0x80;           // ODR выполним
+        const uint8_t data[6] = { 0x00, 0x00, 0x14, 0x40, 0xF3, 0x62 };   // 20 °C, 101325 Па
+        memcpy(&baroChip.regs[0x1D], data, sizeof(data));
+        Wire.attach(0x46, &baroChip);
 
         magChip.regs[0x00] = 0x80;            // QMC5883P, поле на север
         magChip.setLittleEndian16(0x01, 750);
@@ -92,8 +91,8 @@ void test_setup_brings_up_the_whole_bench()
     TEST_ASSERT_TRUE(contains(log, "Outputs: aileronLeft(GPIO4)=OK"));
     TEST_ASSERT_TRUE(contains(log, "WHO_AM_I=0x70 -> MPU6500"));
     TEST_ASSERT_TRUE(contains(log, "MPU6500: предполётная проверка пройдена"));
-    TEST_ASSERT_TRUE(contains(log, "BMP388: подключён"));
-    TEST_ASSERT_TRUE(contains(log, "BMP388: калибровка завершена"));
+    TEST_ASSERT_TRUE(contains(log, "BMP581: подключён"));
+    TEST_ASSERT_TRUE(contains(log, "BMP581: калибровка завершена"));
     TEST_ASSERT_TRUE(contains(log, "QMC5883P: подключён"));
     TEST_ASSERT_TRUE(contains(log, "Autopilot: инициализирован"));
     TEST_ASSERT_TRUE(contains(log, "OLED: подключён (SSD1306)"));
@@ -213,7 +212,7 @@ void test_console_commands_over_serial()
     loop();
     const std::string status = takeSerial();
     TEST_ASSERT_TRUE(contains(status, "MPU6500: available=YES"));
-    TEST_ASSERT_TRUE(contains(status, "BMP388: available=YES"));
+    TEST_ASSERT_TRUE(contains(status, "BMP581: available=YES"));
     TEST_ASSERT_TRUE(contains(status, "QMC5883P: available=YES"));
 
     Serial.pushRx("p");

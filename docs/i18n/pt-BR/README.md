@@ -172,7 +172,7 @@ A placa grava cada voo: IMU a 500 Hz, ângulos e decisões do piloto automático
 | **LSM6DSV** + **QMC6309** | IMU + bússola (módulo) | I2C / SPI |
 | **ICM-45686** + **QMC6309** | IMU + bússola (alternativa) | I2C / SPI |
 | **SPL06-001** | barômetro da fuselagem | I2C / SPI |
-| **BMP581** | barômetro no tubo de Pitot (ou o principal) | I2C / SPI |
+| **BMP581** | barômetro principal e barômetro no tubo de Pitot | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | de bancada e anteriores | I2C / SPI |
 | **u-blox M10** | GPS, 10 Hz, UBX | UART |
 

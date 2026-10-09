@@ -753,7 +753,7 @@ void test_gps_ignores_corrupt_foreign_and_malformed_frames()
 void test_sensor_selection_defaults()
 {
     static_assert(std::is_same<SelectedImu, MPU6050_Sensor>::value, "IMU по умолчанию — MPU6050/6500");
-    static_assert(std::is_same<SelectedBaro, BMP388_Sensor>::value, "барометр по умолчанию — BMP388");
+    static_assert(std::is_same<SelectedBaro, BMP581_Sensor>::value, "барометр по умолчанию — BMP581");
     static_assert(std::is_same<SelectedMag, QMC5883P_Sensor>::value, "компас по умолчанию — QMC5883P");
     static_assert(SENSOR_GPS == SENSOR_GPS_NONE, "GPS по умолчанию не подключён");
 
@@ -762,7 +762,7 @@ void test_sensor_selection_defaults()
     I2cRegisterDevice baroDevice = SELECTED_BARO_DEVICE(board);
     I2cRegisterDevice magDevice = SELECTED_MAG_DEVICE(board);
     TEST_ASSERT_EQUAL_HEX8(0x68, imuDevice.getAddress());
-    TEST_ASSERT_EQUAL_HEX8(0x76, baroDevice.getAddress());
+    TEST_ASSERT_EQUAL_HEX8(0x46, baroDevice.getAddress());
     TEST_ASSERT_EQUAL_HEX8(0x2C, magDevice.getAddress());
 }
 

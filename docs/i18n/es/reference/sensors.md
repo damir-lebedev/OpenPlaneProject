@@ -125,7 +125,7 @@ con una bandera de compilación (`-D SENSOR_KIT=SENSOR_KIT_LSM6DSV_PITOT`,
 
 | Kit `SENSOR_KIT` | IMU | Barómetro | Brújula | Velocidad del aire | GPS |
 |---|---|---|---|---|---|
-| `SENSOR_KIT_BENCH_GY521` (1, por defecto) | MPU6500 | BMP388 I2C | QMC5883P | — | — |
+| `SENSOR_KIT_BENCH_GY521` (1, por defecto) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (fuselaje) | QMC6309 | BMP581 en el tubo | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (fuselaje) | QMC6309 | BMP581 en el tubo | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | definir las cinco macros siguientes | | | | |
@@ -378,7 +378,7 @@ SPL06-001 (Goertek). Las fórmulas son de la hoja de datos §4.9.
 
 ## `BMP581_Sensor`
 
-**Archivo:** `sensors/baro/BMP581_Sensor.h` · **Hereda de:** `BarometerBase` · **Estado:** no verificado en el hardware
+**Archivo:** `sensors/baro/BMP581_Sensor.h` · **Hereda de:** `BarometerBase` · **Estado:** barómetro principal del conjunto por defecto, no verificado en el hardware
 
 BMP581 (Bosch). La secuencia sigue la BMP5_SensorAPI oficial.
 

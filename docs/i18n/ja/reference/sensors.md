@@ -120,7 +120,7 @@ Y は左）に変換します。`rotationCwDeg` は、チップの X 軸が向�
 
 | `SENSOR_KIT` のセット | IMU | バロメーター | コンパス | 対気速度 | GPS |
 |---|---|---|---|---|---|
-| `SENSOR_KIT_BENCH_GY521`（1、既定） | MPU6500 | BMP388 I2C | QMC5883P | — | — |
+| `SENSOR_KIT_BENCH_GY521`（1、既定） | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT`（2） | LSM6DSV | SPL06（胴体） | QMC6309 | 管内の BMP581 | M10 |
 | `SENSOR_KIT_ICM45686_PITOT`（3） | ICM-45686 | SPL06（胴体） | QMC6309 | 管内の BMP581 | M10 |
 | `SENSOR_KIT_CUSTOM`（0） | 下の5つのマクロをすべて指定 | | | | |
@@ -358,7 +358,7 @@ SPL06-001（Goertek）。数式はデータシート §4.9 によります。
 
 ## `BMP581_Sensor`
 
-**ファイル:** `sensors/baro/BMP581_Sensor.h` · **継承元:** `BarometerBase` · **状態:** 実機では未確認
+**ファイル:** `sensors/baro/BMP581_Sensor.h` · **継承元:** `BarometerBase` · **状態:** 既定セットのメイン気圧計。実機では未確認
 
 BMP581（Bosch）。手順は公式の BMP5_SensorAPI に従っています。
 

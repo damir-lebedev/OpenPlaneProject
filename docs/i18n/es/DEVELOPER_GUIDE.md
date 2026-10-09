@@ -217,7 +217,7 @@ Las reglas que mantienen limpia la arquitectura:
 | `baro/BMP388_Sensor.h` | BMP388 por I2C o SPI (con el byte ficticio de SPI), compensación de Bosch, lectura según el indicador de dato listo. **En el banco (I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280, compensación de Bosch §8.1. No probado en hardware |
 | `baro/SPL06_Sensor.h` | SPL06-001: coeficientes y fórmulas de la hoja de datos, 32 Hz ×16; I2C 0x76/0x77 o SPI. No probado en hardware |
-| `baro/BMP581_Sensor.h` | BMP581: la secuencia de BMP5_SensorAPI, 16×/2×, IIR; I2C 0x46/0x47 o SPI; sirve tanto de barómetro principal como de tubo de Pitot. No probado en hardware |
+| `baro/BMP581_Sensor.h` | BMP581: la secuencia de BMP5_SensorAPI, 16×/2×, IIR; I2C 0x46/0x47 o SPI; sirve tanto de barómetro principal (conjunto de banco por defecto) como de tubo de Pitot. No probado en hardware |
 | `mag/MagnetometerBase.h` | Lo común de las brújulas: consulta a 50 Hz, calibración hard-iron en NVS, giro de ejes, rumbo, errores |
 | `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C. **En el banco** |
 | `mag/QMC5883L_Sensor.h` | QMC5883L, 0x0D |

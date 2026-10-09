@@ -110,7 +110,7 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native/test_telemetry` | 28 | `LoopStats`, `LogSettings`(NVS, 버전), `DebugLogger`(모든 채널, NAV), `DebugConsole`(메뉴, 단축키, 버스 탐색 `b`, ARM 중 금지, ARM이 아닐 때만 저장), `WebDebugServer`(경로, JSON, 우편함), `OledDisplay`(I2C 바이트, 프레임, 신호 상실 시 반전) |
 | `native/test_sim` | 15 | 비행기 모델로 하는 펌웨어 전체의 폐루프 비행: 뱅크에서의 회복, 옆바람 속 CRUISE, LOITER, RTH, failsafe RTH/활공, 지오펜스, 활주로에서의 자동 이륙, 손으로 던져 이륙, 자동 착륙, 서멀, 나선에서의 RESCUE, 속도 유지와 실속 방지, 루프 안의 실제 피토관, “삐뚤어진” 비행기의 오토 트림, 비행 중 센서 고장(IMU, 기압계, 피토관, GPS) |
 | `native/test_feedback_units` | 14 | 피드백 모듈을 하나씩: 속도 소스, 공중/지상 판정, RLS 추정, 제어기, 실속 징후, 이륙/착륙 중단 |
-| `native/test_app` | 10 | ESP32-S3의 `src/main.cpp`, 벤치용 구성 MPU6500/BMP388/QMC5883P/OLED: `loop()` 주기, 조종기 → 서보, ARM, 모드, 신호 상실, 콘솔, 대시보드, 화면, 블랙박스(코어 0의 태스크, 스로틀 시 기록, DISARM 뒤의 비행, `bb list`) |
+| `native/test_app` | 10 | ESP32-S3의 `src/main.cpp`, 벤치용 구성 MPU6500/BMP581/QMC5883P/OLED: `loop()` 주기, 조종기 → 서보, ARM, 모드, 신호 상실, 콘솔, 대시보드, 화면, 블랙박스(코어 0의 태스크, 스로틀 시 기록, DISARM 뒤의 비행, `bb list`) |
 | `native/test_app_lsm6dsv_pitot` | 9 | ESP32-S3의 `src/main.cpp`, 비행용 구성: LSM6DSV + QMC6309 + SPL06 + 피토관 속 BMP581 + GPS: 모든 칩 식별, 피토관 영점과 속도, 고도, GPS 기준 홈 지점, 칩의 각도로 하는 STABILIZE, 홈 지점으로 가는 RTH, 버스 탐색, 대시보드 |
 | `native/test_app_icm45686_esp32dev` | 5 | **ESP32 38핀**(`BOARD_ESP32_CLASSIC`)의 `src/main.cpp`, ICM-45686 + QMC6309 + SPL06 + BMP581 구성: 보드 핀 배치, IPREG 필터, 손으로 던져 이륙, 안정화와 속도, 버스 하나만 탐색 |
 | `native_stm32/test_app_stm32_lsm6dsv_pitot` | 9 | **STM32H743**의 `src/stm32/main.cpp`, 비행용 구성: 태스크와 우선순위, 2 ms 주기, 피토관, PWM 타이머와 `pulseIn`, 비행 중 MAVLink, GCS에서의 모드 변경, 백그라운드 태스크가 설정을 “플래시”에 기록, I2C1의 화면, 콘솔 |

@@ -75,7 +75,7 @@
 
 // Готовые наборы: SENSOR_KIT задаёт все датчики разом.
 #define SENSOR_KIT_CUSTOM          0   // каждый датчик — своей строкой ниже
-#define SENSOR_KIT_BENCH_GY521     1   // стенд: GY-521 (MPU6500), BMP388 I2C, GY-273 (QMC5883P)
+#define SENSOR_KIT_BENCH_GY521     1   // стенд: GY-521 (MPU6500), BMP581 I2C, GY-273 (QMC5883P)
 #define SENSOR_KIT_LSM6DSV_PITOT   2   // LSM6DSV+QMC6309, SPL06 в фюзеляже, BMP581 в трубке Пито, GPS
 #define SENSOR_KIT_ICM45686_PITOT  3   // ICM-45686+QMC6309, SPL06, BMP581 в трубке, GPS
 
@@ -93,7 +93,7 @@
 
 #if SENSOR_KIT == SENSOR_KIT_BENCH_GY521
     #define KIT_IMU      SENSOR_IMU_MPU6050
-    #define KIT_BARO     SENSOR_BARO_BMP388_I2C
+    #define KIT_BARO     SENSOR_BARO_BMP581
     #define KIT_MAG      SENSOR_MAG_QMC5883P
     #define KIT_AIRSPEED SENSOR_AIRSPEED_NONE
     #define KIT_GPS      SENSOR_GPS_NONE

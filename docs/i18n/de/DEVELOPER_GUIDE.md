@@ -217,7 +217,7 @@ Die Regeln, die die Architektur sauber halten:
 | `baro/BMP388_Sensor.h` | BMP388 über I2C oder SPI (mit dem SPI-Dummy-Byte), Bosch-Kompensation, Auslesen über das Bereitschafts-Flag. **Auf dem Prüfstand (I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280, Bosch-Kompensation §8.1. Nicht an der Hardware getestet |
 | `baro/SPL06_Sensor.h` | SPL06-001: Koeffizienten und Formeln aus dem Datenblatt, 32 Hz ×16; I2C 0x76/0x77 oder SPI. Nicht an der Hardware getestet |
-| `baro/BMP581_Sensor.h` | BMP581: die Abfolge der BMP5_SensorAPI, 16×/2×, IIR; I2C 0x46/0x47 oder SPI; dient sowohl als Haupt-Barometer als auch als Pitotrohr. Nicht an der Hardware getestet |
+| `baro/BMP581_Sensor.h` | BMP581: die Abfolge der BMP5_SensorAPI, 16×/2×, IIR; I2C 0x46/0x47 oder SPI; dient sowohl als Haupt-Barometer (Standardsatz des Prüfstands) als auch als Pitotrohr. Nicht an der Hardware getestet |
 | `mag/MagnetometerBase.h` | Das Gemeinsame aller Kompasse: Abfrage mit 50 Hz, Hard-Iron-Kalibrierung im NVS, Achsendrehung, Kurs, Fehler |
 | `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C. **Auf dem Prüfstand** |
 | `mag/QMC5883L_Sensor.h` | QMC5883L, 0x0D |

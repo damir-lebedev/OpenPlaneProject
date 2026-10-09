@@ -172,7 +172,7 @@ SwD를 RTH 대신 서멀 소어링으로 쓰고 싶으신가요? `Bind::mode(Cha
 | **LSM6DSV** + **QMC6309** | IMU + 나침반(모듈) | I2C / SPI |
 | **ICM-45686** + **QMC6309** | IMU + 나침반(대체품) | I2C / SPI |
 | **SPL06-001** | 기체의 기압계 | I2C / SPI |
-| **BMP581** | 피토관의 기압계(또는 주 기압계) | I2C / SPI |
+| **BMP581** | 주 기압계 및 피토관의 기압계 | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | 테스트 벤치용 및 이전 센서 | I2C / SPI |
 | **u-blox M10** | GPS, 10 Hz, UBX | UART |
 

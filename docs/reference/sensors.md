@@ -123,7 +123,7 @@ Y влево). `rotationCwDeg` — куда смотрит ось X чипа, п
 
 | Набор `SENSOR_KIT` | IMU | Барометр | Компас | Воздушная скорость | GPS |
 |---|---|---|---|---|---|
-| `SENSOR_KIT_BENCH_GY521` (1, по умолчанию) | MPU6500 | BMP388 I2C | QMC5883P | — | — |
+| `SENSOR_KIT_BENCH_GY521` (1, по умолчанию) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (фюзеляж) | QMC6309 | BMP581 в трубке | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (фюзеляж) | QMC6309 | BMP581 в трубке | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | задать все пять макросов ниже | | | | |
@@ -376,7 +376,7 @@ SPL06-001 (Goertek). Формулы — датащит §4.9.
 
 ## `BMP581_Sensor`
 
-**Файл:** `sensors/baro/BMP581_Sensor.h` · **Наследует:** `BarometerBase` · **Статус:** не проверен на железе
+**Файл:** `sensors/baro/BMP581_Sensor.h` · **Наследует:** `BarometerBase` · **Статус:** основной барометр набора по умолчанию, не проверен на железе
 
 BMP581 (Bosch). Последовательность — официальный BMP5_SensorAPI.
 

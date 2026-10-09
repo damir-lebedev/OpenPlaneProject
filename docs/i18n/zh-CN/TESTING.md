@@ -110,7 +110,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native/test_telemetry` | 28 | `LoopStats`、`LogSettings`（NVS、版本）、`DebugLogger`（所有通道、NAV）、`DebugConsole`（菜单、热键、总线探测 `b`、ARM 时禁用、仅在未 ARM 时保存）、`WebDebugServer`（路由、JSON、邮箱）、`OledDisplay`（通过 I2C 发送的字节、帧、信号丢失时反色） |
 | `native/test_sim` | 15 | 整套固件与飞机模型的闭环飞行：从倾斜姿态改平、侧风中的 CRUISE、LOITER、RTH、failsafe RTH/滑翔、地理围栏、从跑道自动起飞、手抛起飞、自动降落、热气流、从螺旋中 RESCUE、速度保持与失速保护、回路中的真实皮托管、“歪”飞机的自动配平、飞行中的传感器故障（IMU、气压计、皮托管、GPS） |
 | `native/test_feedback_units` | 14 | 各反馈模块的单独测试：速度来源、空中/地面判断、RLS 估计、控制器、失速征兆、起飞/降落中止 |
-| `native/test_app` | 10 | 在 ESP32-S3 上运行 `src/main.cpp`，配台架套件 MPU6500/BMP388/QMC5883P/OLED：`loop()` 周期、遥控器 → 舵机、ARM、模式、信号丢失、控制台、仪表盘、屏幕、黑匣子（运行在核心 0 上的任务、按油门记录、DISARM 之后的飞行、`bb list`） |
+| `native/test_app` | 10 | 在 ESP32-S3 上运行 `src/main.cpp`，配台架套件 MPU6500/BMP581/QMC5883P/OLED：`loop()` 周期、遥控器 → 舵机、ARM、模式、信号丢失、控制台、仪表盘、屏幕、黑匣子（运行在核心 0 上的任务、按油门记录、DISARM 之后的飞行、`bb list`） |
 | `native/test_app_lsm6dsv_pitot` | 9 | 在 ESP32-S3 上运行 `src/main.cpp`，配飞行套件：LSM6DSV + QMC6309 + SPL06 + 皮托管内的 BMP581 + GPS——识别所有芯片、皮托管零点与速度、高度、按 GPS 确定的返航点、按芯片给出的角度做 STABILIZE、RTH 返回返航点、总线探测、仪表盘 |
 | `native/test_app_icm45686_esp32dev` | 5 | 在 **ESP32 38 针版**（`BOARD_ESP32_CLASSIC`）上运行 `src/main.cpp`，配 ICM-45686 + QMC6309 + SPL06 + BMP581 套件：开发板引脚分配、IPREG 滤波器、手抛起飞、增稳与速度、仅探测一条总线 |
 | `native_stm32/test_app_stm32_lsm6dsv_pitot` | 9 | 在 **STM32H743** 上运行 `src/stm32/main.cpp`，配飞行套件：任务与优先级、2 ms 周期、皮托管、PWM 定时器与 `pulseIn`、飞行中的 MAVLink、从 GCS 切换模式、由后台任务把设置写入“闪存”、I2C1 上的屏幕、控制台 |
