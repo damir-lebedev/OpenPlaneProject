@@ -8,8 +8,8 @@ Elle fonctionne sur deux cartes :
 
 | Carte | Où elle enregistre | Combien ça contient (à ~20 Ko/s) |
 |---|---|---|
-| **ESP32-S3 N16R8** (principale) | une partition de 13,9 Mo de la flash intégrée | environ **11 minutes** |
-| **STM32H743** (DevEBox, WeAct) | un fichier sur une carte SD, [plus bas](#carte-sd-stm32h743) | 64 Mo — environ **55 minutes**, la taille est fixée par le fichier |
+| **ESP32-S3 N16R8** | une partition de 13,9 Mo de la flash intégrée | environ **11 minutes** |
+| **STM32H743** (DevEBox — principale ; WeAct) | un fichier sur une carte SD, [plus bas](#carte-sd-stm32h743) | 64 Mo — environ **55 minutes**, la taille est fixée par le fichier |
 
 Sur les autres cartes (ESP32-C3, ESP32 ordinaire), il n’y a pas de support de stockage : la boîte noire est désactivée et ne gêne pas le vol.
 

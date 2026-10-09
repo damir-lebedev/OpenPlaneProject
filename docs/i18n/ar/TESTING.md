@@ -49,7 +49,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 
 ## كيف يُبنى البناء الأصلي
 
-البيئة `[env:native]` في `platformio.ini`: `platform = native`، وUnity، و`-std=gnu++17`، و`-D BOARD_ESP32_S3` (توزيع أطراف اللوحة الرئيسية)، و`-I test/native/support`، و`-Wall -Wextra -Wshadow`، والتغطية بـ `--coverage` مع `-fkeep-inline-functions -fkeep-static-functions` — فبدونهما لا يرى gcov دوال الترويسات التي لم تُستدعَ قط ويبالغ في التغطية.
+البيئة `[env:native]` في `platformio.ini`: `platform = native`، وUnity، و`-std=gnu++17`، و`-D BOARD_ESP32_S3` (توزيع أطراف ESP32-S3)، و`-I test/native/support`، و`-Wall -Wextra -Wshadow`، والتغطية بـ `--coverage` مع `-fkeep-inline-functions -fkeep-static-functions` — فبدونهما لا يرى gcov دوال الترويسات التي لم تُستدعَ قط ويبالغ في التغطية.
 
 ### بدائل العتاد المحاكية — `test/native/support/`
 

@@ -56,7 +56,7 @@
 
 | | |
 |---|---|
-| **Qué es** | Un controlador de vuelo y piloto automático abiertos para aviones de radiocontrol. Hoy es un ESP32-S3 de unos 10 $; el siguiente paso es el STM32H743 (una placa de la clase Pixhawk): el firmware completo pasa las pruebas y en una placa DevEBox **ya está en marcha y se pilota con la emisora** ([hay vídeo](#-la-stm32h743-cobra-vida-en-la-placa)). |
+| **Qué es** | Un controlador de vuelo y piloto automático abiertos para aviones de radiocontrol. La placa principal es la STM32H743 (una placa de la clase Pixhawk): en una placa DevEBox el firmware **ya está en marcha y se pilota con la emisora** ([hay vídeo](#-la-stm32h743-cobra-vida-en-la-placa)), y ahora se están conectando los sensores. La base anterior es un ESP32-S3 de unos 10 $, que pasó el banco con todos los sensores. |
 | **Qué hace** | 12 modos de vuelo: desde la estabilización hasta el regreso a casa, círculos por GPS, lanzamiento a mano, aterrizaje automático y **vuelo a vela en térmicas**. Un tubo de Pitot hecho con dos barómetros baratos. Telemetría MAVLink para QGroundControl y Mission Planner. |
 | **Lo principal** | Cualquier interruptor o potenciómetro de la emisora = cualquier función. **Una línea** en `Controls.h` y SwD deja de ser RTH para convertirse en lanzamiento de carga. |
 | **Por qué fiarse** | 387 pruebas automáticas (y 9 más en la propia placa, con una tarjeta SD real), el 98 % del código cubierto por pruebas, 24 compilaciones «placa × sensores» sin un solo aviso y simulaciones en lazo cerrado de cada modo. |
@@ -162,10 +162,10 @@ La placa graba cada vuelo: IMU a 500 Hz, ángulos y decisiones del piloto autom�
 
 | Placa | Estado | Qué se ha comprobado |
 |---|---|---|
-| **ESP32-S3 N16R8** | ✅ principal, en el banco | todos los sensores, servos, iBUS, OLED y panel web en vivo; el firmware completo, en pruebas |
+| **STM32H743VIT6** | ✅ principal · 🔧 DevEBox, conectando sensores + 🧪 pruebas | en la placa: arranque, consola por USB, **tarjeta SD y caja negra** (pruebas en la placa), **recepción iBUS, ARM y control de servos y motor desde la emisora** (el arranque está en vídeo); en el PC, todo el firmware: tareas FreeRTOS, flash, MAVLink, I2C y SPI. Aún no se han conectado sensores a la placa |
+| **ESP32-S3 N16R8** | ✅ antigua principal, en el banco | todos los sensores, servos, iBUS, OLED y panel web en vivo; el firmware completo, en pruebas |
 | **ESP32 38-pin** | 🧪 pruebas | el firmware completo en pruebas con el kit ICM-45686 |
 | **ESP32-C3 SuperMini** | ✈️ ha volado (manual) | el primer prototipo; compilación de todos los kits |
-| **STM32H743VIT6** | 🔧 placa DevEBox sin sensores + 🧪 pruebas | en la placa: arranque, consola por USB, **tarjeta SD y caja negra** (pruebas en la placa), **recepción iBUS, ARM y control de servos y motor desde la emisora** (el arranque está en vídeo); en el PC, todo el firmware: tareas FreeRTOS, flash, MAVLink, I2C y SPI. Aún no se han conectado sensores a la placa |
 
 | Sensor | Qué es | Buses |
 |---|---|---|
@@ -243,9 +243,9 @@ Más detalles: [ARCHITECTURE.md](ARCHITECTURE.md).
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
+pio run -e stm32h743-devebox -t upload                    # DevEBox H743: USB DFU, consola por USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
-pio run -e stm32h743-devebox -t upload                    # DevEBox H743: USB DFU, consola por USB
 ```
 
 DevEBox: la placa no tiene botón BOOT0; antes de la primera carga, une el pin BT0 con 3V3 y pulsa RST. Después, la tecla `D` de la consola reinicia la placa en el cargador de arranque por sí sola ([más detalles](DEVELOPER_GUIDE.md#stm32h743)).

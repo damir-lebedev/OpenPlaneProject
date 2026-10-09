@@ -545,7 +545,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s 内最差) | iBUS ok=... crc_err
 STM32H743VIT6（Cortex-M7 480 MHz，2 MB 闪存，1 MB RAM）运行**完整固件**：传感器、自动驾驶仪、拨杆、控制台和显示屏与 ESP32-S3 相同，另外还有 MAVLink
 遥测和 SD 卡上的黑匣子。固件可以编译，通过 cppcheck 以及通用代码的全部原生测试。在硬件上验证过的是**没有接传感器的 DevEBox H743 板**：启动、通过 USB 的控制台、SD 卡、黑匣子——见 [TESTING.md](TESTING.md#stm32-开发板上的测试)——
 以及 iBUS、ARM 和送往舵机与电机的 PWM：用遥控器在手动模式下操控（有视频）。
-STM32 上的传感器仍在等待试验台。主力飞控板是 ESP32-S3。
+传感器现在正接到 STM32 上。**主力板是 STM32H743（DevEBox）**；ESP32-S3 是之前的主力板，已在装有全部传感器的台架上验证过。
 
 - **HAL**——`include/hal/stm32/`：`Stm32Board`（与 `Esp32Board` 的 API 相同，另加 `telemetryUart()`）、`Stm32I2CBus`、`Stm32SpiBus`、`Stm32UartPort`、
   `Stm32ServoOutput`（`HardwareTimer` 提供的硬件 PWM，一个定时器带多路输出）。详见 [reference/hal.md](reference/hal.md#stm32h743-的实现)。
@@ -768,7 +768,7 @@ pio run -t upload                        # 恢复正常固件
 ## 构建、烧录与监视命令
 
 ```bash
-pio run                        # 构建默认开发板（esp32-s3）
+pio run                        # 构建默认开发板（stm32h743-devebox）
 pio run -t upload              # 烧录
 pio device monitor             # 监视器，115200
 pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 检查所有开发板都能构建
@@ -819,9 +819,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 检查所有开发
 - **提交前先测试和分析**：`pio test -e native -e native-stm32`、
   `pio check -e esp32-s3`、`pio check -e stm32h743`、`tools/clang-tidy.sh`——
   全部通过（[`TESTING.md`](TESTING.md)）。
-- **修改通用代码后要构建所有开发板**——S3 是主力，但 C3、
-  38 针板和 `stm32h743` 不能被破坏；发布前运行
-  `tools/build_matrix.sh`（所有开发板 × 所有传感器）。
+- **修改通用代码后要构建所有开发板**——STM32H743 是主力，但 ESP32-S3、C3 和 38 针板也不能被破坏；发布前运行 `tools/build_matrix.sh`（所有开发板 × 所有传感器）。
 - **能在硬件上验证的就在硬件上验证**：符号——靠倾斜，输出——用 `p` 命令，链路——靠关闭遥控器。
 - **不要凭空编造 API**。请对照 `~/.platformio/packages/framework-arduinoespressif32/`
   中的框架源码（Arduino core 2.0.x）——网上的资料常常描述的是 API 不同的

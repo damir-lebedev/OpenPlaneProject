@@ -7,11 +7,8 @@
 Das HAL ist die einzige Schicht, die einen konkreten MCU kennen darf. Die
 Schnittstellen liegen in `include/hal/`; die Implementierungen sind:
 
-- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x), **die wichtigste**;
-- `include/hal/stm32/` — STM32H743 (STM32duino 3.x): Die vollständige Firmware
-  lässt sich bauen (`pio run -e stm32h743`) und läuft auf dem PC (`pio test -e
-  native-stm32`); auf der Hardware wurde das nackte DevEBox-Board geprüft
-  (SD-Karte, Blackbox), die Sensoren und Servos dagegen noch nicht;
+- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x);
+- `include/hal/stm32/` — STM32H743 (STM32duino 3.x), **die wichtigste**: Die vollständige Firmware lässt sich bauen (`pio run -e stm32h743-devebox`) und läuft auf dem PC (`pio test -e native-stm32`); auf dem DevEBox-Board sind SD-Karte, Blackbox, iBUS und Servos geprüft, die Sensoren noch nicht;
 - `hal/Rtos.h` — FreeRTOS-Tasks, auf beiden Plattformen gleich.
 
 Alles darüber arbeitet nur mit den Schnittstellen. Der Wechsel auf einen anderen

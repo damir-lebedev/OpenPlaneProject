@@ -43,7 +43,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 
 ## 原生构建的结构
 
-`platformio.ini` 中的 `[env:native]`：`platform = native`，Unity，`-std=gnu++17`，`-D BOARD_ESP32_S3`（主力板的引脚分配），`-I test/native/support`，`-Wall -Wextra -Wshadow`，用 `--coverage` 统计覆盖率，另有 `-fkeep-inline-functions -fkeep-static-functions`——没有它们，gcov 看不到从未被调用过的头文件函数，会高估覆盖率。
+`platformio.ini` 中的 `[env:native]`：`platform = native`，Unity，`-std=gnu++17`，`-D BOARD_ESP32_S3`（ESP32-S3 的引脚分配），`-I test/native/support`，`-Wall -Wextra -Wshadow`，用 `--coverage` 统计覆盖率，另有 `-fkeep-inline-functions -fkeep-static-functions`——没有它们，gcov 看不到从未被调用过的头文件函数，会高估覆盖率。
 
 ### 硬件模拟替身——`test/native/support/`
 

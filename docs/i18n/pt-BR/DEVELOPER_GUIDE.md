@@ -617,8 +617,7 @@ Compila, passa no cppcheck e em todos os testes nativos do código comum. No
 hardware foi testada a **placa DevEBox H743 sem sensores**: inicialização,
 console por USB, cartão SD, caixa-preta —
 [TESTING.md](TESTING.md#testes-na-placa-stm32) — e também iBUS, ARM e PWM para
-os servos e o motor: controle pelo rádio em modo manual (em vídeo). Os sensores
-na STM32 ainda esperam uma bancada. A placa principal de voo é a ESP32-S3.
+os servos e o motor: controle pelo rádio em modo manual (em vídeo). Os sensores estão sendo ligados à STM32 agora. **A placa principal é a STM32H743 (DevEBox)**; a ESP32-S3 é a antiga placa principal, na qual a bancada com todos os sensores foi concluída.
 
 - **HAL** — `include/hal/stm32/`: `Stm32Board` (a mesma API do `Esp32Board`,
   mais `telemetryUart()`), `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`,
@@ -961,7 +960,7 @@ pio run -t upload                        # restaurar o firmware normal
 ## Comandos de build, gravação e monitor
 
 ```bash
-pio run                        # compilar a placa padrão (esp32-s3)
+pio run                        # compilar a placa padrão (stm32h743-devebox)
 pio run -t upload              # gravar
 pio device monitor             # monitor, 115200
 pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # verificar se todas as placas compilam
@@ -1048,10 +1047,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # verificar se todas
 - **Testes e análise antes de um commit:** `pio test -e native -e native-stm32`,
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   tudo verde ([`TESTING.md`](TESTING.md)).
-- **Compile todas as placas** depois de mudanças no código comum — a S3 é a
-  principal, mas a C3, a de 38 pinos e a `stm32h743` não podem quebrar; antes
-  de um lançamento — `tools/build_matrix.sh` (todas as placas × todos os
-  sensores).
+- **Compile todas as placas** depois de mudanças no código comum — a STM32H743 é a principal, mas a ESP32-S3, a C3 e a de 38 pinos também não podem quebrar; antes de um lançamento — `tools/build_matrix.sh` (todas as placas × todos os sensores).
 - **Verifique no hardware o que puder ser verificado:** os sinais — pela
   inclinação, as saídas — com o comando `p`, o link — desligando o rádio.
 - **Não invente APIs.** Consulte os fontes do framework em

@@ -43,7 +43,7 @@ Bevor Sie nach Änderungen an den Tests die Abdeckung zählen, ist es sinnvoll, 
 
 ## Wie der native Build aufgebaut ist
 
-`[env:native]` in `platformio.ini`: `platform = native`, Unity, `-std=gnu++17`, `-D BOARD_ESP32_S3` (die Pinbelegung des Hauptboards), `-I test/native/support`, `-Wall -Wextra -Wshadow`, Abdeckung mit `--coverage` und `-fkeep-inline-functions -fkeep-static-functions` – ohne sie sieht gcov Header-Funktionen, die nie aufgerufen wurden, gar nicht und überschätzt die Abdeckung.
+`[env:native]` in `platformio.ini`: `platform = native`, Unity, `-std=gnu++17`, `-D BOARD_ESP32_S3` (die Pinbelegung des ESP32-S3), `-I test/native/support`, `-Wall -Wextra -Wshadow`, Abdeckung mit `--coverage` und `-fkeep-inline-functions -fkeep-static-functions` – ohne sie sieht gcov Header-Funktionen, die nie aufgerufen wurden, gar nicht und überschätzt die Abdeckung.
 
 ### Hardware-Fakes – `test/native/support/`
 

@@ -31,6 +31,7 @@ Let's be upfront: the project is under active development and is **not a finishe
 
 The kit of the current build (the firmware has been verified on it):
 
+- **An STM32H743 DevEBox H743 board** (MCUDEV) — the main one. The former main board, the ESP32-S3 below, is supported too.
 - **An ESP32-S3 N16R8 board** (a DevKitC-1 clone with two USB-C ports: "USB" and "COM").
 - **An FS-i6 transmitter + FS-iA6B receiver** (iBUS protocol, 10 channels). You need one data wire — the iBUS SERVO port. The transmitter must be able to set failsafe — this setting is mandatory, see the failsafe section.
 - **2 MG90S servos** for the ailerons — one for each wing panel (two independent servos, not one for both wings).
@@ -53,13 +54,46 @@ Airframe: wingspan 1200 mm, chord 250 mm, NACA 4412 airfoil, PETG construction (
 
 ## Choosing a board and pinout
 
-The firmware supports three boards; switching takes one build parameter (`pio run -e <environment name>`). Each board has its own pinout, hard-coded in the firmware for the specific environment — do not rearrange wires on your own; look at the table for your board.
+The firmware supports four boards; switching takes one build parameter (`pio run -e <environment name>`). Each board has its own pinout, hard-coded in the firmware for the specific environment — do not rearrange wires on your own; look at the table for your board.
 
-> **Important:** the main board is now **esp32-s3 (N16R8)** — its pinout has been verified on the bench with all sensors. **esp32-c3** is the old flown prototype. The **esp32-dev** pinout was chosen from the chip documentation and **has not been checked on real hardware**.
+> **Important:** the main board is now the **STM32H743 (DevEBox H743)** — boot, the USB console, the SD card, iBUS, servos and the motor have been verified on it; the sensors are being connected for the first time. **esp32-s3 (N16R8)** is the former main board; its pinout has been verified on the bench with all sensors. **esp32-c3** is the old flown prototype. The **esp32-dev** pinout was chosen from the chip documentation and **has not been checked on real hardware**.
 
-### esp32-s3 (N16R8) — the main board, verified on the bench
+### STM32H743 (DevEBox H743) — the main board
 
-`pio run -e esp32-s3`, board `esp32-s3-devkitc-1` with settings for the N16R8 module (16 MB of flash, 8 MB of octal PSRAM). This is the default board (`default_envs = esp32-s3`).
+`pio run -e stm32h743-devebox`, an MCUDEV DevEBox H743 board (STM32H743VIT6). This is the default board (`default_envs = stm32h743-devebox`). Boot, the USB console, the SD card and the black box, iBUS reception, ARM, servos and the motor from the transmitter have already been verified on it; the sensors are being connected for the first time.
+
+| Purpose | Pin |
+|---|---|
+| Aileron, left wing panel | PA0 |
+| Aileron, right wing panel | PA1 |
+| Elevator | PA2 |
+| ESC (throttle) | PA3 |
+| Rudder + steering wheel | PD14 |
+| iBUS from the receiver (RX) | PE7 |
+| Sensor I2C SDA / SCL (MPU, BMP581, compass) | PB11 / PB10 |
+| OLED I2C SDA / SCL (separate bus) | PB9 / PB8 |
+| GPS: RX (← GPS TX) / TX (→ GPS RX) | PD9 / PD8 |
+| MAVLink telemetry (radio modem): RX / TX | PD0 / PD1 |
+| AUX1 / AUX2 (servos), buzzer | PD15 / PE9, PE15 |
+| Sensor SPI SCK / MISO / MOSI, IMU CS / barometer CS | PB13 / PB14 / PB15, PB12 / PD10 |
+| Reserve: battery / current sensor (ADC; the STM32 firmware does not read them yet) | PC0 / PC1 |
+
+The console, the log and the black box download go over the board's USB-C (a virtual COM port). Keep free: PA11/PA12 (USB), PA13/PA14 (SWD), PC8–PC12 and PD2 (the µSD slot), PE3 and PC5 (the K1/K2 buttons).
+
+Connecting the sensors on the bench (all modules run from **3.3 V**, not 5 V):
+
+| Module | Pins |
+|---|---|
+| MPU-6050 / GY-521 (the board may carry an MPU6500 — that is fine) | VCC–3.3V, GND–GND, SCL–PB10, SDA–PB11, AD0–GND, INT/XDA/XCL — leave unconnected. A standalone MPU-6500 module (10 pins): the same, plus **NCS–3.3V** (otherwise the chip switches to SPI) and FSYNC–GND; EDA/ECL — leave unconnected. Chip facing up, the X arrow pointing to the nose; the rotation of the chip's axes is `IMU_ROTATION_CW_DEG` in `Config.h` (90 on our clone) |
+| BMP581 | VCC–3.3V (**3.3V only**: many modules have no regulator of their own), GND–GND, SCL–PB10, SDA–PB11, **SDO–GND** (address 0x46; do not leave it floating), **CSB–3.3V** (otherwise the chip switches to SPI), INT — leave unconnected |
+| GY-273 (QMC5883P) | VCC–3.3V, GND–GND, SCL–PB10, SDA–PB11, DRDY — leave unconnected. Keep it away from the servo, ESC and motor wires |
+| OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
+
+The servos are powered **not from the board** but from the ESC's BEC (or from a separate 5 V supply rated at 2 A or more); the grounds of all sources are common. Do not connect the ESC's red wire to the board's 5 V while USB is plugged in.
+
+### esp32-s3 (N16R8) — the former main board, verified on the bench
+
+`pio run -e esp32-s3`, board `esp32-s3-devkitc-1` with settings for the N16R8 module (16 MB of flash, 8 MB of octal PSRAM).
 
 | Purpose | GPIO |
 |---|---|
@@ -251,7 +285,10 @@ The easiest way is to install the **PlatformIO IDE** extension in VS Code (Exten
 Open the project (the repository folder) in VS Code with PlatformIO installed, connect the board over USB and run, in the terminal, the command for your board:
 
 ```bash
-# esp32-s3 N16R8 (main board)
+# STM32H743 DevEBox (main board)
+pio run -e stm32h743-devebox -t upload
+
+# esp32-s3 N16R8 (former main board)
 pio run -e esp32-s3 -t upload
 
 # esp32-c3 (old prototype)
@@ -261,7 +298,9 @@ pio run -e esp32-c3 -t upload
 pio run -e esp32-dev -t upload
 ```
 
-If you do not specify `-e` at all, the default board is built — `esp32-s3`.
+If you do not specify `-e` at all, the default board is built — `stm32h743-devebox`.
+
+**STM32 DevEBox:** the first flash goes over USB DFU: a jumper BT0→3V3, press RST, then the command above (Windows needs the WinUSB driver for "STM32 BOOTLOADER", installed with Zadig). After that the `D` key in the console reboots the board into the bootloader by itself, and the jumper is no longer needed. The console runs over the same USB-C.
 
 **esp32-s3:** the board has two USB-C connectors. Flashing and Serial go through the **"COM"** connector (a CH343 bridge; on Windows it shows up as "USB-Enhanced-SERIAL CH343"). The "USB" connector (the chip's native USB) is not needed for operation, but it may be plugged in — it interferes with nothing.
 

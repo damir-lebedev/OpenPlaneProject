@@ -7,11 +7,8 @@
 HAL은 특정 MCU를 알아도 되는 유일한 계층입니다. 인터페이스는
 `include/hal/`에 있으며, 구현은 다음과 같습니다.
 
-- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x), **주력 구현**입니다.
-- `include/hal/stm32/` — STM32H743 (STM32duino 3.x): 전체 펌웨어가
-  빌드되고 (`pio run -e stm32h743`) PC에서 실행됩니다 (`pio test -e
-  native-stm32`). 실제 하드웨어에서는 아무것도 달지 않은 DevEBox 보드(SD 카드,
-  블랙박스)를 확인했고, 센서와 서보는 아직 확인하지 않았습니다.
+- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x)입니다.
+- `include/hal/stm32/` — STM32H743 (STM32duino 3.x), **주력 구현**입니다. 전체 펌웨어가 빌드되고 (`pio run -e stm32h743-devebox`) PC에서 실행됩니다 (`pio test -e native-stm32`). DevEBox 보드에서는 SD 카드, 블랙박스, iBUS, 서보를 확인했고, 센서는 아직 확인하지 않았습니다.
 - `hal/Rtos.h` — FreeRTOS 태스크로, 두 플랫폼에서 똑같이 동작합니다.
 
 이 위의 모든 코드는 인터페이스만 사용하므로, 다른 MCU로 옮기는 일은 센서를 다시 쓰는 것이 아니라

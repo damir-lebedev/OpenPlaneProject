@@ -4,6 +4,8 @@
 
 Uma placa portadora para a ESP32-S3 DevKitC-1 (N16R8): a DevKit se encaixa em duas barras de soquetes fêmea, e em volta ficam blocos de conectores JST-XH. Este documento responde a três perguntas: quais conectores montar em blocos, onde colocar os capacitores e o que ligar em cada lugar. Os pinos coincidem com o `include/config/Config.h` (o bloco `BOARD_ESP32_S3`).
 
+> Esta placa foi desenhada para a ESP32-S3, a antiga placa principal. Agora a principal é a STM32H743 (DevEBox H743): a placa-base para ela ainda não foi desenhada, então por enquanto os sensores são ligados nos pinos da DevEBox; a pinagem está no [PILOT_GUIDE](PILOT_GUIDE.md).
+
 A placa foi pensada para ser **de um lado só**: os GPIOs foram escolhidos de modo que os pinos de cada bloco sigam em sequência ao longo da barra da DevKit, e as trilhas de sinal se abram em leque sem se cruzar. Eu não verifiquei o roteamento em um CAD. Se em algum ponto não fechar, coloque um jumper de fio pelo lado dos componentes: de um a três em uma placa assim é normal.
 
 **Todos os conectores são JST-XH, de 1 a 5 contatos.** Os fios não são soldados na placa: nos fios dos servos, do ESC, do receptor e dos módulos crimpam-se as carcaças correspondentes. O XH tem chave, então não dá para ligar ao contrário. Cada contato aguenta ~3 A.

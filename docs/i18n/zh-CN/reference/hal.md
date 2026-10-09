@@ -6,9 +6,8 @@
 
 HAL 是唯一允许了解具体 MCU 的层。接口位于 `include/hal/`，实现有：
 
-- `include/hal/esp32/` — ESP32（Arduino core 2.0.x），**主平台**；
-- `include/hal/stm32/` — STM32H743（STM32duino 3.x）：完整固件可以构建（`pio run -e stm32h743`），也可以在 PC 上运行（`pio test -e
-  native-stm32`）；在硬件上已验证裸的 DevEBox 板（SD 卡、黑匣子），传感器和舵机尚未验证；
+- `include/hal/esp32/` — ESP32（Arduino core 2.0.x）；
+- `include/hal/stm32/` — STM32H743（STM32duino 3.x），**主平台**：完整固件可以构建（`pio run -e stm32h743-devebox`），也可以在 PC 上运行（`pio test -e native-stm32`）；在 DevEBox 板上已验证 SD 卡、黑匣子、iBUS 和舵机，传感器尚未验证；
 - `hal/Rtos.h` — FreeRTOS 任务，在两个平台上完全一致。
 
 上层只与接口打交道，因此迁移到另一款 MCU，只需要新写一个 `IBoard` 实现，而不必重写传感器。

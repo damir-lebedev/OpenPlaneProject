@@ -31,6 +31,7 @@ Já de início, com franqueza: o projeto está em desenvolvimento ativo e **não
 
 O kit da montagem atual (o firmware foi verificado nele):
 
+- **Uma placa STM32H743 DevEBox H743** (MCUDEV): a principal. A antiga placa principal, a ESP32-S3 abaixo, também é suportada.
 - **Uma placa ESP32-S3 N16R8** (clone da DevKitC-1 com duas USB-C: "USB" e "COM").
 - **Um rádio FS-i6 + um receptor FS-iA6B** (protocolo iBUS, 10 canais). É preciso um único fio de dados: a porta iBUS SERVO. O rádio precisa permitir configurar o failsafe; essa configuração é obrigatória, veja a seção sobre failsafe.
 - **2 servos MG90S** para os ailerons, um para cada semiasa (dois servos independentes, e não um para as duas asas).
@@ -53,13 +54,46 @@ Estrutura: envergadura de 1200 mm, corda de 250 mm, perfil NACA 4412, construç�
 
 ## Escolha da placa e pinagem
 
-O firmware suporta três placas; para trocar de uma para outra basta um parâmetro de build (`pio run -e <nome do ambiente>`). Cada placa tem a sua própria pinagem, fixada no firmware para cada ambiente específico: não troque os fios por conta própria, consulte a tabela da sua placa.
+O firmware suporta quatro placas; para trocar de uma para outra basta um parâmetro de build (`pio run -e <nome do ambiente>`). Cada placa tem a sua própria pinagem, fixada no firmware para cada ambiente específico: não troque os fios por conta própria, consulte a tabela da sua placa.
 
-> **Importante:** a placa principal agora é a **esp32-s3 (N16R8)**; a pinagem dela foi verificada na bancada com todos os sensores. A **esp32-c3** é o antigo protótipo que já voou. A pinagem da **esp32-dev** foi escolhida com base na documentação do chip e **não foi verificada em hardware real**.
+> **Importante:** a placa principal agora é a **STM32H743 (DevEBox H743)**; nela já foram verificados o boot, o console por USB, o cartão SD, o iBUS, os servos e o motor, e os sensores estão sendo ligados pela primeira vez. A **esp32-s3 (N16R8)** é a antiga placa principal; sua pinagem foi verificada na bancada com todos os sensores. A **esp32-c3** é o antigo protótipo que já voou. A pinagem da **esp32-dev** foi escolhida pela documentação do chip e **não foi verificada em hardware real**.
 
-### esp32-s3 (N16R8): a placa principal, verificada na bancada
+### STM32H743 (DevEBox H743): a placa principal
 
-`pio run -e esp32-s3`, placa `esp32-s3-devkitc-1` com as configurações do módulo N16R8 (16 MB de flash, 8 MB de PSRAM octal). É a placa padrão (`default_envs = esp32-s3`).
+`pio run -e stm32h743-devebox`, placa MCUDEV DevEBox H743 (STM32H743VIT6). É a placa padrão (`default_envs = stm32h743-devebox`). Nela já foram verificados o boot, o console por USB, o cartão SD e a caixa-preta, a recepção de iBUS, o ARM e os servos e o motor pelo rádio; os sensores estão sendo ligados pela primeira vez.
+
+| Função | Pino |
+|---|---|
+| Aileron, semiasa esquerda | PA0 |
+| Aileron, semiasa direita | PA1 |
+| Profundor | PA2 |
+| ESC (acelerador) | PA3 |
+| Leme + roda direcional | PD14 |
+| iBUS do receptor (RX) | PE7 |
+| I2C dos sensores SDA / SCL (MPU, BMP581, bússola) | PB11 / PB10 |
+| I2C do OLED SDA / SCL (barramento separado) | PB9 / PB8 |
+| GPS: RX (← TX do GPS) / TX (→ RX do GPS) | PD9 / PD8 |
+| Telemetria MAVLink (radiomodem): RX / TX | PD0 / PD1 |
+| AUX1 / AUX2 (servos), buzzer | PD15 / PE9, PE15 |
+| SPI dos sensores SCK / MISO / MOSI, CS do IMU / CS do barômetro | PB13 / PB14 / PB15, PB12 / PD10 |
+| Reserva: bateria / sensor de corrente (ADC; o firmware do STM32 ainda não os lê) | PC0 / PC1 |
+
+O console, o log e o download da caixa-preta passam pelo USB-C da placa (uma porta COM virtual). Não ocupar: PA11/PA12 (USB), PA13/PA14 (SWD), PC8–PC12 e PD2 (slot µSD), PE3 e PC5 (botões K1/K2).
+
+Ligação dos sensores na bancada (todos os módulos funcionam com **3,3 V**, e não com 5 V):
+
+| Módulo | Pinos |
+|---|---|
+| MPU-6050 / GY-521 (na placa pode haver um MPU6500, e isso é normal) | VCC–3.3V, GND–GND, SCL–PB10, SDA–PB11, AD0–GND, INT/XDA/XCL: não ligar. Módulo MPU-6500 avulso (10 pinos): o mesmo, mais **NCS–3.3V** (senão o chip passa para SPI) e FSYNC–GND; EDA/ECL: não ligar. Com o chip para cima e a seta X apontando para o nariz; a rotação dos eixos do chip é definida por `IMU_ROTATION_CW_DEG` em `Config.h` (90 no nosso clone) |
+| BMP581 | VCC–3.3V (**só 3.3V**: muitos módulos não têm regulador próprio), GND–GND, SCL–PB10, SDA–PB11, **SDO–GND** (endereço 0x46; não deixar solto), **CSB–3.3V** (senão o chip passa para SPI), INT: não ligar |
+| GY-273 (QMC5883P) | VCC–3.3V, GND–GND, SCL–PB10, SDA–PB11, DRDY: não ligar. Longe dos fios dos servos, do ESC e do motor |
+| OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
+
+Os servos são alimentados **não pela placa**, e sim pelo BEC do controlador de velocidade (ou por uma fonte separada de 5 V com pelo menos 2 A); o terra de todas as fontes é comum. Não ligue o fio vermelho do ESC aos 5 V da placa enquanto o USB estiver conectado.
+
+### esp32-s3 (N16R8): a antiga placa principal, verificada na bancada
+
+`pio run -e esp32-s3`, placa `esp32-s3-devkitc-1` com as configurações do módulo N16R8 (16 MB de flash, 8 MB de PSRAM octal).
 
 | Função | GPIO |
 |---|---|
@@ -251,7 +285,10 @@ O mais fácil é instalar a extensão **PlatformIO IDE** no VS Code (Extensions 
 Abra o projeto (a pasta do repositório) no VS Code com o PlatformIO instalado, conecte a placa por USB e execute no terminal o comando correspondente à sua placa:
 
 ```bash
-# esp32-s3 N16R8 (placa principal)
+# STM32H743 DevEBox (placa principal)
+pio run -e stm32h743-devebox -t upload
+
+# esp32-s3 N16R8 (antiga placa principal)
 pio run -e esp32-s3 -t upload
 
 # esp32-c3 (antigo protótipo)
@@ -261,7 +298,9 @@ pio run -e esp32-c3 -t upload
 pio run -e esp32-dev -t upload
 ```
 
-Se você não indicar `-e`, será compilada a placa padrão: `esp32-s3`.
+Se você não indicar `-e`, será compilada a placa padrão: `stm32h743-devebox`.
+
+**STM32 DevEBox:** a primeira gravação é por USB DFU: um jumper BT0→3V3, aperte RST e depois o comando acima (o Windows precisa do driver WinUSB para "STM32 BOOTLOADER", instalado com o Zadig). Depois disso, a tecla `D` no console reinicia a placa no bootloader sozinha, e o jumper não é mais necessário. O console passa pelo mesmo USB-C.
 
 **esp32-s3:** a placa tem dois conectores USB-C. A gravação e o Serial passam pelo conector **"COM"** (ponte CH343; no Windows aparece como "USB-Enhanced-SERIAL CH343"). O conector "USB" (o USB nativo do chip) não é necessário para o trabalho, mas pode ficar conectado: não atrapalha em nada.
 

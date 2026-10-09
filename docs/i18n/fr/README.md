@@ -56,7 +56,7 @@
 
 | | |
 |---|---|
-| **Ce que c’est** | Un contrôleur de vol et pilote automatique ouverts pour avions radiocommandés. Aujourd’hui, c’est un ESP32-S3 à environ 10 $ ; la prochaine étape est le STM32H743 (une carte de la classe Pixhawk) : le firmware complet passe les tests et, sur une carte DevEBox, il **tourne déjà et se pilote avec la radio** — [il y a une vidéo](#-le-stm32h743sanime-sur-la-carte). |
+| **Ce que c’est** | Un contrôleur de vol et pilote automatique ouverts pour avions radiocommandés. La carte principale est la STM32H743 (une carte de la classe Pixhawk) : sur une carte DevEBox, le firmware **tourne déjà et se pilote avec la radio** — [il y a une vidéo](#-le-stm32h743sanime-sur-la-carte), et les capteurs sont en cours de branchement. L’ancienne base est un ESP32-S3 à environ 10 $, qui a passé le banc avec tous les capteurs. |
 | **Ce qu’il sait faire** | 12 modes de vol, de la stabilisation au retour à la maison, en passant par les cercles au GPS, le lancer à la main, l’atterrissage automatique et le **vol à voile en thermiques**. Un tube de Pitot fait de deux baromètres bon marché. Télémétrie MAVLink vers QGroundControl et Mission Planner. |
 | **L’atout principal** | N’importe quel interrupteur ou potentiomètre de la radio = n’importe quelle fonction. **Une seule ligne** dans `Controls.h`, et SwD n’est plus un RTH mais un largage de charge. |
 | **Pourquoi lui faire confiance** | 387 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 98 % du code couvert par les tests, 24 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
@@ -162,10 +162,10 @@ La carte enregistre chaque vol : IMU à 500 Hz, angles et décisions du pilote
 
 | Carte | État | Ce qui a été vérifié |
 |---|---|---|
-| **ESP32-S3 N16R8** | ✅ principale, sur le banc | tous les capteurs, servos, iBUS, OLED, tableau de bord en direct ; le firmware complet dans les tests |
+| **STM32H743VIT6** | ✅ principale · 🔧 DevEBox, capteurs en cours de branchement + 🧪 tests | sur la carte : démarrage, console par USB, **carte SD et boîte noire** (tests sur la carte), **réception iBUS, ARM et pilotage des servos et du moteur avec la radio** (le lancement est filmé) ; sur PC : le firmware entier — tâches FreeRTOS, flash, MAVLink, I2C et SPI. Aucun capteur n’a encore été branché sur la carte |
+| **ESP32-S3 N16R8** | ✅ ancienne principale, sur le banc | tous les capteurs, servos, iBUS, OLED, tableau de bord en direct ; le firmware complet dans les tests |
 | **ESP32 38-pin** | 🧪 tests | le firmware complet dans les tests avec le kit ICM-45686 |
 | **ESP32-C3 SuperMini** | ✈️ a volé (manuel) | le premier prototype ; compilation de tous les kits |
-| **STM32H743VIT6** | 🔧 carte DevEBox sans capteurs + 🧪 tests | sur la carte : démarrage, console par USB, **carte SD et boîte noire** (tests sur la carte), **réception iBUS, ARM et pilotage des servos et du moteur avec la radio** (le lancement est filmé) ; sur PC : le firmware entier — tâches FreeRTOS, flash, MAVLink, I2C et SPI. Aucun capteur n’a encore été branché sur la carte |
 
 | Capteur | Ce que c’est | Bus |
 |---|---|---|
@@ -243,9 +243,9 @@ Détails : [ARCHITECTURE.md](ARCHITECTURE.md).
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
+pio run -e stm32h743-devebox -t upload                    # DevEBox H743 : USB DFU, console par USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
-pio run -e stm32h743-devebox -t upload                    # DevEBox H743 : USB DFU, console par USB
 ```
 
 DevEBox : la carte n’a pas de bouton BOOT0 — avant le premier téléversement, reliez la broche BT0 au 3V3 et appuyez sur RST ; ensuite, la touche `D` de la console redémarre la carte dans le chargeur d’amorçage toute seule ([détails](DEVELOPER_GUIDE.md#stm32h743)).

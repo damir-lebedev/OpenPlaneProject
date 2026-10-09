@@ -8,8 +8,8 @@ It works on two boards:
 
 | Board | Where it records | How much fits (at ~20 KB/s) |
 |---|---|---|
-| **ESP32-S3 N16R8** (main) | a 13.9 MB partition of the built-in flash | about **11 minutes** |
-| **STM32H743** (DevEBox, WeAct) | a file on an SD card, [below](#sd-card-stm32h743) | 64 MB — about **55 minutes**, the size is set by the file |
+| **ESP32-S3 N16R8** | a 13.9 MB partition of the built-in flash | about **11 minutes** |
+| **STM32H743** (DevEBox — main; WeAct) | a file on an SD card, [below](#sd-card-stm32h743) | 64 MB — about **55 minutes**, the size is set by the file |
 
 On the other boards (ESP32-C3, the ordinary ESP32) there is no storage: the black box is off and does not interfere with the flight.
 

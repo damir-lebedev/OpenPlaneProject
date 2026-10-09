@@ -8,8 +8,8 @@ Funciona em duas placas:
 
 | Placa | Onde grava | Quanto cabe (a ~20 KB/s) |
 |---|---|---|
-| **ESP32-S3 N16R8** (principal) | uma partição de 13,9 MB da flash integrada | cerca de **11 minutos** |
-| **STM32H743** (DevEBox, WeAct) | um arquivo em um cartão SD, [abaixo](#cartão-sd-stm32h743) | 64 MB: cerca de **55 minutos**, o tamanho é definido pelo arquivo |
+| **ESP32-S3 N16R8** | uma partição de 13,9 MB da flash integrada | cerca de **11 minutos** |
+| **STM32H743** (DevEBox, a principal; WeAct) | um arquivo em um cartão SD, [abaixo](#cartão-sd-stm32h743) | 64 MB: cerca de **55 minutos**, o tamanho é definido pelo arquivo |
 
 Nas demais placas (ESP32-C3, ESP32 comum) não há mídia de armazenamento: a caixa-preta fica desligada e não interfere no voo.
 

@@ -4,6 +4,8 @@
 
 A carrier board for the ESP32-S3 DevKitC-1 (N16R8): the DevKit plugs into two female pin-header strips, with blocks of JST-XH connectors around it. This document answers three questions: which connectors to assemble into blocks, where to put the capacitors, and what plugs in where. The pins match `include/config/Config.h` (the `BOARD_ESP32_S3` block).
 
+> This board is laid out for the ESP32-S3, the former main board. The main board is now the STM32H743 (DevEBox H743): a carrier board for it has not been drawn yet, so for now the sensors connect to the DevEBox pin headers — the pinout is in [PILOT_GUIDE](PILOT_GUIDE.md).
+
 The board is designed to be **single-sided**: the GPIOs are chosen so that the pins of each block run consecutively along the DevKit's header, and the signal traces fan out without crossing. I have not checked the routing in a CAD tool. If somewhere it does not work out, put in a wire jumper on the component side: one to three of them on a board like this is fine.
 
 **All connectors are JST-XH, 1–5 pins.** Wires are not soldered to the board: mating housings are crimped onto the wires of the servos, ESC, receiver and modules. XH is keyed, so it cannot be plugged in backwards. One pin carries ~3 A.

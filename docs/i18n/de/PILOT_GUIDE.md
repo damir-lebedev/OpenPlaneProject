@@ -31,6 +31,7 @@ Gleich vorweg ehrlich: Das Projekt befindet sich in aktiver Entwicklung und ist 
 
 Der Bausatz des aktuellen Aufbaus (die Firmware wurde darauf geprüft):
 
+- **Ein STM32H743-Board DevEBox H743** (MCUDEV) – das Hauptboard. Das frühere Hauptboard, das ESP32-S3 unten, wird ebenfalls unterstützt.
 - **Ein ESP32-S3-N16R8-Board** (ein DevKitC-1-Klon mit zwei USB-C-Buchsen: „USB“ und „COM“).
 - **Ein Sender FS-i6 + Empfänger FS-iA6B** (iBUS-Protokoll, 10 Kanäle). Benötigt wird eine einzige Datenleitung – der Anschluss iBUS SERVO. Der Sender muss Failsafe einstellen können – diese Einstellung ist Pflicht, siehe den Abschnitt zu Failsafe.
 - **2 Servos MG90S** für die Querruder – eines für jede Tragflächenhälfte (zwei unabhängige Servos, nicht eines für beide Flächen).
@@ -53,13 +54,46 @@ Zelle: Spannweite 1200 mm, Flügeltiefe 250 mm, Profil NACA 4412, Aufbau aus PET
 
 ## Boardauswahl und Pinbelegung
 
-Die Firmware unterstützt drei Boards; umgeschaltet wird mit einem einzigen Build-Parameter (`pio run -e <Name der Umgebung>`). Jedes Board hat seine eigene Pinbelegung, die in der Firmware für die jeweilige Umgebung fest verdrahtet ist – stecken Sie Leitungen nicht eigenmächtig um, sondern halten Sie sich an die Tabelle für Ihr Board.
+Die Firmware unterstützt vier Boards; umgeschaltet wird mit einem einzigen Build-Parameter (`pio run -e <Name der Umgebung>`). Jedes Board hat seine eigene Pinbelegung, die in der Firmware für die jeweilige Umgebung fest verdrahtet ist – stecken Sie Leitungen nicht eigenmächtig um, sondern halten Sie sich an die Tabelle für Ihr Board.
 
-> **Wichtig:** Das Hauptboard ist jetzt das **esp32-s3 (N16R8)** – seine Pinbelegung wurde auf dem Prüfstand mit allen Sensoren geprüft. Das **esp32-c3** ist der alte Prototyp, der geflogen ist. Die Pinbelegung des **esp32-dev** wurde anhand der Chip-Dokumentation gewählt und **nicht auf echter Hardware geprüft**.
+> **Wichtig:** Das Hauptboard ist jetzt das **STM32H743 (DevEBox H743)** – darauf sind Start, USB-Konsole, SD-Karte, iBUS, Servos und Motor geprüft; die Sensoren werden zum ersten Mal angeschlossen. Das **esp32-s3 (N16R8)** ist das frühere Hauptboard, seine Pinbelegung wurde auf dem Prüfstand mit allen Sensoren geprüft. Das **esp32-c3** ist der alte Prototyp, der geflogen ist. Die Pinbelegung des **esp32-dev** wurde anhand der Chip-Dokumentation gewählt und **nicht auf echter Hardware geprüft**.
 
-### esp32-s3 (N16R8) – Hauptboard, auf dem Prüfstand geprüft
+### STM32H743 (DevEBox H743) – Hauptboard
 
-`pio run -e esp32-s3`, Board `esp32-s3-devkitc-1` mit den Einstellungen für das Modul N16R8 (16 MB Flash, 8 MB Octal-PSRAM). Das ist das Standardboard (`default_envs = esp32-s3`).
+`pio run -e stm32h743-devebox`, Board MCUDEV DevEBox H743 (STM32H743VIT6). Das ist das Standardboard (`default_envs = stm32h743-devebox`). Darauf sind Start, USB-Konsole, SD-Karte und Blackbox, iBUS-Empfang, ARM sowie Servos und Motor vom Sender bereits geprüft; die Sensoren werden zum ersten Mal angeschlossen.
+
+| Verwendung | Pin |
+|---|---|
+| Querruder, linke Tragflächenhälfte | PA0 |
+| Querruder, rechte Tragflächenhälfte | PA1 |
+| Höhenruder | PA2 |
+| ESC (Gas) | PA3 |
+| Seitenruder + Lenkrad | PD14 |
+| iBUS vom Empfänger (RX) | PE7 |
+| I2C der Sensoren SDA / SCL (MPU, BMP581, Kompass) | PB11 / PB10 |
+| I2C des OLED SDA / SCL (eigener Bus) | PB9 / PB8 |
+| GPS: RX (← TX des GPS) / TX (→ RX des GPS) | PD9 / PD8 |
+| MAVLink-Telemetrie (Funkmodem): RX / TX | PD0 / PD1 |
+| AUX1 / AUX2 (Servos), Summer | PD15 / PE9, PE15 |
+| SPI der Sensoren SCK / MISO / MOSI, CS IMU / CS Barometer | PB13 / PB14 / PB15, PB12 / PD10 |
+| Reserve: Akku / Stromsensor (ADC; die STM32-Firmware liest sie noch nicht) | PC0 / PC1 |
+
+Konsole, Log und Blackbox-Download laufen über die USB-C-Buchse des Boards (virtueller COM-Port). Nicht belegen: PA11/PA12 (USB), PA13/PA14 (SWD), PC8–PC12 und PD2 (µSD-Slot), PE3 und PC5 (Tasten K1/K2).
+
+Anschluss der Sensoren auf dem Prüfstand (alle Module laufen mit **3,3 V**, nicht mit 5 V):
+
+| Modul | Pins |
+|---|---|
+| MPU-6050 / GY-521 (auf der Platine kann ein MPU6500 sitzen – das ist normal) | VCC–3.3V, GND–GND, SCL–PB10, SDA–PB11, AD0–GND, INT/XDA/XCL – nicht anschließen. Separates MPU-6500-Modul (10 Pins): dasselbe, dazu **NCS–3.3V** (sonst wechselt der Chip auf SPI) und FSYNC–GND; EDA/ECL – nicht anschließen. Chip nach oben, X-Pfeil zur Nase; die Drehung der Chipachsen wird mit `IMU_ROTATION_CW_DEG` in `Config.h` eingestellt (bei unserem Klon 90) |
+| BMP581 | VCC–3.3V (**nur 3.3V**: viele Module haben keinen eigenen Spannungsregler), GND–GND, SCL–PB10, SDA–PB11, **SDO–GND** (Adresse 0x46; nicht offen lassen), **CSB–3.3V** (sonst wechselt der Chip auf SPI), INT – nicht anschließen |
+| GY-273 (QMC5883P) | VCC–3.3V, GND–GND, SCL–PB10, SDA–PB11, DRDY – nicht anschließen. Möglichst weit weg von den Leitungen der Servos, des ESC und des Motors |
+| OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
+
+Die Servos werden **nicht über das Board** versorgt, sondern über das BEC des Fahrtreglers (oder über ein separates 5-V-Netzteil mit mindestens 2 A); die Massen aller Quellen sind gemeinsam. Schließen Sie die rote Leitung des ESC nicht an die 5 V des Boards an, solange USB angesteckt ist.
+
+### esp32-s3 (N16R8) – früheres Hauptboard, auf dem Prüfstand geprüft
+
+`pio run -e esp32-s3`, Board `esp32-s3-devkitc-1` mit den Einstellungen für das Modul N16R8 (16 MB Flash, 8 MB Octal-PSRAM).
 
 | Verwendung | GPIO |
 |---|---|
@@ -251,7 +285,10 @@ Am einfachsten installiert man die Erweiterung **PlatformIO IDE** in VS Code (Ex
 Öffnen Sie das Projekt (den Ordner des Repositorys) in VS Code mit installiertem PlatformIO, schließen Sie das Board per USB an und führen Sie im Terminal den Befehl für Ihr Board aus:
 
 ```bash
-# esp32-s3 N16R8 (Hauptboard)
+# STM32H743 DevEBox (Hauptboard)
+pio run -e stm32h743-devebox -t upload
+
+# esp32-s3 N16R8 (früheres Hauptboard)
 pio run -e esp32-s3 -t upload
 
 # esp32-c3 (alter Prototyp)
@@ -261,7 +298,9 @@ pio run -e esp32-c3 -t upload
 pio run -e esp32-dev -t upload
 ```
 
-Wenn Sie `-e` gar nicht angeben, wird das Standardboard gebaut – `esp32-s3`.
+Wenn Sie `-e` gar nicht angeben, wird das Standardboard gebaut – `stm32h743-devebox`.
+
+**STM32 DevEBox:** Die erste Firmware kommt über USB-DFU: Brücke BT0→3V3, RST drücken, dann der Befehl oben (Windows braucht den WinUSB-Treiber für „STM32 BOOTLOADER“, installiert mit Zadig). Danach startet die Taste `D` in der Konsole das Board selbst in den Bootloader neu, die Brücke wird nicht mehr gebraucht. Die Konsole läuft über dieselbe USB-C-Buchse.
 
 **esp32-s3:** Das Board hat zwei USB-C-Buchsen. Flashen und Serial laufen über die Buchse **„COM“** (CH343-Brücke; unter Windows „USB-Enhanced-SERIAL CH343“). Die Buchse „USB“ (der native USB des Chips) wird für den Betrieb nicht gebraucht, darf aber angesteckt sein – sie stört nicht.
 

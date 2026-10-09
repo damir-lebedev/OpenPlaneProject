@@ -56,7 +56,7 @@
 
 | | |
 |---|---|
-| **What it is** | An open flight controller and autopilot for radio-controlled airplanes. Today it is an ESP32-S3 at ~$10; the next step is the STM32H743 (a Pixhawk-class board): the full firmware runs through the tests, and on a DevEBox board it is **already up and flown from the transmitter** — [there is a video](#-stm32h743-came-alive-on-the-board). |
+| **What it is** | An open flight controller and autopilot for radio-controlled airplanes. The main board is the STM32H743 (a Pixhawk-class board): on a DevEBox board the firmware is **already up and flown from the transmitter** — [there is a video](#-stm32h743-came-alive-on-the-board), and the sensors are being connected now. The former base is an ESP32-S3 at ~$10, which passed the bench with all the sensors. |
 | **What it can do** | 12 flight modes — from stabilization to return-home, GPS circles, hand launch, auto-landing and **thermal soaring**. A pitot tube made of two cheap barometers. MAVLink telemetry to QGroundControl and Mission Planner. |
 | **The main trick** | Any switch or knob on the transmitter = any function. **One line** in `Controls.h` — and SwD is no longer RTH but a payload drop. |
 | **Why you can trust it** | 387 automated tests (plus 9 on the board itself with a real SD card), 98% of the code under test, 24 "board × sensors" builds with not a single warning, closed-loop simulations of every mode. |
@@ -162,10 +162,10 @@ The board records every flight: IMU at 500 Hz, angles and autopilot decisions, P
 
 | Board | Status | What has been checked |
 |---|---|---|
-| **ESP32-S3 N16R8** | ✅ main board, on the bench | all sensors, servos, iBUS, OLED, dashboard live; the whole firmware in tests |
+| **STM32H743VIT6** | ✅ main board · 🔧 DevEBox, sensors being connected + 🧪 tests | on the board: boot, console over USB, **SD card and black box** (on-board tests), **iBUS reception, ARM and control of the servos and motor from the transmitter** (the launch is on video); on the PC — the whole firmware: FreeRTOS tasks, flash, MAVLink, I2C and SPI. Sensors have not been connected to the board yet |
+| **ESP32-S3 N16R8** | ✅ former main board, on the bench | all sensors, servos, iBUS, OLED, dashboard live; the whole firmware in tests |
 | **ESP32 38-pin** | 🧪 tests | the whole firmware in tests with the ICM-45686 kit |
 | **ESP32-C3 SuperMini** | ✈️ has flown (manual) | the first prototype; builds of all kits |
-| **STM32H743VIT6** | 🔧 DevEBox board without sensors + 🧪 tests | on the board: boot, console over USB, **SD card and black box** (on-board tests), **iBUS reception, ARM and control of the servos and motor from the transmitter** (the launch is on video); on the PC — the whole firmware: FreeRTOS tasks, flash, MAVLink, I2C and SPI. Sensors have not been connected to the board yet |
 
 | Sensor | What it is | Buses |
 |---|---|---|
@@ -243,9 +243,9 @@ Details — [ARCHITECTURE.md](ARCHITECTURE.md).
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
+pio run -e stm32h743-devebox -t upload                    # DevEBox H743: USB DFU, console over USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
-pio run -e stm32h743-devebox -t upload                    # DevEBox H743: USB DFU, console over USB
 ```
 
 DevEBox: the board has no BOOT0 button — before the first upload, connect pin BT0 to 3V3 and press RST; after that, the `D` key in the console reboots the board into the bootloader by itself ([details](DEVELOPER_GUIDE.md#stm32h743)).

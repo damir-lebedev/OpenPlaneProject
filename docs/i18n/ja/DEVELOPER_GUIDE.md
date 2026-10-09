@@ -537,7 +537,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 秒間での最悪値) | iBUS ok=.
 ### STM32H743
 
 STM32H743VIT6（Cortex-M7 480 MHz、フラッシュ 2 MB、RAM 1 MB）は**完全なファームウェア**を実行します。ESP32-S3 と同じセンサー、オートパイロット、スイッチ、コンソール、ディスプレイに加えて、MAVLink テレメトリと SD カードのブラックボックスがあります。ビルドでき、cppcheck と共通コードのすべてのネイティブテストに合格します。実機で確認したのは**センサーなしの DevEBox H743
-基板**です：起動、USB 経由のコンソール、SD カード、ブラックボックス（[TESTING.md](TESTING.md#stm32-ボード上のテスト)）、さらに iBUS、ARM、サーボとモーターへの PWM（送信機からの手動モードでの操縦。動画あり）。STM32 のセンサーはまだテストベンチを待っています。主力の飛行用ボードは ESP32-S3 です。
+基板**です：起動、USB 経由のコンソール、SD カード、ブラックボックス（[TESTING.md](TESTING.md#stm32-ボード上のテスト)）、さらに iBUS、ARM、サーボとモーターへの PWM（送信機からの手動モードでの操縦。動画あり）。センサーは現在 STM32 に接続しているところです。**主力ボードは STM32H743（DevEBox）です**。ESP32-S3 は以前の主力ボードで、全センサーを載せたテストベンチを通過しています。
 
 - **HAL**：`include/hal/stm32/`。`Stm32Board`（`Esp32Board` と同じ API に
   `telemetryUart()` を追加）、`Stm32I2CBus`、`Stm32SpiBus`、`Stm32UartPort`、
@@ -766,7 +766,7 @@ pio run -t upload                        # 通常のファームウェアに戻�
 ## ビルド、書き込み、モニターのコマンド
 
 ```bash
-pio run                        # 既定のボード（esp32-s3）をビルド
+pio run                        # 既定のボード（stm32h743-devebox）をビルド
 pio run -t upload              # 書き込み
 pio device monitor             # モニター、115200
 pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # すべてのボードがビルドできることを確認
@@ -812,9 +812,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # すべてのボー
 - **小さなコミット：** 論理的な 1 ステップを 1 コミットにします。
 - **コミット前にテストと解析：** `pio test -e native -e native-stm32`、
   `pio check -e esp32-s3`、`pio check -e stm32h743`、`tools/clang-tidy.sh` をすべて通します（[`TESTING.md`](TESTING.md)）。
-- **共通コードを変更したら、すべてのボードをビルドする。** S3 が主力ですが、C3、
-  38 ピン版、`stm32h743` を壊してはいけません。リリース前には
-  `tools/build_matrix.sh`（全ボード × 全センサー）を実行します。
+- **共通コードを変更したら、すべてのボードをビルドする。** STM32H743 が主力ですが、ESP32-S3、C3、38 ピン版も壊してはいけません。リリース前には `tools/build_matrix.sh`（全ボード × 全センサー）を実行します。
 - **実機で確認できることは実機で確認する：** 符号は傾けて、出力は `p` コマンドで、リンクは送信機の電源を切って確認します。
 - **API を作り話で書かない。** `~/.platformio/packages/framework-arduinoespressif32/`
   にあるフレームワークのソース（Arduino core 2.0.x）と照らし合わせてください。ネット上の情報は API の異なる 3.x 系を説明していることが多くあります（たとえば

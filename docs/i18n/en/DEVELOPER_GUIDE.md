@@ -626,8 +626,7 @@ hardware, the **DevEBox H743 board without sensors** has been tested: boot,
 the console over USB, the SD card, the black box —
 [TESTING.md](TESTING.md#tests-on-the-stm32-board) — as well as iBUS, ARM and PWM
 to the servos and the motor: control from the transmitter in manual mode (on
-video). The sensors on the STM32 are still waiting for a bench. The main
-flight board is the ESP32-S3.
+video). The sensors are being connected to the STM32 now. **The main board is the STM32H743 (DevEBox)**; the ESP32-S3 is the former main board, and it passed the bench with all the sensors.
 
 - **HAL** — `include/hal/stm32/`: `Stm32Board` (the same API as `Esp32Board`,
   plus `telemetryUart()`), `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`,
@@ -973,7 +972,7 @@ pio run -t upload                        # restore the normal firmware
 ## Build, upload and monitor commands
 
 ```bash
-pio run                        # build the default board (esp32-s3)
+pio run                        # build the default board (stm32h743-devebox)
 pio run -t upload              # upload
 pio device monitor             # monitor, 115200
 pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # check that all the boards build
@@ -1059,9 +1058,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # check that all the
 - **Tests and analysis before a commit:** `pio test -e native -e native-stm32`,
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   all green ([`TESTING.md`](TESTING.md)).
-- **Build all the boards** after changes in shared code — the S3 is the main
-  one, but the C3, the 38-pin and `stm32h743` must not break; before a
-  release — `tools/build_matrix.sh` (all boards × all sensors).
+- **Build all the boards** after changes in shared code — the STM32H743 is the main one, but the ESP32-S3, the C3 and the 38-pin must not break either; before a release — `tools/build_matrix.sh` (all boards × all sensors).
 - **Check on hardware what can be checked:** signs — by tilting, outputs — with
   the `p` command, the link — by switching the transmitter off.
 - **Do not invent APIs.** Consult the framework sources in

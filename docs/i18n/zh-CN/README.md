@@ -56,7 +56,7 @@
 
 | | |
 |---|---|
-| **这是什么** | 面向遥控飞机的开放式飞控与自动驾驶仪。现在用的是约 10 美元的 ESP32-S3，下一步是 STM32H743（Pixhawk 级别的开发板）：完整固件已通过全套测试，并且在 DevEBox 板上**已经运行起来，可以用遥控器操控**——[有视频](#-stm32h743-在开发板上跑起来了)。 |
+| **这是什么** | 面向遥控飞机的开放式飞控与自动驾驶仪。主力板是 STM32H743（Pixhawk 级别的开发板）：固件在 DevEBox 板上**已经运行起来，可以用遥控器操控**——[有视频](#-stm32h743-在开发板上跑起来了)，现在正在接传感器。之前的基础是约 10 美元的 ESP32-S3，它已在装有全部传感器的台架上验证过。 |
 | **能做什么** | 12 种飞行模式——从自稳到返航、GPS 盘旋、手抛起飞、自动降落，还有**热气流翱翔**。用两个廉价气压计做成的空速管。通过 MAVLink 把遥测数据送到 QGroundControl 和 Mission Planner。 |
 | **最大亮点** | 遥控器上的任何开关或旋钮 = 任何功能。在 `Controls.h` 里**改一行**，SwD 就不再是 RTH，而变成投放载荷。 |
 | **为什么可以信任** | 387 项自动化测试（另有 9 项在带真实 SD 卡的开发板上运行），98% 的代码有测试覆盖，24 种“开发板 × 传感器”组合构建零警告，每种模式都有闭环仿真。 |
@@ -162,10 +162,10 @@ constexpr Binding BINDINGS[] = {
 
 | 开发板 | 状态 | 已验证的内容 |
 |---|---|---|
-| **ESP32-S3 N16R8** | ✅ 主力板，台架验证 | 所有传感器、舵机、iBUS、OLED、网页仪表盘实机运行；整套固件通过测试 |
+| **STM32H743VIT6** | ✅ 主力板 · 🔧 DevEBox，正在接传感器 + 🧪 测试 | 开发板上：启动、USB 控制台、**SD 卡和黑匣子**（板载测试）、**接收 iBUS、解锁（ARM），并用遥控器操控舵机和电机**（启动过程有视频）；电脑上：整套固件——FreeRTOS 任务、闪存、MAVLink、I2C 和 SPI。传感器尚未接到这块板上 |
+| **ESP32-S3 N16R8** | ✅ 之前的主力板，台架验证 | 所有传感器、舵机、iBUS、OLED、网页仪表盘实机运行；整套固件通过测试 |
 | **ESP32 38-pin** | 🧪 测试 | 整套固件配合 ICM-45686 套件通过测试 |
 | **ESP32-C3 SuperMini** | ✈️ 飞过（手动模式） | 第一架原型机；所有套件均可构建 |
-| **STM32H743VIT6** | 🔧 DevEBox 板（无传感器）+ 🧪 测试 | 开发板上：启动、USB 控制台、**SD 卡和黑匣子**（板载测试）、**接收 iBUS、解锁（ARM），并用遥控器操控舵机和电机**（启动过程有视频）；电脑上：整套固件——FreeRTOS 任务、闪存、MAVLink、I2C 和 SPI。传感器尚未接到这块板上 |
 
 | 传感器 | 是什么 | 总线 |
 |---|---|---|
@@ -243,9 +243,9 @@ flowchart LR
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
+pio run -e stm32h743-devebox -t upload                    # DevEBox H743：USB DFU，通过 USB 使用控制台
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
-pio run -e stm32h743-devebox -t upload                    # DevEBox H743：USB DFU，通过 USB 使用控制台
 ```
 
 DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚接到 3V3 并按一下 RST；之后在控制台按 `D` 键，板子就会自己重启进入引导程序（[详情](DEVELOPER_GUIDE.md#stm32h743)）。

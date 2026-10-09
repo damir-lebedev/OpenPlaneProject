@@ -8,8 +8,8 @@ Sie funktioniert auf zwei Boards:
 
 | Board | Wohin sie schreibt | Wie viel hineinpasst (bei ~20 KB/s) |
 |---|---|---|
-| **ESP32-S3 N16R8** (Hauptboard) | eine Partition von 13,9 MB im eingebauten Flash | etwa **11 Minuten** |
-| **STM32H743** (DevEBox, WeAct) | eine Datei auf einer SD-Karte, [weiter unten](#sd-karte-stm32h743) | 64 MB – etwa **55 Minuten**, die Größe legt die Datei fest |
+| **ESP32-S3 N16R8** | eine Partition von 13,9 MB im eingebauten Flash | etwa **11 Minuten** |
+| **STM32H743** (DevEBox – Hauptboard; WeAct) | eine Datei auf einer SD-Karte, [weiter unten](#sd-karte-stm32h743) | 64 MB – etwa **55 Minuten**, die Größe legt die Datei fest |
 
 Auf den übrigen Boards (ESP32-C3, gewöhnlicher ESP32) gibt es keinen Speicher: Die Blackbox ist abgeschaltet und stört den Flug nicht.
 

@@ -635,8 +635,7 @@ tests natifs du code commun. Sur le matériel, c’est la **carte DevEBox H743
 sans capteurs** qui a été testée : démarrage, console par USB, carte SD, boîte
 noire — [TESTING.md](TESTING.md#tests-sur-la-carte-stm32) — ainsi que l’iBUS, l’ARM
 et le PWM vers les servos et le moteur : pilotage depuis la radiocommande en
-mode manuel (en vidéo). Les capteurs sur la STM32 attendent encore un banc. La
-carte de vol principale est l’ESP32-S3.
+mode manuel (en vidéo). Les capteurs sont en cours de branchement sur la STM32. **La carte principale est la STM32H743 (DevEBox)** ; l’ESP32-S3 est l’ancienne carte principale, sur laquelle le banc avec tous les capteurs a été validé.
 
 - **HAL** — `include/hal/stm32/` : `Stm32Board` (la même API que `Esp32Board`,
   plus `telemetryUart()`), `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`,
@@ -993,7 +992,7 @@ pio run -t upload                        # remettre le micrologiciel normal
 ## Commandes de compilation, de téléversement et de moniteur
 
 ```bash
-pio run                        # compiler la carte par défaut (esp32-s3)
+pio run                        # compiler la carte par défaut (stm32h743-devebox)
 pio run -t upload              # téléverser
 pio device monitor             # moniteur, 115200
 pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # vérifier que toutes les cartes se compilent
@@ -1085,10 +1084,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # vérifier que tout
 - **Tests et analyse avant un commit :** `pio test -e native -e native-stm32`,
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   tout au vert ([`TESTING.md`](TESTING.md)).
-- **Compilez toutes les cartes** après des modifications du code commun — la S3
-  est la principale, mais la C3, la 38 broches et `stm32h743` ne doivent pas
-  casser ; avant une version — `tools/build_matrix.sh` (toutes les cartes ×
-  tous les capteurs).
+- **Compilez toutes les cartes** après des modifications du code commun — la STM32H743 est la principale, mais l’ESP32-S3, la C3 et la 38 broches ne doivent pas casser non plus ; avant une version — `tools/build_matrix.sh` (toutes les cartes × tous les capteurs).
 - **Vérifiez sur le matériel ce qui peut l’être :** les signes — par
   l’inclinaison, les sorties — avec la commande `p`, la liaison — en éteignant
   la radiocommande.

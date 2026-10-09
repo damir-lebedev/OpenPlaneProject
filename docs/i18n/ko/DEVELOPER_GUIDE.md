@@ -602,8 +602,7 @@ STM32H743VIT6(Cortex-M7 480 MHz, 플래시 2 MB, RAM 1 MB)은 **전체 펌웨어
 모든 네이티브 테스트를 통과합니다. 실제 하드웨어에서 확인한 것은 **센서 없는
 DevEBox H743 보드**입니다: 부팅, USB 콘솔, SD 카드, 블랙박스
 ([TESTING.md](TESTING.md#stm32-보드에서의-테스트)), 그리고 iBUS, ARM, 서보와 모터로
-가는 PWM(송신기로 수동 모드에서 조종, 영상 있음). STM32의 센서는 아직 테스트
-벤치를 기다리고 있습니다. 주력 비행 보드는 ESP32-S3입니다.
+가는 PWM(송신기로 수동 모드에서 조종, 영상 있음). 지금 STM32에 센서를 연결하는 중입니다. **주력 보드는 STM32H743(DevEBox)입니다**. ESP32-S3은 이전 주력 보드로, 모든 센서를 단 테스트 벤치를 통과했습니다.
 
 - **HAL** — `include/hal/stm32/`: `Stm32Board`(`Esp32Board`와 같은 API에
   `telemetryUart()`가 추가됨), `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`,
@@ -911,7 +910,7 @@ pio run -t upload                        # 일반 펌웨어로 되돌림
 ## 빌드, 업로드, 모니터 명령
 
 ```bash
-pio run                        # 기본 보드(esp32-s3) 빌드
+pio run                        # 기본 보드(stm32h743-devebox) 빌드
 pio run -t upload              # 업로드
 pio device monitor             # 모니터, 115200
 pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 모든 보드가 빌드되는지 확인
@@ -985,9 +984,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 모든 보드가 �
 - **커밋 전에 테스트와 분석:** `pio test -e native -e native-stm32`,
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh`를
   모두 통과시킵니다([`TESTING.md`](TESTING.md)).
-- **공통 코드를 고친 뒤에는 모든 보드를 빌드하세요.** S3가 주력이지만 C3, 38핀
-  보드, `stm32h743`이 깨지면 안 됩니다. 릴리스 전에는
-  `tools/build_matrix.sh`(모든 보드 × 모든 센서)를 실행합니다.
+- **공통 코드를 고친 뒤에는 모든 보드를 빌드하세요.** STM32H743이 주력이지만 ESP32-S3, C3, 38핀 보드도 깨지면 안 됩니다. 릴리스 전에는 `tools/build_matrix.sh`(모든 보드 × 모든 센서)를 실행합니다.
 - **하드웨어에서 확인할 수 있는 것은 하드웨어에서 확인하세요:** 부호는 기울여서,
   출력은 `p` 명령으로, 링크는 송신기를 꺼서 확인합니다.
 - **API를 지어내지 마세요.** `~/.platformio/packages/framework-arduinoespressif32/`의

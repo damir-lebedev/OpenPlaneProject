@@ -43,7 +43,7 @@ Avant de calculer la couverture après des modifications des tests, il est utile
 
 ## Comment est faite la compilation native
 
-`[env:native]` dans `platformio.ini` : `platform = native`, Unity, `-std=gnu++17`, `-D BOARD_ESP32_S3` (le brochage de la carte principale), `-I test/native/support`, `-Wall -Wextra -Wshadow`, couverture avec `--coverage` et `-fkeep-inline-functions -fkeep-static-functions` — sans eux, gcov ne voit pas les fonctions d’en-tête jamais appelées et surestime la couverture.
+`[env:native]` dans `platformio.ini` : `platform = native`, Unity, `-std=gnu++17`, `-D BOARD_ESP32_S3` (le brochage de l’ESP32-S3), `-I test/native/support`, `-Wall -Wextra -Wshadow`, couverture avec `--coverage` et `-fkeep-inline-functions -fkeep-static-functions` — sans eux, gcov ne voit pas les fonctions d’en-tête jamais appelées et surestime la couverture.
 
 ### Fakes du matériel — `test/native/support/`
 

@@ -43,7 +43,7 @@ Before counting coverage after changes to the tests, it helps to start from a cl
 
 ## How the native build works
 
-`[env:native]` in `platformio.ini`: `platform = native`, Unity, `-std=gnu++17`, `-D BOARD_ESP32_S3` (the main board's pinout), `-I test/native/support`, `-Wall -Wextra -Wshadow`, coverage with `--coverage` and `-fkeep-inline-functions -fkeep-static-functions` — without them gcov does not see header functions that were never called and overstates the coverage.
+`[env:native]` in `platformio.ini`: `platform = native`, Unity, `-std=gnu++17`, `-D BOARD_ESP32_S3` (the ESP32-S3 pinout), `-I test/native/support`, `-Wall -Wextra -Wshadow`, coverage with `--coverage` and `-fkeep-inline-functions -fkeep-static-functions` — without them gcov does not see header functions that were never called and overstates the coverage.
 
 ### Hardware fakes — `test/native/support/`
 

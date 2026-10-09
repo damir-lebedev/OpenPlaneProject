@@ -7,11 +7,8 @@
 The HAL is the only layer allowed to know a specific MCU. The interfaces live
 in `include/hal/`, the implementations are:
 
-- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x), **the main one**;
-- `include/hal/stm32/` — STM32H743 (STM32duino 3.x): the full firmware
-  builds (`pio run -e stm32h743`) and runs on the PC (`pio test -e
-  native-stm32`); on hardware, the bare DevEBox board has been verified (SD
-  card, black box), but not yet the sensors and servos;
+- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x);
+- `include/hal/stm32/` — STM32H743 (STM32duino 3.x), **the main one**: the full firmware builds (`pio run -e stm32h743-devebox`) and runs on the PC (`pio test -e native-stm32`); on the DevEBox board the SD card, the black box, iBUS and the servos have been verified, the sensors not yet;
 - `hal/Rtos.h` — FreeRTOS tasks, identical on both platforms.
 
 Everything above works only with the interfaces, so moving to another MCU

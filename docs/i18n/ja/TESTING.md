@@ -43,7 +43,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 
 ## ネイティブビルドの仕組み
 
-`platformio.ini` の `[env:native]`：`platform = native`、Unity、`-std=gnu++17`、`-D BOARD_ESP32_S3`（メインボードのピン配置）、`-I test/native/support`、`-Wall -Wextra -Wshadow`、`--coverage` によるカバレッジ計測、そして `-fkeep-inline-functions -fkeep-static-functions` です。この 2 つのオプションがないと、一度も呼ばれなかったヘッダー内の関数が gcov に見えず、カバレッジが過大に出ます。
+`platformio.ini` の `[env:native]`：`platform = native`、Unity、`-std=gnu++17`、`-D BOARD_ESP32_S3`（ESP32-S3 のピン配置）、`-I test/native/support`、`-Wall -Wextra -Wshadow`、`--coverage` によるカバレッジ計測、そして `-fkeep-inline-functions -fkeep-static-functions` です。この 2 つのオプションがないと、一度も呼ばれなかったヘッダー内の関数が gcov に見えず、カバレッジが過大に出ます。
 
 ### ハードウェアのフェイク：`test/native/support/`
 

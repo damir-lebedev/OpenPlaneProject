@@ -7,11 +7,8 @@
 O HAL é a única camada autorizada a conhecer um MCU específico. As interfaces
 ficam em `include/hal/`; as implementações são:
 
-- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x), **a principal**;
-- `include/hal/stm32/` — STM32H743 (STM32duino 3.x): o firmware completo
-  compila (`pio run -e stm32h743`) e roda no PC (`pio test -e
-  native-stm32`); no hardware, foi verificada a placa DevEBox sozinha (cartão
-  SD, caixa-preta), mas ainda não os sensores e os servos;
+- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x);
+- `include/hal/stm32/` — STM32H743 (STM32duino 3.x), **a principal**: o firmware completo compila (`pio run -e stm32h743-devebox`) e roda no PC (`pio test -e native-stm32`); na placa DevEBox foram verificados o cartão SD, a caixa-preta, o iBUS e os servos, mas ainda não os sensores;
 - `hal/Rtos.h` — tarefas do FreeRTOS, iguais nas duas plataformas.
 
 Tudo o que está acima trabalha apenas com as interfaces; por isso, migrar para outro

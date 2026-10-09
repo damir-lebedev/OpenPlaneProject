@@ -629,9 +629,7 @@ sich bauen, besteht cppcheck und alle nativen Tests des gemeinsamen Codes. An
 der Hardware wurde die **DevEBox-H743-Platine ohne Sensoren** getestet: Start,
 Konsole über USB, SD-Karte, Blackbox —
 [TESTING.md](TESTING.md#tests-auf-dem-stm32-board) — sowie iBUS, ARM und PWM an die
-Servos und den Motor: Steuerung vom Sender im manuellen Modus (auf Video). Die
-Sensoren am STM32 warten noch auf einen Prüfstand. Die Hauptflugplatine ist der
-ESP32-S3.
+Servos und den Motor: Steuerung vom Sender im manuellen Modus (auf Video). Die Sensoren werden jetzt an den STM32 angeschlossen. **Das Hauptboard ist der STM32H743 (DevEBox)**; der ESP32-S3 ist das frühere Hauptboard, auf ihm wurde der Prüfstand mit allen Sensoren durchlaufen.
 
 - **HAL** — `include/hal/stm32/`: `Stm32Board` (dieselbe API wie `Esp32Board`,
   plus `telemetryUart()`), `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`,
@@ -988,7 +986,7 @@ pio run -t upload                        # die normale Firmware zurückspielen
 ## Befehle zum Bauen, Aufspielen und Überwachen
 
 ```bash
-pio run                        # das Standard-Board bauen (esp32-s3)
+pio run                        # das Standard-Board bauen (stm32h743-devebox)
 pio run -t upload              # aufspielen
 pio device monitor             # Monitor, 115200
 pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # prüfen, dass alle Boards bauen
@@ -1081,10 +1079,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # prüfen, dass alle
 - **Tests und Analyse vor einem Commit:** `pio test -e native -e native-stm32`,
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   alles grün ([`TESTING.md`](TESTING.md)).
-- **Bauen Sie alle Boards** nach Änderungen am gemeinsamen Code — der S3 ist
-  die Hauptplatine, aber C3, das 38-Pin-Board und `stm32h743` dürfen nicht
-  kaputtgehen; vor einem Release — `tools/build_matrix.sh` (alle Boards × alle
-  Sensoren).
+- **Bauen Sie alle Boards** nach Änderungen am gemeinsamen Code — der STM32H743 ist das Hauptboard, aber ESP32-S3, C3 und das 38-Pin-Board dürfen ebenfalls nicht kaputtgehen; vor einem Release — `tools/build_matrix.sh` (alle Boards × alle Sensoren).
 - **Prüfen Sie an der Hardware, was sich prüfen lässt:** Vorzeichen — durch
   Neigen, Ausgänge — mit dem Befehl `p`, die Verbindung — durch Ausschalten des
   Senders.

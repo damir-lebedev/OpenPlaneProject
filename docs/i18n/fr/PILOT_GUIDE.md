@@ -31,6 +31,7 @@ Soyons francs d’emblée : le projet est en développement actif et **n’est 
 
 Le kit de la version actuelle (le firmware a été vérifié dessus) :
 
+- **Une carte STM32H743 DevEBox H743** (MCUDEV) — la carte principale. L’ancienne carte principale, l’ESP32-S3 ci-dessous, reste prise en charge.
 - **Une carte ESP32-S3 N16R8** (un clone de DevKitC-1 avec deux USB-C : « USB » et « COM »).
 - **Une radio FS-i6 + un récepteur FS-iA6B** (protocole iBUS, 10 canaux). Il faut un seul fil de données : le port iBUS SERVO. La radio doit permettre de régler le failsafe ; ce réglage est obligatoire, voir la section sur le failsafe.
 - **2 servos MG90S** pour les ailerons — un par demi-aile (deux servos indépendants, et non un seul pour les deux ailes).
@@ -53,13 +54,46 @@ Cellule : envergure 1200 mm, corde 250 mm, profil NACA 4412, construction en 
 
 ## Choix de la carte et brochage
 
-Le firmware prend en charge trois cartes ; pour passer de l’une à l’autre, il suffit d’un paramètre de compilation (`pio run -e <nom de l’environnement>`). Chaque carte a son propre brochage, fixé dans le firmware pour l’environnement concerné — ne déplacez pas les fils de votre propre initiative, consultez le tableau de votre carte.
+Le firmware prend en charge quatre cartes ; pour passer de l’une à l’autre, il suffit d’un paramètre de compilation (`pio run -e <nom de l’environnement>`). Chaque carte a son propre brochage, fixé dans le firmware pour l’environnement concerné — ne déplacez pas les fils de votre propre initiative, consultez le tableau de votre carte.
 
-> **Important :** la carte principale est désormais l’**esp32-s3 (N16R8)** — son brochage a été vérifié sur le banc avec tous les capteurs. L’**esp32-c3** est l’ancien prototype qui a volé. Le brochage de l’**esp32-dev** a été choisi d’après la documentation de la puce et **n’a pas été vérifié sur du vrai matériel**.
+> **Important :** la carte principale est désormais la **STM32H743 (DevEBox H743)** — le démarrage, la console USB, la carte SD, l’iBUS, les servos et le moteur y ont été vérifiés ; les capteurs sont branchés pour la première fois. L’**esp32-s3 (N16R8)** est l’ancienne carte principale ; son brochage a été vérifié sur le banc avec tous les capteurs. L’**esp32-c3** est l’ancien prototype qui a volé. Le brochage de l’**esp32-dev** a été choisi d’après la documentation de la puce et **n’a pas été vérifié sur du vrai matériel**.
 
-### esp32-s3 (N16R8) — la carte principale, vérifiée sur le banc
+### STM32H743 (DevEBox H743) — la carte principale
 
-`pio run -e esp32-s3`, carte `esp32-s3-devkitc-1` avec les réglages du module N16R8 (16 Mo de flash, 8 Mo de PSRAM octale). C’est la carte par défaut (`default_envs = esp32-s3`).
+`pio run -e stm32h743-devebox`, carte MCUDEV DevEBox H743 (STM32H743VIT6). C’est la carte par défaut (`default_envs = stm32h743-devebox`). Le démarrage, la console USB, la carte SD et la boîte noire, la réception iBUS, l’ARM, les servos et le moteur depuis la radiocommande y sont déjà vérifiés ; les capteurs sont branchés pour la première fois.
+
+| Fonction | Broche |
+|---|---|
+| Aileron, demi-aile gauche | PA0 |
+| Aileron, demi-aile droite | PA1 |
+| Gouverne de profondeur | PA2 |
+| ESC (gaz) | PA3 |
+| Gouverne de direction + roue directrice | PD14 |
+| iBUS du récepteur (RX) | PE7 |
+| I2C des capteurs SDA / SCL (MPU, BMP581, boussole) | PB11 / PB10 |
+| I2C de l’OLED SDA / SCL (bus séparé) | PB9 / PB8 |
+| GPS : RX (← TX du GPS) / TX (→ RX du GPS) | PD9 / PD8 |
+| Télémétrie MAVLink (modem radio) : RX / TX | PD0 / PD1 |
+| AUX1 / AUX2 (servos), buzzer | PD15 / PE9, PE15 |
+| SPI des capteurs SCK / MISO / MOSI, CS de l’IMU / CS du baromètre | PB13 / PB14 / PB15, PB12 / PD10 |
+| Réserve : batterie / capteur de courant (ADC ; le firmware STM32 ne les lit pas encore) | PC0 / PC1 |
+
+La console, le journal et le téléchargement de la boîte noire passent par l’USB-C de la carte (port COM virtuel). Ne pas occuper : PA11/PA12 (USB), PA13/PA14 (SWD), PC8–PC12 et PD2 (emplacement µSD), PE3 et PC5 (boutons K1/K2).
+
+Branchement des capteurs sur le banc (tous les modules fonctionnent en **3,3 V**, et non en 5 V) :
+
+| Module | Broches |
+|---|---|
+| MPU-6050 / GY-521 (la carte peut porter un MPU6500 — c’est normal) | VCC–3.3V, GND–GND, SCL–PB10, SDA–PB11, AD0–GND, INT/XDA/XCL — ne pas brancher. Module MPU-6500 seul (10 broches) : pareil, plus **NCS–3.3V** (sinon la puce passe en SPI) et FSYNC–GND ; EDA/ECL — ne pas brancher. Puce vers le haut, flèche X vers le nez ; la rotation des axes de la puce se règle avec `IMU_ROTATION_CW_DEG` dans `Config.h` (90 sur notre clone) |
+| BMP581 | VCC–3.3V (**3.3V uniquement** : beaucoup de modules n’ont pas leur propre régulateur), GND–GND, SCL–PB10, SDA–PB11, **SDO–GND** (adresse 0x46 ; ne pas la laisser en l’air), **CSB–3.3V** (sinon la puce passe en SPI), INT — ne pas brancher |
+| GY-273 (QMC5883P) | VCC–3.3V, GND–GND, SCL–PB10, SDA–PB11, DRDY — ne pas brancher. À l’écart des fils des servos, de l’ESC et du moteur |
+| OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
+
+Les servos sont alimentés **non pas par la carte**, mais par le BEC du variateur (ou par une alimentation 5 V séparée d’au moins 2 A) ; la masse de toutes les sources est commune. Ne reliez pas le fil rouge de l’ESC au 5 V de la carte tant que l’USB est branché.
+
+### esp32-s3 (N16R8) — l’ancienne carte principale, vérifiée sur le banc
+
+`pio run -e esp32-s3`, carte `esp32-s3-devkitc-1` avec les réglages du module N16R8 (16 Mo de flash, 8 Mo de PSRAM octale).
 
 | Fonction | GPIO |
 |---|---|
@@ -251,7 +285,10 @@ Le plus simple est d’installer l’extension **PlatformIO IDE** dans VS Code (
 Ouvrez le projet (le dossier du dépôt) dans VS Code avec PlatformIO installé, branchez la carte en USB et exécutez dans le terminal la commande correspondant à votre carte :
 
 ```bash
-# esp32-s3 N16R8 (carte principale)
+# STM32H743 DevEBox (carte principale)
+pio run -e stm32h743-devebox -t upload
+
+# esp32-s3 N16R8 (ancienne carte principale)
 pio run -e esp32-s3 -t upload
 
 # esp32-c3 (ancien prototype)
@@ -261,7 +298,9 @@ pio run -e esp32-c3 -t upload
 pio run -e esp32-dev -t upload
 ```
 
-Si vous n’indiquez pas du tout `-e`, la carte par défaut est compilée — `esp32-s3`.
+Si vous n’indiquez pas du tout `-e`, la carte par défaut est compilée — `stm32h743-devebox`.
+
+**STM32 DevEBox :** le premier flashage passe par l’USB DFU : un strap BT0→3V3, appuyez sur RST, puis la commande ci-dessus (Windows a besoin du pilote WinUSB pour « STM32 BOOTLOADER », installé avec Zadig). Ensuite, la touche `D` dans la console redémarre la carte dans le bootloader toute seule, et le strap n’est plus nécessaire. La console passe par le même USB-C.
 
 **esp32-s3 :** la carte a deux connecteurs USB-C. Le téléversement et Serial passent par le connecteur **« COM »** (pont CH343 ; sous Windows, « USB-Enhanced-SERIAL CH343 »). Le connecteur « USB » (l’USB natif de la puce) n’est pas nécessaire au travail, mais il peut rester branché — il ne gêne en rien.
 

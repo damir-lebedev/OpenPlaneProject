@@ -7,11 +7,8 @@
 HAL अकेली ऐसी परत है जिसे किसी ख़ास MCU के बारे में जानने की अनुमति है। इंटरफ़ेस
 `include/hal/` में हैं, और क्रियान्वयन ये हैं:
 
-- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x), **मुख्य**;
-- `include/hal/stm32/` — STM32H743 (STM32duino 3.x): पूरा फ़र्मवेयर
-  बिल्ड होता है (`pio run -e stm32h743`) और PC पर चलता है (`pio test -e
-  native-stm32`); हार्डवेयर पर अकेला DevEBox बोर्ड जाँचा गया है (SD कार्ड,
-  ब्लैक बॉक्स), सेंसर और सर्वो अभी नहीं;
+- `include/hal/esp32/` — ESP32 (Arduino core 2.0.x);
+- `include/hal/stm32/` — STM32H743 (STM32duino 3.x), **मुख्य**: पूरा फ़र्मवेयर बिल्ड होता है (`pio run -e stm32h743-devebox`) और PC पर चलता है (`pio test -e native-stm32`); DevEBox बोर्ड पर SD कार्ड, ब्लैक बॉक्स, iBUS और सर्वो जाँचे गए हैं, सेंसर अभी नहीं;
 - `hal/Rtos.h` — FreeRTOS टास्क, दोनों प्लेटफ़ॉर्म पर एक जैसे।
 
 इसके ऊपर का सब कुछ केवल इंटरफ़ेस के साथ काम करता है, इसलिए किसी दूसरे MCU पर जाने का

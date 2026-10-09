@@ -43,7 +43,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 
 ## 네이티브 빌드의 구조
 
-`platformio.ini`의 `[env:native]`: `platform = native`, Unity, `-std=gnu++17`, `-D BOARD_ESP32_S3`(주력 보드의 핀 배치), `-I test/native/support`, `-Wall -Wextra -Wshadow`, `--coverage`로 하는 커버리지 계산, 그리고 `-fkeep-inline-functions -fkeep-static-functions`입니다. 이 두 옵션이 없으면 한 번도 호출되지 않은 헤더 함수를 gcov가 보지 못해 커버리지가 부풀려집니다.
+`platformio.ini`의 `[env:native]`: `platform = native`, Unity, `-std=gnu++17`, `-D BOARD_ESP32_S3`(ESP32-S3의 핀 배치), `-I test/native/support`, `-Wall -Wextra -Wshadow`, `--coverage`로 하는 커버리지 계산, 그리고 `-fkeep-inline-functions -fkeep-static-functions`입니다. 이 두 옵션이 없으면 한 번도 호출되지 않은 헤더 함수를 gcov가 보지 못해 커버리지가 부풀려집니다.
 
 ### 하드웨어 페이크: `test/native/support/`
 

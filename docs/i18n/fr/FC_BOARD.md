@@ -4,6 +4,8 @@
 
 Une carte porteuse pour l’ESP32-S3 DevKitC-1 (N16R8) : le DevKit s’enfiche dans deux barrettes femelles, et tout autour se trouvent des blocs de connecteurs JST-XH. Ce document répond à trois questions : quels connecteurs assembler en blocs, où placer les condensateurs et ce qu’il faut brancher où. Les broches correspondent à `include/config/Config.h` (le bloc `BOARD_ESP32_S3`).
 
+> Cette carte est conçue pour l’ESP32-S3, l’ancienne carte principale. La carte principale est désormais la STM32H743 (DevEBox H743) : sa carte porteuse n’est pas encore dessinée, les capteurs se branchent donc pour l’instant sur les barrettes de la DevEBox — le brochage est dans [PILOT_GUIDE](PILOT_GUIDE.md).
+
 La carte est conçue pour être **simple face** : les GPIO sont choisis de façon que les broches de chaque bloc se suivent le long de la barrette du DevKit et que les pistes de signal s’ouvrent en éventail sans se croiser. Je n’ai pas vérifié le routage dans un logiciel de CAO. Si cela ne passe pas quelque part, ajoutez un strap en fil côté composants : de un à trois sur une carte de ce type, c’est normal.
 
 **Tous les connecteurs sont des JST-XH, de 1 à 5 contacts.** Les fils ne sont pas soudés à la carte : sur les fils des servos, de l’ESC, du récepteur et des modules, on sertit les boîtiers correspondants. Le XH est détrompé, on ne peut donc pas l’enficher à l’envers. Un contact supporte ~3 A.

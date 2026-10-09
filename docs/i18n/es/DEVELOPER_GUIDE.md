@@ -627,9 +627,7 @@ negra en la tarjeta SD. Compila, pasa cppcheck y todas las pruebas nativas del
 código común. En hardware se ha probado la **placa DevEBox H743 sin sensores**:
 arranque, consola por USB, tarjeta SD, caja negra
 ([TESTING.md](TESTING.md#pruebas-en-la-placa-stm32)), y además iBUS, ARM y PWM a
-los servos y al motor: control desde la emisora en modo manual (en vídeo). Los
-sensores en la STM32 aún esperan un banco. La placa principal de vuelo es la
-ESP32-S3.
+los servos y al motor: control desde la emisora en modo manual (en vídeo). Los sensores se están conectando ahora a la STM32. **La placa principal es la STM32H743 (DevEBox)**; la ESP32-S3 es la antigua placa principal, con la que se completó el banco con todos los sensores.
 
 - **HAL**: `include/hal/stm32/`: `Stm32Board` (la misma API que `Esp32Board`,
   más `telemetryUart()`), `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`,
@@ -978,7 +976,7 @@ pio run -t upload                        # devolver el firmware normal
 ## Comandos de compilación, carga y monitor
 
 ```bash
-pio run                        # compilar la placa predeterminada (esp32-s3)
+pio run                        # compilar la placa predeterminada (stm32h743-devebox)
 pio run -t upload              # cargar
 pio device monitor             # monitor, 115200
 pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # comprobar que se compilan todas las placas
@@ -1067,10 +1065,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # comprobar que se c
 - **Pruebas y análisis antes de un commit:** `pio test -e native -e native-stm32`,
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh`,
   todo en verde ([`TESTING.md`](TESTING.md)).
-- **Compile todas las placas** tras cambios en el código común: la S3 es la
-  principal, pero la C3, la de 38 pines y `stm32h743` no deben romperse;
-  antes de una versión, `tools/build_matrix.sh` (todas las placas × todos los
-  sensores).
+- **Compile todas las placas** tras cambios en el código común: la STM32H743 es la principal, pero la ESP32-S3, la C3 y la de 38 pines tampoco deben romperse; antes de una versión, `tools/build_matrix.sh` (todas las placas × todos los sensores).
 - **Compruebe en el hardware lo que se pueda comprobar:** los signos, con la
   inclinación; las salidas, con el comando `p`; el enlace, apagando la
   emisora.

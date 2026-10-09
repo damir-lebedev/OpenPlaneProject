@@ -4,6 +4,8 @@
 
 Eine Trägerplatine für den ESP32-S3 DevKitC-1 (N16R8): Das DevKit wird in zwei Buchsenleisten gesteckt, und ringsherum sitzen Blöcke von JST-XH-Steckverbindern. Dieses Dokument beantwortet drei Fragen: welche Steckverbinder zu Blöcken zusammengefasst werden, wohin die Kondensatoren kommen und was wohin gesteckt wird. Die Pins stimmen mit `include/config/Config.h` überein (dem Block `BOARD_ESP32_S3`).
 
+> Diese Platine ist für den ESP32-S3 entworfen, das frühere Hauptboard. Hauptboard ist jetzt der STM32H743 (DevEBox H743): Eine Trägerplatine dafür ist noch nicht gezeichnet, die Sensoren werden vorerst an die Stiftleisten des DevEBox angeschlossen – die Pinbelegung steht in [PILOT_GUIDE](PILOT_GUIDE.md).
+
 Die Platine ist als **einseitige** Platine gedacht: Die GPIOs sind so gewählt, dass die Pins jedes Blocks entlang der Leiste des DevKit aufeinanderfolgen und die Signalbahnen sich fächerförmig ohne Kreuzungen ausbreiten. Das Layout habe ich in keinem CAD-Programm geprüft. Geht es irgendwo nicht auf, setzen Sie eine Drahtbrücke auf der Bestückungsseite: Eine bis drei davon sind auf einer solchen Platine normal.
 
 **Alle Steckverbinder sind JST-XH mit 1–5 Kontakten.** Die Leitungen werden nicht an die Platine gelötet: An die Leitungen von Servos, ESC, Empfänger und Modulen werden passende Steckergehäuse gecrimpt. Der XH ist kodiert, deshalb lässt er sich nicht verkehrt herum stecken. Ein Kontakt hält ~3 A aus.

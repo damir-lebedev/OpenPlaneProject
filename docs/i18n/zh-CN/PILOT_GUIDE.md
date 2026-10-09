@@ -31,6 +31,7 @@
 
 当前这套配置（固件就是在它上面验证的）：
 
+- **STM32H743 开发板 DevEBox H743**（MCUDEV）——主力板。之前的主力板，即下面的 ESP32-S3，也仍然支持。
 - **ESP32-S3 N16R8 开发板**（DevKitC-1 的仿制板，有两个 USB-C 口：“USB”和“COM”）。
 - **FS-i6 遥控器 + FS-iA6B 接收机**（iBUS 协议，10 个通道）。只需要一根数据线——iBUS SERVO 接口。遥控器必须能设置 failsafe，这项设置是必需的，见 failsafe 一节。
 - **2 个 MG90S 舵机**用于副翼——每侧机翼各一个（两个独立舵机，而不是两侧机翼共用一个）。
@@ -53,13 +54,46 @@
 
 ## 选择开发板与引脚分配
 
-固件支持三种开发板；切换只需一个构建参数（`pio run -e <环境名>`）。每块板的引脚分配各不相同，并且针对具体的构建环境写死在固件里——不要自作主张挪线，请对照自己那块板的表格。
+固件支持四种开发板；切换只需一个构建参数（`pio run -e <环境名>`）。每块板的引脚分配各不相同，并且针对具体的构建环境写死在固件里——不要自作主张挪线，请对照自己那块板的表格。
 
-> **重要**：现在的主力板是 **esp32-s3 (N16R8)**——它的引脚分配已在装有全部传感器的台架上验证。**esp32-c3** 是飞过的旧原型机。**esp32-dev** 的引脚分配是根据芯片文档选定的，**没有在真实硬件上验证过**。
+> **重要**：现在的主力板是 **STM32H743 (DevEBox H743)**——已在它上面验证了启动、USB 控制台、SD 卡、iBUS、舵机和电机；传感器是第一次接上去。**esp32-s3 (N16R8)** 是之前的主力板，它的引脚分配已在装有全部传感器的台架上验证。**esp32-c3** 是飞过的旧原型机。**esp32-dev** 的引脚分配是根据芯片文档选定的，**没有在真实硬件上验证过**。
 
-### esp32-s3 (N16R8)——主力板，已在台架上验证
+### STM32H743 (DevEBox H743)——主力板
 
-`pio run -e esp32-s3`，开发板 `esp32-s3-devkitc-1`，按 N16R8 模块设置（16 MB 闪存，8 MB 八线 PSRAM）。这是默认开发板（`default_envs = esp32-s3`）。
+`pio run -e stm32h743-devebox`，开发板 MCUDEV DevEBox H743（STM32H743VIT6）。这是默认开发板（`default_envs = stm32h743-devebox`）。已在它上面验证了启动、USB 控制台、SD 卡和黑匣子、iBUS 接收、ARM、用遥控器控制舵机和电机；传感器是第一次接上去。
+
+| 用途 | 引脚 |
+|---|---|
+| 副翼，左侧机翼 | PA0 |
+| 副翼，右侧机翼 | PA1 |
+| 升降舵 | PA2 |
+| 电调（油门） | PA3 |
+| 方向舵 + 转向轮 | PD14 |
+| 来自接收机的 iBUS (RX) | PE7 |
+| 传感器 I2C SDA / SCL（MPU、BMP581、罗盘） | PB11 / PB10 |
+| OLED 的 I2C SDA / SCL（独立总线） | PB9 / PB8 |
+| GPS：RX（← GPS 的 TX）/ TX（→ GPS 的 RX） | PD9 / PD8 |
+| MAVLink 遥测（数传电台）：RX / TX | PD0 / PD1 |
+| AUX1 / AUX2（舵机）、蜂鸣器 | PD15 / PE9, PE15 |
+| 传感器 SPI SCK / MISO / MOSI，IMU 的 CS / 气压计的 CS | PB13 / PB14 / PB15, PB12 / PD10 |
+| 预留：电池 / 电流传感器（ADC；STM32 固件暂不读取） | PC0 / PC1 |
+
+控制台、日志和黑匣子下载都走开发板的 USB-C（虚拟 COM 口）。不要占用：PA11/PA12（USB）、PA13/PA14（SWD）、PC8–PC12 和 PD2（µSD 卡槽）、PE3 和 PC5（K1/K2 按键）。
+
+台架上的传感器接线（所有模块都用 **3.3 V** 供电，不是 5 V）：
+
+| 模块 | 引脚 |
+|---|---|
+| MPU-6050 / GY-521（板上可能是 MPU6500——这是正常的） | VCC–3.3V, GND–GND, SCL–PB10, SDA–PB11, AD0–GND, INT/XDA/XCL——不接。单独的 MPU-6500 模块（10 个引脚）：接法相同，另外 **NCS–3.3V**（否则芯片会切换到 SPI）、FSYNC–GND，EDA/ECL——不接。芯片朝上，X 轴箭头指向机头；芯片坐标轴的旋转由 `Config.h` 中的 `IMU_ROTATION_CW_DEG` 设定（我们这块仿制板上是 90） |
+| BMP581 | VCC–3.3V（**只能接 3.3V**：很多模块没有自己的稳压器）, GND–GND, SCL–PB10, SDA–PB11, **SDO–GND**（地址 0x46；不要悬空）, **CSB–3.3V**（否则芯片会切换到 SPI）, INT——不接 |
+| GY-273 (QMC5883P) | VCC–3.3V, GND–GND, SCL–PB10, SDA–PB11, DRDY——不接。远离舵机、电调和电机的导线 |
+| OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
+
+舵机**不由开发板供电**，而是由电调的 BEC（或另一个不低于 2 A 的 5 V 电源）供电；所有电源的地线共地。USB 插着的时候，不要把电调的红线接到开发板的 5 V 上。
+
+### esp32-s3 (N16R8)——之前的主力板，已在台架上验证
+
+`pio run -e esp32-s3`，开发板 `esp32-s3-devkitc-1`，按 N16R8 模块设置（16 MB 闪存，8 MB 八线 PSRAM）。
 
 | 用途 | GPIO |
 |---|---|
@@ -250,7 +284,10 @@ CH6–CH10 在 `include/config/Controls.h` 中**只需一行就能随意指定**
 在装有 PlatformIO 的 VS Code 中打开项目（仓库文件夹），用 USB 连接开发板，然后在终端中运行与自己开发板对应的命令：
 
 ```bash
-# esp32-s3 N16R8（主力板）
+# STM32H743 DevEBox（主力板）
+pio run -e stm32h743-devebox -t upload
+
+# esp32-s3 N16R8（之前的主力板）
 pio run -e esp32-s3 -t upload
 
 # esp32-c3（旧原型机）
@@ -260,7 +297,9 @@ pio run -e esp32-c3 -t upload
 pio run -e esp32-dev -t upload
 ```
 
-如果完全不指定 `-e`，就会编译默认开发板——`esp32-s3`。
+如果完全不指定 `-e`，就会编译默认开发板——`stm32h743-devebox`。
+
+**STM32 DevEBox：** 第一次烧录走 USB DFU：用跳线把 BT0 接到 3V3，按一下 RST，然后执行上面的命令（Windows 需要为“STM32 BOOTLOADER”安装 WinUSB 驱动，用 Zadig 安装）。之后在控制台按 `D` 键，板子会自己重启进入引导程序，跳线就不再需要了。控制台也走同一个 USB-C。
 
 **esp32-s3**：这块板有两个 USB-C 接口。烧录和串口都走 **“COM”** 接口（CH343 桥接芯片，在 Windows 中显示为“USB-Enhanced-SERIAL CH343”）。“USB”接口（芯片自带的原生 USB）工作时用不到，但可以插着——不会影响任何东西。
 

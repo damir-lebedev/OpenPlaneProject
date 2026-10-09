@@ -7,9 +7,8 @@
 HAL は、特定の MCU を知ってよい唯一の層です。インターフェースは
 `include/hal/` にあり、実装は次のとおりです。
 
-- `include/hal/esp32/` — ESP32（Arduino core 2.0.x）。**メインの実装**です。
-- `include/hal/stm32/` — STM32H743（STM32duino 3.x）。ファームウェア全体がビルドでき（`pio run -e stm32h743`）、PC 上でも動作します（`pio test -e
-  native-stm32`）。実機では、素の DevEBox ボード（SD カード、ブラックボックス）を確認済みで、センサーとサーボはまだ確認していません。
+- `include/hal/esp32/` — ESP32（Arduino core 2.0.x）です。
+- `include/hal/stm32/` — STM32H743（STM32duino 3.x）。**メインの実装**です。ファームウェア全体がビルドでき（`pio run -e stm32h743-devebox`）、PC 上でも動作します（`pio test -e native-stm32`）。DevEBox ボードでは SD カード、ブラックボックス、iBUS、サーボを確認済みで、センサーはまだ確認していません。
 - `hal/Rtos.h` — FreeRTOS のタスク。両方のプラットフォームで同じように動きます。
 
 この上位のコードはすべてインターフェースだけを相手にするので、別の MCU へ移植するときは、センサーを書き直すのではなく、`IBoard` の実装を新しく書くだけで済みます。

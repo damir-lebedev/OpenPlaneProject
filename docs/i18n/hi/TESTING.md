@@ -43,7 +43,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 
 ## नेटिव बिल्ड कैसे बना है
 
-`platformio.ini` में `[env:native]`: `platform = native`, Unity, `-std=gnu++17`, `-D BOARD_ESP32_S3` (मुख्य बोर्ड की पिन-व्यवस्था), `-I test/native/support`, `-Wall -Wextra -Wshadow`, `--coverage` के साथ कवरेज और `-fkeep-inline-functions -fkeep-static-functions` — इनके बिना gcov को हेडरों के वे फ़ंक्शन नहीं दिखते जिन्हें कभी बुलाया ही नहीं गया, और कवरेज बढ़ा-चढ़ाकर दिखता है।
+`platformio.ini` में `[env:native]`: `platform = native`, Unity, `-std=gnu++17`, `-D BOARD_ESP32_S3` (ESP32-S3 की पिन-व्यवस्था), `-I test/native/support`, `-Wall -Wextra -Wshadow`, `--coverage` के साथ कवरेज और `-fkeep-inline-functions -fkeep-static-functions` — इनके बिना gcov को हेडरों के वे फ़ंक्शन नहीं दिखते जिन्हें कभी बुलाया ही नहीं गया, और कवरेज बढ़ा-चढ़ाकर दिखता है।
 
 ### हार्डवेयर के फ़ेक — `test/native/support/`
 

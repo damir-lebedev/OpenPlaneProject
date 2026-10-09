@@ -44,7 +44,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 ## Как устроена нативная сборка
 
 `[env:native]` в `platformio.ini`: `platform = native`, Unity, `-std=gnu++17`,
-`-D BOARD_ESP32_S3` (распиновка основной платы), `-I test/native/support`,
+`-D BOARD_ESP32_S3` (распиновка ESP32-S3), `-I test/native/support`,
 `-Wall -Wextra -Wshadow`, покрытие `--coverage` и
 `-fkeep-inline-functions -fkeep-static-functions` — без них gcov не видит
 ни разу не вызванные функции заголовков и завышает покрытие.
