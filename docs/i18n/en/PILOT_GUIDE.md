@@ -76,7 +76,7 @@ The firmware supports four boards; switching takes one build parameter (`pio run
 | MAVLink telemetry (radio modem): RX / TX | PD0 / PD1 |
 | AUX1 / AUX2 (servos), buzzer | PD15 / PE9, PE15 |
 | Sensor SPI SCK / MISO / MOSI, IMU CS / barometer CS | PB13 / PB14 / PB15, PB12 / PD10 |
-| Reserve: battery / current sensor (ADC; the STM32 firmware does not read them yet) | PC0 / PC1 |
+| Battery / current sensor (ADC, recorded by the black box) | PC0 / PC1 |
 
 The console, the log and the black box download go over the board's USB-C (a virtual COM port). Keep free: PA11/PA12 (USB), PA13/PA14 (SWD), PC8–PC12 and PD2 (the µSD slot), PE3 and PC5 (the K1/K2 buttons).
 

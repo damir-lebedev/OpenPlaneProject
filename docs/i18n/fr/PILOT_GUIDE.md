@@ -76,7 +76,7 @@ Le firmware prend en charge quatre cartes ; pour passer de l’une à l’autre
 | Télémétrie MAVLink (modem radio) : RX / TX | PD0 / PD1 |
 | AUX1 / AUX2 (servos), buzzer | PD15 / PE9, PE15 |
 | SPI des capteurs SCK / MISO / MOSI, CS de l’IMU / CS du baromètre | PB13 / PB14 / PB15, PB12 / PD10 |
-| Réserve : batterie / capteur de courant (ADC ; le firmware STM32 ne les lit pas encore) | PC0 / PC1 |
+| Batterie / capteur de courant (ADC, enregistré par la boîte noire) | PC0 / PC1 |
 
 La console, le journal et le téléchargement de la boîte noire passent par l’USB-C de la carte (port COM virtuel). Ne pas occuper : PA11/PA12 (USB), PA13/PA14 (SWD), PC8–PC12 et PD2 (emplacement µSD), PE3 et PC5 (boutons K1/K2).
 

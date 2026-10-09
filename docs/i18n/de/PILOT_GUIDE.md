@@ -76,7 +76,7 @@ Die Firmware unterstützt vier Boards; umgeschaltet wird mit einem einzigen Buil
 | MAVLink-Telemetrie (Funkmodem): RX / TX | PD0 / PD1 |
 | AUX1 / AUX2 (Servos), Summer | PD15 / PE9, PE15 |
 | SPI der Sensoren SCK / MISO / MOSI, CS IMU / CS Barometer | PB13 / PB14 / PB15, PB12 / PD10 |
-| Reserve: Akku / Stromsensor (ADC; die STM32-Firmware liest sie noch nicht) | PC0 / PC1 |
+| Akku / Stromsensor (ADC, zeichnet die Blackbox auf) | PC0 / PC1 |
 
 Konsole, Log und Blackbox-Download laufen über die USB-C-Buchse des Boards (virtueller COM-Port). Nicht belegen: PA11/PA12 (USB), PA13/PA14 (SWD), PC8–PC12 und PD2 (µSD-Slot), PE3 und PC5 (Tasten K1/K2).
 

@@ -76,7 +76,7 @@
 | MAVLink 텔레메트리(무선 모뎀): RX / TX | PD0 / PD1 |
 | AUX1 / AUX2(서보), 부저 | PD15 / PE9, PE15 |
 | 센서 SPI SCK / MISO / MOSI, IMU의 CS / 기압계의 CS | PB13 / PB14 / PB15, PB12 / PD10 |
-| 예비: 배터리 / 전류 센서(ADC, STM32 펌웨어는 아직 읽지 않음) | PC0 / PC1 |
+| 배터리 / 전류 센서(ADC, 블랙박스가 기록) | PC0 / PC1 |
 
 콘솔, 로그, 블랙박스 다운로드는 보드의 USB-C(가상 COM 포트)를 통해 이루어집니다. 다음 핀은 쓰지 마세요: PA11/PA12(USB), PA13/PA14(SWD), PC8–PC12와 PD2(µSD 슬롯), PE3와 PC5(K1/K2 버튼).
 

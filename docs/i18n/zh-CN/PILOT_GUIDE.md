@@ -76,7 +76,7 @@
 | MAVLink 遥测（数传电台）：RX / TX | PD0 / PD1 |
 | AUX1 / AUX2（舵机）、蜂鸣器 | PD15 / PE9, PE15 |
 | 传感器 SPI SCK / MISO / MOSI，IMU 的 CS / 气压计的 CS | PB13 / PB14 / PB15, PB12 / PD10 |
-| 预留：电池 / 电流传感器（ADC；STM32 固件暂不读取） | PC0 / PC1 |
+| 电池 / 电流传感器（ADC，由黑匣子记录） | PC0 / PC1 |
 
 控制台、日志和黑匣子下载都走开发板的 USB-C（虚拟 COM 口）。不要占用：PA11/PA12（USB）、PA13/PA14（SWD）、PC8–PC12 和 PD2（µSD 卡槽）、PE3 和 PC5（K1/K2 按键）。
 

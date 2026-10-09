@@ -76,7 +76,7 @@ O firmware suporta quatro placas; para trocar de uma para outra basta um parâme
 | Telemetria MAVLink (radiomodem): RX / TX | PD0 / PD1 |
 | AUX1 / AUX2 (servos), buzzer | PD15 / PE9, PE15 |
 | SPI dos sensores SCK / MISO / MOSI, CS do IMU / CS do barômetro | PB13 / PB14 / PB15, PB12 / PD10 |
-| Reserva: bateria / sensor de corrente (ADC; o firmware do STM32 ainda não os lê) | PC0 / PC1 |
+| Bateria / sensor de corrente (ADC, gravado pela caixa-preta) | PC0 / PC1 |
 
 O console, o log e o download da caixa-preta passam pelo USB-C da placa (uma porta COM virtual). Não ocupar: PA11/PA12 (USB), PA13/PA14 (SWD), PC8–PC12 e PD2 (slot µSD), PE3 e PC5 (botões K1/K2).
 
