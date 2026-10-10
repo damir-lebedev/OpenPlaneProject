@@ -23,6 +23,8 @@
     <a href="docs/i18n/ja/README.md"><img src="docs/images/flags/jp.svg" width="20" height="20" align="absmiddle" alt="🇯🇵"> 日本語で読む</a>
     &nbsp;·&nbsp;
     <a href="docs/i18n/ko/README.md"><img src="docs/images/flags/kr.svg" width="20" height="20" align="absmiddle" alt="🇰🇷"> 한국어로 읽기</a>
+    &nbsp;·&nbsp;
+    <a href="docs/i18n/sv/README.md"><img src="docs/images/flags/se.svg" width="20" height="20" align="absmiddle" alt="🇸🇪"> Läs på svenska</a>
   </p>
 <!-- i18n-bar:end -->
 

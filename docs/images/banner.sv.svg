@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" lang="sv" xml:lang="sv" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-label="OpenPlane — öppen autopilot för flygplan">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1020"/>
+      <stop offset="0.55" stop-color="#101a36"/>
+      <stop offset="1" stop-color="#1b1140"/>
+    </linearGradient>
+    <linearGradient id="trail" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#39d0ff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#39d0ff" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#9fe7ff"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.78" cy="0.45" r="0.35">
+      <stop offset="0" stop-color="#39d0ff" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#39d0ff" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="400" fill="url(#sky)"/>
+  <rect width="1200" height="400" fill="url(#grid)"/>
+  <rect width="1200" height="400" fill="url(#glow)"/>
+
+  <!-- Круг LOITER и траектория RTH -->
+  <circle cx="930" cy="190" r="120" fill="none" stroke="#a371f7" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="6 8"/>
+  <circle cx="930" cy="190" r="6" fill="#f2cc60"/>
+  <text x="944" y="186" fill="#f2cc60" font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif" font-size="14">HOME</text>
+  <path d="M1150 360 C 1090 330, 1060 300, 1040 250" fill="none" stroke="url(#trail)" stroke-width="3"/>
+  <path d="M1040 250 C 1030 225, 1025 200, 1030 180" fill="none" stroke="#39d0ff" stroke-width="3" stroke-dasharray="2 7" stroke-linecap="round"/>
+
+  <!-- Самолёт (вид сверху), нос на север-запад -->
+  <g transform="translate(1040 250) rotate(-20) scale(1.25)">
+    <path d="M0 -46 C 4 -44, 6 -36, 6 -26 L 6 -8 L 58 6 L 58 14 L 6 8 L 5 30 L 20 38 L 20 44 L 0 40 L -20 44 L -20 38 L -5 30 L -6 8 L -58 14 L -58 6 L -6 -8 L -6 -26 C -6 -36, -4 -44, 0 -46 Z"
+          fill="#e6edf3" stroke="#39d0ff" stroke-width="1.5"/>
+    <rect x="-4" y="-40" width="8" height="10" rx="3" fill="#39d0ff" opacity="0.8"/>
+  </g>
+
+  <!-- Горизонт-прибор -->
+  <g transform="translate(700 300)" opacity="0.85">
+    <circle r="46" fill="#0d1117" stroke="#30363d" stroke-width="2"/>
+    <clipPath id="ah"><circle r="44"/></clipPath>
+    <g clip-path="url(#ah)" transform="rotate(-12)">
+      <rect x="-60" y="-60" width="120" height="64" fill="#1f6feb" opacity="0.55"/>
+      <rect x="-60" y="4" width="120" height="64" fill="#8b5a2b" opacity="0.6"/>
+      <line x1="-60" y1="4" x2="60" y2="4" stroke="#e6edf3" stroke-width="2"/>
+    </g>
+    <path d="M-26 0 H-8 L0 8 L8 0 H26" fill="none" stroke="#f2cc60" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <!-- Текст -->
+  <g font-family="Segoe UI, Roboto, Helvetica, Arial, sans-serif">
+    <text x="60" y="118" font-size="76" font-weight="800" fill="url(#title)" letter-spacing="1">OpenPlane</text>
+    <text x="62" y="162" font-size="25" fill="#c9d1d9">Öppen autopilot för flygplan — från en ESP32 för 10 $</text>
+    <text x="62" y="194" font-size="25" fill="#c9d1d9">till flygkontroller i klassen STM32H743</text>
+
+    <g font-size="15" font-weight="600">
+      <rect x="60" y="226" width="119" height="38" rx="19" fill="#39d0ff" fill-opacity="0.14" stroke="#39d0ff" stroke-opacity="0.6"/>
+      <text x="119" y="251" text-anchor="middle" fill="#9fe7ff">12 flyglägen</text>
+      <rect x="191" y="226" width="220" height="38" rx="19" fill="#3fb950" fill-opacity="0.14" stroke="#3fb950" stroke-opacity="0.6"/>
+      <text x="301" y="251" text-anchor="middle" fill="#7ee787">387 tester · 98 % täckning</text>
+      <rect x="60" y="276" width="206" height="38" rx="19" fill="#a371f7" fill-opacity="0.14" stroke="#a371f7" stroke-opacity="0.6"/>
+      <text x="163" y="301" text-anchor="middle" fill="#d2a8ff">MAVLink · QGroundControl</text>
+      <rect x="278" y="276" width="220" height="38" rx="19" fill="#ff9f43" fill-opacity="0.14" stroke="#ff9f43" stroke-opacity="0.6"/>
+      <text x="388" y="301" text-anchor="middle" fill="#ffc38a">Pitotrör av två barometrar</text>
+      <rect x="60" y="326" width="329" height="38" rx="19" fill="#f2cc60" fill-opacity="0.12" stroke="#f2cc60" stroke-opacity="0.6"/>
+      <text x="224" y="351" text-anchor="middle" fill="#f2cc60">Brytare på sändaren = funktion, på en rad</text>
+    </g>
+  </g>
+</svg>

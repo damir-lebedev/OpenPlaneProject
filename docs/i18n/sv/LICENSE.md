@@ -1,0 +1,19 @@
+# OpenPlane License
+
+(baserad på MIT-licensen, med krav på namnangivelse och användningsbegränsningar)
+
+⚠️ Inofficiell översättning, endast för att underlätta läsningen. Juridiskt bindande är enbart den engelska texten i filen [LICENSE](../../../LICENSE). Översättningen är gjord av AI och har inte granskats av personer med svenska som modersmål. Rapportera fel till [Damir Lebedev](https://github.com/damir-lebedev) eller i [ärendehanteraren](https://github.com/damir-lebedev/OpenPlaneProject/issues).
+
+Copyright (c) 2026 Damir Lebedev (Damn / Проклятый), https://github.com/damir-lebedev
+
+Härmed ges var och en som erhåller en kopia av denna programvara och tillhörande dokumentation, konstruktionsfiler (inklusive modeller av hårdvara och flygplansstommar) och övrigt material i detta repository (”Programvaran”) kostnadsfritt tillstånd att använda, kopiera, ändra, sammanfoga, publicera, distribuera, underlicensiera och/eller sälja kopior av Programvaran samt att tillåta personer som Programvaran tillhandahålls att göra detsamma, på följande villkor:
+
+1. **Namnangivelse.** Ovanstående upphovsrättsmeddelande och detta tillståndsmeddelande ska ingå i alla kopior eller väsentliga delar av Programvaran. All användning av Programvaran – i käll- eller binärform, inklusive härledda verk och produkter som byggts med den – ska ange den ursprungliga upphovspersonen, Damir Lebedev, på en plats där användarna av resultatet kan se det (dokumentation, README, ”Om”-sida eller motsvarande).
+2. **Ingen militär användning.** Programvaran, härledda verk och produkter som byggts med den eller innehåller den får inte användas för militära ändamål. Detta omfattar användning av eller för väpnade styrkor eller andra militära eller paramilitära organisationer; användning i krig, strid eller andra fientligheter; samt användning vid utveckling, tillverkning, provning eller drift av vapen, ammunition eller vapenbärande system eller målsökningssystem.
+3. **Ingen skada på människor eller egendom utan medgivande.** Programvaran, härledda verk och produkter som byggts med den eller innehåller den får inte användas för att avsiktligt skada eller döda någon person eller för att avsiktligt skada eller förstöra någon egendom, såvida inte varje person som skulle skadas och varje ägare till den egendom som skulle skadas i förväg skriftligen har gett sitt medgivande till just den skadan. Skada på din egen egendom, eller på egendom vars ägare har gett ett sådant medgivande, är inte en överträdelse så länge den inte utsätter någon annan för fara. Det är till exempel tillåtet att skjuta på sin egen drönare med ett luftvapen.
+4. **Säkerhet och lag.** När du bygger, provar och använder något som använder Programvaran ska du iaktta alla tillämpliga säkerhetsregler och försiktighetsåtgärder (inklusive de som gäller luftfartyg, radioutrustning och batterier) och följa all tillämplig lag. Ingenting i denna licens tillåter olagligt handlande, och ett medgivande enligt villkor 3 gör inte en olaglig handling laglig.
+5. **Efterlevnad.** Om du inte följer dessa villkor har du inget tillstånd att använda, kopiera, ändra eller distribuera Programvaran.
+
+PROGRAMVARAN TILLHANDAHÅLLS ”I BEFINTLIGT SKICK”, UTAN NÅGON GARANTI AV NÅGOT SLAG, VARE SIG UTTRYCKLIG ELLER UNDERFÖRSTÅDD, INKLUSIVE MEN INTE BEGRÄNSAT TILL GARANTIER OM SÄLJBARHET, LÄMPLIGHET FÖR ETT VISST ÄNDAMÅL OCH ICKE-INTRÅNG. UPPHOVSPERSONERNA ELLER UPPHOVSRÄTTSINNEHAVARNA ÄR UNDER INGA OMSTÄNDIGHETER ANSVARIGA FÖR NÅGRA ANSPRÅK, SKADOR ELLER ANNAT ANSVAR, VARE SIG I AVTAL, UTOMOBLIGATORISKT ELLER PÅ ANNAT SÄTT, SOM UPPSTÅR UR, TILL FÖLJD AV ELLER I SAMBAND MED PROGRAMVARAN ELLER ANVÄNDNINGEN AV ELLER ANNAN HANTERING AV PROGRAMVARAN.
+
+**DENNA PROGRAMVARA STYR LUFTFARTYG.** Den är inte certifierad för något ändamål. All flygning sker helt på egen risk.

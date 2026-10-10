@@ -1,9 +1,9 @@
 # Переводы документации / Documentation translations
 
-Вся документация проекта и лицензия переведены на 10 языков. **Оригинал — русский**
+Вся документация проекта и лицензия переведены на 11 языков. **Оригинал — русский**
 (файлы в корне репозитория и в [`docs/`](..)); переводы лежат рядом по языкам и
 повторяют структуру оригинала. / *All documentation and the license are translated into
-10 languages. **The Russian text is the original**; the translations mirror its structure.*
+11 languages. **The Russian text is the original**; the translations mirror its structure.*
 
 | Язык | Папка | Начать отсюда |
 |---|---|---|
@@ -18,6 +18,7 @@
 | Deutsch | [`de/`](de) | [README](de/README.md) |
 | 日本語 | [`ja/`](ja) | [README](ja/README.md) |
 | 한국어 | [`ko/`](ko) | [README](ko/README.md) |
+| Svenska | [`sv/`](sv) | [README](sv/README.md) |
 
 ## Что переведено
 
