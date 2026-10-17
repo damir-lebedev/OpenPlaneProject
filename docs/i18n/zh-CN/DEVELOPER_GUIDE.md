@@ -48,8 +48,8 @@ include/
 ├── storage/     KeyValueStore, KvPreferences — 不依赖 NVS 的设置存储
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
-│                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, Beeper, FlightController
+│                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
+│                FlightOutputState, FlightOutputs, Beeper, FlightController
 ├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
 │   │            Navigation, AltitudeSpeedController, LaunchController,
 │   │            SoaringController, AutoTrim, PidController
@@ -82,7 +82,8 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
 │  └ FlapsController  │  │  └ 导航、PID          │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
-│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+│ MotorReverse        │             │ ImuSensor* / BarometerSensor* / ...
+│ FlightOutputs       │             │
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORS                                          │
@@ -178,8 +179,10 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
 | `ControlMixer.h` | `fromSticks(rc)` → `ControlCommand`；`updateFlaps(目标, now)`；`mix(command)` → 带舵机反向的 PWM；襟副翼：副翼为 `flaps ± roll`（减号表示减速板） |
 | `FlapsController.h` | 襟翼平滑放出/收起，时间以参数传入 |
 | `ThrottleManager.h` | 来自摇杆的油门；信号丢失时为 `FAILSAFE_THROTTLE` |
+| `EscSignal.h` | 油门 + 方向 → 电调脉冲：双向 BLHeli 上 1500 = 停止，正转 1500..2000，反转 1500..1000 |
+| `MotorReverse.h` | 通过 `Feature::MOTOR_REVERSE` 反转电机——只在 DISARM 时；改变方向后 `REVERSE_SETTLE_MS` 内拒绝 ARM |
 | `ArmingManager.h` | 用 SwA 拨杆 ARM（油门在底时 OFF→ON 的切换 + 该模式所需的传感器检查），DISARM 立即生效 |
-| `FlightOutputState.h` | 期望的 PWM：`aileronLeft`、`aileronRight`、`elevator`、`rudder`、`throttle`、`aux1`（载荷）、`aux2`（相机） |
+| `FlightOutputState.h` | 期望的 PWM：`aileronLeft`、`aileronRight`、`elevator`、`rudder`、`throttle`（任一方向的 0..100%）、`motorReverse`、`aux1`（载荷）、`aux2`（相机） |
 | `Beeper.h` | 蜂鸣器：由 `BEEPER` 功能触发，或在地面时“模型丢失” |
 | `FlightOutputs.h` | 输出表（`outputInfo()`：键、名称、引脚、是否必需、状态字段），以及在它之上循环完成的所有工作：`begin()`、`write()`、`setFailsafe()`、状态、`printPulseSelfTest()` |
 | `FlightController.h` | 每个周期内的操作顺序、信号丢失（`applyLinkLoss()`）、供遥测使用的取值函数 |
@@ -309,14 +312,16 @@ PID 计算 `误差 = 目标 − 实际`：向右横滚（roll > 0）→ 横滚�
 | CH5 | SwA | `ARM` | ≥ 1750 = ARM（在 FS-i6 上是拨杆向下，朝自己一侧） |
 | CH6 | SwB | `SWB` | 默认是襟翼（≥ 1750 表示放出） |
 | CH7 | SwC（3 档） | `SWC` | 默认是模式：< 1250 MANUAL，1250–1749 STABILIZE，≥ 1750 AUTO_TAKEOFF |
-| CH8 | SwD | `SWD` | 默认是 RTH |
+| CH8 | SwD | `SWD` | 默认是电机反转（只在 DISARM 时切换） |
 | CH9 | VrA | `VRA` | 默认是增稳强度 |
 | CH10 | VrB | `VRB` | 默认是巡航速度 |
 
 CH6–CH10 只需在 `include/config/Controls.h` 中用一行代码即可分配（[AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md#一行代码分配功能)）。
 
 **ARM**（`ArmingManager`）：拨杆由 OFF 切到 ON，油门 < `THROTTLE_LOW_US`，并且已通过当前模式所需的传感器检查。否则拒绝，并在 Serial 中给出原因，需要重新执行一次 OFF→ON。开机时拨杆已在 ON 位置不会 ARM。OFF——立即
-DISARM。未 ARM 时，送往电调的油门被强制为 `PWM_MIN`。
+DISARM。未 ARM 时，送往电调的油门被强制为 `PWM_MIN`（在双向电调的引脚上就是 1500 的中立值）。
+
+**反转**（`MotorReverse`，`Feature::MOTOR_REVERSE`，默认 SwD）：电机方向只在未解锁时跟随开关；解锁状态下拨动开关在 DISARM 之前不起作用。改变方向后 `REVERSE_SETTLE_MS`（3 s）内拒绝 ARM。反转时只用飞手油门，不超过 `REVERSE_THROTTLE_LIMIT_PCT`（50%）；自动驾驶仪拿不到油门，失去信号时电机停转。
 
 **信号丢失**（`IBusReceiver::isSignalLost()`）：
 
@@ -405,12 +410,13 @@ IMU 校准（每次启动时以及通过 `i` 命令）：静止 2 s，陀螺仪 
 6. **蜂鸣器**——`Beeper`。
 7. **信号丢失**——`applyLinkLoss()`：已 ARM 时，舵面和油门按自动驾驶仪的
    failsafe 指令输出，否则舵面回中立位、电机关闭；然后 `return`。优先级高于下面的一切。
-8. **ARM**——`arming.update(rc, false)`。
+8. **ARM 与反转**——`arming.update(rc, false, reverse.armBlockReason(now))`，然后 `reverse.update(MOTOR_REVERSE, armed, now)`：方向只在未解锁时改变。
 9. **指令**——`autopilot->getCommand()`：在带增稳的模式下，摇杆表示期望角度，最终舵面指令由自动驾驶仪给出。
 10. **混控器**——`mixer.mix(command)` → 副翼（襟翼 + 横滚）、升降舵和方向舵的
     PWM，已考虑舵机反向。
 11. **油门**——`autopilot->applyThrottle(pilotThrottle)`：飞手油门、自动驾驶仪油门，或两者中的较大者（自动起飞）。然后，如果未 ARM 或处于 `MOTOR_KILL`，
     ——强制为 `PWM_MIN`。这项检查放在最后，以保证任何模式都无法让油门绕过 ARM。
+    反转时只用飞手油门，最多 `REVERSE_THROTTLE_LIMIT_PCT`。油门和方向由 `FlightOutputs`（`EscSignal`）换算成电调脉冲。
 12. **AUX**——载荷（`PAYLOAD_DROP`）和相机（`CAMERA_TILT`、`CAMERA_STAB`）。
 13. **`outputs.write(output)`**——向 7 路输出写入 PWM。
 
@@ -427,13 +433,14 @@ IMU 校准（每次启动时以及通过 `i` 命令）：静止 2 s，陀螺仪 
 {
   "rc": [1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1500],
   "armed": false,
+  "motorReverse": false,
   "failsafe": false,
   "outputs": {
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true },
+    "esc":          { "us": 1500, "attached": true },
     "aux1":         { "us": 1000, "attached": true },
     "aux2":         { "us": 1500, "attached": true }
   },
@@ -779,7 +786,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 检查所有开发
 - 只要串口监视器还开着，就无法向同一个端口烧录。
 - `lib_deps`：`olikraus/U8g2`（OLED）是唯一的外部库。
 - `test/`——详见 [`TESTING.md`](TESTING.md)：
-  - `pio test -e native -e native-stm32`——在 PC 上运行 387 个测试（硬件的模拟替身位于 `test/native/support/`），覆盖率用 `gcovr`；
+  - `pio test -e native -e native-stm32`——在 PC 上运行 392 个测试（硬件的模拟替身位于 `test/native/support/`），覆盖率用 `gcovr`；
   - `pio test -e esp32-s3`——在板子上运行 `test_feedback/`（反馈闭环仿真）和 `test_imu_orientation/`；每一项都会烧录测试固件，之后请用
     `pio run -t upload` 烧回正常固件。
 - 静态分析：`pio check -e esp32-s3`（cppcheck）、`pio check -e stm32h743`（对 `hal/stm32/` 和 `src/stm32/`
@@ -807,6 +814,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 检查所有开发
   `attachPin()` 中把 MCPWM 单元编号与定时器编号搞混：GPIO6/7 输出了
   GPIO4/5 的信号（电调被右摇杆控制）。输出已改写为基于 LEDC；要换回这个库，必须先用 `p` 检查。
 - **电调使用 50 Hz PWM**，固件中暂时没有油门行程校准模式。
+  主电调是双向的 BLHeli 80A（`ESC_BIDIRECTIONAL`）：在 BLHeliSuite 中设置（Motor Direction = Bidirectional，行程 1000..2000），中立值 1500 = 停止。换成普通电调时要设 `ESC_BIDIRECTIONAL = false`，否则它在“停止”时会得到一半油门。
 - **网页仪表盘**：接入点的密码很弱，而且飞行中也会接受命令。它是用于试验台和野外的工具，不是用于飞行的。
 - **原型机的机械结构**：第一架原型机飞过，发现电机固定不牢，机翼刚度不足。
 - **许可证为 OpenPlane License**（[LICENSE](LICENSE.md)）：MIT，并强制署名作者，禁止军事用途，禁止在未经当事人书面同意的情况下故意伤害人员和损坏财产。请不要在文件中添加其他许可证头，也不要删除作者姓名。

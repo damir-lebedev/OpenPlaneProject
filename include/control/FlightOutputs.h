@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 #include "config/Config.h"
+#include "control/EscSignal.h"
 #include "control/FlightOutputState.h"
 #include "hal/IBoard.h"
 
@@ -17,6 +18,11 @@
 // write(), вывод статуса и самопроверка проходят по ней циклом —
 // новый выход добавляется одной строкой таблицы + полем в
 // FlightOutputState + индексом в ServoChannel.
+//
+// У ESC в таблице — газ (0..100%), а на пин идёт импульс регулятора:
+// у двунаправленного BLHeli 1500 = стоп, направление — по
+// FlightOutputState::motorReverse (control/EscSignal.h). valueOf()
+// возвращает именно то, что уходит на пин.
 //
 // attached означает только то, что плата смогла выделить канал и
 // настроить пин. Подключён ли физический сервопривод — программно
@@ -72,6 +78,9 @@ public:
         }
 
         printStatus();
+        Serial.println(Config::ESC_BIDIRECTIONAL
+                           ? "ESC: двунаправленный (BLHeli 3D): 1500 мкс — стоп, реверс — только в DISARM"
+                           : "ESC: однонаправленный: 1000 мкс — стоп, реверса нет");
         return allRequired;
     }
 
@@ -80,10 +89,11 @@ public:
         return channel < ServoChannel::COUNT && attached[channel];
     }
 
-    // Значение выхода channel в состоянии state, мкс.
+    // Импульс на пине выхода channel в состоянии state, мкс.
     static uint16_t valueOf(const FlightOutputState& state, uint8_t channel)
     {
-        return state.*(outputInfo(channel).field);
+        const uint16_t value = state.*(outputInfo(channel).field);
+        return channel == ServoChannel::ESC ? EscSignal::pulseUs(value, state.motorReverse) : value;
     }
 
     void printStatus() const
@@ -150,7 +160,8 @@ public:
         lastState = state;
     }
 
-    // Немедленно выставить безопасные значения (нейтраль, газ выключен).
+    // Немедленно выставить безопасные значения (нейтраль, мотор стоит —
+    // у двунаправленного ESC это импульс 1500, не 1000).
     // Груз и камера остаются как были: потеря связи не должна
     // сбрасывать груз.
     void setFailsafe()

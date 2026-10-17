@@ -46,6 +46,10 @@
 // (ImuSensor::getPreflightProblem(): неподвижность при калибровке,
 // установка платы совпадает с сохранённой).
 //
+// blockReason — внешняя причина не армиться (nullptr — нет такой):
+// FlightController передаёт сюда MotorReverse::armBlockReason() —
+// мотор после смены направления ещё не остановился.
+//
 // GPS-фикс в проверки намеренно НЕ включён: LOITER и RTH без GPS
 // не опасны — они кружат на месте с удержанием высоты (см.
 // Autopilot::orbit()), а дом записывается при первом хорошем фиксе.
@@ -62,7 +66,8 @@ public:
 
     void update(
         const RcChannelState& rc,
-        bool receiverFailsafe
+        bool receiverFailsafe,
+        const char* blockReason = nullptr
     )
     {
         if (receiverFailsafe)
@@ -94,6 +99,7 @@ public:
         switchSeenOff = false;  // эта попытка использована, дальше — только через OFF
 
         const char* reason = checkFailureReason(rc);
+        if (!reason) reason = blockReason;
 
         if (reason)
         {

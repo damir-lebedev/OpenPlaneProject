@@ -35,10 +35,13 @@
 
 نبضات المخارج المطلوبة، بوحدة PWM µs. الافتراضي — الأسطح محايدة والخانق `PWM_MIN`.
 
+‏`throttle` هو مقدار الخانق (1000..2000 = 0..100%) في أي اتجاه؛ ويحوّله `FlightOutputs` مع `motorReverse` إلى نبضة ESC ‏(عبر `EscSignal`).
+
 | الحقل | الافتراضي |
 |---|---|
 | `aileronLeft` و`aileronRight` و`elevator` و`rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
+| `bool motorReverse` | `false` — المحرك إلى الأمام |
 | `aux1` | `PAYLOAD_CLOSED_US` — جهاز إسقاط الحمولة مغلق |
 | `aux2` | `PWM_CENTER` — الكاميرا |
 
@@ -97,6 +100,36 @@
 
 ---
 
+## ‏`EscSignal`
+
+**الملف:** `control/EscSignal.h` · **النوع:** namespace · **يعتمد على:** `Config`
+
+الخانق (1000..2000 = 0..100%) والاتجاه ← النبضة على طرف ESC.
+
+| الدالة | الوصف |
+|---|---|
+| `uint16_t pulseUs(uint16_t throttleUs, bool reverse)` | ‏`ESC_BIDIRECTIONAL` ‏(BLHeli 80A في وضع 3D): 0% ← `ESC_NEUTRAL_US` ‏(1500)، وإلى الأمام 1500..2000، وإلى الخلف 1500..1000. والمتحكم أحادي الاتجاه: 1000..2000 كما هي، ويُتجاهل `reverse`. ويُقصّ الخانق خارج 1000..2000 |
+| `uint16_t stopUs()` | نبضة «المحرك متوقف» (1500 في ثنائي الاتجاه، و1000 في العادي) |
+
+تحويل فقط بلا حمايات: متى يُبدَّل الاتجاه يقرّره `MotorReverse`، وحدّ الخانق إلى الخلف — `FlightController`.
+
+---
+
+## ‏`MotorReverse`
+
+**الملف:** `control/MotorReverse.h` · **يعتمد على:** `Config`
+
+اتجاه المحرك بحسب مفتاح `Feature::MOTOR_REVERSE` (افتراضيًّا SwD) — **دون ARM فقط**.
+
+| الدالة | الوصف |
+|---|---|
+| `void update(bool requested, bool armed, uint32_t nowMs)` | دون ARM — يتبع الاتجاه المفتاحَ فورًا (يُطبع في Serial ‏`MotorReverse: мотор НАЗАД` / `вперёд` — «المحرك إلى الخلف» / «إلى الأمام»). وأثناء ARM — لا أثر للمفتاح، ويُطبع مرة واحدة «реверс НЕ переключён» («لم يُبدَّل العكس»)، وينتظر الاتجاه الجديد DISARM. ومع `ESC_BIDIRECTIONAL = false` لا يُفعَّل العكس أبدًا |
+| `bool isReversed() const` | المحرك إلى الخلف |
+| `bool isPending() const` | المفتاح في الوضع الآخر فعلًا، والاتجاه ينتظر DISARM |
+| `const char* armBlockReason(uint32_t nowMs) const` | سبب لرفض ARM: مرّ على آخر تبديل للاتجاه أقل من `REVERSE_SETTLE_MS` (قد يكون المحرك ما زال يدور)؛ وإلا `nullptr` |
+
+---
+
 ## ‏`ArmingManager`
 
 **الملف:** `control/ArmingManager.h` · **يعتمد على:** `Autopilot` (يمكن أن يكون فارغًا) و`RcChannelState` و`Config` و`Channels`
@@ -107,7 +140,7 @@
 | الدالة | الوصف |
 |---|---|
 | `explicit ArmingManager(Autopilot* ap = nullptr)` | دون طيار آلي يُفحص الخانق فقط |
-| `void update(const RcChannelState& rc, bool receiverFailsafe)` | عند failsafe — لا شيء (فالمفتاح في إطار failsafe لا يعكس الطيار). المفتاح OFF ← DISARM، و`switchSeenOff = true`. والانتقال OFF→ON ← الفحوص ← ARM أو رفض |
+| `void update(const RcChannelState& rc, bool receiverFailsafe, const char* blockReason = nullptr)` | عند failsafe — لا شيء (فالمفتاح في إطار failsafe لا يعكس الطيار). المفتاح OFF ← DISARM، و`switchSeenOff = true`. والانتقال OFF→ON ← الفحوص ← ARM أو رفض و`blockReason` سبب رفض خارجي (من `FlightController`: ‏`MotorReverse::armBlockReason()`) |
 | `bool isArmed() const` | مُفعَّل |
 | `const char* getLastRefusalReason() const` | سبب آخر رفض أو `nullptr`؛ ويُمسح عند إطفاء المفتاح |
 
@@ -119,6 +152,7 @@
 | أي وضع عدا MANUAL، وIMU موجودة لكنها لا تستجيب | «IMU لا تستجيب…» |
 | أي وضع عدا MANUAL، وفي IMU مشكلة بفحص ما قبل الطيران | نص `ImuSensor::getPreflightProblem()` |
 | وضع يتطلب الارتفاع (`needsAltitude`: ‏ALT_HOLD وCRUISE وLOITER وRTH وAUTO_LAND وSOARING)، ومقياس الضغط موجود لكنه لا يستجيب | «مقياس الضغط لا يستجيب…» |
+| نجح كل ما عدا ذلك، لكن مُرِّر `blockReason` | `blockReason` (مثلًا «تبدّل اتجاه المحرك للتو…») |
 
 الحساس غير الموجود في البناء (`nullptr`) لا يمنع ARM؛ وفي MANUAL تُفعَّل
 الطائرة حتى دون أي حساسات. ولم يُدرج تثبيت GPS في الفحوص عمدًا: فدون GPS
@@ -132,7 +166,7 @@
 
 ## ‏`FlightOutputs`
 
-**الملف:** `control/FlightOutputs.h` · **يعتمد على:** `IBoard` و`FlightOutputState` و`Config`
+**الملف:** `control/FlightOutputs.h` · **يعتمد على:** `IBoard` و`FlightOutputState` و`EscSignal` و`Config`
 
 الصنف الوحيد الذي يعرف مجموعة مخارج PWM وترتيبها. وجميع المخارج موصوفة في
 جدول واحد؛ وتمرّ عليه `begin()` و`write()` والحالة والفحص الذاتي في حلقة.
@@ -151,13 +185,13 @@
 |---|---|
 | `static const OutputInfo& outputInfo(uint8_t ch)` | سطر من الجدول؛ والترتيب = `ServoChannel` |
 | `explicit FlightOutputs(IBoard& board)` | |
-| `bool begin()` | ‏`attach(PWM_MIN, PWM_MAX)` لكل مخرج، وطباعة الحالة؛ و`true` إذا حصلت جميع المخارج **الإلزامية** على قناة |
+| `bool begin()` | ‏`attach(PWM_MIN, PWM_MAX)` لكل مخرج، وطباعة الحالة ونوع ESC؛ و`true` إن حصلت كل المخارج **الإلزامية** على قناة |
 | `bool isAttached(uint8_t ch) const` | المخرج موصول (فهرس خارج المدى ← `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | قيمة المخرج من الحالة بحسب الجدول |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | النبضة على طرف المخرج: الحقل بحسب الجدول، وللـ ESC — عبر `EscSignal::pulseUs(throttle, motorReverse)` |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | النبضة المقيسة مقابل المتوقعة على كل طرف موصول؛ و«OK» عندما يكون الفرق ≤ 15 µs |
 | `void write(const FlightOutputState&)` | كتابة جميع المخارج وتذكّر الحالة |
-| `void setFailsafe()` | الأسطح محايدة (`FAILSAFE_*`)، والخانق `FAILSAFE_THROTTLE`؛ وAUX كما كانت (فلا تُسقَط الحمولة عند فقدان الاتصال) |
+| `void setFailsafe()` | أسطح التحكم في الوضع المحايد (`FAILSAFE_*`)، والخانق `FAILSAFE_THROTTLE` ‏(1500 على طرف ESC ثنائي الاتجاه)؛ وAUX كما كانت (لا تُسقَط الحمولة بفقدان الاتصال) |
 | `void setBuzzer(bool on)` | صافرة اللوحة (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | آخر حالة مكتوبة |
 
@@ -169,7 +203,7 @@
 ## ‏`FlightController`
 
 **الملف:** `control/FlightController.h` · **الطبقة:** COORDINATION ·
-**يعتمد على:** `IBusReceiver` و`ControlMixer` و`ThrottleManager` و`ArmingManager` و`FlightOutputs` و`Autopilot*` و`PilotSwitches*` و`Beeper`
+**يعتمد على:** `IBusReceiver` و`ControlMixer` و`ThrottleManager` و`ArmingManager` و`FlightOutputs` و`Autopilot*` و`PilotSwitches*` و`Beeper` و`MotorReverse`
 
 المنسِّق الوحيد لحلقة التحكم: لا يحلل UART بنفسه، ولا يمس PWM، ولا يحسب
 الخلّاط — بل يستدعي الآخرين بالترتيب الصحيح فقط. والمخطط المفصّل في
@@ -189,6 +223,7 @@
 | `int16_t getFlapsUs() const` | وضع الفلابات |
 | `const PilotSwitches* getSwitches() const` و`const PilotInputs& getInputs() const` | مفاتيح هذه الدورة ومقابضها |
 | `bool isLostModelBeeping() const` | صافرة «أنا هنا» تعمل |
+| `const MotorReverse& getMotorReverse() const` | اتجاه المحرك والعكس المنتظر |
 
 ترتيب `update()`:
 
@@ -199,18 +234,23 @@
    `mixer.updateFlaps(target)`: ‏`AIRBRAKE` ← −`AIRBRAKE_US`، و`FLAPS` ←
    `FLAPS_DEPLOYED_US`، و`Knob::FLAPS` ← بسلاسة، وعند فقدان الاتصال — 0؛
 5. ‏`autopilot->update(armed, failsafe, pilotThrottle, sticks)` — **دائمًا**؛
+   وفي العكس يُمرَّر `PWM_MIN` بدل `pilotThrottle` (المحرك مطفأ بالنسبة إلى الطيار الآلي)؛
 6. الصافرة: `Beeper::update(BEEPER, armed, failsafe, now)`؛
 7. الاتصال مفقود ← `applyLinkLoss()` والخروج من الدورة؛
-8. ‏`arming.update(rc, false)`؛
+8. ‏`arming.update(rc, false, reverse.armBlockReason(now))`، ثم
+   `reverse.update(MOTOR_REVERSE, armed, now)` — عند DISARM يتبدّل الاتجاه في الدورة نفسها؛
 9. ‏`command = autopilot->getCommand()` (أو العصي دون طيار آلي)، والفلابات — خاصتها؛
-10. ‏`output = mixer.mix(command)`؛ و`output.throttle = autopilot->applyThrottle(pilotThrottle)`؛
+10. ‏`output = mixer.mix(command)`؛ و`output.motorReverse = reverse.isReversed()`؛
+    إلى الأمام — `output.throttle = autopilot->applyThrottle(pilotThrottle)` بحدّ
+    `THROTTLE_LIMIT_PCT`، وإلى الخلف — خانق الطيار بحدّ
+    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`؛
 11. غير مُفعَّل أو `MOTOR_KILL` ← `throttle = PWM_MIN` (آخر خطوة)؛
 12. ‏AUX1 — الحمولة (`PAYLOAD_DROP`)، وAUX2 — الكاميرا (`Knob::CAMERA_TILT`، و`CAMERA_STAB` يطرح الميل)؛
 13. ‏`outputs.write(output)`.
 
 ‏`applyLinkLoss()`: إذا كان الطيار الآلي في failsafe (مُفعَّل: RTH أو
 انسياب) — فالأسطح والخانق وفق أمر الطيار الآلي (تُسحب الفلابات بسلاسة،
-و`MOTOR_KILL` ما زال يُسكت المحرك، وAUX كما كانت)؛ وإلا فـ`outputs.setFailsafe()`.
+و`MOTOR_KILL` ما زال يُسكت المحرك، وAUX كما كانت)؛ وإلا فـ`outputs.setFailsafe()`. وفي العكس يبقى المحرك متوقفًا دائمًا.
 
 ---
 

@@ -12,9 +12,11 @@
 #include "control/ArmingManager.h"
 #include "control/ControlCommand.h"
 #include "control/ControlMixer.h"
+#include "control/EscSignal.h"
 #include "control/FlapsController.h"
 #include "control/FlightOutputState.h"
 #include "control/FlightOutputs.h"
+#include "control/MotorReverse.h"
 #include "control/ThrottleManager.h"
 #include "rc/RcChannelState.h"
 #include "helpers/TestSupport.h"
@@ -385,7 +387,9 @@ void test_output_table_matches_servo_channels()
     s.aux2 = 1007;
     for (uint8_t ch = 0; ch < ServoChannel::COUNT; ++ch)
     {
-        TEST_ASSERT_EQUAL_UINT16(1001 + ch, FlightOutputs::valueOf(s, ch));
+        // У ESC — импульс регулятора, а не газ (двунаправленный: 1500 = стоп).
+        const uint16_t expected = ch == ServoChannel::ESC ? escUs(1001 + ch) : 1001 + ch;
+        TEST_ASSERT_EQUAL_UINT16(expected, FlightOutputs::valueOf(s, ch));
     }
 }
 
@@ -427,15 +431,19 @@ void test_outputs_write_and_failsafe()
     s.throttle = 1600;
     outputs.write(s);
     TEST_ASSERT_EQUAL_UINT16(1100, board.servos[ServoChannel::AILERON_LEFT].lastUs);
-    TEST_ASSERT_EQUAL_UINT16(1600, board.servos[ServoChannel::ESC].lastUs);
+    TEST_ASSERT_EQUAL_UINT16(escUs(1600), board.servos[ServoChannel::ESC].lastUs);
     TEST_ASSERT_EQUAL_UINT16(1600, outputs.getLastState().throttle);
+
+    s.motorReverse = true;   // тот же газ назад: 1500 - 60% от 500
+    outputs.write(s);
+    TEST_ASSERT_EQUAL_UINT16(1200, board.servos[ServoChannel::ESC].lastUs);
 
     outputs.setFailsafe();
     TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_AILERON, board.servos[ServoChannel::AILERON_LEFT].lastUs);
     TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_AILERON, board.servos[ServoChannel::AILERON_RIGHT].lastUs);
     TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_ELEVATOR, board.servos[ServoChannel::ELEVATOR].lastUs);
     TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_RUDDER, board.servos[ServoChannel::RUDDER].lastUs);
-    TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_THROTTLE, board.servos[ServoChannel::ESC].lastUs);
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::FAILSAFE_THROTTLE), board.servos[ServoChannel::ESC].lastUs);
 }
 
 void test_pulse_self_test_reports_match_mismatch_and_missing()
@@ -457,6 +465,72 @@ void test_pulse_self_test_reports_match_mismatch_and_missing()
     TEST_ASSERT_TRUE(contains(log, "элерон L GPIO4: 1505 / 1500  OK"));
     TEST_ASSERT_TRUE(contains(log, "элерон R GPIO5: 1000 / 1500  НЕ СОВПАДАЕТ"));
     TEST_ASSERT_TRUE(contains(log, "руль выс GPIO6: нет импульса / 1500  НЕ СОВПАДАЕТ"));
+}
+
+// ------------------------------------------------------------
+// ESC: газ -> импульс, реверс
+// ------------------------------------------------------------
+
+void test_esc_signal_bidirectional_mapping()
+{
+    TEST_ASSERT_TRUE(Config::ESC_BIDIRECTIONAL);   // основной ESC — BLHeli 80A в 3D
+    TEST_ASSERT_EQUAL_UINT16(1500, EscSignal::stopUs());
+    TEST_ASSERT_EQUAL_UINT16(1500, EscSignal::pulseUs(1000, false));
+    TEST_ASSERT_EQUAL_UINT16(1500, EscSignal::pulseUs(1000, true));
+    TEST_ASSERT_EQUAL_UINT16(1750, EscSignal::pulseUs(1500, false));
+    TEST_ASSERT_EQUAL_UINT16(2000, EscSignal::pulseUs(2000, false));
+    TEST_ASSERT_EQUAL_UINT16(1250, EscSignal::pulseUs(1500, true));
+    TEST_ASSERT_EQUAL_UINT16(1000, EscSignal::pulseUs(2000, true));
+    // Вне диапазона — обрезается, а не переворачивается.
+    TEST_ASSERT_EQUAL_UINT16(1500, EscSignal::pulseUs(900, true));
+    TEST_ASSERT_EQUAL_UINT16(2000, EscSignal::pulseUs(2100, false));
+}
+
+void test_motor_reverse_changes_only_when_disarmed_and_blocks_arm_while_settling()
+{
+    MotorReverse reverse;
+    TEST_ASSERT_FALSE(reverse.isReversed());
+    TEST_ASSERT_NULL(reverse.armBlockReason(0));   // при включении ничего не ждём
+
+    reverse.update(true, true, 100);               // ARM — тумблер не действует
+    TEST_ASSERT_FALSE(reverse.isReversed());
+    TEST_ASSERT_TRUE(reverse.isPending());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "реверс НЕ переключён"));
+    reverse.update(true, true, 102);               // предупреждение — один раз
+    TEST_ASSERT_EQUAL_STRING("", takeSerial().c_str());
+
+    reverse.update(true, false, 1000);             // DISARM — переключается
+    TEST_ASSERT_TRUE(reverse.isReversed());
+    TEST_ASSERT_FALSE(reverse.isPending());
+    TEST_ASSERT_NOT_NULL(reverse.armBlockReason(1000));
+    TEST_ASSERT_NOT_NULL(reverse.armBlockReason(1000 + Config::REVERSE_SETTLE_MS - 1));
+    TEST_ASSERT_NULL(reverse.armBlockReason(1000 + Config::REVERSE_SETTLE_MS));
+
+    reverse.update(false, true, 5000);             // и обратно — тоже только без ARM
+    TEST_ASSERT_TRUE(reverse.isReversed());
+    reverse.update(true, true, 5002);              // тумблер вернули — ждать нечего
+    TEST_ASSERT_FALSE(reverse.isPending());
+    takeSerial();
+}
+
+void test_arming_refuses_with_external_block_reason()
+{
+    ArmingManager arming;
+    arming.update(armRc(false), false);
+    arming.update(armRc(true), false, "мотор крутится");
+    TEST_ASSERT_FALSE(arming.isArmed());
+    TEST_ASSERT_EQUAL_STRING("мотор крутится", arming.getLastRefusalReason());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "ARM отклонён — мотор крутится"));
+
+    // Газ не внизу — эта причина главнее.
+    arming.update(armRc(false), false);
+    arming.update(armRc(true, 1500), false, "мотор крутится");
+    TEST_ASSERT_EQUAL_STRING("газ не на минимуме", arming.getLastRefusalReason());
+
+    arming.update(armRc(false), false);
+    arming.update(armRc(true), false, nullptr);
+    TEST_ASSERT_TRUE(arming.isArmed());
+    takeSerial();
 }
 
 int main()
@@ -482,6 +556,9 @@ int main()
     RUN_TEST(test_output_table_matches_servo_channels);
     RUN_TEST(test_outputs_begin_attaches_all_and_reports_required);
     RUN_TEST(test_outputs_write_and_failsafe);
+    RUN_TEST(test_esc_signal_bidirectional_mapping);
+    RUN_TEST(test_motor_reverse_changes_only_when_disarmed_and_blocks_arm_while_settling);
+    RUN_TEST(test_arming_refuses_with_external_block_reason);
     RUN_TEST(test_pulse_self_test_reports_match_mismatch_and_missing);
     return UNITY_END();
 }

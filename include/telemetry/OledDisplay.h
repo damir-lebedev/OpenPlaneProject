@@ -164,19 +164,21 @@ private:
         display.sendBuffer();
     }
 
-    // Связь / ARM / режим / закрылки. Потеря связи — инверсией строки.
+    // Связь / ARM / режим / реверс мотора / закрылки. Потеря связи —
+    // инверсией строки.
     void drawStatusLine()
     {
         const bool rxLost = controller.isReceiverFailsafe();
         char line[32];
 
-        snprintf(line, sizeof(line), "%s %s %s%s",
+        snprintf(line, sizeof(line), "%s %s %s%s%s",
                  rxLost ? "RX LOST" : "RX ok",
                  controller.isArmed() ? "ARM" : "safe",
                  !autopilot                        ? "MAN"
                  : autopilot->isFailsafeGliding()   ? "GLIDE"
                  : autopilot->isFailsafeReturning() ? "FSRTH"
                                                     : AutopilotNames::modeShort(autopilot->getMode()),
+                 controller.getOutputState().motorReverse ? " REV" : "",
                  controller.getFlapsUs() > 0 ? " FL" : "");
 
         if (rxLost)

@@ -62,7 +62,7 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (не подключён)<br/>FeedbackSupervisor и модули"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -409,6 +409,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -418,24 +419,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → газ пилота
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(цель по функциям)
-    FC->>AP: update(armed, linkLost, газ пилота, стики)
+    FC->>AP: update(armed, linkLost, газ пилота (в реверсе 0), стики)
     Note over AP: датчики читаются ВСЕГДА;<br/>навигация, failsafe, геозабор,<br/>режим, координация, автотриммер
     FC->>OUT: setBuzzer(Beeper)
     alt связь потеряна
         alt armed и failsafe автопилота (RTH / GLIDE)
             FC->>MX: mix(команда автопилота)
-            FC->>OUT: write(рули, газ автопилота, AUX как были)
+            FC->>OUT: write(рули, газ автопилота (в реверсе 0), AUX как были)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — ARM и тумблеры не читаются
     else связь есть
-        FC->>AM: update(rc) — тумблер ARM
+        FC->>AM: update(rc, MR.armBlockReason) — тумблер ARM
+        FC->>MR: update(MOTOR_REVERSE, armed) — направление только без ARM
         FC->>AP: getCommand() — итоговая команда рулей
         FC->>MX: mix(command) → PWM с реверсом
-        FC->>AP: applyThrottle(газ пилота)
-        Note over FC: !armed или MOTOR_KILL → throttle = PWM_MIN (последним)
+        FC->>AP: applyThrottle(газ пилота) — только вперёд
+        Note over FC: назад — газ пилота ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed или MOTOR_KILL → throttle = PWM_MIN (последним)
         FC->>OUT: write(output + AUX1 груз, AUX2 камера)
+        Note over OUT: ESC: газ + направление → импульс (EscSignal),<br/>двунаправленный ESC: 1500 = стоп
     end
 ```
 
@@ -446,6 +449,9 @@ sequenceDiagram
   (RTH с мотором) или `FAILSAFE_THROTTLE`.
 - **Ни один режим не протащит газ мимо ARM**: принудительный `PWM_MIN` при
   `!armed` и `MOTOR_KILL` стоит после `Autopilot::applyThrottle()`.
+- **Реверс не включается на ходу**: `MotorReverse` меняет направление только
+  без ARM, а `ArmingManager` не армит ещё `REVERSE_SETTLE_MS` после смены.
+  В реверсе газ — только пилота, автопилот видит мотор выключенным.
 - **Автопилот выдаёт итоговую команду** (`getCommand()`), в режимах со
   стабилизацией стики — это желаемые углы; коррекции = команда − стики
   (для лога и дашборда). Всё в одних знаках (`ControlCommand`) до микшера.
@@ -460,7 +466,7 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> WaitOff : включение платы
     WaitOff --> Ready : тумблер OFF
-    Ready --> Armed : тумблер OFF→ON, газ < THROTTLE_LOW_US,<br/>проверки датчиков режима пройдены
+    Ready --> Armed : тумблер OFF→ON, газ < THROTTLE_LOW_US,<br/>проверки датчиков режима пройдены,<br/>направление мотора не менялось REVERSE_SETTLE_MS
     Ready --> WaitOff : тумблер ON, проверка не пройдена<br/>(причина → Serial, getLastRefusalReason)
     Armed --> Ready : тумблер OFF (DISARM сразу)
     note right of Armed : потеря связи не меняет состояние
@@ -468,6 +474,25 @@ stateDiagram-v2
 
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### Реверс мотора (`MotorReverse`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : тумблер ON и не armed
+    Reverse --> Forward : тумблер OFF и не armed
+    Forward --> ForwardPending : тумблер ON при ARM
+    ForwardPending --> Forward : тумблер OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : тумблер OFF при ARM
+    ReversePending --> Reverse : тумблер ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : после каждой смены направления<br/>ARM запрещён REVERSE_SETTLE_MS
+```
+
+`*Pending` — `isPending()`: тумблер уже в другом положении, мотор крутится
+как при ARM; предупреждение в Serial печатается один раз.
 
 ### Режимы автопилота (`Autopilot` + `PilotSwitches`)
 

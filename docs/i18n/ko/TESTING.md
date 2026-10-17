@@ -96,10 +96,10 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 |---|---|---|
 | `native/test_hal` | 17 | `II2CBus` 도우미(NACK, 짧은 읽기: 버퍼는 건드리지 않음), `I2cRegisterDevice`, `SpiRegisterDevice`(읽기 비트, BMP388의 더미 바이트), `Esp32I2CBus`(5 ms 타임아웃), `Esp32SpiBus`(모드 0–3), `Esp32UartPort`(8N1, 핀), `Esp32ServoOutput`(50 Hz/14비트, 펄스 제한, LEDC 고장, 입력 버퍼를 통한 측정), `Esp32Board`(버스, UART, 채널 순서, AUX, 부저) |
 | `native/test_rc` | 16 | `RcChannelState`, `RcInput`, iBUS 파싱: 조각으로 도착하는 프레임, CRC, 12비트 값, 조종기의 페일세이프, 500 ms 타임아웃(`micros()` 오버플로를 넘어가는 경우 포함), 쓰레기 데이터, 재동기화 |
-| `native/test_control` | 21 | 플랩(속도, 첫 호출, 일시 정지), 믹서(부호, 리버스, 플래퍼론), 스로틀, ARM 상태 머신과 모드 센서 확인, 출력 표와 펄스 자가 점검 |
+| `native/test_control` | 24 | 플랩(속도, 첫 호출, 일시 정지), 믹서(부호, 리버스, 플래퍼론), 스로틀, ARM 상태 머신과 모드 센서 확인, 출력 표와 펄스 자가 점검, 양방향 ESC 펄스, 모터 역회전은 DISARM 상태에서만, 방향을 바꾼 뒤 ARM 금지 |
 | `native/test_autopilot` | 22 | PID(센서 각속도 기반 D항, 적분, 안티 와인드업, `dt`), 각도 모드로서의 STABILIZE, 시간 기반 자동 이륙, 승강타를 쓰는 ALT_HOLD, 신호 상실 시 활공 |
 | `native/test_autopilot_modes` | 31 | 12개 모드 전체와 센서가 없을 때 각 모드의 반응, 바인딩 표와 `static_assert`, 기능과 노브, 항법(침로, 원, 홈 지점, 지오펜스), failsafe RTH/활공, 손으로 던져 이륙, 소어링, 오토 트림(기록은 지상에서만) |
-| `native/test_flight_controller` | 12 | 실제 클래스로 돌리는 `FlightController`의 한 주기: 우선순위는 신호 상실 > ARM > 스틱/오토파일럿 > 스로틀, AUX, `MOTOR_KILL`, 부저 |
+| `native/test_flight_controller` | 14 | 실제 클래스로 돌리는 `FlightController`의 한 주기: 우선순위는 신호 상실 > ARM > 스틱/오토파일럿 > 스로틀, AUX, `MOTOR_KILL`, 부저; SwD 역회전: DISARM 상태에서만, 3 s 동안 ARM 불가, 후진 스로틀 50%, 오토파일럿 스로틀 없음, 통신이 끊기면 모터 정지 |
 | `native/test_imu` | 21 | MPU6050/6500/9250과 ICM-42688: 식별, 레지스터, 스케일, 축 회전과 항공 부호, 버스 오류, 자이로 보정과 비행 전 점검, 세 가지 자세로 하는 장착 보정, NVS, 자세 필터 |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`, I2C와 SPI의 BMP388, Bosch 기준 구현과 비교한 BME280/BMP280, 나침반(침로, NVS에 저장하는 하드 아이언 보정), u-blox M10(CFG-VALSET, NAV-PVT, 손상된 프레임, 타임아웃), `SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV(16X/32X, 예비 주소, SPI), ICM-45686(간접 레지스터), QMC6309, SPL06-001(데이터시트 공식), BMP581(DRDY와 대체 경로), 피토관(영점, 필터, 밀도, 바뀐 호스, 오래된 데이터, 기압계 두 개의 노이즈를 반영한 “비행”) |
@@ -111,7 +111,7 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native/test_sim` | 15 | 비행기 모델로 하는 펌웨어 전체의 폐루프 비행: 뱅크에서의 회복, 옆바람 속 CRUISE, LOITER, RTH, failsafe RTH/활공, 지오펜스, 활주로에서의 자동 이륙, 손으로 던져 이륙, 자동 착륙, 서멀, 나선에서의 RESCUE, 속도 유지와 실속 방지, 루프 안의 실제 피토관, “삐뚤어진” 비행기의 오토 트림, 비행 중 센서 고장(IMU, 기압계, 피토관, GPS) |
 | `native/test_feedback_units` | 14 | 피드백 모듈을 하나씩: 속도 소스, 공중/지상 판정, RLS 추정, 제어기, 실속 징후, 이륙/착륙 중단 |
 | `native/test_app` | 10 | ESP32-S3의 `src/main.cpp`, 벤치용 구성 MPU6500/BMP581/QMC5883P/OLED: `loop()` 주기, 조종기 → 서보, ARM, 모드, 신호 상실, 콘솔, 대시보드, 화면, 블랙박스(코어 0의 태스크, 스로틀 시 기록, DISARM 뒤의 비행, `bb list`) |
-| `native/test_app_lsm6dsv_pitot` | 9 | ESP32-S3의 `src/main.cpp`, 비행용 구성: LSM6DSV + QMC6309 + SPL06 + 피토관 속 BMP581 + GPS: 모든 칩 식별, 피토관 영점과 속도, 고도, GPS 기준 홈 지점, 칩의 각도로 하는 STABILIZE, 홈 지점으로 가는 RTH, 버스 탐색, 대시보드 |
+| `native/test_app_lsm6dsv_pitot` | 9 | ESP32-S3의 `src/main.cpp`, 비행용 구성: LSM6DSV + QMC6309 + SPL06 + 피토관 속 BMP581 + GPS: 모든 칩 식별, 피토관 영점과 속도, 고도, GPS 기준 홈 지점, 칩의 각도로 하는 STABILIZE, 홈 지점으로 가는 RTH, 버스 탐색, 대시보드; 비행 중 SwD(역회전)는 DISARM 전까지 효과 없음 |
 | `native/test_app_icm45686_esp32dev` | 5 | **ESP32 38핀**(`BOARD_ESP32_CLASSIC`)의 `src/main.cpp`, ICM-45686 + QMC6309 + SPL06 + BMP581 구성: 보드 핀 배치, IPREG 필터, 손으로 던져 이륙, 안정화와 속도, 버스 하나만 탐색 |
 | `native_stm32/test_app_stm32_lsm6dsv_pitot` | 9 | **STM32H743**의 `src/stm32/main.cpp`, 비행용 구성: 태스크와 우선순위, 2 ms 주기, 피토관, PWM 타이머와 `pulseIn`, 비행 중 MAVLink, GCS에서의 모드 변경, 백그라운드 태스크가 설정을 “플래시”에 기록, I2C1의 화면, 콘솔 |
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743과 **SPI로 연결한** ICM-45686, BMP581 + QMC6309: 전원을 켤 때 손상된 플래시, GCS의 ALT_HOLD가 고도를 유지, 신호 상실 → RTH, MAVLink에서 확인 가능, 손상된 이미지 다시 쓰기 |
@@ -120,7 +120,7 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native_stm32/test_app_stm32_no_sd` | 2 | 카드가 없는 `src/stm32/main.cpp`: 블랙박스는 비활성화되고 이유를 설명함, 비행기는 비행함, 메뉴 `k`는 망가지지 않음 |
 | `test_feedback` | 10 | 피드백 루프가 있는 비행기의 폐루프 시뮬레이션(PC와 보드 모두) |
 | `test_imu_orientation` | 5 | 무작위 장착 300가지에서 하는 IMU 장착 보정(PC와 보드 모두) |
-| **합계** | **387** | `native`에 340개 + `native-stm32`에 47개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
+| **합계** | **392** | `native`에 345개 + `native-stm32`에 47개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
 
 ### STM32 보드에서의 테스트
 

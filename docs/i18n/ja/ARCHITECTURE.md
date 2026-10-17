@@ -58,7 +58,7 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK（未接続）<br/>FeedbackSupervisor とモジュール"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -362,6 +362,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -371,24 +372,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → パイロットのスロットル
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(機能から決まる目標)
-    FC->>AP: update(armed, linkLost, パイロットのスロットル, スティック)
+    FC->>AP: update(armed, linkLost, パイロットのスロットル（逆転中は 0）, スティック)
     Note over AP: センサーは常に読む,<br/>ナビゲーション、failsafe、ジオフェンス,<br/>モード、協調、オートトリム
     FC->>OUT: setBuzzer(Beeper)
     alt 通信喪失
         alt armed かつオートパイロットの failsafe（RTH / GLIDE）
             FC->>MX: mix(オートパイロットの指令)
-            FC->>OUT: write(舵面、オートパイロットのスロットル、AUX は据え置き)
+            FC->>OUT: write(舵面、オートパイロットのスロットル（逆転中は 0）、AUX は据え置き)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — ARM とスイッチは読まない
     else 通信あり
-        FC->>AM: update(rc) — ARM スイッチ
+        FC->>AM: update(rc, MR.armBlockReason) — ARM スイッチ
+        FC->>MR: update(MOTOR_REVERSE, armed) — 方向は ARM していないときのみ
         FC->>AP: getCommand() — 最終的な舵面の指令
         FC->>MX: mix(command) → リバース付き PWM
-        FC->>AP: applyThrottle(パイロットのスロットル)
-        Note over FC: !armed または MOTOR_KILL → throttle = PWM_MIN（最後に適用）
+        FC->>AP: applyThrottle(パイロットのスロットル) — 前進時のみ
+        Note over FC: 後退：パイロットのスロットル ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed または MOTOR_KILL → throttle = PWM_MIN（最後に適用）
         FC->>OUT: write(output + AUX1 ペイロード、AUX2 カメラ)
+        Note over OUT: ESC：スロットル＋方向 → パルス（EscSignal）、<br/>双方向 ESC：1500 = 停止
     end
 ```
 
@@ -396,6 +399,7 @@ sequenceDiagram
 
 - **信号喪失**：スイッチによるモードと機能は変わりません。ARM は読まれず、リセットもされません。モーターはオートパイロットの failsafe の判断（モーター付きの RTH）または `FAILSAFE_THROTTLE` によってのみ動きます。
 - **どのモードも ARM をすり抜けてスロットルを通すことはできません**：`!armed` と `MOTOR_KILL` のときの強制 `PWM_MIN` は、`Autopilot::applyThrottle()` のあとに置かれています。
+- **逆転は回転中に入りません**：`MotorReverse` は ARM していないときだけ方向を変え、`ArmingManager` は方向変更後 `REVERSE_SETTLE_MS` の間 ARM を拒否します。逆転中のスロットルはパイロットのものだけで、オートパイロットからはモーター停止に見えます。
 - **オートパイロットが最終的な指令を出します**（`getCommand()`）。スタビライゼーションのモードでは、スティックは目標の角度です。補正 = 指令 − スティック（ログとダッシュボード用）。ミキサーまでは、すべてが 1 つの符号体系（`ControlCommand`）です。
 
 ---
@@ -408,7 +412,7 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> WaitOff : ボードの電源投入
     WaitOff --> Ready : スイッチ OFF
-    Ready --> Armed : スイッチ OFF→ON、スロットル < THROTTLE_LOW_US、<br/>モードのセンサー確認に合格
+    Ready --> Armed : スイッチ OFF→ON、スロットル < THROTTLE_LOW_US、<br/>モードのセンサー確認に合格、<br/>モーターの方向が REVERSE_SETTLE_MS 変わっていない
     Ready --> WaitOff : スイッチ ON、確認に不合格<br/>（理由 → Serial、getLastRefusalReason）
     Armed --> Ready : スイッチ OFF（即 DISARM）
     note right of Armed : 信号喪失では状態は変わらない
@@ -416,6 +420,24 @@ stateDiagram-v2
 
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### モーター逆転（`MotorReverse`）
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : スイッチ ON かつ ARM でない
+    Reverse --> Forward : スイッチ OFF かつ ARM でない
+    Forward --> ForwardPending : ARM 中にスイッチ ON
+    ForwardPending --> Forward : スイッチ OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : ARM 中にスイッチ OFF
+    ReversePending --> Reverse : スイッチ ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : 方向を変えるたびに<br/>REVERSE_SETTLE_MS の間 ARM を拒否
+```
+
+`*Pending`：`isPending()`。スイッチはすでに反対の位置にあり、モーターは ARM 時の方向のまま回っています。Serial への警告は 1 回だけ表示されます。
 
 ### オートパイロットのモード（`Autopilot` + `PilotSwitches`）
 

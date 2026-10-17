@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-387%20passing-3fb950?style=for-the-badge" alt="387 Tests">
+  <img src="https://img.shields.io/badge/tests-392%20passing-3fb950?style=for-the-badge" alt="392 Tests">
   <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="98 % Testabdeckung">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 Builds ohne Warnungen">
   <br>
@@ -60,8 +60,8 @@
 |---|---|
 | **Was es ist** | Eine offene Flugsteuerung und ein Autopilot für ferngesteuerte Flugzeuge. Das Hauptboard ist der STM32H743 (ein Board der Pixhawk-Klasse): Auf einem DevEBox-Board **läuft die Firmware bereits und lässt sich per Sender steuern** – [es gibt ein Video](#-der-stm32h743-erwacht-auf-dem-board-zum-leben), gerade werden die Sensoren angeschlossen. Die frühere Basis ist ein ESP32-S3 für rund 10 $, der den Prüfstand mit allen Sensoren durchlaufen hat. |
 | **Was er kann** | 12 Flugmodi – von der Stabilisierung bis zur Rückkehr nach Hause, Kreisen per GPS, Handstart, Autolandung und **Thermikfliegen**. Ein Pitotrohr aus zwei billigen Barometern. MAVLink-Telemetrie für QGroundControl und Mission Planner. |
-| **Der Clou** | Jeder Schalter oder Drehregler am Sender = jede beliebige Funktion. **Eine Zeile** in `Controls.h` – und SwD ist nicht mehr RTH, sondern ein Lastabwurf. |
-| **Warum man dem trauen kann** | 387 automatische Tests (dazu 9 auf dem Board selbst mit einer echten SD-Karte), 98 % des Codes durch Tests abgedeckt, 24 Builds „Board × Sensoren“ ohne eine einzige Warnung, Simulationen jedes Modus im geschlossenen Regelkreis. |
+| **Der Clou** | Jeder Schalter oder Drehregler am Sender = jede beliebige Funktion. **Eine Zeile** in `Controls.h` – und SwD ist nicht mehr die Motorumkehr, sondern ein Lastabwurf. |
+| **Warum man dem trauen kann** | 392 automatische Tests (dazu 9 auf dem Board selbst mit einer echten SD-Karte), 98 % des Codes durch Tests abgedeckt, 24 Builds „Board × Sensoren“ ohne eine einzige Warnung, Simulationen jedes Modus im geschlossenen Regelkreis. |
 | **Ehrlich gesagt** | Bisher ist nur der manuelle Modus geflogen (der erste Prototyp). Der STM32H743 wurde bisher nur auf dem Prüfstand und ohne Sensoren getestet. Der Autopilot wurde auf dem Prüfstand, durch Tests und in Simulationen überprüft und wartet auf die Flugerprobung – [Stand weiter unten](#-ehrlicher-stand). |
 
 ---
@@ -73,15 +73,15 @@
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),              // nach Hause, solange eingeschaltet
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),// Motorumkehr – nur im DISARM
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),       // „weicher / härter“ direkt im Flug
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
 ```
 
-Sie möchten auf SwD statt RTH das Thermikfliegen haben? `Bind::mode(Channels::SWD, MODE_SOARING)`. Einen Lastabwurf auf SwB? `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`. Unterläuft Ihnen ein Fehler – etwa zwei Modi auf einem Schalter oder ein bereits belegter Knüppel –, **schlägt der Build fehl**: Die Tabelle prüft der Compiler (`static_assert`). Beim Einschalten gibt das Flugzeug selbst aus, was auf welchem Schalter liegt.
+Sie möchten auf SwD statt der Motorumkehr das Thermikfliegen haben? `Bind::mode(Channels::SWD, MODE_SOARING)`. Einen Lastabwurf auf SwB? `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`. Unterläuft Ihnen ein Fehler – etwa zwei Modi auf einem Schalter oder ein bereits belegter Knüppel –, **schlägt der Build fehl**: Die Tabelle prüft der Compiler (`static_assert`). Beim Einschalten gibt das Flugzeug selbst aus, was auf welchem Schalter liegt.
 
-**12 Modi · 10 Funktionen · 7 Drehregler** – alles mit Beispielen in der [Autopilot-Referenz](AUTOPILOT_GUIDE.md).
+**12 Modi · 11 Funktionen · 7 Drehregler** – alles mit Beispielen in der [Autopilot-Referenz](AUTOPILOT_GUIDE.md).
 
 ---
 
@@ -205,7 +205,7 @@ Was das beweist: Die Kette „Sender → iBUS → Firmware → PWM“ funktionie
 
 | | |
 |---|---|
-| **387 automatische Tests** | Module, Treiber auf Ebene der Chipregister, Flüge im geschlossenen Regelkreis, die Firmware für ESP32 und STM32 **vollständig** auf dem PC; dazu 9 Tests auf dem STM32-Board selbst mit einer echten SD-Karte |
+| **392 automatische Tests** | Module, Treiber auf Ebene der Chipregister, Flüge im geschlossenen Regelkreis, die Firmware für ESP32 und STM32 **vollständig** auf dem PC; dazu 9 Tests auf dem STM32-Board selbst mit einer echten SD-Karte |
 | **98,3 % der Zeilen, 87,7 % der Verzweigungen** | `gcovr`-Abdeckung, einschließlich des STM32-Codes |
 | **24/24 Builds** | 4 Boards × 6 Sensorsets, `-Wall -Wextra`, null Warnungen |
 | **0 Beanstandungen** | cppcheck und clang-tidy über den gesamten Code |
@@ -262,6 +262,7 @@ Im seriellen Monitor: `h` – Menü, `b` – welche Chips auf den Bussen sichtba
 |---|---|
 | Manuelle Steuerung, Mixer | ✈️ im Flug (erster Prototyp, C3) |
 | ARM, Failsafe, Klappen, Servos, Motor | 🔧 auf dem Prüfstand (S3) |
+| Bidirektionaler Fahrtregler (ESC) BLHeli 80A, Umkehr nur im DISARM | 🧪 Tests; mit dem echten Regler noch nicht ausprobiert |
 | STABILIZE | 🔧 auf dem Prüfstand: Die Ruder reagieren auf Neigungen in die richtige Richtung |
 | Prüfstandssensoren (MPU6500, BMP388, QMC5883P), OLED, Dashboard | 🔧 auf dem Prüfstand |
 | Übrige Modi, Navigation, Pitotrohr, MAVLink | 🧪 Tests und Simulationen im geschlossenen Regelkreis |

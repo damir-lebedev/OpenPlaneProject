@@ -96,10 +96,10 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 |---|---|---|
 | `native/test_hal` | 17 | `II2CBus` の補助機能（NACK、短い読み出し：バッファには触れない）、`I2cRegisterDevice`、`SpiRegisterDevice`（読み出しビット、BMP388 のダミーバイト）、`Esp32I2CBus`（5 ms のタイムアウト）、`Esp32SpiBus`（モード 0〜3）、`Esp32UartPort`（8N1、ピン）、`Esp32ServoOutput`（50 Hz/14 ビット、パルスの制限、LEDC の故障、入力バッファ経由の測定）、`Esp32Board`（バス、UART、チャンネル順、AUX、ブザー） |
 | `native/test_rc` | 16 | `RcChannelState`、`RcInput`、iBUS の解析：分割されて届くフレーム、CRC、12 ビットの値、送信機のフェイルセーフ、500 ms のタイムアウト（`micros()` のオーバーフローをまたぐ場合も）、ゴミデータ、再同期 |
-| `native/test_control` | 21 | フラップ（速度、初回の呼び出し、一時停止）、ミキサー（符号、リバース、フラッペロン）、スロットル、ARM のステートマシンとモードのセンサー確認、出力テーブルとパルスの自己診断 |
+| `native/test_control` | 24 | フラップ（速度、初回の呼び出し、一時停止）、ミキサー（符号、リバース、フラッペロン）、スロットル、ARM のステートマシンとモードのセンサー確認、出力テーブルとパルスの自己診断、双方向 ESC のパルス、モーター逆転は DISARM 中のみで方向変更後は ARM 禁止 |
 | `native/test_autopilot` | 22 | PID（センサーの角速度に基づく D 項、積分、アンチウィンドアップ、`dt`）、角度モードとしての STABILIZE、時間による自動離陸、昇降舵による ALT_HOLD、信号喪失時の滑空 |
 | `native/test_autopilot_modes` | 31 | 全 12 モードと、センサーがないときの各モードの反応、割り当て表と `static_assert`、機能とダイヤル、ナビゲーション（針路、円、ホーム地点、ジオフェンス）、failsafe RTH/滑空、手投げ発進、ソアリング、オートトリム（書き込みは地上のみ） |
-| `native/test_flight_controller` | 12 | 実物のクラスでの `FlightController` の 1 周期：優先順位は 信号喪失 > ARM > スティック/オートパイロット > スロットル、AUX、`MOTOR_KILL`、ブザー |
+| `native/test_flight_controller` | 14 | 実物のクラスでの `FlightController` の 1 周期：優先順位は 信号喪失 > ARM > スティック/オートパイロット > スロットル、AUX、`MOTOR_KILL`、ブザー。SwD の逆転：DISARM 中のみ、3 s は ARM 不可、後退はスロットル 50%、オートパイロットのスロットルなし、通信途絶でモーター停止 |
 | `native/test_imu` | 21 | MPU6050/6500/9250 と ICM-42688：識別、レジスタ、スケール、軸の回転と航空機の符号、バスのエラー、ジャイロの校正と飛行前チェック、3 つの姿勢による取り付け校正、NVS、姿勢フィルター |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`、I2C と SPI の BMP388、Bosch の基準実装との照合による BME280/BMP280、コンパス（針路、NVS に保存するハードアイアン校正）、u-blox M10（CFG-VALSET、NAV-PVT、壊れたフレーム、タイムアウト）、`SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV（16X/32X、代替アドレス、SPI）、ICM-45686（間接レジスタ）、QMC6309、SPL06-001（データシートの式）、BMP581（DRDY と予備経路）、ピトー管（ゼロ点、フィルター、密度、ホースの取り違え、古いデータ、2 つの気圧センサーのノイズを含む「飛行」） |
@@ -111,7 +111,7 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 | `native/test_sim` | 15 | 機体モデルを使った、ファームウェア全体の閉ループ飛行：バンクからの回復、横風の中の CRUISE、LOITER、RTH、failsafe RTH/滑空、ジオフェンス、滑走路からの自動離陸、手投げ発進、自動着陸、サーマル、スパイラルからの RESCUE、速度保持と失速防止、ループ内の本物のピトー管、「ゆがんだ」機体のオートトリム、飛行中のセンサー故障（IMU、気圧センサー、ピトー管、GPS） |
 | `native/test_feedback_units` | 14 | フィードバックの各モジュール単体：速度の取得元、空中/地上の判定、RLS 推定、コントローラー、失速の兆候、離陸/着陸の中止 |
 | `native/test_app` | 10 | ESP32-S3 上の `src/main.cpp`、ベンチ用セット MPU6500/BMP581/QMC5883P/OLED：`loop()` の周期、送信機 → サーボ、ARM、モード、信号喪失、コンソール、ダッシュボード、画面、ブラックボックス（コア 0 のタスク、スロットルでの記録、DISARM 後のフライト、`bb list`） |
-| `native/test_app_lsm6dsv_pitot` | 9 | ESP32-S3 上の `src/main.cpp`、飛行用セット：LSM6DSV + QMC6309 + SPL06 + ピトー管内の BMP581 + GPS：すべてのチップの識別、ピトー管のゼロ点と速度、高度、GPS によるホーム地点、チップの角度による STABILIZE、ホーム地点への RTH、バスの探索、ダッシュボード |
+| `native/test_app_lsm6dsv_pitot` | 9 | ESP32-S3 上の `src/main.cpp`、飛行用セット：LSM6DSV + QMC6309 + SPL06 + ピトー管内の BMP581 + GPS：すべてのチップの識別、ピトー管のゼロ点と速度、高度、GPS によるホーム地点、チップの角度による STABILIZE、ホーム地点への RTH、バスの探索、ダッシュボード。飛行中の SwD（逆転）は DISARM まで効かない |
 | `native/test_app_icm45686_esp32dev` | 5 | **ESP32 38 ピン**（`BOARD_ESP32_CLASSIC`）上の `src/main.cpp`、ICM-45686 + QMC6309 + SPL06 + BMP581 のセット：ボードのピン配置、IPREG フィルター、手投げ発進、安定化と速度、1 本のバスの探索 |
 | `native_stm32/test_app_stm32_lsm6dsv_pitot` | 9 | **STM32H743** 上の `src/stm32/main.cpp`、飛行用セット：タスクと優先度、2 ms の周期、ピトー管、PWM タイマーと `pulseIn`、飛行中の MAVLink、GCS からのモード変更、バックグラウンドタスクによる設定の「フラッシュ」への書き込み、I2C1 の画面、コンソール |
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743 と **SPI 接続**の ICM-45686 および BMP581 + QMC6309：起動時のフラッシュ破損、GCS からの ALT_HOLD が高度を保持、信号喪失 → RTH、MAVLink で確認できること、壊れたイメージの書き直し |
@@ -120,7 +120,7 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 | `native_stm32/test_app_stm32_no_sd` | 2 | カードなしの `src/stm32/main.cpp`：ブラックボックスは無効になり理由を説明する、飛行機は飛ぶ、メニュー `k` は壊れない |
 | `test_feedback` | 10 | フィードバックループを備えた飛行機の閉ループシミュレーション（PC とボードの両方） |
 | `test_imu_orientation` | 5 | 300 通りのランダムな取り付けでの IMU の取り付け校正（PC とボードの両方） |
-| **合計** | **387** | `native` に 340 + `native-stm32` に 47（さらにボード専用が 9：`test_blackbox_sd`） |
+| **合計** | **392** | `native` に 345 + `native-stm32` に 47（さらにボード専用が 9：`test_blackbox_sd`） |
 
 ### STM32 ボード上のテスト
 

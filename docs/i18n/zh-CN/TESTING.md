@@ -96,10 +96,10 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 |---|---|---|
 | `native/test_hal` | 17 | `II2CBus` 的辅助函数（NACK、短读取——缓冲区保持不变）、`I2cRegisterDevice`、`SpiRegisterDevice`（读位、BMP388 的哑字节）、`Esp32I2CBus`（5 ms 超时）、`Esp32SpiBus`（模式 0–3）、`Esp32UartPort`（8N1、引脚）、`Esp32ServoOutput`（50 Hz/14 位、脉宽限制、LEDC 故障、通过输入缓冲区测量）、`Esp32Board`（总线、UART、通道顺序、AUX、蜂鸣器） |
 | `native/test_rc` | 16 | `RcChannelState`、`RcInput`，iBUS 解析：分段到达的帧、CRC、12 位数值、遥控器的失控保护、500 ms 超时（包括 `micros()` 溢出时）、乱码数据、重新同步 |
-| `native/test_control` | 21 | 襟翼（速度、首次调用、暂停）、混控器（符号、反向、襟副翼）、油门、ARM 状态机与模式传感器检查、输出表与脉冲自检 |
+| `native/test_control` | 24 | 襟翼（速度、首次调用、暂停）、混控器（符号、反向、襟副翼）、油门、ARM 状态机与模式传感器检查、输出表与脉冲自检、双向电调脉冲、电机反转只在 DISARM 时切换以及改变方向后禁止 ARM |
 | `native/test_autopilot` | 22 | PID（取自传感器角速度的 D 项、积分、抗积分饱和、`dt`）、作为角度模式的 STABILIZE、按时间的自动起飞、用升降舵实现的 ALT_HOLD、信号丢失时的滑翔 |
 | `native/test_autopilot_modes` | 31 | 全部 12 种模式及各自对传感器缺失的反应、绑定表与 `static_assert`、功能与旋钮、导航（航向、绕圈、返航点、地理围栏）、failsafe RTH/滑翔、手抛起飞、翱翔、自动配平（仅在地面写入） |
-| `native/test_flight_controller` | 12 | 在真实的类上完整运行一个 `FlightController` 控制周期：优先级为 信号丢失 > ARM > 摇杆/自动驾驶仪 > 油门；AUX、`MOTOR_KILL`、蜂鸣器 |
+| `native/test_flight_controller` | 14 | 在真实的类上完整运行一个 `FlightController` 控制周期：优先级为 信号丢失 > ARM > 摇杆/自动驾驶仪 > 油门；AUX、`MOTOR_KILL`、蜂鸣器；SwD 反转：只在 DISARM 时、3 s 内不能 ARM、反转 50% 油门、自动驾驶仪不给油门、失去信号时电机停转 |
 | `native/test_imu` | 21 | MPU6050/6500/9250 与 ICM-42688：识别、寄存器、比例系数、轴旋转与航空坐标符号约定、总线错误、陀螺仪校准与飞行前检查、基于三个姿态的安装校准、NVS、姿态滤波器 |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`、通过 I2C 和 SPI 的 BMP388、对照 Bosch 参考算法的 BME280/BMP280、电子罗盘（航向、NVS 中的 hard-iron 校准）、u-blox M10（CFG-VALSET、NAV-PVT、损坏的帧、超时）、`SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV（16X/32X、备用地址、SPI）、ICM-45686（间接寄存器）、QMC6309、SPL06-001（数据手册公式）、BMP581（DRDY 与备用路径）、皮托管（零点、滤波、空气密度、软管接反、过期数据、带两个气压计噪声的“飞行”） |
@@ -111,7 +111,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native/test_sim` | 15 | 整套固件与飞机模型的闭环飞行：从倾斜姿态改平、侧风中的 CRUISE、LOITER、RTH、failsafe RTH/滑翔、地理围栏、从跑道自动起飞、手抛起飞、自动降落、热气流、从螺旋中 RESCUE、速度保持与失速保护、回路中的真实皮托管、“歪”飞机的自动配平、飞行中的传感器故障（IMU、气压计、皮托管、GPS） |
 | `native/test_feedback_units` | 14 | 各反馈模块的单独测试：速度来源、空中/地面判断、RLS 估计、控制器、失速征兆、起飞/降落中止 |
 | `native/test_app` | 10 | 在 ESP32-S3 上运行 `src/main.cpp`，配台架套件 MPU6500/BMP581/QMC5883P/OLED：`loop()` 周期、遥控器 → 舵机、ARM、模式、信号丢失、控制台、仪表盘、屏幕、黑匣子（运行在核心 0 上的任务、按油门记录、DISARM 之后的飞行、`bb list`） |
-| `native/test_app_lsm6dsv_pitot` | 9 | 在 ESP32-S3 上运行 `src/main.cpp`，配飞行套件：LSM6DSV + QMC6309 + SPL06 + 皮托管内的 BMP581 + GPS——识别所有芯片、皮托管零点与速度、高度、按 GPS 确定的返航点、按芯片给出的角度做 STABILIZE、RTH 返回返航点、总线探测、仪表盘 |
+| `native/test_app_lsm6dsv_pitot` | 9 | 在 ESP32-S3 上运行 `src/main.cpp`，配飞行套件：LSM6DSV + QMC6309 + SPL06 + 皮托管内的 BMP581 + GPS——识别所有芯片、皮托管零点与速度、高度、按 GPS 确定的返航点、按芯片给出的角度做 STABILIZE、RTH 返回返航点、总线探测、仪表盘；飞行中 SwD（反转）在 DISARM 之前不起作用 |
 | `native/test_app_icm45686_esp32dev` | 5 | 在 **ESP32 38 针版**（`BOARD_ESP32_CLASSIC`）上运行 `src/main.cpp`，配 ICM-45686 + QMC6309 + SPL06 + BMP581 套件：开发板引脚分配、IPREG 滤波器、手抛起飞、增稳与速度、仅探测一条总线 |
 | `native_stm32/test_app_stm32_lsm6dsv_pitot` | 9 | 在 **STM32H743** 上运行 `src/stm32/main.cpp`，配飞行套件：任务与优先级、2 ms 周期、皮托管、PWM 定时器与 `pulseIn`、飞行中的 MAVLink、从 GCS 切换模式、由后台任务把设置写入“闪存”、I2C1 上的屏幕、控制台 |
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743 配 **SPI 接口**的 ICM-45686 和 BMP581 + QMC6309：开机时闪存已损坏、从 GCS 发起的 ALT_HOLD 保持高度、信号丢失 → RTH、在 MAVLink 中可见；改写损坏的映像 |
@@ -120,7 +120,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native_stm32/test_app_stm32_no_sd` | 2 | 不带卡的 `src/stm32/main.cpp`：黑匣子关闭并说明原因、飞机照常飞行、菜单 `k` 不出错 |
 | `test_feedback` | 10 | 带反馈回路的飞机闭环仿真（在电脑和开发板上） |
 | `test_imu_orientation` | 5 | 在 300 种随机安装方式下校准 IMU 的安装姿态（在电脑和开发板上） |
-| **合计** | **387** | `native` 中 340 个 + `native-stm32` 中 47 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
+| **合计** | **392** | `native` 中 345 个 + `native-stm32` 中 47 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
 
 ### STM32 开发板上的测试
 

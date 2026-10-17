@@ -11,6 +11,7 @@
 #include "control/ControlMixer.h"
 #include "control/FlightOutputState.h"
 #include "control/FlightOutputs.h"
+#include "control/MotorReverse.h"
 #include "control/ThrottleManager.h"
 #include "rc/IBusReceiver.h"
 #include "sensors/SensorInterface.h"
@@ -35,12 +36,20 @@
 //                   автопилот возвращает домой или планирует (мотор
 //                   выключен), на земле — рули в нейтраль; дальше цикл
 //                   не идёт
-//   5. ARMING     — тумблер ARM (SwA)
-//   6. ВЫХОДЫ     — команда -> PWM каждого серво; газ ограничен
+//   5. ARMING     — тумблер ARM (SwA); сразу после смены направления
+//                   ARM запрещён (мотор ещё крутится)
+//   6. РЕВЕРС     — MotorReverse: направление мотора по тумблеру
+//                   Feature::MOTOR_REVERSE, но только пока не armed
+//   7. ВЫХОДЫ     — команда -> PWM каждого серво; газ ограничен
 //                   Config::THROTTLE_LIMIT_PCT (стик и автопилот
-//                   одинаково), затем -> 0, если не armed или
-//                   включён Feature::MOTOR_KILL; AUX1 — груз,
-//                   AUX2 — камера; пищалка
+//                   одинаково), назад — ещё и REVERSE_THROTTLE_LIMIT_PCT,
+//                   затем -> 0, если не armed или включён
+//                   Feature::MOTOR_KILL; AUX1 — груз, AUX2 — камера;
+//                   пищалка
+//
+// В реверсе газом управляет только пилот: автопилот получает газ
+// 0 (для него мотор выключен — ни автовзлёт, ни круиз не стартуют),
+// его газ не применяется, при потере связи мотор глохнет.
 // ============================================================
 
 class FlightController
@@ -88,6 +97,7 @@ public:
         const PilotInputs& in = inputs();
 
         const uint16_t pilotThrottle = throttle.update(rc, receiverFailsafe);
+        const bool reversed = reverse.isReversed();
 
         ControlCommand sticks;
         if (!receiverFailsafe)
@@ -97,7 +107,7 @@ public:
         }
         sticks.flaps = mixer.updateFlaps(receiverFailsafe ? 0.0f : flapsTarget(in), nowMs);
 
-        if (autopilot) autopilot->update(arming.isArmed(), receiverFailsafe, pilotThrottle, sticks);
+        if (autopilot) autopilot->update(arming.isArmed(), receiverFailsafe, reversed ? Config::PWM_MIN : pilotThrottle, sticks);
 
         outputs.setBuzzer(beeper.update(in.has(Feature::BEEPER), arming.isArmed(), receiverFailsafe, nowMs));
 
@@ -107,14 +117,26 @@ public:
             return;  // стики и тумблеры в этом цикле не участвуют
         }
 
-        arming.update(rc, false);
+        // ARM — раньше реверса: на DISARM направление меняется в том же
+        // такте, а щелчок обоих тумблеров разом армит в старом
+        // направлении (новое ждёт следующего DISARM).
+        arming.update(rc, false, reverse.armBlockReason(nowMs));
+        reverse.update(in.has(Feature::MOTOR_REVERSE), arming.isArmed(), nowMs);
 
         ControlCommand command = autopilot ? autopilot->getCommand() : sticks;
         command.flaps = sticks.flaps;
 
         FlightOutputState output = mixer.mix(command);
-        output.throttle = autopilot ? autopilot->applyThrottle(pilotThrottle) : pilotThrottle;
-        output.throttle = capThrottle(output.throttle);
+        output.motorReverse = reverse.isReversed();
+        if (output.motorReverse)
+        {
+            output.throttle = capReverseThrottle(pilotThrottle);
+        }
+        else
+        {
+            output.throttle = autopilot ? autopilot->applyThrottle(pilotThrottle) : pilotThrottle;
+            output.throttle = capThrottle(output.throttle);
+        }
 
         // ARM реально блокирует газ (см. ArmingManager) — ставим ПОСЛЕ
         // автопилота, чтобы ни один режим не мог протащить газ мимо
@@ -141,6 +163,7 @@ public:
     const PilotSwitches* getSwitches() const { return switches; }
     const PilotInputs& getInputs() const { return inputs(); }
     bool isLostModelBeeping() const { return beeper.isLostModel(); }
+    const MotorReverse& getMotorReverse() const { return reverse; }
 
 
 private:
@@ -155,6 +178,7 @@ private:
     PilotSwitches* switches;
 
     Beeper beeper;
+    MotorReverse reverse;
     PilotInputs noInputs;
 
     const PilotInputs& inputs() const
@@ -190,6 +214,20 @@ private:
         ));
     }
 
+    // Газ назад: свой предел REVERSE_THROTTLE_LIMIT_PCT, но не выше
+    // общего THROTTLE_LIMIT_PCT. Ход стика так же пропорционален.
+    static uint16_t capReverseThrottle(uint16_t us)
+    {
+        const uint16_t pct = min(Config::REVERSE_THROTTLE_LIMIT_PCT, Config::THROTTLE_LIMIT_PCT);
+        return static_cast<uint16_t>(map(
+            us,
+            Config::PWM_MIN,
+            Config::PWM_MAX,
+            Config::PWM_MIN,
+            Config::PWM_MIN + (Config::PWM_MAX - Config::PWM_MIN) * pct / 100
+        ));
+    }
+
     // Куда ехать закрылкам: тормоз важнее закрылков, тумблер — крутилки.
     static float flapsTarget(const PilotInputs& in)
     {
@@ -218,8 +256,9 @@ private:
 
     // Потеря связи. В воздухе (armed) автопилот ведёт самолёт сам:
     // домой с мотором или планирование с выключенным мотором (см.
-    // Autopilot::setFailsafe()); закрылки плавно убираются, груз и
-    // камера — как были. На земле или без автопилота — нейтраль.
+    // Autopilot::setFailsafe()); в реверсе мотор всегда стоит;
+    // закрылки плавно убираются, груз и камера — как были. На земле
+    // или без автопилота — нейтраль.
     void applyLinkLoss(int16_t flapsUs, const PilotInputs& in)
     {
         if (!autopilot || !autopilot->isFailsafeActive())
@@ -234,7 +273,9 @@ private:
         FlightOutputState output = mixer.mix(command);
         output.throttle = autopilot->applyThrottle(Config::FAILSAFE_THROTTLE);
         output.throttle = capThrottle(output.throttle);
-        if (in.has(Feature::MOTOR_KILL)) output.throttle = Config::PWM_MIN;
+        output.motorReverse = reverse.isReversed();
+        // Назад автопилот мотором не ведёт — домой только планированием.
+        if (in.has(Feature::MOTOR_KILL) || output.motorReverse) output.throttle = Config::PWM_MIN;
         output.aux1 = outputs.getLastState().aux1;
         output.aux2 = outputs.getLastState().aux2;
         outputs.write(output);

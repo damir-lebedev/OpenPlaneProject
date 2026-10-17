@@ -64,7 +64,7 @@ flowchart TD
     APP["APPLIKATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["KOORDINERING<br/>control/FlightController"]
     TELE["TELEMETRI<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["STYRNING<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["STYRNING<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["ÅTERKOPPLING (inte ansluten)<br/>FeedbackSupervisor och moduler"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -408,6 +408,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -417,24 +418,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → pilotens gas
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(mål från funktionerna)
-    FC->>AP: update(armed, linkLost, pilotens gas, spakar)
+    FC->>AP: update(armed, linkLost, pilotens gas (0 i reversering), spakar)
     Note over AP: sensorerna läses ALLTID,<br/>navigering, failsafe, geofence,<br/>läge, koordinering, autotrimning
     FC->>OUT: setBuzzer(Beeper)
     alt förbindelsen förlorad
         alt armerat och autopilotens failsafe (RTH / GLIDE)
             FC->>MX: mix(autopilotens kommando)
-            FC->>OUT: write(roderytor, autopilotens gas, AUX oförändrade)
+            FC->>OUT: write(roderytor, autopilotens gas (0 i reversering), AUX oförändrade)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — ARM och brytarna läses inte
     else förbindelse finns
-        FC->>AM: update(rc) — ARM-brytaren
+        FC->>AM: update(rc, MR.armBlockReason) — ARM-brytaren
+        FC->>MR: update(MOTOR_REVERSE, armed) — riktning bara utan ARM
         FC->>AP: getCommand() — det slutliga roderkommandot
         FC->>MX: mix(kommando) → PWM med reversering
-        FC->>AP: applyThrottle(pilotens gas)
-        Note over FC: !armed eller MOTOR_KILL → gas = PWM_MIN (tillämpas sist)
+        FC->>AP: applyThrottle(pilotens gas) — bara framåt
+        Note over FC: bakåt – pilotens gas ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed eller MOTOR_KILL → gas = PWM_MIN (tillämpas sist)
         FC->>OUT: write(utdata + AUX1 last, AUX2 kamera)
+        Note over OUT: ESC: gas + riktning → puls (EscSignal),<br/>dubbelriktad ESC: 1500 = stopp
     end
 ```
 
@@ -442,6 +445,9 @@ Cykelns viktigaste invarianter:
 
 - **Förlorad förbindelse** – läget och funktionerna från brytarna ändras inte; ARM varken läses eller återställs; motorn går bara på beslut av autopilotens failsafe (RTH med motor) eller `FAILSAFE_THROTTLE`.
 - **Inget läge kan smyga gasen förbi ARM**: den påtvingade `PWM_MIN` för `!armed` och `MOTOR_KILL` kommer efter `Autopilot::applyThrottle()`.
+- **Reversering slås aldrig på under gång**: `MotorReverse` byter riktning bara
+  utan ARM, och `ArmingManager` nekar ARM i `REVERSE_SETTLE_MS` efter ett byte. I
+  reversering är gasen bara pilotens; autopiloten ser motorn som avstängd.
 - **Autopiloten ger det slutliga kommandot** (`getCommand()`); i stabiliseringslägena är spakarna de önskade vinklarna; korrigeringar = kommando − spakar (för loggen och panelen). Allt är i en teckenkonvention (`ControlCommand`) fram till mixern.
 
 ---
@@ -454,7 +460,7 @@ Cykelns viktigaste invarianter:
 stateDiagram-v2
     [*] --> WaitOff : kortet startas
     WaitOff --> Ready : brytaren OFF
-    Ready --> Armed : brytaren OFF→ON, gas < THROTTLE_LOW_US,<br/>lägets sensorkontroller godkända
+    Ready --> Armed : brytaren OFF→ON, gas < THROTTLE_LOW_US,<br/>lägets sensorkontroller godkända,<br/>motorns riktning oförändrad i REVERSE_SETTLE_MS
     Ready --> WaitOff : brytaren ON, kontrollen misslyckades<br/>(orsak → Serial, getLastRefusalReason)
     Armed --> Ready : brytaren OFF (DISARM direkt)
     note right of Armed : förlorad förbindelse ändrar inte tillståndet
@@ -462,6 +468,25 @@ stateDiagram-v2
 
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### Motorreversering (`MotorReverse`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : brytare ON och inte armerat
+    Reverse --> Forward : brytare OFF och inte armerat
+    Forward --> ForwardPending : brytare ON i ARM
+    ForwardPending --> Forward : brytare OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : brytare OFF i ARM
+    ReversePending --> Reverse : brytare ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : efter varje riktningsbyte<br/>nekas ARM i REVERSE_SETTLE_MS
+```
+
+`*Pending` – `isPending()`: brytaren står redan i det andra läget, och motorn går
+som i ARM; varningen skrivs ut i Serial en gång.
 
 ### Autopilotlägen (`Autopilot` + `PilotSwitches`)
 

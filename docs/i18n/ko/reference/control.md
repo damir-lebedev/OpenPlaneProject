@@ -34,10 +34,13 @@ CONTROL 계층은 UART, PWM, Wi-Fi 없이 데이터 위에서 동작하는 로�
 
 원하는 출력 펄스이며 단위는 PWM µs입니다. 기본값은 조종면 중립, 스로틀 `PWM_MIN`입니다.
 
+`throttle`은 어느 방향이든 스로틀의 크기(1000..2000 = 0..100%)입니다. 이것을 `motorReverse`와 함께 ESC 펄스로 바꾸는 것은 `FlightOutputs`입니다(`EscSignal`을 통해).
+
 | 필드 | 기본값 |
 |---|---|
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
+| `bool motorReverse` | `false` — 모터 전진 |
 | `aux1` | `PAYLOAD_CLOSED_US` — 페이로드 투하기는 닫힘 |
 | `aux2` | `PWM_CENTER` — 카메라 |
 
@@ -96,6 +99,36 @@ ARM과 오토파일럿에 대해서는 모릅니다. 그 보정은 `FlightContro
 
 ---
 
+## `EscSignal`
+
+**파일:** `control/EscSignal.h` · **종류:** namespace · **의존:** `Config`
+
+스로틀(1000..2000 = 0..100%)과 방향 → ESC 핀의 펄스.
+
+| 함수 | 설명 |
+|---|---|
+| `uint16_t pulseUs(uint16_t throttleUs, bool reverse)` | `ESC_BIDIRECTIONAL`(3D 모드의 BLHeli 80A): 0% → `ESC_NEUTRAL_US`(1500), 전진 1500..2000, 후진 1500..1000. 단방향 ESC: 1000..2000 그대로, `reverse`는 무시. 1000..2000 범위 밖의 스로틀은 잘라냄 |
+| `uint16_t stopUs()` | “모터 정지” 펄스(양방향 ESC는 1500, 일반 ESC는 1000) |
+
+변환만 하고 보호는 하지 않습니다. 방향을 언제 바꿀지는 `MotorReverse`가, 후진 스로틀 상한은 `FlightController`가 정합니다.
+
+---
+
+## `MotorReverse`
+
+**파일:** `control/MotorReverse.h` · **의존:** `Config`
+
+`Feature::MOTOR_REVERSE` 스위치(기본값 SwD)에 따른 모터 방향 — **ARM이 아닐 때만**.
+
+| 메서드 | 설명 |
+|---|---|
+| `void update(bool requested, bool armed, uint32_t nowMs)` | ARM 아님 — 방향이 즉시 스위치를 따름(Serial에 `MotorReverse: мотор НАЗАД` / `вперёд` — “모터 후진” / “전진” 출력). ARM 중 — 스위치는 효과가 없고 “реверс НЕ переключён”(“역회전이 바뀌지 않음”)을 한 번 출력하며, 새 방향은 DISARM을 기다림. `ESC_BIDIRECTIONAL = false`이면 역회전은 절대 켜지지 않음 |
+| `bool isReversed() const` | 모터 후진 |
+| `bool isPending() const` | 스위치는 이미 반대 위치이고, 방향은 DISARM을 기다리는 중 |
+| `const char* armBlockReason(uint32_t nowMs) const` | ARM을 거부할 이유: 마지막 방향 변경 후 `REVERSE_SETTLE_MS`가 지나지 않음(모터가 아직 돌고 있을 수 있음). 아니면 `nullptr` |
+
+---
+
 ## `ArmingManager`
 
 **파일:** `control/ArmingManager.h` · **의존:** `Autopilot`(null 가능), `RcChannelState`, `Config`, `Channels`
@@ -106,7 +139,7 @@ ARM은 별도의 스위치 SwA(CH5)로 합니다. 상태 기계는
 | 메서드 | 설명 |
 |---|---|
 | `explicit ArmingManager(Autopilot* ap = nullptr)` | 오토파일럿이 없으면 스로틀만 점검 |
-| `void update(const RcChannelState& rc, bool receiverFailsafe)` | failsafe 중에는 아무것도 하지 않음(failsafe 프레임의 스위치는 조종자의 조작을 반영하지 않음). 스위치 OFF → DISARM, `switchSeenOff = true`. OFF→ON 전환 → 점검 → ARM 또는 거부 |
+| `void update(const RcChannelState& rc, bool receiverFailsafe, const char* blockReason = nullptr)` | failsafe 중에는 아무것도 하지 않음(failsafe 프레임의 스위치는 조종자의 조작을 반영하지 않음). 스위치 OFF → DISARM, `switchSeenOff = true`. OFF→ON 전환 → 점검 → ARM 또는 거부 `blockReason`은 외부 거부 사유(`FlightController`에서: `MotorReverse::armBlockReason()`) |
 | `bool isArmed() const` | ARM 상태인지 |
 | `const char* getLastRefusalReason() const` | 마지막 거부 사유 또는 `nullptr`. 스위치를 끄면 지워짐 |
 
@@ -118,6 +151,7 @@ ARM은 별도의 스위치 SwA(CH5)로 합니다. 상태 기계는
 | MANUAL 이외의 모드에서 IMU는 있으나 응답하지 않음 | “IMU가 응답하지 않음…” |
 | MANUAL 이외의 모드에서 IMU의 비행 전 점검에 문제가 있음 | `ImuSensor::getPreflightProblem()`의 문구 |
 | 고도를 쓰는 모드(`needsAltitude`: ALT_HOLD, CRUISE, LOITER, RTH, AUTO_LAND, SOARING)에서 기압계는 있으나 응답하지 않음 | “기압계가 응답하지 않음…” |
+| 나머지는 모두 통과했지만 `blockReason`이 전달됨 | `blockReason`(예: “모터 방향이 방금 바뀜…”) |
 
 빌드에 없는 센서(`nullptr`)는 ARM을 막지 않으며, MANUAL에서는 센서가 하나도 없어도
 기체가 ARM됩니다. GPS 측위는 의도적으로 점검 항목에 넣지 않았습니다. GPS가 없어도
@@ -131,7 +165,7 @@ ARM은 별도의 스위치 SwA(CH5)로 합니다. 상태 기계는
 
 ## `FlightOutputs`
 
-**파일:** `control/FlightOutputs.h` · **의존:** `IBoard`, `FlightOutputState`, `Config`
+**파일:** `control/FlightOutputs.h` · **의존:** `IBoard`, `FlightOutputState`, `EscSignal`, `Config`
 
 PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 출력이 하나의 표에
 기술되어 있고, `begin()`, `write()`, 상태 출력, 자가 점검이 그 표를 루프로
@@ -151,13 +185,13 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
 |---|---|
 | `static const OutputInfo& outputInfo(uint8_t ch)` | 표의 한 행. 순서는 `ServoChannel`과 같음 |
 | `explicit FlightOutputs(IBoard& board)` | |
-| `bool begin()` | 각 출력의 `attach(PWM_MIN, PWM_MAX)`를 하고 상태를 출력. **필수** 출력이 모두 채널을 얻으면 `true` |
+| `bool begin()` | 각 출력의 `attach(PWM_MIN, PWM_MAX)`, 상태와 ESC 종류 출력. **필수** 출력이 모두 채널을 얻으면 `true` |
 | `bool isAttached(uint8_t ch) const` | 출력이 연결되어 있음(범위를 벗어난 인덱스는 `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | 표에 따라 상태에서 출력 값을 꺼냄 |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | 출력 핀의 펄스: 표에 따른 필드, ESC는 `EscSignal::pulseUs(throttle, motorReverse)`를 거침 |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | 배선된 각 핀에서 측정한 펄스를 기대값과 비교. 차이가 15 µs 이하이면 “OK” |
 | `void write(const FlightOutputState&)` | 모든 출력을 기록하고 상태를 기억 |
-| `void setFailsafe()` | 조종면 중립(`FAILSAFE_*`), 스로틀 `FAILSAFE_THROTTLE`. AUX는 그대로(링크 상실로 페이로드가 투하되지 않음) |
+| `void setFailsafe()` | 조종면 중립(`FAILSAFE_*`), 스로틀 `FAILSAFE_THROTTLE`(양방향 ESC 핀에서는 1500). AUX는 그대로(통신이 끊겨도 화물은 투하하지 않음) |
 | `void setBuzzer(bool on)` | 보드의 부저(`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | 마지막으로 기록한 상태 |
 
@@ -169,7 +203,7 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
 ## `FlightController`
 
 **파일:** `control/FlightController.h` · **계층:** COORDINATION ·
-**의존:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`
+**의존:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
 
 제어 루프의 유일한 조율자입니다. 직접 UART를 해석하지 않고, PWM을 건드리지 않고,
 믹서를 계산하지도 않으며, 다른 클래스를 올바른 순서로 호출할 뿐입니다. 자세한 도표는
@@ -189,6 +223,7 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
 | `int16_t getFlapsUs() const` | 플랩 위치 |
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | 이번 주기의 스위치와 노브 |
 | `bool isLostModelBeeping() const` | “여기 있어요” 부저가 울리는 중 |
+| `const MotorReverse& getMotorReverse() const` | 모터 방향과 대기 중인 역회전 |
 
 `update()`의 순서:
 
@@ -199,18 +234,23 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
    `mixer.updateFlaps(target)`: `AIRBRAKE` → −`AIRBRAKE_US`, `FLAPS` →
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → 부드럽게, 링크를 잃으면 0.
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)`를 **항상** 실행.
+   역회전 중에는 `pilotThrottle` 대신 `PWM_MIN`을 넘김(오토파일럿에게 모터는 꺼진 상태);
 6. 부저: `Beeper::update(BEEPER, armed, failsafe, now)`.
 7. 링크 상실 → `applyLinkLoss()`를 실행하고 주기를 빠져나감.
-8. `arming.update(rc, false)`.
+8. `arming.update(rc, false, reverse.armBlockReason(now))`, 이어서
+   `reverse.update(MOTOR_REVERSE, armed, now)` — DISARM 시 같은 주기에 방향이 바뀜;
 9. `command = autopilot->getCommand()`(오토파일럿이 없으면 스틱). 플랩은 자체 값.
-10. `output = mixer.mix(command)`. `output.throttle = autopilot->applyThrottle(pilotThrottle)`.
+10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
+    전진 — `output.throttle = autopilot->applyThrottle(pilotThrottle)`, 상한
+    `THROTTLE_LIMIT_PCT`; 후진 — 파일럿 스로틀, 상한
+    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
 11. ARM하지 않았거나 `MOTOR_KILL` → `throttle = PWM_MIN`(맨 마지막에).
 12. AUX1은 페이로드(`PAYLOAD_DROP`), AUX2는 카메라(`Knob::CAMERA_TILT`, `CAMERA_STAB`은 피치를 뺌).
 13. `outputs.write(output)`.
 
 `applyLinkLoss()`: 오토파일럿이 failsafe 상태(ARM 상태에서는 RTH 또는 활공)이면 조종면과
 스로틀은 오토파일럿의 명령을 따릅니다(플랩은 부드럽게 접히고, `MOTOR_KILL`은 여전히
-모터를 멈추며, AUX는 그대로). 그렇지 않으면 `outputs.setFailsafe()`를 실행합니다.
+모터를 멈추며, AUX는 그대로). 그렇지 않으면 `outputs.setFailsafe()`를 실행합니다. 역회전 중에는 모터가 항상 멈춰 있습니다.
 
 ---
 

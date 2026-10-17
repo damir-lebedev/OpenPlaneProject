@@ -42,6 +42,7 @@ input[type=number]{width:64px}
 <div class="card"><h2>Состояние</h2><div class="row">
 <span class="label">Связь</span><span class="badge" id="rx">--</span>
 <span class="label">ARM</span><span class="badge" id="arm">--</span>
+<span class="label">Мотор</span><span class="badge" id="motor">--</span>
 <span class="label">Закрылки</span><span class="value" id="flaps">--</span>
 </div></div>
 
@@ -101,6 +102,7 @@ function row(container, id, label, withBar) {
 function render(s) {
   badge($('rx'), !s.failsafe, 'OK', 'LOST');
   badge($('arm'), s.armed, 'ARMED', 'DISARMED');
+  badge($('motor'), !s.motorReverse, 'ВПЕРЁД', 'РЕВЕРС');
   $('flaps').textContent = s.flapsUs > 0 ? ('выпущены, ' + s.flapsUs + ' мкс') : 'убраны';
 
   s.rc.forEach((v, i) => {

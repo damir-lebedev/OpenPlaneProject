@@ -57,7 +57,7 @@ FS-i6 + FS-iA6B, iBUS, 10 channels (`config/Channels.h`).
 | CH5 | **SwA** | **ARM** (down = armed, only with the throttle down; cannot be reassigned) |
 | CH6 | SwB | flaps (`Feature::FLAPS`) |
 | CH7 | **SwC** (3 positions) | up **MANUAL** · middle **STABILIZE** · down **AUTO_TAKEOFF** |
-| CH8 | SwD | **RTH** — home, while switched on |
+| CH8 | SwD | **motor reverse** (`Feature::MOTOR_REVERSE`) — switches only when disarmed |
 | CH9 | VrA | stabilization strength (`Knob::STAB_GAIN`) |
 | CH10 | VrB | cruise speed (`Knob::CRUISE_SPEED`) |
 
@@ -66,7 +66,7 @@ When the board is powered up, the serial monitor prints the actual layout — wh
 ```
 SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
 SwB (CH6): FLAPS, пока включён
-SwD (CH8): RTH, пока включён
+SwD (CH8): MOTOR_REVERSE, пока включён
 VrA (CH9): крутилка STAB_GAIN
 VrB (CH10): крутилка CRUISE_SPEED
 ```
@@ -83,7 +83,7 @@ Everything is in one file — `include/config/Controls.h`:
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
@@ -171,7 +171,7 @@ Clockwise circles over the point where the mode was switched on, radius 50 m (th
 **Needs:** IMU + barometer + GPS.
 
 ### RTH — "home"
-Course to home (the ARM point), altitude `RTH_ALTITUDE_M` = 40 m (below it — climbs along the way, above it — stays). Over home — circles of the LOITER radius until the pilot takes control. No GPS or no home — circles in place. The same mode is engaged by link loss and by the geofence.
+Course to home (the ARM point), altitude `RTH_ALTITUDE_M` = 40 m (below it — climbs along the way, above it — stays). Over home — circles of the LOITER radius until the pilot takes control. No GPS or no home — circles in place. The same mode is engaged by link loss and by the geofence. By default RTH has no switch of its own (SwD is motor reverse): bring it back with the line `Bind::mode(Channels::SWD, MODE_RTH)` in `Controls.h`, or engage it from the dashboard.
 **Needs:** IMU + barometer + GPS with a home point.
 
 ### AUTO_TAKEOFF (TKOFF) — "takeoff on throttle"
@@ -215,6 +215,7 @@ Wings level, nose +8°, throttle 70 % — from any spiral. Lost your orientation
 | `GEOFENCE` | farther than 500 m from home or higher than 120 m — RTH | `GEOFENCE_ALWAYS_ON` — without a switch |
 | `HOME_RESET` | home = the current point (at the moment the switch is turned on) | only with a good GPS |
 | `CAMERA_STAB` | the camera on AUX2 holds its angle to the horizon | the airplane's pitch is subtracted |
+| `MOTOR_REVERSE` | motor runs backwards (bidirectional ESC) — to taxi back on the ground | changes **only when disarmed**: a flip while armed waits for DISARM; after a change, no ARM for 3 s; backwards up to 50 % throttle, pilot throttle only |
 
 ## Knobs
 

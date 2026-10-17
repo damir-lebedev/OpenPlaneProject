@@ -101,6 +101,15 @@ la variante.
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Deflexión desde el centro con el recorrido completo del stick, µs. El timón de dirección es menor: en el mismo servo va la rueda del tren de aterrizaje |
 | `THROTTLE_LIMIT_PCT` | 100 | El techo del acelerador hacia el ESC, %, igual para el stick y para el piloto automático (`FlightController::capThrottle`). Para las pruebas de banco con una batería 3S1P débil se puso 50; las pruebas calculan la salida esperada a partir de este valor |
 
+### ESC e inversión del motor
+
+| Constante | Valor | Significado |
+|---|---|---|
+| `ESC_BIDIRECTIONAL` | `true` | Variador bidireccional (BLHeli 80A en modo Bidirectional/3D): el gas se convierte en un pulso alrededor del neutro (`EscSignal`), «motor parado» es 1500 y hay inversión. `false`: variador normal, 1000 = parado, sin inversión |
+| `ESC_NEUTRAL_US` | 1500 | Neutro del variador bidireccional: el motor está parado; por encima, hacia delante; por debajo, hacia atrás |
+| `REVERSE_THROTTLE_LIMIT_PCT` | 50 | Límite de gas hacia atrás, % (y no más que `THROTTLE_LIMIT_PCT`): la hélice tira mal hacia atrás, pero consume toda la corriente |
+| `REVERSE_SETTLE_MS` | 3000 | Tras cambiar el sentido, el ARM se rechaza durante este tiempo para que un motor desarmado con gas tenga tiempo de pararse |
+
 ### Flaps (flaperones)
 
 | Constante | Valor | Significado |

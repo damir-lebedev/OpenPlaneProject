@@ -57,7 +57,7 @@ FS-i6 + FS-iA6B，iBUS，10 个通道（`config/Channels.h`）。
 | CH5 | **SwA** | **ARM**（向下 = 解锁，仅在油门拉到最低时有效；不能重新分配） |
 | CH6 | SwB | 襟翼（`Feature::FLAPS`） |
 | CH7 | **SwC**（3 档） | 向上 **MANUAL** · 中间 **STABILIZE** · 向下 **AUTO_TAKEOFF** |
-| CH8 | SwD | **RTH**——返航，开关接通期间有效 |
+| CH8 | SwD | **电机反转**（`Feature::MOTOR_REVERSE`）——只在上锁（DISARM）时切换 |
 | CH9 | VrA | 增稳强度（`Knob::STAB_GAIN`） |
 | CH10 | VrB | 巡航速度（`Knob::CRUISE_SPEED`） |
 
@@ -66,7 +66,7 @@ FS-i6 + FS-iA6B，iBUS，10 个通道（`config/Channels.h`）。
 ```
 SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
 SwB (CH6): FLAPS, пока включён
-SwD (CH8): RTH, пока включён
+SwD (CH8): MOTOR_REVERSE, пока включён
 VrA (CH9): крутилка STAB_GAIN
 VrB (CH10): крутилка CRUISE_SPEED
 ```
@@ -83,7 +83,7 @@ VrB (CH10): крутилка CRUISE_SPEED
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
@@ -171,7 +171,7 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 **需要：** IMU + 气压计 + GPS。
 
 ### RTH — “返航”
-朝返航点（ARM 的位置）飞去，高度为 `RTH_ALTITUDE_M` = 40 m（低于这个高度——沿途爬升，高于——保持不变）。到了返航点上空——以 LOITER 半径盘旋，直到飞手接管。没有 GPS 或返航点——原地盘旋。信号丢失和地理围栏触发的也是这个模式。
+朝返航点（ARM 的位置）飞去，高度为 `RTH_ALTITUDE_M` = 40 m（低于这个高度——沿途爬升，高于——保持不变）。到了返航点上空——以 LOITER 半径盘旋，直到飞手接管。没有 GPS 或返航点——原地盘旋。信号丢失和地理围栏触发的也是这个模式。 RTH 默认没有专用开关（SwD 是电机反转）：要恢复，在 `Controls.h` 里加一行 `Bind::mode(Channels::SWD, MODE_RTH)`，或者从仪表盘开启。
 **需要：** IMU + 气压计 + 已记录返航点的 GPS。
 
 ### AUTO_TAKEOFF (TKOFF) — “按油门起飞”
@@ -215,6 +215,7 @@ ARM 之后什么也不会发生，直到飞手把油门推过中点。然后按�
 | `GEOFENCE` | 距返航点超过 500 m 或高度超过 120 m——RTH | `GEOFENCE_ALWAYS_ON`——不需要开关 |
 | `HOME_RESET` | 返航点 = 当前位置（开关接通的那一刻） | 仅在 GPS 良好时 |
 | `CAMERA_STAB` | AUX2 上的相机保持相对地平线的角度 | 减去飞机的俯仰角 |
+| `MOTOR_REVERSE` | 电机反转（双向电调）——在地面倒车滑行 | **只在 DISARM 时**切换：解锁状态下拨动开关要等到 DISARM 才生效；切换后 3 s 内不能 ARM；反转最多 50 % 油门，只用飞手的油门 |
 
 ## 旋钮
 

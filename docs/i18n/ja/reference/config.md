@@ -91,6 +91,15 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 | `AILERON_MAX_US`、`ELEVATOR_MAX_US`、`RUDDER_MAX_US` | 500 / 500 / 300 | スティックをフルストロークにしたときの中心からの舵角（µs）。ラダーが小さいのは、同じサーボに降着装置のホイールが付いているため |
 | `THROTTLE_LIMIT_PCT` | 100 | ESC へのスロットルの上限（%）。スティックにもオートパイロットにも同じ値が適用される（`FlightController::capThrottle`）。出力の弱い 3S1P のバッテリーでのテストベンチ試験では 50 にしていた。テストはこの値から期待出力を計算する |
 
+### ESC とモーター逆転
+
+| 定数 | 値 | 意味 |
+|---|---|---|
+| `ESC_BIDIRECTIONAL` | `true` | 双方向 ESC（Bidirectional/3D モードの BLHeli 80A）：スロットルをニュートラルを中心としたパルスに変換（`EscSignal`）、「モーター停止」は 1500、逆転が使える。`false`：普通の ESC で、1000 = 停止、逆転なし |
+| `ESC_NEUTRAL_US` | 1500 | 双方向 ESC のニュートラル：モーター停止。それより上は前進、下は後退 |
+| `REVERSE_THROTTLE_LIMIT_PCT` | 50 | 後退時のスロットル上限（%、かつ `THROTTLE_LIMIT_PCT` 以下）：プロペラは逆回転では推力が弱いのに、電流は目いっぱい流れる |
+| `REVERSE_SETTLE_MS` | 3000 | 方向を変えたあと、この時間は ARM を拒否する。スロットルを上げたまま DISARM したモーターが止まる時間を確保するため |
+
 ### フラップ（フラッペロン）
 
 | 定数 | 値 | 意味 |

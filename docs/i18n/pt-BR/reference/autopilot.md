@@ -40,7 +40,7 @@ JSON de `/api/setmode`, `/api/status` e para o `MavlinkModes`):
 
 `enum class Feature : uint8_t` — as funções das chaves: `FLAPS`, `AIRBRAKE`,
 `AUTO_TRIM`, `TURN_COORDINATION`, `MOTOR_KILL`, `BEEPER`, `PAYLOAD_DROP`,
-`GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `COUNT`.
+`GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `MOTOR_REVERSE`, `COUNT`.
 
 `enum class Knob : uint8_t` — os potenciômetros: `STAB_GAIN`, `MAX_BANK`,
 `CRUISE_SPEED`, `FLAPS`, `CAMERA_TILT`, `RATES`, `LOITER_RADIUS`, `COUNT`.

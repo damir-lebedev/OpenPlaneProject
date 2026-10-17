@@ -58,7 +58,7 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (nicht angeschlossen)<br/>FeedbackSupervisor und Module"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -362,6 +362,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -371,24 +372,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → Pilotengas
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(Ziel nach den Funktionen)
-    FC->>AP: update(armed, linkLost, Pilotengas, Knüppel)
+    FC->>AP: update(armed, linkLost, Pilotengas (in Umkehr 0), Knüppel)
     Note over AP: Sensoren werden IMMER gelesen,<br/>Navigation, Failsafe, Geofence,<br/>Modus, Koordination, Auto-Trimm
     FC->>OUT: setBuzzer(Beeper)
     alt Verbindung verloren
         alt armed und Failsafe des Autopiloten (RTH / GLIDE)
             FC->>MX: mix(Kommando des Autopiloten)
-            FC->>OUT: write(Ruder, Gas des Autopiloten, AUX unverändert)
+            FC->>OUT: write(Ruder, Gas des Autopiloten (in Umkehr 0), AUX unverändert)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — ARM und Schalter werden nicht gelesen
     else Verbindung vorhanden
-        FC->>AM: update(rc) — der ARM-Schalter
+        FC->>AM: update(rc, MR.armBlockReason) — der ARM-Schalter
+        FC->>MR: update(MOTOR_REVERSE, armed) — Richtung nur ohne ARM
         FC->>AP: getCommand() — das endgültige Ruderkommando
         FC->>MX: mix(command) → PWM mit Umkehr
-        FC->>AP: applyThrottle(Pilotengas)
-        Note over FC: !armed oder MOTOR_KILL → throttle = PWM_MIN (zuletzt)
+        FC->>AP: applyThrottle(Pilotengas) — nur vorwärts
+        Note over FC: rückwärts – Gas des Piloten ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed oder MOTOR_KILL → throttle = PWM_MIN (zuletzt)
         FC->>OUT: write(output + AUX1 Last, AUX2 Kamera)
+        Note over OUT: ESC: Gas + Richtung → Impuls (EscSignal),<br/>bidirektionaler ESC: 1500 = Stopp
     end
 ```
 
@@ -396,6 +399,10 @@ Zentrale Invarianten des Zyklus:
 
 - **Signalverlust** – der Modus und die Funktionen von den Schaltern ändern sich nicht; ARM wird weder gelesen noch zurückgesetzt; der Motor läuft nur auf Entscheidung des Autopilot-Failsafe (RTH mit Motor) oder über `FAILSAFE_THROTTLE`.
 - **Kein Modus kann das Gas am ARM vorbeischleusen**: das erzwungene `PWM_MIN` bei `!armed` und `MOTOR_KILL` steht nach `Autopilot::applyThrottle()`.
+- **Die Umkehr schaltet nie im Lauf ein**: `MotorReverse` wechselt die Richtung nur
+  ohne ARM, und `ArmingManager` lehnt ARM nach einem Wechsel für
+  `REVERSE_SETTLE_MS` ab. In der Umkehr gibt nur der Pilot Gas; für den Autopiloten
+  ist der Motor aus.
 - **Der Autopilot gibt das endgültige Kommando aus** (`getCommand()`); in den Modi mit Stabilisierung sind die Knüppel die gewünschten Winkel; Korrekturen = Kommando − Knüppel (für Log und Dashboard). Bis zum Mischer ist alles in einem einzigen Vorzeichensystem (`ControlCommand`).
 
 ---
@@ -408,7 +415,7 @@ Zentrale Invarianten des Zyklus:
 stateDiagram-v2
     [*] --> WaitOff : Einschalten des Boards
     WaitOff --> Ready : Schalter OFF
-    Ready --> Armed : Schalter OFF→ON, Gas < THROTTLE_LOW_US,<br/>Sensorprüfungen des Modus bestanden
+    Ready --> Armed : Schalter OFF→ON, Gas < THROTTLE_LOW_US,<br/>Sensorprüfungen des Modus bestanden,<br/>Motorrichtung seit REVERSE_SETTLE_MS unverändert
     Ready --> WaitOff : Schalter ON, Prüfung nicht bestanden<br/>(Grund → Serial, getLastRefusalReason)
     Armed --> Ready : Schalter OFF (DISARM sofort)
     note right of Armed : Signalverlust ändert den Zustand nicht
@@ -416,6 +423,25 @@ stateDiagram-v2
 
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### Motorumkehr (`MotorReverse`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : Schalter ON und kein ARM
+    Reverse --> Forward : Schalter OFF und kein ARM
+    Forward --> ForwardPending : Schalter ON bei ARM
+    ForwardPending --> Forward : Schalter OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : Schalter OFF bei ARM
+    ReversePending --> Reverse : Schalter ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : nach jedem Richtungswechsel<br/>wird ARM für REVERSE_SETTLE_MS abgelehnt
+```
+
+`*Pending` – `isPending()`: Der Schalter steht schon in der anderen Stellung, der
+Motor dreht wie bei ARM; die Warnung im Serial erscheint einmal.
 
 ### Autopilot-Modi (`Autopilot` + `PilotSwitches`)
 

@@ -741,8 +741,8 @@ void test_web_status_json_with_all_sensors()
     const std::string& json = r.body;
     TEST_ASSERT_TRUE(looksLikeJson(json));
     TEST_ASSERT_TRUE(contains(json, "\"rc\":[1600,1500,1000,1500,1000,1000,1000,1500,1500,1500]"));
-    TEST_ASSERT_TRUE(contains(json, "\"armed\":false,\"failsafe\":false,\"flapsUs\":0"));
-    TEST_ASSERT_TRUE(contains(json, "\"esc\":{\"us\":1000,\"attached\":true}"));
+    TEST_ASSERT_TRUE(contains(json, "\"armed\":false,\"motorReverse\":false,\"failsafe\":false,\"flapsUs\":0"));
+    TEST_ASSERT_TRUE(contains(json, "\"esc\":{\"us\":1500,\"attached\":true}"));
     TEST_ASSERT_TRUE(contains(json, "\"imu\":{\"attached\":true,\"available\":true,\"roll\":1.50"));
     TEST_ASSERT_TRUE(contains(json, "\"baro\":{\"attached\":true,\"available\":true,\"altitude\":3.25"));
     TEST_ASSERT_TRUE(contains(json, "\"mag\":{\"attached\":true,\"available\":true,\"heading\":90.0}"));

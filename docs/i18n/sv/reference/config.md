@@ -98,6 +98,15 @@ Konsolen `Serial` är LPUART1 (PA9 TX / PA10 RX), variantens standard.
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Utslag från mitten vid fullt spakutslag, µs. Sidrodret är mindre: landningsställets hjul sitter på samma servo |
 | `THROTTLE_LIMIT_PCT` | 100 | Gastaket till ESC:n, %, samma för spaken och autopiloten (`FlightController::capThrottle`). För bänktester med ett svagt 3S1P-batteri var det satt till 50; testerna räknar ut den förväntade utdatan från det här värdet |
 
+### ESC och motorreversering
+
+| Konstant | Värde | Betydelse |
+|---|---|---|
+| `ESC_BIDIRECTIONAL` | `true` | Dubbelriktad ESC (BLHeli 80A i läget Bidirectional/3D): gasen blir en puls runt neutralläget (`EscSignal`), ”motorn står” är 1500, reversering finns. `false` – vanlig ESC: 1000 = stopp, ingen reversering |
+| `ESC_NEUTRAL_US` | 1500 | Neutralläget för en dubbelriktad ESC: motorn står; över – framåt, under – bakåt |
+| `REVERSE_THROTTLE_LIMIT_PCT` | 50 | Gasgräns bakåt, % (och högst `THROTTLE_LIMIT_PCT`): en propeller drar dåligt bakåt men tar full ström |
+| `REVERSE_SETTLE_MS` | 3000 | Efter ett riktningsbyte nekas ARM så här länge – en motor som desarmerats med gas ute hinner stanna |
+
 ### Klaffar (flaperoner)
 
 | Konstant | Värde | Betydelse |

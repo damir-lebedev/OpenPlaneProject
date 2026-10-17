@@ -31,6 +31,7 @@
 
 #include "config/Channels.h"
 #include "config/Config.h"
+#include "control/EscSignal.h"
 #include "hal/IBoard.h"
 #include "hal/RegisterDevice.h"
 #if !defined(BOARD_STM32H743)
@@ -47,6 +48,13 @@ inline uint16_t cappedThrottleUs(uint16_t stickUs)
 {
     const long top = Config::PWM_MIN + (Config::PWM_MAX - Config::PWM_MIN) * Config::THROTTLE_LIMIT_PCT / 100;
     return static_cast<uint16_t>(map(stickUs, Config::PWM_MIN, Config::PWM_MAX, Config::PWM_MIN, top));
+}
+
+// Импульс на пине ESC при газе throttleUs (1000..2000 = 0..100%): у
+// двунаправленного ESC (Config::ESC_BIDIRECTIONAL) 1500 = мотор стоит.
+inline uint16_t escUs(uint16_t throttleUs, bool reverse = false)
+{
+    return EscSignal::pulseUs(throttleUs, reverse);
 }
 
 inline void resetWorld()

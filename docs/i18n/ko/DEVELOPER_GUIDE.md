@@ -48,8 +48,8 @@ include/
 ├── storage/     KeyValueStore, KvPreferences — NVS 없는 설정 저장소
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
-│                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, Beeper, FlightController
+│                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
+│                FlightOutputState, FlightOutputs, Beeper, FlightController
 ├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
 │   │            Navigation, AltitudeSpeedController, LaunchController,
 │   │            SoaringController, AutoTrim, PidController
@@ -82,7 +82,8 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
 │  └ FlapsController  │  │  └ 항법, PID          │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
-│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+│ MotorReverse        │             │ ImuSensor* / BarometerSensor* / ...
+│ FlightOutputs       │             │
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORS                                          │
@@ -178,8 +179,10 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
 | `ControlMixer.h` | `fromSticks(rc)` → `ControlCommand`; `updateFlaps(목표, now)`; `mix(command)` → 서보 반전이 적용된 PWM; 플래퍼론: 에일러론은 `flaps ± roll`(마이너스는 에어브레이크) |
 | `FlapsController.h` | 플랩을 부드럽게 내리고 올림. 시간은 매개변수로 전달 |
 | `ThrottleManager.h` | 스틱에서 오는 스로틀. 신호를 잃으면 `FAILSAFE_THROTTLE` |
+| `EscSignal.h` | 스로틀 + 방향 → ESC 펄스: 양방향 BLHeli에서 1500 = 정지, 전진 1500..2000, 후진 1500..1000 |
+| `MotorReverse.h` | `Feature::MOTOR_REVERSE`에 의한 모터 역회전 — DISARM 상태에서만, 방향을 바꾼 뒤 `REVERSE_SETTLE_MS` 동안 ARM 거부 |
 | `ArmingManager.h` | SwA 스위치로 ARM(스로틀을 맨 아래에 둔 상태에서 OFF→ON 전환 + 해당 모드에 필요한 센서 점검), DISARM은 즉시 |
-| `FlightOutputState.h` | 원하는 PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`, `aux1`(페이로드), `aux2`(카메라) |
+| `FlightOutputState.h` | 원하는 PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`(어느 방향이든 0..100%), `motorReverse`, `aux1`(페이로드), `aux2`(카메라) |
 | `Beeper.h` | 부저: `BEEPER` 기능에 의해, 또는 지상에서 “기체 분실” 시 울림 |
 | `FlightOutputs.h` | 출력 표(`outputInfo()`: 키, 이름, 핀, 필수 여부, 상태 필드)와 그 위에서 루프로 처리하는 모든 것: `begin()`, `write()`, `setFailsafe()`, 상태, `printPulseSelfTest()` |
 | `FlightController.h` | 주기마다 작업을 수행하는 순서, 신호 상실(`applyLinkLoss()`), 텔레메트리용 게터 |
@@ -322,7 +325,7 @@ PID는 `오차 = 목표 − 실제`를 계산합니다. 오른쪽 롤(roll > 0) 
 | CH5 | SwA | `ARM` | ≥ 1750 = ARM (FS-i6에서는 스위치를 아래, 자기 쪽으로 내린 상태) |
 | CH6 | SwB | `SWB` | 기본값은 플랩(≥ 1750 — 펼침) |
 | CH7 | SwC(3단) | `SWC` | 기본값은 모드: < 1250 MANUAL, 1250–1749 STABILIZE, ≥ 1750 AUTO_TAKEOFF |
-| CH8 | SwD | `SWD` | 기본값은 RTH |
+| CH8 | SwD | `SWD` | 기본값은 모터 역회전(DISARM 상태에서만 바뀜) |
 | CH9 | VrA | `VRA` | 기본값은 안정화 강도 |
 | CH10 | VrB | `VRB` | 기본값은 순항 속도 |
 
@@ -333,7 +336,9 @@ CH6–CH10은 `include/config/Controls.h`에 한 줄만 쓰면 할당됩니다
 `THROTTLE_LOW_US` 미만이며, 현재 모드에 필요한 센서 점검을 통과해야 합니다.
 그렇지 않으면 이유를 Serial에 출력하며 거부하고, 새로 OFF→ON 동작이 필요합니다.
 스위치가 ON인 채로 보드의 전원을 켜면 ARM되지 않습니다. OFF는 즉시 DISARM입니다.
-ARM되지 않은 동안 ESC로 가는 스로틀은 강제로 `PWM_MIN`이 됩니다.
+ARM되지 않은 동안 ESC로 가는 스로틀은 강제로 `PWM_MIN`(양방향 ESC 핀에서는 1500 중립)이 됩니다.
+
+**역회전**(`MotorReverse`, `Feature::MOTOR_REVERSE`, 기본값 SwD): 모터 방향은 ARM이 아닐 때만 스위치를 따릅니다. ARM 중에 스위치를 바꿔도 DISARM할 때까지 아무것도 바뀌지 않습니다. 방향을 바꾼 뒤 `REVERSE_SETTLE_MS`(3 s) 동안 ARM은 거부됩니다. 후진은 파일럿 스로틀만, `REVERSE_THROTTLE_LIMIT_PCT`(50%)를 넘지 않습니다. 오토파일럿은 스로틀을 받지 못하고, 통신이 끊기면 모터가 멈춥니다.
 
 **링크 상실**(`IBusReceiver::isSignalLost()`):
 
@@ -444,7 +449,8 @@ IMU 보정(시작할 때마다, 그리고 `i` 명령): 2초간 정지, 자이로
 7. **링크 상실** — `applyLinkLoss()`. ARM 상태에서는 조종면과 스로틀이 오토파일럿의
    failsafe 명령을 따르고, 그렇지 않으면 중립과 모터 정지이며 `return`합니다.
    아래의 모든 것보다 절대적으로 우선합니다.
-8. **ARM** — `arming.update(rc, false)`.
+8. **ARM과 역회전** — `arming.update(rc, false, reverse.armBlockReason(now))`,
+   이어서 `reverse.update(MOTOR_REVERSE, armed, now)`: 방향은 ARM이 아닐 때만 바뀝니다.
 9. **명령** — `autopilot->getCommand()`. 안정화 모드에서는 스틱이 원하는
    각도이고, 최종 조종면 명령은 오토파일럿이 냅니다.
 10. **믹서** — `mixer.mix(command)` → 에일러론(플랩 + 롤), 승강타, 방향타의
@@ -453,6 +459,8 @@ IMU 보정(시작할 때마다, 그리고 `i` 명령): 2초간 정지, 자이로
     오토파일럿의 스로틀, 또는 둘 중 큰 값(자동 이륙). 그런 다음 ARM하지
     않았거나 `MOTOR_KILL`이면 강제로 `PWM_MIN`입니다. 어떤 모드도 ARM을
     우회해 스로틀을 내보내지 못하도록 이 검사는 맨 마지막에 둡니다.
+    역회전 중에는 파일럿 스로틀만, `REVERSE_THROTTLE_LIMIT_PCT`까지입니다.
+    스로틀과 방향을 ESC 펄스로 바꾸는 것은 `FlightOutputs`(`EscSignal`)입니다.
 12. **AUX** — 페이로드(`PAYLOAD_DROP`)와 카메라(`CAMERA_TILT`, `CAMERA_STAB`).
 13. **`outputs.write(output)`** — 7개 출력으로 PWM을 내보냅니다.
 
@@ -469,13 +477,14 @@ IMU 보정(시작할 때마다, 그리고 `i` 명령): 2초간 정지, 자이로
 {
   "rc": [1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1500],
   "armed": false,
+  "motorReverse": false,
   "failsafe": false,
   "outputs": {
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true },
+    "esc":          { "us": 1500, "attached": true },
     "aux1":         { "us": 1000, "attached": true },
     "aux2":         { "us": 1500, "attached": true }
   },
@@ -923,7 +932,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 모든 보드가 �
 - 포트 모니터가 열려 있는 동안에는 같은 포트로 업로드할 수 없습니다.
 - `lib_deps`: `olikraus/U8g2`(OLED)가 유일한 외부 라이브러리입니다.
 - `test/` — 자세한 내용은 [`TESTING.md`](TESTING.md)에 있습니다.
-  - `pio test -e native -e native-stm32` — PC에서 387개 테스트(하드웨어 대역은
+  - `pio test -e native -e native-stm32` — PC에서 392개 테스트(하드웨어 대역은
     `test/native/support/`), 커버리지는 `gcovr`.
   - `pio test -e esp32-s3` — 보드에서 `test_feedback/`(피드백 폐루프 시뮬레이션)과
     `test_imu_orientation/`을 실행합니다. 각각 테스트 펌웨어를 기록하므로, 그 뒤에
@@ -967,6 +976,10 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 모든 보드가 �
   GPIO4/5의 신호를 내보냈습니다(ESC가 오른쪽 스틱으로 조종됨). 출력은 LEDC로 다시
   작성했으며, 라이브러리를 되돌리려면 `p`로 확인한 뒤에 하세요.
 - **ESC는 50 Hz PWM**이며, 펌웨어에는 스로틀 범위 보정 모드가 아직 없습니다.
+  주 변속기는 양방향 BLHeli 80A(`ESC_BIDIRECTIONAL`)입니다. BLHeliSuite에서
+  설정하며(Motor Direction = Bidirectional, 범위 1000..2000), 중립 1500 = 정지입니다.
+  일반 변속기를 달면 `ESC_BIDIRECTIONAL = false`로 바꾸십시오. 그렇지 않으면
+  “정지”에서 스로틀 절반을 받습니다.
 - **웹 대시보드:** 액세스 포인트의 비밀번호가 약하고, 비행 중에도 명령을 받습니다.
   테스트 벤치와 야외용 도구이며 비행 중에 쓰는 것이 아닙니다.
 - **프로토타입의 기구:** 첫 프로토타입은 비행했으며, 모터 고정이 약하고 날개의

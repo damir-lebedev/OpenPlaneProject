@@ -48,8 +48,8 @@ include/
 ├── storage/     KeyValueStore, KvPreferences — almacenamiento de ajustes sin NVS
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
-│                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, Beeper, FlightController
+│                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
+│                FlightOutputState, FlightOutputs, Beeper, FlightController
 ├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
 │   │            Navigation, AltitudeSpeedController, LaunchController,
 │   │            SoaringController, AutoTrim, PidController
@@ -82,7 +82,8 @@ src/stm32/main.cpp  — firmware del STM32H743 (tareas de FreeRTOS, MAVLink)
 │  └ FlapsController  │  │  └ navegación, PID    │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
-│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+│ MotorReverse        │             │ ImuSensor* / BarometerSensor* / ...
+│ FlightOutputs       │             │
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORS                                          │
@@ -178,8 +179,10 @@ Las reglas que mantienen limpia la arquitectura:
 | `ControlMixer.h` | `fromSticks(rc)` → `ControlCommand`; `updateFlaps(objetivo, now)`; `mix(command)` → PWM con inversión de servos; flaperones: los alerones `flaps ± roll` (el menos, aerofreno) |
 | `FlapsController.h` | Salida y recogida suaves de los flaps, con el tiempo pasado como parámetro |
 | `ThrottleManager.h` | Acelerador desde el stick; al perder la señal, `FAILSAFE_THROTTLE` |
+| `EscSignal.h` | Gas + sentido → pulso del variador: en el BLHeli bidireccional 1500 = parado, hacia delante 1500..2000, hacia atrás 1500..1000 |
+| `MotorReverse.h` | Inversión del motor con `Feature::MOTOR_REVERSE`, solo en DISARM; tras cambiar el sentido, el ARM se rechaza durante `REVERSE_SETTLE_MS` |
 | `ArmingManager.h` | ARM con el interruptor SwA (una transición OFF→ON con el acelerador abajo + las comprobaciones de sensores del modo), DISARM instantáneo |
-| `FlightOutputState.h` | Los PWM deseados: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`, `aux1` (carga), `aux2` (cámara) |
+| `FlightOutputState.h` | Los PWM deseados: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % en cualquier sentido), `motorReverse`, `aux1` (carga), `aux2` (cámara) |
 | `Beeper.h` | El zumbador: por la función `BEEPER` o «modelo perdido» en tierra |
 | `FlightOutputs.h` | La tabla de salidas (`outputInfo()`: clave, nombre, pin, si es obligatoria, campo de estado) y todo lo que va encima en un bucle: `begin()`, `write()`, `setFailsafe()`, estado, `printPulseSelfTest()` |
 | `FlightController.h` | El orden de las operaciones por ciclo, la pérdida de señal (`applyLinkLoss()`), getters para la telemetría |
@@ -331,7 +334,7 @@ receptor FS-iA6B, iBUS 115200.
 | CH5 | SwA | `ARM` | ≥ 1750 = ARM (en la FS-i6 es el interruptor abajo, hacia uno) |
 | CH6 | SwB | `SWB` | por defecto, los flaps (≥ 1750: extendidos) |
 | CH7 | SwC (3 posiciones) | `SWC` | por defecto, el modo: < 1250 MANUAL, 1250–1749 STABILIZE, ≥ 1750 AUTO_TAKEOFF |
-| CH8 | SwD | `SWD` | por defecto, RTH |
+| CH8 | SwD | `SWD` | por defecto, inversión del motor (solo cambia en DISARM) |
 | CH9 | VrA | `VRA` | por defecto, la intensidad de la estabilización |
 | CH10 | VrB | `VRB` | por defecto, la velocidad de crucero |
 
@@ -343,7 +346,14 @@ por debajo de `THROTTLE_LOW_US` y se han superado las comprobaciones de
 sensores del modo actual. De lo contrario, lo rechaza e indica el motivo por
 Serial; hace falta un nuevo ciclo OFF→ON. Encender la placa con el
 interruptor ya en ON no arma. OFF: DISARM inmediato. Mientras no esté armado,
-el acelerador hacia el ESC se fuerza a `PWM_MIN`.
+el acelerador hacia el ESC se fuerza a `PWM_MIN` (en el pin de un variador bidireccional, el neutro de 1500).
+
+**Inversión** (`MotorReverse`, `Feature::MOTOR_REVERSE`, por defecto SwD): el
+sentido del motor sigue al interruptor solo sin ARM; accionarlo con ARM no cambia
+nada hasta el DISARM. Tras cambiar el sentido, el ARM se rechaza durante
+`REVERSE_SETTLE_MS` (3 s). Hacia atrás, solo el gas del piloto y no más de
+`REVERSE_THROTTLE_LIMIT_PCT` (50 %); el piloto automático no recibe gas y, si se
+pierde el enlace, el motor se para.
 
 **Pérdida de enlace** (`IBusReceiver::isSignalLost()`):
 
@@ -458,7 +468,9 @@ Se llama desde `loop()` cada 2 ms. El orden es la prioridad:
    y el acelerador siguen la orden de failsafe del piloto automático; si no,
    neutro y motor apagado; `return`. Prioridad absoluta sobre todo lo que
    sigue.
-8. **ARM**: `arming.update(rc, false)`.
+8. **ARM e inversión**: `arming.update(rc, false, reverse.armBlockReason(now))`
+   y luego `reverse.update(MOTOR_REVERSE, armed, now)`: el sentido solo cambia
+   sin ARM.
 9. **Orden**: `autopilot->getCommand()`: en los modos con estabilización el
    stick es el ángulo deseado y el piloto automático emite las órdenes finales
    a las superficies.
@@ -470,6 +482,8 @@ Se llama desde `loop()` cada 2 ms. El orden es la prioridad:
     automático). Después, si no está armado o hay `MOTOR_KILL`, se fuerza a
     `PWM_MIN`. Esta comprobación va la última para que ningún modo pueda
     colar el acelerador sin pasar por el ARM.
+    En inversión, solo el gas del piloto, hasta `REVERSE_THROTTLE_LIMIT_PCT`.
+    `FlightOutputs` (`EscSignal`) convierte gas y sentido en el pulso del variador.
 12. **AUX**: carga (`PAYLOAD_DROP`) y cámara (`CAMERA_TILT`, `CAMERA_STAB`).
 13. **`outputs.write(output)`**: PWM en las 7 salidas.
 
@@ -487,13 +501,14 @@ acceso: SSID `OpenPlane-Debug`, contraseña `12345678`, dirección
 {
   "rc": [1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1500],
   "armed": false,
+  "motorReverse": false,
   "failsafe": false,
   "outputs": {
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true },
+    "esc":          { "us": 1500, "attached": true },
     "aux1":         { "us": 1000, "attached": true },
     "aux2":         { "us": 1500, "attached": true }
   },
@@ -991,7 +1006,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # comprobar que se c
   funcionará.
 - `lib_deps`: `olikraus/U8g2` (OLED) es la única biblioteca externa.
 - `test/`: con detalle en [`TESTING.md`](TESTING.md):
-  - `pio test -e native -e native-stm32`: 387 pruebas en el PC (simulacros
+  - `pio test -e native -e native-stm32`: 392 pruebas en el PC (simulacros
     del hardware en `test/native/support/`), cobertura con `gcovr`;
   - `pio test -e esp32-s3`: `test_feedback/` (la simulación en lazo cerrado de
     la realimentación) y `test_imu_orientation/` en la propia placa; cada una
@@ -1046,6 +1061,10 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # comprobar que se c
   sobre LEDC; solo se debe devolver la biblioteca tras comprobarlo con `p`.
 - **El ESC es de PWM a 50 Hz**; el firmware todavía no tiene un modo de
   calibración del rango del acelerador.
+  El variador principal es un BLHeli 80A bidireccional (`ESC_BIDIRECTIONAL`):
+  se configura en BLHeliSuite (Motor Direction = Bidirectional, rango
+  1000..2000), el neutro de 1500 = parado. Si montas un variador normal, pon
+  `ESC_BIDIRECTIONAL = false`; si no, en «parado» recibirá medio gas.
 - **Dashboard web:** la contraseña del punto de acceso es débil y las órdenes
   se aceptan también en vuelo. Es una herramienta para el banco y el campo,
   no para el vuelo.

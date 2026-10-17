@@ -48,8 +48,8 @@ include/
 ├── storage/     KeyValueStore, KvPreferences — NVS を使わない設定ストレージ
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
-│                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, Beeper, FlightController
+│                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
+│                FlightOutputState, FlightOutputs, Beeper, FlightController
 ├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
 │   │            Navigation, AltitudeSpeedController, LaunchController,
 │   │            SoaringController, AutoTrim, PidController
@@ -82,7 +82,8 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
 │  └ FlapsController  │  │  └ 航法、PID          │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
-│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+│ MotorReverse        │             │ ImuSensor* / BarometerSensor* / ...
+│ FlightOutputs       │             │
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORS                                          │
@@ -178,8 +179,10 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
 | `ControlMixer.h` | `fromSticks(rc)` → `ControlCommand`、`updateFlaps(目標, now)`、`mix(command)` → サーボのリバースを反映した PWM。フラッペロン：エルロンは `flaps ± roll`（マイナス側はエアブレーキ） |
 | `FlapsController.h` | フラップの滑らかな展開と格納。時刻は引数で渡す |
 | `ThrottleManager.h` | スティックからのスロットル。信号喪失時は `FAILSAFE_THROTTLE` |
+| `EscSignal.h` | スロットル＋方向 → ESC パルス。双方向 BLHeli では 1500 = 停止、前進 1500..2000、後退 1500..1000 |
+| `MotorReverse.h` | `Feature::MOTOR_REVERSE` によるモーター逆転。DISARM 中のみ。方向を変えたあと `REVERSE_SETTLE_MS` の間は ARM を拒否 |
 | `ArmingManager.h` | SwA スイッチによる ARM（スロットルが最低位置のときの OFF→ON 切り替え＋そのモードに必要なセンサーの検査）、DISARM は即時 |
-| `FlightOutputState.h` | 目標の PWM：`aileronLeft`、`aileronRight`、`elevator`、`rudder`、`throttle`、`aux1`（ペイロード）、`aux2`（カメラ） |
+| `FlightOutputState.h` | 目標の PWM：`aileronLeft`、`aileronRight`、`elevator`、`rudder`、`throttle`（どちらの方向でも 0..100%）、`motorReverse`、`aux1`（ペイロード）、`aux2`（カメラ） |
 | `Beeper.h` | ブザー：`BEEPER` 機能による鳴動、または地上での「機体ロスト」 |
 | `FlightOutputs.h` | 出力のテーブル（`outputInfo()`：キー、名前、ピン、必須かどうか、状態フィールド）と、その上でループ処理されるすべて：`begin()`、`write()`、`setFailsafe()`、状態、`printPulseSelfTest()` |
 | `FlightController.h` | 各周期での処理の順序、信号喪失（`applyLinkLoss()`）、テレメトリ用のゲッター |
@@ -302,7 +305,7 @@ PID は `誤差 = 目標 − 実測` を計算します。右ロール（roll > 
 | CH5 | SwA | `ARM` | ≥ 1750 で ARM（FS-i6 ではスイッチを下、手前に倒した状態） |
 | CH6 | SwB | `SWB` | 既定ではフラップ（≥ 1750 で展開） |
 | CH7 | SwC（3 ポジション） | `SWC` | 既定ではモード：< 1250 は MANUAL、1250–1749 は STABILIZE、≥ 1750 は AUTO_TAKEOFF |
-| CH8 | SwD | `SWD` | 既定では RTH |
+| CH8 | SwD | `SWD` | 既定ではモーター逆転（DISARM 中のみ切り替わる） |
 | CH9 | VrA | `VRA` | 既定ではスタビライズの強さ |
 | CH10 | VrB | `VRB` | 既定では巡航速度 |
 
@@ -310,7 +313,9 @@ CH6〜CH10 は、`include/config/Controls.h` に 1 行書くだけで割り当�
 
 **ARM**（`ArmingManager`）：スイッチが OFF→ON になり、スロットルが
 `THROTTLE_LOW_US` 未満で、現在のモードに必要なセンサー検査を通過していること。そうでない場合は理由を Serial に出して拒否し、新たに OFF→ON の操作が必要です。スイッチを ON にしたまま基板の電源を入れても ARM されません。OFF にするとすぐ DISARM します。ARM されていない間、ESC へのスロットルは強制的に
-`PWM_MIN` になります。
+`PWM_MIN`（双方向 ESC のピンでは 1500 のニュートラル）になります。
+
+**逆転**（`MotorReverse`、`Feature::MOTOR_REVERSE`、既定では SwD）：モーターの回転方向は ARM していないときだけスイッチに従います。ARM 中に切り替えても DISARM まで何も変わりません。方向を変えたあと `REVERSE_SETTLE_MS`（3 秒）は ARM を拒否します。後退はパイロットのスロットルのみで `REVERSE_THROTTLE_LIMIT_PCT`（50%）まで。オートパイロットにはスロットルを渡さず、通信が途絶えるとモーターは止まります。
 
 **リンク喪失**（`IBusReceiver::isSignalLost()`）：
 
@@ -400,11 +405,12 @@ IMU の校正（起動のたび、および `i` コマンド）：2 秒間静止
 7. **リンク喪失**：`applyLinkLoss()`。ARM 中は舵面とスロットルがオートパイロットの
    failsafe コマンドに従い、そうでなければニュートラルでモーター停止となり、
    `return` します。これより下のすべてに対して絶対的に優先されます。
-8. **ARM**：`arming.update(rc, false)`。
+8. **ARM と逆転**：`arming.update(rc, false, reverse.armBlockReason(now))`、続いて `reverse.update(MOTOR_REVERSE, armed, now)`。方向は ARM していないときだけ変わります。
 9. **コマンド**：`autopilot->getCommand()`。スタビライズ付きのモードではスティックは目標角度を表し、最終的な舵面コマンドはオートパイロットが出します。
 10. **ミキサー**：`mixer.mix(command)` → エルロン（フラップ＋ロール）、エレベーター、ラダーの PWM。リバースも考慮されます。
 11. **スロットル**：`autopilot->applyThrottle(pilotThrottle)`。パイロットのスロットル、オートパイロットのスロットル、または両者の大きいほう（自動離陸）。その後、
     ARM していない場合や `MOTOR_KILL` の場合は強制的に `PWM_MIN` にします。どのモードも ARM をすり抜けてスロットルを通せないよう、この検査は最後に置いています。
+    逆転中はパイロットのスロットルのみで、`REVERSE_THROTTLE_LIMIT_PCT` まで。スロットルと方向を ESC パルスに変換するのは `FlightOutputs`（`EscSignal`）です。
 12. **AUX**：ペイロード（`PAYLOAD_DROP`）とカメラ（`CAMERA_TILT`、`CAMERA_STAB`）。
 13. **`outputs.write(output)`**：7 つの出力へ PWM を出します。
 
@@ -421,13 +427,14 @@ IMU の校正（起動のたび、および `i` コマンド）：2 秒間静止
 {
   "rc": [1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1500],
   "armed": false,
+  "motorReverse": false,
   "failsafe": false,
   "outputs": {
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true },
+    "esc":          { "us": 1500, "attached": true },
     "aux1":         { "us": 1000, "attached": true },
     "aux2":         { "us": 1500, "attached": true }
   },
@@ -777,7 +784,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # すべてのボー
 - ポートモニターを開いている間は、同じポートへの書き込みは通りません。
 - `lib_deps`：`olikraus/U8g2`（OLED）が唯一の外部ライブラリです。
 - `test/` の詳細は [`TESTING.md`](TESTING.md) にあります。
-  - `pio test -e native -e native-stm32`：PC 上で 387 件のテスト（ハードウェアの代役は `test/native/support/`）。カバレッジは `gcovr`。
+  - `pio test -e native -e native-stm32`：PC 上で 392 件のテスト（ハードウェアの代役は `test/native/support/`）。カバレッジは `gcovr`。
   - `pio test -e esp32-s3`：基板上で `test_feedback/`（フィードバックの閉ループシミュレーション）と `test_imu_orientation/` を実行します。それぞれテスト用ファームウェアを書き込むので、そのあと `pio run -t upload` で通常のファームウェアを書き戻してください。
 - 静的解析：`pio check -e esp32-s3`（cppcheck）、`pio check -e stm32h743`（`hal/stm32/` と `src/stm32/` に対する
   cppcheck）、`tools/clang-tidy.sh`（`.clang-tidy` のプロファイル）。
@@ -801,6 +808,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # すべてのボー
   に割り振り、`attachPin()` で MCPWM のユニット番号とタイマー番号を取り違えます。
   GPIO6/7 から GPIO4/5 の信号が出ていました（ESC が右スティックで動いていた）。出力は LEDC に書き直しました。ライブラリを戻すなら、`p` で確認してからにしてください。
 - **ESC は 50 Hz の PWM** で、ファームウェアにはスロットル範囲の校正モードがまだありません。
+  メインの ESC は双方向の BLHeli 80A です（`ESC_BIDIRECTIONAL`）。BLHeliSuite で設定し（Motor Direction = Bidirectional、範囲 1000..2000）、ニュートラル 1500 = 停止です。普通の ESC を付けた場合は `ESC_BIDIRECTIONAL = false` にしてください。そうしないと「停止」でスロットル半分になります。
 - **Web ダッシュボード：** アクセスポイントのパスワードは弱く、コマンドは飛行中も受け付けます。テストベンチと野外で使う道具であり、飛行中に使うものではありません。
 - **プロトタイプの機構：** 最初のプロトタイプは飛行しましたが、モーターの固定が弱いことと、翼の剛性が不足していることが分かりました。
 - **ライセンスは OpenPlane License** です（[LICENSE](LICENSE.md)）。作者名の明記を必須とする MIT で、軍事利用の禁止と、人や財産に対する、本人の書面による同意のない意図的な危害の禁止を定めています。ファイルに他のライセンスヘッダーを追加したり、作者名を削除したりしないでください。

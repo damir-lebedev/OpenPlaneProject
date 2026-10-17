@@ -37,7 +37,7 @@ Le kit de la version actuelle (le firmware a été vérifié dessus) :
 - **2 servos MG90S** pour les ailerons — un par demi-aile (deux servos indépendants, et non un seul pour les deux ailes).
 - **1 servo MG90S** pour la gouverne de profondeur.
 - **1 servo MG90S** pour la gouverne de direction — la roue directrice du train d’atterrissage est montée sur son axe (pour rouler au sol).
-- **Un variateur (ESC)** de 60–80 A avec BEC 5 V (le BEC alimente les servos et le récepteur).
+- **Un variateur (ESC) BLHeli 80A bidirectionnel** (mode Bidirectional/3D) avec BEC 5 V (le BEC alimente les servos et le récepteur). Un variateur unidirectionnel ordinaire convient aussi — `ESC_BIDIRECTIONAL = false` dans `Config.h`, voir [Inversion du moteur](#inversion-du-moteur-swd).
 - **Un moteur D3548 1100KV** + **une hélice 10x5**.
 - **Une batterie LiPo 3S**.
 
@@ -187,11 +187,11 @@ La table a été vérifiée sur le banc avec une radio FS-i6 (10 canaux, mode 2)
 | CH5 | SwA | ARM | Interrupteur ARM — voir la section sur l’ARM plus bas |
 | CH6 | SwB | SWB | Par défaut, volets : vers le bas, vers soi — sortis, vers le haut — rentrés (voir plus bas) |
 | CH7 | SwC (3 positions) | SWC | Par défaut, mode : en haut MANUAL, au milieu STABILIZE, en bas AUTO_TAKEOFF |
-| CH8 | SwD | SWD | Par défaut, RTH (retour à la maison) tant qu’il est activé |
+| CH8 | SwD | SWD | Par défaut, l’inversion du moteur ; ne change qu’en DISARM (voir plus bas) |
 | CH9 | VrA | VRA | Par défaut, force de la stabilisation |
 | CH10 | VrB | VRB | Par défaut, vitesse de croisière |
 
-Les canaux CH6–CH10 peuvent être **n’importe quoi, en une seule ligne** de `include/config/Controls.h` : n’importe lequel des 12 modes, des 10 fonctions (volets, frein, largage de charge, géorepérage, buzzer…) et des 7 potentiomètres. À la mise sous tension de la carte, l’affectation réelle s’affiche dans le moniteur série. Tout ce qui concerne les modes et les affectations se trouve dans [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+Les canaux CH6–CH10 peuvent être **n’importe quoi, en une seule ligne** de `include/config/Controls.h` : n’importe lequel des 12 modes, des 11 fonctions (volets, frein, largage de charge, géorepérage, buzzer, inversion…) et des 7 potentiomètres. À la mise sous tension de la carte, l’affectation réelle s’affiche dans le moniteur série. Tout ce qui concerne les modes et les affectations se trouve dans [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 Toutes les valeurs des canaux utilisent la plage d’impulsion standard du récepteur, 1000–2000 µs, avec 1500 µs pour le centre/neutre.
 
@@ -212,7 +212,7 @@ En bref, l’affectation par défaut (`include/config/Controls.h`) :
 | Interrupteur | Ce qu’il fait |
 |---|---|
 | **SwC** (CH7) | en haut **MANUAL** · au milieu **STABILIZE** · en bas **AUTO_TAKEOFF** |
-| **SwD** (CH8) | **RTH** — retour à la maison tant qu’il est activé |
+| **SwD** (CH8) | **inversion du moteur** — uniquement en DISARM (le RTH revient sur l’interrupteur en une ligne) |
 | **SwB** (CH6) | volets |
 | **VrA / VrB** (CH9/10) | force de la stabilisation / vitesse de croisière |
 
@@ -237,7 +237,20 @@ Signes des angles (comme sur l’OLED et dans le journal) : **roulis R > 0 — 
 - Si SwA est basculé sur ARM alors que les gaz ne sont pas en bas, ou que les vérifications avant vol n’ont pas été réussies, l’ARM n’a **pas** lieu (la raison est affichée dans Serial). Il faut remettre SwA vers le haut, couper les gaz et le rebasculer vers le bas.
 - Si la carte est mise sous tension avec SwA déjà en position ARM (en bas), elle ne s’arme **pas** : le firmware doit d’abord voir SwA en haut (OFF).
 
-**L’ARM bloque réellement les gaz :** tant que l’appareil n’est pas armé, les gaz de l’ESC sont maintenus de force au minimum, quelle que soit la position du stick. Avant l’armement, on vérifie que les capteurs requis par le mode choisi répondent — par exemple, STABILIZE sans IMU opérationnelle ne s’armera pas tant que vous n’aurez pas passé en MANUAL. Comportez-vous quand même comme si l’hélice pouvait se mettre à tourner à tout moment après l’ARM.
+**L’ARM bloque réellement les gaz :** tant que l’appareil n’est pas armé, les gaz de l’ESC sont maintenus de force à zéro, quelle que soit la position du stick (sur un ESC bidirectionnel, c’est l’impulsion neutre de 1500 µs). Avant l’armement, on vérifie que les capteurs requis par le mode choisi répondent — par exemple, STABILIZE sans IMU opérationnelle ne s’armera pas tant que vous n’aurez pas passé en MANUAL. Comportez-vous quand même comme si l’hélice pouvait se mettre à tourner à tout moment après l’ARM.
+
+### Inversion du moteur (SwD)
+
+Le variateur principal est un BLHeli 80A bidirectionnel : le moteur tourne dans les deux sens, **SwD vers le bas** — en arrière, vers le haut — en avant. L’inversion sert à reculer au sol.
+
+- **Le sens ne change qu’en DISARM.** Basculer SwD en ARM ne fait rien (Serial affiche `MotorReverse: реверс НЕ переключён` — « inversion NON basculée ») : le moteur continue de tourner comme avant. Le nouveau sens s’applique au désarmement. Impossible ainsi d’enclencher l’inversion plein gaz et de griller le variateur et le moteur.
+- **Pendant 3 secondes après un changement de sens, pas d’ARM** (`REVERSE_SETTLE_MS`) : si vous avez désarmé avec des gaz, le moteur tourne encore sur son élan — laissez-le s’arrêter. Pendant ce temps, l’ARM est refusé avec la raison dans Serial.
+- **En arrière — uniquement vos gaz et pas plus de 50 %** (`REVERSE_THROTTLE_LIMIT_PCT`) : manche à fond = la moitié de la puissance. En inversion, le pilote automatique ne touche pas aux gaz (les gouvernes fonctionnent comme d’habitude) ; en cas de perte de liaison, le moteur s’arrête tout simplement.
+- C’est visible sur l’OLED (`REV` dans la première ligne) et sur le tableau de bord (le badge « Мотор: РЕВЕРС » — « Moteur : INVERSION »).
+
+**Réglage du variateur dans BLHeliSuite** (une fois, hélice démontée) : Motor Direction — **Bidirectional** (sur BLHeli_32 — « Bidirectional »/3D), PPM Min Throttle — 1000, PPM Max Throttle — 2000, Center — 1500. Le variateur s’arme en voyant le neutre de 1500 µs, et le firmware l’envoie dès la première impulsion. Si le manche vers l’avant fait tourner le moteur dans le mauvais sens, permutez deux fils quelconques du moteur (ou réglez Motor Direction = Bidirectional Reversed) plutôt que de modifier le firmware.
+
+Un variateur unidirectionnel ordinaire : `ESC_BIDIRECTIONAL = false` dans `Config.h`, sinon à l’« arrêt » (1500) il donnera la moitié des gaz ! L’inversion ne s’enclenche alors jamais.
 
 ### Failsafe
 
@@ -245,6 +258,7 @@ La perte de liaison a une **priorité absolue** sur tout le reste :
 
 - **appareil armé, GPS et point de départ disponibles** — **retour à la maison avec le moteur** (comme sur ArduPilot/INAV) : cap sur le point de départ, altitude de 40 m, cercles au-dessus jusqu’au retour de la liaison. L’OLED affiche `FSRTH`. Se désactive avec `FAILSAFE_RTH = false` dans `Config.h` ;
 - **appareil armé, pas de GPS** — **plané** : moteur coupé ; le pilote automatique, dans n’importe quel mode, même MANUAL, maintient les ailes à plat et le nez légèrement sous l’horizon (−3°), et les volets rentrent. L’OLED affiche `RX LOST ... GLIDE`. Si vous réglez `FAILSAFE_GLIDE_ROLL_DEG` = 10–20, l’avion décrira une spirale peu inclinée au-dessus de vous ;
+- **moteur en inversion** — le moteur est coupé dans tous les cas, le pilote automatique ne pilote qu’avec les gouvernes (retour au départ en plané) ;
 - **non armé** (au sol) ou IMU qui ne répond pas — moteur coupé, ailerons, profondeur et direction au neutre (1500 µs) ; au bout de 10 s sans liaison, le buzzer « je suis là » retentit (s’il est soudé).
 
 Le firmware reconnaît la perte de liaison de deux façons :
@@ -374,10 +388,10 @@ Tant qu’il n’y a pas de calibration du montage, l’ancienne méthode s’ap
 Si l’OLED est branché (GPIO1/GPIO2), il affiche ceci 5 fois par seconde :
 
 ```
-RX ok disarm STAB        <- liaison / ARM / mode (si la liaison est perdue, la ligne est en inversé)
+RX ok disarm STAB        <- liaison / ARM / mode / REV — moteur en arrière (si la liaison est perdue, la ligne est en inversé)
 R  +1.2 P  -0.4          <- roulis / tangage, °
 Alt +0.3 Vz +0.1         <- altitude depuis le point de mise sous tension, m / vitesse verticale, m/s
-Hdg 123  Thr 1000        <- cap de la boussole / gaz envoyés à l’ESC, µs
+Hdg 123  Thr 1000        <- cap de la boussole / gaz 1000..2000 = 0..100 % (en arrière aussi), µs
 L1500 R1500 E1500        <- PWM des ailerons et de la profondeur, µs
 Loop 500Hz max 1100us    <- fréquence et pire durée de la boucle
 ```

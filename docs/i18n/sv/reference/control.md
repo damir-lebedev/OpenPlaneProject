@@ -35,10 +35,13 @@ Alla fält är 0 som standard.
 De önskade utgångspulserna, PWM µs. Som standard – roderytor i neutralläge och
 gas `PWM_MIN`.
 
+`throttle` är gasens storlek (1000..2000 = 0..100 %) åt vilket håll som helst; `FlightOutputs` gör om den, tillsammans med `motorReverse`, till ESC-pulsen (via `EscSignal`).
+
 | Fält | Standard |
 |---|---|
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
+| `bool motorReverse` | `false` – motorn går framåt |
 | `aux1` | `PAYLOAD_CLOSED_US` – lastsläppet är stängt |
 | `aux2` | `PWM_CENTER` – kameran |
 
@@ -100,6 +103,36 @@ Den vet ingenting om ARM och autopiloten – deras korrigeringar tillämpas av
 
 ---
 
+## `EscSignal`
+
+**Fil:** `control/EscSignal.h` · **Typ:** namespace · **Beror på:** `Config`
+
+Gas (1000..2000 = 0..100 %) och riktning → pulsen på ESC-stiftet.
+
+| Funktion | Beskrivning |
+|---|---|
+| `uint16_t pulseUs(uint16_t throttleUs, bool reverse)` | `ESC_BIDIRECTIONAL` (BLHeli 80A i 3D): 0 % → `ESC_NEUTRAL_US` (1500), framåt 1500..2000, bakåt 1500..1000. Enkelriktad ESC: 1000..2000 som det är, `reverse` ignoreras. Gas utanför 1000..2000 kapas |
+| `uint16_t stopUs()` | Pulsen ”motorn står” (1500 för dubbelriktad ESC, 1000 för en vanlig) |
+
+Bara omräkning, inga skydd: när riktningen får bytas avgör `MotorReverse`, och gasgränsen bakåt sätter `FlightController`.
+
+---
+
+## `MotorReverse`
+
+**Fil:** `control/MotorReverse.h` · **Beror på:** `Config`
+
+Motorns riktning enligt brytaren `Feature::MOTOR_REVERSE` (SwD som standard) – **bara utan ARM**.
+
+| Metod | Beskrivning |
+|---|---|
+| `void update(bool requested, bool armed, uint32_t nowMs)` | Utan ARM – riktningen följer brytaren direkt (i Serial `MotorReverse: мотор НАЗАД` / `вперёд` – ”motor BAKÅT” / ”framåt”). I ARM – brytaren verkar inte, ”реверс НЕ переключён” (”reversering INTE omkopplad”) skrivs ut en gång, och den nya riktningen väntar på DISARM. Med `ESC_BIDIRECTIONAL = false` slås reversering aldrig på |
+| `bool isReversed() const` | Motorn går bakåt |
+| `bool isPending() const` | Brytaren står redan i det andra läget; riktningen väntar på DISARM |
+| `const char* armBlockReason(uint32_t nowMs) const` | Skäl att neka ARM: sedan det senaste riktningsbytet har mindre än `REVERSE_SETTLE_MS` gått (motorn kan fortfarande snurra); annars `nullptr` |
+
+---
+
 ## `ArmingManager`
 
 **Fil:** `control/ArmingManager.h` · **Beror på:** `Autopilot` (nullbar), `RcChannelState`, `Config`, `Channels`
@@ -110,7 +143,7 @@ ARM med en separat brytare SwA (CH5). Tillståndsmaskinen finns i
 | Metod | Beskrivning |
 |---|---|
 | `explicit ArmingManager(Autopilot* ap = nullptr)` | Utan autopilot kontrolleras bara gasen |
-| `void update(const RcChannelState& rc, bool receiverFailsafe)` | Vid failsafe – ingenting (brytaren i en failsafe-ram återspeglar inte piloten). Brytaren OFF → DISARM, `switchSeenOff = true`. En övergång OFF→ON → kontroller → ARM eller en vägran |
+| `void update(const RcChannelState& rc, bool receiverFailsafe, const char* blockReason = nullptr)` | Vid failsafe – ingenting (brytaren i en failsafe-ram återspeglar inte piloten). Brytaren OFF → DISARM, `switchSeenOff = true`. En övergång OFF→ON → kontroller → ARM eller en vägran `blockReason` är ett externt skäl att neka (från `FlightController`: `MotorReverse::armBlockReason()`) |
 | `bool isArmed() const` | Armerat |
 | `const char* getLastRefusalReason() const` | Orsaken till den senaste vägran eller `nullptr`; nollställs när brytaren slås av |
 
@@ -122,6 +155,7 @@ ARM med en separat brytare SwA (CH5). Tillståndsmaskinen finns i
 | Vilket läge som helst utom MANUAL, IMU:n finns men svarar inte | ”IMU:n svarar inte…” |
 | Vilket läge som helst utom MANUAL, IMU:n har ett problem i kontrollen före flygning | texten från `ImuSensor::getPreflightProblem()` |
 | Ett läge med höjd (`needsAltitude`: ALT_HOLD, CRUISE, LOITER, RTH, AUTO_LAND, SOARING), barometern finns men svarar inte | ”barometern svarar inte…” |
+| Allt annat godkänt, men `blockReason` skickades | `blockReason` (t.ex. ”motorns riktning har just bytts …”) |
 
 En sensor som saknas i bygget (`nullptr`) blockerar inte ARM; i MANUAL
 armeras planet helt utan sensorer. En GPS-fix finns avsiktligt inte bland
@@ -135,7 +169,7 @@ per övergång OFF→ON; förlorad förbindelse nollställer inte ARM.
 
 ## `FlightOutputs`
 
-**Fil:** `control/FlightOutputs.h` · **Beror på:** `IBoard`, `FlightOutputState`, `Config`
+**Fil:** `control/FlightOutputs.h` · **Beror på:** `IBoard`, `FlightOutputState`, `EscSignal`, `Config`
 
 Den enda klassen som känner till uppsättningen och ordningen för PWM-utgångarna. Alla utgångar
 beskrivs i en tabell; `begin()`, `write()`, statusen och självtestet
@@ -155,13 +189,13 @@ går igenom den i en slinga.
 |---|---|
 | `static const OutputInfo& outputInfo(uint8_t ch)` | En tabellrad; ordningen = `ServoChannel` |
 | `explicit FlightOutputs(IBoard& board)` | |
-| `bool begin()` | `attach(PWM_MIN, PWM_MAX)` för varje utgång, skriver ut statusen; `true` om alla **obligatoriska** fick en kanal |
+| `bool begin()` | `attach(PWM_MIN, PWM_MAX)` för varje utgång, skriver ut status och ESC-typ; `true` om alla **obligatoriska** fick en kanal |
 | `bool isAttached(uint8_t ch) const` | Utgången är ansluten (ett index utanför intervallet → `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Utgångens värde från tillståndet, enligt tabellen |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Pulsen på utgångens stift: fältet enligt tabellen, för ESC – via `EscSignal::pulseUs(throttle, motorReverse)` |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | Den uppmätta pulsen mot den förväntade på varje draget stift; ”OK” när avvikelsen är ≤ 15 µs |
 | `void write(const FlightOutputState&)` | Skriv alla utgångar och kom ihåg tillståndet |
-| `void setFailsafe()` | Roderytor i neutralläge (`FAILSAFE_*`), gas `FAILSAFE_THROTTLE`; AUX som de var (lasten släpps inte vid förlorad förbindelse) |
+| `void setFailsafe()` | Roderytor i neutral (`FAILSAFE_*`), gas `FAILSAFE_THROTTLE` (1500 på stiftet till en dubbelriktad ESC); AUX som de var (lasten släpps inte vid förlorad förbindelse) |
 | `void setBuzzer(bool on)` | kortets summer (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | Det senast skrivna tillståndet |
 
@@ -173,7 +207,7 @@ För att lägga till en utgång: en tabellrad + ett fält i `FlightOutputState` 
 ## `FlightController`
 
 **Fil:** `control/FlightController.h` · **Lager:** KOORDINERING ·
-**Beror på:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`
+**Beror på:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
 
 Styrslingans enda koordinator: den tolkar inte UART:en, rör inte
 PWM:en och beräknar inte mixern själv – den anropar bara de andra i rätt
@@ -193,6 +227,7 @@ ordning. Ett detaljerat diagram finns i [ARCHITECTURE.md §6](../ARCHITECTURE.md
 | `int16_t getFlapsUs() const` | Klaffarnas läge |
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | Den här cykelns brytare och rattar |
 | `bool isLostModelBeeping() const` | ”Jag är här”-summern är igång |
+| `const MotorReverse& getMotorReverse() const` | Motorns riktning och väntande reversering |
 
 Ordningen i `update()`:
 
@@ -203,11 +238,16 @@ Ordningen i `update()`:
    klaffarna `mixer.updateFlaps(target)`: `AIRBRAKE` → −`AIRBRAKE_US`, `FLAPS` →
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → steglöst, vid förlorad förbindelse – 0;
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)` – **alltid**;
+   i reversering skickas `PWM_MIN` i stället för `pilotThrottle` (för autopiloten är motorn av);
 6. summern: `Beeper::update(BEEPER, armed, failsafe, now)`;
 7. förbindelsen förlorad → `applyLinkLoss()` och cykeln lämnas;
-8. `arming.update(rc, false)`;
+8. `arming.update(rc, false, reverse.armBlockReason(now))`, därefter
+   `reverse.update(MOTOR_REVERSE, armed, now)` – vid DISARM byts riktningen i samma takt;
 9. `command = autopilot->getCommand()` (eller spakarna utan autopilot), klaffarna – sina egna;
-10. `output = mixer.mix(command)`; `output.throttle = autopilot->applyThrottle(pilotThrottle)`;
+10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
+    framåt – `output.throttle = autopilot->applyThrottle(pilotThrottle)` med gränsen
+    `THROTTLE_LIMIT_PCT`, bakåt – pilotens gas med gränsen
+    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
 11. inte armerat eller `MOTOR_KILL` → `throttle = PWM_MIN` (sist);
 12. AUX1 – lasten (`PAYLOAD_DROP`), AUX2 – kameran (`Knob::CAMERA_TILT`, `CAMERA_STAB` drar ifrån tippningen);
 13. `outputs.write(output)`.
@@ -215,7 +255,7 @@ Ordningen i `update()`:
 `applyLinkLoss()`: om autopiloten är i failsafe (armerat: RTH eller glidflykt) –
 roderytorna och gasen följer autopilotens kommando (klaffarna
 fälls in mjukt, `MOTOR_KILL` tystar fortfarande motorn, AUX som de var);
-annars `outputs.setFailsafe()`.
+annars `outputs.setFailsafe()`. I reversering står motorn alltid still.
 
 ---
 

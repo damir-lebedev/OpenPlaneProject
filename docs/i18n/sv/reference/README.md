@@ -15,7 +15,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | [hal.md](hal.md) | HAL | `IBoard`, `ServoChannel`, `II2CBus`, `ISpiBus`, `IUartPort`, `IServoOutput`, `IRegisterDevice`, `I2cRegisterDevice`, `SpiRegisterDevice`, `Rtos`, `Esp32Board`, `Esp32I2CBus`, `Esp32SpiBus`, `Esp32UartPort`, `Esp32ServoOutput`; STM32H743: `Stm32Board`, `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`, `Stm32ServoOutput`, `Stm32FlashStorage`, `compat/Preferences` |
 | [storage.md](storage.md) | LAGRING | `IFlashStorage`, `KeyValueStore`, `KvPreferences` |
 | [rc.md](rc.md) | RC | `RcChannelState`, `RcInput`, `IBusReceiver` |
-| [control.md](control.md) | STYRNING / KOORDINERING | `ControlCommand`, `FlightOutputState`, `FlapsController`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Beeper`, `FlightController` |
+| [control.md](control.md) | STYRNING / KOORDINERING | `ControlCommand`, `FlightOutputState`, `FlapsController`, `ControlMixer`, `ThrottleManager`, `EscSignal`, `MotorReverse`, `ArmingManager`, `FlightOutputs`, `Beeper`, `FlightController` |
 | [autopilot.md](autopilot.md) | AUTOPILOT | `AutopilotMode`, `Feature`, `Knob`, `PilotInputs`, `Binding`/`Bind`/`BindingCheck`, `PilotSwitches`, `Autopilot`, `NavStatus`, `Geo`/`Guidance`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, `PidController` |
 | [feedback.md](feedback.md) | AUTOPILOT / återkoppling | `FeedbackConfig`, `FeedbackMath`, `FlightSnapshot`, `FeedbackOutput`, `PhaseTargets`, `SpeedEstimator`, `AirborneDetector`, `ControlEffectivenessEstimator`, `AxisModel`, `AdaptiveRateController`, `StallGuard`, `TakeoffSequencer`, `LandingSequencer`, `FeedbackSupervisor` |
 | [sensors.md](sensors.md) | SENSORER | gränssnitt och data, `SensorMounting`, `SensorSelection`, `ImuOrientation`, `AttitudeEstimator`, `ImuSensorBase`, `MPU6050_Sensor`, `ICM42688_Sensor`, `LSM6DSV_Sensor`, `ICM45686_Sensor`, `BarometerBase`, `BMP388_Sensor`, `BME280_Sensor`, `SPL06_Sensor`, `BMP581_Sensor`, `MagnetometerBase`, `QMC5883P_Sensor`, `QMC5883L_Sensor`, `QMC6309_Sensor`, `UbloxM10_Gps`, `AirspeedSensor`, `PitotDualBaroAirspeed` |
@@ -51,6 +51,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | `Controls` | namnrymd | `config/Controls.h` | [config](config.md#namnrymd-controls) |
 | `DebugConsole` | klass | `telemetry/DebugConsole.h` | [telemetry](telemetry.md#debugconsole) |
 | `DebugLogger` | klass | `telemetry/DebugLogger.h` | [telemetry](telemetry.md#debuglogger) |
+| `EscSignal` | namespace | `control/EscSignal.h` | [control](control.md#escsignal) |
 | `Esp32Board` | klass | `hal/esp32/Esp32Board.h` | [hal](hal.md#esp32board) |
 | `Esp32I2CBus` | klass | `hal/esp32/Esp32I2CBus.h` | [hal](hal.md#esp32i2cbus) |
 | `Esp32ServoOutput` | klass | `hal/esp32/Esp32ServoOutput.h` | [hal](hal.md#esp32servooutput) |
@@ -94,6 +95,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | `MagnetometerBase` | abstrakt klass | `sensors/mag/MagnetometerBase.h` | [sensors](sensors.md#magnetometerbase) |
 | `Mavlink` | namnrymd | `telemetry/MavlinkCodec.h` | [telemetry](telemetry.md#mavlink-kodek) |
 | `MavlinkModes`, `MavlinkTelemetry` | namnrymd, klass | `telemetry/MavlinkTelemetry.h` | [telemetry](telemetry.md#mavlinktelemetry) |
+| `MotorReverse` | class | `control/MotorReverse.h` | [control](control.md#motorreverse) |
 | `MPU6050_Sensor` | klass | `sensors/imu/MPU6050_Sensor.h` | [sensors](sensors.md#mpu6050_sensor) |
 | `OledDisplay` | klass | `telemetry/OledDisplay.h` | [telemetry](telemetry.md#oleddisplay) |
 | `PhaseTargets` | struktur | `autopilot/feedback/PhaseTargets.h` | [feedback](feedback.md#phasetargets) |

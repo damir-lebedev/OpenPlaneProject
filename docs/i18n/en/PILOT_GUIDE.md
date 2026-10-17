@@ -37,7 +37,7 @@ The kit of the current build (the firmware has been verified on it):
 - **2 MG90S servos** for the ailerons — one for each wing panel (two independent servos, not one for both wings).
 - **1 MG90S servo** for the elevator.
 - **1 MG90S servo** for the rudder — the landing gear's steering wheel is mounted on the same shaft (steering on the ground).
-- **An electronic speed controller (ESC)** 60–80 A with a 5 V BEC (the BEC powers the servos and the receiver).
+- **An electronic speed controller (ESC) BLHeli 80A, bidirectional** (Bidirectional/3D mode) with a 5 V BEC (the BEC powers the servos and the receiver). An ordinary unidirectional ESC also works — `ESC_BIDIRECTIONAL = false` in `Config.h`, see [Motor reverse](#motor-reverse-swd).
 - **A D3548 1100KV motor** + **a 10x5 propeller**.
 - **A 3S LiPo battery**.
 
@@ -187,11 +187,11 @@ The map was verified on the bench with an FS-i6 transmitter (10 channels, mode 2
 | CH5 | SwA | ARM | The ARM switch — see the ARM section below |
 | CH6 | SwB | SWB | Flaps by default: down, toward you — deployed, up — retracted (see below) |
 | CH7 | SwC (3 positions) | SWC | Mode by default: up MANUAL, middle STABILIZE, down AUTO_TAKEOFF |
-| CH8 | SwD | SWD | RTH (home) by default, while switched on |
+| CH8 | SwD | SWD | Motor reverse by default; switches only when disarmed (see below) |
 | CH9 | VrA | VRA | Stabilization strength by default |
 | CH10 | VrB | VRB | Cruise speed by default |
 
-CH6–CH10 can be **anything, in one line** of `include/config/Controls.h`: any of the 12 modes, 10 functions (flaps, brake, payload drop, geofence, buzzer…) and 7 knobs. When the board powers up, the actual layout is printed to the serial monitor. Everything about modes and bindings is in [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 can be **anything, in one line** of `include/config/Controls.h`: any of the 12 modes, 11 functions (flaps, brake, payload drop, geofence, buzzer, reverse…) and 7 knobs. When the board powers up, the actual layout is printed to the serial monitor. Everything about modes and bindings is in [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 All channel values use the standard receiver pulse range of 1000–2000 µs, with 1500 µs as center/neutral.
 
@@ -212,7 +212,7 @@ In short — the default layout (`include/config/Controls.h`):
 | Switch | What it does |
 |---|---|
 | **SwC** (CH7) | up **MANUAL** · middle **STABILIZE** · down **AUTO_TAKEOFF** |
-| **SwD** (CH8) | **RTH** — home, while switched on |
+| **SwD** (CH8) | **motor reverse** — only when disarmed (RTH goes back on the switch with one line) |
 | **SwB** (CH6) | flaps |
 | **VrA / VrB** (CH9/10) | stabilization strength / cruise speed |
 
@@ -237,7 +237,20 @@ Angle signs (as on the OLED and in the log): **roll R > 0 — right wing down, p
 - If SwA is moved to ARM with the throttle not at the bottom, or the pre-flight checks have not passed, ARM does **not** happen (the reason is printed in Serial). You need to return SwA up, lower the throttle and move it down again.
 - If the board was powered on with SwA already in the ARM position (down), it does **not** arm: the firmware must first see SwA up (OFF).
 
-**ARM really blocks the throttle:** while the aircraft is not armed, the ESC throttle is forcibly held at the minimum regardless of the stick. Before arming, the firmware checks that the sensors required by the selected mode respond — for example, STABILIZE without a live IMU will not arm until you switch to MANUAL. Still, behave as if the propeller could start spinning at any moment after ARM.
+**ARM really blocks the throttle:** while the aircraft is not armed, the ESC throttle is forcibly held at zero regardless of the stick (on a bidirectional ESC that is the 1500 µs neutral pulse). Before arming, the firmware checks that the sensors required by the selected mode respond — for example, STABILIZE without a live IMU will not arm until you switch to MANUAL. Still, behave as if the propeller could start spinning at any moment after ARM.
+
+### Motor reverse (SwD)
+
+The main ESC is a bidirectional BLHeli 80A: the motor spins both ways, **SwD down** — backwards, up — forwards. Reverse is there to taxi backwards on the ground.
+
+- **The direction changes only when disarmed.** Flip SwD while armed and nothing happens (Serial prints `MotorReverse: реверс НЕ переключён` — “reverse NOT switched”); the motor keeps turning the way it was. The new direction takes effect when you disarm. This way reverse cannot be engaged at full throttle, burning out the ESC and the motor.
+- **For 3 seconds after a direction change, ARM is refused** (`REVERSE_SETTLE_MS`): if you disarmed with throttle up, the motor is still coasting — let it stop. Meanwhile ARM is refused with the reason in Serial.
+- **Backwards — only your throttle and no more than 50%** (`REVERSE_THROTTLE_LIMIT_PCT`): full stick = half power. In reverse the autopilot does not touch the throttle (the control surfaces work as usual); on link loss the motor simply stops.
+- It is visible on the OLED (`REV` in the first line) and on the dashboard (the “Мотор: РЕВЕРС” badge — “Motor: REVERSE”).
+
+**ESC setup in BLHeliSuite** (once, propeller removed): Motor Direction — **Bidirectional** (on BLHeli_32 — “Bidirectional”/3D), PPM Min Throttle — 1000, PPM Max Throttle — 2000, Center — 1500. The ESC arms when it sees the 1500 µs neutral, and the firmware outputs it from the very first pulse. If stick forward spins the motor the wrong way, swap any two motor wires (or set Motor Direction = Bidirectional Reversed) rather than changing the firmware.
+
+An ordinary unidirectional ESC: set `ESC_BIDIRECTIONAL = false` in `Config.h`, otherwise at “stop” (1500) it will run at half throttle! Reverse is then never engaged.
 
 ### Failsafe
 
@@ -245,6 +258,7 @@ Loss of link has **absolute priority** over everything else:
 
 - **the aircraft is armed, GPS and home are available** — **return home with the motor** (as in ArduPilot/INAV): heading to home, altitude 40 m, circles above home until the link returns. The OLED shows `FSRTH`. Disabled with `FAILSAFE_RTH = false` in `Config.h`;
 - **the aircraft is armed, no GPS** — **gliding**: the motor is off, the autopilot in any mode, even MANUAL, keeps the wings level and the nose slightly below the horizon (−3°), and the flaps retract. The OLED shows `RX LOST ... GLIDE`. If you set `FAILSAFE_GLIDE_ROLL_DEG` = 10–20, the airplane will circle above you in a shallow spiral;
+- **motor in reverse** — the motor is off in any case; the autopilot steers with the control surfaces only (home — by gliding);
 - **not armed** (on the ground) or the IMU does not respond — the motor is off, the ailerons, elevator and rudder go to neutral (1500 µs); after 10 s without a link the "I'm here" buzzer beeps (if it is soldered on).
 
 The firmware recognizes loss of link in two ways:
@@ -374,10 +388,10 @@ On every power-up the IMU spends ~2 s calibrating the gyroscope and checks itsel
 If the OLED is connected (GPIO1/GPIO2), it shows the following 5 times a second:
 
 ```
-RX ok disarm STAB        <- link / ARM / mode (when the link is lost the line is inverted)
+RX ok disarm STAB        <- link / ARM / mode / REV — motor backwards (when the link is lost the line is inverted)
 R  +1.2 P  -0.4          <- roll / pitch, °
 Alt +0.3 Vz +0.1         <- altitude from the power-up point, m / vertical speed, m/s
-Hdg 123  Thr 1000        <- compass heading / throttle to the ESC, µs
+Hdg 123  Thr 1000        <- compass heading / throttle 1000..2000 = 0..100% (backwards too), µs
 L1500 R1500 E1500        <- PWM of the ailerons and elevator, µs
 Loop 500Hz max 1100us    <- frequency and worst loop time
 ```

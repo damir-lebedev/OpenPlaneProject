@@ -37,7 +37,7 @@ Satsen i det nuvarande bygget (firmwaren har verifierats på den):
 - **2 MG90S-servon** för skevrodren – ett för varje vinghalva (två oberoende servon, inte ett för båda vingarna).
 - **1 MG90S-servo** för höjdrodret.
 - **1 MG90S-servo** för sidrodret – landningsställets styrhjul sitter på samma axel (styrning på marken).
-- **Ett elektroniskt fartreglage (ESC)** 60–80 A med en 5 V BEC (BEC:en driver servona och mottagaren).
+- **Ett elektroniskt fartreglage (ESC) BLHeli 80A, dubbelriktat** (läget Bidirectional/3D) med en 5 V BEC (BEC:en driver servona och mottagaren). Ett vanligt enkelriktat fartreglage fungerar också – `ESC_BIDIRECTIONAL = false` i `Config.h`, se [Motorreversering](#motorreversering-swd).
 - **En D3548 1100KV-motor** + **en 10x5-propeller**.
 - **Ett 3S LiPo-batteri**.
 
@@ -187,11 +187,11 @@ Kartan verifierades på bänken med en FS-i6-sändare (10 kanaler, mode 2) och e
 | CH5 | SwA | ARM | ARM-brytaren – se avsnittet om ARM nedan |
 | CH6 | SwB | SWB | Klaffar som standard: ned, mot dig – utfällda, upp – infällda (se nedan) |
 | CH7 | SwC (3 lägen) | SWC | Läge som standard: upp MANUAL, mitten STABILIZE, ned AUTO_TAKEOFF |
-| CH8 | SwD | SWD | RTH (hem) som standard, så länge den är påslagen |
+| CH8 | SwD | SWD | Som standard motorreversering; växlar bara i DISARM (se nedan) |
 | CH9 | VrA | VRA | Stabiliseringens styrka som standard |
 | CH10 | VrB | VRB | Marschfart som standard |
 
-CH6–CH10 kan vara **vad som helst, på en rad** i `include/config/Controls.h`: vilket som helst av de 12 lägena, 10 funktionerna (klaffar, broms, lastsläpp, geofence, summer…) och 7 rattarna. När kortet startar skrivs den faktiska fördelningen ut i seriemonitorn. Allt om lägen och bindningar finns i [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 kan vara **vad som helst, på en rad** i `include/config/Controls.h`: vilket som helst av de 12 lägena, 11 funktionerna (klaffar, broms, lastsläpp, geofence, summer, reversering…) och 7 rattarna. När kortet startar skrivs den faktiska fördelningen ut i seriemonitorn. Allt om lägen och bindningar finns i [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 Alla kanalvärden använder mottagarens standardpulsområde 1000–2000 µs, med 1500 µs som mitt/neutralläge.
 
@@ -212,7 +212,7 @@ Kort sagt – standardfördelningen (`include/config/Controls.h`):
 | Brytare | Vad den gör |
 |---|---|
 | **SwC** (CH7) | upp **MANUAL** · mitten **STABILIZE** · ned **AUTO_TAKEOFF** |
-| **SwD** (CH8) | **RTH** – hem, så länge den är påslagen |
+| **SwD** (CH8) | **motorreversering** – bara i DISARM (RTH läggs tillbaka på brytaren med en rad) |
 | **SwB** (CH6) | klaffar |
 | **VrA / VrB** (CH9/10) | stabiliseringens styrka / marschfart |
 
@@ -237,7 +237,20 @@ Vinkeltecken (som på OLED-skärmen och i loggen): **roll R > 0 – höger vinge
 - Om SwA förs till ARM med gasen inte i botten, eller om kontrollerna före flygning inte har gått igenom, sker **ingen** ARM (orsaken skrivs ut i Serial). Du måste föra tillbaka SwA uppåt, sänka gasen och föra den nedåt igen.
 - Om kortet startades med SwA redan i ARM-läget (ned) armeras det **inte**: firmwaren måste först se SwA uppe (OFF).
 
-**ARM blockerar verkligen gasen:** så länge planet inte är armerat hålls ESC:ns gas tvångsmässigt på minimum oavsett spak. Före armering kontrollerar firmwaren att de sensorer som det valda läget kräver svarar – till exempel armeras inte STABILIZE utan en levande IMU förrän du byter till MANUAL. Bete dig ändå som om propellern kan börja snurra när som helst efter ARM.
+**ARM blockerar verkligen gasen:** så länge planet inte är armerat hålls ESC:ns gas tvångsmässigt på noll oavsett spak (på en dubbelriktad ESC är det neutralpulsen 1500 µs). Före armering kontrollerar firmwaren att de sensorer som det valda läget kräver svarar – till exempel armeras inte STABILIZE utan en levande IMU förrän du byter till MANUAL. Bete dig ändå som om propellern kan börja snurra när som helst efter ARM.
+
+### Motorreversering (SwD)
+
+Huvudfartreglaget är ett dubbelriktat BLHeli 80A: motorn går åt båda hållen, **SwD nedåt** – bakåt, uppåt – framåt. Reverseringen är till för att taxa bakåt på marken.
+
+- **Riktningen ändras bara i DISARM.** Slår du om SwD i ARM händer ingenting (i Serial står `MotorReverse: реверс НЕ переключён` – ”reversering INTE omkopplad”), motorn fortsätter som förut. Den nya riktningen gäller när du desarmerar. På så sätt går det inte att slå på reversering på full gas och bränna fartreglaget och motorn.
+- **I 3 sekunder efter ett riktningsbyte går det inte att armera** (`REVERSE_SETTLE_MS`): har du desarmerat med gas ute snurrar motorn fortfarande av farten – låt den stanna. Under tiden nekas ARM med orsaken i Serial.
+- **Bakåt – bara din gas och högst 50 %** (`REVERSE_THROTTLE_LIMIT_PCT`): full spak = halv effekt. I reversering rör autopiloten inte gasen (rodren fungerar som vanligt), och vid förlorad förbindelse stannar motorn helt enkelt.
+- Det syns på OLED:en (`REV` på första raden) och på instrumentpanelen (märket ”Мотор: РЕВЕРС” – ”Motor: BAKÅT”).
+
+**Inställning av fartreglaget i BLHeliSuite** (en gång, propellern borttagen): Motor Direction – **Bidirectional** (på BLHeli_32 – ”Bidirectional”/3D), PPM Min Throttle – 1000, PPM Max Throttle – 2000, Center – 1500. Fartreglaget armeras när det ser neutralläget 1500 µs, och firmwaren skickar det från allra första pulsen. Om motorn snurrar åt fel håll med spaken framåt byter du plats på två valfria motorledningar (eller ställer Motor Direction = Bidirectional Reversed) i stället för att ändra firmwaren.
+
+Ett vanligt enkelriktat fartreglage: sätt `ESC_BIDIRECTIONAL = false` i `Config.h`, annars ger det halv gas vid ”stopp” (1500)! Reversering slås då aldrig på.
 
 ### Failsafe
 
@@ -245,6 +258,7 @@ Förlorad förbindelse har **absolut prioritet** över allt annat:
 
 - **planet är armerat, GPS och hempunkt finns** – **hemflygning med motor** (som i ArduPilot/INAV): kurs mot hempunkten, höjd 40 m, cirklar över hempunkten tills förbindelsen återkommer. OLED-skärmen visar `FSRTH`. Stängs av med `FAILSAFE_RTH = false` i `Config.h`;
 - **planet är armerat, ingen GPS** – **glidflykt**: motorn är av, autopiloten håller i vilket läge som helst, även MANUAL, vingarna plana och nosen något under horisonten (−3°), och klaffarna fälls in. OLED-skärmen visar `RX LOST ... GLIDE`. Om du sätter `FAILSAFE_GLIDE_ROLL_DEG` = 10–20 kommer flygplanet att cirkla ovanför dig i en flack spiral;
+- **motorn i reversering** – motorn är av i alla lägen, autopiloten styr bara med rodren (hem – i glidflykt);
 - **inte armerat** (på marken) eller IMU:n svarar inte – motorn är av, skevrodren, höjdrodret och sidrodret går till neutralläge (1500 µs); efter 10 s utan förbindelse piper ”jag är här”-summern (om den är monterad).
 
 Firmwaren känner igen förlorad förbindelse på två sätt:
@@ -374,10 +388,10 @@ Vid varje start ägnar IMU:n ~2 s åt att kalibrera gyroskopet och kontrollerar 
 Om OLED-skärmen är ansluten (GPIO1/GPIO2) visar den följande 5 gånger per sekund:
 
 ```
-RX ok disarm STAB        <- förbindelse / ARM / läge (vid förlorad förbindelse inverteras raden)
+RX ok disarm STAB        <- förbindelse / ARM / läge / REV – motorn bakåt (vid förlorad förbindelse inverteras raden)
 R  +1.2 P  -0.4          <- roll / tippning, °
 Alt +0.3 Vz +0.1         <- höjd från startpunkten, m / vertikal hastighet, m/s
-Hdg 123  Thr 1000        <- kompasskurs / gas till ESC:n, µs
+Hdg 123  Thr 1000        <- kompasskurs / gas 1000..2000 = 0..100 % (även bakåt), µs
 L1500 R1500 E1500        <- PWM för skevrodren och höjdrodret, µs
 Loop 500Hz max 1100us    <- frekvens och sämsta slingtid
 ```

@@ -97,6 +97,15 @@
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | 스틱을 끝까지 움직였을 때 중심에서의 변위(µs). 방향타가 작은 것은 같은 서보에 착륙장치 바퀴가 달려 있기 때문 |
 | `THROTTLE_LIMIT_PCT` | 100 | ESC로 가는 스로틀의 상한(%)이며 스틱과 오토파일럿에 똑같이 적용됨(`FlightController::capThrottle`). 출력이 약한 3S1P 배터리로 테스트 벤치 시험을 할 때는 50으로 두었으며, 테스트는 이 값으로 기대 출력을 계산함 |
 
+### ESC와 모터 역회전
+
+| 상수 | 값 | 의미 |
+|---|---|---|
+| `ESC_BIDIRECTIONAL` | `true` | 양방향 ESC(Bidirectional/3D 모드의 BLHeli 80A): 스로틀을 중립을 중심으로 한 펄스로 변환(`EscSignal`), “모터 정지”는 1500, 역회전 사용 가능. `false` — 일반 ESC: 1000 = 정지, 역회전 없음 |
+| `ESC_NEUTRAL_US` | 1500 | 양방향 ESC의 중립: 모터 정지, 그보다 위는 전진, 아래는 후진 |
+| `REVERSE_THROTTLE_LIMIT_PCT` | 50 | 후진 스로틀 상한, %(그리고 `THROTTLE_LIMIT_PCT` 이하): 프로펠러는 거꾸로 돌면 추력이 약하지만 전류는 그대로 다 먹음 |
+| `REVERSE_SETTLE_MS` | 3000 | 방향을 바꾼 뒤 이 시간 동안 ARM 거부 — 스로틀을 올린 채 DISARM한 모터가 멈출 시간을 줌 |
+
 ### 플랩(플래퍼론)
 
 | 상수 | 값 | 의미 |

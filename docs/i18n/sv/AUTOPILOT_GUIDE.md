@@ -57,7 +57,7 @@ FS-i6 + FS-iA6B, iBUS, 10 kanaler (`config/Channels.h`).
 | CH5 | **SwA** | **ARM** (ned = armerad, bara med gasen i botten; kan inte tilldelas om) |
 | CH6 | SwB | klaffar (`Feature::FLAPS`) |
 | CH7 | **SwC** (3 lägen) | upp **MANUAL** · mitten **STABILIZE** · ned **AUTO_TAKEOFF** |
-| CH8 | SwD | **RTH** – hem, så länge den är påslagen |
+| CH8 | SwD | **motorreversering** (`Feature::MOTOR_REVERSE`) – växlar bara i DISARM |
 | CH9 | VrA | stabiliseringens styrka (`Knob::STAB_GAIN`) |
 | CH10 | VrB | marschfart (`Knob::CRUISE_SPEED`) |
 
@@ -66,7 +66,7 @@ När kortet startar skriver seriemonitorn ut den faktiska fördelningen – det 
 ```
 SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
 SwB (CH6): FLAPS, пока включён
-SwD (CH8): RTH, пока включён
+SwD (CH8): MOTOR_REVERSE, пока включён
 VrA (CH9): крутилка STAB_GAIN
 VrB (CH10): крутилка CRUISE_SPEED
 ```
@@ -83,7 +83,7 @@ Allt finns i en fil – `include/config/Controls.h`:
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
@@ -171,7 +171,7 @@ Cirklar medurs över punkten där läget slogs på, radie 50 m (ratten `LOITER_R
 **Behöver:** IMU + barometer + GPS.
 
 ### RTH – ”hem”
-Kurs mot hempunkten (ARM-punkten), höjd `RTH_ALTITUDE_M` = 40 m (under den – stiger på vägen, över den – stannar kvar). Över hempunkten – cirklar med LOITER-radien tills piloten tar över. Ingen GPS eller ingen hempunkt – cirklar på stället. Samma läge kopplas in vid förlorad förbindelse och av geofencen.
+Kurs mot hempunkten (ARM-punkten), höjd `RTH_ALTITUDE_M` = 40 m (under den – stiger på vägen, över den – stannar kvar). Över hempunkten – cirklar med LOITER-radien tills piloten tar över. Ingen GPS eller ingen hempunkt – cirklar på stället. Samma läge kopplas in vid förlorad förbindelse och av geofencen. Som standard har RTH ingen egen brytare (SwD är motorreversering): lägg tillbaka den med raden `Bind::mode(Channels::SWD, MODE_RTH)` i `Controls.h`, eller koppla in den från instrumentpanelen.
 **Behöver:** IMU + barometer + GPS med hempunkt.
 
 ### AUTO_TAKEOFF (TKOFF) – ”start på gas”
@@ -215,6 +215,7 @@ Vingarna plana, nosen +8°, gas 70 % – ur vilken spiral som helst. Tappat orie
 | `GEOFENCE` | längre bort än 500 m från hempunkten eller högre än 120 m – RTH | `GEOFENCE_ALWAYS_ON` – utan brytare |
 | `HOME_RESET` | hempunkt = den aktuella punkten (i det ögonblick brytaren slås på) | bara med bra GPS |
 | `CAMERA_STAB` | kameran på AUX2 håller sin vinkel mot horisonten | flygplanets tippning dras ifrån |
+| `MOTOR_REVERSE` | motorn går bakåt (dubbelriktad ESC) – för att taxa bakåt på marken | växlar **bara i DISARM**: en växling i ARM väntar på DISARM; efter en växling ingen ARM på 3 s; bakåt upp till 50 % gas, bara pilotens gas |
 
 ## Rattar
 

@@ -58,7 +58,7 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (não conectado)<br/>FeedbackSupervisor e módulos"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -362,6 +362,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -371,24 +372,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → acelerador do piloto
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(alvo conforme as funções)
-    FC->>AP: update(armed, linkLost, acelerador do piloto, sticks)
+    FC->>AP: update(armed, linkLost, acelerador do piloto (0 em reversão), sticks)
     Note over AP: os sensores são lidos SEMPRE,<br/>navegação, failsafe, geofence,<br/>modo, coordenação, auto-trim
     FC->>OUT: setBuzzer(Beeper)
     alt enlace perdido
         alt armed e failsafe do piloto automático (RTH / GLIDE)
             FC->>MX: mix(comando do piloto automático)
-            FC->>OUT: write(superfícies, acelerador do piloto automático, AUX como estavam)
+            FC->>OUT: write(superfícies, acelerador do piloto automático (0 em reversão), AUX como estavam)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — o ARM e as chaves não são lidos
     else há enlace
-        FC->>AM: update(rc) — a chave ARM
+        FC->>AM: update(rc, MR.armBlockReason) — a chave ARM
+        FC->>MR: update(MOTOR_REVERSE, armed) — sentido só sem ARM
         FC->>AP: getCommand() — o comando final das superfícies
         FC->>MX: mix(command) → PWM com reversão
-        FC->>AP: applyThrottle(acelerador do piloto)
-        Note over FC: !armed ou MOTOR_KILL → throttle = PWM_MIN (por último)
+        FC->>AP: applyThrottle(acelerador do piloto) — só para a frente
+        Note over FC: para trás — acelerador do piloto ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed ou MOTOR_KILL → throttle = PWM_MIN (por último)
         FC->>OUT: write(output + AUX1 carga, AUX2 câmera)
+        Note over OUT: ESC: acelerador + sentido → pulso (EscSignal),<br/>ESC bidirecional: 1500 = parado
     end
 ```
 
@@ -396,6 +399,9 @@ Invariantes principais do ciclo:
 
 - **Perda de sinal** — o modo e as funções das chaves não mudam; o ARM não é lido nem reiniciado; o motor funciona apenas por decisão do failsafe do piloto automático (RTH com motor) ou por `FAILSAFE_THROTTLE`.
 - **Nenhum modo consegue passar o acelerador por cima do ARM**: o `PWM_MIN` forçado com `!armed` e `MOTOR_KILL` vem depois de `Autopilot::applyThrottle()`.
+- **A reversão não liga em movimento**: `MotorReverse` só troca o sentido sem ARM,
+  e `ArmingManager` não arma por `REVERSE_SETTLE_MS` depois da troca. Em reversão o
+  acelerador é só do piloto; o piloto automático vê o motor desligado.
 - **O piloto automático emite o comando final** (`getCommand()`); nos modos com estabilização, os sticks são os ângulos desejados; correções = comando − sticks (para o log e o dashboard). Tudo em uma única convenção de sinais (`ControlCommand`) até o mixer.
 
 ---
@@ -408,7 +414,7 @@ Invariantes principais do ciclo:
 stateDiagram-v2
     [*] --> WaitOff : energização da placa
     WaitOff --> Ready : chave OFF
-    Ready --> Armed : chave OFF→ON, acelerador < THROTTLE_LOW_US,<br/>verificações dos sensores do modo aprovadas
+    Ready --> Armed : chave OFF→ON, acelerador < THROTTLE_LOW_US,<br/>verificações dos sensores do modo aprovadas,<br/>sentido do motor inalterado por REVERSE_SETTLE_MS
     Ready --> WaitOff : chave ON, verificação reprovada<br/>(motivo → Serial, getLastRefusalReason)
     Armed --> Ready : chave OFF (DISARM imediato)
     note right of Armed : a perda de sinal não altera o estado
@@ -416,6 +422,25 @@ stateDiagram-v2
 
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### Reversão do motor (`MotorReverse`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : chave ON e sem ARM
+    Reverse --> Forward : chave OFF e sem ARM
+    Forward --> ForwardPending : chave ON com ARM
+    ForwardPending --> Forward : chave OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : chave OFF com ARM
+    ReversePending --> Reverse : chave ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : depois de cada troca de sentido<br/>o ARM é recusado por REVERSE_SETTLE_MS
+```
+
+`*Pending` — `isPending()`: a chave já está na outra posição, e o motor gira como
+girava com ARM; o aviso no Serial é impresso uma vez.
 
 ### Modos do piloto automático (`Autopilot` + `PilotSwitches`)
 

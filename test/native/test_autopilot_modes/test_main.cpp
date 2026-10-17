@@ -236,7 +236,7 @@ void test_default_bindings_are_printed_at_start()
     const std::string text = takeSerial();
     TEST_ASSERT_TRUE(contains(text, "SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)"));
     TEST_ASSERT_TRUE(contains(text, "SwB (CH6): FLAPS, пока включён"));
-    TEST_ASSERT_TRUE(contains(text, "SwD (CH8): RTH, пока включён"));
+    TEST_ASSERT_TRUE(contains(text, "SwD (CH8): MOTOR_REVERSE, пока включён"));
     TEST_ASSERT_TRUE(contains(text, "VrA (CH9): крутилка STAB_GAIN"));
     TEST_ASSERT_TRUE(contains(text, "VrB (CH10): крутилка CRUISE_SPEED"));
 
@@ -1026,10 +1026,10 @@ void test_motor_kill_payload_camera_and_rates()
 
     rc.set(Channels::ARM, 2000).set(Channels::THROTTLE, 1600);
     plane.tick(rc);
-    TEST_ASSERT_EQUAL_UINT16(cappedThrottleUs(1600), plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(escUs(cappedThrottleUs(1600)), plane.pwm(ServoChannel::ESC));
     rc.set(Channels::SWB, 2000);   // мотор-килл
     plane.tick(rc);
-    TEST_ASSERT_EQUAL_UINT16(1000, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(escUs(1000), plane.pwm(ServoChannel::ESC));
     TEST_ASSERT_TRUE(plane.controller.isArmed());
 
     TEST_ASSERT_EQUAL_UINT16(Config::PAYLOAD_CLOSED_US, plane.pwm(ServoChannel::AUX1));
@@ -1121,7 +1121,7 @@ void test_failsafe_rth_keeps_motor_and_payload_closed()
     for (int i = 0; i < 300; ++i) plane.tickWithoutFrame();   // 600 мс без кадров
     TEST_ASSERT_TRUE(plane.controller.isReceiverFailsafe());
     TEST_ASSERT_TRUE(plane.autopilot.isFailsafeReturning());
-    TEST_ASSERT_GREATER_THAN_UINT16(1000, plane.pwm(ServoChannel::ESC));   // мотор работает — домой
+    TEST_ASSERT_GREATER_THAN_UINT16(escUs(1000), plane.pwm(ServoChannel::ESC));   // мотор работает — домой
     TEST_ASSERT_EQUAL_UINT16(Config::PAYLOAD_CLOSED_US, plane.pwm(ServoChannel::AUX1));
 }
 

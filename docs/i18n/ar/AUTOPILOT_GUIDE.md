@@ -63,7 +63,7 @@
 | CH5 | **SwA** | **ARM** (إلى الأسفل = مسلَّحة، ولا يعمل إلا والخانق في الأسفل؛ لا يمكن إعادة إسنادها) |
 | CH6 | SwB | الفلابات (`Feature::FLAPS`) |
 | CH7 | **SwC** (3 أوضاع) | إلى الأعلى **MANUAL** · في الوسط **STABILIZE** · إلى الأسفل **AUTO_TAKEOFF** |
-| CH8 | SwD | **RTH** — العودة إلى المنزل ما دام مفعَّلًا |
+| CH8 | SwD | **عكس اتجاه المحرك** (`Feature::MOTOR_REVERSE`) — لا يتبدّل إلا في DISARM |
 | CH9 | VrA | قوة التثبيت (`Knob::STAB_GAIN`) |
 | CH10 | VrB | سرعة الإبحار (`Knob::CRUISE_SPEED`) |
 
@@ -74,7 +74,7 @@
 ```
 SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
 SwB (CH6): FLAPS, пока включён
-SwD (CH8): RTH, пока включён
+SwD (CH8): MOTOR_REVERSE, пока включён
 VrA (CH9): крутилка STAB_GAIN
 VrB (CH10): крутилка CRUISE_SPEED
 ```
@@ -95,7 +95,7 @@ VrB (CH10): крутилка CRUISE_SPEED
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
@@ -189,7 +189,7 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 **المطلوب:** IMU + مقياس الضغط + GPS.
 
 ### ‏RTH — «إلى المنزل»
-اتجاه نحو نقطة المنزل (نقطة ARM)، وارتفاع `RTH_ALTITUDE_M` = 40 m (وإن كانت أدنى منه صعدت في الطريق، وإن كانت أعلى بقيت كما هي). وفوق نقطة المنزل — دوائر بنصف قطر LOITER إلى أن يستعيد الطيار التحكم. وبدون GPS أو نقطة منزل — دوائر في المكان. وهذا الوضع نفسه هو ما يفعّله فقدان الاتصال والسياج الجغرافي.
+اتجاه نحو نقطة المنزل (نقطة ARM)، وارتفاع `RTH_ALTITUDE_M` = 40 m (وإن كانت أدنى منه صعدت في الطريق، وإن كانت أعلى بقيت كما هي). وفوق نقطة المنزل — دوائر بنصف قطر LOITER إلى أن يستعيد الطيار التحكم. وبدون GPS أو نقطة منزل — دوائر في المكان. وهذا الوضع نفسه هو ما يفعّله فقدان الاتصال والسياج الجغرافي. لا يملك RTH افتراضيًا مفتاحًا خاصًا به (SwD لعكس المحرك): لإعادته أضف السطر `Bind::mode(Channels::SWD, MODE_RTH)` في `Controls.h`، أو فعّله من لوحة المعلومات.
 **المطلوب:** IMU + مقياس الضغط + GPS مع نقطة منزل.
 
 ### ‏AUTO_TAKEOFF (TKOFF) — «الإقلاع بالخانق»
@@ -233,6 +233,7 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 | `GEOFENCE` | أبعد من 500 m عن نقطة المنزل أو أعلى من 120 m — RTH | `GEOFENCE_ALWAYS_ON` — بلا مفتاح |
 | `HOME_RESET` | نقطة المنزل = النقطة الحالية (لحظة تفعيل المفتاح) | عند جودة GPS فقط |
 | `CAMERA_STAB` | الكاميرا على AUX2 تحافظ على زاويتها مع الأفق | يُطرح ميل الطائرة |
+| `MOTOR_REVERSE` | يدور المحرك إلى الخلف (متحكم سرعة ثنائي الاتجاه) — للتراجع على الأرض | لا يتبدّل **إلا في DISARM**: قلب المفتاح أثناء ARM ينتظر DISARM؛ وبعد التبديل لا ARM مدة 3 s؛ إلى الخلف حتى 50 % من الخانق، وخانق الطيار فقط |
 
 ## المقابض
 

@@ -32,10 +32,13 @@ CONTROL 层是基于数据的逻辑，不涉及 UART、PWM 或 Wi-Fi。
 
 期望的输出脉冲，PWM µs。默认值：舵面中立位，油门为 `PWM_MIN`。
 
+`throttle` 是任一方向上的油门大小（1000..2000 = 0..100%）；由 `FlightOutputs` 把它和 `motorReverse` 一起换算成电调脉冲（通过 `EscSignal`）。
+
 | 字段 | 默认值 |
 |---|---|
 | `aileronLeft`、`aileronRight`、`elevator`、`rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
+| `bool motorReverse` | `false`——电机正转 |
 | `aux1` | `PAYLOAD_CLOSED_US`——载荷抛投装置关闭 |
 | `aux2` | `PWM_CENTER`——相机 |
 
@@ -90,6 +93,36 @@ CONTROL 层是基于数据的逻辑，不涉及 UART、PWM 或 Wi-Fi。
 
 ---
 
+## `EscSignal`
+
+**文件：** `control/EscSignal.h` · **类别：** namespace · **依赖：** `Config`
+
+油门（1000..2000 = 0..100%）和方向 → 电调引脚上的脉冲。
+
+| 函数 | 说明 |
+|---|---|
+| `uint16_t pulseUs(uint16_t throttleUs, bool reverse)` | `ESC_BIDIRECTIONAL`（3D 模式的 BLHeli 80A）：0% → `ESC_NEUTRAL_US`（1500），正转 1500..2000，反转 1500..1000。单向电调：1000..2000 原样输出，忽略 `reverse`。超出 1000..2000 的油门会被截断 |
+| `uint16_t stopUs()` | “电机停止”的脉冲（双向电调为 1500，普通电调为 1000） |
+
+只做换算，不做保护：什么时候可以改变方向由 `MotorReverse` 决定，反转油门上限由 `FlightController` 负责。
+
+---
+
+## `MotorReverse`
+
+**文件：** `control/MotorReverse.h` · **依赖：** `Config`
+
+电机方向跟随 `Feature::MOTOR_REVERSE` 开关（默认 SwD）——**只在未解锁时**。
+
+| 方法 | 说明 |
+|---|---|
+| `void update(bool requested, bool armed, uint32_t nowMs)` | 未解锁——方向立即跟随开关（串口打印 `MotorReverse: мотор НАЗАД` / `вперёд`——“电机反转”/“正转”）。已解锁——开关不起作用，只打印一次“реверс НЕ переключён”（“反转未切换”），新方向等到 DISARM。`ESC_BIDIRECTIONAL = false` 时永远不会启用反转 |
+| `bool isReversed() const` | 电机反转 |
+| `bool isPending() const` | 开关已在另一位置，方向等待 DISARM |
+| `const char* armBlockReason(uint32_t nowMs) const` | 拒绝 ARM 的原因：距上次改变方向不到 `REVERSE_SETTLE_MS`（电机可能还在转）；否则为 `nullptr` |
+
+---
+
 ## `ArmingManager`
 
 **文件：** `control/ArmingManager.h` · **依赖：** `Autopilot`（可为空）、`RcChannelState`、`Config`、`Channels`
@@ -100,7 +133,7 @@ ARM 由单独的拨杆 SwA（CH5）完成。状态机见
 | 方法 | 说明 |
 |---|---|
 | `explicit ArmingManager(Autopilot* ap = nullptr)` | 没有自动驾驶仪时只检查油门 |
-| `void update(const RcChannelState& rc, bool receiverFailsafe)` | failsafe 时——什么也不做（failsafe 帧中的拨杆并不反映飞手的操作）。拨杆 OFF → DISARM，`switchSeenOff = true`。OFF→ON 的切换 → 检查 → ARM 或拒绝 |
+| `void update(const RcChannelState& rc, bool receiverFailsafe, const char* blockReason = nullptr)` | failsafe 时——什么也不做（failsafe 帧中的拨杆并不反映飞手的操作）。拨杆 OFF → DISARM，`switchSeenOff = true`。OFF→ON 的切换 → 检查 → ARM 或拒绝。`blockReason`——外部的拒绝原因（来自 `FlightController`：`MotorReverse::armBlockReason()`） |
 | `bool isArmed() const` | 是否已 ARM |
 | `const char* getLastRefusalReason() const` | 上一次拒绝的原因，或 `nullptr`；关闭拨杆时清除 |
 
@@ -112,6 +145,7 @@ ARM 由单独的拨杆 SwA（CH5）完成。状态机见
 | 除 MANUAL 外的任何模式，IMU 存在但无应答 | “IMU 无应答……” |
 | 除 MANUAL 外的任何模式，IMU 的飞行前检查有问题 | `ImuSensor::getPreflightProblem()` 的文字 |
 | 需要高度的模式（`needsAltitude`：ALT_HOLD、CRUISE、LOITER、RTH、AUTO_LAND、SOARING），气压计存在但无应答 | “气压计无应答……” |
+| 其他检查都通过，但传入了 `blockReason` | `blockReason`（例如“电机方向刚刚改变……”） |
 
 构建中不存在的传感器（`nullptr`）不会阻止 ARM；在 MANUAL 下，飞机即使完全没有传感器也能 ARM。GPS 定位有意不列入检查项：没有 GPS 时，导航模式的行为是安全的（原地盘旋），而 GPS 搜到卫星之后会记录返航点。
 
@@ -121,7 +155,7 @@ ARM 由单独的拨杆 SwA（CH5）完成。状态机见
 
 ## `FlightOutputs`
 
-**文件：** `control/FlightOutputs.h` · **依赖：** `IBoard`、`FlightOutputState`、`Config`
+**文件：** `control/FlightOutputs.h` · **依赖：** `IBoard`、`FlightOutputState`、`EscSignal`、`Config`
 
 唯一了解 PWM 输出集合及其顺序的类。所有输出都在一张表中描述；
 `begin()`、`write()`、状态和自检都循环遍历这张表。
@@ -140,13 +174,13 @@ ARM 由单独的拨杆 SwA（CH5）完成。状态机见
 |---|---|
 | `static const OutputInfo& outputInfo(uint8_t ch)` | 表中的一行；顺序 = `ServoChannel` |
 | `explicit FlightOutputs(IBoard& board)` | |
-| `bool begin()` | 对每个输出调用 `attach(PWM_MIN, PWM_MAX)`，打印状态；所有**必需**输出都拿到通道时返回 `true` |
+| `bool begin()` | 对每个输出执行 `attach(PWM_MIN, PWM_MAX)`，打印状态和电调类型；所有**必需**输出都拿到通道时返回 `true` |
 | `bool isAttached(uint8_t ch) const` | 该输出已连接（索引越界 → `false`） |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | 按表取出状态中该输出的值 |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | 输出引脚上的脉冲：按表取字段，电调则经过 `EscSignal::pulseUs(throttle, motorReverse)` |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | 在每个已引出的引脚上，把测得的脉冲与预期值比较；偏差 ≤ 15 µs 时为“OK” |
 | `void write(const FlightOutputState&)` | 写入所有输出并记住该状态 |
-| `void setFailsafe()` | 舵面中立位（`FAILSAFE_*`），油门 `FAILSAFE_THROTTLE`；AUX 保持原样（信号丢失时不会抛投载荷） |
+| `void setFailsafe()` | 舵面回中（`FAILSAFE_*`），油门 `FAILSAFE_THROTTLE`（双向电调引脚上为 1500）；AUX 保持原样（失去信号不会投放载荷） |
 | `void setBuzzer(bool on)` | 板载蜂鸣器（`IBoard::setBuzzer`） |
 | `const FlightOutputState& getLastState() const` | 最近一次写入的状态 |
 
@@ -158,7 +192,7 @@ ARM 由单独的拨杆 SwA（CH5）完成。状态机见
 ## `FlightController`
 
 **文件：** `control/FlightController.h` · **层：** COORDINATION ·
-**依赖：** `IBusReceiver`、`ControlMixer`、`ThrottleManager`、`ArmingManager`、`FlightOutputs`、`Autopilot*`、`PilotSwitches*`、`Beeper`
+**依赖：** `IBusReceiver`、`ControlMixer`、`ThrottleManager`、`ArmingManager`、`FlightOutputs`、`Autopilot*`、`PilotSwitches*`、`Beeper`、`MotorReverse`
 
 控制循环唯一的协调者：它自己不解析 UART，不碰 PWM，也不计算混控——
 只是按正确的顺序调用其他部分。详细的图见 [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-控制周期flightcontrollerupdate)。
@@ -177,6 +211,7 @@ ARM 由单独的拨杆 SwA（CH5）完成。状态机见
 | `int16_t getFlapsUs() const` | 襟翼位置 |
 | `const PilotSwitches* getSwitches() const`、`const PilotInputs& getInputs() const` | 本周期的拨杆和旋钮 |
 | `bool isLostModelBeeping() const` | “我在这里”蜂鸣器正在工作 |
+| `const MotorReverse& getMotorReverse() const` | 电机方向和等待中的反转 |
 
 `update()` 的顺序：
 
@@ -187,17 +222,18 @@ ARM 由单独的拨杆 SwA（CH5）完成。状态机见
    `mixer.updateFlaps(target)`：`AIRBRAKE` → −`AIRBRAKE_US`，`FLAPS` →
    `FLAPS_DEPLOYED_US`，`Knob::FLAPS` → 平滑变化，信号丢失时——0；
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)`——**始终**执行；
+   反转时传入 `PWM_MIN` 代替 `pilotThrottle`（对自动驾驶仪来说电机是关着的）；
 6. 蜂鸣器：`Beeper::update(BEEPER, armed, failsafe, now)`；
 7. 信号丢失 → `applyLinkLoss()` 并退出本周期；
-8. `arming.update(rc, false)`；
+8. `arming.update(rc, false, reverse.armBlockReason(now))`，然后 `reverse.update(MOTOR_REVERSE, armed, now)`——DISARM 时方向在同一个周期内改变；
 9. `command = autopilot->getCommand()`（没有自动驾驶仪时用摇杆），襟翼——使用自己的；
-10. `output = mixer.mix(command)`；`output.throttle = autopilot->applyThrottle(pilotThrottle)`；
+10. `output = mixer.mix(command)`；`output.motorReverse = reverse.isReversed()`；正转——`output.throttle = autopilot->applyThrottle(pilotThrottle)`，上限 `THROTTLE_LIMIT_PCT`；反转——飞手油门，上限 `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`；
 11. 未 ARM 或 `MOTOR_KILL` → `throttle = PWM_MIN`（最后执行）；
 12. AUX1——载荷（`PAYLOAD_DROP`），AUX2——相机（`Knob::CAMERA_TILT`，`CAMERA_STAB` 会减去俯仰）；
 13. `outputs.write(output)`。
 
 `applyLinkLoss()`：如果自动驾驶仪处于 failsafe（已 ARM：RTH 或滑翔）——
-舵面和油门按自动驾驶仪的指令输出（襟翼平滑收起，`MOTOR_KILL` 依然会让电机停转，AUX 保持原样）；否则调用 `outputs.setFailsafe()`。
+舵面和油门按自动驾驶仪的指令输出（襟翼平滑收起，`MOTOR_KILL` 依然会让电机停转，AUX 保持原样）；否则调用 `outputs.setFailsafe()`。反转时电机始终停转。
 
 ---
 

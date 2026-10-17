@@ -25,11 +25,12 @@ namespace Controls
     constexpr Binding BINDINGS[] = {
         Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
         Bind::feature(Channels::SWB, Feature::FLAPS),
-        Bind::mode   (Channels::SWD, MODE_RTH),
+        Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),  // только в DISARM, см. control/MotorReverse.h
         Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
         Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 
         // Идеи — раскомментируйте, закомментировав строку с тем же каналом:
+        // Bind::mode   (Channels::SWD, MODE_RTH),             // домой (по потере связи — и без тумблера)
         // Bind::modes  (Channels::SWC, MODE_STABILIZE, MODE_CRUISE, MODE_LOITER),
         // Bind::mode   (Channels::SWD, MODE_RESCUE),          // "спасите": ровно и вверх
         // Bind::mode   (Channels::SWD, MODE_LAUNCH),          // запуск с руки

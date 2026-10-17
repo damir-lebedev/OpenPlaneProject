@@ -160,7 +160,7 @@ void test_boot_brings_up_board_sensors_and_tasks()
     TEST_ASSERT_TRUE(fake::schedulerStarted());
 
     // Выходы — таймеры, сразу в безопасном положении.
-    TEST_ASSERT_EQUAL(1000, fake::timerPulseUs(Config::PIN_ESC));
+    TEST_ASSERT_EQUAL(escUs(1000), fake::timerPulseUs(Config::PIN_ESC));
     TEST_ASSERT_EQUAL(1500, fake::timerPulseUs(Config::PIN_AILERON_LEFT));
     TEST_ASSERT_EQUAL(1500, fake::timerPulseUs(Config::PIN_RUDDER));
 }
@@ -201,9 +201,9 @@ void test_sticks_and_stabilize_drive_timer_outputs()
     fly(rc, 1.0);
     TEST_ASSERT_EQUAL(MODE_STABILIZE, autopilot.getMode());
     TEST_ASSERT_LESS_THAN_FLOAT(-20.0f, autopilot.getRollCorrection());
-    TEST_ASSERT_EQUAL(cappedThrottleUs(1400), fake::timerPulseUs(Config::PIN_ESC));
+    TEST_ASSERT_EQUAL(escUs(cappedThrottleUs(1400)), fake::timerPulseUs(Config::PIN_ESC));
     // Выход реально читается обратно (самопроверка 'p' на STM32 — pulseIn()).
-    TEST_ASSERT_EQUAL(cappedThrottleUs(1400), pulseIn(static_cast<uint8_t>(Config::PIN_ESC), HIGH));
+    TEST_ASSERT_EQUAL(escUs(cappedThrottleUs(1400)), pulseIn(static_cast<uint8_t>(Config::PIN_ESC), HIGH));
     world.rollDeg = 0;
     takeSerial();
 }

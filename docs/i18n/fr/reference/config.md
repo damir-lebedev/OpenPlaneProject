@@ -101,6 +101,15 @@ la variante.
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Débattement par rapport au centre à pleine course du manche, µs. La direction est plus faible : la roue du train d’atterrissage est sur le même servo |
 | `THROTTLE_LIMIT_PCT` | 100 | Le plafond des gaz vers l’ESC, %, identique pour le manche et pour le pilote automatique (`FlightController::capThrottle`). Pour les essais sur banc avec une batterie 3S1P faible, on avait mis 50 ; les tests calculent la sortie attendue à partir de cette valeur |
 
+### ESC et inversion du moteur
+
+| Constante | Valeur | Signification |
+|---|---|---|
+| `ESC_BIDIRECTIONAL` | `true` | ESC bidirectionnel (BLHeli 80A en mode Bidirectional/3D) : les gaz deviennent une impulsion autour du neutre (`EscSignal`), « moteur arrêté » vaut 1500, l’inversion est disponible. `false` — ESC ordinaire : 1000 = arrêt, pas d’inversion |
+| `ESC_NEUTRAL_US` | 1500 | Le neutre d’un ESC bidirectionnel : le moteur est arrêté ; au-dessus — en avant, en dessous — en arrière |
+| `REVERSE_THROTTLE_LIMIT_PCT` | 50 | Limite des gaz en arrière, % (et pas plus que `THROTTLE_LIMIT_PCT`) : une hélice tire mal à l’envers, mais consomme tout le courant |
+| `REVERSE_SETTLE_MS` | 3000 | Après un changement de sens, l’ARM est refusé pendant ce temps, pour qu’un moteur désarmé avec des gaz ait le temps de s’arrêter |
+
 ### Volets (flaperons)
 
 | Constante | Valeur | Signification |

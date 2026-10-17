@@ -214,10 +214,10 @@ variable `busSlot()` — there is only one display on board.
 The display:
 
 ```
-RX ok ARM STAB FL       link (a loss — an inverted line) / ARM / mode / flaps
+RX ok ARM STAB FL       link (a loss — an inverted line) / ARM / mode / REV — motor backwards / flaps
 R  +1.2 P  -0.4         roll / pitch, °           (IMU --)
 Alt +0.3 Vz +0.1 A14    altitude / vertical speed / airspeed, if there is a pitot tube (BARO --)
-H123 T1000 Y1500        heading / throttle / rudder (H---)
+H123 T1000 Y1500        heading / throttle 1000..2000 = 0..100% in either direction / rudder (H---)
 L1500 R1500 E1500       ailerons / elevator
 Loop 500Hz max1100us    frequency and the worst tick over the second
 ```

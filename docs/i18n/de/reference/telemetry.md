@@ -214,10 +214,10 @@ Variablen `busSlot()` gehalten — an Bord gibt es nur ein Display.
 Das Display:
 
 ```
-RX ok ARM STAB FL       Verbindung (Verlust — invertierte Zeile) / ARM / Modus / Klappen
+RX ok ARM STAB FL       Verbindung (Verlust — invertierte Zeile) / ARM / Modus / REV – Motor rückwärts / Klappen
 R  +1.2 P  -0.4         Rollen / Nicken, °           (IMU --)
 Alt +0.3 Vz +0.1 A14    Höhe / Vertikalgeschwindigkeit / Fluggeschwindigkeit, falls ein Pitotrohr da ist (BARO --)
-H123 T1000 Y1500        Kurs / Gas / Seitenruder (H---)
+H123 T1000 Y1500        Kurs / Gas 1000..2000 = 0..100 % in beiden Richtungen / Seitenruder (H---)
 L1500 R1500 E1500       Querruder / Höhenruder
 Loop 500Hz max1100us    Frequenz und der schlechteste Takt in der Sekunde
 ```

@@ -32,7 +32,7 @@ cruise, circles and return home by GPS, hand launch, auto-landing, soaring
 in thermals, “rescue”), a geofence, return home on link loss, payload drop,
 a pitot tube made of two barometers, support for new sensors (LSM6DSV, ICM-45686,
 QMC6309, SPL06, BMP581), and a complete firmware for the STM32H743 with MAVLink telemetry
-for QGroundControl. All of this has been checked by 387 automated tests and closed-loop
+for QGroundControl. All of this has been checked by 392 automated tests and closed-loop
 flight simulations (the whole firmware flies an airplane model), but **it has not yet been
 tested in the air**. In other words: so far only manual control has flown; the autopilot has been
 written, checked by everything that can be used to check it without flying, and is waiting for
@@ -133,12 +133,12 @@ Upload the firmware: `pio run -t upload`. Monitor: `pio device monitor` (115200)
 | CH5 | ARM | switch SwA: ARM with the throttle down, DISARM instantly |
 | CH6 | SWB | flaps |
 | CH7 | SWC | mode: MANUAL / STABILIZE / AUTO_TAKEOFF |
-| CH8 | SWD | RTH — home |
+| CH8 | SWD | motor reverse (only when disarmed) |
 | CH9 | VRA | stabilization strength |
 | CH10 | VRB | cruise speed |
 
 CH6–CH10 are assigned with a single line in `include/config/Controls.h`: any of the 12
-modes, 10 functions (flaps, brake, payload drop, geofence…) and 7 knobs —
+modes, 11 functions (flaps, brake, payload drop, geofence, reverse…) and 7 knobs —
 [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 ### 4.3 Control flow (`FlightController::update()`)
@@ -179,7 +179,7 @@ classes that already exist, with no invented dates or sums.
 
 ### Phase 1 — Manual control and a safe base [done]
 
-**Goal:** a reliable, predictable radio-controlled glider with transparent debugging. **What already exists technically:** iBUS parsing with link-loss detection in `IBusReceiver.h`, the `ControlMixer.h` mixer (sticks → roll/pitch/flaps command → PWM with servo reverse, with no knowledge of UART/PWM), `ThrottleManager.h`, `ArmingManager.h` (ARM with a separate switch with the throttle down, instant DISARM), failsafe with absolute priority in `FlightController.h`, output to Serial (`DebugLogger.h`), the web dashboard (`WebDebugServer.h`) and the OLED display (`OledDisplay.h`). **Why this is the base for everything else:** it is the only layer that must always work, even if all the other phases have not yet been implemented or their sensors are disconnected — which is exactly why failsafe and ARM were written first and verified on hardware (including the real behavior of the FS-iA6B receiver with the transmitter switched off).
+**Goal:** a reliable, predictable radio-controlled glider with transparent debugging. **What already exists technically:** iBUS parsing with link-loss detection in `IBusReceiver.h`, the `ControlMixer.h` mixer (sticks → roll/pitch/flaps command → PWM with servo reverse, with no knowledge of UART/PWM), `ThrottleManager.h`, `ArmingManager.h` (ARM with a separate switch with the throttle down, instant DISARM), a bidirectional BLHeli 80A ESC with motor reverse that switches only without ARM (`MotorReverse.h`), failsafe with absolute priority in `FlightController.h`, output to Serial (`DebugLogger.h`), the web dashboard (`WebDebugServer.h`) and the OLED display (`OledDisplay.h`). **Why this is the base for everything else:** it is the only layer that must always work, even if all the other phases have not yet been implemented or their sensors are disconnected — which is exactly why failsafe and ARM were written first and verified on hardware (including the real behavior of the FS-iA6B receiver with the transmitter switched off).
 
 ### Phase 2 — IMU + barometer → autopilot [written and verified by tests and simulation, awaiting flight tests]
 
@@ -244,7 +244,7 @@ In other words, the element of the future ground station that is the riskiest in
 
 So that the roadmap does not read like marketing, we record separately what has not been done yet or has been done only partially:
 
-- The autopilot has been verified on the bench, by 387 automated tests and by closed-loop simulations, but it has never been tested in flight — so far only manual control has flown (on the first prototype). The airplane model in the simulations is simplified, and the coefficients are starting values.
+- The autopilot has been verified on the bench, by 392 automated tests and by closed-loop simulations, but it has never been tested in flight — so far only manual control has flown (on the first prototype). The airplane model in the simulations is simplified, and the coefficients are starting values.
 - The new sensors (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) have been verified by register emulators built from the datasheets; on hardware, not yet.
 - STM32H743: the whole firmware runs on a PC on top of STM32duino fakes; there is no physical board yet.
 - The horizon for stabilization is the attitude of the aircraft at power-on (the IMU calibrates at every start), or the mounting calibration from three poses.

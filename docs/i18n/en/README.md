@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-387%20passing-3fb950?style=for-the-badge" alt="387 tests">
+  <img src="https://img.shields.io/badge/tests-392%20passing-3fb950?style=for-the-badge" alt="392 tests">
   <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="98% coverage">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 builds without warnings">
   <br>
@@ -60,8 +60,8 @@
 |---|---|
 | **What it is** | An open flight controller and autopilot for radio-controlled airplanes. The main board is the STM32H743 (a Pixhawk-class board): on a DevEBox board the firmware is **already up and flown from the transmitter** — [there is a video](#-stm32h743-came-alive-on-the-board), and the sensors are being connected now. The former base is an ESP32-S3 at ~$10, which passed the bench with all the sensors. |
 | **What it can do** | 12 flight modes — from stabilization to return-home, GPS circles, hand launch, auto-landing and **thermal soaring**. A pitot tube made of two cheap barometers. MAVLink telemetry to QGroundControl and Mission Planner. |
-| **The main trick** | Any switch or knob on the transmitter = any function. **One line** in `Controls.h` — and SwD is no longer RTH but a payload drop. |
-| **Why you can trust it** | 387 automated tests (plus 9 on the board itself with a real SD card), 98% of the code under test, 24 "board × sensors" builds with not a single warning, closed-loop simulations of every mode. |
+| **The main trick** | Any switch or knob on the transmitter = any function. **One line** in `Controls.h` — and SwD is no longer motor reverse but a payload drop. |
+| **Why you can trust it** | 392 automated tests (plus 9 on the board itself with a real SD card), 98% of the code under test, 24 "board × sensors" builds with not a single warning, closed-loop simulations of every mode. |
 | **Honestly** | So far only manual mode has flown (the first prototype). The STM32H743 has so far been checked only on the bench, without sensors. The autopilot has been verified on the bench, by tests and by simulations, and is waiting for flight trials — [status below](#-honest-status). |
 
 ---
@@ -73,15 +73,15 @@
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),              // home, while switched on
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),// motor reverse — only when disarmed
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),       // "softer / stiffer" right in flight
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
 ```
 
-Want thermal soaring on SwD instead of RTH? `Bind::mode(Channels::SWD, MODE_SOARING)`. A payload drop on SwB? `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`. Made a mistake — say, put two modes on one switch or took over a stick — **the build will not pass**: the compiler checks the table (`static_assert`). At power-up the aircraft itself prints what is assigned to which switch.
+Want thermal soaring on SwD instead of motor reverse? `Bind::mode(Channels::SWD, MODE_SOARING)`. A payload drop on SwB? `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`. Made a mistake — say, put two modes on one switch or took over a stick — **the build will not pass**: the compiler checks the table (`static_assert`). At power-up the aircraft itself prints what is assigned to which switch.
 
-**12 modes · 10 functions · 7 knobs** — all with examples in the [autopilot reference](AUTOPILOT_GUIDE.md).
+**12 modes · 11 functions · 7 knobs** — all with examples in the [autopilot reference](AUTOPILOT_GUIDE.md).
 
 ---
 
@@ -205,7 +205,7 @@ What this proves: the "transmitter → iBUS → firmware → PWM" chain works on
 
 | | |
 |---|---|
-| **387 automated tests** | modules, chip drivers checked at the register level, closed-loop flights, the ESP32 and STM32 firmware **in full** on a PC; plus 9 tests on the STM32 board itself with a real SD card |
+| **392 automated tests** | modules, chip drivers checked at the register level, closed-loop flights, the ESP32 and STM32 firmware **in full** on a PC; plus 9 tests on the STM32 board itself with a real SD card |
 | **98.3% of lines, 87.7% of branches** | `gcovr` coverage, including the STM32 code |
 | **24/24 builds** | 4 boards × 6 sensor kits, `-Wall -Wextra`, zero warnings |
 | **0 findings** | cppcheck and clang-tidy over all the code |
@@ -262,6 +262,7 @@ In the serial monitor: `h` — menu, `b` — which chips are visible on the buse
 |---|---|
 | Manual control, mixer | ✈️ in flight (first prototype, C3) |
 | ARM, failsafe, flaps, servos, motor | 🔧 on the bench (S3) |
+| Bidirectional BLHeli 80A ESC, reverse only when disarmed | 🧪 tests; not yet tried with the actual ESC |
 | STABILIZE | 🔧 on the bench: the control surfaces respond to tilts in the right direction |
 | Bench sensors (MPU6500, BMP388, QMC5883P), OLED, dashboard | 🔧 on the bench |
 | The other modes, navigation, pitot tube, MAVLink | 🧪 tests and closed-loop simulations |

@@ -62,7 +62,7 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (غير موصولة)<br/>FeedbackSupervisor والوحدات"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -390,6 +390,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -399,24 +400,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → خانق الطيار
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(الهدف بحسب الوظائف)
-    FC->>AP: update(armed, linkLost, خانق الطيار, العصي)
+    FC->>AP: update(armed, linkLost, خانق الطيار (0 في العكس), العصي)
     Note over AP: الحساسات تُقرأ دائمًا،<br/>والملاحة، وfailsafe، والسياج الجغرافي،<br/>والوضع، والتنسيق، والضبط التلقائي
     FC->>OUT: setBuzzer(Beeper)
     alt فُقد الاتصال
         alt armed وfailsafe الطيار الآلي (RTH / GLIDE)
             FC->>MX: mix(أمر الطيار الآلي)
-            FC->>OUT: write(الأسطح، وخانق الطيار الآلي، وAUX كما كانت)
+            FC->>OUT: write(الأسطح، وخانق الطيار الآلي (0 في العكس)، وAUX كما كانت)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — لا يُقرأ ARM ولا المفاتيح
     else الاتصال موجود
-        FC->>AM: update(rc) — مفتاح ARM
+        FC->>AM: update(rc, MR.armBlockReason) — مفتاح ARM
+        FC->>MR: update(MOTOR_REVERSE, armed) — الاتجاه دون ARM فقط
         FC->>AP: getCommand() — الأمر النهائي للأسطح
         FC->>MX: mix(command) → PWM مع العكس
-        FC->>AP: applyThrottle(خانق الطيار)
-        Note over FC: !armed أو MOTOR_KILL ← throttle = PWM_MIN (آخرًا)
+        FC->>AP: applyThrottle(خانق الطيار) — إلى الأمام فقط
+        Note over FC: إلى الخلف — خانق الطيار ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed أو MOTOR_KILL ← throttle = PWM_MIN (آخرًا)
         FC->>OUT: write(output + AUX1 الحمولة، AUX2 الكاميرا)
+        Note over OUT: ESC: الخانق + الاتجاه ← نبضة (EscSignal)،<br/>متحكم ثنائي الاتجاه: 1500 = توقف
     end
 ```
 
@@ -426,6 +429,9 @@ sequenceDiagram
 
 - **فقدان الاتصال** — لا يتغير الوضع ولا الوظائف القادمة من المفاتيح؛ ولا يُقرأ ARM ولا يُعاد ضبطه؛ ولا يعمل المحرك إلا بقرار failsafe الطيار الآلي (RTH مع المحرك) أو بـ `FAILSAFE_THROTTLE`.
 - **لا يستطيع أي وضع تمرير الخانق متجاوزًا ARM**: فرض `PWM_MIN` عند `!armed` و`MOTOR_KILL` يأتي بعد `Autopilot::applyThrottle()`.
+- **لا يُفعَّل العكس أثناء الدوران**: لا يبدّل `MotorReverse` الاتجاه إلا دون ARM،
+  ولا يسلّح `ArmingManager` مدة `REVERSE_SETTLE_MS` بعد التبديل. وفي العكس الخانق
+  للطيار وحده، والطيار الآلي يرى المحرك مطفأً.
 - **يُصدر الطيار الآلي الأمر النهائي** (`getCommand()`)؛ وفي أوضاع التثبيت تمثل العصي الزوايا المطلوبة؛ التصحيحات = الأمر − العصي (للسجل ولوحة المعلومات). وكل شيء بنظام إشارات واحد (`ControlCommand`) حتى الخلّاط.
 
 ---
@@ -440,7 +446,7 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> WaitOff : تشغيل اللوحة
     WaitOff --> Ready : المفتاح OFF
-    Ready --> Armed : المفتاح OFF→ON، والخانق < THROTTLE_LOW_US،<br/>واجتياز فحوص حساسات الوضع
+    Ready --> Armed : المفتاح OFF→ON، والخانق < THROTTLE_LOW_US،<br/>واجتياز فحوص حساسات الوضع،<br/>لم يتغيّر اتجاه المحرك مدة REVERSE_SETTLE_MS
     Ready --> WaitOff : المفتاح ON، ولم يجتز الفحص<br/>(السبب ← Serial، وgetLastRefusalReason)
     Armed --> Ready : المفتاح OFF (DISARM فورًا)
     note right of Armed : فقدان الاتصال لا يغيّر الحالة
@@ -450,6 +456,25 @@ stateDiagram-v2
 
 ‏`WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### عكس اتجاه المحرك (`MotorReverse`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : المفتاح ON ودون ARM
+    Reverse --> Forward : المفتاح OFF ودون ARM
+    Forward --> ForwardPending : المفتاح ON أثناء ARM
+    ForwardPending --> Forward : المفتاح OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : المفتاح OFF أثناء ARM
+    ReversePending --> Reverse : المفتاح ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : بعد كل تبديل للاتجاه<br/>يُرفض ARM مدة REVERSE_SETTLE_MS
+```
+
+`*Pending` — `isPending()`: المفتاح في الوضع الآخر فعلًا، والمحرك يدور كما كان عند
+ARM؛ ويُطبع التحذير في Serial مرة واحدة.
 
 ### أوضاع الطيار الآلي (`Autopilot` + `PilotSwitches`)
 

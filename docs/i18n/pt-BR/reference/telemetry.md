@@ -214,10 +214,10 @@ estática `busSlot()` — há apenas uma tela a bordo.
 A tela:
 
 ```
-RX ok ARM STAB FL       enlace (perda — linha invertida) / ARM / modo / flaps
+RX ok ARM STAB FL       enlace (perda — linha invertida) / ARM / modo / REV — motor para trás / flaps
 R  +1.2 P  -0.4         rolagem / arfagem, °           (IMU --)
 Alt +0.3 Vz +0.1 A14    altitude / velocidade vertical / velocidade do ar, se houver tubo de Pitot (BARO --)
-H123 T1000 Y1500        rumo / aceleração / leme de direção (H---)
+H123 T1000 Y1500        rumo / aceleração 1000..2000 = 0..100% em qualquer sentido / leme de direção (H---)
 L1500 R1500 E1500       ailerons / profundor
 Loop 500Hz max1100us    frequência e o pior ciclo no segundo
 ```

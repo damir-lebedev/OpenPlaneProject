@@ -154,6 +154,8 @@ private:
 
         json += ",\"armed\":";
         json += controller.isArmed() ? "true" : "false";
+        json += ",\"motorReverse\":";
+        json += controller.getOutputState().motorReverse ? "true" : "false";
         json += ",\"failsafe\":";
         json += controller.isReceiverFailsafe() ? "true" : "false";
         json += ",\"flapsUs\":";

@@ -37,7 +37,7 @@ O kit da montagem atual (o firmware foi verificado nele):
 - **2 servos MG90S** para os ailerons, um para cada semiasa (dois servos independentes, e não um para as duas asas).
 - **1 servo MG90S** para o profundor.
 - **1 servo MG90S** para o leme; no mesmo eixo dele está montada a roda direcional do trem de pouso (para manobrar no solo).
-- **Um controlador de velocidade (ESC)** de 60–80 A com BEC de 5 V (o BEC alimenta os servos e o receptor).
+- **Um controlador de velocidade (ESC) BLHeli 80A bidirecional** (modo Bidirectional/3D) com BEC de 5 V (o BEC alimenta os servos e o receptor). Um ESC unidirecional comum também serve — `ESC_BIDIRECTIONAL = false` no `Config.h`, veja [Reversão do motor](#reversão-do-motor-swd).
 - **Um motor D3548 1100KV** + **uma hélice 10x5**.
 - **Uma bateria LiPo 3S**.
 
@@ -187,11 +187,11 @@ O mapa foi verificado na bancada com um rádio FS-i6 (10 canais, modo 2) e um re
 | CH5 | SwA | ARM | Chave ARM: veja a seção sobre ARM abaixo |
 | CH6 | SwB | SWB | Por padrão, flaps: para baixo, em sua direção, estendidos; para cima, recolhidos (veja abaixo) |
 | CH7 | SwC (3 posições) | SWC | Por padrão, modo: em cima MANUAL, no meio STABILIZE, embaixo AUTO_TAKEOFF |
-| CH8 | SwD | SWD | Por padrão, RTH (para casa) enquanto estiver ligada |
+| CH8 | SwD | SWD | Por padrão, a reversão do motor; só muda em DISARM (veja abaixo) |
 | CH9 | VrA | VRA | Por padrão, intensidade da estabilização |
 | CH10 | VrB | VRB | Por padrão, velocidade de cruzeiro |
 
-Os canais CH6–CH10 podem ser **qualquer coisa, com uma única linha** em `include/config/Controls.h`: qualquer um dos 12 modos, das 10 funções (flaps, freio, lançamento de carga, geofence, buzzer…) e dos 7 potenciômetros. Quando a placa liga, a distribuição real é impressa no monitor serial. Tudo sobre os modos e as atribuições está em [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+Os canais CH6–CH10 podem ser **qualquer coisa, com uma única linha** em `include/config/Controls.h`: qualquer um dos 12 modos, das 11 funções (flaps, freio, lançamento de carga, geofence, buzzer, reversão…) e dos 7 potenciômetros. Quando a placa liga, a distribuição real é impressa no monitor serial. Tudo sobre os modos e as atribuições está em [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 Todos os valores dos canais usam a faixa padrão de pulso do receptor, de 1000 a 2000 µs, com 1500 µs como centro/neutro.
 
@@ -212,7 +212,7 @@ Em resumo, a distribuição padrão (`include/config/Controls.h`):
 | Chave | O que faz |
 |---|---|
 | **SwC** (CH7) | em cima **MANUAL** · no meio **STABILIZE** · embaixo **AUTO_TAKEOFF** |
-| **SwD** (CH8) | **RTH**: para casa enquanto estiver ligada |
+| **SwD** (CH8) | **reversão do motor** — só em DISARM (o RTH volta para a chave com uma linha) |
 | **SwB** (CH6) | flaps |
 | **VrA / VrB** (CH9/10) | intensidade da estabilização / velocidade de cruzeiro |
 
@@ -237,7 +237,20 @@ Sinais dos ângulos (como no OLED e no log): **rolagem R > 0: asa direita para b
 - Se a SwA for levada para ARM com o acelerador fora da posição mais baixa, ou se as verificações pré-voo não passarem, o ARM **não** acontece (o motivo é impresso no Serial). É preciso devolver a SwA para cima, abaixar o acelerador e levá-la para baixo de novo.
 - Se a placa for ligada com a SwA já na posição de ARM (para baixo), ela **não** arma: o firmware precisa ver primeiro a SwA para cima (OFF).
 
-**O ARM bloqueia de fato o acelerador:** enquanto a aeronave não está armada, o acelerador do ESC é mantido à força no mínimo, seja qual for a posição do stick. Antes de armar, verifica-se se os sensores exigidos pelo modo escolhido respondem; por exemplo, o STABILIZE sem um IMU funcionando não arma até você passar para o MANUAL. Mesmo assim, comporte-se como se a hélice pudesse começar a girar a qualquer momento depois do ARM.
+**O ARM bloqueia de fato o acelerador:** enquanto a aeronave não está armada, o acelerador do ESC é mantido à força em zero, seja qual for a posição do stick (num ESC bidirecional, é o pulso neutro de 1500 µs). Antes de armar, verifica-se se os sensores exigidos pelo modo escolhido respondem; por exemplo, o STABILIZE sem um IMU funcionando não arma até você passar para o MANUAL. Mesmo assim, comporte-se como se a hélice pudesse começar a girar a qualquer momento depois do ARM.
+
+### Reversão do motor (SwD)
+
+O ESC principal é um BLHeli 80A bidirecional: o motor gira nos dois sentidos, **SwD para baixo** — para trás, para cima — para a frente. A reversão serve para taxiar de ré no solo.
+
+- **O sentido só muda em DISARM.** Acionou a SwD com ARM — nada acontece (no Serial aparece `MotorReverse: реверс НЕ переключён`, “reversão NÃO trocada”), e o motor continua girando como antes. O novo sentido vale quando você desarmar. Assim não dá para ligar a reversão com acelerador total e queimar o ESC e o motor.
+- **Por 3 segundos depois de trocar o sentido, não é possível armar** (`REVERSE_SETTLE_MS`): se você desarmou com acelerador, o motor ainda gira por inércia — deixe-o parar. Enquanto isso, o ARM é recusado com o motivo no Serial.
+- **Para trás — só o seu acelerador e no máximo 50%** (`REVERSE_THROTTLE_LIMIT_PCT`): stick no máximo = metade da potência. Em reversão o piloto automático não mexe no acelerador (as superfícies de controle funcionam normalmente); na perda de link o motor simplesmente para.
+- Aparece no OLED (`REV` na primeira linha) e no painel (o selo “Мотор: РЕВЕРС” — “Motor: REVERSÃO”).
+
+**Configuração do ESC no BLHeliSuite** (uma vez, sem a hélice): Motor Direction — **Bidirectional** (no BLHeli_32 — “Bidirectional”/3D), PPM Min Throttle — 1000, PPM Max Throttle — 2000, Center — 1500. O ESC arma ao ver o neutro de 1500 µs, e o firmware o envia desde o primeiro pulso. Se com o stick para a frente o motor gira para o lado errado, troque dois fios quaisquer do motor (ou defina Motor Direction = Bidirectional Reversed) em vez de mexer no firmware.
+
+ESC unidirecional comum: defina `ESC_BIDIRECTIONAL = false` no `Config.h`; senão, no “parado” (1500) ele dará meio acelerador! A reversão, então, nunca é ativada.
 
 ### Failsafe
 
@@ -245,6 +258,7 @@ A perda de link tem **prioridade absoluta** sobre todo o resto:
 
 - **aeronave armada, com GPS e ponto de origem**: **retorno para casa com motor** (como no ArduPilot/INAV): rumo ao ponto de origem, altitude de 40 m, círculos sobre ele até o link voltar. No OLED aparece `FSRTH`. Desativa-se com `FAILSAFE_RTH = false` em `Config.h`;
 - **aeronave armada, sem GPS**: **planeio**: motor desligado; o piloto automático, em qualquer modo, até no MANUAL, mantém as asas niveladas e o nariz um pouco abaixo do horizonte (−3°), e os flaps recolhem. No OLED aparece `RX LOST ... GLIDE`. Se você definir `FAILSAFE_GLIDE_ROLL_DEG` = 10–20, o avião fará uma espiral suave sobre você;
+- **motor em reversão**: o motor é desligado em qualquer caso; o piloto automático comanda só as superfícies de controle (para casa, planando);
 - **desarmada** (no solo) ou com o IMU sem responder: motor desligado; ailerons, profundor e leme em neutro (1500 µs); depois de 10 s sem link toca o buzzer "estou aqui" (se estiver soldado).
 
 O firmware reconhece a perda de link de duas maneiras:
@@ -374,10 +388,10 @@ A cada vez que é ligado, o IMU gasta cerca de 2 s calibrando o giroscópio e, a
 Se o OLED estiver conectado (GPIO1/GPIO2), ele mostra o seguinte 5 vezes por segundo:
 
 ```
-RX ok disarm STAB        <- link / ARM / modo (se o link se perde, a linha fica invertida)
+RX ok disarm STAB        <- link / ARM / modo / REV: motor para trás (se o link se perde, a linha fica invertida)
 R  +1.2 P  -0.4          <- rolagem / arfagem, °
 Alt +0.3 Vz +0.1         <- altitude em relação ao ponto de ligação, m / velocidade vertical, m/s
-Hdg 123  Thr 1000        <- rumo pela bússola / acelerador para o ESC, µs
+Hdg 123  Thr 1000        <- rumo pela bússola / acelerador 1000..2000 = 0..100% (para trás também), µs
 L1500 R1500 E1500        <- PWM dos ailerons e do profundor, µs
 Loop 500Hz max 1100us    <- frequência e pior duração do laço
 ```

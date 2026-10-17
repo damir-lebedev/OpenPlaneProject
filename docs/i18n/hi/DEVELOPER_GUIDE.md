@@ -48,8 +48,8 @@ include/
 ├── storage/     KeyValueStore, KvPreferences — NVS के बिना सेटिंग का भंडारण
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
-│                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, Beeper, FlightController
+│                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
+│                FlightOutputState, FlightOutputs, Beeper, FlightController
 ├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
 │   │            Navigation, AltitudeSpeedController, LaunchController,
 │   │            SoaringController, AutoTrim, PidController
@@ -82,7 +82,8 @@ src/stm32/main.cpp  — STM32H743 फ़र्मवेयर (FreeRTOS टा�
 │  └ FlapsController  │  │  └ नेविगेशन, PID        │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
-│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+│ MotorReverse        │             │ ImuSensor* / BarometerSensor* / ...
+│ FlightOutputs       │             │
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORS                                          │
@@ -178,8 +179,10 @@ src/stm32/main.cpp  — STM32H743 फ़र्मवेयर (FreeRTOS टा�
 | `ControlMixer.h` | `fromSticks(rc)` → `ControlCommand`; `updateFlaps(लक्ष्य, now)`; `mix(command)` → सर्वो रिवर्स के साथ PWM; फ़्लैपरॉन: एलेरॉन `flaps ± roll` (माइनस — एयर ब्रेक) |
 | `FlapsController.h` | फ़्लैप का सहज निकलना/समेटना, समय पैरामीटर के रूप में दिया जाता है |
 | `ThrottleManager.h` | स्टिक से थ्रॉटल; सिग्नल खोने पर — `FAILSAFE_THROTTLE` |
+| `EscSignal.h` | थ्रॉटल + दिशा → ESC पल्स: द्विदिश BLHeli पर 1500 = रुका, आगे 1500..2000, पीछे 1500..1000 |
+| `MotorReverse.h` | `Feature::MOTOR_REVERSE` से मोटर रिवर्स — केवल DISARM में; दिशा बदलने के बाद `REVERSE_SETTLE_MS` तक ARM अस्वीकार |
 | `ArmingManager.h` | SwA स्विच से ARM (थ्रॉटल नीचे होने पर OFF→ON का बदलाव + मोड के सेंसरों की जाँचें), तुरंत DISARM |
-| `FlightOutputState.h` | वांछित PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`, `aux1` (पेलोड), `aux2` (कैमरा) |
+| `FlightOutputState.h` | वांछित PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (किसी भी दिशा में 0..100%), `motorReverse`, `aux1` (पेलोड), `aux2` (कैमरा) |
 | `Beeper.h` | बजर: फ़ंक्शन `BEEPER` से या ज़मीन पर “मॉडल खो गया” |
 | `FlightOutputs.h` | आउटपुट की तालिका (`outputInfo()`: कुंजी, नाम, पिन, अनिवार्यता, स्थिति का फ़ील्ड) और उसके ऊपर लूप में सब कुछ: `begin()`, `write()`, `setFailsafe()`, स्थिति, `printPulseSelfTest()` |
 | `FlightController.h` | हर चक्र में संचालन का क्रम, सिग्नल खोना (`applyLinkLoss()`), टेलीमेट्री के लिए गेटर |
@@ -324,7 +327,7 @@ PID `त्रुटि = लक्ष्य − वास्तविक` ग�
 | CH5 | SwA | `ARM` | ≥ 1750 = ARM (FS-i6 पर यह स्विच नीचे, अपनी ओर) |
 | CH6 | SwB | `SWB` | डिफ़ॉल्ट रूप से फ़्लैप (≥ 1750 — निकले हुए) |
 | CH7 | SwC (3 स्थितियाँ) | `SWC` | डिफ़ॉल्ट रूप से मोड: < 1250 MANUAL, 1250–1749 STABILIZE, ≥ 1750 AUTO_TAKEOFF |
-| CH8 | SwD | `SWD` | डिफ़ॉल्ट रूप से RTH |
+| CH8 | SwD | `SWD` | डिफ़ॉल्ट रूप से मोटर रिवर्स (केवल DISARM में बदलता है) |
 | CH9 | VrA | `VRA` | डिफ़ॉल्ट रूप से स्थिरीकरण की ताक़त |
 | CH10 | VrB | `VRB` | डिफ़ॉल्ट रूप से क्रूज़ की गति |
 
@@ -335,7 +338,13 @@ CH6–CH10 को `include/config/Controls.h` में एक ही पंक�
 और मौजूदा मोड के लिए सेंसरों की जाँचें पास होना। वरना कारण Serial में बताकर
 इनकार कर दिया जाता है, और OFF→ON का नया चक्र चाहिए। स्विच ON रखकर बोर्ड चालू
 करने पर ARM नहीं होता। OFF — तुरंत DISARM। जब तक ARM नहीं है, ESC को जाने वाला
-थ्रॉटल ज़बरदस्ती `PWM_MIN` रहता है।
+थ्रॉटल ज़बरदस्ती `PWM_MIN` (द्विदिश ESC के पिन पर — 1500 का न्यूट्रल) रहता है।
+
+**रिवर्स** (`MotorReverse`, `Feature::MOTOR_REVERSE`, डिफ़ॉल्ट रूप से SwD):
+मोटर की दिशा स्विच के साथ केवल ARM के बिना बदलती है; ARM में स्विच पलटने से
+DISARM तक कुछ नहीं बदलता। दिशा बदलने के बाद `REVERSE_SETTLE_MS` (3 s) तक ARM
+अस्वीकार होता है। पीछे — केवल पायलट का थ्रॉटल, `REVERSE_THROTTLE_LIMIT_PCT`
+(50%) से ज़्यादा नहीं; ऑटोपायलट को थ्रॉटल नहीं मिलता, संपर्क टूटने पर मोटर रुकती है।
 
 **संपर्क टूटना** (`IBusReceiver::isSignalLost()`):
 
@@ -442,7 +451,8 @@ IMU का कैलिब्रेशन (हर शुरुआत पर औ�
 7. **संपर्क टूटना** — `applyLinkLoss()`: ARM में — कंट्रोल सरफ़ेस और थ्रॉटल
    ऑटोपायलट की failsafe कमांड के अनुसार, वरना न्यूट्रल और मोटर बंद; `return`।
    नीचे की हर चीज़ पर पूर्ण प्राथमिकता।
-8. **ARM** — `arming.update(rc, false)`।
+8. **ARM और रिवर्स** — `arming.update(rc, false, reverse.armBlockReason(now))`,
+   फिर `reverse.update(MOTOR_REVERSE, armed, now)`: दिशा केवल ARM के बिना बदलती है।
 9. **कमांड** — `autopilot->getCommand()`: स्थिरीकरण वाले मोड में स्टिक
    वांछित कोण है, और अंतिम कंट्रोल सरफ़ेस कमांड ऑटोपायलट देता है।
 10. **मिक्सर** — `mixer.mix(command)` → एलेरॉन (फ़्लैप + रोल), एलिवेटर और रडर
@@ -451,6 +461,8 @@ IMU का कैलिब्रेशन (हर शुरुआत पर औ�
     ऑटोपायलट का थ्रॉटल, या दोनों में से अधिकतम (ऑटो टेकऑफ़)। फिर, अगर ARM नहीं
     है या `MOTOR_KILL` है, — ज़बरदस्ती `PWM_MIN`। यह जाँच सबसे अंत में है, ताकि
     कोई मोड थ्रॉटल को ARM को बायपास करके न निकाल सके।
+    रिवर्स में — केवल पायलट का थ्रॉटल, `REVERSE_THROTTLE_LIMIT_PCT` तक।
+    थ्रॉटल और दिशा को ESC पल्स में `FlightOutputs` (`EscSignal`) बदलता है।
 12. **AUX** — पेलोड (`PAYLOAD_DROP`) और कैमरा (`CAMERA_TILT`, `CAMERA_STAB`)।
 13. **`outputs.write(output)`** — 7 आउटपुट पर PWM।
 
@@ -467,13 +479,14 @@ IMU का कैलिब्रेशन (हर शुरुआत पर औ�
 {
   "rc": [1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1500],
   "armed": false,
+  "motorReverse": false,
   "failsafe": false,
   "outputs": {
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true },
+    "esc":          { "us": 1500, "attached": true },
     "aux1":         { "us": 1000, "attached": true },
     "aux2":         { "us": 1500, "attached": true }
   },
@@ -929,7 +942,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # जाँचें
 - जब तक पोर्ट मॉनिटर खुला है, उसी पोर्ट पर फ़र्मवेयर डालना नहीं चलेगा।
 - `lib_deps`: `olikraus/U8g2` (OLED) — इकलौती बाहरी लाइब्रेरी।
 - `test/` — विस्तार से [`TESTING.md`](TESTING.md) में:
-  - `pio test -e native -e native-stm32` — PC पर 387 टेस्ट (हार्डवेयर के नक़ली
+  - `pio test -e native -e native-stm32` — PC पर 392 टेस्ट (हार्डवेयर के नक़ली
     `test/native/support/` में), कवरेज — `gcovr`;
   - `pio test -e esp32-s3` — बोर्ड पर ही `test_feedback/` (फ़ीडबैक का बंद-लूप
     सिमुलेशन) और `test_imu_orientation/`; हर एक टेस्ट फ़र्मवेयर डालता है, उसके
@@ -977,6 +990,10 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # जाँचें
   चलता था)। आउटपुट LEDC पर दोबारा लिखे गए; लाइब्रेरी लौटानी हो तो `p` से जाँचकर
   ही।
 - **ESC — 50 Hz PWM**, फ़र्मवेयर में थ्रॉटल की सीमा का कैलिब्रेशन मोड अभी नहीं है।
+  मुख्य ESC द्विदिश BLHeli 80A है (`ESC_BIDIRECTIONAL`): इसे BLHeliSuite में
+  सेट किया जाता है (Motor Direction = Bidirectional, सीमा 1000..2000), न्यूट्रल
+  1500 = रुका। साधारण ESC लगाएँ तो `ESC_BIDIRECTIONAL = false` करें, वरना “रुको”
+  पर उसे आधा थ्रॉटल मिलेगा।
 - **वेब डैशबोर्ड:** एक्सेस पॉइंट का पासवर्ड कमज़ोर है, और कमांड उड़ान में भी
   स्वीकार होती हैं। यह टेस्ट बेंच और मैदान का औज़ार है, उड़ान का नहीं।
 - **प्रोटोटाइप की यांत्रिकी:** पहला प्रोटोटाइप उड़ा, मोटर का कमज़ोर माउंट और पंख की

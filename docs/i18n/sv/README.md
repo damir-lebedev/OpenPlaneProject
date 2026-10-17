@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-387%20passing-3fb950?style=for-the-badge" alt="387 tester">
+  <img src="https://img.shields.io/badge/tests-392%20passing-3fb950?style=for-the-badge" alt="392 tester">
   <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="98 % testtäckning">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 byggen utan varningar">
   <br>
@@ -60,8 +60,8 @@
 |---|---|
 | **Vad det är** | En öppen flygkontroller och autopilot för radiostyrda flygplan. Huvudkortet är STM32H743 (ett kort i Pixhawk-klassen): på ett DevEBox-kort är firmwaren **redan igång och styrs från sändaren** – [det finns en video](#-stm32h743-har-vaknat-till-liv-på-kortet), och sensorerna kopplas in just nu. Den tidigare basen är en ESP32-S3 för cirka 10 $, som klarade testbänken med alla sensorer. |
 | **Vad den kan** | 12 flyglägen – från stabilisering till hemflygning, GPS-cirklar, handstart, autolandning och **termikflygning**. Ett pitotrör av två billiga barometrar. MAVLink-telemetri till QGroundControl och Mission Planner. |
-| **Huvudtricket** | Vilken brytare eller ratt som helst på sändaren = vilken funktion som helst. **En rad** i `Controls.h` – och SwD är inte längre RTH utan lastsläpp. |
-| **Varför man kan lita på den** | 387 automatiska tester (plus 9 på själva kortet med ett riktigt SD-kort), 98 % av koden täckt av tester, 24 bygg ”kort × sensorer” utan en enda varning, simuleringar i sluten slinga av varje läge. |
+| **Huvudtricket** | Vilken brytare eller ratt som helst på sändaren = vilken funktion som helst. **En rad** i `Controls.h` – och SwD är inte längre motorreversering utan lastsläpp. |
+| **Varför man kan lita på den** | 392 automatiska tester (plus 9 på själva kortet med ett riktigt SD-kort), 98 % av koden täckt av tester, 24 bygg ”kort × sensorer” utan en enda varning, simuleringar i sluten slinga av varje läge. |
 | **Ärligt talat** | Hittills har bara manuellt läge flugit (den första prototypen). STM32H743 har hittills bara provats på bänken, utan sensorer. Autopiloten är verifierad på bänken, med tester och simuleringar och väntar på flygprov – [status nedan](#-ärlig-status). |
 
 ---
@@ -73,15 +73,15 @@
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),              // hem, så länge den är påslagen
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),// motorreversering – bara i DISARM
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),       // "mjukare / hårdare" mitt under flygningen
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
 ```
 
-Vill du ha termikflygning på SwD i stället för RTH? `Bind::mode(Channels::SWD, MODE_SOARING)`. Lastsläpp på SwB? `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`. Har du gjort fel – till exempel lagt två lägen på en brytare eller tagit en spak – **går bygget inte igenom**: kompilatorn kontrollerar tabellen (`static_assert`). Vid start skriver planet själv ut vad som ligger på vilken brytare.
+Vill du ha termikflygning på SwD i stället för motorreversering? `Bind::mode(Channels::SWD, MODE_SOARING)`. Lastsläpp på SwB? `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`. Har du gjort fel – till exempel lagt två lägen på en brytare eller tagit en spak – **går bygget inte igenom**: kompilatorn kontrollerar tabellen (`static_assert`). Vid start skriver planet själv ut vad som ligger på vilken brytare.
 
-**12 lägen · 10 funktioner · 7 rattar** – alla med exempel i [autopilotreferensen](AUTOPILOT_GUIDE.md).
+**12 lägen · 11 funktioner · 7 rattar** – alla med exempel i [autopilotreferensen](AUTOPILOT_GUIDE.md).
 
 ---
 
@@ -205,7 +205,7 @@ Vad det bevisar: kedjan ”sändare → iBUS → firmware → PWM” fungerar p�
 
 | | |
 |---|---|
-| **387 automatiska tester** | moduler, kretsdrivrutiner kontrollerade på registernivå, flygningar i sluten slinga, firmwaren för ESP32 och STM32 **i sin helhet** på en dator; plus 9 tester på själva STM32-kortet med ett riktigt SD-kort |
+| **392 automatiska tester** | moduler, kretsdrivrutiner kontrollerade på registernivå, flygningar i sluten slinga, firmwaren för ESP32 och STM32 **i sin helhet** på en dator; plus 9 tester på själva STM32-kortet med ett riktigt SD-kort |
 | **98,3 % av raderna, 87,7 % av grenarna** | täckning med `gcovr`, inklusive STM32-koden |
 | **24/24 bygg** | 4 kort × 6 sensorsatser, `-Wall -Wextra`, noll varningar |
 | **0 anmärkningar** | cppcheck och clang-tidy över all kod |
@@ -262,6 +262,7 @@ I seriemonitorn: `h` – meny, `b` – vilka kretsar som syns på bussarna, `s` 
 |---|---|
 | Manuell styrning, mixer | ✈️ under flygning (första prototypen, C3) |
 | ARM, failsafe, klaffar, servon, motor | 🔧 på bänken (S3) |
+| Dubbelriktad ESC BLHeli 80A, reversering bara i DISARM | 🧪 tester; ännu inte provad med riktig ESC |
 | STABILIZE | 🔧 på bänken: roderytorna reagerar på lutning åt rätt håll |
 | Bänksensorer (MPU6500, BMP388, QMC5883P), OLED, panel | 🔧 på bänken |
 | Övriga lägen, navigering, pitotrör, MAVLink | 🧪 tester och simuleringar i sluten slinga |

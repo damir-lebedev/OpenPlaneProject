@@ -52,8 +52,8 @@ include/
 ├── storage/     KeyValueStore, KvPreferences — تخزين الإعدادات دون NVS
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
-│                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, Beeper, FlightController
+│                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
+│                FlightOutputState, FlightOutputs, Beeper, FlightController
 ├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
 │   │            Navigation, AltitudeSpeedController, LaunchController,
 │   │            SoaringController, AutoTrim, PidController
@@ -90,7 +90,8 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 │  └ FlapsController  │  │  └ الملاحة وPID       │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
-│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+│ MotorReverse        │             │ ImuSensor* / BarometerSensor* / ...
+│ FlightOutputs       │             │
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORS                                          │
@@ -188,8 +189,10 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 | `ControlMixer.h` | `fromSticks(rc)` ← `ControlCommand`؛ و`updateFlaps(الهدف, now)`؛ و`mix(command)` ← PWM مع عكس السيرفو؛ والفلابرون: الجنيحات `flaps ± roll` (السالب — مكبح هوائي) |
 | `FlapsController.h` | إخراج الفلابات وسحبها بسلاسة، والزمن يُمرَّر معاملًا |
 | `ThrottleManager.h` | الخانق من العصا؛ وعند فقدان الاتصال — `FAILSAFE_THROTTLE` |
+| `EscSignal.h` | الخانق + الاتجاه ← نبضة ESC: في BLHeli ثنائي الاتجاه 1500 = توقف، إلى الأمام 1500..2000، إلى الخلف 1500..1000 |
+| `MotorReverse.h` | عكس المحرك عبر `Feature::MOTOR_REVERSE` — في DISARM فقط؛ وبعد تبديل الاتجاه يُرفض ARM مدة `REVERSE_SETTLE_MS` |
 | `ArmingManager.h` | ARM بالمفتاح SwA (انتقال OFF→ON والخانق في الأسفل + فحوص حساسات الوضع)، وDISARM فوري |
-| `FlightOutputState.h` | قيم PWM المطلوبة: `aileronLeft` و`aileronRight` و`elevator` و`rudder` و`throttle` و`aux1` (الحمولة) و`aux2` (الكاميرا) |
+| `FlightOutputState.h` | قيم PWM المطلوبة: `aileronLeft` و`aileronRight` و`elevator` و`rudder` و`throttle` (0..100% في أي اتجاه) و`motorReverse` و`aux1` (الحمولة) و`aux2` (الكاميرا) |
 | `Beeper.h` | الصافرة: بوظيفة `BEEPER` أو «فُقد النموذج» على الأرض |
 | `FlightOutputs.h` | جدول المخارج (`outputInfo()`: المفتاح والاسم والطرف وإلزاميته وحقل الحالة) وكل ما فوقه في حلقة: `begin()` و`write()` و`setFailsafe()` والحالة و`printPulseSelfTest()` |
 | `FlightController.h` | ترتيب العمليات في كل دورة، وفقدان الاتصال (`applyLinkLoss()`)، ودوال الجلب للقياس عن بُعد |
@@ -333,7 +336,7 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 | CH5 | SwA | `ARM` | ‏≥ 1750 = ARM (في FS-i6 هو المفتاح إلى أسفل، نحوك) |
 | CH6 | SwB | `SWB` | افتراضيًّا الفلابات (≥ 1750 — مُخرَجة) |
 | CH7 | SwC (3 أوضاع) | `SWC` | افتراضيًّا الوضع: أقل من 1250 MANUAL، و1250–1749 STABILIZE، و≥ 1750 AUTO_TAKEOFF |
-| CH8 | SwD | `SWD` | افتراضيًّا RTH |
+| CH8 | SwD | `SWD` | افتراضيًّا عكس اتجاه المحرك (لا يتبدّل إلا في DISARM) |
 | CH9 | VrA | `VRA` | افتراضيًّا قوة التثبيت |
 | CH10 | VrB | `VRB` | افتراضيًّا سرعة الانطلاق |
 
@@ -344,7 +347,13 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 `THROTTLE_LOW_US`، واجتياز فحوص الحساسات للوضع الحالي. وإلا يُرفَض الأمر مع
 ذكر السبب في Serial، ويلزم دورة OFF→ON جديدة. تشغيل اللوحة والمفتاح في
 وضع ON لا يفعّل ARM. وOFF — DISARM فورًا. وما دام الجهاز غير مُفعَّل،
-يُفرَض على الخانق المتجه إلى ESC القيمة `PWM_MIN`.
+يُفرَض على الخانق المتجه إلى ESC القيمة `PWM_MIN` (وعلى طرف ESC ثنائي الاتجاه هو المحايد 1500).
+
+**العكس** (`MotorReverse`، و`Feature::MOTOR_REVERSE`، وافتراضيًّا SwD): يتبع
+اتجاه المحرك المفتاحَ دون ARM فقط؛ وقلب المفتاح أثناء ARM لا يغيّر شيئًا حتى
+DISARM. وبعد تبديل الاتجاه يُرفض ARM مدة `REVERSE_SETTLE_MS` ‏(3 s). وإلى الخلف —
+خانق الطيار وحده ولا يزيد على `REVERSE_THROTTLE_LIMIT_PCT` ‏(50%)؛ ولا يحصل الطيار
+الآلي على الخانق، وعند فقدان الاتصال يتوقف المحرك.
 
 **فقدان الاتصال** (`IBusReceiver::isSignalLost()`):
 
@@ -456,7 +465,8 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 7. **فقدان الاتصال** — `applyLinkLoss()`: مع ARM — تتبع الأسطح والخانق أمر
    failsafe الصادر عن الطيار الآلي، وإلا فالوضع المحايد والمحرك مطفأ؛ ثم
    `return`. أولوية مطلقة على كل ما يلي.
-8. **‏ARM** — `arming.update(rc, false)`.
+8. **‏ARM والعكس** — `arming.update(rc, false, reverse.armBlockReason(now))`،
+   ثم `reverse.update(MOTOR_REVERSE, armed, now)`: لا يتبدّل الاتجاه إلا دون ARM.
 9. **الأمر** — `autopilot->getCommand()`: في الأوضاع المستقرة بالتثبيت تمثّل
    العصا الزاوية المطلوبة، ويُصدر الطيار الآلي أوامر الأسطح النهائية.
 10. **الخلّاط** — `mixer.mix(command)` ← PWM للجنيحات (الفلابات + الدوران
@@ -465,6 +475,8 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
     خانق الطيار الآلي، أو الأكبر من الاثنين (الإقلاع التلقائي). ثم إذا لم يكن
     الجهاز مُفعَّلًا أو كان `MOTOR_KILL` — يُفرَض `PWM_MIN`. ويأتي هذا الفحص
     في الآخر كي لا يتمكن أي وضع من تمرير الخانق متجاوزًا ARM.
+    وفي العكس — خانق الطيار وحده حتى `REVERSE_THROTTLE_LIMIT_PCT`. ويحوّل
+    `FlightOutputs` ‏(`EscSignal`) الخانق والاتجاه إلى نبضة ESC.
 12. **‏AUX** — الحمولة (`PAYLOAD_DROP`) والكاميرا (`CAMERA_TILT` و`CAMERA_STAB`).
 13. **‏`outputs.write(output)`** — PWM على 7 مخارج.
 
@@ -483,13 +495,14 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 {
   "rc": [1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1500],
   "armed": false,
+  "motorReverse": false,
   "failsafe": false,
   "outputs": {
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true },
+    "esc":          { "us": 1500, "attached": true },
     "aux1":         { "us": 1000, "attached": true },
     "aux2":         { "us": 1500, "attached": true }
   },
@@ -959,7 +972,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # التحقق من 
 - ما دام مراقِب المنفذ مفتوحًا فلن ينجح الرفع إلى المنفذ نفسه.
 - ‏`lib_deps`: ‏`olikraus/U8g2` (شاشة OLED) هي المكتبة الخارجية الوحيدة.
 - ‏`test/` — بالتفصيل في [`TESTING.md`](TESTING.md):
-  - ‏`pio test -e native -e native-stm32` — 387 اختبارًا على الحاسوب (بدائل
+  - ‏`pio test -e native -e native-stm32` — 392 اختبارًا على الحاسوب (بدائل
     العتاد في `test/native/support/`)، والتغطية بأداة `gcovr`؛
   - ‏`pio test -e esp32-s3` — ‏`test_feedback/` (محاكاة التغذية الراجعة بحلقة
     مغلقة) و`test_imu_orientation/` على اللوحة نفسها؛ ويرفع كلٌّ منهما برنامجًا
@@ -1005,6 +1018,10 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # التحقق من 
   كتابة المخارج على LEDC؛ ولا تُعَد المكتبة إلا بعد التحقق بالأمر `p`.
 - **‏ESC يعمل بـ PWM عند 50 Hz**، ولا يوجد في البرنامج الثابت بعدُ وضع لمعايرة
   مدى الخانق.
+  متحكم السرعة الرئيسي هو BLHeli 80A ثنائي الاتجاه (`ESC_BIDIRECTIONAL`): يُضبط
+  في BLHeliSuite ‏(Motor Direction = Bidirectional، والمدى 1000..2000)، والمحايد
+  1500 = توقف. وإن ركّبت متحكمًا عاديًا فاضبط `ESC_BIDIRECTIONAL = false`، وإلا
+  فسيتلقى عند «التوقف» نصف الخانق.
 - **لوحة المعلومات عبر الويب:** كلمة مرور نقطة الوصول ضعيفة، وتُقبل الأوامر
   حتى أثناء الطيران. وهي أداة للمنصة والميدان، لا للطيران.
 - **ميكانيكا النموذج الأولي:** طار النموذج الأول، وظهر ضعف في تثبيت المحرك

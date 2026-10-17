@@ -55,7 +55,7 @@ FS-i6 + FS-iA6B, iBUS, 10 каналов (`config/Channels.h`).
 | CH5 | **SwA** | **ARM** (вниз = заармлен, только при газе внизу; переназначить нельзя) |
 | CH6 | SwB | закрылки (`Feature::FLAPS`) |
 | CH7 | **SwC** (3 положения) | вверх **MANUAL** · середина **STABILIZE** · вниз **AUTO_TAKEOFF** |
-| CH8 | SwD | **RTH** — домой, пока включён |
+| CH8 | SwD | **реверс мотора** (`Feature::MOTOR_REVERSE`) — переключается только в DISARM |
 | CH9 | VrA | сила стабилизации (`Knob::STAB_GAIN`) |
 | CH10 | VrB | скорость круиза (`Knob::CRUISE_SPEED`) |
 
@@ -64,7 +64,7 @@ FS-i6 + FS-iA6B, iBUS, 10 каналов (`config/Channels.h`).
 ```
 SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
 SwB (CH6): FLAPS, пока включён
-SwD (CH8): RTH, пока включён
+SwD (CH8): MOTOR_REVERSE, пока включён
 VrA (CH9): крутилка STAB_GAIN
 VrB (CH10): крутилка CRUISE_SPEED
 ```
@@ -81,7 +81,7 @@ VrB (CH10): крутилка CRUISE_SPEED
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
@@ -169,7 +169,7 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 **Нужно:** IMU + барометр + GPS.
 
 ### RTH — «домой»
-Курс на дом (точка ARM), высота `RTH_ALTITUDE_M` = 40 м (ниже — набирает по пути, выше — остаётся). Над домом — круги радиуса LOITER, пока пилот не заберёт управление. Нет GPS или дома — круги на месте. Тот же режим включают потеря связи и геозабор.
+Курс на дом (точка ARM), высота `RTH_ALTITUDE_M` = 40 м (ниже — набирает по пути, выше — остаётся). Над домом — круги радиуса LOITER, пока пилот не заберёт управление. Нет GPS или дома — круги на месте. Тот же режим включают потеря связи и геозабор. Своего тумблера по умолчанию у RTH нет (SwD — реверс мотора): вернуть — строкой `Bind::mode(Channels::SWD, MODE_RTH)` в `Controls.h` или включать с дашборда.
 **Нужно:** IMU + барометр + GPS с домом.
 
 ### AUTO_TAKEOFF (TKOFF) — «взлёт по газу»
@@ -213,6 +213,7 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 | `GEOFENCE` | дальше 500 м от дома или выше 120 м — RTH | `GEOFENCE_ALWAYS_ON` — без тумблера |
 | `HOME_RESET` | дом = текущая точка (в момент включения тумблера) | только при хорошем GPS |
 | `CAMERA_STAB` | камера на AUX2 держит угол к горизонту | вычитается тангаж самолёта |
+| `MOTOR_REVERSE` | мотор назад (двунаправленный ESC) — отрулить на земле | меняется **только в DISARM**: щелчок в ARM ждёт DISARM; после смены 3 с ARM нельзя; назад до 50 % газа, только газ пилота |
 
 ## Крутилки
 

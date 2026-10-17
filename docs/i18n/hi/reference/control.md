@@ -34,10 +34,13 @@ CONTROL परत डेटा के ऊपर का तर्क है, UART
 
 आउटपुट के वांछित पल्स, PWM µs। डिफ़ॉल्ट — कंट्रोल सरफ़ेस न्यूट्रल और थ्रॉटल `PWM_MIN`।
 
+`throttle` किसी भी दिशा में थ्रॉटल का परिमाण है (1000..2000 = 0..100%); इसे `motorReverse` के साथ ESC पल्स में `FlightOutputs` बदलता है (`EscSignal` के ज़रिए)।
+
 | फ़ील्ड | डिफ़ॉल्ट |
 |---|---|
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
+| `bool motorReverse` | `false` — मोटर आगे घूमती है |
 | `aux1` | `PAYLOAD_CLOSED_US` — पेलोड गिराने वाला बंद है |
 | `aux2` | `PWM_CENTER` — कैमरा |
 
@@ -97,6 +100,36 @@ CONTROL परत डेटा के ऊपर का तर्क है, UART
 
 ---
 
+## `EscSignal`
+
+**फ़ाइल:** `control/EscSignal.h` · **प्रकार:** namespace · **निर्भर है:** `Config`
+
+थ्रॉटल (1000..2000 = 0..100%) और दिशा → ESC पिन पर पल्स।
+
+| फ़ंक्शन | विवरण |
+|---|---|
+| `uint16_t pulseUs(uint16_t throttleUs, bool reverse)` | `ESC_BIDIRECTIONAL` (3D में BLHeli 80A): 0% → `ESC_NEUTRAL_US` (1500), आगे 1500..2000, पीछे 1500..1000। एकदिश ESC: 1000..2000 जैसा है, `reverse` अनदेखा। 1000..2000 से बाहर का थ्रॉटल काट दिया जाता है |
+| `uint16_t stopUs()` | “मोटर रुकी” का पल्स (द्विदिश ESC में 1500, साधारण में 1000) |
+
+केवल रूपांतरण, सुरक्षा नहीं: दिशा कब बदलनी है यह `MotorReverse` तय करता है, पीछे की थ्रॉटल सीमा — `FlightController`।
+
+---
+
+## `MotorReverse`
+
+**फ़ाइल:** `control/MotorReverse.h` · **निर्भर है:** `Config`
+
+मोटर की दिशा `Feature::MOTOR_REVERSE` स्विच से (डिफ़ॉल्ट रूप से SwD) — **केवल ARM के बिना**।
+
+| मेथड | विवरण |
+|---|---|
+| `void update(bool requested, bool armed, uint32_t nowMs)` | ARM नहीं — दिशा तुरंत स्विच के साथ बदलती है (Serial में `MotorReverse: мотор НАЗАД` / `вперёд` — “मोटर पीछे” / “आगे”)। ARM — स्विच का असर नहीं, एक बार “реверс НЕ переключён” (“रिवर्स नहीं बदला”) छपता है, नई दिशा DISARM का इंतज़ार करती है। `ESC_BIDIRECTIONAL = false` होने पर रिवर्स कभी चालू नहीं होता |
+| `bool isReversed() const` | मोटर पीछे घूमती है |
+| `bool isPending() const` | स्विच पहले ही दूसरी स्थिति में है, दिशा DISARM का इंतज़ार कर रही है |
+| `const char* armBlockReason(uint32_t nowMs) const` | ARM अस्वीकार करने का कारण: आख़िरी दिशा-बदलाव को `REVERSE_SETTLE_MS` से कम समय हुआ (मोटर अभी घूम रही हो सकती है); वरना `nullptr` |
+
+---
+
 ## `ArmingManager`
 
 **फ़ाइल:** `control/ArmingManager.h` · **निर्भर है:** `Autopilot` (nullable), `RcChannelState`, `Config`, `Channels`
@@ -107,7 +140,7 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 | मेथड | विवरण |
 |---|---|
 | `explicit ArmingManager(Autopilot* ap = nullptr)` | ऑटोपायलट के बिना केवल थ्रॉटल जाँचा जाता है |
-| `void update(const RcChannelState& rc, bool receiverFailsafe)` | failsafe में — कुछ नहीं (failsafe फ़्रेम में स्विच पायलट को नहीं दर्शाता)। स्विच OFF → DISARM, `switchSeenOff = true`। OFF→ON का बदलाव → जाँचें → ARM या इनकार |
+| `void update(const RcChannelState& rc, bool receiverFailsafe, const char* blockReason = nullptr)` | failsafe में — कुछ नहीं (failsafe फ़्रेम में स्विच पायलट को नहीं दर्शाता)। स्विच OFF → DISARM, `switchSeenOff = true`। OFF→ON का बदलाव → जाँचें → ARM या इनकार `blockReason` — बाहरी अस्वीकृति कारण (`FlightController` से: `MotorReverse::armBlockReason()`) |
 | `bool isArmed() const` | ARM है |
 | `const char* getLastRefusalReason() const` | आख़िरी इनकार का कारण या `nullptr`; स्विच बंद करने पर साफ़ हो जाता है |
 
@@ -119,6 +152,7 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 | MANUAL को छोड़कर कोई भी मोड, IMU है पर जवाब नहीं देती | “IMU जवाब नहीं देती…” |
 | MANUAL को छोड़कर कोई भी मोड, IMU की उड़ान-पूर्व जाँच में समस्या | `ImuSensor::getPreflightProblem()` का पाठ |
 | ऊँचाई वाला मोड (`needsAltitude`: ALT_HOLD, CRUISE, LOITER, RTH, AUTO_LAND, SOARING), बैरोमीटर है पर जवाब नहीं देता | “बैरोमीटर जवाब नहीं देता…” |
+| बाकी सब पास, पर `blockReason` दिया गया | `blockReason` (जैसे “मोटर की दिशा अभी-अभी बदली…”) |
 
 जो सेंसर बिल्ड में नहीं है (`nullptr`), वह ARM को नहीं रोकता; MANUAL में विमान
 बिना किसी सेंसर के भी ARM हो जाता है। GPS फ़िक्स को जाँचों में जानबूझकर शामिल नहीं
@@ -132,7 +166,7 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 
 ## `FlightOutputs`
 
-**फ़ाइल:** `control/FlightOutputs.h` · **निर्भर है:** `IBoard`, `FlightOutputState`, `Config`
+**फ़ाइल:** `control/FlightOutputs.h` · **निर्भर है:** `IBoard`, `FlightOutputState`, `EscSignal`, `Config`
 
 इकलौती क्लास जो PWM आउटपुट का सेट और क्रम जानती है। सभी आउटपुट एक तालिका में
 वर्णित हैं; `begin()`, `write()`, स्थिति और स्व-जाँच उस पर लूप में चलते हैं।
@@ -151,13 +185,13 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 |---|---|
 | `static const OutputInfo& outputInfo(uint8_t ch)` | तालिका की पंक्ति; क्रम = `ServoChannel` |
 | `explicit FlightOutputs(IBoard& board)` | |
-| `bool begin()` | हर आउटपुट का `attach(PWM_MIN, PWM_MAX)`, स्थिति छापना; अगर सभी **ज़रूरी** आउटपुट को चैनल मिला तो `true` |
+| `bool begin()` | हर आउटपुट का `attach(PWM_MIN, PWM_MAX)`, स्थिति और ESC का प्रकार छापना; `true`, अगर सभी **अनिवार्य** आउटपुट को चैनल मिला |
 | `bool isAttached(uint8_t ch) const` | आउटपुट जुड़ा है (सीमा से बाहर का इंडेक्स → `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | तालिका के अनुसार स्थिति से आउटपुट का मान |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | आउटपुट पिन पर पल्स: तालिका से फ़ील्ड, ESC के लिए — `EscSignal::pulseUs(throttle, motorReverse)` से |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | हर जुड़े पिन पर नापा हुआ पल्स बनाम अपेक्षित; अंतर ≤ 15 µs हो तो “OK” |
 | `void write(const FlightOutputState&)` | सभी आउटपुट लिखना और स्थिति याद रखना |
-| `void setFailsafe()` | कंट्रोल सरफ़ेस न्यूट्रल (`FAILSAFE_*`), थ्रॉटल `FAILSAFE_THROTTLE`; AUX जैसे थे वैसे (संपर्क टूटने पर पेलोड नहीं गिरता) |
+| `void setFailsafe()` | कंट्रोल सतहें न्यूट्रल (`FAILSAFE_*`), थ्रॉटल `FAILSAFE_THROTTLE` (द्विदिश ESC के पिन पर 1500); AUX जैसे थे (संपर्क टूटने से पेलोड नहीं गिरता) |
 | `void setBuzzer(bool on)` | बोर्ड का बजर (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | आख़िरी लिखी गई स्थिति |
 
@@ -169,7 +203,7 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 ## `FlightController`
 
 **फ़ाइल:** `control/FlightController.h` · **परत:** COORDINATION ·
-**निर्भर है:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`
+**निर्भर है:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
 
 नियंत्रण-चक्र का इकलौता संयोजक: ख़ुद UART नहीं पार्स करता, PWM को नहीं छूता, मिक्सर
 नहीं गिनता — बस बाक़ियों को सही क्रम में बुलाता है। विस्तृत आरेख
@@ -189,6 +223,7 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 | `int16_t getFlapsUs() const` | फ़्लैप की स्थिति |
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | इस चक्र के स्विच और नॉब |
 | `bool isLostModelBeeping() const` | “मैं यहाँ हूँ” बजर चल रहा है |
+| `const MotorReverse& getMotorReverse() const` | मोटर की दिशा और प्रतीक्षारत रिवर्स |
 
 `update()` का क्रम:
 
@@ -199,18 +234,23 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
    `mixer.updateFlaps(target)`: `AIRBRAKE` → −`AIRBRAKE_US`, `FLAPS` →
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → सहजता से, संपर्क टूटने पर — 0;
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)` — **हमेशा**;
+   रिवर्स में `pilotThrottle` की जगह `PWM_MIN` (ऑटोपायलट के लिए मोटर बंद);
 6. बजर: `Beeper::update(BEEPER, armed, failsafe, now)`;
 7. संपर्क खोया → `applyLinkLoss()` और चक्र से बाहर;
-8. `arming.update(rc, false)`;
+8. `arming.update(rc, false, reverse.armBlockReason(now))`, फिर
+   `reverse.update(MOTOR_REVERSE, armed, now)` — DISARM पर दिशा उसी टिक में बदलती है;
 9. `command = autopilot->getCommand()` (या ऑटोपायलट के बिना स्टिक), फ़्लैप — अपने;
-10. `output = mixer.mix(command)`; `output.throttle = autopilot->applyThrottle(pilotThrottle)`;
+10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
+    आगे — `output.throttle = autopilot->applyThrottle(pilotThrottle)`, सीमा
+    `THROTTLE_LIMIT_PCT`; पीछे — पायलट का थ्रॉटल, सीमा
+    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
 11. ARM नहीं या `MOTOR_KILL` → `throttle = PWM_MIN` (सबसे अंत में);
 12. AUX1 — पेलोड (`PAYLOAD_DROP`), AUX2 — कैमरा (`Knob::CAMERA_TILT`, `CAMERA_STAB` पिच घटाता है);
 13. `outputs.write(output)`।
 
 `applyLinkLoss()`: अगर ऑटोपायलट failsafe में है (ARM: RTH या ग्लाइड) — कंट्रोल सरफ़ेस और
 थ्रॉटल ऑटोपायलट की कमांड के अनुसार (फ़्लैप सहजता से समेटे जाते हैं, `MOTOR_KILL` अब भी
-मोटर को चुप कराता है, AUX जैसे थे वैसे); वरना `outputs.setFailsafe()`।
+मोटर को चुप कराता है, AUX जैसे थे वैसे); वरना `outputs.setFailsafe()`। रिवर्स में मोटर हमेशा रुकी रहती है।
 
 ---
 

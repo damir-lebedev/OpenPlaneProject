@@ -101,7 +101,7 @@ void test_setup_brings_up_the_whole_bench()
     TEST_ASSERT_TRUE(contains(log, "Готово. iBUS 115200 бод"));
 
     // Выходы — в безопасном положении до всякого пульта.
-    TEST_ASSERT_UINT32_WITHIN(2, 1000, pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_UINT32_WITHIN(2, escUs(1000), pulseUs(ServoChannel::ESC));
     TEST_ASSERT_UINT32_WITHIN(2, 1500, pulseUs(ServoChannel::AILERON_LEFT));
     TEST_ASSERT_EQUAL_UINT32(Config::IBUS_BAUDRATE, fake::uart(1)->baud());
 
@@ -136,7 +136,7 @@ void test_sticks_move_surfaces_but_motor_needs_arm()
     rc.set(Channels::AILERON, 2000).set(Channels::THROTTLE, 1600);
     fly(rc, 5);
     TEST_ASSERT_UINT32_WITHIN(2, Config::AILERON_LEFT_REVERSED ? 1000 : 2000, pulseUs(ServoChannel::AILERON_LEFT));
-    TEST_ASSERT_UINT32_WITHIN(2, 1000, pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_UINT32_WITHIN(2, escUs(1000), pulseUs(ServoChannel::ESC));
     TEST_ASSERT_FALSE(flightController.isArmed());
 }
 
@@ -151,7 +151,7 @@ void test_arm_then_throttle_reaches_esc()
     RcChannels rc = armedSticks();
     rc.set(Channels::THROTTLE, 1500);
     fly(rc, 3);
-    TEST_ASSERT_UINT32_WITHIN(2, cappedThrottleUs(1500), pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_UINT32_WITHIN(2, escUs(cappedThrottleUs(1500)), pulseUs(ServoChannel::ESC));
 
     // Газ при ARM — чёрный ящик пишет; задачу записи будит каждый такт.
     TEST_ASSERT_EQUAL(BlackBox::State::Recording, blackBox.getState());
@@ -188,17 +188,17 @@ void test_link_loss_in_air_cuts_motor_and_glides()
     RcChannels rc = armedSticks();
     rc.set(Channels::THROTTLE, 1700);
     fly(rc, 3);
-    TEST_ASSERT_UINT32_WITHIN(2, cappedThrottleUs(1700), pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_UINT32_WITHIN(2, escUs(cappedThrottleUs(1700)), pulseUs(ServoChannel::ESC));
 
     for (int i = 0; i < 300; ++i) loop();   // 600 мс без кадров
     TEST_ASSERT_TRUE(flightController.isReceiverFailsafe());
     TEST_ASSERT_TRUE(autopilot.isFailsafeGliding());
-    TEST_ASSERT_UINT32_WITHIN(2, 1000, pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_UINT32_WITHIN(2, escUs(1000), pulseUs(ServoChannel::ESC));
     TEST_ASSERT_TRUE(contains(takeSerial(), "связь потеряна"));
 
     fly(rc, 3);   // связь вернулась
     TEST_ASSERT_FALSE(autopilot.isFailsafeGliding());
-    TEST_ASSERT_UINT32_WITHIN(2, cappedThrottleUs(1700), pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_UINT32_WITHIN(2, escUs(cappedThrottleUs(1700)), pulseUs(ServoChannel::ESC));
 
     RcChannels disarm;
     fly(disarm, 2);

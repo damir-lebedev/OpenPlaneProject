@@ -57,7 +57,7 @@ FS-i6 + FS-iA6B、iBUS、10 チャンネル（`config/Channels.h`）。
 | CH5 | **SwA** | **ARM**（下 = ARM、スロットルが下のときのみ。割り当て変更不可） |
 | CH6 | SwB | フラップ（`Feature::FLAPS`） |
 | CH7 | **SwC**（3 ポジション） | 上が **MANUAL** ・ 中央が **STABILIZE** ・ 下が **AUTO_TAKEOFF** |
-| CH8 | SwD | **RTH**：ホームへ帰還、オンの間 |
+| CH8 | SwD | **モーター逆転**（`Feature::MOTOR_REVERSE`）：DISARM 中のみ切り替わる |
 | CH9 | VrA | スタビライズの強さ（`Knob::STAB_GAIN`） |
 | CH10 | VrB | 巡航速度（`Knob::CRUISE_SPEED`） |
 
@@ -66,7 +66,7 @@ FS-i6 + FS-iA6B、iBUS、10 チャンネル（`config/Channels.h`）。
 ```
 SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
 SwB (CH6): FLAPS, пока включён
-SwD (CH8): RTH, пока включён
+SwD (CH8): MOTOR_REVERSE, пока включён
 VrA (CH9): крутилка STAB_GAIN
 VrB (CH10): крутилка CRUISE_SPEED
 ```
@@ -83,7 +83,7 @@ VrB (CH10): крутилка CRUISE_SPEED
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
@@ -171,7 +171,7 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 **必要なもの：** IMU + 気圧センサー + GPS。
 
 ### RTH — 「ホームへ帰還」
-ホーム（ARM した地点）へ針路を取り、高度は `RTH_ALTITUDE_M` = 40 m にします（それより低ければ途中で上昇し、高ければそのままです）。ホームの上空では、パイロットが操縦を取り戻すまで LOITER の半径で旋回します。GPS またはホームがない場合は、その場で旋回します。通信途絶とジオフェンスも同じモードを起動します。
+ホーム（ARM した地点）へ針路を取り、高度は `RTH_ALTITUDE_M` = 40 m にします（それより低ければ途中で上昇し、高ければそのままです）。ホームの上空では、パイロットが操縦を取り戻すまで LOITER の半径で旋回します。GPS またはホームがない場合は、その場で旋回します。通信途絶とジオフェンスも同じモードを起動します。 RTH には既定では専用のスイッチがありません（SwD はモーター逆転です）。戻すには `Controls.h` に `Bind::mode(Channels::SWD, MODE_RTH)` の 1 行を書くか、ダッシュボードからオンにします。
 **必要なもの：** IMU + 気圧センサー + ホームが記録された GPS。
 
 ### AUTO_TAKEOFF (TKOFF) — 「スロットルで離陸」
@@ -215,6 +215,7 @@ ARM のあとは、パイロットがスロットルを中央より上に上げ�
 | `GEOFENCE` | ホームから 500 m より遠く、または高度 120 m より上で RTH | `GEOFENCE_ALWAYS_ON`：スイッチなしで常時有効 |
 | `HOME_RESET` | ホーム = 現在地（スイッチをオンにした瞬間の位置） | GPS が良好なときのみ |
 | `CAMERA_STAB` | AUX2 のカメラが水平線に対する角度を保つ | 機体のピッチを差し引く |
+| `MOTOR_REVERSE` | モーターを逆回転させる（双方向 ESC）。地上で後退するため | **DISARM 中のみ**切り替わる。ARM 中に切り替えると DISARM まで待つ。切り替え後 3 s は ARM できない。後退はスロットル 50 % まで、パイロットのスロットルのみ |
 
 ## ダイヤル
 

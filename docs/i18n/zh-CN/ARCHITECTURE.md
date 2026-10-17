@@ -58,7 +58,7 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK（未接入）<br/>FeedbackSupervisor 及各模块"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -362,6 +362,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -371,24 +372,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → 飞手油门
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(按功能得到的目标)
-    FC->>AP: update(armed, linkLost, 飞手油门, 摇杆)
+    FC->>AP: update(armed, linkLost, 飞手油门（反转时为 0）, 摇杆)
     Note over AP: 传感器始终被读取,<br/>导航、failsafe、地理围栏,<br/>模式、协调、自动配平
     FC->>OUT: setBuzzer(Beeper)
     alt 信号丢失
         alt 已 ARM 且自动驾驶仪处于 failsafe（RTH / GLIDE）
             FC->>MX: mix(自动驾驶仪的指令)
-            FC->>OUT: write(舵面、自动驾驶仪的油门、AUX 保持不变)
+            FC->>OUT: write(舵面、自动驾驶仪的油门（反转时为 0）、AUX 保持不变)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — 不读取 ARM 和拨杆
     else 有信号
-        FC->>AM: update(rc) — ARM 拨杆
+        FC->>AM: update(rc, MR.armBlockReason) — ARM 拨杆
+        FC->>MR: update(MOTOR_REVERSE, armed) — 方向只在未解锁时改变
         FC->>AP: getCommand() — 最终的舵面指令
         FC->>MX: mix(command) → 带反向的 PWM
-        FC->>AP: applyThrottle(飞手油门)
-        Note over FC: !armed 或 MOTOR_KILL → throttle = PWM_MIN（最后执行）
+        FC->>AP: applyThrottle(飞手油门) — 只在正转时
+        Note over FC: 反转——飞手油门 ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed 或 MOTOR_KILL → throttle = PWM_MIN（最后执行）
         FC->>OUT: write(output + AUX1 载荷、AUX2 相机)
+        Note over OUT: ESC：油门 + 方向 → 脉冲（EscSignal），<br/>双向电调：1500 = 停止
     end
 ```
 
@@ -396,6 +399,7 @@ sequenceDiagram
 
 - **信号丢失**——拨杆设定的模式和功能不变；ARM 既不读取也不复位；电机只按自动驾驶仪的 failsafe 决定（带电机的 RTH）或 `FAILSAFE_THROTTLE` 运转。
 - **任何模式都不能让油门绕过 ARM**：`!armed` 和 `MOTOR_KILL` 时强制设为 `PWM_MIN` 的操作位于 `Autopilot::applyThrottle()` 之后。
+- **反转不会在运转中启用**：`MotorReverse` 只在未解锁时改变方向，而 `ArmingManager` 在方向改变后 `REVERSE_SETTLE_MS` 内拒绝 ARM。反转时只用飞手油门，自动驾驶仪认为电机是关着的。
 - **自动驾驶仪给出最终指令**（`getCommand()`）；在增稳类模式中，摇杆表示期望角度；修正量 = 指令 − 摇杆（用于日志和仪表盘）。在进入混控器之前，一切都采用同一套符号（`ControlCommand`）。
 
 ---
@@ -408,7 +412,7 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> WaitOff : 开发板上电
     WaitOff --> Ready : 拨杆 OFF
-    Ready --> Armed : 拨杆 OFF→ON，油门 < THROTTLE_LOW_US，<br/>模式所需的传感器检查通过
+    Ready --> Armed : 拨杆 OFF→ON，油门 < THROTTLE_LOW_US，<br/>模式所需的传感器检查通过，<br/>电机方向在 REVERSE_SETTLE_MS 内没有改变
     Ready --> WaitOff : 拨杆 ON，检查未通过<br/>（原因 → Serial，getLastRefusalReason）
     Armed --> Ready : 拨杆 OFF（立即 DISARM）
     note right of Armed : 信号丢失不改变状态
@@ -416,6 +420,24 @@ stateDiagram-v2
 
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### 电机反转（`MotorReverse`）
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : 开关 ON 且未解锁
+    Reverse --> Forward : 开关 OFF 且未解锁
+    Forward --> ForwardPending : 解锁时开关 ON
+    ForwardPending --> Forward : 开关 OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : 解锁时开关 OFF
+    ReversePending --> Reverse : 开关 ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : 每次改变方向后<br/>REVERSE_SETTLE_MS 内拒绝 ARM
+```
+
+`*Pending`——`isPending()`：开关已经在另一个位置，电机仍按解锁时的方向转；串口警告只打印一次。
 
 ### 自动驾驶仪模式（`Autopilot` + `PilotSwitches`）
 

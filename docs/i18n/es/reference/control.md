@@ -36,10 +36,13 @@ Todos los campos valen 0 por defecto.
 Los pulsos deseados de las salidas, µs de PWM. Por defecto: superficies en
 neutro y acelerador a `PWM_MIN`.
 
+`throttle` es la magnitud del gas (1000..2000 = 0..100 %) en cualquier sentido; `FlightOutputs` la convierte, junto con `motorReverse`, en el pulso del variador (mediante `EscSignal`).
+
 | Campo | Valor por defecto |
 |---|---|
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
+| `bool motorReverse` | `false`: el motor gira hacia delante |
 | `aux1` | `PAYLOAD_CLOSED_US`: el lanzamiento de carga está cerrado |
 | `aux2` | `PWM_CENTER`: la cámara |
 
@@ -101,6 +104,36 @@ No sabe nada del ARM ni del piloto automático: sus correcciones las aplica
 
 ---
 
+## `EscSignal`
+
+**Archivo:** `control/EscSignal.h` · **Clase:** namespace · **Depende de:** `Config`
+
+Gas (1000..2000 = 0..100 %) y sentido → pulso en el pin del variador.
+
+| Función | Descripción |
+|---|---|
+| `uint16_t pulseUs(uint16_t throttleUs, bool reverse)` | `ESC_BIDIRECTIONAL` (BLHeli 80A en 3D): 0 % → `ESC_NEUTRAL_US` (1500), hacia delante 1500..2000, hacia atrás 1500..1000. Variador unidireccional: 1000..2000 tal cual, `reverse` se ignora. El gas fuera de 1000..2000 se recorta |
+| `uint16_t stopUs()` | Pulso de «motor parado» (1500 en un variador bidireccional, 1000 en uno normal) |
+
+Solo conversión, sin protecciones: cuándo cambiar el sentido lo decide `MotorReverse`, y el límite de gas hacia atrás, `FlightController`.
+
+---
+
+## `MotorReverse`
+
+**Archivo:** `control/MotorReverse.h` · **Depende de:** `Config`
+
+Sentido del motor según el interruptor `Feature::MOTOR_REVERSE` (por defecto SwD), **solo sin ARM**.
+
+| Método | Descripción |
+|---|---|
+| `void update(bool requested, bool armed, uint32_t nowMs)` | Sin ARM, el sentido sigue al interruptor al instante (en Serial, `MotorReverse: мотор НАЗАД` / `вперёд`, «motor HACIA ATRÁS» / «hacia delante»). Con ARM, el interruptor no actúa, se imprime una vez «реверс НЕ переключён» («inversión NO cambiada») y el nuevo sentido espera al DISARM. Con `ESC_BIDIRECTIONAL = false` la inversión nunca se activa |
+| `bool isReversed() const` | El motor gira hacia atrás |
+| `bool isPending() const` | El interruptor ya está en la otra posición; el sentido espera al DISARM |
+| `const char* armBlockReason(uint32_t nowMs) const` | Motivo para rechazar el ARM: desde el último cambio de sentido ha pasado menos de `REVERSE_SETTLE_MS` (el motor puede seguir girando); si no, `nullptr` |
+
+---
+
 ## `ArmingManager`
 
 **Archivo:** `control/ArmingManager.h` · **Depende de:** `Autopilot` (puede ser nulo), `RcChannelState`, `Config`, `Channels`
@@ -111,7 +144,7 @@ El ARM con un interruptor aparte, SwA (CH5). La máquina de estados está en
 | Método | Descripción |
 |---|---|
 | `explicit ArmingManager(Autopilot* ap = nullptr)` | Sin piloto automático solo se comprueba el acelerador |
-| `void update(const RcChannelState& rc, bool receiverFailsafe)` | En failsafe: nada (el interruptor en una trama de failsafe no refleja al piloto). Interruptor OFF → DISARM, `switchSeenOff = true`. Una transición OFF→ON → comprobaciones → ARM o rechazo |
+| `void update(const RcChannelState& rc, bool receiverFailsafe, const char* blockReason = nullptr)` | En failsafe: nada (el interruptor en una trama de failsafe no refleja al piloto). Interruptor OFF → DISARM, `switchSeenOff = true`. Una transición OFF→ON → comprobaciones → ARM o rechazo `blockReason` es un motivo de rechazo externo (de `FlightController`: `MotorReverse::armBlockReason()`) |
 | `bool isArmed() const` | Armado |
 | `const char* getLastRefusalReason() const` | El motivo del último rechazo o `nullptr`; se borra al apagar el interruptor |
 
@@ -123,6 +156,7 @@ El ARM con un interruptor aparte, SwA (CH5). La máquina de estados está en
 | Cualquier modo salvo MANUAL, la IMU existe pero no responde | «la IMU no responde…» |
 | Cualquier modo salvo MANUAL, la IMU tiene un problema en la comprobación prevuelo | el texto de `ImuSensor::getPreflightProblem()` |
 | Un modo con altitud (`needsAltitude`: ALT_HOLD, CRUISE, LOITER, RTH, AUTO_LAND, SOARING), el barómetro existe pero no responde | «el barómetro no responde…» |
+| Todo lo demás se ha superado, pero se pasó `blockReason` | `blockReason` (por ejemplo, «el sentido del motor acaba de cambiar…») |
 
 Un sensor que no está en la compilación (`nullptr`) no bloquea el ARM; en
 MANUAL el aparato se arma incluso sin ningún sensor. El fix del GPS no figura
@@ -137,7 +171,7 @@ cada transición OFF→ON; la pérdida de enlace no anula el ARM.
 
 ## `FlightOutputs`
 
-**Archivo:** `control/FlightOutputs.h` · **Depende de:** `IBoard`, `FlightOutputState`, `Config`
+**Archivo:** `control/FlightOutputs.h` · **Depende de:** `IBoard`, `FlightOutputState`, `EscSignal`, `Config`
 
 La única clase que conoce el conjunto y el orden de las salidas PWM. Todas las
 salidas están descritas en una tabla; `begin()`, `write()`, el estado y la
@@ -157,13 +191,13 @@ autocomprobación la recorren en un bucle.
 |---|---|
 | `static const OutputInfo& outputInfo(uint8_t ch)` | Una fila de la tabla; el orden = `ServoChannel` |
 | `explicit FlightOutputs(IBoard& board)` | |
-| `bool begin()` | `attach(PWM_MIN, PWM_MAX)` de cada salida, imprime el estado; `true` si todas las **obligatorias** obtuvieron un canal |
+| `bool begin()` | `attach(PWM_MIN, PWM_MAX)` de cada salida, imprime el estado y el tipo de variador; `true` si todas las **obligatorias** han obtenido canal |
 | `bool isAttached(uint8_t ch) const` | La salida está conectada (un índice fuera de rango → `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | El valor de la salida a partir del estado, según la tabla |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Pulso en el pin de la salida: el campo según la tabla; en el variador, mediante `EscSignal::pulseUs(throttle, motorReverse)` |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | El pulso medido frente al esperado en cada pin cableado; «OK» si la discrepancia es ≤ 15 µs |
 | `void write(const FlightOutputState&)` | Escribir todas las salidas y recordar el estado |
-| `void setFailsafe()` | Superficies en neutro (`FAILSAFE_*`), acelerador `FAILSAFE_THROTTLE`; AUX como estaban (la carga no se lanza por perder el enlace) |
+| `void setFailsafe()` | Superficies de mando en neutro (`FAILSAFE_*`), gas `FAILSAFE_THROTTLE` (1500 en el pin de un variador bidireccional); AUX como estaban (la carga no se suelta por perder el enlace) |
 | `void setBuzzer(bool on)` | el zumbador de la placa (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | El último estado escrito |
 
@@ -176,7 +210,7 @@ Para añadir una salida: una fila en la tabla + un campo en
 ## `FlightController`
 
 **Archivo:** `control/FlightController.h` · **Capa:** COORDINATION ·
-**Depende de:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`
+**Depende de:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
 
 El único coordinador del ciclo de control: no analiza la UART, no toca el PWM
 ni calcula el mezclador; solo llama a los demás en el orden correcto. El
@@ -196,6 +230,7 @@ diagrama detallado está en [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-el-ciclo-
 | `int16_t getFlapsUs() const` | La posición de los flaps |
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | Los interruptores y potenciómetros de este ciclo |
 | `bool isLostModelBeeping() const` | El zumbador de «estoy aquí» está sonando |
+| `const MotorReverse& getMotorReverse() const` | Sentido del motor e inversión pendiente |
 
 El orden de `update()`:
 
@@ -206,11 +241,17 @@ El orden de `update()`:
    flaps `mixer.updateFlaps(target)`: `AIRBRAKE` → −`AIRBRAKE_US`, `FLAPS` →
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → de forma suave, al perder el enlace: 0;
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)`: **siempre**;
+   en inversión, en lugar de `pilotThrottle` se pasa `PWM_MIN` (para el piloto automático el motor está apagado);
 6. el zumbador: `Beeper::update(BEEPER, armed, failsafe, now)`;
 7. enlace perdido → `applyLinkLoss()` y salida del ciclo;
-8. `arming.update(rc, false)`;
+8. `arming.update(rc, false, reverse.armBlockReason(now))` y luego
+   `reverse.update(MOTOR_REVERSE, armed, now)`: con el DISARM el sentido cambia en
+   el mismo ciclo;
 9. `command = autopilot->getCommand()` (o los sticks sin piloto automático), los flaps, los suyos;
-10. `output = mixer.mix(command)`; `output.throttle = autopilot->applyThrottle(pilotThrottle)`;
+10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
+    hacia delante, `output.throttle = autopilot->applyThrottle(pilotThrottle)` con el
+    límite `THROTTLE_LIMIT_PCT`; hacia atrás, el gas del piloto con el límite
+    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
 11. no armado o `MOTOR_KILL` → `throttle = PWM_MIN` (lo último);
 12. AUX1: la carga (`PAYLOAD_DROP`), AUX2: la cámara (`Knob::CAMERA_TILT`, `CAMERA_STAB` resta el cabeceo);
 13. `outputs.write(output)`.
@@ -218,7 +259,7 @@ El orden de `update()`:
 `applyLinkLoss()`: si el piloto automático está en failsafe (armado: RTH o
 planeo), las superficies y el acelerador siguen la orden del piloto automático
 (los flaps se recogen suavemente, `MOTOR_KILL` sigue apagando el motor, AUX
-como estaban); si no, `outputs.setFailsafe()`.
+como estaban); si no, `outputs.setFailsafe()`. En inversión el motor siempre está parado.
 
 ---
 

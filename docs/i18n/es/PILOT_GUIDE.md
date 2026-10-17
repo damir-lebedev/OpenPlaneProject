@@ -37,7 +37,7 @@ El equipo de la versión actual (el firmware está comprobado con él):
 - **2 servos MG90S** para los alerones: uno por cada semiala (dos servos independientes, no uno para las dos alas).
 - **1 servo MG90S** para el timón de profundidad.
 - **1 servo MG90S** para el timón de dirección; en su mismo eje va montada la rueda direccional del tren de aterrizaje (para maniobrar en tierra).
-- **Un variador (ESC)** de 60–80 A con BEC de 5 V (el BEC alimenta los servos y el receptor).
+- **Un variador (ESC) BLHeli 80A bidireccional** (modo Bidirectional/3D) con BEC de 5 V (el BEC alimenta los servos y el receptor). También sirve un variador unidireccional normal: `ESC_BIDIRECTIONAL = false` en `Config.h`, consulta [Inversión del motor](#inversión-del-motor-swd).
 - **Un motor D3548 1100KV** + **una hélice 10x5**.
 - **Una batería LiPo 3S**.
 
@@ -187,11 +187,11 @@ El mapa se ha comprobado en el banco con una emisora FS-i6 (10 canales, modo 2) 
 | CH5 | SwA | ARM | Interruptor ARM: véase la sección sobre ARM más abajo |
 | CH6 | SwB | SWB | Por defecto, flaps: abajo, hacia ti, desplegados; arriba, recogidos (véase más abajo) |
 | CH7 | SwC (3 posiciones) | SWC | Por defecto, modo: arriba MANUAL, centro STABILIZE, abajo AUTO_TAKEOFF |
-| CH8 | SwD | SWD | Por defecto, RTH (regreso a casa) mientras esté activado |
+| CH8 | SwD | SWD | Por defecto, la inversión del motor; solo cambia en DISARM (ver abajo) |
 | CH9 | VrA | VRA | Por defecto, intensidad de la estabilización |
 | CH10 | VrB | VRB | Por defecto, velocidad de crucero |
 
-CH6–CH10 pueden ser **lo que quieras, con una sola línea** de `include/config/Controls.h`: cualquiera de los 12 modos, de las 10 funciones (flaps, freno, lanzamiento de carga, geovalla, zumbador…) y de los 7 potenciómetros. Al encender la placa, la asignación real se imprime en el monitor serie. Todo sobre los modos y las asignaciones está en [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 pueden ser **lo que quieras, con una sola línea** de `include/config/Controls.h`: cualquiera de los 12 modos, de las 11 funciones (flaps, freno, lanzamiento de carga, geovalla, zumbador, inversión…) y de los 7 potenciómetros. Al encender la placa, la asignación real se imprime en el monitor serie. Todo sobre los modos y las asignaciones está en [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 Todos los valores de los canales usan el rango estándar de pulso del receptor, de 1000 a 2000 µs, con 1500 µs como centro/neutro.
 
@@ -212,7 +212,7 @@ En resumen, la asignación por defecto (`include/config/Controls.h`):
 | Interruptor | Qué hace |
 |---|---|
 | **SwC** (CH7) | arriba **MANUAL** · centro **STABILIZE** · abajo **AUTO_TAKEOFF** |
-| **SwD** (CH8) | **RTH**: a casa mientras esté activado |
+| **SwD** (CH8) | **inversión del motor**: solo en DISARM (RTH vuelve al interruptor con una línea) |
 | **SwB** (CH6) | flaps |
 | **VrA / VrB** (CH9/10) | intensidad de la estabilización / velocidad de crucero |
 
@@ -237,7 +237,20 @@ Signos de los ángulos (como en el OLED y en el registro): **alabeo R > 0: ala d
 - Si se pasa SwA a ARM con el acelerador que no está abajo, o si no se han superado las comprobaciones previas al vuelo, el ARM **no** se produce (el motivo se imprime en Serial). Hay que volver a poner SwA arriba, bajar el acelerador y volver a ponerlo abajo.
 - Si la placa se enciende con SwA ya en la posición de ARM (abajo), **no** se arma: el firmware tiene que ver primero SwA arriba (OFF).
 
-**El ARM bloquea de verdad el acelerador:** mientras la aeronave no esté armada, el acelerador del ESC se mantiene forzosamente al mínimo, sea cual sea la posición del stick. Antes de armar se comprueba que los sensores que necesita el modo elegido responden; por ejemplo, STABILIZE sin un IMU en funcionamiento no se arma hasta que cambies a MANUAL. De todos modos, compórtate como si la hélice pudiera empezar a girar en cualquier momento después del ARM.
+**El ARM bloquea de verdad el acelerador:** mientras la aeronave no esté armada, el acelerador del ESC se mantiene forzosamente en cero, sea cual sea la posición del stick (en un variador bidireccional es el pulso neutro de 1500 µs). Antes de armar se comprueba que los sensores que necesita el modo elegido responden; por ejemplo, STABILIZE sin un IMU en funcionamiento no se arma hasta que cambies a MANUAL. De todos modos, compórtate como si la hélice pudiera empezar a girar en cualquier momento después del ARM.
+
+### Inversión del motor (SwD)
+
+El variador principal es un BLHeli 80A bidireccional: el motor gira en ambos sentidos, **SwD abajo**, hacia atrás; arriba, hacia delante. La inversión sirve para rodar marcha atrás en tierra.
+
+- **El sentido solo cambia en DISARM.** Si accionas SwD con ARM, no pasa nada (en Serial aparece `MotorReverse: реверс НЕ переключён`, «inversión NO cambiada») y el motor sigue girando como antes. El nuevo sentido se aplica cuando desarmas. Así no se puede activar la inversión a todo gas y quemar el variador y el motor.
+- **Durante 3 segundos tras cambiar el sentido no se puede armar** (`REVERSE_SETTLE_MS`): si desarmaste con gas, el motor aún gira por inercia; deja que se pare. Mientras tanto, el ARM se rechaza con el motivo en Serial.
+- **Hacia atrás, solo tu gas y no más del 50 %** (`REVERSE_THROTTLE_LIMIT_PCT`): stick a fondo = media potencia. En inversión el piloto automático no toca el gas (las superficies de mando funcionan como siempre); si se pierde el enlace, el motor simplemente se para.
+- Se ve en la OLED (`REV` en la primera línea) y en el panel (la insignia «Мотор: РЕВЕРС», «Motor: INVERSIÓN»).
+
+**Configuración del variador en BLHeliSuite** (una vez, sin hélice): Motor Direction, **Bidirectional** (en BLHeli_32, «Bidirectional»/3D); PPM Min Throttle, 1000; PPM Max Throttle, 2000; Center, 1500. El variador se arma al ver el neutro de 1500 µs, y el firmware lo emite desde el primer pulso. Si con el stick hacia delante el motor gira al revés, intercambia dos cables cualesquiera del motor (o pon Motor Direction = Bidirectional Reversed) en lugar de tocar el firmware.
+
+Un variador unidireccional normal: `ESC_BIDIRECTIONAL = false` en `Config.h`; si no, en «parado» (1500) dará medio gas. En ese caso la inversión nunca se activa.
 
 ### Failsafe
 
@@ -245,6 +258,7 @@ La pérdida de enlace tiene **prioridad absoluta** sobre todo lo demás:
 
 - **aeronave armada, con GPS y punto de origen**: **regreso a casa con motor** (como en ArduPilot/INAV): rumbo al punto de origen, altitud de 40 m, círculos sobre él hasta que vuelva el enlace. En el OLED aparece `FSRTH`. Se desactiva con `FAILSAFE_RTH = false` en `Config.h`;
 - **aeronave armada, sin GPS**: **planeo**: motor apagado; el piloto automático, en cualquier modo, incluso en MANUAL, mantiene las alas niveladas y el morro algo por debajo del horizonte (−3°), y los flaps se recogen. En el OLED aparece `RX LOST ... GLIDE`. Si pones `FAILSAFE_GLIDE_ROLL_DEG` = 10–20, el avión describirá una espiral suave sobre ti;
+- **motor en inversión**: el motor se apaga en cualquier caso; el piloto automático solo maneja las superficies de mando (a casa, planeando);
 - **sin armar** (en tierra) o con el IMU sin responder: motor apagado; alerones, timón de profundidad y timón de dirección en neutro (1500 µs); tras 10 s sin enlace suena el zumbador «estoy aquí» (si está soldado).
 
 El firmware detecta la pérdida de enlace de dos maneras:
@@ -374,10 +388,10 @@ Cada vez que se enciende, el IMU dedica unos 2 s a calibrar el giroscopio y, de 
 Si hay un OLED conectado (GPIO1/GPIO2), muestra lo siguiente 5 veces por segundo:
 
 ```
-RX ok disarm STAB        <- enlace / ARM / modo (si se pierde el enlace, la línea sale invertida)
+RX ok disarm STAB        <- enlace / ARM / modo / REV: motor hacia atrás (si se pierde el enlace, la línea sale invertida)
 R  +1.2 P  -0.4          <- alabeo / cabeceo, °
 Alt +0.3 Vz +0.1         <- altitud desde el punto de encendido, m / velocidad vertical, m/s
-Hdg 123  Thr 1000        <- rumbo de la brújula / acelerador al ESC, µs
+Hdg 123  Thr 1000        <- rumbo de la brújula / acelerador 1000..2000 = 0..100% (también hacia atrás), µs
 L1500 R1500 E1500        <- PWM de los alerones y del timón de profundidad, µs
 Loop 500Hz max 1100us    <- frecuencia y peor duración del ciclo
 ```

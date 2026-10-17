@@ -48,8 +48,8 @@ include/
 ├── storage/     KeyValueStore, KvPreferences – lagring av inställningar utan NVS
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
-│                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, Beeper, FlightController
+│                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
+│                FlightOutputState, FlightOutputs, Beeper, FlightController
 ├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
 │   │            Navigation, AltitudeSpeedController, LaunchController,
 │   │            SoaringController, AutoTrim, PidController
@@ -82,7 +82,8 @@ src/stm32/main.cpp  — STM32H743-firmware (FreeRTOS-uppgifter, MAVLink)
 │  └ FlapsController  │  │  └ navigering, PID    │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
-│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+│ MotorReverse        │             │ ImuSensor* / BarometerSensor* / ...
+│ FlightOutputs       │             │
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORER                                         │
@@ -189,8 +190,10 @@ Reglerna som håller arkitekturen ren:
 | `ControlMixer.h` | `fromSticks(rc)` → `ControlCommand`; `updateFlaps(target, now)`; `mix(command)` → PWM med servoreversering; flaperoner: skevrodren `flaps ± roll` (minus – luftbroms) |
 | `FlapsController.h` | Mjuk utfällning/infällning av klaffarna, med tiden som parameter |
 | `ThrottleManager.h` | Gas från spaken; vid förlorad förbindelse – `FAILSAFE_THROTTLE` |
+| `EscSignal.h` | Gas + riktning → ESC-puls: på dubbelriktad BLHeli 1500 = stopp, framåt 1500..2000, bakåt 1500..1000 |
+| `MotorReverse.h` | Motorreversering via `Feature::MOTOR_REVERSE` – bara i DISARM; efter ett riktningsbyte nekas ARM i `REVERSE_SETTLE_MS` |
 | `ArmingManager.h` | ARM med brytaren SwA (en övergång OFF→ON med gasen i botten + lägets sensorkontroller), omedelbar DISARM |
-| `FlightOutputState.h` | Önskad PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`, `aux1` (last), `aux2` (kamera) |
+| `FlightOutputState.h` | Önskad PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % åt vilket håll som helst), `motorReverse`, `aux1` (last), `aux2` (kamera) |
 | `Beeper.h` | Summern: via funktionen `BEEPER` eller ”modellen borttappad” på marken |
 | `FlightOutputs.h` | Utgångstabellen (`outputInfo()`: nyckel, namn, stift, om den är obligatorisk, tillståndsfältet) och allt ovanpå den i en slinga: `begin()`, `write()`, `setFailsafe()`, status, `printPulseSelfTest()` |
 | `FlightController.h` | Operationsordningen per cykel, förlorad förbindelse (`applyLinkLoss()`), getters för telemetri |
@@ -338,7 +341,7 @@ mode 2) + en FS-iA6B-mottagare, iBUS 115200.
 | CH5 | SwA | `ARM` | ≥ 1750 = ARM (på FS-i6 är det brytaren ned, mot dig) |
 | CH6 | SwB | `SWB` | klaffar som standard (≥ 1750 – utfällda) |
 | CH7 | SwC (3 lägen) | `SWC` | läge som standard: < 1250 MANUAL, 1250–1749 STABILIZE, ≥ 1750 AUTO_TAKEOFF |
-| CH8 | SwD | `SWD` | RTH som standard |
+| CH8 | SwD | `SWD` | motorreversering som standard (växlar bara i DISARM) |
 | CH9 | VrA | `VRA` | stabiliseringens styrka som standard |
 | CH10 | VrB | `VRB` | marschfart som standard |
 
@@ -349,7 +352,13 @@ CH6–CH10 tilldelas med en enda rad i `include/config/Controls.h`
 och sensorkontrollerna för det aktuella läget har godkänts. Annars nekas den,
 med orsaken utskriven i Serial, och en ny cykel OFF→ON behövs. Att starta
 kortet med brytaren redan på ON armerar inte. OFF – DISARM direkt.
-Så länge planet inte är armerat tvingas gasen till ESC:n till `PWM_MIN`.
+Så länge planet inte är armerat tvingas gasen till ESC:n till `PWM_MIN` (på stiftet till en dubbelriktad ESC – neutralläget 1500).
+
+**Reversering** (`MotorReverse`, `Feature::MOTOR_REVERSE`, SwD som standard):
+motorns riktning följer brytaren bara utan ARM; en växling i ARM ändrar ingenting
+förrän DISARM. Efter ett riktningsbyte nekas ARM i `REVERSE_SETTLE_MS` (3 s).
+Bakåt – bara pilotens gas, högst `REVERSE_THROTTLE_LIMIT_PCT` (50 %);
+autopiloten får ingen gas, och vid förlorad förbindelse stannar motorn.
 
 **Förlorad förbindelse** (`IBusReceiver::isSignalLost()`):
 
@@ -463,7 +472,9 @@ Anropas från `loop()` var 2:a ms. Ordningen är prioriteten:
 7. **Förlorad förbindelse** – `applyLinkLoss()`: när armerat – roderytorna och
    gasen följer autopilotens failsafe-kommando, annars neutralläge och
    motorn av; `return`. Absolut prioritet över allt nedanför.
-8. **ARM** – `arming.update(rc, false)`.
+8. **ARM och reversering** – `arming.update(rc, false, reverse.armBlockReason(now))`,
+   därefter `reverse.update(MOTOR_REVERSE, armed, now)`: riktningen ändras bara
+   utan ARM.
 9. **Kommando** – `autopilot->getCommand()`: i de stabiliserade lägena är spaken
    den önskade vinkeln, och autopiloten ger de slutliga
    roderkommandona.
@@ -473,6 +484,8 @@ Anropas från `loop()` var 2:a ms. Ordningen är prioriteten:
     gas, autopilotens gas eller det högsta av de två (automatisk
     start). Därefter, om inte armerat eller `MOTOR_KILL` – tvingad till `PWM_MIN`. Den här
     kontrollen kommer sist så att inget läge kan smyga gasen förbi ARM.
+    I reversering – bara pilotens gas, upp till `REVERSE_THROTTLE_LIMIT_PCT`.
+    `FlightOutputs` (`EscSignal`) gör om gas och riktning till ESC-pulsen.
 12. **AUX** – last (`PAYLOAD_DROP`) och kamera (`CAMERA_TILT`, `CAMERA_STAB`).
 13. **`outputs.write(output)`** – PWM till de 7 utgångarna.
 
@@ -489,13 +502,14 @@ SSID `OpenPlane-Debug`, lösenord `12345678`, adress `http://192.168.4.1`.
 {
   "rc": [1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1500],
   "armed": false,
+  "motorReverse": false,
   "failsafe": false,
   "outputs": {
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true },
+    "esc":          { "us": 1500, "attached": true },
     "aux1":         { "us": 1000, "attached": true },
     "aux2":         { "us": 1500, "attached": true }
   },
@@ -986,7 +1000,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # kontrollera att al
 - Medan portmonitorn är öppen fungerar inte uppladdning till samma port.
 - `lib_deps`: `olikraus/U8g2` (OLED) är det enda externa biblioteket.
 - `test/` – i detalj i [`TESTING.md`](TESTING.md):
-  - `pio test -e native -e native-stm32` – 387 tester på en dator (hårdvaruattrapper
+  - `pio test -e native -e native-stm32` – 392 tester på en dator (hårdvaruattrapper
     i `test/native/support/`), täckning – `gcovr`;
   - `pio test -e esp32-s3` – `test_feedback/` (återkopplingssimuleringen
     i sluten slinga) och `test_imu_orientation/` på själva kortet; var och en
@@ -1040,6 +1054,10 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # kontrollera att al
   biblioteket bara efter kontroll med `p`.
 - **ESC:n är 50 Hz PWM**, firmwaren har ännu inget läge för kalibrering av
   gasområdet.
+  Huvudfartreglaget är ett dubbelriktat BLHeli 80A (`ESC_BIDIRECTIONAL`): det
+  ställs in i BLHeliSuite (Motor Direction = Bidirectional, intervall
+  1000..2000), neutralläget 1500 = stopp. Monterar du ett vanligt fartreglage,
+  sätt `ESC_BIDIRECTIONAL = false`, annars får det halv gas vid ”stopp”.
 - **Webbpanel:** åtkomstpunktens lösenord är svagt, och kommandon
   tas emot även under flygning. Det är ett verktyg för bänken och fältet, inte för
   flygning.

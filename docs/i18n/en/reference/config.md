@@ -98,6 +98,15 @@ The `Serial` console is LPUART1 (PA9 TX / PA10 RX), the variant's default.
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Deflection from center at full stick travel, µs. The rudder is smaller: the landing-gear wheel is on the same servo |
 | `THROTTLE_LIMIT_PCT` | 100 | The throttle ceiling to the ESC, %, the same for the stick and the autopilot (`FlightController::capThrottle`). For bench tests on a weak 3S1P pack it was set to 50; the tests compute the expected output from this value |
 
+### ESC and motor reverse
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `ESC_BIDIRECTIONAL` | `true` | Bidirectional ESC (BLHeli 80A in Bidirectional/3D mode): throttle becomes a pulse around the neutral (`EscSignal`), “motor stopped” is 1500, reverse is available. `false` — an ordinary ESC: 1000 = stop, no reverse |
+| `ESC_NEUTRAL_US` | 1500 | The neutral of a bidirectional ESC: the motor stands still; above — forwards, below — backwards |
+| `REVERSE_THROTTLE_LIMIT_PCT` | 50 | Backwards throttle limit, % (and no more than `THROTTLE_LIMIT_PCT`): a propeller pulls poorly in reverse yet draws full current |
+| `REVERSE_SETTLE_MS` | 3000 | After a direction change ARM is refused for this long, so a motor disarmed with throttle up has time to stop |
+
 ### Flaps (flaperons)
 
 | Constant | Value | Meaning |

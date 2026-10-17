@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-387%20passing-3fb950?style=for-the-badge" alt="387 tests">
+  <img src="https://img.shields.io/badge/tests-392%20passing-3fb950?style=for-the-badge" alt="392 tests">
   <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="couverture de 98 %">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 compilations sans avertissement">
   <br>
@@ -60,8 +60,8 @@
 |---|---|
 | **Ce que c’est** | Un contrôleur de vol et pilote automatique ouverts pour avions radiocommandés. La carte principale est la STM32H743 (une carte de la classe Pixhawk) : sur une carte DevEBox, le firmware **tourne déjà et se pilote avec la radio** — [il y a une vidéo](#-le-stm32h743sanime-sur-la-carte), et les capteurs sont en cours de branchement. L’ancienne base est un ESP32-S3 à environ 10 $, qui a passé le banc avec tous les capteurs. |
 | **Ce qu’il sait faire** | 12 modes de vol, de la stabilisation au retour à la maison, en passant par les cercles au GPS, le lancer à la main, l’atterrissage automatique et le **vol à voile en thermiques**. Un tube de Pitot fait de deux baromètres bon marché. Télémétrie MAVLink vers QGroundControl et Mission Planner. |
-| **L’atout principal** | N’importe quel interrupteur ou potentiomètre de la radio = n’importe quelle fonction. **Une seule ligne** dans `Controls.h`, et SwD n’est plus un RTH mais un largage de charge. |
-| **Pourquoi lui faire confiance** | 387 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 98 % du code couvert par les tests, 24 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
+| **L’atout principal** | N’importe quel interrupteur ou potentiomètre de la radio = n’importe quelle fonction. **Une seule ligne** dans `Controls.h`, et SwD n’est plus l’inversion du moteur mais un largage de charge. |
+| **Pourquoi lui faire confiance** | 392 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 98 % du code couvert par les tests, 24 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
 | **En toute franchise** | Pour l’instant, seul le mode manuel a volé (le premier prototype). Le STM32H743 n’a été vérifié que sur le banc, sans capteurs. Le pilote automatique a été vérifié sur le banc, par des tests et des simulations, et attend les essais en vol — [état des lieux plus bas](#-état-réel). |
 
 ---
@@ -73,15 +73,15 @@
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),              // retour à la maison, tant qu’il est activé
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),// inversion du moteur, uniquement en DISARM
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),       // « plus doux / plus ferme » en plein vol
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
 ```
 
-Vous voulez le vol à voile en thermiques sur SwD au lieu du RTH ? `Bind::mode(Channels::SWD, MODE_SOARING)`. Un largage de charge sur SwB ? `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`. Si vous faites une erreur (par exemple deux modes sur le même interrupteur, ou un stick déjà pris), **la compilation échoue** : la table est vérifiée par le compilateur (`static_assert`). À la mise sous tension, l’appareil affiche lui-même ce qui est affecté à chaque interrupteur.
+Vous voulez le vol à voile en thermiques sur SwD au lieu de l’inversion du moteur ? `Bind::mode(Channels::SWD, MODE_SOARING)`. Un largage de charge sur SwB ? `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`. Si vous faites une erreur (par exemple deux modes sur le même interrupteur, ou un stick déjà pris), **la compilation échoue** : la table est vérifiée par le compilateur (`static_assert`). À la mise sous tension, l’appareil affiche lui-même ce qui est affecté à chaque interrupteur.
 
-**12 modes · 10 fonctions · 7 potentiomètres** — le tout avec des exemples dans la [référence du pilote automatique](AUTOPILOT_GUIDE.md).
+**12 modes · 11 fonctions · 7 potentiomètres** — le tout avec des exemples dans la [référence du pilote automatique](AUTOPILOT_GUIDE.md).
 
 ---
 
@@ -205,7 +205,7 @@ Ce que cela prouve : la chaîne « radio → iBUS → firmware → PWM » fon
 
 | | |
 |---|---|
-| **387 tests automatiques** | modules, pilotes vérifiés au niveau des registres des puces, vols en boucle fermée, firmware ESP32 et STM32 **complet** sur PC ; plus 9 tests sur la carte STM32 elle-même avec une vraie carte SD |
+| **392 tests automatiques** | modules, pilotes vérifiés au niveau des registres des puces, vols en boucle fermée, firmware ESP32 et STM32 **complet** sur PC ; plus 9 tests sur la carte STM32 elle-même avec une vraie carte SD |
 | **98,3 % des lignes, 87,7 % des branches** | couverture `gcovr`, code STM32 compris |
 | **24/24 compilations** | 4 cartes × 6 kits de capteurs, `-Wall -Wextra`, zéro avertissement |
 | **0 remarque** | cppcheck et clang-tidy sur tout le code |
@@ -262,6 +262,7 @@ Dans le moniteur série : `h` — menu, `b` — quelles puces sont visibles sur
 |---|---|
 | Pilotage manuel, mixeur | ✈️ en vol (premier prototype, C3) |
 | ARM, failsafe, volets, servos, moteur | 🔧 sur le banc (S3) |
+| ESC bidirectionnel BLHeli 80A, inversion uniquement en DISARM | 🧪 tests ; pas encore essayé avec le vrai ESC |
 | STABILIZE | 🔧 sur le banc : les gouvernes réagissent aux inclinaisons dans le bon sens |
 | Capteurs du banc (MPU6500, BMP388, QMC5883P), OLED, tableau de bord | 🔧 sur le banc |
 | Autres modes, navigation, tube de Pitot, MAVLink | 🧪 tests et simulations en boucle fermée |

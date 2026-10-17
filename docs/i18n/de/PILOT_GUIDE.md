@@ -37,7 +37,7 @@ Der Bausatz des aktuellen Aufbaus (die Firmware wurde darauf geprüft):
 - **2 Servos MG90S** für die Querruder – eines für jede Tragflächenhälfte (zwei unabhängige Servos, nicht eines für beide Flächen).
 - **1 Servo MG90S** für das Höhenruder.
 - **1 Servo MG90S** für das Seitenruder – auf dessen Achse sitzt auch das Lenkrad des Fahrwerks (Rollen am Boden).
-- **Ein Fahrtregler (ESC)** mit 60–80 A und 5-V-BEC (das BEC versorgt die Servos und den Empfänger).
+- **Ein Fahrtregler (ESC) BLHeli 80A, bidirektional** (Modus Bidirectional/3D) mit 5-V-BEC (das BEC versorgt die Servos und den Empfänger). Ein gewöhnlicher Regler mit nur einer Drehrichtung geht auch – `ESC_BIDIRECTIONAL = false` in `Config.h`, siehe [Motorumkehr](#motorumkehr-swd).
 - **Ein Motor D3548 1100KV** + **ein Propeller 10x5**.
 - **Ein LiPo-Akku 3S**.
 
@@ -187,11 +187,11 @@ Die Belegung wurde auf dem Prüfstand mit einem Sender FS-i6 (10 Kanäle, Modus 
 | CH5 | SwA | ARM | ARM-Schalter – siehe den Abschnitt zu ARM weiter unten |
 | CH6 | SwB | SWB | Standardmäßig Klappen: unten, zu sich hin – ausgefahren, oben – eingefahren (siehe unten) |
 | CH7 | SwC (3 Stellungen) | SWC | Standardmäßig der Modus: oben MANUAL, Mitte STABILIZE, unten AUTO_TAKEOFF |
-| CH8 | SwD | SWD | Standardmäßig RTH (nach Hause), solange eingeschaltet |
+| CH8 | SwD | SWD | Standardmäßig die Motorumkehr; schaltet nur im DISARM um (siehe unten) |
 | CH9 | VrA | VRA | Standardmäßig die Stärke der Stabilisierung |
 | CH10 | VrB | VRB | Standardmäßig die Reisegeschwindigkeit |
 
-CH6–CH10 lassen sich in `include/config/Controls.h` **mit einer einzigen Zeile beliebig belegen**: mit jedem der 12 Modi, der 10 Funktionen (Klappen, Bremse, Lastabwurf, Geofence, Summer …) und der 7 Drehregler. Beim Einschalten des Boards wird die tatsächliche Belegung im seriellen Monitor ausgegeben. Alles zu den Modi und Zuordnungen steht in [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 lassen sich in `include/config/Controls.h` **mit einer einzigen Zeile beliebig belegen**: mit jedem der 12 Modi, der 11 Funktionen (Klappen, Bremse, Lastabwurf, Geofence, Summer, Motorumkehr …) und der 7 Drehregler. Beim Einschalten des Boards wird die tatsächliche Belegung im seriellen Monitor ausgegeben. Alles zu den Modi und Zuordnungen steht in [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 Alle Kanalwerte liegen im üblichen Impulsbereich des Empfängers von 1000–2000 µs, wobei 1500 µs die Mitte/Neutralstellung ist.
 
@@ -212,7 +212,7 @@ Kurz gesagt – die Standardbelegung (`include/config/Controls.h`):
 | Schalter | Was er tut |
 |---|---|
 | **SwC** (CH7) | oben **MANUAL** · Mitte **STABILIZE** · unten **AUTO_TAKEOFF** |
-| **SwD** (CH8) | **RTH** – nach Hause, solange eingeschaltet |
+| **SwD** (CH8) | **Motorumkehr** – nur im DISARM (RTH kommt mit einer Zeile wieder auf den Schalter) |
 | **SwB** (CH6) | Klappen |
 | **VrA / VrB** (CH9/10) | Stärke der Stabilisierung / Reisegeschwindigkeit |
 
@@ -237,7 +237,20 @@ Vorzeichen der Winkel (wie auf dem OLED und im Log): **Rollen R > 0 – rechter 
 - Wird SwA auf ARM gelegt, obwohl das Gas nicht unten ist, oder wurden die Prüfungen vor dem Flug nicht bestanden, findet ARM **nicht** statt (der Grund wird in Serial ausgegeben). Dann muss SwA wieder nach oben gelegt, das Gas zurückgenommen und der Schalter erneut nach unten gelegt werden.
 - Wird das Board eingeschaltet, während SwA bereits in der ARM-Stellung (unten) steht, wird es **nicht** scharf: Die Firmware muss SwA zuerst oben (OFF) sehen.
 
-**ARM sperrt das Gas tatsächlich:** Solange das Flugzeug nicht scharfgeschaltet ist, wird das Gas am ESC unabhängig vom Knüppel zwangsweise auf dem Minimum gehalten. Vor dem Scharfschalten wird geprüft, ob die für den gewählten Modus nötigen Sensoren antworten – STABILIZE ohne funktionierende IMU etwa lässt sich nicht scharfschalten, bis Sie auf MANUAL wechseln. Verhalten Sie sich dennoch so, als könnte der Propeller nach dem ARM jeden Moment anlaufen.
+**ARM sperrt das Gas tatsächlich:** Solange das Flugzeug nicht scharfgeschaltet ist, wird das Gas am ESC unabhängig vom Knüppel zwangsweise auf null gehalten (bei einem bidirektionalen ESC ist das der Neutralimpuls von 1500 µs). Vor dem Scharfschalten wird geprüft, ob die für den gewählten Modus nötigen Sensoren antworten – STABILIZE ohne funktionierende IMU etwa lässt sich nicht scharfschalten, bis Sie auf MANUAL wechseln. Verhalten Sie sich dennoch so, als könnte der Propeller nach dem ARM jeden Moment anlaufen.
+
+### Motorumkehr (SwD)
+
+Der Hauptregler ist ein bidirektionaler BLHeli 80A: Der Motor dreht in beide Richtungen, **SwD nach unten** – rückwärts, nach oben – vorwärts. Die Umkehr dient zum Zurückrollen am Boden.
+
+- **Die Richtung wechselt nur im DISARM.** SwD bei ARM umgelegt – nichts passiert (im Serial steht `MotorReverse: реверс НЕ переключён` – „Umkehr NICHT umgeschaltet“), der Motor dreht weiter wie bisher. Die neue Richtung gilt, sobald Sie disarmen. So lässt sich die Umkehr nicht bei Vollgas einschalten und Regler und Motor verbrennen.
+- **3 Sekunden nach einem Richtungswechsel ist kein ARM möglich** (`REVERSE_SETTLE_MS`): Wurde mit Gas disarmt, dreht der Motor noch nach – lassen Sie ihn stehen bleiben. In dieser Zeit wird ARM mit Begründung im Serial abgelehnt.
+- **Rückwärts – nur Ihr Gas und höchstens 50 %** (`REVERSE_THROTTLE_LIMIT_PCT`): voller Knüppel = halbe Leistung. In der Umkehr fasst der Autopilot das Gas nicht an (die Ruder arbeiten wie gewohnt), bei Verbindungsverlust bleibt der Motor einfach stehen.
+- Zu sehen auf dem OLED (`REV` in der ersten Zeile) und im Dashboard (Badge „Мотор: РЕВЕРС“ – „Motor: UMKEHR“).
+
+**Einstellung des Reglers in BLHeliSuite** (einmalig, Propeller ab): Motor Direction – **Bidirectional** (bei BLHeli_32 – „Bidirectional“/3D), PPM Min Throttle – 1000, PPM Max Throttle – 2000, Center – 1500. Der Regler schaltet scharf, wenn er die Neutralstellung 1500 µs sieht, und die Firmware gibt sie ab dem ersten Impuls aus. Dreht der Motor bei Knüppel nach vorn falsch herum, tauschen Sie zwei beliebige Motorkabel (oder stellen Motor Direction = Bidirectional Reversed ein) statt die Firmware zu ändern.
+
+Gewöhnlicher Regler mit einer Drehrichtung: `ESC_BIDIRECTIONAL = false` in `Config.h`, sonst gibt er bei „Stopp“ (1500) halbes Gas! Die Umkehr wird dann nie eingeschaltet.
 
 ### Failsafe
 
@@ -245,6 +258,7 @@ Der Verbindungsverlust hat **absoluten Vorrang** vor allem anderen:
 
 - **Flugzeug scharfgeschaltet, GPS und Startpunkt vorhanden** – **Rückkehr nach Hause mit Motor** (wie bei ArduPilot/INAV): Kurs auf den Startpunkt, Höhe 40 m, Kreise darüber, bis die Verbindung zurückkehrt. Auf dem OLED `FSRTH`. Abschaltbar mit `FAILSAFE_RTH = false` in `Config.h`;
 - **Flugzeug scharfgeschaltet, kein GPS** – **Gleitflug**: Motor aus; der Autopilot hält in jedem Modus, sogar in MANUAL, die Flügel waagerecht und die Nase leicht unter dem Horizont (−3°), die Klappen fahren ein. Auf dem OLED `RX LOST ... GLIDE`. Setzt man `FAILSAFE_GLIDE_ROLL_DEG` = 10–20, kreist das Flugzeug in einer flachen Spirale über Ihnen;
+- **Motor in Umkehr** – der Motor ist in jedem Fall aus, der Autopilot steuert nur mit den Rudern (nach Hause im Gleitflug);
 - **nicht scharfgeschaltet** (am Boden) oder die IMU antwortet nicht – Motor aus, Querruder, Höhen- und Seitenruder in Neutralstellung (1500 µs); nach 10 s ohne Verbindung piept der Summer „Ich bin hier“ (falls er eingelötet ist).
 
 Die Firmware erkennt den Verbindungsverlust auf zwei Wegen:
@@ -374,10 +388,10 @@ Bei jedem Einschalten kalibriert die IMU ca. 2 s lang das Gyroskop und prüft da
 Ist ein OLED angeschlossen (GPIO1/GPIO2), zeigt es 5-mal pro Sekunde Folgendes:
 
 ```
-RX ok disarm STAB        <- Verbindung / ARM / Modus (bei Verbindungsverlust ist die Zeile invertiert)
+RX ok disarm STAB        <- Verbindung / ARM / Modus / REV – Motor rückwärts (bei Verbindungsverlust ist die Zeile invertiert)
 R  +1.2 P  -0.4          <- Rollen / Nicken, °
 Alt +0.3 Vz +0.1         <- Höhe ab dem Einschaltpunkt, m / Vertikalgeschwindigkeit, m/s
-Hdg 123  Thr 1000        <- Kompasskurs / Gas an den ESC, µs
+Hdg 123  Thr 1000        <- Kompasskurs / Gas 1000..2000 = 0..100 % (auch rückwärts), µs
 L1500 R1500 E1500        <- PWM von Querrudern und Höhenruder, µs
 Loop 500Hz max 1100us    <- Frequenz und schlechteste Schleifenzeit
 ```

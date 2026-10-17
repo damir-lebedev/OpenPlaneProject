@@ -58,7 +58,7 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK(연결되지 않음)<br/>FeedbackSupervisor와 모듈"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -362,6 +362,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -371,24 +372,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → 조종사 스로틀
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(기능에 따른 목표)
-    FC->>AP: update(armed, linkLost, 조종사 스로틀, 스틱)
+    FC->>AP: update(armed, linkLost, 조종사 스로틀 (역회전 시 0), 스틱)
     Note over AP: 센서는 항상 읽음,<br/>항법, failsafe, 지오펜스,<br/>모드, 조율, 오토 트림
     FC->>OUT: setBuzzer(Beeper)
     alt 통신 상실
         alt armed이고 오토파일럿 failsafe(RTH / GLIDE)
             FC->>MX: mix(오토파일럿 명령)
-            FC->>OUT: write(조종면, 오토파일럿 스로틀, AUX는 그대로)
+            FC->>OUT: write(조종면, 오토파일럿 스로틀 (역회전 시 0), AUX는 그대로)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — ARM과 스위치는 읽지 않음
     else 통신 있음
-        FC->>AM: update(rc) — ARM 스위치
+        FC->>AM: update(rc, MR.armBlockReason) — ARM 스위치
+        FC->>MR: update(MOTOR_REVERSE, armed) — 방향은 ARM이 아닐 때만
         FC->>AP: getCommand() — 최종 조종면 명령
         FC->>MX: mix(command) → 리버스가 있는 PWM
-        FC->>AP: applyThrottle(조종사 스로틀)
-        Note over FC: !armed 또는 MOTOR_KILL → throttle = PWM_MIN(맨 마지막)
+        FC->>AP: applyThrottle(조종사 스로틀) — 전진일 때만
+        Note over FC: 후진 — 파일럿 스로틀 ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed 또는 MOTOR_KILL → throttle = PWM_MIN(맨 마지막)
         FC->>OUT: write(output + AUX1 화물, AUX2 카메라)
+        Note over OUT: ESC: 스로틀 + 방향 → 펄스(EscSignal),<br/>양방향 ESC: 1500 = 정지
     end
 ```
 
@@ -396,6 +399,7 @@ sequenceDiagram
 
 - **신호 상실** — 스위치에 따른 모드와 기능은 바뀌지 않습니다. ARM은 읽지도 초기화하지도 않습니다. 모터는 오토파일럿 failsafe의 판단(모터를 쓰는 RTH)이나 `FAILSAFE_THROTTLE`로만 동작합니다.
 - **어떤 모드도 스로틀을 ARM 너머로 통과시킬 수 없습니다**: `!armed`와 `MOTOR_KILL` 때의 강제 `PWM_MIN`은 `Autopilot::applyThrottle()` 뒤에 놓입니다.
+- **역회전은 도는 중에 켜지지 않습니다**: `MotorReverse`는 ARM이 아닐 때만 방향을 바꾸고, `ArmingManager`는 방향이 바뀐 뒤 `REVERSE_SETTLE_MS` 동안 ARM을 거부합니다. 역회전 중 스로틀은 파일럿 것뿐이며, 오토파일럿에게는 모터가 꺼진 것으로 보입니다.
 - **오토파일럿이 최종 명령을 냅니다**(`getCommand()`). 안정화 모드에서 스틱은 원하는 각도입니다. 보정 = 명령 − 스틱(로그와 대시보드용). 믹서까지는 모든 것이 하나의 부호 체계(`ControlCommand`)입니다.
 
 ---
@@ -408,7 +412,7 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> WaitOff : 보드 전원 켜짐
     WaitOff --> Ready : 스위치 OFF
-    Ready --> Armed : 스위치 OFF→ON, 스로틀 < THROTTLE_LOW_US,<br/>모드 센서 확인 통과
+    Ready --> Armed : 스위치 OFF→ON, 스로틀 < THROTTLE_LOW_US,<br/>모드 센서 확인 통과,<br/>모터 방향이 REVERSE_SETTLE_MS 동안 바뀌지 않음
     Ready --> WaitOff : 스위치 ON, 확인 실패<br/>(이유 → Serial, getLastRefusalReason)
     Armed --> Ready : 스위치 OFF(즉시 DISARM)
     note right of Armed : 신호 상실은 상태를 바꾸지 않음
@@ -416,6 +420,24 @@ stateDiagram-v2
 
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### 모터 역회전(`MotorReverse`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : 스위치 ON이고 ARM 아님
+    Reverse --> Forward : 스위치 OFF이고 ARM 아님
+    Forward --> ForwardPending : ARM 중 스위치 ON
+    ForwardPending --> Forward : 스위치 OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : ARM 중 스위치 OFF
+    ReversePending --> Reverse : 스위치 ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : 방향을 바꿀 때마다<br/>REVERSE_SETTLE_MS 동안 ARM 거부
+```
+
+`*Pending` — `isPending()`: 스위치는 이미 반대 위치에 있고, 모터는 ARM 때 방향대로 돕니다. Serial 경고는 한 번만 출력됩니다.
 
 ### 오토파일럿 모드(`Autopilot` + `PilotSwitches`)
 

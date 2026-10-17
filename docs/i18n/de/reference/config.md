@@ -101,6 +101,15 @@ Variante.
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Ausschlag aus der Mitte bei vollem Knüppelweg, µs. Das Seitenruder ist kleiner: am selben Servo hängt das Fahrwerksrad |
 | `THROTTLE_LIMIT_PCT` | 100 | Die Gasobergrenze zum ESC, %, gleich für den Knüppel und den Autopiloten (`FlightController::capThrottle`). Für Prüfstandtests mit einem schwachen 3S1P-Akku wurde 50 gesetzt; die Tests berechnen die erwartete Ausgabe aus diesem Wert |
 
+### ESC und Motorumkehr
+
+| Konstante | Wert | Bedeutung |
+|---|---|---|
+| `ESC_BIDIRECTIONAL` | `true` | Bidirektionaler ESC (BLHeli 80A im Modus Bidirectional/3D): Gas wird zu einem Impuls um die Neutralstellung (`EscSignal`), „Motor steht“ ist 1500, Umkehr verfügbar. `false` – gewöhnlicher Regler: 1000 = Stopp, keine Umkehr |
+| `ESC_NEUTRAL_US` | 1500 | Neutralstellung des bidirektionalen ESC: Motor steht; darüber – vorwärts, darunter – rückwärts |
+| `REVERSE_THROTTLE_LIMIT_PCT` | 50 | Gasgrenze rückwärts, % (und höchstens `THROTTLE_LIMIT_PCT`): Ein Propeller zieht rückwärts schlecht, nimmt aber vollen Strom |
+| `REVERSE_SETTLE_MS` | 3000 | Nach einem Richtungswechsel wird ARM so lange abgelehnt – ein mit Gas disarmter Motor hat Zeit stehen zu bleiben |
+
 ### Klappen (Flaperons)
 
 | Konstante | Wert | Bedeutung |

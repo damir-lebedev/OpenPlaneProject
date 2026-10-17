@@ -41,7 +41,7 @@
 
 ‏`enum class Feature : uint8_t` — وظائف المفاتيح: `FLAPS` و`AIRBRAKE` و
 `AUTO_TRIM` و`TURN_COORDINATION` و`MOTOR_KILL` و`BEEPER` و`PAYLOAD_DROP` و
-`GEOFENCE` و`HOME_RESET` و`CAMERA_STAB` و`COUNT`.
+`GEOFENCE` و`HOME_RESET` و`CAMERA_STAB` و`MOTOR_REVERSE` و`COUNT`.
 
 ‏`enum class Knob : uint8_t` — المقابض: `STAB_GAIN` و`MAX_BANK` و
 `CRUISE_SPEED` و`FLAPS` و`CAMERA_TILT` و`RATES` و`LOITER_RADIUS` و`COUNT`.

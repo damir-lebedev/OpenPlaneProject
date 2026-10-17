@@ -214,10 +214,10 @@ variabel `busSlot()` – det finns bara en skärm ombord.
 Skärmen:
 
 ```
-RX ok ARM STAB FL       förbindelse (förlust – inverterad rad) / ARM / läge / klaffar
+RX ok ARM STAB FL       förbindelse (förlust – inverterad rad) / ARM / läge / REV – motorn bakåt / klaffar
 R  +1.2 P  -0.4         roll / tippning, °           (IMU --)
 Alt +0.3 Vz +0.1 A14    höjd / vertikal hastighet / lufthastighet, om pitotrör finns (BARO --)
-H123 T1000 Y1500        kurs / gas / sidroder (H---)
+H123 T1000 Y1500        kurs / gas 1000..2000 = 0..100 % åt vilket håll som helst / sidroder (H---)
 L1500 R1500 E1500       skevroder / höjdroder
 Loop 500Hz max1100us    frekvens och den sämsta cykeln under sekunden
 ```

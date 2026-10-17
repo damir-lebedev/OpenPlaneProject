@@ -57,7 +57,7 @@ FS-i6 + FS-iA6B, iBUS, 10채널(`config/Channels.h`).
 | CH5 | **SwA** | **ARM**(아래 = ARM됨, 스로틀이 아래일 때만. 재지정 불가) |
 | CH6 | SwB | 플랩(`Feature::FLAPS`) |
 | CH7 | **SwC**(3단) | 위 **MANUAL** · 가운데 **STABILIZE** · 아래 **AUTO_TAKEOFF** |
-| CH8 | SwD | **RTH** — 홈으로 귀환, 켜져 있는 동안 |
+| CH8 | SwD | **모터 역회전**(`Feature::MOTOR_REVERSE`) — DISARM 상태에서만 바뀜 |
 | CH9 | VrA | 안정화 세기(`Knob::STAB_GAIN`) |
 | CH10 | VrB | 순항 속도(`Knob::CRUISE_SPEED`) |
 
@@ -66,7 +66,7 @@ FS-i6 + FS-iA6B, iBUS, 10채널(`config/Channels.h`).
 ```
 SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
 SwB (CH6): FLAPS, пока включён
-SwD (CH8): RTH, пока включён
+SwD (CH8): MOTOR_REVERSE, пока включён
 VrA (CH9): крутилка STAB_GAIN
 VrB (CH10): крутилка CRUISE_SPEED
 ```
@@ -83,7 +83,7 @@ VrB (CH10): крутилка CRUISE_SPEED
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
@@ -171,7 +171,7 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 **필요한 것:** IMU + 기압계 + GPS.
 
 ### RTH — "홈으로 귀환"
-홈(ARM한 지점)으로 침로를 잡고, 고도는 `RTH_ALTITUDE_M` = 40 m입니다(그보다 낮으면 가는 도중에 상승하고, 높으면 그대로 유지합니다). 홈 위에서는 파일럿이 조종을 되찾을 때까지 LOITER 반지름으로 선회합니다. GPS나 홈이 없으면 그 자리에서 선회합니다. 통신 두절과 지오펜스도 같은 모드를 작동시킵니다.
+홈(ARM한 지점)으로 침로를 잡고, 고도는 `RTH_ALTITUDE_M` = 40 m입니다(그보다 낮으면 가는 도중에 상승하고, 높으면 그대로 유지합니다). 홈 위에서는 파일럿이 조종을 되찾을 때까지 LOITER 반지름으로 선회합니다. GPS나 홈이 없으면 그 자리에서 선회합니다. 통신 두절과 지오펜스도 같은 모드를 작동시킵니다. RTH에는 기본적으로 전용 스위치가 없습니다(SwD는 모터 역회전입니다). 되돌리려면 `Controls.h`에 `Bind::mode(Channels::SWD, MODE_RTH)` 한 줄을 넣거나 대시보드에서 켭니다.
 **필요한 것:** IMU + 기압계 + 홈이 기록된 GPS.
 
 ### AUTO_TAKEOFF (TKOFF) — "스로틀로 이륙"
@@ -215,6 +215,7 @@ ARM 뒤에는 파일럿이 스로틀을 중간 위로 올릴 때까지 아무 �
 | `GEOFENCE` | 홈에서 500 m보다 멀거나 120 m보다 높으면 RTH | `GEOFENCE_ALWAYS_ON` — 스위치 없이 항상 켜짐 |
 | `HOME_RESET` | 홈 = 현재 지점(스위치를 켠 순간의 위치) | GPS가 좋을 때만 |
 | `CAMERA_STAB` | AUX2의 카메라가 수평선에 대한 각도를 유지 | 비행기의 피치를 뺌 |
+| `MOTOR_REVERSE` | 모터를 거꾸로 돌림(양방향 ESC) — 지상에서 후진 택싱용 | **DISARM 상태에서만** 바뀜: ARM 중에 스위치를 바꾸면 DISARM까지 대기, 바꾼 뒤 3 s 동안 ARM 불가, 후진은 스로틀 50 %까지, 파일럿 스로틀만 |
 
 ## 노브
 

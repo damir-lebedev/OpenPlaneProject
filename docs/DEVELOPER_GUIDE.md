@@ -63,8 +63,8 @@ include/
 ├── storage/     KeyValueStore, KvPreferences — хранилище настроек без NVS
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
-│                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, Beeper, FlightController
+│                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
+│                FlightOutputState, FlightOutputs, Beeper, FlightController
 ├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
 │   │            Navigation, AltitudeSpeedController, LaunchController,
 │   │            SoaringController, AutoTrim, PidController
@@ -97,7 +97,8 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
 │  └ FlapsController  │  │  └ навигация, ПИД     │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
-│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+│ MotorReverse        │             │ ImuSensor* / BarometerSensor* / ...
+│ FlightOutputs       │             │
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORS                                          │
@@ -218,8 +219,10 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
 | `ControlMixer.h` | `fromSticks(rc)` → `ControlCommand`; `updateFlaps(цель, now)`; `mix(command)` → PWM с реверсом серво; флапероны: элероны `flaps ± roll` (минус — воздушный тормоз) |
 | `FlapsController.h` | Плавный выпуск/уборка закрылков, время передаётся параметром |
 | `ThrottleManager.h` | Газ со стика; при потере связи — `FAILSAFE_THROTTLE` |
+| `EscSignal.h` | Газ + направление → импульс ESC: у двунаправленного BLHeli 1500 = стоп, вперёд 1500..2000, назад 1500..1000 |
+| `MotorReverse.h` | Реверс мотора по `Feature::MOTOR_REVERSE` — только в DISARM; после смены направления ARM запрещён `REVERSE_SETTLE_MS` |
 | `ArmingManager.h` | ARM тумблером SwA (переход OFF→ON при газе внизу + проверки датчиков режима), мгновенный DISARM |
-| `FlightOutputState.h` | Желаемые PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`, `aux1` (груз), `aux2` (камера) |
+| `FlightOutputState.h` | Желаемые PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100% в любом направлении), `motorReverse`, `aux1` (груз), `aux2` (камера) |
 | `Beeper.h` | Пищалка: по функции `BEEPER` или «модель потеряна» на земле |
 | `FlightOutputs.h` | Таблица выходов (`outputInfo()`: ключ, имя, пин, обязательность, поле состояния) и всё поверх неё циклом: `begin()`, `write()`, `setFailsafe()`, статус, `printPulseSelfTest()` |
 | `FlightController.h` | Порядок операций за такт, потеря связи (`applyLinkLoss()`), геттеры для телеметрии |
@@ -363,7 +366,7 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
 | CH5 | SwA | `ARM` | ≥ 1750 = ARM (на FS-i6 это тумблер вниз, к себе) |
 | CH6 | SwB | `SWB` | по умолчанию — закрылки (≥ 1750 — выпущены) |
 | CH7 | SwC (3 положения) | `SWC` | по умолчанию — режим: < 1250 MANUAL, 1250–1749 STABILIZE, ≥ 1750 AUTO_TAKEOFF |
-| CH8 | SwD | `SWD` | по умолчанию — RTH |
+| CH8 | SwD | `SWD` | по умолчанию — реверс мотора (переключается только в DISARM) |
 | CH9 | VrA | `VRA` | по умолчанию — сила стабилизации |
 | CH10 | VrB | `VRB` | по умолчанию — скорость круиза |
 
@@ -373,7 +376,14 @@ CH6–CH10 назначаются одной строкой в `include/config/C
 **ARM** (`ArmingManager`): переход тумблера OFF→ON, газ < `THROTTLE_LOW_US`,
 пройдены проверки датчиков для текущего режима. Иначе — отказ с причиной в
 Serial, нужен новый цикл OFF→ON. Включение платы с тумблером в ON не армит.
-OFF — DISARM сразу. Пока не armed, газ на ESC принудительно `PWM_MIN`.
+OFF — DISARM сразу. Пока не armed, газ на ESC принудительно `PWM_MIN` (на пине
+двунаправленного ESC — нейтраль 1500).
+
+**Реверс** (`MotorReverse`, `Feature::MOTOR_REVERSE`, по умолчанию SwD):
+направление мотора следует за тумблером только без ARM; щелчок в ARM ничего не
+меняет до DISARM. После смены направления ARM запрещён `REVERSE_SETTLE_MS`
+(3 с). Назад — только газ пилота, не больше `REVERSE_THROTTLE_LIMIT_PCT` (50%);
+автопилот газ не получает, при потере связи мотор стоит.
 
 **Потеря связи** (`IBusReceiver::isSignalLost()`):
 
@@ -483,15 +493,19 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
 7. **Потеря связи** — `applyLinkLoss()`: в ARM — рули и газ по команде
    failsafe автопилота, иначе нейтраль и мотор выключен; `return`.
    Абсолютный приоритет над всем ниже.
-8. **ARM** — `arming.update(rc, false)`.
+8. **ARM и реверс** — `arming.update(rc, false, reverse.armBlockReason(now))`,
+   затем `reverse.update(MOTOR_REVERSE, armed, now)`: направление меняется
+   только без ARM.
 9. **Команда** — `autopilot->getCommand()`: в режимах со стабилизацией стик —
    это желаемый угол, автопилот выдаёт итоговые рули.
 10. **Микшер** — `mixer.mix(command)` → PWM элеронов (закрылки + крен), руля
     высоты и руля направления с учётом реверса.
 11. **Газ** — `autopilot->applyThrottle(pilotThrottle)`: газ пилота, газ
-    автопилота или max из двух (автовзлёт). Затем, если не armed или
-    `MOTOR_KILL`, — принудительно `PWM_MIN`. Эта проверка стоит последней,
-    чтобы ни один режим не протащил газ мимо ARM.
+    автопилота или max из двух (автовзлёт); в реверсе — только газ пилота до
+    `REVERSE_THROTTLE_LIMIT_PCT`. Затем, если не armed или `MOTOR_KILL`, —
+    принудительно `PWM_MIN`. Эта проверка стоит последней, чтобы ни один режим
+    не протащил газ мимо ARM. В импульс ESC газ и направление переводит
+    `FlightOutputs` (`EscSignal`).
 12. **AUX** — груз (`PAYLOAD_DROP`) и камера (`CAMERA_TILT`, `CAMERA_STAB`).
 13. **`outputs.write(output)`** — PWM на 7 выходов.
 
@@ -508,13 +522,14 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
 {
   "rc": [1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1500],
   "armed": false,
+  "motorReverse": false,
   "failsafe": false,
   "outputs": {
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true },
+    "esc":          { "us": 1500, "attached": true },
     "aux1":         { "us": 1000, "attached": true },
     "aux2":         { "us": 1500, "attached": true }
   },
@@ -970,7 +985,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # проверить
 - Пока открыт монитор порта, заливка на тот же порт не пройдёт.
 - `lib_deps`: `olikraus/U8g2` (OLED) — единственная внешняя библиотека.
 - `test/` — подробно в [`TESTING.md`](TESTING.md):
-  - `pio test -e native -e native-stm32` — 387 тестов на ПК (фейки железа в
+  - `pio test -e native -e native-stm32` — 392 теста на ПК (фейки железа в
     `test/native/support/`), покрытие — `gcovr`;
   - `pio test -e esp32-s3` — `test_feedback/` (замкнутая симуляция обратной
     связи) и `test_imu_orientation/` на самой плате; каждый прошивает тестовую
@@ -1016,6 +1031,10 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # проверить
   GPIO6/7 выдавали сигнал GPIO4/5 (ESC управлялся правым стиком). Выходы
   переписаны на LEDC; возвращать библиотеку — только проверив `p`.
 - **ESC — 50 Гц PWM**, режима калибровки диапазона газа в прошивке пока нет.
+  Основной ESC — двунаправленный BLHeli 80A (`ESC_BIDIRECTIONAL`): его
+  настраивают в BLHeliSuite (Motor Direction = Bidirectional, диапазон
+  1000..2000), нейтраль 1500 = стоп. Поставили обычный ESC — переключите
+  `ESC_BIDIRECTIONAL = false`, иначе на «стоп» он получит половину газа.
 - **Веб-дашборд:** пароль точки доступа слабый, команды принимаются и в
   полёте. Это инструмент для стенда и поля, не для полёта.
 - **Механика прототипа:** первый прототип летал, выявлены слабое крепление

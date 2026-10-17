@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-387%20passing-3fb950?style=for-the-badge" alt="387 项测试">
+  <img src="https://img.shields.io/badge/tests-392%20passing-3fb950?style=for-the-badge" alt="392 项测试">
   <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="98% 代码覆盖率">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 次构建零警告">
   <br>
@@ -60,8 +60,8 @@
 |---|---|
 | **这是什么** | 面向遥控飞机的开放式飞控与自动驾驶仪。主力板是 STM32H743（Pixhawk 级别的开发板）：固件在 DevEBox 板上**已经运行起来，可以用遥控器操控**——[有视频](#-stm32h743-在开发板上跑起来了)，现在正在接传感器。之前的基础是约 10 美元的 ESP32-S3，它已在装有全部传感器的台架上验证过。 |
 | **能做什么** | 12 种飞行模式——从自稳到返航、GPS 盘旋、手抛起飞、自动降落，还有**热气流翱翔**。用两个廉价气压计做成的空速管。通过 MAVLink 把遥测数据送到 QGroundControl 和 Mission Planner。 |
-| **最大亮点** | 遥控器上的任何开关或旋钮 = 任何功能。在 `Controls.h` 里**改一行**，SwD 就不再是 RTH，而变成投放载荷。 |
-| **为什么可以信任** | 387 项自动化测试（另有 9 项在带真实 SD 卡的开发板上运行），98% 的代码有测试覆盖，24 种“开发板 × 传感器”组合构建零警告，每种模式都有闭环仿真。 |
+| **最大亮点** | 遥控器上的任何开关或旋钮 = 任何功能。在 `Controls.h` 里**改一行**，SwD 就不再是电机反转，而变成投放载荷。 |
+| **为什么可以信任** | 392 项自动化测试（另有 9 项在带真实 SD 卡的开发板上运行），98% 的代码有测试覆盖，24 种“开发板 × 传感器”组合构建零警告，每种模式都有闭环仿真。 |
 | **实话实说** | 目前飞过的只有手动模式（第一架原型机）。STM32H743 目前只在台架上、没有接传感器的情况下验证过。自动驾驶仪已通过台架测试、自动化测试和仿真验证，正等待试飞——[现状见下文](#-真实现状)。 |
 
 ---
@@ -73,15 +73,15 @@
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),              // 开关打开期间就返航
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),// 电机反转——仅在 DISARM 时
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),       // “柔和 / 灵敏”，飞行中直接调
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
 ```
 
-想让 SwD 控制热气流翱翔，而不是 RTH？写 `Bind::mode(Channels::SWD, MODE_SOARING)`。想在 SwB 上投放载荷？写 `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`。如果搞错了——比如把两个模式挂到同一个开关上，或者占用了摇杆——**编译就无法通过**：这张表由编译器检查（`static_assert`）。开机时，飞机会自己打印出哪个开关对应什么。
+想让 SwD 控制热气流翱翔，而不是电机反转？写 `Bind::mode(Channels::SWD, MODE_SOARING)`。想在 SwB 上投放载荷？写 `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`。如果搞错了——比如把两个模式挂到同一个开关上，或者占用了摇杆——**编译就无法通过**：这张表由编译器检查（`static_assert`）。开机时，飞机会自己打印出哪个开关对应什么。
 
-**12 种模式 · 10 项功能 · 7 个旋钮**——全部配有示例，见[自动驾驶仪手册](AUTOPILOT_GUIDE.md)。
+**12 种模式 · 11 项功能 · 7 个旋钮**——全部配有示例，见[自动驾驶仪手册](AUTOPILOT_GUIDE.md)。
 
 ---
 
@@ -205,7 +205,7 @@ STM32H743 的固件已在**没有任何传感器**的 DevEBox 板上运行，并
 
 | | |
 |---|---|
-| **387 项自动化测试** | 模块、按芯片寄存器层面验证的驱动、闭环飞行、在电脑上**完整运行**的 ESP32 和 STM32 固件；另外在 STM32 板上用真实 SD 卡跑 9 项测试 |
+| **392 项自动化测试** | 模块、按芯片寄存器层面验证的驱动、闭环飞行、在电脑上**完整运行**的 ESP32 和 STM32 固件；另外在 STM32 板上用真实 SD 卡跑 9 项测试 |
 | **98.3% 的代码行，87.7% 的分支** | `gcovr` 覆盖率，包括 STM32 代码 |
 | **24/24 次构建** | 4 种开发板 × 6 套传感器组合，`-Wall -Wextra`，零警告 |
 | **0 条问题** | 对全部代码运行 cppcheck 和 clang-tidy |
@@ -262,6 +262,7 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 |---|---|
 | 手动控制、混控器 | ✈️ 实际飞行验证（第一架原型机，C3） |
 | ARM、failsafe、襟翼、舵机、电机 | 🔧 台架验证（S3） |
+| 双向电调 BLHeli 80A，仅在 DISARM 时可反转 | 🧪 测试；尚未接实物电调验证 |
 | STABILIZE | 🔧 台架验证：舵面对倾斜的响应方向正确 |
 | 台架传感器（MPU6500、BMP388、QMC5883P）、OLED、网页仪表盘 | 🔧 台架验证 |
 | 其他模式、导航、空速管、MAVLink | 🧪 测试和闭环仿真 |

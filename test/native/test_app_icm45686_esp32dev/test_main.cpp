@@ -121,7 +121,7 @@ void test_hand_launch_mode_arms_and_waits_for_throw()
     rc.set(Channels::THROTTLE, 1700);   // взвести
     fly(rc, 0.5);
     TEST_ASSERT_EQUAL(LaunchController::State::READY, autopilot.getLaunchState());
-    TEST_ASSERT_UINT32_WITHIN(3, 1000, pulseUs(ServoChannel::ESC));   // в руке мотор стоит
+    TEST_ASSERT_UINT32_WITHIN(3, escUs(1000), pulseUs(ServoChannel::ESC));   // в руке мотор стоит
     takeSerial();
 }
 

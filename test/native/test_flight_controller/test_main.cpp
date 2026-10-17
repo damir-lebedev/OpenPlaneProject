@@ -76,7 +76,7 @@ void test_begin_puts_outputs_to_failsafe_and_opens_receiver()
 {
     Plane plane;
     TEST_ASSERT_EQUAL_UINT32(Config::IBUS_BAUDRATE, plane.board.rc.baud);
-    TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_THROTTLE, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::FAILSAFE_THROTTLE), plane.pwm(ServoChannel::ESC));
     TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_AILERON, plane.pwm(ServoChannel::AILERON_LEFT));
 }
 
@@ -85,7 +85,7 @@ void test_no_frames_yet_means_failsafe_outputs()
     Plane plane;
     plane.tickWithoutFrame();
     TEST_ASSERT_TRUE(plane.controller.isReceiverFailsafe());
-    TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_THROTTLE, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::FAILSAFE_THROTTLE), plane.pwm(ServoChannel::ESC));
     TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_ELEVATOR, plane.pwm(ServoChannel::ELEVATOR));
 }
 
@@ -97,7 +97,7 @@ void test_sticks_drive_surfaces_but_throttle_is_blocked_until_armed()
     plane.tick(rc);
 
     TEST_ASSERT_FALSE(plane.controller.isArmed());
-    TEST_ASSERT_EQUAL_UINT16(Config::PWM_MIN, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::PWM_MIN), plane.pwm(ServoChannel::ESC));
     TEST_ASSERT_EQUAL_UINT16(Config::AILERON_LEFT_REVERSED ? 1000 : 2000, plane.pwm(ServoChannel::AILERON_LEFT));
     TEST_ASSERT_EQUAL_UINT16(Config::AILERON_LEFT_REVERSED ? 1000 : 2000,
                              plane.controller.getOutputState().aileronLeft);
@@ -114,7 +114,7 @@ void test_armed_passes_pilot_throttle()
     RcChannels rc;
     rc.set(Channels::ARM, 2000).set(Channels::THROTTLE, 1650);
     plane.tick(rc);
-    TEST_ASSERT_EQUAL_UINT16(cappedThrottleUs(1650), plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(escUs(cappedThrottleUs(1650)), plane.pwm(ServoChannel::ESC));
 }
 
 void test_link_loss_on_ground_neutralises_everything()
@@ -128,7 +128,7 @@ void test_link_loss_on_ground_neutralises_everything()
     plane.tickWithoutFrame();
     TEST_ASSERT_TRUE(plane.controller.isReceiverFailsafe());
     TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_AILERON, plane.pwm(ServoChannel::AILERON_LEFT));
-    TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_THROTTLE, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::FAILSAFE_THROTTLE), plane.pwm(ServoChannel::ESC));
 }
 
 // В воздухе (armed) без связи: мотор выключен, автопилот держит
@@ -148,7 +148,7 @@ void test_link_loss_in_air_glides_with_motor_off()
 
     TEST_ASSERT_TRUE(plane.autopilot.isFailsafeGliding());
     TEST_ASSERT_TRUE(plane.controller.isArmed());   // ARM не сбрасывается
-    TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_THROTTLE, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::FAILSAFE_THROTTLE), plane.pwm(ServoChannel::ESC));
     // Коррекция крена влево: левый элерон вверх (закрылки убраны).
     const uint16_t left = plane.pwm(ServoChannel::AILERON_LEFT);
     TEST_ASSERT_TRUE(Config::AILERON_LEFT_REVERSED ? left > 1500 : left < 1500);
@@ -164,7 +164,7 @@ void test_link_loss_without_imu_neutralises_even_when_armed()
     plane.tick(lost);
     TEST_ASSERT_EQUAL_UINT16(1500, plane.pwm(ServoChannel::AILERON_LEFT));
     TEST_ASSERT_EQUAL_UINT16(1500, plane.pwm(ServoChannel::ELEVATOR));
-    TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_THROTTLE, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::FAILSAFE_THROTTLE), plane.pwm(ServoChannel::ESC));
 }
 
 void test_mode_switch_is_ignored_during_link_loss()
@@ -218,11 +218,11 @@ void test_takeoff_throttle_still_requires_arm()
     TEST_ASSERT_TRUE(plane.controller.isArmed());
     rc.set(Channels::THROTTLE, 1600);
     for (int i = 0; i < 600; ++i) plane.tick(rc);   // 1.2 с программы
-    TEST_ASSERT_EQUAL_UINT16(cappedThrottleUs(2000), plane.pwm(ServoChannel::ESC));   // 100% программы
+    TEST_ASSERT_EQUAL_UINT16(escUs(cappedThrottleUs(2000)), plane.pwm(ServoChannel::ESC));   // 100% программы
 
     rc.set(Channels::ARM, 1000);   // DISARM — газ сразу в ноль, хотя режим хочет 100 %
     plane.tick(rc);
-    TEST_ASSERT_EQUAL_UINT16(Config::PWM_MIN, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::PWM_MIN), plane.pwm(ServoChannel::ESC));
 }
 
 void test_flaps_follow_switch_smoothly()
@@ -262,11 +262,99 @@ void test_manual_only_controller_without_autopilot()
     rc.set(Channels::THROTTLE, 1400);
     board.rc.push(ibusFrame(rc));
     controller.update();
-    TEST_ASSERT_EQUAL_UINT16(cappedThrottleUs(1400), board.servos[ServoChannel::ESC].lastUs);
+    TEST_ASSERT_EQUAL_UINT16(escUs(cappedThrottleUs(1400)), board.servos[ServoChannel::ESC].lastUs);
 
     fake::advanceMs(600);
     controller.update();
-    TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_THROTTLE, board.servos[ServoChannel::ESC].lastUs);
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::FAILSAFE_THROTTLE), board.servos[ServoChannel::ESC].lastUs);
+}
+
+// Реверс (SwD, Feature::MOTOR_REVERSE в Controls.h) — только в DISARM.
+void test_motor_reverse_switches_only_when_disarmed()
+{
+    Plane plane;
+    RcChannels rc;
+    plane.tick(rc);
+    rc.set(Channels::SWD, 2000);
+    plane.tick(rc);
+    TEST_ASSERT_TRUE(plane.controller.getOutputState().motorReverse);
+    TEST_ASSERT_EQUAL_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));   // стоит
+    TEST_ASSERT_TRUE(contains(takeSerial(), "MotorReverse: мотор НАЗАД"));
+
+    // Сразу после смены направления ARM нельзя — мотор мог ещё крутиться.
+    rc.set(Channels::ARM, 2000);
+    plane.tick(rc);
+    TEST_ASSERT_FALSE(plane.controller.isArmed());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "направление мотора только что сменилось"));
+
+    rc.set(Channels::ARM, 1000);
+    plane.tick(rc);
+    fake::advanceMs(Config::REVERSE_SETTLE_MS);
+    plane.tick(rc);
+    rc.set(Channels::ARM, 2000);
+    plane.tick(rc);
+    TEST_ASSERT_TRUE(plane.controller.isArmed());
+
+    // Полный газ назад — REVERSE_THROTTLE_LIMIT_PCT мощности.
+    rc.set(Channels::THROTTLE, 2000);
+    plane.tick(rc);
+    const uint16_t fullBack = Config::PWM_MIN + 10 * Config::REVERSE_THROTTLE_LIMIT_PCT;
+    TEST_ASSERT_EQUAL_UINT16(fullBack, plane.controller.getOutputState().throttle);
+    TEST_ASSERT_EQUAL_UINT16(escUs(fullBack, true), plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_LESS_THAN_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));
+
+    // Тумблер назад в ARM: направление не меняется, ждёт DISARM.
+    rc.set(Channels::SWD, 1000);
+    plane.tick(rc);
+    TEST_ASSERT_TRUE(plane.controller.getOutputState().motorReverse);
+    TEST_ASSERT_TRUE(plane.controller.getMotorReverse().isPending());
+    TEST_ASSERT_EQUAL_UINT16(escUs(fullBack, true), plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_TRUE(contains(takeSerial(), "реверс НЕ переключён"));
+
+    rc.set(Channels::ARM, 1000);
+    plane.tick(rc);
+    TEST_ASSERT_FALSE(plane.controller.isArmed());
+    TEST_ASSERT_FALSE(plane.controller.getOutputState().motorReverse);
+    TEST_ASSERT_FALSE(plane.controller.getMotorReverse().isPending());
+    TEST_ASSERT_EQUAL_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));
+    TEST_ASSERT_TRUE(contains(takeSerial(), "MotorReverse: мотор вперёд"));
+
+    // ARM и реверс щёлкнули разом — ARM в старом направлении, реверс ждёт.
+    fake::advanceMs(Config::REVERSE_SETTLE_MS);
+    plane.tick(rc);
+    rc.set(Channels::ARM, 2000).set(Channels::SWD, 2000).set(Channels::THROTTLE, 1000);
+    plane.tick(rc);
+    TEST_ASSERT_TRUE(plane.controller.isArmed());
+    TEST_ASSERT_FALSE(plane.controller.getOutputState().motorReverse);
+    TEST_ASSERT_TRUE(plane.controller.getMotorReverse().isPending());
+    takeSerial();
+}
+
+// В реверсе газ только от пилота: автопилот видит мотор выключенным,
+// а при потере связи мотор глохнет, даже если автопилот ведёт домой.
+void test_motor_reverse_ignores_autopilot_throttle_and_stops_on_link_loss()
+{
+    Plane plane;
+    RcChannels rc;
+    rc.set(Channels::SWD, 2000);
+    plane.tick(rc);
+    fake::advanceMs(Config::REVERSE_SETTLE_MS);
+    plane.tick(rc);
+    rc.set(Channels::ARM, 2000).set(Channels::SWC, 2000);   // AUTO_TAKEOFF
+    plane.tick(rc);
+    TEST_ASSERT_TRUE(plane.controller.isArmed());
+    TEST_ASSERT_EQUAL(MODE_AUTO_TAKEOFF, plane.autopilot.getMode());
+
+    rc.set(Channels::THROTTLE, 1600);
+    for (int i = 0; i < 10; ++i) plane.tick(rc);
+    const uint16_t back = Config::PWM_MIN + 600 * Config::REVERSE_THROTTLE_LIMIT_PCT / 100;
+    TEST_ASSERT_EQUAL_UINT16(escUs(back, true), plane.pwm(ServoChannel::ESC));
+
+    RcChannels lost = rc;
+    lost.set(Channels::THROTTLE, 900);
+    plane.tick(lost);
+    TEST_ASSERT_TRUE(plane.controller.isReceiverFailsafe());
+    TEST_ASSERT_EQUAL_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));
 }
 
 int main()
@@ -284,5 +372,7 @@ int main()
     RUN_TEST(test_takeoff_throttle_still_requires_arm);
     RUN_TEST(test_flaps_follow_switch_smoothly);
     RUN_TEST(test_manual_only_controller_without_autopilot);
+    RUN_TEST(test_motor_reverse_switches_only_when_disarmed);
+    RUN_TEST(test_motor_reverse_ignores_autopilot_throttle_and_stops_on_link_loss);
     return UNITY_END();
 }

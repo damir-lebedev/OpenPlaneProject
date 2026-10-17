@@ -945,7 +945,7 @@ void test_box_stays_off_without_a_card_or_a_file_and_the_plane_still_flies()
         rig.rc.set(Channels::THROTTLE, 1500);
         rig.run(1000);
         TEST_ASSERT_EQUAL(BlackBox::State::Off, rig.box.getState());
-        TEST_ASSERT_EQUAL_UINT16(cappedThrottleUs(1500), rig.board.servos[ServoChannel::ESC].lastUs);
+        TEST_ASSERT_EQUAL_UINT16(escUs(cappedThrottleUs(1500)), rig.board.servos[ServoChannel::ESC].lastUs);
     }
 
     // Карта есть, файла нет.

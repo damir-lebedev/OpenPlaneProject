@@ -99,6 +99,15 @@ O console `Serial` é a LPUART1 (PA9 TX / PA10 RX), o padrão da variante.
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Deflexão a partir do centro com o curso total do stick, µs. O leme é menor: no mesmo servo fica a roda do trem de pouso |
 | `THROTTLE_LIMIT_PCT` | 100 | O teto do acelerador para o ESC, %, igual para o stick e para o piloto automático (`FlightController::capThrottle`). Para os testes de bancada com uma bateria 3S1P fraca foi usado 50; os testes calculam a saída esperada a partir desse valor |
 
+### ESC e reversão do motor
+
+| Constante | Valor | Significado |
+|---|---|---|
+| `ESC_BIDIRECTIONAL` | `true` | ESC bidirecional (BLHeli 80A no modo Bidirectional/3D): o acelerador vira um pulso em torno do neutro (`EscSignal`), “motor parado” é 1500, há reversão. `false` — ESC comum: 1000 = parado, sem reversão |
+| `ESC_NEUTRAL_US` | 1500 | O neutro do ESC bidirecional: o motor fica parado; acima — para a frente, abaixo — para trás |
+| `REVERSE_THROTTLE_LIMIT_PCT` | 50 | Limite de acelerador para trás, % (e no máximo `THROTTLE_LIMIT_PCT`): a hélice puxa mal para trás, mas consome a corrente toda |
+| `REVERSE_SETTLE_MS` | 3000 | Depois de trocar o sentido, o ARM é recusado por esse tempo, para que um motor desarmado com acelerador tenha tempo de parar |
+
 ### Flaps (flaperons)
 
 | Constante | Valor | Significado |

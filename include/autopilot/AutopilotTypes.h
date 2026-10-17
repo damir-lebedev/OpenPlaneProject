@@ -51,6 +51,7 @@ enum class Feature : uint8_t
     GEOFENCE,           // геозабор: вылет за радиус/высоту -> домой
     HOME_RESET,         // дом = текущая точка (по включению тумблера)
     CAMERA_STAB,        // камера (серво AUX2) держит угол к горизонту
+    MOTOR_REVERSE,      // мотор назад (двунаправленный ESC); переключается только в DISARM
     COUNT
 };
 
@@ -123,6 +124,7 @@ namespace AutopilotNames
             case Feature::GEOFENCE:          return "GEOFENCE";
             case Feature::HOME_RESET:        return "HOME_RESET";
             case Feature::CAMERA_STAB:       return "CAMERA_STAB";
+            case Feature::MOTOR_REVERSE:     return "MOTOR_REVERSE";
             default:                         return "?";
         }
     }

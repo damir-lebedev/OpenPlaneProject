@@ -90,6 +90,15 @@ STM32duino 内核（以及其他 Arduino 内核）中，`PIN_SPI_SCK/MISO/MOSI` 
 | `AILERON_MAX_US`、`ELEVATOR_MAX_US`、`RUDDER_MAX_US` | 500 / 500 / 300 | 摇杆满行程时相对中心的偏转量，µs。方向舵较小：同一个舵机上还带着起落架的前轮 |
 | `THROTTLE_LIMIT_PCT` | 100 | 送往电调的油门上限，%，对摇杆和自动驾驶仪相同（`FlightController::capThrottle`）。在较弱的 3S1P 电池上做台架测试时曾设为 50；测试会按该值计算预期输出 |
 
+### 电调与电机反转
+
+| 常量 | 值 | 含义 |
+|---|---|---|
+| `ESC_BIDIRECTIONAL` | `true` | 双向电调（Bidirectional/3D 模式的 BLHeli 80A）：油门换算成围绕中立值的脉冲（`EscSignal`），“电机停止”为 1500，可以反转。`false`——普通电调：1000 = 停止，不能反转 |
+| `ESC_NEUTRAL_US` | 1500 | 双向电调的中立值：电机停止；高于它——正转，低于它——反转 |
+| `REVERSE_THROTTLE_LIMIT_PCT` | 50 | 反转油门上限，%（且不超过 `THROTTLE_LIMIT_PCT`）：螺旋桨反转时拉力很差，电流却照样很大 |
+| `REVERSE_SETTLE_MS` | 3000 | 改变方向后在这段时间内拒绝 ARM——带着油门上锁的电机有时间停下来 |
+
 ### 襟翼（襟副翼）
 
 | 常量 | 值 | 含义 |

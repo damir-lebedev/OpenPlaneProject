@@ -58,7 +58,7 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (no conectado)<br/>FeedbackSupervisor y módulos"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -362,6 +362,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -371,24 +372,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → acelerador del piloto
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(objetivo según las funciones)
-    FC->>AP: update(armed, linkLost, acelerador del piloto, sticks)
+    FC->>AP: update(armed, linkLost, acelerador del piloto (0 en inversión), sticks)
     Note over AP: los sensores se leen SIEMPRE,<br/>navegación, failsafe, geovalla,<br/>modo, coordinación, autotrim
     FC->>OUT: setBuzzer(Beeper)
     alt enlace perdido
         alt armed y failsafe del piloto automático (RTH / GLIDE)
             FC->>MX: mix(orden del piloto automático)
-            FC->>OUT: write(superficies, acelerador del piloto automático, AUX sin cambios)
+            FC->>OUT: write(superficies, acelerador del piloto automático (0 en inversión), AUX sin cambios)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — no se leen ni el ARM ni los interruptores
     else hay enlace
-        FC->>AM: update(rc) — el interruptor ARM
+        FC->>AM: update(rc, MR.armBlockReason) — el interruptor ARM
+        FC->>MR: update(MOTOR_REVERSE, armed) — sentido solo sin ARM
         FC->>AP: getCommand() — la orden final de las superficies
         FC->>MX: mix(command) → PWM con inversión
-        FC->>AP: applyThrottle(acelerador del piloto)
-        Note over FC: !armed o MOTOR_KILL → throttle = PWM_MIN (lo último)
+        FC->>AP: applyThrottle(acelerador del piloto) — solo hacia delante
+        Note over FC: hacia atrás: gas del piloto ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed o MOTOR_KILL → throttle = PWM_MIN (lo último)
         FC->>OUT: write(output + AUX1 carga, AUX2 cámara)
+        Note over OUT: ESC: gas + sentido → pulso (EscSignal),<br/>variador bidireccional: 1500 = parado
     end
 ```
 
@@ -396,6 +399,9 @@ Invariantes clave del ciclo:
 
 - **Pérdida de señal**: el modo y las funciones de los interruptores no cambian; el ARM no se lee ni se restablece; el motor funciona solo por decisión del failsafe del piloto automático (RTH con motor) o por `FAILSAFE_THROTTLE`.
 - **Ningún modo puede colar el acelerador por encima del ARM**: el `PWM_MIN` forzado con `!armed` y `MOTOR_KILL` se aplica después de `Autopilot::applyThrottle()`.
+- **La inversión no se activa en marcha**: `MotorReverse` cambia el sentido solo
+  sin ARM, y `ArmingManager` no arma durante `REVERSE_SETTLE_MS` tras el cambio.
+  En inversión el gas es solo del piloto; el piloto automático ve el motor apagado.
 - **El piloto automático emite la orden final** (`getCommand()`); en los modos con estabilización los sticks son los ángulos deseados; correcciones = orden − sticks (para el registro y el dashboard). Todo con un único convenio de signos (`ControlCommand`) hasta el mezclador.
 
 ---
@@ -408,7 +414,7 @@ Invariantes clave del ciclo:
 stateDiagram-v2
     [*] --> WaitOff : encendido de la placa
     WaitOff --> Ready : interruptor OFF
-    Ready --> Armed : interruptor OFF→ON, acelerador < THROTTLE_LOW_US,<br/>comprobaciones de sensores del modo superadas
+    Ready --> Armed : interruptor OFF→ON, acelerador < THROTTLE_LOW_US,<br/>comprobaciones de sensores del modo superadas,<br/>sentido del motor sin cambios durante REVERSE_SETTLE_MS
     Ready --> WaitOff : interruptor ON, comprobación no superada<br/>(motivo → Serial, getLastRefusalReason)
     Armed --> Ready : interruptor OFF (DISARM al instante)
     note right of Armed : la pérdida de señal no cambia el estado
@@ -416,6 +422,25 @@ stateDiagram-v2
 
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### Inversión del motor (`MotorReverse`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : interruptor ON y sin ARM
+    Reverse --> Forward : interruptor OFF y sin ARM
+    Forward --> ForwardPending : interruptor ON con ARM
+    ForwardPending --> Forward : interruptor OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : interruptor OFF con ARM
+    ReversePending --> Reverse : interruptor ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : tras cada cambio de sentido<br/>el ARM se rechaza durante REVERSE_SETTLE_MS
+```
+
+`*Pending`: `isPending()`; el interruptor ya está en la otra posición y el motor
+gira como lo hacía con ARM; el aviso en Serial se imprime una sola vez.
 
 ### Modos del piloto automático (`Autopilot` + `PilotSwitches`)
 

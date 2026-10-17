@@ -33,10 +33,13 @@ CONTROL レイヤーは、UART、PWM、Wi-Fi を含まない、データに対�
 出力の目標パルスで、単位は PWM の µs です。既定では舵面がニュートラル、スロットルは
 `PWM_MIN` です。
 
+`throttle` はどちらの方向でもスロットルの大きさ（1000..2000 = 0..100%）です。これを `motorReverse` とあわせて ESC パルスに変換するのは `FlightOutputs` です（`EscSignal` 経由）。
+
 | フィールド | 既定値 |
 |---|---|
 | `aileronLeft`、`aileronRight`、`elevator`、`rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
+| `bool motorReverse` | `false`：モーターは前進 |
 | `aux1` | `PAYLOAD_CLOSED_US`（ペイロード投下は閉じた状態） |
 | `aux2` | `PWM_CENTER`（カメラ） |
 
@@ -90,6 +93,36 @@ ARM とオートパイロットのことは知りません。それらの補正�
 
 ---
 
+## `EscSignal`
+
+**ファイル：** `control/EscSignal.h` · **種別：** namespace · **依存先：** `Config`
+
+スロットル（1000..2000 = 0..100%）と方向 → ESC ピンのパルス。
+
+| 関数 | 説明 |
+|---|---|
+| `uint16_t pulseUs(uint16_t throttleUs, bool reverse)` | `ESC_BIDIRECTIONAL`（3D モードの BLHeli 80A）：0% → `ESC_NEUTRAL_US`（1500）、前進 1500..2000、後退 1500..1000。一方向 ESC：1000..2000 をそのまま、`reverse` は無視。1000..2000 の範囲外のスロットルは切り詰める |
+| `uint16_t stopUs()` | 「モーター停止」のパルス（双方向 ESC では 1500、普通の ESC では 1000） |
+
+変換だけで、保護はしません。方向を変えてよいかは `MotorReverse` が、後退時のスロットル上限は `FlightController` が決めます。
+
+---
+
+## `MotorReverse`
+
+**ファイル：** `control/MotorReverse.h` · **依存先：** `Config`
+
+`Feature::MOTOR_REVERSE` スイッチ（既定では SwD）によるモーターの方向。**ARM していないときのみ**。
+
+| メソッド | 説明 |
+|---|---|
+| `void update(bool requested, bool armed, uint32_t nowMs)` | ARM していない：方向はすぐにスイッチに従う（Serial に `MotorReverse: мотор НАЗАД` / `вперёд`「モーター後退」/「前進」と表示）。ARM 中：スイッチは効かず、「реверс НЕ переключён」（「逆転は切り替わっていません」）を 1 回表示し、新しい方向は DISARM を待つ。`ESC_BIDIRECTIONAL = false` では逆転は決して入らない |
+| `bool isReversed() const` | モーターが後退 |
+| `bool isPending() const` | スイッチはすでに反対の位置にあり、方向は DISARM を待っている |
+| `const char* armBlockReason(uint32_t nowMs) const` | ARM を拒否する理由：最後に方向を変えてから `REVERSE_SETTLE_MS` 未満（モーターがまだ回っているかもしれない）。それ以外は `nullptr` |
+
+---
+
 ## `ArmingManager`
 
 **ファイル：** `control/ArmingManager.h` · **依存先：** `Autopilot`（null 可）、`RcChannelState`、`Config`、`Channels`
@@ -100,7 +133,7 @@ ARM は専用のスイッチ SwA（CH5）で行います。ステートマシン
 | メソッド | 説明 |
 |---|---|
 | `explicit ArmingManager(Autopilot* ap = nullptr)` | オートパイロットがなければスロットルだけを検査する |
-| `void update(const RcChannelState& rc, bool receiverFailsafe)` | failsafe 中は何もしない（failsafe フレームのスイッチはパイロットの操作を反映していない）。スイッチ OFF → DISARM、`switchSeenOff = true`。OFF→ON への遷移 → 検査 → ARM または拒否 |
+| `void update(const RcChannelState& rc, bool receiverFailsafe, const char* blockReason = nullptr)` | failsafe 中は何もしない（failsafe フレームのスイッチはパイロットの操作を反映していない）。スイッチ OFF → DISARM、`switchSeenOff = true`。OFF→ON への遷移 → 検査 → ARM または拒否。`blockReason` は外部からの拒否理由（`FlightController` から：`MotorReverse::armBlockReason()`） |
 | `bool isArmed() const` | ARM 済みか |
 | `const char* getLastRefusalReason() const` | 最後に拒否した理由、または `nullptr`。スイッチを切るとクリアされる |
 
@@ -112,6 +145,7 @@ ARM は専用のスイッチ SwA（CH5）で行います。ステートマシン
 | MANUAL 以外のモードで、IMU はあるが応答しない | 「IMU が応答しない…」 |
 | MANUAL 以外のモードで、IMU の飛行前チェックに問題がある | `ImuSensor::getPreflightProblem()` の文言 |
 | 高度を使うモード（`needsAltitude`：ALT_HOLD、CRUISE、LOITER、RTH、AUTO_LAND、SOARING）で、気圧計はあるが応答しない | 「気圧計が応答しない…」 |
+| ほかはすべて合格したが、`blockReason` が渡された | `blockReason`（例：「モーターの方向が変わったばかり…」） |
 
 ビルドに存在しないセンサー（`nullptr`）は ARM を妨げません。MANUAL では、センサーがまったくなくても機体は ARM できます。GPS の測位は検査項目に意図的に含めていません。
 GPS がなくてもナビゲーション系のモードは安全に動作し（その場で旋回）、ホームは GPS が衛星を捕捉した時点で記録されるためです。
@@ -122,7 +156,7 @@ GPS がなくてもナビゲーション系のモードは安全に動作し（�
 
 ## `FlightOutputs`
 
-**ファイル：** `control/FlightOutputs.h` · **依存先：** `IBoard`、`FlightOutputState`、`Config`
+**ファイル：** `control/FlightOutputs.h` · **依存先：** `IBoard`、`FlightOutputState`、`EscSignal`、`Config`
 
 PWM 出力の集合とその順序を知る唯一のクラスです。すべての出力が 1 つのテーブルに記述されており、`begin()`、`write()`、状態表示、セルフテストはそれをループでたどります。
 
@@ -140,13 +174,13 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
 |---|---|
 | `static const OutputInfo& outputInfo(uint8_t ch)` | テーブルの行。順序は `ServoChannel` と同じ |
 | `explicit FlightOutputs(IBoard& board)` | |
-| `bool begin()` | 各出力の `attach(PWM_MIN, PWM_MAX)` を行い、状態を出力する。**必須**の出力がすべてチャンネルを得られれば `true` |
+| `bool begin()` | 各出力の `attach(PWM_MIN, PWM_MAX)`、状態と ESC の種類を表示。**必須**の出力がすべてチャンネルを得たら `true` |
 | `bool isAttached(uint8_t ch) const` | 出力が接続されている（範囲外のインデックスは `false`） |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | テーブルに従って、状態から出力の値を取り出す |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | 出力ピンのパルス：表に従ったフィールド。ESC は `EscSignal::pulseUs(throttle, motorReverse)` を通す |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | 配線済みの各ピンで、測定したパルスを期待値と比較する。差が 15 µs 以内なら「OK」 |
 | `void write(const FlightOutputState&)` | すべての出力を書き込み、状態を記憶する |
-| `void setFailsafe()` | 舵面はニュートラル（`FAILSAFE_*`）、スロットルは `FAILSAFE_THROTTLE`。AUX はそのまま（リンク喪失でペイロードは投下されない） |
+| `void setFailsafe()` | 舵面はニュートラル（`FAILSAFE_*`）、スロットルは `FAILSAFE_THROTTLE`（双方向 ESC のピンでは 1500）。AUX はそのまま（通信途絶でペイロードは投下しない） |
 | `void setBuzzer(bool on)` | 基板のブザー（`IBoard::setBuzzer`） |
 | `const FlightOutputState& getLastState() const` | 最後に書き込んだ状態 |
 
@@ -159,7 +193,7 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
 ## `FlightController`
 
 **ファイル：** `control/FlightController.h` · **レイヤー：** COORDINATION ·
-**依存先：** `IBusReceiver`、`ControlMixer`、`ThrottleManager`、`ArmingManager`、`FlightOutputs`、`Autopilot*`、`PilotSwitches*`、`Beeper`
+**依存先：** `IBusReceiver`、`ControlMixer`、`ThrottleManager`、`ArmingManager`、`FlightOutputs`、`Autopilot*`、`PilotSwitches*`、`Beeper`、`MotorReverse`
 
 制御ループの唯一のコーディネーターです。自分では UART を解析せず、PWM にも触れず、ミキサーの計算もしません。ほかのクラスを正しい順序で呼ぶだけです。詳しい図は
 [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-制御周期flightcontrollerupdate) にあります。
@@ -178,6 +212,7 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
 | `int16_t getFlapsUs() const` | フラップの位置 |
 | `const PilotSwitches* getSwitches() const`、`const PilotInputs& getInputs() const` | この周期のスイッチとノブ |
 | `bool isLostModelBeeping() const` | 「ここにいるよ」ブザーが鳴っている |
+| `const MotorReverse& getMotorReverse() const` | モーターの方向と保留中の逆転 |
 
 `update()` の順序：
 
@@ -188,18 +223,19 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
    `mixer.updateFlaps(target)`：`AIRBRAKE` → −`AIRBRAKE_US`、`FLAPS` →
    `FLAPS_DEPLOYED_US`、`Knob::FLAPS` → 滑らかに、リンク喪失時は 0。
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)` を**常に**実行。
+   逆転中は `pilotThrottle` の代わりに `PWM_MIN` を渡す（オートパイロットにとってモーターは停止）。
 6. ブザー：`Beeper::update(BEEPER, armed, failsafe, now)`。
 7. リンク喪失 → `applyLinkLoss()` を実行して周期を抜ける。
-8. `arming.update(rc, false)`。
+8. `arming.update(rc, false, reverse.armBlockReason(now))`、続いて `reverse.update(MOTOR_REVERSE, armed, now)`。DISARM 時は同じ周期で方向が変わる。
 9. `command = autopilot->getCommand()`（オートパイロットがなければスティック）。フラップは専用の値。
-10. `output = mixer.mix(command)`。`output.throttle = autopilot->applyThrottle(pilotThrottle)`。
+10. `output = mixer.mix(command)`。`output.motorReverse = reverse.isReversed()`。前進なら `output.throttle = autopilot->applyThrottle(pilotThrottle)` に上限 `THROTTLE_LIMIT_PCT`、後退ならパイロットのスロットルに上限 `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`。
 11. ARM していない、または `MOTOR_KILL` → `throttle = PWM_MIN`（最後に実行）。
 12. AUX1 はペイロード（`PAYLOAD_DROP`）、AUX2 はカメラ（`Knob::CAMERA_TILT`、`CAMERA_STAB` はピッチを差し引く）。
 13. `outputs.write(output)`。
 
 `applyLinkLoss()`：オートパイロットが failsafe 中（ARM 済みなら RTH または滑空）なら、舵面とスロットルはオートパイロットのコマンドに従います（フラップは滑らかに格納され、
 `MOTOR_KILL` は引き続きモーターを止め、AUX はそのまま）。そうでなければ
-`outputs.setFailsafe()` を実行します。
+`outputs.setFailsafe()` を実行します。逆転中、モーターは常に停止しています。
 
 ---
 

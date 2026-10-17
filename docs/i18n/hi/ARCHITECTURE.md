@@ -58,7 +58,7 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (जुड़ा नहीं है)<br/>FeedbackSupervisor और मॉड्यूल"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -362,6 +362,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -371,24 +372,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → पायलट का थ्रॉटल
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(फ़ंक्शनों के अनुसार लक्ष्य)
-    FC->>AP: update(armed, linkLost, पायलट का थ्रॉटल, स्टिक)
+    FC->>AP: update(armed, linkLost, पायलट का थ्रॉटल (रिवर्स में 0), स्टिक)
     Note over AP: सेंसर हमेशा पढ़े जाते हैं,<br/>नेविगेशन, failsafe, जियोफ़ेंस,<br/>मोड, समन्वय, ऑटो-ट्रिम
     FC->>OUT: setBuzzer(Beeper)
     alt संपर्क खो गया
         alt armed और ऑटोपायलट का failsafe (RTH / GLIDE)
             FC->>MX: mix(ऑटोपायलट की कमांड)
-            FC->>OUT: write(कंट्रोल सरफ़ेस, ऑटोपायलट का थ्रॉटल, AUX जैसे थे)
+            FC->>OUT: write(कंट्रोल सरफ़ेस, ऑटोपायलट का थ्रॉटल (रिवर्स में 0), AUX जैसे थे)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — ARM और स्विच नहीं पढ़े जाते
     else संपर्क है
-        FC->>AM: update(rc) — ARM स्विच
+        FC->>AM: update(rc, MR.armBlockReason) — ARM स्विच
+        FC->>MR: update(MOTOR_REVERSE, armed) — दिशा केवल ARM के बिना
         FC->>AP: getCommand() — कंट्रोल सरफ़ेस की अंतिम कमांड
         FC->>MX: mix(command) → रिवर्स के साथ PWM
-        FC->>AP: applyThrottle(पायलट का थ्रॉटल)
-        Note over FC: !armed या MOTOR_KILL → throttle = PWM_MIN (सबसे आख़िर में)
+        FC->>AP: applyThrottle(पायलट का थ्रॉटल) — केवल आगे
+        Note over FC: पीछे — पायलट का थ्रॉटल ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed या MOTOR_KILL → throttle = PWM_MIN (सबसे आख़िर में)
         FC->>OUT: write(output + AUX1 पेलोड, AUX2 कैमरा)
+        Note over OUT: ESC: थ्रॉटल + दिशा → पल्स (EscSignal),<br/>द्विदिश ESC: 1500 = रुका
     end
 ```
 
@@ -396,6 +399,9 @@ sequenceDiagram
 
 - **सिग्नल खोना** — स्विचों से मोड और फ़ंक्शन नहीं बदलते; ARM न पढ़ा जाता है, न रीसेट होता है; मोटर केवल ऑटोपायलट के failsafe के फ़ैसले (मोटर के साथ RTH) या `FAILSAFE_THROTTLE` से चलती है।
 - **कोई भी मोड थ्रॉटल को ARM से बचाकर नहीं निकाल सकता**: `!armed` और `MOTOR_KILL` पर ज़बरदस्ती `PWM_MIN` करना `Autopilot::applyThrottle()` के बाद आता है।
+- **रिवर्स चलते हुए चालू नहीं होता**: `MotorReverse` दिशा केवल ARM के बिना बदलता
+  है, और `ArmingManager` बदलाव के बाद `REVERSE_SETTLE_MS` तक ARM नहीं करता। रिवर्स में
+  थ्रॉटल केवल पायलट का है, ऑटोपायलट के लिए मोटर बंद है।
 - **ऑटोपायलट अंतिम कमांड देता है** (`getCommand()`); स्टेबलाइज़ेशन वाले मोड में स्टिक वांछित कोण हैं; सुधार = कमांड − स्टिक (लॉग और डैशबोर्ड के लिए)। मिक्सर तक सब कुछ एक ही चिह्न-प्रणाली (`ControlCommand`) में रहता है।
 
 ---
@@ -408,7 +414,7 @@ sequenceDiagram
 stateDiagram-v2
     [*] --> WaitOff : बोर्ड चालू होना
     WaitOff --> Ready : स्विच OFF
-    Ready --> Armed : स्विच OFF→ON, थ्रॉटल < THROTTLE_LOW_US,<br/>मोड के सेंसर की जाँचें पास हुईं
+    Ready --> Armed : स्विच OFF→ON, थ्रॉटल < THROTTLE_LOW_US,<br/>मोड के सेंसर की जाँचें पास हुईं,<br/>मोटर की दिशा REVERSE_SETTLE_MS तक नहीं बदली
     Ready --> WaitOff : स्विच ON, जाँच पास नहीं हुई<br/>(कारण → Serial, getLastRefusalReason)
     Armed --> Ready : स्विच OFF (तुरंत DISARM)
     note right of Armed : सिग्नल खोने से स्थिति नहीं बदलती
@@ -416,6 +422,25 @@ stateDiagram-v2
 
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### मोटर रिवर्स (`MotorReverse`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : स्विच ON और ARM नहीं
+    Reverse --> Forward : स्विच OFF और ARM नहीं
+    Forward --> ForwardPending : ARM में स्विच ON
+    ForwardPending --> Forward : स्विच OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : ARM में स्विच OFF
+    ReversePending --> Reverse : स्विच ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : हर दिशा-बदलाव के बाद<br/>REVERSE_SETTLE_MS तक ARM अस्वीकार
+```
+
+`*Pending` — `isPending()`: स्विच पहले ही दूसरी स्थिति में है, मोटर वैसे ही घूमती है
+जैसे ARM के समय; Serial में चेतावनी एक बार छपती है।
 
 ### ऑटोपायलट के मोड (`Autopilot` + `PilotSwitches`)
 

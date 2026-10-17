@@ -57,7 +57,7 @@ FS-i6 + FS-iA6B, iBUS, 10 चैनल (`config/Channels.h`)।
 | CH5 | **SwA** | **ARM** (नीचे = ARM, केवल थ्रॉटल नीचे होने पर; दोबारा असाइन नहीं हो सकता) |
 | CH6 | SwB | फ़्लैप (`Feature::FLAPS`) |
 | CH7 | **SwC** (3 स्थितियाँ) | ऊपर **MANUAL** · बीच में **STABILIZE** · नीचे **AUTO_TAKEOFF** |
-| CH8 | SwD | **RTH** — होम की ओर, जब तक चालू है |
+| CH8 | SwD | **मोटर रिवर्स** (`Feature::MOTOR_REVERSE`) — केवल DISARM में बदलता है |
 | CH9 | VrA | स्टेबलाइज़ेशन की ताक़त (`Knob::STAB_GAIN`) |
 | CH10 | VrB | क्रूज़ की गति (`Knob::CRUISE_SPEED`) |
 
@@ -66,7 +66,7 @@ FS-i6 + FS-iA6B, iBUS, 10 चैनल (`config/Channels.h`)।
 ```
 SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
 SwB (CH6): FLAPS, пока включён
-SwD (CH8): RTH, пока включён
+SwD (CH8): MOTOR_REVERSE, пока включён
 VrA (CH9): крутилка STAB_GAIN
 VrB (CH10): крутилка CRUISE_SPEED
 ```
@@ -83,7 +83,7 @@ VrB (CH10): крутилка CRUISE_SPEED
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
@@ -171,7 +171,7 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 **ज़रूरत:** IMU + बैरोमीटर + GPS।
 
 ### RTH — “घर वापसी”
-होम की ओर दिशा (ARM का बिंदु), ऊँचाई `RTH_ALTITUDE_M` = 40 m (उससे नीचे हो तो रास्ते में चढ़ता है, ऊपर हो तो वहीं रहता है)। होम के ऊपर — LOITER त्रिज्या के चक्कर, जब तक पायलट नियंत्रण न ले ले। GPS या होम न हो — उसी जगह चक्कर। यही मोड संपर्क टूटने और जियोफ़ेंस से भी चालू होता है।
+होम की ओर दिशा (ARM का बिंदु), ऊँचाई `RTH_ALTITUDE_M` = 40 m (उससे नीचे हो तो रास्ते में चढ़ता है, ऊपर हो तो वहीं रहता है)। होम के ऊपर — LOITER त्रिज्या के चक्कर, जब तक पायलट नियंत्रण न ले ले। GPS या होम न हो — उसी जगह चक्कर। यही मोड संपर्क टूटने और जियोफ़ेंस से भी चालू होता है। डिफ़ॉल्ट रूप से RTH का अपना स्विच नहीं है (SwD मोटर रिवर्स है): वापस लाने के लिए `Controls.h` में पंक्ति `Bind::mode(Channels::SWD, MODE_RTH)` जोड़ें, या डैशबोर्ड से चालू करें।
 **ज़रूरत:** IMU + बैरोमीटर + होम वाला GPS।
 
 ### AUTO_TAKEOFF (TKOFF) — “थ्रॉटल पर टेकऑफ़”
@@ -215,6 +215,7 @@ ARM के बाद तब तक कुछ नहीं होता जब �
 | `GEOFENCE` | होम से 500 m से आगे या 120 m से ऊपर — RTH | `GEOFENCE_ALWAYS_ON` — बिना स्विच के |
 | `HOME_RESET` | होम = मौजूदा बिंदु (स्विच चालू करने के क्षण का) | केवल अच्छे GPS पर |
 | `CAMERA_STAB` | AUX2 पर लगा कैमरा क्षितिज से अपना कोण बनाए रखता है | हवाई जहाज़ की पिच घटाई जाती है |
+| `MOTOR_REVERSE` | मोटर उल्टा घूमती है (द्विदिश ESC) — ज़मीन पर पीछे टैक्सी करने के लिए | **केवल DISARM में** बदलता है: ARM में स्विच पलटने पर DISARM तक इंतज़ार; बदलने के बाद 3 s तक ARM नहीं; पीछे अधिकतम 50 % थ्रॉटल, केवल पायलट का थ्रॉटल |
 
 ## नॉब
 

@@ -48,8 +48,8 @@ include/
 ├── storage/     KeyValueStore, KvPreferences — Einstellungsspeicher ohne NVS
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
-│                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, Beeper, FlightController
+│                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
+│                FlightOutputState, FlightOutputs, Beeper, FlightController
 ├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
 │   │            Navigation, AltitudeSpeedController, LaunchController,
 │   │            SoaringController, AutoTrim, PidController
@@ -82,7 +82,8 @@ src/stm32/main.cpp  — STM32H743-Firmware (FreeRTOS-Tasks, MAVLink)
 │  └ FlapsController  │  │  └ Navigation, PID    │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
-│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+│ MotorReverse        │             │ ImuSensor* / BarometerSensor* / ...
+│ FlightOutputs       │             │
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORS                                          │
@@ -178,8 +179,10 @@ Die Regeln, die die Architektur sauber halten:
 | `ControlMixer.h` | `fromSticks(rc)` → `ControlCommand`; `updateFlaps(Ziel, now)`; `mix(command)` → PWM mit Servo-Umkehr; Flaperons: die Querruder `flaps ± roll` (das Minus ist eine Bremsklappe) |
 | `FlapsController.h` | Sanftes Aus- und Einfahren der Klappen, die Zeit wird als Parameter übergeben |
 | `ThrottleManager.h` | Das Gas vom Knüppel; bei Signalverlust — `FAILSAFE_THROTTLE` |
+| `EscSignal.h` | Gas + Richtung → ESC-Impuls: beim bidirektionalen BLHeli 1500 = Stopp, vorwärts 1500..2000, rückwärts 1500..1000 |
+| `MotorReverse.h` | Motorumkehr über `Feature::MOTOR_REVERSE` – nur im DISARM; nach einem Richtungswechsel wird ARM für `REVERSE_SETTLE_MS` abgelehnt |
 | `ArmingManager.h` | ARM über den Schalter SwA (ein Wechsel OFF→ON bei Gas unten + die Sensorprüfungen des Modus), DISARM sofort |
-| `FlightOutputState.h` | Die gewünschten PWM-Werte: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`, `aux1` (Nutzlast), `aux2` (Kamera) |
+| `FlightOutputState.h` | Die gewünschten PWM-Werte: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % in jeder Richtung), `motorReverse`, `aux1` (Nutzlast), `aux2` (Kamera) |
 | `Beeper.h` | Der Summer: über die Funktion `BEEPER` oder „Modell verloren“ am Boden |
 | `FlightOutputs.h` | Die Tabelle der Ausgänge (`outputInfo()`: Schlüssel, Name, Pin, Pflichtangabe, Statusfeld) und alles, was in einer Schleife darübergelegt ist: `begin()`, `write()`, `setFailsafe()`, Status, `printPulseSelfTest()` |
 | `FlightController.h` | Die Reihenfolge der Operationen in jedem Zyklus, der Signalverlust (`applyLinkLoss()`), Getter für die Telemetrie |
@@ -331,7 +334,7 @@ Empfänger FS-iA6B, iBUS 115200.
 | CH5 | SwA | `ARM` | ≥ 1750 = ARM (am FS-i6 ist das der Schalter nach unten, zu sich hin) |
 | CH6 | SwB | `SWB` | standardmäßig die Klappen (≥ 1750 — ausgefahren) |
 | CH7 | SwC (3 Stellungen) | `SWC` | standardmäßig der Modus: < 1250 MANUAL, 1250–1749 STABILIZE, ≥ 1750 AUTO_TAKEOFF |
-| CH8 | SwD | `SWD` | standardmäßig RTH |
+| CH8 | SwD | `SWD` | standardmäßig Motorumkehr (schaltet nur im DISARM um) |
 | CH9 | VrA | `VRA` | standardmäßig die Stabilisierungsstärke |
 | CH10 | VrB | `VRB` | standardmäßig die Reisegeschwindigkeit |
 
@@ -343,7 +346,14 @@ unter `THROTTLE_LOW_US`, und die Sensorprüfungen für den aktuellen Modus sind
 bestanden. Andernfalls wird abgelehnt, mit dem Grund auf Serial; ein neuer
 Zyklus OFF→ON ist nötig. Wird die Platine mit dem Schalter in ON
 eingeschaltet, armt sie nicht. OFF — sofort DISARM. Solange nicht gearmt ist,
-wird das Gas zum ESC zwangsweise auf `PWM_MIN` gesetzt.
+wird das Gas zum ESC zwangsweise auf `PWM_MIN` (am Pin eines bidirektionalen ESC – die Neutralstellung 1500) gesetzt.
+
+**Umkehr** (`MotorReverse`, `Feature::MOTOR_REVERSE`, standardmäßig SwD): Die
+Motorrichtung folgt dem Schalter nur ohne ARM; Umschalten bei ARM ändert bis zum
+DISARM nichts. Nach einem Richtungswechsel wird ARM für `REVERSE_SETTLE_MS` (3 s)
+abgelehnt. Rückwärts – nur das Gas des Piloten, höchstens
+`REVERSE_THROTTLE_LIMIT_PCT` (50 %); der Autopilot bekommt kein Gas, bei
+Verbindungsverlust bleibt der Motor stehen.
 
 **Verbindungsverlust** (`IBusReceiver::isSignalLost()`):
 
@@ -459,7 +469,9 @@ Wird aus `loop()` alle 2 ms aufgerufen. Die Reihenfolge ist die Priorität:
 7. **Verbindungsverlust** — `applyLinkLoss()`: gearmt — Ruder und Gas folgen
    dem Failsafe-Kommando des Autopiloten, sonst Neutral und Motor aus;
    `return`. Absolute Priorität vor allem, was darunter folgt.
-8. **ARM** — `arming.update(rc, false)`.
+8. **ARM und Umkehr** — `arming.update(rc, false, reverse.armBlockReason(now))`,
+   danach `reverse.update(MOTOR_REVERSE, armed, now)`: Die Richtung wechselt nur
+   ohne ARM.
 9. **Kommando** — `autopilot->getCommand()`: in den stabilisierten Modi ist der
    Knüppel der gewünschte Winkel, und der Autopilot gibt die endgültigen
    Ruderkommandos aus.
@@ -470,6 +482,8 @@ Wird aus `loop()` alle 2 ms aufgerufen. Die Reihenfolge ist die Priorität:
     Danach, wenn nicht gearmt oder `MOTOR_KILL`, — zwangsweise `PWM_MIN`.
     Diese Prüfung steht ganz am Ende, damit kein Modus das Gas am ARM vorbei
     durchschleusen kann.
+    In der Umkehr – nur das Gas des Piloten, bis `REVERSE_THROTTLE_LIMIT_PCT`.
+    `FlightOutputs` (`EscSignal`) setzt Gas und Richtung in den ESC-Impuls um.
 12. **AUX** — Nutzlast (`PAYLOAD_DROP`) und Kamera (`CAMERA_TILT`,
     `CAMERA_STAB`).
 13. **`outputs.write(output)`** — PWM auf die 7 Ausgänge.
@@ -488,13 +502,14 @@ Point: SSID `OpenPlane-Debug`, Passwort `12345678`, Adresse
 {
   "rc": [1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1500],
   "armed": false,
+  "motorReverse": false,
   "failsafe": false,
   "outputs": {
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true },
+    "esc":          { "us": 1500, "attached": true },
     "aux1":         { "us": 1000, "attached": true },
     "aux2":         { "us": 1500, "attached": true }
   },
@@ -1001,7 +1016,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # prüfen, dass alle
   Port nicht.
 - `lib_deps`: `olikraus/U8g2` (OLED) ist die einzige externe Bibliothek.
 - `test/` — ausführlich im [`TESTING.md`](TESTING.md):
-  - `pio test -e native -e native-stm32` — 387 Tests am PC (Hardware-Attrappen
+  - `pio test -e native -e native-stm32` — 392 Tests am PC (Hardware-Attrappen
     in `test/native/support/`), Abdeckung — `gcovr`;
   - `pio test -e esp32-s3` — `test_feedback/` (die Simulation der Rückführung
     im geschlossenen Regelkreis) und `test_imu_orientation/` auf der Platine
@@ -1059,6 +1074,11 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # prüfen, dass alle
   zurückholen.
 - **Der ESC ist 50-Hz-PWM**, einen Modus zur Kalibrierung des Gasbereichs gibt
   es in der Firmware noch nicht.
+  Der Hauptregler ist ein bidirektionaler BLHeli 80A (`ESC_BIDIRECTIONAL`): Er
+  wird in BLHeliSuite eingestellt (Motor Direction = Bidirectional, Bereich
+  1000..2000), die Neutralstellung 1500 = Stopp. Bauen Sie einen gewöhnlichen
+  Regler ein, setzen Sie `ESC_BIDIRECTIONAL = false`, sonst bekommt er bei
+  „Stopp“ halbes Gas.
 - **Web-Dashboard:** das Passwort des Access Points ist schwach, und Befehle
   werden auch im Flug angenommen. Es ist ein Werkzeug für Prüfstand und Feld,
   nicht für den Flug.

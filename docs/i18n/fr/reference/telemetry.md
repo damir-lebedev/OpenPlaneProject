@@ -214,10 +214,10 @@ statique `busSlot()` — il n’y a qu’un seul écran à bord.
 L’écran :
 
 ```
-RX ok ARM STAB FL       liaison (perte — ligne inversée) / ARM / mode / volets
+RX ok ARM STAB FL       liaison (perte — ligne inversée) / ARM / mode / REV — moteur en arrière / volets
 R  +1.2 P  -0.4         roulis / tangage, °           (IMU --)
 Alt +0.3 Vz +0.1 A14    altitude / vitesse verticale / vitesse de l’air, s’il y a un tube de Pitot (BARO --)
-H123 T1000 Y1500        cap / gaz / gouverne de direction (H---)
+H123 T1000 Y1500        cap / gaz 1000..2000 = 0..100 % dans un sens comme dans l’autre / gouverne de direction (H---)
 L1500 R1500 E1500       ailerons / gouverne de profondeur
 Loop 500Hz max1100us    fréquence et le pire cycle sur la seconde
 ```

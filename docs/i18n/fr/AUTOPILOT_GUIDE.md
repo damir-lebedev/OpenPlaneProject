@@ -57,7 +57,7 @@ FS-i6 + FS-iA6B, iBUS, 10 canaux (`config/Channels.h`).
 | CH5 | **SwA** | **ARM** (en bas = armé, seulement avec les gaz en bas ; ne peut pas être réaffecté) |
 | CH6 | SwB | volets (`Feature::FLAPS`) |
 | CH7 | **SwC** (3 positions) | en haut **MANUAL** · au milieu **STABILIZE** · en bas **AUTO_TAKEOFF** |
-| CH8 | SwD | **RTH** — retour au point de départ, tant qu’il est actif |
+| CH8 | SwD | **inversion du moteur** (`Feature::MOTOR_REVERSE`) — ne change qu’en DISARM |
 | CH9 | VrA | force de la stabilisation (`Knob::STAB_GAIN`) |
 | CH10 | VrB | vitesse de croisière (`Knob::CRUISE_SPEED`) |
 
@@ -66,7 +66,7 @@ FS-i6 + FS-iA6B, iBUS, 10 canaux (`config/Channels.h`).
 ```
 SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
 SwB (CH6): FLAPS, пока включён
-SwD (CH8): RTH, пока включён
+SwD (CH8): MOTOR_REVERSE, пока включён
 VrA (CH9): крутилка STAB_GAIN
 VrB (CH10): крутилка CRUISE_SPEED
 ```
@@ -83,7 +83,7 @@ Tout se trouve dans un seul fichier : `include/config/Controls.h` :
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
@@ -171,7 +171,7 @@ Des cercles dans le sens horaire au-dessus du point où le mode a été activé,
 **Il faut :** l’IMU + le baromètre + le GPS.
 
 ### RTH — « à la maison »
-Cap sur le point de départ (le point de l’ARM), altitude `RTH_ALTITUDE_M` = 40 m (en dessous, il monte en route ; au-dessus, il y reste). Au-dessus du point de départ — des cercles du rayon LOITER, jusqu’à ce que le pilote reprenne les commandes. Sans GPS ou sans point de départ — des cercles sur place. Le même mode est enclenché par la perte de liaison et par le géorepérage.
+Cap sur le point de départ (le point de l’ARM), altitude `RTH_ALTITUDE_M` = 40 m (en dessous, il monte en route ; au-dessus, il y reste). Au-dessus du point de départ — des cercles du rayon LOITER, jusqu’à ce que le pilote reprenne les commandes. Sans GPS ou sans point de départ — des cercles sur place. Le même mode est enclenché par la perte de liaison et par le géorepérage. Par défaut, le RTH n’a pas d’interrupteur à lui (SwD sert à l’inversion du moteur) : pour le remettre, ajoutez la ligne `Bind::mode(Channels::SWD, MODE_RTH)` dans `Controls.h`, ou enclenchez-le depuis le tableau de bord.
 **Il faut :** l’IMU + le baromètre + le GPS avec un point de départ.
 
 ### AUTO_TAKEOFF (TKOFF) — « décollage aux gaz »
@@ -215,6 +215,7 @@ Ailes à plat, nez à +8°, gaz à 70 % — depuis n’importe quelle spirale. 
 | `GEOFENCE` | au-delà de 500 m du point de départ ou au-dessus de 120 m — RTH | `GEOFENCE_ALWAYS_ON` — sans interrupteur |
 | `HOME_RESET` | point de départ = point actuel (au moment où l’on active l’interrupteur) | seulement avec un bon GPS |
 | `CAMERA_STAB` | la caméra sur AUX2 garde son angle par rapport à l’horizon | on retranche le tangage de l’avion |
+| `MOTOR_REVERSE` | le moteur tourne à l’envers (ESC bidirectionnel) — pour reculer au sol | ne change **qu’en DISARM** : basculé en ARM, il attend le DISARM ; après un changement, pas d’ARM pendant 3 s ; en arrière jusqu’à 50 % des gaz, gaz du pilote uniquement |
 
 ## Potentiomètres
 

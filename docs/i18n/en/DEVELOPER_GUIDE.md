@@ -48,8 +48,8 @@ include/
 ├── storage/     KeyValueStore, KvPreferences — settings storage without NVS
 ├── rc/          RcChannelState, RcInput, IBusReceiver
 ├── control/     ControlCommand, ControlMixer, FlapsController,
-│                ThrottleManager, ArmingManager, FlightOutputState,
-│                FlightOutputs, Beeper, FlightController
+│                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
+│                FlightOutputState, FlightOutputs, Beeper, FlightController
 ├── autopilot/   AutopilotTypes, ControlBinding, PilotSwitches, Autopilot,
 │   │            Navigation, AltitudeSpeedController, LaunchController,
 │   │            SoaringController, AutoTrim, PidController
@@ -82,7 +82,8 @@ src/stm32/main.cpp  — STM32H743 firmware (FreeRTOS tasks, MAVLink)
 │  └ FlapsController  │  │  └ navigation, PID    │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
-│ FlightOutputs       │             │ ImuSensor* / BarometerSensor* / ...
+│ MotorReverse        │             │ ImuSensor* / BarometerSensor* / ...
+│ FlightOutputs       │             │
 └─────────┬───────────┘             ▼
           │           ┌─────────────────────────────────────────────────┐
           │           │ SENSORS                                          │
@@ -189,8 +190,10 @@ The rules that keep the architecture clean:
 | `ControlMixer.h` | `fromSticks(rc)` → `ControlCommand`; `updateFlaps(target, now)`; `mix(command)` → PWM with servo reverse; flaperons: the ailerons `flaps ± roll` (minus — air brake) |
 | `FlapsController.h` | Smooth extension/retraction of the flaps, with time passed as a parameter |
 | `ThrottleManager.h` | Throttle from the stick; on link loss — `FAILSAFE_THROTTLE` |
+| `EscSignal.h` | Throttle + direction → ESC pulse: on the bidirectional BLHeli 1500 = stop, forwards 1500..2000, backwards 1500..1000 |
+| `MotorReverse.h` | Motor reverse via `Feature::MOTOR_REVERSE` — only when disarmed; after a direction change ARM is refused for `REVERSE_SETTLE_MS` |
 | `ArmingManager.h` | ARM with the SwA switch (an OFF→ON transition with the throttle down + the mode's sensor checks), instant DISARM |
-| `FlightOutputState.h` | The desired PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`, `aux1` (payload), `aux2` (camera) |
+| `FlightOutputState.h` | The desired PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100% in either direction), `motorReverse`, `aux1` (payload), `aux2` (camera) |
 | `Beeper.h` | The buzzer: by the `BEEPER` function or “model lost” on the ground |
 | `FlightOutputs.h` | The output table (`outputInfo()`: key, name, pin, whether it is mandatory, the state field) and everything on top of it in a loop: `begin()`, `write()`, `setFailsafe()`, status, `printPulseSelfTest()` |
 | `FlightController.h` | The order of operations per tick, link loss (`applyLinkLoss()`), getters for telemetry |
@@ -338,7 +341,7 @@ mode 2) + an FS-iA6B receiver, iBUS 115200.
 | CH5 | SwA | `ARM` | ≥ 1750 = ARM (on the FS-i6 this is the switch down, toward you) |
 | CH6 | SwB | `SWB` | flaps by default (≥ 1750 — deployed) |
 | CH7 | SwC (3 positions) | `SWC` | mode by default: < 1250 MANUAL, 1250–1749 STABILIZE, ≥ 1750 AUTO_TAKEOFF |
-| CH8 | SwD | `SWD` | RTH by default |
+| CH8 | SwD | `SWD` | motor reverse by default (switches only when disarmed) |
 | CH9 | VrA | `VRA` | stabilization strength by default |
 | CH10 | VrB | `VRB` | cruise speed by default |
 
@@ -349,7 +352,14 @@ CH6–CH10 are assigned with a single line in `include/config/Controls.h`
 and the sensor checks for the current mode have passed. Otherwise, it refuses,
 with the reason printed to Serial, and a new OFF→ON cycle is needed. Powering
 the board on with the switch already ON does not arm. OFF — DISARM at once.
-While not armed, the throttle to the ESC is forced to `PWM_MIN`.
+While not armed, the throttle to the ESC is forced to `PWM_MIN` (on the pin of a bidirectional ESC — the 1500 neutral).
+
+**Reverse** (`MotorReverse`, `Feature::MOTOR_REVERSE`, SwD by default): the
+motor direction follows the switch only when disarmed; a flip while armed changes
+nothing until DISARM. After a direction change ARM is refused for
+`REVERSE_SETTLE_MS` (3 s). Backwards — only the pilot's throttle, no more than
+`REVERSE_THROTTLE_LIMIT_PCT` (50%); the autopilot gets no throttle, and on link
+loss the motor stops.
 
 **Link loss** (`IBusReceiver::isSignalLost()`):
 
@@ -463,7 +473,9 @@ Called from `loop()` every 2 ms. The order is the priority:
 7. **Link loss** — `applyLinkLoss()`: when armed — the control surfaces and
    throttle follow the autopilot's failsafe command, otherwise neutral and
    the motor off; `return`. Absolute priority over everything below.
-8. **ARM** — `arming.update(rc, false)`.
+8. **ARM and reverse** — `arming.update(rc, false, reverse.armBlockReason(now))`,
+   then `reverse.update(MOTOR_REVERSE, armed, now)`: the direction changes only
+   when disarmed.
 9. **Command** — `autopilot->getCommand()`: in the stabilized modes the stick
    is the desired angle, and the autopilot issues the final control surface
    commands.
@@ -473,6 +485,8 @@ Called from `loop()` every 2 ms. The order is the priority:
     throttle, the autopilot's throttle, or the max of the two (automatic
     takeoff). Then, if not armed or `MOTOR_KILL`, — forced to `PWM_MIN`. This
     check comes last so that no mode can slip the throttle past ARM.
+    In reverse — only the pilot's throttle, up to `REVERSE_THROTTLE_LIMIT_PCT`.
+    `FlightOutputs` (`EscSignal`) turns throttle and direction into the ESC pulse.
 12. **AUX** — payload (`PAYLOAD_DROP`) and camera (`CAMERA_TILT`, `CAMERA_STAB`).
 13. **`outputs.write(output)`** — PWM to the 7 outputs.
 
@@ -489,13 +503,14 @@ SSID `OpenPlane-Debug`, password `12345678`, address `http://192.168.4.1`.
 {
   "rc": [1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1500],
   "armed": false,
+  "motorReverse": false,
   "failsafe": false,
   "outputs": {
     "aileronLeft":  { "us": 1500, "attached": true },
     "aileronRight": { "us": 1500, "attached": true },
     "elevator":     { "us": 1500, "attached": true },
     "rudder":       { "us": 1500, "attached": true },
-    "esc":          { "us": 1000, "attached": true },
+    "esc":          { "us": 1500, "attached": true },
     "aux1":         { "us": 1000, "attached": true },
     "aux2":         { "us": 1500, "attached": true }
   },
@@ -986,7 +1001,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # check that all the
 - While the port monitor is open, uploading to the same port will not work.
 - `lib_deps`: `olikraus/U8g2` (OLED) is the only external library.
 - `test/` — in detail in [`TESTING.md`](TESTING.md):
-  - `pio test -e native -e native-stm32` — 387 tests on a PC (hardware fakes
+  - `pio test -e native -e native-stm32` — 392 tests on a PC (hardware fakes
     in `test/native/support/`), coverage — `gcovr`;
   - `pio test -e esp32-s3` — `test_feedback/` (the closed-loop feedback
     simulation) and `test_imu_orientation/` on the board itself; each one
@@ -1040,6 +1055,10 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # check that all the
   the library back only after checking with `p`.
 - **The ESC is 50 Hz PWM**, the firmware has no throttle range calibration
   mode yet.
+  The main ESC is a bidirectional BLHeli 80A (`ESC_BIDIRECTIONAL`): it is
+  set up in BLHeliSuite (Motor Direction = Bidirectional, range 1000..2000), the
+  1500 neutral = stop. If you fit an ordinary ESC, set
+  `ESC_BIDIRECTIONAL = false`, otherwise at “stop” it gets half throttle.
 - **Web dashboard:** the access point password is weak, and commands are
   accepted in flight too. It is a tool for the bench and the field, not for
   flight.

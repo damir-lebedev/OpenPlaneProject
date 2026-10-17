@@ -37,7 +37,7 @@
 
 `enum class Feature : uint8_t` — функции тумблеров: `FLAPS`, `AIRBRAKE`,
 `AUTO_TRIM`, `TURN_COORDINATION`, `MOTOR_KILL`, `BEEPER`, `PAYLOAD_DROP`,
-`GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `COUNT`.
+`GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `MOTOR_REVERSE`, `COUNT`.
 
 `enum class Knob : uint8_t` — крутилки: `STAB_GAIN`, `MAX_BANK`,
 `CRUISE_SPEED`, `FLAPS`, `CAMERA_TILT`, `RATES`, `LOITER_RADIUS`, `COUNT`.

@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-387%20passing-3fb950?style=for-the-badge" alt="테스트 387개">
+  <img src="https://img.shields.io/badge/tests-392%20passing-3fb950?style=for-the-badge" alt="테스트 392개">
   <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="커버리지 98%">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="경고 없는 빌드 24개">
   <br>
@@ -60,8 +60,8 @@
 |---|---|
 | **무엇인가** | 무선 조종 비행기를 위한 개방형 비행 컨트롤러이자 오토파일럿입니다. 주력 보드는 STM32H743(Pixhawk급 보드)이며, DevEBox 보드에서는 **이미 작동하며 조종기로 조종됩니다**([영상 있음](#-stm32h743이-보드-위에서-깨어났습니다)). 지금은 센서를 연결하는 중입니다. 이전 기반은 약 10달러짜리 ESP32-S3이며, 모든 센서를 단 테스트 벤치를 통과했습니다. |
 | **무엇을 할 수 있나** | 12가지 비행 모드: 자세 안정화부터 귀환, GPS 선회, 손으로 던져 발진, 자동 착륙, **서멀 소어링**까지. 저렴한 기압계 두 개로 만든 피토관. QGroundControl과 Mission Planner용 MAVLink 텔레메트리. |
-| **핵심 기능** | 조종기의 어떤 스위치나 노브든 원하는 기능으로 바꿀 수 있습니다. `Controls.h`에서 **한 줄**만 고치면 SwD는 더 이상 RTH가 아니라 화물 투하가 됩니다. |
-| **믿을 수 있는 이유** | 자동 테스트 387개(실제 SD 카드를 꽂은 보드에서 도는 테스트 9개는 별도), 코드의 98%가 테스트로 검증됨, "보드 × 센서" 빌드 24개가 경고 없이 통과, 모든 모드의 폐루프 시뮬레이션. |
+| **핵심 기능** | 조종기의 어떤 스위치나 노브든 원하는 기능으로 바꿀 수 있습니다. `Controls.h`에서 **한 줄**만 고치면 SwD는 더 이상 모터 역회전이 아니라 화물 투하가 됩니다. |
+| **믿을 수 있는 이유** | 자동 테스트 392개(실제 SD 카드를 꽂은 보드에서 도는 테스트 9개는 별도), 코드의 98%가 테스트로 검증됨, "보드 × 센서" 빌드 24개가 경고 없이 통과, 모든 모드의 폐루프 시뮬레이션. |
 | **솔직히 말씀드리면** | 지금까지 실제로 날아 본 것은 수동 모드뿐입니다(첫 번째 시제기). STM32H743은 아직 센서 없이 테스트 벤치에서만 확인했습니다. 오토파일럿은 테스트 벤치, 테스트, 시뮬레이션으로 검증했고 비행 시험을 기다리고 있습니다. [아래 현황](#-솔직한-현황)을 확인하세요. |
 
 ---
@@ -73,15 +73,15 @@
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),              // 스위치가 켜져 있는 동안 귀환
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),// 모터 역회전 — DISARM 상태에서만
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),       // "부드럽게 / 단단하게"를 비행 중에 바로 조절
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
 ```
 
-SwD를 RTH 대신 서멀 소어링으로 쓰고 싶으신가요? `Bind::mode(Channels::SWD, MODE_SOARING)`이라고 쓰면 됩니다. SwB에 화물 투하를 지정하려면 `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`입니다. 실수하면(예를 들어 스위치 하나에 모드 두 개를 지정하거나 스틱을 점유하면) **빌드가 통과하지 않습니다**. 표는 컴파일러가 검사합니다(`static_assert`). 전원을 켜면 기체가 스스로 어느 스위치에 무엇이 지정되어 있는지 출력합니다.
+SwD를 모터 역회전 대신 서멀 소어링으로 쓰고 싶으신가요? `Bind::mode(Channels::SWD, MODE_SOARING)`이라고 쓰면 됩니다. SwB에 화물 투하를 지정하려면 `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`입니다. 실수하면(예를 들어 스위치 하나에 모드 두 개를 지정하거나 스틱을 점유하면) **빌드가 통과하지 않습니다**. 표는 컴파일러가 검사합니다(`static_assert`). 전원을 켜면 기체가 스스로 어느 스위치에 무엇이 지정되어 있는지 출력합니다.
 
-**12가지 모드 · 10가지 기능 · 7개의 노브**. 모두 [오토파일럿 레퍼런스](AUTOPILOT_GUIDE.md)에 예시와 함께 정리되어 있습니다.
+**12가지 모드 · 11가지 기능 · 7개의 노브**. 모두 [오토파일럿 레퍼런스](AUTOPILOT_GUIDE.md)에 예시와 함께 정리되어 있습니다.
 
 ---
 
@@ -205,7 +205,7 @@ STM32H743 펌웨어는 **센서를 하나도 달지 않은** DevEBox 보드에�
 
 | | |
 |---|---|
-| **자동 테스트 387개** | 모듈, 칩 레지스터 수준에서 검증한 드라이버, 폐루프 비행, PC에서 ESP32와 STM32의 **펌웨어 전체**. 여기에 실제 SD 카드를 쓰는 STM32 보드 위의 테스트 9개 |
+| **자동 테스트 392개** | 모듈, 칩 레지스터 수준에서 검증한 드라이버, 폐루프 비행, PC에서 ESP32와 STM32의 **펌웨어 전체**. 여기에 실제 SD 카드를 쓰는 STM32 보드 위의 테스트 9개 |
 | **줄 커버리지 98.3%, 분기 커버리지 87.7%** | `gcovr` 커버리지(STM32 코드 포함) |
 | **빌드 24/24** | 보드 4종 × 센서 세트 6종, `-Wall -Wextra`, 경고 0개 |
 | **지적 사항 0건** | 전체 코드에 대한 cppcheck와 clang-tidy |
@@ -262,6 +262,7 @@ DevEBox: 이 보드에는 BOOT0 버튼이 없습니다. 처음 업로드하기 �
 |---|---|
 | 수동 조종, 믹서 | ✈️ 실제 비행(첫 번째 시제기, C3) |
 | ARM, failsafe, 플랩, 서보, 모터 | 🔧 테스트 벤치(S3) |
+| 양방향 변속기(ESC) BLHeli 80A, 역회전은 DISARM 상태에서만 | 🧪 테스트, 실제 ESC로는 아직 확인하지 않음 |
 | STABILIZE | 🔧 테스트 벤치: 기체를 기울이면 조종면이 올바른 방향으로 움직임 |
 | 벤치용 센서(MPU6500, BMP388, QMC5883P), OLED, 대시보드 | 🔧 테스트 벤치 |
 | 나머지 모드, 항법, 피토관, MAVLink | 🧪 테스트와 폐루프 시뮬레이션 |

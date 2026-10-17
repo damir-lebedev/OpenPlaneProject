@@ -38,7 +38,7 @@ JSON और `MavlinkModes` में जाते हैं):
 
 `enum class Feature : uint8_t` — स्विच के फ़ंक्शन: `FLAPS`, `AIRBRAKE`,
 `AUTO_TRIM`, `TURN_COORDINATION`, `MOTOR_KILL`, `BEEPER`, `PAYLOAD_DROP`,
-`GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `COUNT`।
+`GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `MOTOR_REVERSE`, `COUNT`।
 
 `enum class Knob : uint8_t` — नॉब: `STAB_GAIN`, `MAX_BANK`,
 `CRUISE_SPEED`, `FLAPS`, `CAMERA_TILT`, `RATES`, `LOITER_RADIUS`, `COUNT`।

@@ -38,7 +38,7 @@ JSON과 `MavlinkModes`에 쓰임):
 
 `enum class Feature : uint8_t` — 스위치의 기능: `FLAPS`, `AIRBRAKE`,
 `AUTO_TRIM`, `TURN_COORDINATION`, `MOTOR_KILL`, `BEEPER`, `PAYLOAD_DROP`,
-`GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `COUNT`.
+`GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `MOTOR_REVERSE`, `COUNT`.
 
 `enum class Knob : uint8_t` — 노브: `STAB_GAIN`, `MAX_BANK`,
 `CRUISE_SPEED`, `FLAPS`, `CAMERA_TILT`, `RATES`, `LOITER_RADIUS`, `COUNT`.

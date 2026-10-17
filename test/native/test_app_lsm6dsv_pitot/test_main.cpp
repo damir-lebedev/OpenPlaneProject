@@ -167,7 +167,7 @@ void test_stabilize_levels_a_tilted_plane()
     takeSerial();
 }
 
-void test_rth_switch_turns_toward_home()
+void test_rth_turns_toward_home_and_swd_does_not_reverse_in_flight()
 {
     // Улетели на 300 м к северу, летим на север.
     world.lat += 300.0 / 111195.0;
@@ -179,7 +179,16 @@ void test_rth_switch_turns_toward_home()
     rc.set(Channels::ARM, 2000).set(Channels::SWC, 1500).set(Channels::THROTTLE, 1400);
     fly(rc, 2.0);
 
+    // SwD — реверс мотора: в ARM не действует, мотор тянет вперёд.
     rc.set(Channels::SWD, 2000);
+    fly(rc, 0.5);
+    TEST_ASSERT_FALSE(flightController.getOutputState().motorReverse);
+    TEST_ASSERT_TRUE(flightController.getMotorReverse().isPending());
+    TEST_ASSERT_GREATER_THAN_UINT32(Config::ESC_NEUTRAL_US + 100, pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_TRUE(contains(takeSerial(), "реверс НЕ переключён"));
+
+    // RTH — с дашборда (тумблер RTH в Controls.h закомментирован).
+    autopilot.setMode(MODE_RTH);
     fly(rc, 0.5);
     TEST_ASSERT_EQUAL(MODE_RTH, autopilot.getMode());
     const NavStatus& nav = autopilot.getNavStatus();
@@ -188,9 +197,15 @@ void test_rth_switch_turns_toward_home()
     TEST_ASSERT_GREATER_THAN_FLOAT(20.0f, fabsf(autopilot.getDesiredRoll()));   // разворот
     TEST_ASSERT_TRUE(autopilot.isAutoThrottle());
 
-    rc.set(Channels::SWD, 1000).set(Channels::SWC, 1000).set(Channels::ARM, 1000);
+    // DISARM — и только теперь мотор переключается назад.
+    rc.set(Channels::SWC, 1000).set(Channels::ARM, 1000);
     fly(rc, 0.2);
     TEST_ASSERT_FALSE(flightController.isArmed());
+    TEST_ASSERT_TRUE(flightController.getOutputState().motorReverse);
+    TEST_ASSERT_UINT32_WITHIN(3, Config::ESC_NEUTRAL_US, pulseUs(ServoChannel::ESC));   // стоит
+    rc.set(Channels::SWD, 1000);
+    fly(rc, 0.2);
+    TEST_ASSERT_FALSE(flightController.getOutputState().motorReverse);
     takeSerial();
 }
 
@@ -229,7 +244,7 @@ void test_outputs_reach_the_s3_pins()
     TEST_ASSERT_EQUAL(Config::PIN_AILERON_LEFT, fake::ledc().channel[ServoChannel::AILERON_LEFT].pin);
     TEST_ASSERT_EQUAL(Config::PIN_ESC, fake::ledc().channel[ServoChannel::ESC].pin);
     TEST_ASSERT_UINT32_WITHIN(3, 2000, pulseUs(ServoChannel::AILERON_LEFT));
-    TEST_ASSERT_UINT32_WITHIN(3, 1000, pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_UINT32_WITHIN(3, escUs(1000), pulseUs(ServoChannel::ESC));
     takeSerial();
 }
 
@@ -242,7 +257,7 @@ int main()
     RUN_TEST(test_static_baro_tracks_altitude);
     RUN_TEST(test_arm_sets_home_from_gps);
     RUN_TEST(test_stabilize_levels_a_tilted_plane);
-    RUN_TEST(test_rth_switch_turns_toward_home);
+    RUN_TEST(test_rth_turns_toward_home_and_swd_does_not_reverse_in_flight);
     RUN_TEST(test_console_bus_scan_names_the_chips);
     RUN_TEST(test_dashboard_shows_airspeed_gps_and_modes);
     RUN_TEST(test_outputs_reach_the_s3_pins);

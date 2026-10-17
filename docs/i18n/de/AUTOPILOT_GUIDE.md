@@ -57,7 +57,7 @@ FS-i6 + FS-iA6B, iBUS, 10 Kanäle (`config/Channels.h`).
 | CH5 | **SwA** | **ARM** (unten = scharfgeschaltet, nur bei Gas unten; nicht umbelegbar) |
 | CH6 | SwB | Klappen (`Feature::FLAPS`) |
 | CH7 | **SwC** (3 Stellungen) | oben **MANUAL** · Mitte **STABILIZE** · unten **AUTO_TAKEOFF** |
-| CH8 | SwD | **RTH** – nach Hause, solange er eingeschaltet ist |
+| CH8 | SwD | **Motorumkehr** (`Feature::MOTOR_REVERSE`) – schaltet nur im DISARM um |
 | CH9 | VrA | Stärke der Stabilisierung (`Knob::STAB_GAIN`) |
 | CH10 | VrB | Reisegeschwindigkeit (`Knob::CRUISE_SPEED`) |
 
@@ -66,7 +66,7 @@ Beim Einschalten des Boards gibt der serielle Monitor die tatsächliche Belegung
 ```
 SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF (вверх / середина / вниз)
 SwB (CH6): FLAPS, пока включён
-SwD (CH8): RTH, пока включён
+SwD (CH8): MOTOR_REVERSE, пока включён
 VrA (CH9): крутилка STAB_GAIN
 VrB (CH10): крутилка CRUISE_SPEED
 ```
@@ -83,7 +83,7 @@ Alles steht in einer einzigen Datei – `include/config/Controls.h`:
 constexpr Binding BINDINGS[] = {
     Bind::modes  (Channels::SWC, MODE_MANUAL, MODE_STABILIZE, MODE_AUTO_TAKEOFF),
     Bind::feature(Channels::SWB, Feature::FLAPS),
-    Bind::mode   (Channels::SWD, MODE_RTH),
+    Bind::feature(Channels::SWD, Feature::MOTOR_REVERSE),
     Bind::knob   (Channels::VRA, Knob::STAB_GAIN),
     Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 };
@@ -171,7 +171,7 @@ Kreise im Uhrzeigersinn über dem Punkt, an dem der Modus eingeschaltet wurde, R
 **Benötigt:** IMU + Barometer + GPS.
 
 ### RTH — „nach Hause“
-Kurs auf den Startpunkt (den Punkt des ARM), Höhe `RTH_ALTITUDE_M` = 40 m (darunter – steigt es unterwegs, darüber – bleibt es). Über dem Startpunkt – Kreise mit dem LOITER-Radius, bis der Pilot die Steuerung übernimmt. Ohne GPS oder Startpunkt – Kreise auf der Stelle. Derselbe Modus wird durch Verbindungsverlust und Geofence ausgelöst.
+Kurs auf den Startpunkt (den Punkt des ARM), Höhe `RTH_ALTITUDE_M` = 40 m (darunter – steigt es unterwegs, darüber – bleibt es). Über dem Startpunkt – Kreise mit dem LOITER-Radius, bis der Pilot die Steuerung übernimmt. Ohne GPS oder Startpunkt – Kreise auf der Stelle. Derselbe Modus wird durch Verbindungsverlust und Geofence ausgelöst. Standardmäßig hat RTH keinen eigenen Schalter (SwD ist die Motorumkehr): Zurückholen lässt er sich mit der Zeile `Bind::mode(Channels::SWD, MODE_RTH)` in `Controls.h` oder über das Dashboard.
 **Benötigt:** IMU + Barometer + GPS mit Startpunkt.
 
 ### AUTO_TAKEOFF (TKOFF) — „Start per Gas“
@@ -215,6 +215,7 @@ Flügel waagerecht, Nase +8°, Gas 70 % – aus jeder Spirale. Orientierung verl
 | `GEOFENCE` | weiter als 500 m vom Startpunkt oder höher als 120 m – RTH | `GEOFENCE_ALWAYS_ON` – ohne Schalter |
 | `HOME_RESET` | Startpunkt = aktueller Punkt (im Moment des Einschaltens des Schalters) | nur bei gutem GPS |
 | `CAMERA_STAB` | die Kamera an AUX2 hält ihren Winkel zum Horizont | der Nickwinkel des Flugzeugs wird abgezogen |
+| `MOTOR_REVERSE` | der Motor dreht rückwärts (bidirektionaler ESC) – zum Zurückrollen am Boden | wechselt **nur im DISARM**: Umschalten bei ARM wartet auf DISARM; nach dem Wechsel 3 s kein ARM; rückwärts bis 50 % Gas, nur das Gas des Piloten |
 
 ## Drehregler
 

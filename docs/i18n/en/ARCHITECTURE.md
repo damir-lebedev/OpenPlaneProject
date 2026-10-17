@@ -64,7 +64,7 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · FlightOutputs · Beeper"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (not connected)<br/>FeedbackSupervisor and modules"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
@@ -408,6 +408,7 @@ sequenceDiagram
     participant MX as ControlMixer
     participant AP as Autopilot
     participant AM as ArmingManager
+    participant MR as MotorReverse
     participant OUT as FlightOutputs
 
     L->>FC: update()
@@ -417,24 +418,26 @@ sequenceDiagram
     end
     FC->>TM: update(rc, failsafe) → pilot throttle
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(target from the functions)
-    FC->>AP: update(armed, linkLost, pilot throttle, sticks)
+    FC->>AP: update(armed, linkLost, pilot throttle (0 in reverse), sticks)
     Note over AP: sensors are ALWAYS read,<br/>navigation, failsafe, geofence,<br/>mode, coordination, auto-trim
     FC->>OUT: setBuzzer(Beeper)
     alt link lost
         alt armed and autopilot failsafe (RTH / GLIDE)
             FC->>MX: mix(autopilot command)
-            FC->>OUT: write(surfaces, autopilot throttle, AUX unchanged)
+            FC->>OUT: write(surfaces, autopilot throttle (0 in reverse), AUX unchanged)
         else
             FC->>OUT: setFailsafe()
         end
         Note over FC: return — ARM and the switches are not read
     else link present
-        FC->>AM: update(rc) — the ARM switch
+        FC->>AM: update(rc, MR.armBlockReason) — the ARM switch
+        FC->>MR: update(MOTOR_REVERSE, armed) — direction only when disarmed
         FC->>AP: getCommand() — the final surface command
         FC->>MX: mix(command) → PWM with reverse
-        FC->>AP: applyThrottle(pilot throttle)
-        Note over FC: !armed or MOTOR_KILL → throttle = PWM_MIN (applied last)
+        FC->>AP: applyThrottle(pilot throttle) — forwards only
+        Note over FC: backwards — pilot throttle ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed or MOTOR_KILL → throttle = PWM_MIN (applied last)
         FC->>OUT: write(output + AUX1 payload, AUX2 camera)
+        Note over OUT: ESC: throttle + direction → pulse (EscSignal),<br/>bidirectional ESC: 1500 = stop
     end
 ```
 
@@ -442,6 +445,9 @@ Key invariants of the tick:
 
 - **Link loss** — the mode and the functions from the switches do not change; ARM is neither read nor reset; the motor runs only by the decision of the autopilot failsafe (RTH with the motor) or `FAILSAFE_THROTTLE`.
 - **No mode can slip the throttle past ARM**: the forced `PWM_MIN` for `!armed` and `MOTOR_KILL` comes after `Autopilot::applyThrottle()`.
+- **Reverse is never engaged on the move**: `MotorReverse` changes direction only
+  when disarmed, and `ArmingManager` refuses ARM for `REVERSE_SETTLE_MS` after a
+  change. In reverse the throttle is the pilot's only; the autopilot sees the motor as off.
 - **The autopilot issues the final command** (`getCommand()`); in the stabilization modes the sticks are the desired angles; corrections = command − sticks (for the log and the dashboard). Everything is in one sign convention (`ControlCommand`) up to the mixer.
 
 ---
@@ -454,7 +460,7 @@ Key invariants of the tick:
 stateDiagram-v2
     [*] --> WaitOff : board power-on
     WaitOff --> Ready : switch OFF
-    Ready --> Armed : switch OFF→ON, throttle < THROTTLE_LOW_US,<br/>mode sensor checks passed
+    Ready --> Armed : switch OFF→ON, throttle < THROTTLE_LOW_US,<br/>mode sensor checks passed,<br/>motor direction unchanged for REVERSE_SETTLE_MS
     Ready --> WaitOff : switch ON, check failed<br/>(reason → Serial, getLastRefusalReason)
     Armed --> Ready : switch OFF (DISARM at once)
     note right of Armed : link loss does not change the state
@@ -462,6 +468,25 @@ stateDiagram-v2
 
 `WaitOff` = `armed == false && switchSeenOff == false`; `Ready` =
 `armed == false && switchSeenOff == true`.
+
+### Motor reverse (`MotorReverse`)
+
+```mermaid
+stateDiagram-v2
+    [*] --> Forward
+    Forward --> Reverse : switch ON and not armed
+    Reverse --> Forward : switch OFF and not armed
+    Forward --> ForwardPending : switch ON while armed
+    ForwardPending --> Forward : switch OFF
+    ForwardPending --> Reverse : DISARM
+    Reverse --> ReversePending : switch OFF while armed
+    ReversePending --> Reverse : switch ON
+    ReversePending --> Forward : DISARM
+    note right of Reverse : after every direction change<br/>ARM is refused for REVERSE_SETTLE_MS
+```
+
+`*Pending` — `isPending()`: the switch is already in the other position, and the
+motor turns as it did when armed; the warning is printed to Serial once.
 
 ### Autopilot modes (`Autopilot` + `PilotSwitches`)
 
