@@ -41,8 +41,9 @@
 //   6. РЕВЕРС     — MotorReverse: направление мотора по тумблеру
 //                   Feature::MOTOR_REVERSE, но только пока не armed
 //   7. ВЫХОДЫ     — команда -> PWM каждого серво; газ ограничен
-//                   Config::THROTTLE_LIMIT_PCT (стик и автопилот
-//                   одинаково), назад — ещё и REVERSE_THROTTLE_LIMIT_PCT,
+//                   Config::THROTTLE_LIMIT_PCT и крутилкой
+//                   Knob::THROTTLE_LIMIT (стик и автопилот одинаково),
+//                   назад — ещё и REVERSE_THROTTLE_LIMIT_PCT,
 //                   затем -> 0, если не armed или включён
 //                   Feature::MOTOR_KILL; AUX1 — груз, AUX2 — камера;
 //                   пищалка
@@ -130,12 +131,12 @@ public:
         output.motorReverse = reverse.isReversed();
         if (output.motorReverse)
         {
-            output.throttle = capReverseThrottle(pilotThrottle);
+            output.throttle = capThrottle(pilotThrottle, reverseLimitPct(in));
         }
         else
         {
             output.throttle = autopilot ? autopilot->applyThrottle(pilotThrottle) : pilotThrottle;
-            output.throttle = capThrottle(output.throttle);
+            output.throttle = capThrottle(output.throttle, throttleLimitPct(in));
         }
 
         // ARM реально блокирует газ (см. ArmingManager) — ставим ПОСЛЕ
@@ -198,34 +199,35 @@ private:
         sticks.yaw = static_cast<int16_t>(sticks.yaw * scale);
     }
 
-    // Ход стика/автопилота остаётся пропорциональным на всём диапазоне,
-    // просто верх ниже: PWM_MIN..PWM_MAX -> PWM_MIN..(PWM_MIN + ход% лимита).
-    // Один выбор на всех — и ручной газ, и автопилотный (CRUISE/RTH/LAUNCH
-    // и т.п.), чтобы слабая сборка 3S1P не получила предельный ток ни
-    // оттуда, ни оттуда.
-    static uint16_t capThrottle(uint16_t us)
+    // Предел газа вперёд, %: Config::THROTTLE_LIMIT_PCT, и поверх —
+    // крутилка Knob::THROTTLE_LIMIT (THROTTLE_KNOB_MIN_PCT ... 100 %),
+    // если привязана. Один выбор на всех — и ручной газ, и автопилотный
+    // (CRUISE/RTH/LAUNCH и т.п.).
+    static float throttleLimitPct(const PilotInputs& in)
     {
-        return static_cast<uint16_t>(map(
-            us,
-            Config::PWM_MIN,
-            Config::PWM_MAX,
-            Config::PWM_MIN,
-            Config::PWM_MIN + (Config::PWM_MAX - Config::PWM_MIN) * Config::THROTTLE_LIMIT_PCT / 100
-        ));
+        float pct = Config::THROTTLE_LIMIT_PCT;
+        if (in.isBound(Knob::THROTTLE_LIMIT))
+        {
+            const float centre = (Config::THROTTLE_KNOB_MIN_PCT + 100.0f) * 0.5f;
+            pct *= in.knobValue(Knob::THROTTLE_LIMIT, Config::THROTTLE_KNOB_MIN_PCT, centre, 100.0f) / 100.0f;
+        }
+        return pct;
     }
 
-    // Газ назад: свой предел REVERSE_THROTTLE_LIMIT_PCT, но не выше
-    // общего THROTTLE_LIMIT_PCT. Ход стика так же пропорционален.
-    static uint16_t capReverseThrottle(uint16_t us)
+    // Назад — свой предел REVERSE_THROTTLE_LIMIT_PCT, но не выше переднего.
+    static float reverseLimitPct(const PilotInputs& in)
     {
-        const uint16_t pct = min(Config::REVERSE_THROTTLE_LIMIT_PCT, Config::THROTTLE_LIMIT_PCT);
-        return static_cast<uint16_t>(map(
-            us,
-            Config::PWM_MIN,
-            Config::PWM_MAX,
-            Config::PWM_MIN,
-            Config::PWM_MIN + (Config::PWM_MAX - Config::PWM_MIN) * pct / 100
-        ));
+        return min(static_cast<float>(Config::REVERSE_THROTTLE_LIMIT_PCT), throttleLimitPct(in));
+    }
+
+    // Разрешённое растягивается на весь ход: PWM_MIN..PWM_MAX ->
+    // PWM_MIN..(PWM_MIN + pct% хода), стик остаётся пропорциональным —
+    // просто верх ниже.
+    static uint16_t capThrottle(uint16_t us, float pct)
+    {
+        const float span = Config::PWM_MAX - Config::PWM_MIN;
+        const float x = constrain(static_cast<float>(us) - Config::PWM_MIN, 0.0f, span);
+        return static_cast<uint16_t>(lroundf(Config::PWM_MIN + x * pct / 100.0f));
     }
 
     // Куда ехать закрылкам: тормоз важнее закрылков, тумблер — крутилки.
@@ -241,7 +243,8 @@ private:
     // угол с крутилки, со стабилизацией — минус тангаж самолёта.
     void applyAuxOutputs(FlightOutputState& output, const PilotInputs& in) const
     {
-        output.aux1 = in.has(Feature::PAYLOAD_DROP) ? Config::PAYLOAD_OPEN_US : Config::PAYLOAD_CLOSED_US;
+        output.aux1 = Config::directedUs(in.has(Feature::PAYLOAD_DROP) ? Config::PAYLOAD_OPEN_US : Config::PAYLOAD_CLOSED_US,
+                                         Config::AUX1_REVERSED);
 
         float tilt = in.knobValue(Knob::CAMERA_TILT, Config::CAMERA_TILT_MIN_DEG, 0.0f, Config::CAMERA_TILT_MAX_DEG);
         const ImuSensor* imu = autopilot ? autopilot->getImuSensor() : nullptr;
@@ -250,8 +253,9 @@ private:
             tilt -= imu->getImuData().pitch;
         }
         const float pwm = Config::PWM_CENTER + tilt * Config::CAMERA_US_PER_DEG;
-        output.aux2 = static_cast<uint16_t>(constrain(pwm, static_cast<float>(Config::PWM_MIN),
-                                                      static_cast<float>(Config::PWM_MAX)));
+        output.aux2 = Config::directedUs(static_cast<uint16_t>(constrain(pwm, static_cast<float>(Config::PWM_MIN),
+                                                                         static_cast<float>(Config::PWM_MAX))),
+                                         Config::AUX2_REVERSED);
     }
 
     // Потеря связи. В воздухе (armed) автопилот ведёт самолёт сам:
@@ -272,7 +276,7 @@ private:
 
         FlightOutputState output = mixer.mix(command);
         output.throttle = autopilot->applyThrottle(Config::FAILSAFE_THROTTLE);
-        output.throttle = capThrottle(output.throttle);
+        output.throttle = capThrottle(output.throttle, throttleLimitPct(in));
         output.motorReverse = reverse.isReversed();
         // Назад автопилот мотором не ведёт — домой только планированием.
         if (in.has(Feature::MOTOR_KILL) || output.motorReverse) output.throttle = Config::PWM_MIN;

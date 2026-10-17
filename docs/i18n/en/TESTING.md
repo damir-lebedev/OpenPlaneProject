@@ -96,10 +96,10 @@ The board tests (`test_feedback`, `test_imu_orientation`) are portable: with `AR
 |---|---|---|
 | `native/test_hal` | 17 | `II2CBus` helpers (NACK, short read — the buffer is left untouched), `I2cRegisterDevice`, `SpiRegisterDevice` (read bit, BMP388 dummy byte), `Esp32I2CBus` (5 ms timeout), `Esp32SpiBus` (modes 0–3), `Esp32UartPort` (8N1, pins), `Esp32ServoOutput` (50 Hz/14-bit, pulse limiting, LEDC failure, measurement through the input buffer), `Esp32Board` (buses, UART, channel order, AUX, buzzer) |
 | `native/test_rc` | 16 | `RcChannelState`, `RcInput`, iBUS parsing: frames arriving in pieces, CRC, 12-bit values, transmitter failsafe, 500 ms timeout (also across a `micros()` overflow), garbage, resynchronization |
-| `native/test_control` | 24 | Flaps (speed, first call, pauses), the mixer (signs, reverse, flaperons), throttle, the ARM state machine and the mode sensor checks, the output table and the pulse self-test, the bidirectional ESC pulse, motor reverse only when disarmed and no ARM after a direction change |
+| `native/test_control` | 26 | Flaps (speed, first call, pauses), the mixer (signs, reverse, flaperons), throttle, the ARM state machine and the mode sensor checks, the output table and the pulse self-test, the bidirectional ESC pulse, motor reverse only when disarmed and no ARM after a direction change, the reverse helpers (pulse mirror, channel reversal, motor reversal) |
 | `native/test_autopilot` | 22 | PID (D term from the sensor rate, integral, anti-windup, `dt`), STABILIZE as an angle mode, time-based auto-takeoff, ALT_HOLD with the elevator, gliding on link loss |
 | `native/test_autopilot_modes` | 31 | All 12 modes and how each reacts to a missing sensor, the binding table and `static_assert`, functions and knobs, navigation (heading, circle, home, geofence), failsafe RTH/gliding, hand launch, soaring, auto-trim (written only on the ground) |
-| `native/test_flight_controller` | 14 | A full `FlightController` tick on the real classes: priorities link loss > ARM > sticks/autopilot > throttle; AUX, `MOTOR_KILL`, buzzer; SwD reverse: only when disarmed, 3 s without ARM, 50% throttle backwards, no autopilot throttle, the motor stops on link loss |
+| `native/test_flight_controller` | 15 | A full `FlightController` tick on the real classes: priorities link loss > ARM > sticks/autopilot > throttle; AUX, `MOTOR_KILL`, buzzer; SwD reverse: only when disarmed, 3 s without ARM, 50% throttle backwards, no autopilot throttle, the motor stops on link loss; the throttle limit knob stretches the allowed range over the whole stick travel |
 | `native/test_imu` | 21 | MPU6050/6500/9250 and ICM-42688: identification, registers, scales, axis rotation and aviation sign conventions, bus errors, gyroscope calibration and the pre-flight check, mounting calibration from three poses, NVS, the orientation filter |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`, BMP388 over I2C and SPI, BME280/BMP280 against the Bosch reference, compasses (heading, hard-iron calibration in NVS), u-blox M10 (CFG-VALSET, NAV-PVT, corrupted frames, timeout), `SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV (16X/32X, alternate address, SPI), ICM-45686 (indirect registers), QMC6309, SPL06-001 (datasheet formulas), BMP581 (DRDY and the fallback path), the pitot tube (zero, filter, density, swapped hoses, stale data, a “flight” with the noise of two barometers) |
@@ -120,7 +120,7 @@ The board tests (`test_feedback`, `test_imu_orientation`) are portable: with `AR
 | `native_stm32/test_app_stm32_no_sd` | 2 | `src/stm32/main.cpp` without a card: the black box is disabled and explains why, the airplane flies, the `k` menu does not break |
 | `test_feedback` | 10 | A closed-loop airplane simulation with a feedback loop (on the PC and on the board) |
 | `test_imu_orientation` | 5 | IMU mounting calibration on 300 random mountings (on the PC and on the board) |
-| **Total** | **392** | 345 in `native` + 47 in `native-stm32` (plus 9 only on the board — `test_blackbox_sd`) |
+| **Total** | **395** | 348 in `native` + 47 in `native-stm32` (plus 9 only on the board — `test_blackbox_sd`) |
 
 ### Tests on the STM32 board
 

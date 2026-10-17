@@ -41,7 +41,7 @@ JSON과 `MavlinkModes`에 쓰임):
 `GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `MOTOR_REVERSE`, `COUNT`.
 
 `enum class Knob : uint8_t` — 노브: `STAB_GAIN`, `MAX_BANK`,
-`CRUISE_SPEED`, `FLAPS`, `CAMERA_TILT`, `RATES`, `LOITER_RADIUS`, `COUNT`.
+`CRUISE_SPEED`, `FLAPS`, `CAMERA_TILT`, `RATES`, `LOITER_RADIUS`, `THROTTLE_LIMIT`, `COUNT`.
 
 `namespace AutopilotNames` — `mode()`, `modeShort()`(5자 이하),
 `feature()`, `knob()`: 로그, OLED, 대시보드, MAVLink용 이름.

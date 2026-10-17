@@ -81,7 +81,7 @@ Die aerodynamische Logik in zwei Schritten. Besitzt den `FlapsController`.
 |---|---|
 | `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 → `roll` (2000 = nach rechts); CH2 → `pitch` **mit umgekehrtem Vorzeichen** (2000 = von sich weg = Nase runter); CH4 → `yaw` |
 | `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | das Ziel der Klappen wählt `FlightController` (Bremsklappe → Klappenschalter → Drehregler), hier — der sanfte Weg |
-| `FlightOutputState mix(const ControlCommand& c) const` | Kommando → PWM. Rollen/Nicken/Gieren werden durch den Weg (`*_MAX_US`) begrenzt; Querruder: links = `flaps + roll`, rechts = `flaps − roll` (nach unten = „+“); PWM = `1500 ± Ausschlag` mit dem Vorzeichen aus `Config::*_REVERSED`, begrenzt auf 1000..2000. `throttle` wird nicht gefüllt |
+| `FlightOutputState mix(const ControlCommand& c) const` | Kommando → PWM. Rollen/Nicken/Gieren werden durch den Weg (`*_MAX_US`) begrenzt; Querruder: links = `flaps + roll`, rechts = `flaps − roll` (nach unten = „+“); PWM = `1500 ± Ausschlag` mit dem Vorzeichen aus `Config::*_REVERSED`, das Vorzeichen der Klappen – `FLAPS_REVERSED`, begrenzt auf 1000..2000. `throttle` wird nicht gefüllt |
 | `int16_t getFlaps() const` | Die aktuelle Klappenstellung, µs |
 
 Flaperons: beim Ausfahren senken sich beide Querruder um `FLAPS_DEPLOYED_US`
@@ -251,10 +251,10 @@ Die Reihenfolge von `update()`:
 9. `command = autopilot->getCommand()` (oder die Knüppel ohne Autopilot), die Klappen — ihre eigenen;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     vorwärts – `output.throttle = autopilot->applyThrottle(pilotThrottle)` mit der
-    Grenze `THROTTLE_LIMIT_PCT`, rückwärts – das Gas des Piloten mit der Grenze
-    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
+    Grenze `THROTTLE_LIMIT_PCT` × Drehregler `Knob::THROTTLE_LIMIT`, rückwärts – das Gas des Piloten mit der Grenze
+    `min(REVERSE_THROTTLE_LIMIT_PCT, Vorwärtsgrenze)`; der erlaubte Bereich wird über den ganzen Knüppelweg gestreckt;
 11. nicht gearmt oder `MOTOR_KILL` → `throttle = PWM_MIN` (als Letztes);
-12. AUX1 — die Nutzlast (`PAYLOAD_DROP`), AUX2 — die Kamera (`Knob::CAMERA_TILT`, `CAMERA_STAB` zieht das Nicken ab);
+12. AUX1 — die Nutzlast (`PAYLOAD_DROP`), AUX2 — die Kamera (`Knob::CAMERA_TILT`, `CAMERA_STAB` zieht das Nicken ab); `AUX1_REVERSED`/`AUX2_REVERSED` spiegeln den Impuls.
 13. `outputs.write(output)`.
 
 `applyLinkLoss()`: ist der Autopilot im Failsafe (gearmt: RTH oder Gleiten) —

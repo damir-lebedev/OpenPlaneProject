@@ -78,7 +78,7 @@ CONTROL 계층은 UART, PWM, Wi-Fi 없이 데이터 위에서 동작하는 로�
 |---|---|
 | `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 → `roll`(2000 = 오른쪽), CH2 → `pitch`(**부호가 반대**: 2000 = 몸에서 멀어지는 방향 = 기수 아래), CH4 → `yaw` |
 | `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | 플랩의 목표는 `FlightController`가 고르고(에어브레이크 → 플랩 스위치 → 노브), 여기서는 부드러운 움직임을 담당 |
-| `FlightOutputState mix(const ControlCommand& c) const` | 명령 → PWM. 롤/피치/요는 행정(`*_MAX_US`)으로 제한. 에일러론은 왼쪽 = `flaps + roll`, 오른쪽 = `flaps − roll`(아래 = “+”). PWM = `1500 ± 변위`이며 부호는 `Config::*_REVERSED`를 따르고 1000..2000으로 제한. `throttle`은 채우지 않음 |
+| `FlightOutputState mix(const ControlCommand& c) const` | 명령 → PWM. 롤/피치/요는 행정(`*_MAX_US`)으로 제한. 에일러론은 왼쪽 = `flaps + roll`, 오른쪽 = `flaps − roll`(아래 = “+”). PWM = `1500 ± 변위`이며 부호는 `Config::*_REVERSED`, 플랩 부호는 `FLAPS_REVERSED`를 따르고 1000..2000으로 제한. `throttle`은 채우지 않음 |
 | `int16_t getFlaps() const` | 현재 플랩 위치(µs) |
 
 플래퍼론: 펼치면 두 에일러론이 `FLAPS_DEPLOYED_US`만큼 내려가고(새로운 “중립”)
@@ -242,10 +242,10 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
 9. `command = autopilot->getCommand()`(오토파일럿이 없으면 스틱). 플랩은 자체 값.
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     전진 — `output.throttle = autopilot->applyThrottle(pilotThrottle)`, 상한
-    `THROTTLE_LIMIT_PCT`; 후진 — 파일럿 스로틀, 상한
-    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
+    `THROTTLE_LIMIT_PCT` × 노브 `Knob::THROTTLE_LIMIT`; 후진 — 파일럿 스로틀, 상한
+    `min(REVERSE_THROTTLE_LIMIT_PCT, 전진 상한)`; 허용 범위를 스틱 전체 행정으로 늘림;
 11. ARM하지 않았거나 `MOTOR_KILL` → `throttle = PWM_MIN`(맨 마지막에).
-12. AUX1은 페이로드(`PAYLOAD_DROP`), AUX2는 카메라(`Knob::CAMERA_TILT`, `CAMERA_STAB`은 피치를 뺌).
+12. AUX1은 페이로드(`PAYLOAD_DROP`), AUX2는 카메라(`Knob::CAMERA_TILT`, `CAMERA_STAB`은 피치를 뺌). `AUX1_REVERSED`/`AUX2_REVERSED`는 펄스를 뒤집음.
 13. `outputs.write(output)`.
 
 `applyLinkLoss()`: 오토파일럿이 failsafe 상태(ARM 상태에서는 RTH 또는 활공)이면 조종면과

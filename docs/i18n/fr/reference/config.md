@@ -100,6 +100,7 @@ la variante.
 | `PWM_MIN` / `PWM_CENTER` / `PWM_MAX` | 1000 / 1500 / 2000 | L’impulsion RC standard, µs |
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Débattement par rapport au centre à pleine course du manche, µs. La direction est plus faible : la roue du train d’atterrissage est sur le même servo |
 | `THROTTLE_LIMIT_PCT` | 100 | Le plafond des gaz vers l’ESC, %, identique pour le manche et pour le pilote automatique (`FlightController::capThrottle`). Pour les essais sur banc avec une batterie 3S1P faible, on avait mis 50 ; les tests calculent la sortie attendue à partir de cette valeur |
+| `THROTTLE_KNOB_MIN_PCT` | 10 | Le potentiomètre `Knob::THROTTLE_LIMIT` : limite des gaz 10 … 55 … 100 % en plus de `THROTTLE_LIMIT_PCT`, la plage autorisée est étirée sur toute la course du manche. Non affecté — pas de limite |
 
 ### ESC et inversion du moteur
 
@@ -118,13 +119,26 @@ la variante.
 | `FLAPS_DEPLOYED_US` | 220 | Braquage vers le bas de chaque aileron, µs (~20° du palonnier du MG90S) |
 | `FLAPS_TRANSITION_MS` | 1000 | Le temps de la sortie/rentrée complète |
 
-### Sens des servos
+### Inversion
 
-`AILERON_LEFT_REVERSED`, `AILERON_RIGHT_REVERSED` (`true` — les servos des ailerons sont montés en miroir), `ELEVATOR_REVERSED` (`true`),
-`RUDDER_REVERSED` — le seul endroit où l’inversion est définie. `ControlMixer`
-calcule en signes physiques et ne change le signe qu’ici, donc les manches et
-le pilote automatique ne peuvent pas diverger. L’inversion sur la radiocommande
-**ne doit pas** être utilisée.
+Tout est dans un seul bloc de `Config.h` : une ligne — une chose, rien d’autre n’est touché.
+
+| Indicateur | Par défaut | Ce qu’il inverse |
+|---|---|---|
+| `AILERON_LEFT_REVERSED` / `AILERON_RIGHT_REVERSED` | `false` / `true` | chaque aileron séparément (les servos dans l’aile sont en miroir) |
+| `ELEVATOR_REVERSED` | `true` | la gouverne de profondeur |
+| `RUDDER_REVERSED` | `false` | la gouverne de direction et la roue (un seul servo) |
+| `AUX1_REVERSED` | `false` | le servo de largage : ouvert ↔ fermé |
+| `AUX2_REVERSED` | `false` | le servo de la caméra |
+| `MOTOR_REVERSED` | `false` | le sens de rotation du moteur — au lieu de ressouder deux fils ; seulement avec `ESC_BIDIRECTIONAL` (sinon la compilation échoue) |
+| `FLAPS_REVERSED` | `false` | les volets et l’aérofrein sur les ailerons ; le roulis n’est pas touché |
+| `CHANNEL_REVERSED[10]` | `false` ×10 | les voies de la radio CH1…CH10, comme Reverse dans le menu de la radio : un manche, un interrupteur ou un potentiomètre fonctionne à l’envers. CH3 (gaz) est interdit : la perte de liaison est détectée sur les gaz bruts < 950 µs (`static_assert`) |
+
+`ControlMixer` calcule en signes physiques et le signe ne change qu’ici, donc
+les manches et le pilote automatique ne peuvent pas diverger. Une gouverne va à
+l’envers à la fois au manche et au pilote automatique — c’est un indicateur de
+sortie ; seulement au manche — un indicateur de voie.
+`Config::directedUs(us, reversed)` reflète une impulsion autour de 1500.
 
 ### Montage des capteurs
 

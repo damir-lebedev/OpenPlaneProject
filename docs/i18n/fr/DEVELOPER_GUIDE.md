@@ -311,7 +311,7 @@ mêmes signes.
 fuite de chaque surface (ailerons : en bas = « + », gauche = `flaps + roll`,
 droit = `flaps − roll` ; profondeur : en haut = « + » ; direction : à droite
 = « + ») et le convertit en PWM `1500 ± débattement`, en inversant le signe
-pour les servos avec `Config::*_REVERSED = true`. Les valeurs par défaut
+pour les servos avec `Config::*_REVERSED = true` (les volets à part — `FLAPS_REVERSED` ; AUX, le moteur et les voies de la radio — `AUX1/AUX2_REVERSED`, `MOTOR_REVERSED`, `CHANNEL_REVERSED`, tout dans le bloc « Inversion »). Les valeurs par défaut
 reproduisent le comportement antérieur du micrologiciel pour les manches. La
 vérification sur l’avion monté figure dans la liste de contrôle avant vol du
 [`PILOT_GUIDE.md`](PILOT_GUIDE.md). L’inversion doit être modifiée dans
@@ -1022,7 +1022,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # vérifier que tout
   ne passera pas.
 - `lib_deps` : `olikraus/U8g2` (OLED) est la seule bibliothèque externe.
 - `test/` — en détail dans [`TESTING.md`](TESTING.md) :
-  - `pio test -e native -e native-stm32` — 392 tests sur PC (simulacres du
+  - `pio test -e native -e native-stm32` — 395 tests sur PC (simulacres du
     matériel dans `test/native/support/`), couverture — `gcovr` ;
   - `pio test -e esp32-s3` — `test_feedback/` (la simulation en boucle fermée
     de la rétroaction) et `test_imu_orientation/` sur la carte elle-même ;

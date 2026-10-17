@@ -191,7 +191,7 @@ La table a été vérifiée sur le banc avec une radio FS-i6 (10 canaux, mode 2)
 | CH9 | VrA | VRA | Par défaut, force de la stabilisation |
 | CH10 | VrB | VRB | Par défaut, vitesse de croisière |
 
-Les canaux CH6–CH10 peuvent être **n’importe quoi, en une seule ligne** de `include/config/Controls.h` : n’importe lequel des 12 modes, des 11 fonctions (volets, frein, largage de charge, géorepérage, buzzer, inversion…) et des 7 potentiomètres. À la mise sous tension de la carte, l’affectation réelle s’affiche dans le moniteur série. Tout ce qui concerne les modes et les affectations se trouve dans [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+Les canaux CH6–CH10 peuvent être **n’importe quoi, en une seule ligne** de `include/config/Controls.h` : n’importe lequel des 12 modes, des 11 fonctions (volets, frein, largage de charge, géorepérage, buzzer, inversion…) et des 8 potentiomètres. À la mise sous tension de la carte, l’affectation réelle s’affiche dans le moniteur série. Tout ce qui concerne les modes et les affectations se trouve dans [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 Toutes les valeurs des canaux utilisent la plage d’impulsion standard du récepteur, 1000–2000 µs, avec 1500 µs pour le centre/neutre.
 
@@ -248,7 +248,7 @@ Le variateur principal est un BLHeli 80A bidirectionnel : le moteur tourne dans
 - **En arrière — uniquement vos gaz et pas plus de 50 %** (`REVERSE_THROTTLE_LIMIT_PCT`) : manche à fond = la moitié de la puissance. En inversion, le pilote automatique ne touche pas aux gaz (les gouvernes fonctionnent comme d’habitude) ; en cas de perte de liaison, le moteur s’arrête tout simplement.
 - C’est visible sur l’OLED (`REV` dans la première ligne) et sur le tableau de bord (le badge « Мотор: РЕВЕРС » — « Moteur : INVERSION »).
 
-**Réglage du variateur dans BLHeliSuite** (une fois, hélice démontée) : Motor Direction — **Bidirectional** (sur BLHeli_32 — « Bidirectional »/3D), PPM Min Throttle — 1000, PPM Max Throttle — 2000, Center — 1500. Le variateur s’arme en voyant le neutre de 1500 µs, et le firmware l’envoie dès la première impulsion. Si le manche vers l’avant fait tourner le moteur dans le mauvais sens, permutez deux fils quelconques du moteur (ou réglez Motor Direction = Bidirectional Reversed) plutôt que de modifier le firmware.
+**Réglage du variateur dans BLHeliSuite** (une fois, hélice démontée) : Motor Direction — **Bidirectional** (sur BLHeli_32 — « Bidirectional »/3D), PPM Min Throttle — 1000, PPM Max Throttle — 2000, Center — 1500. Le variateur s’arme en voyant le neutre de 1500 µs, et le firmware l’envoie dès la première impulsion. Si le manche vers l’avant fait tourner le moteur dans le mauvais sens, mettez `MOTOR_REVERSED = true` dans `Config.h` (une ligne au lieu de ressouder des fils).
 
 Un variateur unidirectionnel ordinaire : `ESC_BIDIRECTIONAL = false` dans `Config.h`, sinon à l’« arrêt » (1500) il donnera la moitié des gaz ! L’inversion ne s’enclenche alors jamais.
 
@@ -466,8 +466,9 @@ Lisez cette section en entier **avant** la première mise sous tension, et non a
   - stick droit vers soi → **profondeur vers le haut** ;
   - stick gauche vers la droite → **gouverne de direction et roue directrice vers la droite** ;
   - SwB (volets) vers le bas → **les deux ailerons descendent en douceur**, et le roulis au stick continue de les écarter en sens opposés ;
+  - gaz vers l’avant (hélice démontée — regardez le sens de rotation) → **l’hélice tire vers l’avant** ;
   - en STABILIZE, inclinez l’avion aile droite vers le bas → **aileron droit vers le bas, gauche vers le haut** (les gouvernes le ramènent à l’horizontale) ; nez vers le bas → **profondeur vers le haut**.
-  Si quelque chose ne va pas, changez le `*_REVERSED` correspondant dans `include/config/Config.h` (section « Sens des servos »), et non l’inversion dans la radio : sinon le stick et le pilote automatique divergeront.
+  Si quelque chose ne va pas, changez une ligne du bloc « Inversion » de `include/config/Config.h` : chaque aileron, la profondeur, la direction, AUX, le moteur (`MOTOR_REVERSED`) et les volets (`FLAPS_REVERSED`) s’inversent séparément, rien d’autre n’est touché. N’inversez pas les servos dans la radio — le manche et le pilote automatique divergeraient ; une voie à l’envers (manche, interrupteur, potentiomètre) — `CHANNEL_REVERSED`, au même endroit.
 - [ ] À la mise sous tension, l’avion était immobile, et le journal ou le tableau de bord n’affiche pas `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА` ; quand vous inclinez l’avion dans vos mains, P et R sur l’OLED changent dans le bon sens.
 - [ ] Le failsafe est réglé dans la radio et vérifié : éteignez la radio → `RX LOST` sur l’OLED ou dans Serial (voir la section sur le failsafe).
 - [ ] La portée de la radio a été vérifiée et la batterie de la radio est chargée.

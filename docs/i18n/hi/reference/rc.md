@@ -35,6 +35,7 @@ RC सिग्नलों के साझा रूपांतरण।
 | मेथड | विवरण |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | `PWM_MIN..PWM_MAX` तक सीमित करना |
+| `static uint16_t reversed(uint16_t value)` | चैनल उल्टा: `3000 − clamp(value)` (1000 ↔ 2000) — `Config::CHANNEL_REVERSED` के लिए |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | रैखिक: 1000 → `−max`, 1500 → 0, 2000 → `+max` (इनपुट पहले सीमित होता है); `reverse` चिह्न बदलता है। नतीजा ±`max` तक सीमित |
 
 उदाहरण: `centered(1750, 500) == 250`, `centered(1750, 500, true) == -250`।
@@ -75,3 +76,6 @@ FlySky iBUS प्रोटोकॉल का बाइट-दर-बाइट 
   ट्रांसमीटर की कमांड नहीं समझे जाते।
 - failsafe का संकेत **हर** सही फ़्रेम पर दोबारा गिना जाता है — संपर्क सामान्य
   थ्रॉटल वाले पहले ही फ़्रेम से बहाल हो जाता है।
+- `Config::CHANNEL_REVERSED` वाले चैनल उलटे रूप में सहेजे जाते हैं
+  (`RcInput::reversed`); failsafe उससे पहले **कच्चे** थ्रॉटल से पहचाना जाता है, और
+  CH3 का रिवर्स `static_assert` से मना है।

@@ -311,7 +311,7 @@ mismos signos.
 salida de cada superficie (alerones: abajo = «+», izquierdo = `flaps + roll`,
 derecho = `flaps − roll`; timón de profundidad: arriba = «+»; timón de
 dirección: a la derecha = «+») y la convierte en PWM `1500 ± deflexión`,
-invirtiendo el signo en los servos con `Config::*_REVERSED = true`. Los
+invirtiendo el signo en los servos con `Config::*_REVERSED = true` (los flaps aparte, `FLAPS_REVERSED`; AUX, el motor y los canales de la emisora, `AUX1/AUX2_REVERSED`, `MOTOR_REVERSED` y `CHANNEL_REVERSED`, todo en el bloque «Inversión»). Los
 valores por defecto reproducen el comportamiento anterior del firmware para
 los sticks. La comprobación en el avión montado está en la lista de
 comprobación prevuelo de [`PILOT_GUIDE.md`](PILOT_GUIDE.md). La inversión hay
@@ -1006,7 +1006,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # comprobar que se c
   funcionará.
 - `lib_deps`: `olikraus/U8g2` (OLED) es la única biblioteca externa.
 - `test/`: con detalle en [`TESTING.md`](TESTING.md):
-  - `pio test -e native -e native-stm32`: 392 pruebas en el PC (simulacros
+  - `pio test -e native -e native-stm32`: 395 pruebas en el PC (simulacros
     del hardware en `test/native/support/`), cobertura con `gcovr`;
   - `pio test -e esp32-s3`: `test_feedback/` (la simulación en lazo cerrado de
     la realimentación) y `test_imu_orientation/` en la propia placa; cada una

@@ -5,6 +5,7 @@
 #include "config/Config.h"
 #include "hal/IUartPort.h"
 #include "rc/RcChannelState.h"
+#include "rc/RcInput.h"
 
 // ============================================================
 // iBUS RECEIVER
@@ -26,6 +27,9 @@
 //     потере связи с пультом (сам он кадры слать не перестаёт, см.
 //     комментарий у RX_FAILSAFE_THROTTLE_US в Config.h).
 // ============================================================
+
+static_assert(!Config::CHANNEL_REVERSED[Channels::THROTTLE],
+              "CHANNEL_REVERSED: газ (CH3) реверсировать нельзя — потеря связи определяется по газу < RX_FAILSAFE_THROTTLE_US");
 
 class IBusReceiver
 {
@@ -176,11 +180,15 @@ private:
                 (static_cast<uint16_t>(lowByte) |
                  (static_cast<uint16_t>(highByte) << 8)) & 0x0FFF;
 
-            state.set(channel, value);
+            // Потеря связи — по сырому газу, до реверса каналов.
+            if (channel == Channels::THROTTLE)
+            {
+                failsafeReported = value < Config::RX_FAILSAFE_THROTTLE_US;
+            }
+
+            state.set(channel, Config::CHANNEL_REVERSED[channel] ? RcInput::reversed(value) : value);
         }
 
-        failsafeReported =
-            state.get(Channels::THROTTLE) < Config::RX_FAILSAFE_THROTTLE_US;
 
         goodFrames++;
         receivedAnyFrame = true;

@@ -191,7 +191,7 @@ Kartan verifierades på bänken med en FS-i6-sändare (10 kanaler, mode 2) och e
 | CH9 | VrA | VRA | Stabiliseringens styrka som standard |
 | CH10 | VrB | VRB | Marschfart som standard |
 
-CH6–CH10 kan vara **vad som helst, på en rad** i `include/config/Controls.h`: vilket som helst av de 12 lägena, 11 funktionerna (klaffar, broms, lastsläpp, geofence, summer, reversering…) och 7 rattarna. När kortet startar skrivs den faktiska fördelningen ut i seriemonitorn. Allt om lägen och bindningar finns i [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 kan vara **vad som helst, på en rad** i `include/config/Controls.h`: vilket som helst av de 12 lägena, 11 funktionerna (klaffar, broms, lastsläpp, geofence, summer, reversering…) och 8 rattarna. När kortet startar skrivs den faktiska fördelningen ut i seriemonitorn. Allt om lägen och bindningar finns i [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 Alla kanalvärden använder mottagarens standardpulsområde 1000–2000 µs, med 1500 µs som mitt/neutralläge.
 
@@ -248,7 +248,7 @@ Huvudfartreglaget är ett dubbelriktat BLHeli 80A: motorn går åt båda hållen
 - **Bakåt – bara din gas och högst 50 %** (`REVERSE_THROTTLE_LIMIT_PCT`): full spak = halv effekt. I reversering rör autopiloten inte gasen (rodren fungerar som vanligt), och vid förlorad förbindelse stannar motorn helt enkelt.
 - Det syns på OLED:en (`REV` på första raden) och på instrumentpanelen (märket ”Мотор: РЕВЕРС” – ”Motor: BAKÅT”).
 
-**Inställning av fartreglaget i BLHeliSuite** (en gång, propellern borttagen): Motor Direction – **Bidirectional** (på BLHeli_32 – ”Bidirectional”/3D), PPM Min Throttle – 1000, PPM Max Throttle – 2000, Center – 1500. Fartreglaget armeras när det ser neutralläget 1500 µs, och firmwaren skickar det från allra första pulsen. Om motorn snurrar åt fel håll med spaken framåt byter du plats på två valfria motorledningar (eller ställer Motor Direction = Bidirectional Reversed) i stället för att ändra firmwaren.
+**Inställning av fartreglaget i BLHeliSuite** (en gång, propellern borttagen): Motor Direction – **Bidirectional** (på BLHeli_32 – ”Bidirectional”/3D), PPM Min Throttle – 1000, PPM Max Throttle – 2000, Center – 1500. Fartreglaget armeras när det ser neutralläget 1500 µs, och firmwaren skickar det från allra första pulsen. Om motorn snurrar åt fel håll med spaken framåt sätter du `MOTOR_REVERSED = true` i `Config.h` (en rad i stället för att löda om ledningar).
 
 Ett vanligt enkelriktat fartreglage: sätt `ESC_BIDIRECTIONAL = false` i `Config.h`, annars ger det halv gas vid ”stopp” (1500)! Reversering slås då aldrig på.
 
@@ -466,8 +466,9 @@ Läs det här avsnittet i sin helhet **före** den första starten, inte efter e
   - höger spak mot dig → **höjdrodret upp**;
   - vänster spak åt höger → **sidroder och hjul åt höger**;
   - SwB (klaffar) ned → **båda skevrodren mjukt ned**, och roll från spaken rör dem fortfarande åt motsatta håll;
+  - gas framåt (propellern borttagen – titta på rotationsriktningen) → **propellern drar framåt**;
   - i STABILIZE, luta flygplanet med höger vinge ned → **höger skevroder ned, vänster skevroder upp** (ytorna för tillbaka det till plant läge); nosen ned → **höjdrodret upp**.
-  Om något är fel, ändra motsvarande `*_REVERSED` i `include/config/Config.h` (avsnittet ”Servo direction”), inte reverseringen på sändaren: annars blir spaken och autopiloten oense.
+  Om något är fel, ändra en rad i blocket ”Reversering” i `include/config/Config.h`: varje skevroder, höjdrodret, sidrodret, AUX, motorn (`MOTOR_REVERSED`) och klaffarna (`FLAPS_REVERSED`) vänds var för sig, inget annat påverkas. Reversera inte servon på sändaren – då blir spaken och autopiloten oense; en kanal åt andra hållet (spak, brytare, ratt) – `CHANNEL_REVERSED` på samma ställe.
 - [ ] Vid start stod flygplanet stilla, och loggen eller panelen visar inte `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА`; när du lutar flygplanet i händerna ändras P och R på OLED-skärmen åt rätt håll.
 - [ ] Failsafe är inställt i sändaren och provat: stäng av sändaren → `RX LOST` på OLED-skärmen/i Serial (se avsnittet om failsafe).
 - [ ] Sändarens räckvidd har kontrollerats, och sändarens batteri är laddat.

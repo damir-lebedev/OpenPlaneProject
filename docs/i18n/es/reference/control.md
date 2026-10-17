@@ -81,7 +81,7 @@ La lógica aerodinámica en dos pasos. Es propietario de `FlapsController`.
 |---|---|
 | `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 → `roll` (2000 = a la derecha); CH2 → `pitch` **con el signo contrario** (2000 = hacia delante = morro abajo); CH4 → `yaw` |
 | `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | el objetivo de los flaps lo elige `FlightController` (aerofreno → interruptor de flaps → potenciómetro); aquí está el recorrido suave |
-| `FlightOutputState mix(const ControlCommand& c) const` | Orden → PWM. El alabeo, el cabeceo y la guiñada se limitan por el recorrido (`*_MAX_US`); alerones: izquierdo = `flaps + roll`, derecho = `flaps − roll` (abajo = «+»); PWM = `1500 ± deflexión` con el signo de `Config::*_REVERSED`, limitado a 1000..2000. `throttle` no se rellena |
+| `FlightOutputState mix(const ControlCommand& c) const` | Orden → PWM. El alabeo, el cabeceo y la guiñada se limitan por el recorrido (`*_MAX_US`); alerones: izquierdo = `flaps + roll`, derecho = `flaps − roll` (abajo = «+»); PWM = `1500 ± deflexión` con el signo de `Config::*_REVERSED`, el signo de los flaps, `FLAPS_REVERSED`, limitado a 1000..2000. `throttle` no se rellena |
 | `int16_t getFlaps() const` | La posición actual de los flaps, µs |
 
 Flaperones: al extender, ambos alerones bajan `FLAPS_DEPLOYED_US` (el nuevo
@@ -250,10 +250,10 @@ El orden de `update()`:
 9. `command = autopilot->getCommand()` (o los sticks sin piloto automático), los flaps, los suyos;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     hacia delante, `output.throttle = autopilot->applyThrottle(pilotThrottle)` con el
-    límite `THROTTLE_LIMIT_PCT`; hacia atrás, el gas del piloto con el límite
-    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
+    límite `THROTTLE_LIMIT_PCT` × el potenciómetro `Knob::THROTTLE_LIMIT`; hacia atrás, el gas del piloto con el límite
+    `min(REVERSE_THROTTLE_LIMIT_PCT, límite hacia delante)`; lo permitido se estira por todo el recorrido del stick;
 11. no armado o `MOTOR_KILL` → `throttle = PWM_MIN` (lo último);
-12. AUX1: la carga (`PAYLOAD_DROP`), AUX2: la cámara (`Knob::CAMERA_TILT`, `CAMERA_STAB` resta el cabeceo);
+12. AUX1: la carga (`PAYLOAD_DROP`), AUX2: la cámara (`Knob::CAMERA_TILT`, `CAMERA_STAB` resta el cabeceo); `AUX1_REVERSED`/`AUX2_REVERSED` reflejan el pulso.
 13. `outputs.write(output)`.
 
 `applyLinkLoss()`: si el piloto automático está en failsafe (armado: RTH o

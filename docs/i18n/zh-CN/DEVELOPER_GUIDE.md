@@ -294,7 +294,7 @@ PID 计算 `误差 = 目标 − 实际`：向右横滚（roll > 0）→ 横滚�
 
 **4. 指令 → PWM。**`ControlMixer::mix()` 计算每个舵面后缘的偏转量（副翼：向下 = “+”，左侧 = `flaps + roll`，右侧 = `flaps − roll`；升降舵：向上 =
 “+”；方向舵：向右 = “+”），并换算为 PWM `1500 ± 偏转量`，对
-`Config::*_REVERSED = true` 的舵机改变符号。默认值保持了固件此前对摇杆的行为。在组装好的飞机上的检查见 [`PILOT_GUIDE.md`](PILOT_GUIDE.md) 的飞行前检查清单。舵机反向必须在 `Config.h` 中修改，**而不是在遥控器上**——否则摇杆与自动驾驶仪的方向会不一致。
+`Config::*_REVERSED = true`（襟翼单独用 `FLAPS_REVERSED`；AUX、电机和遥控器通道用 `AUX1/AUX2_REVERSED`、`MOTOR_REVERSED`、`CHANNEL_REVERSED`，都在“反向”块里） 的舵机改变符号。默认值保持了固件此前对摇杆的行为。在组装好的飞机上的检查见 [`PILOT_GUIDE.md`](PILOT_GUIDE.md) 的飞行前检查清单。舵机反向必须在 `Config.h` 中修改，**而不是在遥控器上**——否则摇杆与自动驾驶仪的方向会不一致。
 
 ---
 
@@ -786,7 +786,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 检查所有开发
 - 只要串口监视器还开着，就无法向同一个端口烧录。
 - `lib_deps`：`olikraus/U8g2`（OLED）是唯一的外部库。
 - `test/`——详见 [`TESTING.md`](TESTING.md)：
-  - `pio test -e native -e native-stm32`——在 PC 上运行 392 个测试（硬件的模拟替身位于 `test/native/support/`），覆盖率用 `gcovr`；
+  - `pio test -e native -e native-stm32`——在 PC 上运行 395 个测试（硬件的模拟替身位于 `test/native/support/`），覆盖率用 `gcovr`；
   - `pio test -e esp32-s3`——在板子上运行 `test_feedback/`（反馈闭环仿真）和 `test_imu_orientation/`；每一项都会烧录测试固件，之后请用
     `pio run -t upload` 烧回正常固件。
 - 静态分析：`pio check -e esp32-s3`（cppcheck）、`pio check -e stm32h743`（对 `hal/stm32/` 和 `src/stm32/`

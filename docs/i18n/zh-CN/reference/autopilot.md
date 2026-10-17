@@ -37,7 +37,7 @@
 `GEOFENCE`、`HOME_RESET`、`CAMERA_STAB`、`MOTOR_REVERSE`、`COUNT`。
 
 `enum class Knob : uint8_t`——旋钮：`STAB_GAIN`、`MAX_BANK`、
-`CRUISE_SPEED`、`FLAPS`、`CAMERA_TILT`、`RATES`、`LOITER_RADIUS`、`COUNT`。
+`CRUISE_SPEED`、`FLAPS`、`CAMERA_TILT`、`RATES`、`LOITER_RADIUS`、`THROTTLE_LIMIT`、`COUNT`。
 
 `namespace AutopilotNames`——`mode()`、`modeShort()`（≤ 5 个字符）、
 `feature()`、`knob()`：用于日志、OLED、仪表盘和 MAVLink 的名称。

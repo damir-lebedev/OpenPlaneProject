@@ -191,7 +191,7 @@ O mapa foi verificado na bancada com um rádio FS-i6 (10 canais, modo 2) e um re
 | CH9 | VrA | VRA | Por padrão, intensidade da estabilização |
 | CH10 | VrB | VRB | Por padrão, velocidade de cruzeiro |
 
-Os canais CH6–CH10 podem ser **qualquer coisa, com uma única linha** em `include/config/Controls.h`: qualquer um dos 12 modos, das 11 funções (flaps, freio, lançamento de carga, geofence, buzzer, reversão…) e dos 7 potenciômetros. Quando a placa liga, a distribuição real é impressa no monitor serial. Tudo sobre os modos e as atribuições está em [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+Os canais CH6–CH10 podem ser **qualquer coisa, com uma única linha** em `include/config/Controls.h`: qualquer um dos 12 modos, das 11 funções (flaps, freio, lançamento de carga, geofence, buzzer, reversão…) e dos 8 potenciômetros. Quando a placa liga, a distribuição real é impressa no monitor serial. Tudo sobre os modos e as atribuições está em [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 Todos os valores dos canais usam a faixa padrão de pulso do receptor, de 1000 a 2000 µs, com 1500 µs como centro/neutro.
 
@@ -248,7 +248,7 @@ O ESC principal é um BLHeli 80A bidirecional: o motor gira nos dois sentidos, *
 - **Para trás — só o seu acelerador e no máximo 50%** (`REVERSE_THROTTLE_LIMIT_PCT`): stick no máximo = metade da potência. Em reversão o piloto automático não mexe no acelerador (as superfícies de controle funcionam normalmente); na perda de link o motor simplesmente para.
 - Aparece no OLED (`REV` na primeira linha) e no painel (o selo “Мотор: РЕВЕРС” — “Motor: REVERSÃO”).
 
-**Configuração do ESC no BLHeliSuite** (uma vez, sem a hélice): Motor Direction — **Bidirectional** (no BLHeli_32 — “Bidirectional”/3D), PPM Min Throttle — 1000, PPM Max Throttle — 2000, Center — 1500. O ESC arma ao ver o neutro de 1500 µs, e o firmware o envia desde o primeiro pulso. Se com o stick para a frente o motor gira para o lado errado, troque dois fios quaisquer do motor (ou defina Motor Direction = Bidirectional Reversed) em vez de mexer no firmware.
+**Configuração do ESC no BLHeliSuite** (uma vez, sem a hélice): Motor Direction — **Bidirectional** (no BLHeli_32 — “Bidirectional”/3D), PPM Min Throttle — 1000, PPM Max Throttle — 2000, Center — 1500. O ESC arma ao ver o neutro de 1500 µs, e o firmware o envia desde o primeiro pulso. Se com o stick para a frente o motor gira para o lado errado, defina `MOTOR_REVERSED = true` no `Config.h` (uma linha em vez de ressoldar fios).
 
 ESC unidirecional comum: defina `ESC_BIDIRECTIONAL = false` no `Config.h`; senão, no “parado” (1500) ele dará meio acelerador! A reversão, então, nunca é ativada.
 
@@ -466,8 +466,9 @@ Leia esta seção inteira **antes** de ligar pela primeira vez, e não depois de
   - stick direito para você → **profundor para cima**;
   - stick esquerdo para a direita → **leme e roda direcional para a direita**;
   - SwB (flaps) para baixo → **os dois ailerons descem suavemente**, e a rolagem pelo stick continua separando-os em sentidos opostos;
+  - acelerador para a frente (sem a hélice — observe o sentido de rotação) → **a hélice puxa para a frente**;
   - em STABILIZE, incline o avião com a asa direita para baixo → **aileron direito para baixo, esquerdo para cima** (as superfícies o devolvem ao horizonte); nariz para baixo → **profundor para cima**.
-  Se algo estiver errado, mude o `*_REVERSED` correspondente em `include/config/Config.h` (seção "Direção dos servos"), e não a reversão no rádio: senão o stick e o piloto automático vão divergir.
+  Se algo estiver errado, mude uma linha no bloco “Reversão” de `include/config/Config.h`: cada aileron, o profundor, o leme, AUX, o motor (`MOTOR_REVERSED`) e os flaps (`FLAPS_REVERSED`) são invertidos separadamente, nada mais é afetado. Não inverta servos no rádio — o stick e o piloto automático vão divergir; um canal ao contrário (stick, chave, potenciômetro) — `CHANNEL_REVERSED`, no mesmo lugar.
 - [ ] Ao ligar, o avião estava parado e não há `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА` no log nem no painel; ao inclinar o avião nas mãos, o P e o R no OLED mudam no sentido certo.
 - [ ] O failsafe está configurado no rádio e foi testado: desligue o rádio → `RX LOST` no OLED ou no Serial (veja a seção sobre failsafe).
 - [ ] O alcance do rádio foi testado e a bateria do rádio está carregada.

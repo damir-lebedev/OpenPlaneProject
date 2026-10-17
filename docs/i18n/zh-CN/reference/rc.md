@@ -33,6 +33,7 @@ RC 信号的通用转换。
 | 方法 | 说明 |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | 限制在 `PWM_MIN..PWM_MAX` 内 |
+| `static uint16_t reversed(uint16_t value)` | 通道反向：`3000 − clamp(value)`（1000 ↔ 2000）——用于 `Config::CHANNEL_REVERSED` |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | 线性映射：1000 → `−max`，1500 → 0，2000 → `+max`（输入先被限幅）；`reverse` 会改变符号。结果被限制在 ±`max` 内 |
 
 示例：`centered(1750, 500) == 250`，`centered(1750, 500, true) == -250`。
@@ -67,3 +68,4 @@ FlySky iBUS 协议的逐字节解析器。
 
 - 在收到第一个正确帧之前，`isSignalLost() == true`——默认值（全部为 1500）不会被当作遥控器的指令。
 - failsafe 标志在**每个**正确帧上重新计算——收到第一个油门正常的帧，链路就恢复了。
+- 设置了 `Config::CHANNEL_REVERSED` 的通道以反向后的值保存（`RcInput::reversed`）；failsafe 在此之前按**原始**油门判断，CH3 的反向被 `static_assert` 禁止。

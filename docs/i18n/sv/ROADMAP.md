@@ -32,7 +32,7 @@ marschflygning, cirklar och hemflygning med GPS, handstart, autolandning, termik
 ”räddning”), geofence, hemflygning vid förlorad förbindelse, lastsläpp,
 ett pitotrör av två barometrar, stöd för nya sensorer (LSM6DSV, ICM-45686,
 QMC6309, SPL06, BMP581) och en fullständig firmware för STM32H743 med MAVLink-telemetri
-för QGroundControl. Allt detta har kontrollerats med 392 automatiska tester och flygsimuleringar
+för QGroundControl. Allt detta har kontrollerats med 395 automatiska tester och flygsimuleringar
 i sluten slinga (hela firmwaren flyger en flygplansmodell), men **det har ännu inte
 provats i luften**. Med andra ord: hittills har bara manuell styrning flugit; autopiloten är
 skriven, kontrollerad med allt som går att kontrollera den med utan att flyga, och väntar på
@@ -138,7 +138,7 @@ Ladda upp firmwaren: `pio run -t upload`. Monitor: `pio device monitor` (115200)
 | CH10 | VRB | marschfart |
 
 CH6–CH10 tilldelas med en enda rad i `include/config/Controls.h`: vilket som helst av de 12
-lägena, 11 funktionerna (klaffar, broms, lastsläpp, geofence, reversering…) och 7 rattarna –
+lägena, 11 funktionerna (klaffar, broms, lastsläpp, geofence, reversering…) och 8 rattarna –
 [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 ### 4.3 Styrflödet (`FlightController::update()`)
@@ -244,7 +244,7 @@ Med andra ord: den del av den framtida markstationen som är mest riskabel i fr�
 
 För att färdplanen inte ska läsas som marknadsföring redovisar vi separat vad som ännu inte har gjorts eller bara har gjorts delvis:
 
-- Autopiloten har verifierats på bänken, med 392 automatiska tester och simuleringar i sluten slinga, men den har aldrig provats under flygning – hittills har bara manuell styrning flugit (på den första prototypen). Flygplansmodellen i simuleringarna är förenklad, och koefficienterna är startvärden.
+- Autopiloten har verifierats på bänken, med 395 automatiska tester och simuleringar i sluten slinga, men den har aldrig provats under flygning – hittills har bara manuell styrning flugit (på den första prototypen). Flygplansmodellen i simuleringarna är förenklad, och koefficienterna är startvärden.
 - De nya sensorerna (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) har verifierats med registeremulatorer byggda efter databladen; på hårdvara ännu inte.
 - STM32H743: hela firmwaren körs på en dator ovanpå STM32duino-attrapper; det finns ännu inget fysiskt kort.
 - Horisonten för stabiliseringen är farkostens attityd vid start (IMU:n kalibreras vid varje start), eller monteringskalibreringen från tre positioner.

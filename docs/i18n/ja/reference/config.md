@@ -90,6 +90,7 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 | `PWM_MIN` / `PWM_CENTER` / `PWM_MAX` | 1000 / 1500 / 2000 | 標準の RC パルス（µs） |
 | `AILERON_MAX_US`、`ELEVATOR_MAX_US`、`RUDDER_MAX_US` | 500 / 500 / 300 | スティックをフルストロークにしたときの中心からの舵角（µs）。ラダーが小さいのは、同じサーボに降着装置のホイールが付いているため |
 | `THROTTLE_LIMIT_PCT` | 100 | ESC へのスロットルの上限（%）。スティックにもオートパイロットにも同じ値が適用される（`FlightController::capThrottle`）。出力の弱い 3S1P のバッテリーでのテストベンチ試験では 50 にしていた。テストはこの値から期待出力を計算する |
+| `THROTTLE_KNOB_MIN_PCT` | 10 | ダイヤル `Knob::THROTTLE_LIMIT`：`THROTTLE_LIMIT_PCT` に加えてスロットル上限 10 … 55 … 100%。許された範囲をスティックの全ストロークに引き伸ばす。割り当てなしなら上限なし |
 
 ### ESC とモーター逆転
 
@@ -108,10 +109,22 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 | `FLAPS_DEPLOYED_US` | 220 | 各エルロンの下げ舵角（µs）（MG90S のホーンで約 20°） |
 | `FLAPS_TRANSITION_MS` | 1000 | 完全に展開／格納するまでの時間 |
 
-### サーボの向き
+### リバース
 
-`AILERON_LEFT_REVERSED`、`AILERON_RIGHT_REVERSED`（`true` はエルロンのサーボが鏡像配置）、`ELEVATOR_REVERSED`（`true`）、
-`RUDDER_REVERSED` は、リバースを設定する唯一の場所です。`ControlMixer` は物理的な符号で計算し、符号の反転はここだけで行うため、スティックとオートパイロットの向きが食い違うことはありません。送信機側でのリバースは**してはいけません**。
+すべて `Config.h` の 1 つのブロックにあります。1 行で 1 つのものだけを反転し、ほかには触れません。
+
+| フラグ | 既定値 | 何を反転するか |
+|---|---|---|
+| `AILERON_LEFT_REVERSED` / `AILERON_RIGHT_REVERSED` | `false` / `true` | エルロンを 1 枚ずつ（翼内のサーボは鏡像配置） |
+| `ELEVATOR_REVERSED` | `true` | エレベーター |
+| `RUDDER_REVERSED` | `false` | ラダーと操向輪（1 つのサーボ） |
+| `AUX1_REVERSED` | `false` | ペイロード投下サーボ：開 ↔ 閉 |
+| `AUX2_REVERSED` | `false` | カメラのサーボ |
+| `MOTOR_REVERSED` | `false` | モーターの回転方向。モーター線 2 本をはんだ付けし直す代わり。`ESC_BIDIRECTIONAL` のときのみ（それ以外はビルドが通らない） |
+| `FLAPS_REVERSED` | `false` | エルロンによるフラップとエアブレーキ。ロールには触れない |
+| `CHANNEL_REVERSED[10]` | `false` ×10 | 送信機のチャンネル CH1…CH10。送信機メニューの Reverse と同じで、スティック、スイッチ、ダイヤルが逆に働く。CH3（スロットル）は不可：通信途絶は生のスロットル < 950 µs で判定するため（`static_assert`） |
+
+`ControlMixer` は物理的な符号で計算し、符号の反転はここだけで行うので、スティックとオートパイロットの向きが食い違うことはありません。舵面がスティックでもオートパイロットでも逆に動くなら出力のフラグ、スティックのときだけ逆ならチャンネルのフラグです。`Config::directedUs(us, reversed)` はパルスを 1500 を中心に反転します。
 
 ### センサーの取り付け
 

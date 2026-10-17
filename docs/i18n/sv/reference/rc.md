@@ -35,6 +35,7 @@ Vanliga omvandlingar av RC-signaler.
 | Metod | Beskrivning |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | Begränsar till `PWM_MIN..PWM_MAX` |
+| `static uint16_t reversed(uint16_t value)` | Kanal åt andra hållet: `3000 − clamp(value)` (1000 ↔ 2000) – för `Config::CHANNEL_REVERSED` |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | Linjär: 1000 → `−max`, 1500 → 0, 2000 → `+max` (indata begränsas först); `reverse` vänder tecknet. Resultatet begränsas till ±`max` |
 
 Exempel: `centered(1750, 500) == 250`, `centered(1750, 500, true) == -250`.
@@ -75,3 +76,6 @@ Invarianter:
   (alla 1500) tas inte för sändarkommandon.
 - Failsafe-flaggan räknas om vid **varje** korrekt ram – förbindelsen
   återställs av allra första ramen med normal gas.
+- Kanaler med `Config::CHANNEL_REVERSED` sparas vända (`RcInput::reversed`);
+  failsafe upptäcks dessförinnan på **rå** gas, och reversering av CH3 förbjuds
+  av `static_assert`.

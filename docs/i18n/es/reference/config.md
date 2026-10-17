@@ -100,6 +100,7 @@ la variante.
 | `PWM_MIN` / `PWM_CENTER` / `PWM_MAX` | 1000 / 1500 / 2000 | El pulso RC estándar, µs |
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Deflexión desde el centro con el recorrido completo del stick, µs. El timón de dirección es menor: en el mismo servo va la rueda del tren de aterrizaje |
 | `THROTTLE_LIMIT_PCT` | 100 | El techo del acelerador hacia el ESC, %, igual para el stick y para el piloto automático (`FlightController::capThrottle`). Para las pruebas de banco con una batería 3S1P débil se puso 50; las pruebas calculan la salida esperada a partir de este valor |
+| `THROTTLE_KNOB_MIN_PCT` | 10 | Potenciómetro `Knob::THROTTLE_LIMIT`: límite de gas 10 … 55 … 100 % sobre `THROTTLE_LIMIT_PCT`; lo permitido se estira por todo el recorrido del stick. Sin asignar, no hay límite |
 
 ### ESC e inversión del motor
 
@@ -118,13 +119,26 @@ la variante.
 | `FLAPS_DEPLOYED_US` | 220 | Deflexión hacia abajo de cada alerón, µs (~20° del brazo del MG90S) |
 | `FLAPS_TRANSITION_MS` | 1000 | El tiempo de la extensión/recogida completa |
 
-### Sentido de los servos
+### Inversión
 
-`AILERON_LEFT_REVERSED`, `AILERON_RIGHT_REVERSED` (`true`: los servos de los alerones están en espejo), `ELEVATOR_REVERSED` (`true`),
-`RUDDER_REVERSED`: el único lugar donde se fija la inversión. `ControlMixer`
-calcula con signos físicos y cambia el signo solo aquí, por eso los sticks y el
-piloto automático no pueden desincronizarse. La inversión en la emisora **no
-debe** usarse.
+Todo está en un solo bloque de `Config.h`: una línea, una cosa; no se toca nada más.
+
+| Indicador | Por defecto | Qué invierte |
+|---|---|---|
+| `AILERON_LEFT_REVERSED` / `AILERON_RIGHT_REVERSED` | `false` / `true` | cada alerón por separado (los servos del ala van en espejo) |
+| `ELEVATOR_REVERSED` | `true` | el timón de profundidad |
+| `RUDDER_REVERSED` | `false` | el timón de dirección y la rueda (un solo servo) |
+| `AUX1_REVERSED` | `false` | el servo del lanzamiento de carga: abierto ↔ cerrado |
+| `AUX2_REVERSED` | `false` | el servo de la cámara |
+| `MOTOR_REVERSED` | `false` | el sentido de giro del motor, en lugar de resoldar dos cables; solo con `ESC_BIDIRECTIONAL` (si no, la compilación falla) |
+| `FLAPS_REVERSED` | `false` | los flaps y el aerofreno en los alerones; el alabeo no se toca |
+| `CHANNEL_REVERSED[10]` | `false` ×10 | canales de la emisora CH1…CH10, como Reverse en el menú de la emisora: un stick, interruptor o potenciómetro funciona al revés. CH3 (gas) no está permitido: la pérdida de enlace se detecta por el gas en bruto < 950 µs (`static_assert`) |
+
+`ControlMixer` calcula con signos físicos y el signo solo se cambia aquí, así
+que los sticks y el piloto automático no pueden desincronizarse. Si una
+superficie se mueve al revés tanto con el stick como con el piloto automático,
+es un indicador de salida; si solo con el stick, de canal.
+`Config::directedUs(us, reversed)` refleja un pulso respecto a 1500.
 
 ### Montaje de los sensores
 

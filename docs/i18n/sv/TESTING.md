@@ -96,10 +96,10 @@ Korttesterna (`test_feedback`, `test_imu_orientation`) är portabla: med `ARDUIN
 |---|---|---|
 | `native/test_hal` | 17 | `II2CBus`-hjälpare (NACK, kort läsning – bufferten lämnas orörd), `I2cRegisterDevice`, `SpiRegisterDevice` (läsbit, BMP388:s dummybyte), `Esp32I2CBus` (tidsgräns 5 ms), `Esp32SpiBus` (lägen 0–3), `Esp32UartPort` (8N1, stift), `Esp32ServoOutput` (50 Hz/14 bitar, pulsbegränsning, LEDC-fel, mätning via ingångsbufferten), `Esp32Board` (bussar, UART, kanalordning, AUX, summer) |
 | `native/test_rc` | 16 | `RcChannelState`, `RcInput`, iBUS-tolkning: ramar som kommer i bitar, CRC, 12-bitarsvärden, sändarens failsafe, tidsgräns 500 ms (även över ett överslag i `micros()`), skräp, omsynkronisering |
-| `native/test_control` | 24 | Klaffar (hastighet, första anropet, pauser), mixern (tecken, reversering, flaperoner), gas, ARM-tillståndsmaskinen och lägets sensorkontroller, utgångstabellen och pulsens självtest, pulsen till dubbelriktad ESC, motorreversering bara i DISARM och ARM-spärr efter ett riktningsbyte |
+| `native/test_control` | 26 | Klaffar (hastighet, första anropet, pauser), mixern (tecken, reversering, flaperoner), gas, ARM-tillståndsmaskinen och lägets sensorkontroller, utgångstabellen och pulsens självtest, pulsen till dubbelriktad ESC, motorreversering bara i DISARM och ARM-spärr efter ett riktningsbyte, reverseringshjälpare (pulsspegel, kanal tvärtom, motor tvärtom) |
 | `native/test_autopilot` | 22 | PID (D-term från sensorns hastighet, integral, anti-windup, `dt`), STABILIZE som vinkelläge, tidsbaserad autostart, ALT_HOLD med höjdrodret, glidflykt vid förlorad förbindelse |
 | `native/test_autopilot_modes` | 31 | Alla 12 lägen och hur vart och ett reagerar på en saknad sensor, bindningstabellen och `static_assert`, funktioner och rattar, navigering (kurs, cirkel, hem, geofence), failsafe RTH/glidflykt, handstart, termikflygning, autotrimning (skrivs bara på marken) |
-| `native/test_flight_controller` | 14 | En fullständig `FlightController`-cykel på de riktiga klasserna: prioriteterna förlorad förbindelse > ARM > spakar/autopilot > gas; AUX, `MOTOR_KILL`, summer; reversering på SwD: bara i DISARM, 3 s utan ARM, 50 % gas bakåt, ingen gas från autopiloten, motorn stannar vid förlorad förbindelse |
+| `native/test_flight_controller` | 15 | En fullständig `FlightController`-cykel på de riktiga klasserna: prioriteterna förlorad förbindelse > ARM > spakar/autopilot > gas; AUX, `MOTOR_KILL`, summer; reversering på SwD: bara i DISARM, 3 s utan ARM, 50 % gas bakåt, ingen gas från autopiloten, motorn stannar vid förlorad förbindelse; gasgränsratten sträcker ut det tillåtna över hela spakens slag |
 | `native/test_imu` | 21 | MPU6050/6500/9250 och ICM-42688: identifiering, register, skalor, axelrotation och flygtekniska teckenkonventioner, bussfel, gyroskopkalibrering och kontrollen före flygning, monteringskalibrering från tre positioner, NVS, orienteringsfiltret |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`, BMP388 över I2C och SPI, BME280/BMP280 mot Bosch-referensen, kompasser (kurs, hard-iron-kalibrering i NVS), u-blox M10 (CFG-VALSET, NAV-PVT, korrupta ramar, tidsgräns), `SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV (16X/32X, alternativ adress, SPI), ICM-45686 (indirekta register), QMC6309, SPL06-001 (formlerna i databladet), BMP581 (DRDY och reservvägen), pitotröret (nollpunkt, filter, densitet, förväxlade slangar, inaktuella data, en ”flygning” med bruset från två barometrar) |
@@ -120,7 +120,7 @@ Korttesterna (`test_feedback`, `test_imu_orientation`) är portabla: med `ARDUIN
 | `native_stm32/test_app_stm32_no_sd` | 2 | `src/stm32/main.cpp` utan SD-kort: den svarta lådan är avstängd och förklarar varför, flygplanet flyger, menyn `k` går inte sönder |
 | `test_feedback` | 10 | En flygplanssimulering i sluten slinga med en återkopplingsslinga (på datorn och på kortet) |
 | `test_imu_orientation` | 5 | Kalibrering av IMU-monteringen på 300 slumpmässiga monteringar (på datorn och på kortet) |
-| **Totalt** | **392** | 345 i `native` + 47 i `native-stm32` (plus 9 bara på kortet – `test_blackbox_sd`) |
+| **Totalt** | **395** | 348 i `native` + 47 i `native-stm32` (plus 9 bara på kortet – `test_blackbox_sd`) |
 
 ### Tester på STM32-kortet
 

@@ -191,7 +191,7 @@ Die Belegung wurde auf dem Prüfstand mit einem Sender FS-i6 (10 Kanäle, Modus 
 | CH9 | VrA | VRA | Standardmäßig die Stärke der Stabilisierung |
 | CH10 | VrB | VRB | Standardmäßig die Reisegeschwindigkeit |
 
-CH6–CH10 lassen sich in `include/config/Controls.h` **mit einer einzigen Zeile beliebig belegen**: mit jedem der 12 Modi, der 11 Funktionen (Klappen, Bremse, Lastabwurf, Geofence, Summer, Motorumkehr …) und der 7 Drehregler. Beim Einschalten des Boards wird die tatsächliche Belegung im seriellen Monitor ausgegeben. Alles zu den Modi und Zuordnungen steht in [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 lassen sich in `include/config/Controls.h` **mit einer einzigen Zeile beliebig belegen**: mit jedem der 12 Modi, der 11 Funktionen (Klappen, Bremse, Lastabwurf, Geofence, Summer, Motorumkehr …) und der 8 Drehregler. Beim Einschalten des Boards wird die tatsächliche Belegung im seriellen Monitor ausgegeben. Alles zu den Modi und Zuordnungen steht in [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 Alle Kanalwerte liegen im üblichen Impulsbereich des Empfängers von 1000–2000 µs, wobei 1500 µs die Mitte/Neutralstellung ist.
 
@@ -248,7 +248,7 @@ Der Hauptregler ist ein bidirektionaler BLHeli 80A: Der Motor dreht in beide Ric
 - **Rückwärts – nur Ihr Gas und höchstens 50 %** (`REVERSE_THROTTLE_LIMIT_PCT`): voller Knüppel = halbe Leistung. In der Umkehr fasst der Autopilot das Gas nicht an (die Ruder arbeiten wie gewohnt), bei Verbindungsverlust bleibt der Motor einfach stehen.
 - Zu sehen auf dem OLED (`REV` in der ersten Zeile) und im Dashboard (Badge „Мотор: РЕВЕРС“ – „Motor: UMKEHR“).
 
-**Einstellung des Reglers in BLHeliSuite** (einmalig, Propeller ab): Motor Direction – **Bidirectional** (bei BLHeli_32 – „Bidirectional“/3D), PPM Min Throttle – 1000, PPM Max Throttle – 2000, Center – 1500. Der Regler schaltet scharf, wenn er die Neutralstellung 1500 µs sieht, und die Firmware gibt sie ab dem ersten Impuls aus. Dreht der Motor bei Knüppel nach vorn falsch herum, tauschen Sie zwei beliebige Motorkabel (oder stellen Motor Direction = Bidirectional Reversed ein) statt die Firmware zu ändern.
+**Einstellung des Reglers in BLHeliSuite** (einmalig, Propeller ab): Motor Direction – **Bidirectional** (bei BLHeli_32 – „Bidirectional“/3D), PPM Min Throttle – 1000, PPM Max Throttle – 2000, Center – 1500. Der Regler schaltet scharf, wenn er die Neutralstellung 1500 µs sieht, und die Firmware gibt sie ab dem ersten Impuls aus. Dreht der Motor bei Knüppel nach vorn falsch herum, setzen Sie `MOTOR_REVERSED = true` in `Config.h` (eine Zeile statt Umlöten).
 
 Gewöhnlicher Regler mit einer Drehrichtung: `ESC_BIDIRECTIONAL = false` in `Config.h`, sonst gibt er bei „Stopp“ (1500) halbes Gas! Die Umkehr wird dann nie eingeschaltet.
 
@@ -466,8 +466,9 @@ Lesen Sie diesen Abschnitt vollständig **vor** dem ersten Einschalten, nicht er
   - rechter Knüppel zu sich → **Höhenruder hoch**;
   - linker Knüppel nach rechts → **Seitenruder und Lenkrad nach rechts**;
   - SwB (Klappen) nach unten → **beide Querruder gehen sanft nach unten**, und das Rollen per Knüppel spreizt sie dabei weiterhin in entgegengesetzte Richtungen;
+  - Gas nach vorn (Propeller ab – auf die Drehrichtung achten) → **der Propeller zieht nach vorn**;
   - in STABILIZE das Flugzeug mit dem rechten Flügel nach unten neigen → **rechtes Querruder runter, linkes hoch** (die Ruder bringen es zurück in die Waagerechte); Nase nach unten → **Höhenruder hoch**.
-  Stimmt etwas nicht, ändern Sie das passende `*_REVERSED` in `include/config/Config.h` (Abschnitt „Servorichtung“) und nicht die Umkehr im Sender: Sonst gehen Knüppel und Autopilot auseinander.
+  Stimmt etwas nicht, ändern Sie eine Zeile im Block „Umkehr“ von `include/config/Config.h`: jedes Querruder, Höhenruder, Seitenruder, AUX, der Motor (`MOTOR_REVERSED`) und die Klappen (`FLAPS_REVERSED`) werden einzeln umgekehrt, sonst wird nichts berührt. Servos nicht im Sender umkehren – sonst gehen Knüppel und Autopilot auseinander; einen Kanal umgekehrt (Knüppel, Schalter, Drehregler) – `CHANNEL_REVERSED` an derselben Stelle.
 - [ ] Beim Einschalten stand das Flugzeug still, und im Log bzw. im Dashboard steht kein `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА`; beim Neigen des Flugzeugs in den Händen ändern sich P und R auf dem OLED in die richtige Richtung.
 - [ ] Failsafe ist im Sender eingerichtet und geprüft: Sender ausgeschaltet → `RX LOST` auf dem OLED bzw. in Serial (siehe den Abschnitt zu Failsafe).
 - [ ] Die Reichweite des Senders wurde geprüft, der Senderakku ist geladen.

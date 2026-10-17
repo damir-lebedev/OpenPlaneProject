@@ -80,7 +80,7 @@ Den aerodynamiska logiken i två steg. Äger `FlapsController`.
 |---|---|
 | `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 → `roll` (2000 = höger); CH2 → `pitch` **med motsatt tecken** (2000 = bort från dig = nosen ned); CH4 → `yaw` |
 | `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | klaffmålet väljs av `FlightController` (luftbroms → klaffbrytare → ratt), den mjuka rörelsen sker här |
-| `FlightOutputState mix(const ControlCommand& c) const` | Kommando → PWM. Roll/tippning/gir begränsas av utslaget (`*_MAX_US`); skevroder: vänster = `flaps + roll`, höger = `flaps − roll` (ned = ”+”); PWM = `1500 ± utslag` med tecknet från `Config::*_REVERSED`, begränsat till 1000..2000. `throttle` fylls inte i |
+| `FlightOutputState mix(const ControlCommand& c) const` | Kommando → PWM. Roll/tippning/gir begränsas av utslaget (`*_MAX_US`); skevroder: vänster = `flaps + roll`, höger = `flaps − roll` (ned = ”+”); PWM = `1500 ± utslag` med tecknet från `Config::*_REVERSED`, klaffarnas tecken – `FLAPS_REVERSED`, begränsat till 1000..2000. `throttle` fylls inte i |
 | `int16_t getFlaps() const` | Klaffarnas aktuella läge, µs |
 
 Flaperoner: vid utfällning sänks båda skevrodren med `FLAPS_DEPLOYED_US` (det nya
@@ -246,10 +246,10 @@ Ordningen i `update()`:
 9. `command = autopilot->getCommand()` (eller spakarna utan autopilot), klaffarna – sina egna;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     framåt – `output.throttle = autopilot->applyThrottle(pilotThrottle)` med gränsen
-    `THROTTLE_LIMIT_PCT`, bakåt – pilotens gas med gränsen
-    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
+    `THROTTLE_LIMIT_PCT` × ratten `Knob::THROTTLE_LIMIT`, bakåt – pilotens gas med gränsen
+    `min(REVERSE_THROTTLE_LIMIT_PCT, framåtgränsen)`; det tillåtna sträcks ut över hela spakens slag;
 11. inte armerat eller `MOTOR_KILL` → `throttle = PWM_MIN` (sist);
-12. AUX1 – lasten (`PAYLOAD_DROP`), AUX2 – kameran (`Knob::CAMERA_TILT`, `CAMERA_STAB` drar ifrån tippningen);
+12. AUX1 – lasten (`PAYLOAD_DROP`), AUX2 – kameran (`Knob::CAMERA_TILT`, `CAMERA_STAB` drar ifrån tippningen); `AUX1_REVERSED`/`AUX2_REVERSED` speglar pulsen.
 13. `outputs.write(output)`.
 
 `applyLinkLoss()`: om autopiloten är i failsafe (armerat: RTH eller glidflykt) –

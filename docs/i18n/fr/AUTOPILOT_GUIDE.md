@@ -230,6 +230,7 @@ Le centre du potentiomètre = valeur par défaut de `Config.h` ; les extrémité
 | `CAMERA_TILT` | −90° … 0° … +30° | angle de la caméra (AUX2) |
 | `RATES` | 30 … 65 … 100 % de la course des sticks | tous les modes : sensibilité des sticks |
 | `LOITER_RADIUS` | 25 … 50 … 150 m | LOITER et cercles au-dessus du point de départ |
+| `THROTTLE_LIMIT` | limite des gaz 10 … 55 … 100 % | tous les modes : manche des gaz à fond = la limite du potentiomètre, la plage autorisée est étirée sur toute la course du manche ; les gaz du pilote automatique sont limités de la même façon |
 
 > Une astuce utile : le potentiomètre `STAB_GAIN` sur VrA permet un réglage « en direct » des coefficients en vol. Si ça oscille — diminuez ; si c’est mou — augmentez ; puis reportez le multiplicateur dans `Config.h`.
 
@@ -299,7 +300,7 @@ L’ARM/DISARM depuis le sol est **refusé** : uniquement par l’interrupteur 
 
 ## Ordre de réglage d’un nouvel avion
 
-1. **MANUAL au sol :** sens des gouvernes (`*_REVERSED` dans `Config.h`), volets vers le bas, AUX. Contrôle des sorties avec `p` dans la console (hélice retirée !).
+1. **MANUAL au sol :** sens des gouvernes, du moteur et des volets (le bloc « Inversion » de `Config.h`), volets vers le bas, AUX. Contrôle des sorties avec `p` dans la console (hélice retirée !).
 2. **Capteurs au sol :** `b` : interrogation des bus ; `s` : état ; `o` : calibration du montage de l’IMU (3 positions, une seule fois) ; `m` : boussole.
 3. **STABILIZE au sol :** inclinez l’avion vers la droite : l’aileron droit doit aller **vers le bas** (pour redresser). Nez en haut : gouverne de profondeur vers le bas. Sinon, les inversions ou le montage de l’IMU sont faux.
 4. **Premier vol en MANUAL**, montée à plus de 50 m → STABILIZE. Si ça oscille, `STAB_GAIN` plus petit ; si c’est mou, plus grand.

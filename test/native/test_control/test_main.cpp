@@ -533,6 +533,30 @@ void test_arming_refuses_with_external_block_reason()
     takeSerial();
 }
 
+// ------------------------------------------------------------
+// Реверс одной строкой (Config.h) — помощники, через которые идут флаги
+// ------------------------------------------------------------
+
+void test_reverse_helpers_mirror_around_centre()
+{
+    TEST_ASSERT_EQUAL_UINT16(1200, Config::directedUs(1200, false));
+    TEST_ASSERT_EQUAL_UINT16(1800, Config::directedUs(1200, true));
+    TEST_ASSERT_EQUAL_UINT16(1500, Config::directedUs(1500, true));
+    TEST_ASSERT_EQUAL_UINT16(2000, RcInput::reversed(1000));
+    TEST_ASSERT_EQUAL_UINT16(1250, RcInput::reversed(1750));
+    TEST_ASSERT_EQUAL_UINT16(1000, RcInput::reversed(2100));   // вне диапазона — обрезается
+    TEST_ASSERT_FALSE(Config::CHANNEL_REVERSED[Channels::THROTTLE]);
+}
+
+void test_motor_reversed_swaps_forward_and_backward()
+{
+    // Как поменять два провода мотора: "вперёд" уходит ниже нейтрали.
+    TEST_ASSERT_EQUAL_UINT16(1250, EscSignal::pulseUs(1500, false, true));
+    TEST_ASSERT_EQUAL_UINT16(1750, EscSignal::pulseUs(1500, true, true));
+    TEST_ASSERT_EQUAL_UINT16(1500, EscSignal::pulseUs(1000, false, true));   // стоп — стоп
+    TEST_ASSERT_EQUAL_UINT16(EscSignal::pulseUs(1500, Config::MOTOR_REVERSED, false), EscSignal::pulseUs(1500, false));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -557,6 +581,8 @@ int main()
     RUN_TEST(test_outputs_begin_attaches_all_and_reports_required);
     RUN_TEST(test_outputs_write_and_failsafe);
     RUN_TEST(test_esc_signal_bidirectional_mapping);
+    RUN_TEST(test_reverse_helpers_mirror_around_centre);
+    RUN_TEST(test_motor_reversed_swaps_forward_and_backward);
     RUN_TEST(test_motor_reverse_changes_only_when_disarmed_and_blocks_arm_while_settling);
     RUN_TEST(test_arming_refuses_with_external_block_reason);
     RUN_TEST(test_pulse_self_test_reports_match_mismatch_and_missing);

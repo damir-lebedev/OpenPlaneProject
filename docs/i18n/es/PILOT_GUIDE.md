@@ -191,7 +191,7 @@ El mapa se ha comprobado en el banco con una emisora FS-i6 (10 canales, modo 2) 
 | CH9 | VrA | VRA | Por defecto, intensidad de la estabilización |
 | CH10 | VrB | VRB | Por defecto, velocidad de crucero |
 
-CH6–CH10 pueden ser **lo que quieras, con una sola línea** de `include/config/Controls.h`: cualquiera de los 12 modos, de las 11 funciones (flaps, freno, lanzamiento de carga, geovalla, zumbador, inversión…) y de los 7 potenciómetros. Al encender la placa, la asignación real se imprime en el monitor serie. Todo sobre los modos y las asignaciones está en [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 pueden ser **lo que quieras, con una sola línea** de `include/config/Controls.h`: cualquiera de los 12 modos, de las 11 funciones (flaps, freno, lanzamiento de carga, geovalla, zumbador, inversión…) y de los 8 potenciómetros. Al encender la placa, la asignación real se imprime en el monitor serie. Todo sobre los modos y las asignaciones está en [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 Todos los valores de los canales usan el rango estándar de pulso del receptor, de 1000 a 2000 µs, con 1500 µs como centro/neutro.
 
@@ -248,7 +248,7 @@ El variador principal es un BLHeli 80A bidireccional: el motor gira en ambos sen
 - **Hacia atrás, solo tu gas y no más del 50 %** (`REVERSE_THROTTLE_LIMIT_PCT`): stick a fondo = media potencia. En inversión el piloto automático no toca el gas (las superficies de mando funcionan como siempre); si se pierde el enlace, el motor simplemente se para.
 - Se ve en la OLED (`REV` en la primera línea) y en el panel (la insignia «Мотор: РЕВЕРС», «Motor: INVERSIÓN»).
 
-**Configuración del variador en BLHeliSuite** (una vez, sin hélice): Motor Direction, **Bidirectional** (en BLHeli_32, «Bidirectional»/3D); PPM Min Throttle, 1000; PPM Max Throttle, 2000; Center, 1500. El variador se arma al ver el neutro de 1500 µs, y el firmware lo emite desde el primer pulso. Si con el stick hacia delante el motor gira al revés, intercambia dos cables cualesquiera del motor (o pon Motor Direction = Bidirectional Reversed) en lugar de tocar el firmware.
+**Configuración del variador en BLHeliSuite** (una vez, sin hélice): Motor Direction, **Bidirectional** (en BLHeli_32, «Bidirectional»/3D); PPM Min Throttle, 1000; PPM Max Throttle, 2000; Center, 1500. El variador se arma al ver el neutro de 1500 µs, y el firmware lo emite desde el primer pulso. Si con el stick hacia delante el motor gira al revés, pon `MOTOR_REVERSED = true` en `Config.h` (una línea en lugar de resoldar cables).
 
 Un variador unidireccional normal: `ESC_BIDIRECTIONAL = false` en `Config.h`; si no, en «parado» (1500) dará medio gas. En ese caso la inversión nunca se activa.
 
@@ -466,8 +466,9 @@ Lee esta sección entera **antes** de la primera puesta en marcha, no después d
   - stick derecho hacia ti → **timón de profundidad arriba**;
   - stick izquierdo a la derecha → **timón de dirección y rueda a la derecha**;
   - SwB (flaps) abajo → **los dos alerones bajan suavemente**, y el alabeo con el stick los sigue separando en sentidos opuestos;
+  - gas hacia delante (sin hélice, mira el sentido de giro) → **la hélice tira hacia delante**;
   - en STABILIZE, inclina el avión con el ala derecha abajo → **alerón derecho abajo, izquierdo arriba** (las superficies lo devuelven a la horizontal); morro abajo → **timón de profundidad arriba**.
-  Si algo no va bien, cambia el `*_REVERSED` correspondiente en `include/config/Config.h` (sección «Dirección de los servos»), no la inversión en la emisora: si no, el stick y el piloto automático discreparán.
+  Si algo no va bien, cambia una línea del bloque «Inversión» de `include/config/Config.h`: cada alerón, el timón de profundidad, el de dirección, AUX, el motor (`MOTOR_REVERSED`) y los flaps (`FLAPS_REVERSED`) se invierten por separado y no se toca nada más. No inviertas servos en la emisora: el stick y el piloto automático discreparán; un canal al revés (stick, interruptor, potenciómetro) se cambia con `CHANNEL_REVERSED`, en el mismo sitio.
 - [ ] Al encender, el avión estaba inmóvil, y en el registro o en el panel no aparece `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА`; al inclinar el avión con las manos, la P y la R del OLED cambian en el sentido correcto.
 - [ ] El failsafe está configurado en la emisora y comprobado: apaga la emisora → `RX LOST` en el OLED o en Serial (véase la sección sobre failsafe).
 - [ ] Se ha comprobado el alcance de la emisora y la batería de la emisora está cargada.

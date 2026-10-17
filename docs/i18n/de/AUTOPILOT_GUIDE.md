@@ -230,6 +230,7 @@ Die Mitte des Drehreglers = Standardwert aus `Config.h`; die Enden sind Minimum 
 | `CAMERA_TILT` | −90° … 0° … +30° | Kamerawinkel (AUX2) |
 | `RATES` | 30 … 65 … 100 % des Knüppelwegs | alle Modi: Empfindlichkeit der Knüppel |
 | `LOITER_RADIUS` | 25 … 50 … 150 m | LOITER und Kreise über dem Startpunkt |
+| `THROTTLE_LIMIT` | Gasgrenze 10 … 55 … 100 % | alle Modi: voller Gasknüppel = die Grenze vom Drehregler, der erlaubte Bereich ist über den ganzen Knüppelweg gestreckt; das Gas des Autopiloten wird ebenso begrenzt |
 
 > Ein nützlicher Kniff: Der Drehregler `STAB_GAIN` auf VrA ist eine „Live“-Abstimmung der Koeffizienten im Flug. Schaukelt es sich auf – reduzieren; ist es träge – erhöhen; danach den Faktor in `Config.h` übernehmen.
 
@@ -299,7 +300,7 @@ ARM/DISARM vom Boden aus wird **abgelehnt** – nur über den Schalter des Sende
 
 ## Reihenfolge bei der Einrichtung eines neuen Flugzeugs
 
-1. **MANUAL am Boden:** Ruderrichtungen (`*_REVERSED` in `Config.h`), Klappen nach unten, AUX. Ausgänge prüfen mit `p` in der Konsole (Propeller abnehmen!).
+1. **MANUAL am Boden:** Richtungen von Rudern, Motor und Klappen (Block „Umkehr“ in `Config.h`), Klappen nach unten, AUX. Ausgänge prüfen mit `p` in der Konsole (Propeller abnehmen!).
 2. **Sensoren am Boden:** `b` – Busabfrage, `s` – Status; `o` – Kalibrierung der IMU-Einbaulage (3 Lagen, einmalig), `m` – Kompass.
 3. **STABILIZE am Boden:** Neigen Sie das Flugzeug nach rechts – das rechte Querruder muss **nach unten** gehen (zum Ausgleichen). Nase hoch – Höhenruder nach unten. Ist es anders, sind die Umkehrungen oder der IMU-Einbau vertauscht.
 4. **Erster Flug in MANUAL**, Steigen auf über 50 m → STABILIZE. Schaukelt es – `STAB_GAIN` verringern; ist es träge – erhöhen.

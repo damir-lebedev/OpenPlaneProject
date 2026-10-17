@@ -73,7 +73,7 @@ CONTROL 层是基于数据的逻辑，不涉及 UART、PWM 或 Wi-Fi。
 |---|---|
 | `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 → `roll`（2000 = 向右）；CH2 → `pitch`，**符号相反**（2000 = 推离自己 = 机头朝下）；CH4 → `yaw` |
 | `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | 襟翼的目标由 `FlightController` 选择（减速板 → 襟翼拨杆 → 旋钮），这里负责平滑的行程 |
-| `FlightOutputState mix(const ControlCommand& c) const` | 指令 → PWM。横滚/俯仰/偏航受行程（`*_MAX_US`）限制；副翼：左 = `flaps + roll`，右 = `flaps − roll`（向下 = “+”）；PWM = `1500 ± 偏转量`，符号取自 `Config::*_REVERSED`，限制在 1000..2000。`throttle` 不在此填写 |
+| `FlightOutputState mix(const ControlCommand& c) const` | 指令 → PWM。横滚/俯仰/偏航受行程（`*_MAX_US`）限制；副翼：左 = `flaps + roll`，右 = `flaps − roll`（向下 = “+”）；PWM = `1500 ± 偏转量`，符号取自 `Config::*_REVERSED`，襟翼的符号取自 `FLAPS_REVERSED`，限制在 1000..2000。`throttle` 不在此填写 |
 | `int16_t getFlaps() const` | 当前的襟翼位置，µs |
 
 襟副翼：放出时两侧副翼各下垂 `FLAPS_DEPLOYED_US`（新的“中立位”），横滚在此基础上叠加。满横滚时，下垂一侧的副翼比上抬一侧更早到达行程末端——
@@ -227,9 +227,9 @@ ARM 由单独的拨杆 SwA（CH5）完成。状态机见
 7. 信号丢失 → `applyLinkLoss()` 并退出本周期；
 8. `arming.update(rc, false, reverse.armBlockReason(now))`，然后 `reverse.update(MOTOR_REVERSE, armed, now)`——DISARM 时方向在同一个周期内改变；
 9. `command = autopilot->getCommand()`（没有自动驾驶仪时用摇杆），襟翼——使用自己的；
-10. `output = mixer.mix(command)`；`output.motorReverse = reverse.isReversed()`；正转——`output.throttle = autopilot->applyThrottle(pilotThrottle)`，上限 `THROTTLE_LIMIT_PCT`；反转——飞手油门，上限 `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`；
+10. `output = mixer.mix(command)`；`output.motorReverse = reverse.isReversed()`；正转——`output.throttle = autopilot->applyThrottle(pilotThrottle)`，上限 `THROTTLE_LIMIT_PCT` × 旋钮 `Knob::THROTTLE_LIMIT`；反转——飞手油门，上限 `min(REVERSE_THROTTLE_LIMIT_PCT, 正转上限)`；允许的范围拉伸到整个摇杆行程；
 11. 未 ARM 或 `MOTOR_KILL` → `throttle = PWM_MIN`（最后执行）；
-12. AUX1——载荷（`PAYLOAD_DROP`），AUX2——相机（`Knob::CAMERA_TILT`，`CAMERA_STAB` 会减去俯仰）；
+12. AUX1——载荷（`PAYLOAD_DROP`），AUX2——相机（`Knob::CAMERA_TILT`，`CAMERA_STAB` 会减去俯仰）；`AUX1_REVERSED`/`AUX2_REVERSED` 把脉冲镜像。
 13. `outputs.write(output)`。
 
 `applyLinkLoss()`：如果自动驾驶仪处于 failsafe（已 ARM：RTH 或滑翔）——

@@ -79,7 +79,7 @@
 |---|---|
 | `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 ← `roll` (2000 = إلى اليمين)؛ وCH2 ← `pitch` **بإشارة معكوسة** (2000 = بعيدًا عنك = الأنف إلى أسفل)؛ وCH4 ← `yaw` |
 | `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | يختار `FlightController` هدف الفلابات (المكبح ← مفتاح الفلابات ← المقبض)، وهنا — الشوط السلس |
-| `FlightOutputState mix(const ControlCommand& c) const` | الأمر ← PWM. يُقيَّد الدوران الجانبي والميل والانعراج بالشوط (`*_MAX_US`)؛ والجنيحات: الأيسر = `flaps + roll`، والأيمن = `flaps − roll` (إلى أسفل = «+»)؛ و PWM = `1500 ± الانحراف` بإشارة من `Config::*_REVERSED`، مع تقييد إلى 1000..2000. ولا يُملأ `throttle` |
+| `FlightOutputState mix(const ControlCommand& c) const` | الأمر ← PWM. يُقيَّد الدوران الجانبي والميل والانعراج بالشوط (`*_MAX_US`)؛ والجنيحات: الأيسر = `flaps + roll`، والأيمن = `flaps − roll` (إلى أسفل = «+»)؛ و PWM = `1500 ± الانحراف` بإشارة من `Config::*_REVERSED`، وإشارة الفلابات من `FLAPS_REVERSED`، مع تقييد إلى 1000..2000. ولا يُملأ `throttle` |
 | `int16_t getFlaps() const` | وضع الفلابات الحالي، بوحدة µs |
 
 الفلابرون: عند الإخراج ينخفض كلا الجنيحين بمقدار `FLAPS_DEPLOYED_US` («المحايد»
@@ -242,10 +242,10 @@
 9. ‏`command = autopilot->getCommand()` (أو العصي دون طيار آلي)، والفلابات — خاصتها؛
 10. ‏`output = mixer.mix(command)`؛ و`output.motorReverse = reverse.isReversed()`؛
     إلى الأمام — `output.throttle = autopilot->applyThrottle(pilotThrottle)` بحدّ
-    `THROTTLE_LIMIT_PCT`، وإلى الخلف — خانق الطيار بحدّ
-    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`؛
+    `THROTTLE_LIMIT_PCT` × المقبض `Knob::THROTTLE_LIMIT`، وإلى الخلف — خانق الطيار بحدّ
+    `min(REVERSE_THROTTLE_LIMIT_PCT, الحدّ الأمامي)`؛ ويُمدّ المسموح على كامل شوط العصا؛
 11. غير مُفعَّل أو `MOTOR_KILL` ← `throttle = PWM_MIN` (آخر خطوة)؛
-12. ‏AUX1 — الحمولة (`PAYLOAD_DROP`)، وAUX2 — الكاميرا (`Knob::CAMERA_TILT`، و`CAMERA_STAB` يطرح الميل)؛
+12. ‏AUX1 — الحمولة (`PAYLOAD_DROP`)، وAUX2 — الكاميرا (`Knob::CAMERA_TILT`، و`CAMERA_STAB` يطرح الميل)؛ وتعكس `AUX1_REVERSED`/`AUX2_REVERSED` النبضة.
 13. ‏`outputs.write(output)`.
 
 ‏`applyLinkLoss()`: إذا كان الطيار الآلي في failsafe (مُفعَّل: RTH أو

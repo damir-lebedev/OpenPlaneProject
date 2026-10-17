@@ -13,7 +13,7 @@ OpenPlaneProject ist derzeit der Prototyp eines Motorseglers, der bereits geflog
 
 Der aktuelle Aufbau ist auf den ESP32-S3 (N16R8) umgezogen, mit einem Motor D3548 1100KV und einem 60–80-A-ESC; auf dem Prüfstand sind daran alle Sensoren des Autopiloten angeschlossen: eine IMU (MPU6500), ein Barometer BMP388, ein Kompass QMC5883P sowie ein OLED-Statusdisplay. Live überprüft: manuelle RC-Steuerung über iBUS mit einem Mischer für Querruder, Höhenruder, Seitenruder (mit lenkbarem Rad) und Klappen (Flaperons); ARM über einen eigenen Schalter; Failsafe bei ausgeschaltetem Sender; eine 500-Hz-Regelschleife; ein Live-Web-Dashboard über WLAN. Auf dem Tisch reagiert die Stabilisierung auf Neigungen in die richtige Richtung.
 
-Seitdem hat die Firmware 12 Autopilot-Modi bekommen (Stabilisierung, Höhenhaltung, Reiseflug, Kreise und Rückkehr zum Startpunkt per GPS, Handstart, automatische Landung, Segelflug in Thermik, „Rettung“), einen Geofence, die Rückkehr zum Startpunkt bei Signalverlust, Lastabwurf, ein Pitotrohr aus zwei Barometern, Unterstützung neuer Sensoren (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) und eine vollständige Firmware für den STM32H743 mit MAVLink-Telemetrie für QGroundControl. All das wurde durch 392 automatisierte Tests und geschlossene Flugsimulationen überprüft (die gesamte Firmware fliegt ein Flugzeugmodell), ist aber **in der Luft noch nicht erprobt**. Mit anderen Worten: Bisher ist nur die manuelle Steuerung geflogen; der Autopilot ist geschrieben, mit allem geprüft, was sich ohne Flug prüfen lässt, und wartet auf die Flugtests.
+Seitdem hat die Firmware 12 Autopilot-Modi bekommen (Stabilisierung, Höhenhaltung, Reiseflug, Kreise und Rückkehr zum Startpunkt per GPS, Handstart, automatische Landung, Segelflug in Thermik, „Rettung“), einen Geofence, die Rückkehr zum Startpunkt bei Signalverlust, Lastabwurf, ein Pitotrohr aus zwei Barometern, Unterstützung neuer Sensoren (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) und eine vollständige Firmware für den STM32H743 mit MAVLink-Telemetrie für QGroundControl. All das wurde durch 395 automatisierte Tests und geschlossene Flugsimulationen überprüft (die gesamte Firmware fliegt ein Flugzeugmodell), ist aber **in der Luft noch nicht erprobt**. Mit anderen Worten: Bisher ist nur die manuelle Steuerung geflogen; der Autopilot ist geschrieben, mit allem geprüft, was sich ohne Flug prüfen lässt, und wartet auf die Flugtests.
 
 ## 2. Warum das wichtig ist
 
@@ -66,7 +66,7 @@ Firmware aufspielen: `pio run -t upload`. Monitor: `pio device monitor` (115200)
 | CH9 | VRA | Stärke der Stabilisierung |
 | CH10 | VRB | Reisegeschwindigkeit |
 
-CH6–CH10 werden mit einer einzigen Zeile in `include/config/Controls.h` zugewiesen: jeder der 12 Modi, 11 Funktionen (Klappen, Bremse, Lastabwurf, Geofence, Motorumkehr …) und 7 Drehregler – [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 werden mit einer einzigen Zeile in `include/config/Controls.h` zugewiesen: jeder der 12 Modi, 11 Funktionen (Klappen, Bremse, Lastabwurf, Geofence, Motorumkehr …) und 8 Drehregler – [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 ### 4.3 Steuerungsablauf (`FlightController::update()`)
 
@@ -156,7 +156,7 @@ Mit anderen Worten: Das Element der künftigen Bodenstation, das unter dem Gesic
 
 Damit die Roadmap nicht wie Marketing wirkt, halten wir gesondert fest, was noch nicht oder nur teilweise erledigt ist:
 
-- Der Autopilot wurde auf dem Prüfstand, mit 392 automatisierten Tests und mit geschlossenen Simulationen geprüft, aber nie im Flug erprobt – bisher ist nur die manuelle Steuerung geflogen (am ersten Prototyp). Das Flugzeugmodell in den Simulationen ist vereinfacht, die Koeffizienten sind Startwerte.
+- Der Autopilot wurde auf dem Prüfstand, mit 395 automatisierten Tests und mit geschlossenen Simulationen geprüft, aber nie im Flug erprobt – bisher ist nur die manuelle Steuerung geflogen (am ersten Prototyp). Das Flugzeugmodell in den Simulationen ist vereinfacht, die Koeffizienten sind Startwerte.
 - Die neuen Sensoren (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) wurden mit Registeremulatoren nach den Datenblättern geprüft; auf der Hardware noch nicht.
 - STM32H743: Die gesamte Firmware läuft auf einem PC über STM32duino-Fakes; ein physisches Board gibt es noch nicht.
 - Der Horizont für die Stabilisierung ist die Lage des Fluggeräts beim Einschalten (die IMU kalibriert sich bei jedem Start) oder die Einbaukalibrierung aus drei Lagen.

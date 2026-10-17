@@ -319,7 +319,7 @@ läggs till spakkommandot **före** mixern, med samma tecken.
 utslag för varje yta (skevroder: ned = ”+”, vänster = `flaps + roll`,
 höger = `flaps − roll`; höjdroder: upp = ”+”; sidroder: höger = ”+”) och
 omvandlar det till PWM `1500 ± utslag`, med omvänt tecken för servon med
-`Config::*_REVERSED = true`. Standardvärdena återger firmwarens
+`Config::*_REVERSED = true` (klaffarna för sig – `FLAPS_REVERSED`; AUX, motorn och sändarens kanaler – `AUX1/AUX2_REVERSED`, `MOTOR_REVERSED`, `CHANNEL_REVERSED`, allt i blocket ”Reversering”). Standardvärdena återger firmwarens
 tidigare beteende för spakarna. Kontrollen på det monterade flygplanet finns i
 checklistan före flygning i [`PILOT_GUIDE.md`](PILOT_GUIDE.md). Reverseringen
 ska ändras i `Config.h`, **inte på sändaren** – annars blir
@@ -1000,7 +1000,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # kontrollera att al
 - Medan portmonitorn är öppen fungerar inte uppladdning till samma port.
 - `lib_deps`: `olikraus/U8g2` (OLED) är det enda externa biblioteket.
 - `test/` – i detalj i [`TESTING.md`](TESTING.md):
-  - `pio test -e native -e native-stm32` – 392 tester på en dator (hårdvaruattrapper
+  - `pio test -e native -e native-stm32` – 395 tester på en dator (hårdvaruattrapper
     i `test/native/support/`), täckning – `gcovr`;
   - `pio test -e esp32-s3` – `test_feedback/` (återkopplingssimuleringen
     i sluten slinga) och `test_imu_orientation/` på själva kortet; var och en

@@ -74,7 +74,7 @@ CONTROL レイヤーは、UART、PWM、Wi-Fi を含まない、データに対�
 |---|---|
 | `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 → `roll`（2000 = 右）、CH2 → `pitch`（**符号が逆**：2000 = 自分から遠ざける = 機首下げ）、CH4 → `yaw` |
 | `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | フラップの目標は `FlightController` が選び（エアブレーキ → フラップスイッチ → ノブ）、ここでは滑らかな動きを担当する |
-| `FlightOutputState mix(const ControlCommand& c) const` | コマンド → PWM。ロール／ピッチ／ヨーはストローク（`*_MAX_US`）で制限される。エルロンは左 = `flaps + roll`、右 = `flaps − roll`（下げ = 「+」）。PWM = `1500 ± 舵角` で、符号は `Config::*_REVERSED` に従い、1000..2000 に制限される。`throttle` は設定しない |
+| `FlightOutputState mix(const ControlCommand& c) const` | コマンド → PWM。ロール／ピッチ／ヨーはストローク（`*_MAX_US`）で制限される。エルロンは左 = `flaps + roll`、右 = `flaps − roll`（下げ = 「+」）。PWM = `1500 ± 舵角` で、符号は `Config::*_REVERSED`、フラップの符号は `FLAPS_REVERSED` に従い、1000..2000 に制限される。`throttle` は設定しない |
 | `int16_t getFlaps() const` | 現在のフラップ位置（µs） |
 
 フラッペロン：展開すると左右のエルロンが `FLAPS_DEPLOYED_US` だけ下がり（新しい「ニュートラル」）、ロールはその上に重ねて働きます。フルロールでは、下がるほうのエルロンが上がるほうより先にストロークの端に達します。これがエルロンのディファレンシャルとして働きます。
@@ -228,9 +228,9 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
 7. リンク喪失 → `applyLinkLoss()` を実行して周期を抜ける。
 8. `arming.update(rc, false, reverse.armBlockReason(now))`、続いて `reverse.update(MOTOR_REVERSE, armed, now)`。DISARM 時は同じ周期で方向が変わる。
 9. `command = autopilot->getCommand()`（オートパイロットがなければスティック）。フラップは専用の値。
-10. `output = mixer.mix(command)`。`output.motorReverse = reverse.isReversed()`。前進なら `output.throttle = autopilot->applyThrottle(pilotThrottle)` に上限 `THROTTLE_LIMIT_PCT`、後退ならパイロットのスロットルに上限 `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`。
+10. `output = mixer.mix(command)`。`output.motorReverse = reverse.isReversed()`。前進なら `output.throttle = autopilot->applyThrottle(pilotThrottle)` に上限 `THROTTLE_LIMIT_PCT` × ダイヤル `Knob::THROTTLE_LIMIT`、後退ならパイロットのスロットルに上限 `min(REVERSE_THROTTLE_LIMIT_PCT, 前進の上限)`。許された範囲はスティックの全ストロークに引き伸ばす。
 11. ARM していない、または `MOTOR_KILL` → `throttle = PWM_MIN`（最後に実行）。
-12. AUX1 はペイロード（`PAYLOAD_DROP`）、AUX2 はカメラ（`Knob::CAMERA_TILT`、`CAMERA_STAB` はピッチを差し引く）。
+12. AUX1 はペイロード（`PAYLOAD_DROP`）、AUX2 はカメラ（`Knob::CAMERA_TILT`、`CAMERA_STAB` はピッチを差し引く）。`AUX1_REVERSED`/`AUX2_REVERSED` はパルスを反転。
 13. `outputs.write(output)`。
 
 `applyLinkLoss()`：オートパイロットが failsafe 中（ARM 済みなら RTH または滑空）なら、舵面とスロットルはオートパイロットのコマンドに従います（フラップは滑らかに格納され、

@@ -191,7 +191,7 @@ The map was verified on the bench with an FS-i6 transmitter (10 channels, mode 2
 | CH9 | VrA | VRA | Stabilization strength by default |
 | CH10 | VrB | VRB | Cruise speed by default |
 
-CH6–CH10 can be **anything, in one line** of `include/config/Controls.h`: any of the 12 modes, 11 functions (flaps, brake, payload drop, geofence, buzzer, reverse…) and 7 knobs. When the board powers up, the actual layout is printed to the serial monitor. Everything about modes and bindings is in [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 can be **anything, in one line** of `include/config/Controls.h`: any of the 12 modes, 11 functions (flaps, brake, payload drop, geofence, buzzer, reverse…) and 8 knobs. When the board powers up, the actual layout is printed to the serial monitor. Everything about modes and bindings is in [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 All channel values use the standard receiver pulse range of 1000–2000 µs, with 1500 µs as center/neutral.
 
@@ -248,7 +248,7 @@ The main ESC is a bidirectional BLHeli 80A: the motor spins both ways, **SwD dow
 - **Backwards — only your throttle and no more than 50%** (`REVERSE_THROTTLE_LIMIT_PCT`): full stick = half power. In reverse the autopilot does not touch the throttle (the control surfaces work as usual); on link loss the motor simply stops.
 - It is visible on the OLED (`REV` in the first line) and on the dashboard (the “Мотор: РЕВЕРС” badge — “Motor: REVERSE”).
 
-**ESC setup in BLHeliSuite** (once, propeller removed): Motor Direction — **Bidirectional** (on BLHeli_32 — “Bidirectional”/3D), PPM Min Throttle — 1000, PPM Max Throttle — 2000, Center — 1500. The ESC arms when it sees the 1500 µs neutral, and the firmware outputs it from the very first pulse. If stick forward spins the motor the wrong way, swap any two motor wires (or set Motor Direction = Bidirectional Reversed) rather than changing the firmware.
+**ESC setup in BLHeliSuite** (once, propeller removed): Motor Direction — **Bidirectional** (on BLHeli_32 — “Bidirectional”/3D), PPM Min Throttle — 1000, PPM Max Throttle — 2000, Center — 1500. The ESC arms when it sees the 1500 µs neutral, and the firmware outputs it from the very first pulse. If stick forward spins the motor the wrong way, set `MOTOR_REVERSED = true` in `Config.h` (one line instead of resoldering wires).
 
 An ordinary unidirectional ESC: set `ESC_BIDIRECTIONAL = false` in `Config.h`, otherwise at “stop” (1500) it will run at half throttle! Reverse is then never engaged.
 
@@ -466,8 +466,9 @@ Read this section in full **before** the first power-up, not after an incident.
   - right stick toward you → **elevator up**;
   - left stick to the right → **rudder and wheel to the right**;
   - SwB (flaps) down → **both ailerons smoothly down**, and roll from the stick still moves them in opposite directions;
+  - throttle forward (propeller off — watch the direction of rotation) → **the propeller pulls forward**;
   - in STABILIZE tilt the airplane right wing down → **right aileron down, left aileron up** (the surfaces return it to level); nose down → **elevator up**.
-  If something is wrong, change the corresponding `*_REVERSED` in `include/config/Config.h` (the "Servo direction" section), not the reverse on the transmitter: otherwise the stick and the autopilot will disagree.
+  If something is wrong, change one line in the “Reverse” block of `include/config/Config.h`: each aileron, the elevator, the rudder, AUX, the motor (`MOTOR_REVERSED`) and the flaps (`FLAPS_REVERSED`) are flipped separately, nothing else is touched. Do not reverse servos on the transmitter — the stick and the autopilot will disagree; a channel the other way round (stick, switch, knob) — `CHANNEL_REVERSED` in the same place.
 - [ ] At power-up the airplane stood still, and the log or dashboard does not show `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА`; as you tilt the airplane in your hands, P and R on the OLED change in the right direction.
 - [ ] Failsafe is set up in the transmitter and tested: switch the transmitter off → `RX LOST` on the OLED/in Serial (see the failsafe section).
 - [ ] The transmitter's range has been checked, and the transmitter battery is charged.

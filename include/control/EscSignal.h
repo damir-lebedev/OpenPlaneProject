@@ -19,14 +19,22 @@
 //   • однонаправленный: 1000..2000 как есть, направление
 //     игнорируется (крутить назад такой ESC не умеет).
 //
+// Config::MOTOR_REVERSED меняет "вперёд" и "назад" местами — то же,
+// что поменять два провода мотора, но одной строкой.
+//
 // Только перевод — без защит. Когда направление вообще можно менять,
 // решает MotorReverse, предел газа назад — FlightController.
 // ============================================================
 
 namespace EscSignal
 {
-    inline uint16_t pulseUs(uint16_t throttleUs, bool reverse)
+    static_assert(Config::ESC_BIDIRECTIONAL || !Config::MOTOR_REVERSED,
+                  "MOTOR_REVERSED: однонаправленный ESC крутит только в одну сторону — поменяйте два провода мотора");
+
+    inline uint16_t pulseUs(uint16_t throttleUs, bool reverse, bool motorReversed = Config::MOTOR_REVERSED)
     {
+        if (motorReversed) reverse = !reverse;
+
         const uint32_t t = constrain(throttleUs, Config::PWM_MIN, Config::PWM_MAX) - Config::PWM_MIN;
         const uint32_t span = Config::PWM_MAX - Config::PWM_MIN;
 

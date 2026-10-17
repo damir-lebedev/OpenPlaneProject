@@ -36,6 +36,7 @@ Conversions courantes des signaux RC.
 | Méthode | Description |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | Borne à `PWM_MIN..PWM_MAX` |
+| `static uint16_t reversed(uint16_t value)` | Voie à l’envers : `3000 − clamp(value)` (1000 ↔ 2000) — pour `Config::CHANNEL_REVERSED` |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | Linéaire : 1000 → `−max`, 1500 → 0, 2000 → `+max` (l’entrée est d’abord bornée) ; `reverse` inverse le signe. Le résultat est borné à ±`max` |
 
 Exemple : `centered(1750, 500) == 250`, `centered(1750, 500, true) == -250`.
@@ -78,3 +79,6 @@ Invariants :
   radiocommande.
 - L’indicateur de failsafe est recalculé à **chaque** trame correcte — la
   liaison est rétablie dès la première trame avec des gaz normaux.
+- Les voies avec `Config::CHANNEL_REVERSED` sont stockées inversées
+  (`RcInput::reversed`) ; le failsafe est détecté avant, sur les gaz **bruts**,
+  et l’inversion de CH3 est interdite par `static_assert`.

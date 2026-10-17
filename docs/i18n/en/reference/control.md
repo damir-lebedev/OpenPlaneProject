@@ -80,7 +80,7 @@ The aerodynamic logic in two steps. Owns the `FlapsController`.
 |---|---|
 | `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 → `roll` (2000 = right); CH2 → `pitch` **with the opposite sign** (2000 = away from you = nose down); CH4 → `yaw` |
 | `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | the flaps target is chosen by `FlightController` (airbrake → flaps switch → knob), the smooth travel is here |
-| `FlightOutputState mix(const ControlCommand& c) const` | Command → PWM. Roll/pitch/yaw are limited by the travel (`*_MAX_US`); ailerons: left = `flaps + roll`, right = `flaps − roll` (down = "+"); PWM = `1500 ± deflection` with the sign from `Config::*_REVERSED`, limited to 1000..2000. `throttle` is not filled in |
+| `FlightOutputState mix(const ControlCommand& c) const` | Command → PWM. Roll/pitch/yaw are limited by the travel (`*_MAX_US`); ailerons: left = `flaps + roll`, right = `flaps − roll` (down = "+"); PWM = `1500 ± deflection` with the sign from `Config::*_REVERSED`, the flaps sign — `FLAPS_REVERSED`, limited to 1000..2000. `throttle` is not filled in |
 | `int16_t getFlaps() const` | The current flaps position, µs |
 
 Flaperons: on deploying, both ailerons drop by `FLAPS_DEPLOYED_US` (the new
@@ -247,10 +247,10 @@ The order of `update()`:
 9. `command = autopilot->getCommand()` (or the sticks without an autopilot), the flaps — its own;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     forwards — `output.throttle = autopilot->applyThrottle(pilotThrottle)` limited by
-    `THROTTLE_LIMIT_PCT`, backwards — the pilot's throttle limited by
-    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
+    `THROTTLE_LIMIT_PCT` × the `Knob::THROTTLE_LIMIT` knob, backwards — the pilot's throttle limited by
+    `min(REVERSE_THROTTLE_LIMIT_PCT, the forward limit)`; the allowed range is stretched over the whole stick travel;
 11. not armed or `MOTOR_KILL` → `throttle = PWM_MIN` (last);
-12. AUX1 — the payload (`PAYLOAD_DROP`), AUX2 — the camera (`Knob::CAMERA_TILT`, `CAMERA_STAB` subtracts the pitch);
+12. AUX1 — the payload (`PAYLOAD_DROP`), AUX2 — the camera (`Knob::CAMERA_TILT`, `CAMERA_STAB` subtracts the pitch); `AUX1_REVERSED`/`AUX2_REVERSED` mirror the pulse.
 13. `outputs.write(output)`.
 
 `applyLinkLoss()`: if the autopilot is in failsafe (armed: RTH or gliding) —

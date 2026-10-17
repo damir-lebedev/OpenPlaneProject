@@ -40,6 +40,7 @@ namespace Controls
         // Bind::feature(Channels::SWD, Feature::BEEPER),      // найти самолёт в траве
         // Bind::knob   (Channels::VRB, Knob::CAMERA_TILT),    // наклон камеры
         // Bind::knob   (Channels::VRB, Knob::FLAPS),          // закрылки плавно
+        // Bind::knob   (Channels::VRB, Knob::THROTTLE_LIMIT), // предел газа: 10..100 % на весь ход стика
     };
 
     static_assert(BindingCheck::channelsFree(BINDINGS),

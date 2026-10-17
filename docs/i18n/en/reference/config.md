@@ -97,6 +97,7 @@ The `Serial` console is LPUART1 (PA9 TX / PA10 RX), the variant's default.
 | `PWM_MIN` / `PWM_CENTER` / `PWM_MAX` | 1000 / 1500 / 2000 | The standard RC pulse, µs |
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Deflection from center at full stick travel, µs. The rudder is smaller: the landing-gear wheel is on the same servo |
 | `THROTTLE_LIMIT_PCT` | 100 | The throttle ceiling to the ESC, %, the same for the stick and the autopilot (`FlightController::capThrottle`). For bench tests on a weak 3S1P pack it was set to 50; the tests compute the expected output from this value |
+| `THROTTLE_KNOB_MIN_PCT` | 10 | The `Knob::THROTTLE_LIMIT` knob: throttle limit 10 … 55 … 100% on top of `THROTTLE_LIMIT_PCT`, the allowed range is stretched over the whole stick travel. Not bound — no limit |
 
 ### ESC and motor reverse
 
@@ -115,12 +116,26 @@ The `Serial` console is LPUART1 (PA9 TX / PA10 RX), the variant's default.
 | `FLAPS_DEPLOYED_US` | 220 | Downward deflection of each aileron, µs (~20° of the MG90S horn) |
 | `FLAPS_TRANSITION_MS` | 1000 | The time for a full deploy/retract |
 
-### Servo direction
+### Reverse
 
-`AILERON_LEFT_REVERSED`, `AILERON_RIGHT_REVERSED` (`true` — the aileron servos are mirrored), `ELEVATOR_REVERSED` (`true`),
-`RUDDER_REVERSED` — the only place where reversal is set. `ControlMixer`
-computes in physical signs and flips the sign only here, so the sticks and the
-autopilot cannot diverge. Reversal on the transmitter **must not** be used.
+Everything is in one block of `Config.h`: one line — one thing, nothing else is touched.
+
+| Flag | Default | What it flips |
+|---|---|---|
+| `AILERON_LEFT_REVERSED` / `AILERON_RIGHT_REVERSED` | `false` / `true` | each aileron separately (the servos in the wing are mirrored) |
+| `ELEVATOR_REVERSED` | `true` | the elevator |
+| `RUDDER_REVERSED` | `false` | the rudder and the steering wheel (one servo) |
+| `AUX1_REVERSED` | `false` | the payload drop servo: open ↔ closed |
+| `AUX2_REVERSED` | `false` | the camera servo |
+| `MOTOR_REVERSED` | `false` | the motor’s direction of rotation — instead of resoldering two wires; only with `ESC_BIDIRECTIONAL` (otherwise the build fails) |
+| `FLAPS_REVERSED` | `false` | the flaps and the airbrake on the ailerons; roll is not touched |
+| `CHANNEL_REVERSED[10]` | `false` ×10 | transmitter channels CH1…CH10, like Reverse in the transmitter menu: a stick, switch or knob works the other way. CH3 (throttle) is not allowed: link loss is detected from the raw throttle < 950 µs (`static_assert`) |
+
+`ControlMixer` computes in physical signs and the sign is flipped only here,
+so the sticks and the autopilot cannot diverge. A surface moves the wrong way
+both from the stick and from the autopilot — that is an output flag; only from
+the stick — a channel flag. `Config::directedUs(us, reversed)` mirrors a pulse
+around 1500.
 
 ### Sensor mounting
 

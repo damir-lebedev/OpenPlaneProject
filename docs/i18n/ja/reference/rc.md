@@ -33,6 +33,7 @@ RC 信号の共通の変換処理です。
 | メソッド | 説明 |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | `PWM_MIN..PWM_MAX` に制限する |
+| `static uint16_t reversed(uint16_t value)` | チャンネルを逆に：`3000 − clamp(value)`（1000 ↔ 2000）。`Config::CHANNEL_REVERSED` 用 |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | 線形変換：1000 → `−max`、1500 → 0、2000 → `+max`（入力は先に制限される）。`reverse` は符号を反転する。結果は ±`max` に制限される |
 
 例：`centered(1750, 500) == 250`、`centered(1750, 500, true) == -250`。
@@ -67,3 +68,4 @@ FlySky の iBUS プロトコルを 1 バイトずつ解析するパーサーで�
 
 - 最初の正しいフレームが来るまで `isSignalLost() == true` です。既定値（すべて 1500）は送信機のコマンドとは見なされません。
 - failsafe のフラグは**正しいフレームごとに**再計算されます。スロットルが正常な最初のフレームで、リンクは回復します。
+- `Config::CHANNEL_REVERSED` のチャンネルは反転した値で保存されます（`RcInput::reversed`）。failsafe はその前に**生の**スロットルで判定し、CH3 の反転は `static_assert` で禁止しています。

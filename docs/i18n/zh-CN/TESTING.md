@@ -96,10 +96,10 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 |---|---|---|
 | `native/test_hal` | 17 | `II2CBus` 的辅助函数（NACK、短读取——缓冲区保持不变）、`I2cRegisterDevice`、`SpiRegisterDevice`（读位、BMP388 的哑字节）、`Esp32I2CBus`（5 ms 超时）、`Esp32SpiBus`（模式 0–3）、`Esp32UartPort`（8N1、引脚）、`Esp32ServoOutput`（50 Hz/14 位、脉宽限制、LEDC 故障、通过输入缓冲区测量）、`Esp32Board`（总线、UART、通道顺序、AUX、蜂鸣器） |
 | `native/test_rc` | 16 | `RcChannelState`、`RcInput`，iBUS 解析：分段到达的帧、CRC、12 位数值、遥控器的失控保护、500 ms 超时（包括 `micros()` 溢出时）、乱码数据、重新同步 |
-| `native/test_control` | 24 | 襟翼（速度、首次调用、暂停）、混控器（符号、反向、襟副翼）、油门、ARM 状态机与模式传感器检查、输出表与脉冲自检、双向电调脉冲、电机反转只在 DISARM 时切换以及改变方向后禁止 ARM |
+| `native/test_control` | 26 | 襟翼（速度、首次调用、暂停）、混控器（符号、反向、襟副翼）、油门、ARM 状态机与模式传感器检查、输出表与脉冲自检、双向电调脉冲、电机反转只在 DISARM 时切换以及改变方向后禁止 ARM、反向辅助函数（脉冲镜像、通道反向、电机反向） |
 | `native/test_autopilot` | 22 | PID（取自传感器角速度的 D 项、积分、抗积分饱和、`dt`）、作为角度模式的 STABILIZE、按时间的自动起飞、用升降舵实现的 ALT_HOLD、信号丢失时的滑翔 |
 | `native/test_autopilot_modes` | 31 | 全部 12 种模式及各自对传感器缺失的反应、绑定表与 `static_assert`、功能与旋钮、导航（航向、绕圈、返航点、地理围栏）、failsafe RTH/滑翔、手抛起飞、翱翔、自动配平（仅在地面写入） |
-| `native/test_flight_controller` | 14 | 在真实的类上完整运行一个 `FlightController` 控制周期：优先级为 信号丢失 > ARM > 摇杆/自动驾驶仪 > 油门；AUX、`MOTOR_KILL`、蜂鸣器；SwD 反转：只在 DISARM 时、3 s 内不能 ARM、反转 50% 油门、自动驾驶仪不给油门、失去信号时电机停转 |
+| `native/test_flight_controller` | 15 | 在真实的类上完整运行一个 `FlightController` 控制周期：优先级为 信号丢失 > ARM > 摇杆/自动驾驶仪 > 油门；AUX、`MOTOR_KILL`、蜂鸣器；SwD 反转：只在 DISARM 时、3 s 内不能 ARM、反转 50% 油门、自动驾驶仪不给油门、失去信号时电机停转；油门上限旋钮把允许的范围拉伸到整个摇杆行程 |
 | `native/test_imu` | 21 | MPU6050/6500/9250 与 ICM-42688：识别、寄存器、比例系数、轴旋转与航空坐标符号约定、总线错误、陀螺仪校准与飞行前检查、基于三个姿态的安装校准、NVS、姿态滤波器 |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`、通过 I2C 和 SPI 的 BMP388、对照 Bosch 参考算法的 BME280/BMP280、电子罗盘（航向、NVS 中的 hard-iron 校准）、u-blox M10（CFG-VALSET、NAV-PVT、损坏的帧、超时）、`SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV（16X/32X、备用地址、SPI）、ICM-45686（间接寄存器）、QMC6309、SPL06-001（数据手册公式）、BMP581（DRDY 与备用路径）、皮托管（零点、滤波、空气密度、软管接反、过期数据、带两个气压计噪声的“飞行”） |
@@ -120,7 +120,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native_stm32/test_app_stm32_no_sd` | 2 | 不带卡的 `src/stm32/main.cpp`：黑匣子关闭并说明原因、飞机照常飞行、菜单 `k` 不出错 |
 | `test_feedback` | 10 | 带反馈回路的飞机闭环仿真（在电脑和开发板上） |
 | `test_imu_orientation` | 5 | 在 300 种随机安装方式下校准 IMU 的安装姿态（在电脑和开发板上） |
-| **合计** | **392** | `native` 中 345 个 + `native-stm32` 中 47 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
+| **合计** | **395** | `native` 中 348 个 + `native-stm32` 中 47 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
 
 ### STM32 开发板上的测试
 

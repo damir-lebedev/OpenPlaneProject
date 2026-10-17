@@ -33,6 +33,7 @@
 | Метод | Описание |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | Ограничение `PWM_MIN..PWM_MAX` |
+| `static uint16_t reversed(uint16_t value)` | Канал наоборот: `3000 − clamp(value)` (1000 ↔ 2000) — для `Config::CHANNEL_REVERSED` |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | Линейно: 1000 → `−max`, 1500 → 0, 2000 → `+max` (вход сначала ограничивается); `reverse` меняет знак. Результат ограничен ±`max` |
 
 Пример: `centered(1750, 500) == 250`, `centered(1750, 500, true) == -250`.
@@ -73,3 +74,6 @@
   умолчанию (все 1500) не принимаются за команды пульта.
 - Признак failsafe пересчитывается на **каждом** корректном кадре — связь
   восстанавливается первым же кадром с нормальным газом.
+- Каналы с `Config::CHANNEL_REVERSED` сохраняются развёрнутыми
+  (`RcInput::reversed`); failsafe определяется по **сырому** газу до этого, а
+  реверс CH3 запрещён `static_assert`.

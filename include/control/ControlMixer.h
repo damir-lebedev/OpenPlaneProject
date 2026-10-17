@@ -19,7 +19,8 @@
 //      команду в тех же знаках, поэтому автопилот и стики
 //      гарантированно крутят рули в одну сторону.
 //   2. mix(): ControlCommand -> FlightOutputState (PWM на каждый
-//      серво) с учётом реверса серво из Config.h.
+//      серво) с учётом реверса из Config.h: каждого серво и
+//      отдельно — закрылков (FLAPS_REVERSED).
 //
 // ЗАКРЫЛКИ (флапероны). Отдельных закрылков нет — их роль играют
 // элероны: при выпуске оба опускаются на одинаковый угол (новая
@@ -61,8 +62,9 @@ public:
         // сумма выходит за ход серво, toPwm() обрежет опускающийся
         // элерон, а поднимающийся продолжит отклоняться — это
         // работает как дифференциал элеронов.
-        const int32_t leftDown = command.flaps + roll;
-        const int32_t rightDown = command.flaps - roll;
+        const int32_t flapsDown = Config::FLAPS_REVERSED ? -command.flaps : command.flaps;
+        const int32_t leftDown = flapsDown + roll;
+        const int32_t rightDown = flapsDown - roll;
 
         FlightOutputState output;
 

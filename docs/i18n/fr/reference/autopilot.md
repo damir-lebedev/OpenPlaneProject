@@ -43,7 +43,7 @@ JSON de `/api/setmode`, `/api/status` et dans `MavlinkModes`) :
 `PAYLOAD_DROP`, `GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `MOTOR_REVERSE`, `COUNT`.
 
 `enum class Knob : uint8_t` — les potentiomètres : `STAB_GAIN`, `MAX_BANK`,
-`CRUISE_SPEED`, `FLAPS`, `CAMERA_TILT`, `RATES`, `LOITER_RADIUS`, `COUNT`.
+`CRUISE_SPEED`, `FLAPS`, `CAMERA_TILT`, `RATES`, `LOITER_RADIUS`, `THROTTLE_LIMIT`, `COUNT`.
 
 `namespace AutopilotNames` — `mode()`, `modeShort()` (≤ 5 caractères),
 `feature()`, `knob()` : les noms pour le journal, l’OLED, le tableau de bord et

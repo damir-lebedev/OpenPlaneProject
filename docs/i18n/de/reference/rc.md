@@ -36,6 +36,7 @@ Gemeinsame Umrechnungen der RC-Signale.
 | Methode | Beschreibung |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | Begrenzung auf `PWM_MIN..PWM_MAX` |
+| `static uint16_t reversed(uint16_t value)` | Kanal umgekehrt: `3000 − clamp(value)` (1000 ↔ 2000) – für `Config::CHANNEL_REVERSED` |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | Linear: 1000 → `−max`, 1500 → 0, 2000 → `+max` (der Eingang wird zuerst begrenzt); `reverse` kehrt das Vorzeichen um. Das Ergebnis ist auf ±`max` begrenzt |
 
 Beispiel: `centered(1750, 500) == 250`, `centered(1750, 500, true) == -250`.
@@ -77,3 +78,6 @@ Invarianten:
   Standardwerte (alle 1500) werden nicht für Senderbefehle gehalten.
 - Das Failsafe-Kennzeichen wird bei **jedem** korrekten Frame neu berechnet —
   die Verbindung ist schon mit dem ersten Frame mit normalem Gas wieder da.
+- Kanäle mit `Config::CHANNEL_REVERSED` werden umgekehrt gespeichert
+  (`RcInput::reversed`); Failsafe wird vorher am **rohen** Gas erkannt, und die
+  Umkehr von CH3 verbietet ein `static_assert`.

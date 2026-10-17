@@ -76,7 +76,7 @@ ESC её вместе с `motorReverse` переводит `FlightOutputs` (че
 |---|---|
 | `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 → `roll` (2000 = вправо); CH2 → `pitch` **с обратным знаком** (2000 = от себя = нос вниз); CH4 → `yaw` |
 | `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | цель закрылков выбирает `FlightController` (тормоз → тумблер закрылков → крутилка), здесь — плавный ход |
-| `FlightOutputState mix(const ControlCommand& c) const` | Команда → PWM. Крен/тангаж/рысканье ограничиваются ходом (`*_MAX_US`); элероны: левый = `flaps + roll`, правый = `flaps − roll` (вниз = «+»); PWM = `1500 ± отклонение` со знаком из `Config::*_REVERSED`, ограничение 1000..2000. `throttle` не заполняется |
+| `FlightOutputState mix(const ControlCommand& c) const` | Команда → PWM. Крен/тангаж/рысканье ограничиваются ходом (`*_MAX_US`); элероны: левый = `flaps + roll`, правый = `flaps − roll` (вниз = «+»); PWM = `1500 ± отклонение` со знаком из `Config::*_REVERSED`, знак закрылок — `FLAPS_REVERSED`, ограничение 1000..2000. `throttle` не заполняется |
 | `int16_t getFlaps() const` | Текущее положение закрылков, мкс |
 
 Флапероны: при выпуске оба элерона опускаются на `FLAPS_DEPLOYED_US` (новая
@@ -244,10 +244,11 @@ PWM, не считает микшер — только вызывает оста
 9. `command = autopilot->getCommand()` (или стики без автопилота), закрылки — свои;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     вперёд — `output.throttle = autopilot->applyThrottle(pilotThrottle)` с пределом
-    `THROTTLE_LIMIT_PCT`, назад — газ пилота с пределом
-    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
+    `THROTTLE_LIMIT_PCT` × крутилка `Knob::THROTTLE_LIMIT`, назад — газ пилота с пределом
+    `min(REVERSE_THROTTLE_LIMIT_PCT, передний предел)`; разрешённое растягивается
+    на весь ход стика;
 11. не armed или `MOTOR_KILL` → `throttle = PWM_MIN` (последним);
-12. AUX1 — груз (`PAYLOAD_DROP`), AUX2 — камера (`Knob::CAMERA_TILT`, `CAMERA_STAB` вычитает тангаж);
+12. AUX1 — груз (`PAYLOAD_DROP`), AUX2 — камера (`Knob::CAMERA_TILT`, `CAMERA_STAB` вычитает тангаж); `AUX1_REVERSED`/`AUX2_REVERSED` зеркалят импульс;
 13. `outputs.write(output)`.
 
 `applyLinkLoss()`: если автопилот в failsafe (armed: RTH или планирование) —

@@ -190,7 +190,7 @@
 | CH9 | VrA | VRA | 默认是增稳强度 |
 | CH10 | VrB | VRB | 默认是巡航速度 |
 
-CH6–CH10 在 `include/config/Controls.h` 中**只需一行就能随意指定**：12 种模式、11 项功能（襟翼、减速板、载荷投放、地理围栏、蜂鸣器、反转……）和 7 个旋钮中的任意一个。开发板上电时，实际的分配方案会打印到串口监视器。关于模式和绑定的全部内容见 [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md)。
+CH6–CH10 在 `include/config/Controls.h` 中**只需一行就能随意指定**：12 种模式、11 项功能（襟翼、减速板、载荷投放、地理围栏、蜂鸣器、反转……）和 8 个旋钮中的任意一个。开发板上电时，实际的分配方案会打印到串口监视器。关于模式和绑定的全部内容见 [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md)。
 
 所有通道值都使用接收机标准的 1000–2000 µs 脉宽范围，1500 µs 为中位/中立。
 
@@ -247,7 +247,7 @@ CH6–CH10 在 `include/config/Controls.h` 中**只需一行就能随意指定**
 - **反转时只用你的油门，而且不超过 50%**（`REVERSE_THROTTLE_LIMIT_PCT`）：摇杆推满 = 一半功率。反转时自动驾驶仪不碰油门（舵面照常工作），失去信号时电机直接停转。
 - 在 OLED 上能看到（第一行的 `REV`），仪表盘上也有（徽标“Мотор: РЕВЕРС”——“电机：反转”）。
 
-**在 BLHeliSuite 中设置电调**（只需一次，拆下螺旋桨）：Motor Direction——**Bidirectional**（BLHeli_32 上是“Bidirectional”/3D），PPM Min Throttle——1000，PPM Max Throttle——2000，Center——1500。电调看到 1500 µs 的中立信号后解锁，固件从第一个脉冲起就输出这个信号。如果推油门时电机转向不对，就把电机的任意两根线对调（或者设 Motor Direction = Bidirectional Reversed），不要改固件。
+**在 BLHeliSuite 中设置电调**（只需一次，拆下螺旋桨）：Motor Direction——**Bidirectional**（BLHeli_32 上是“Bidirectional”/3D），PPM Min Throttle——1000，PPM Max Throttle——2000，Center——1500。电调看到 1500 µs 的中立信号后解锁，固件从第一个脉冲起就输出这个信号。如果推油门时电机转向不对，在 `Config.h` 中设 `MOTOR_REVERSED = true`（一行代替重新焊线）。
 
 普通的单向电调：在 `Config.h` 中设 `ESC_BIDIRECTIONAL = false`，否则在“停止”（1500）时它会给出一半油门！这种情况下反转永远不会启用。
 
@@ -465,7 +465,8 @@ python tools/blackbox.py download
   - 右摇杆拉向自己 → **升降舵向上**；
   - 左摇杆向右 → **方向舵和转向轮向右**；
   - SwB（襟翼）向下 → **两个副翼平滑地向下**，此时用摇杆打横滚，两个副翼仍然朝相反方向分开；
-  - 在 STABILIZE 下把飞机右翼向下倾斜 → **右副翼向下，左副翼向上**（舵面把它拉回水平）；机头向下 → **升降舵向上**。如果有哪里不对，请修改 `include/config/Config.h` 中对应的 `*_REVERSED`（“舵机方向”一节），而不要在遥控器上做反向：否则摇杆和自动驾驶仪会各行其是。
+  - 推油门（拆下螺旋桨，看旋转方向）→ **螺旋桨向前拉**；
+  - 在 STABILIZE 下把飞机右翼向下倾斜 → **右副翼向下，左副翼向上**（舵面把它拉回水平）；机头向下 → **升降舵向上**。如果有哪里不对，就改 `include/config/Config.h` 中“反向”块里的一行：每个副翼、升降舵、方向舵、AUX、电机（`MOTOR_REVERSED`）和襟翼（`FLAPS_REVERSED`）都单独反转，其他不受影响。不要在遥控器上反转舵机——摇杆和自动驾驶仪会不一致；要让某个通道（摇杆、开关、旋钮）反向——用同一处的 `CHANNEL_REVERSED`。
 - [ ] 上电时飞机是静止的，日志/仪表盘中没有 `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА`；用手倾斜飞机时，OLED 上的 P 和 R 朝正确的方向变化。
 - [ ] 遥控器里已设置并测试过 failsafe：关闭遥控器 → OLED/串口中出现 `RX LOST`（见 failsafe 一节）。
 - [ ] 已检查遥控器的作用距离，遥控器的电池有电。

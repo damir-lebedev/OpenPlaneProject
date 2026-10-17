@@ -357,6 +357,50 @@ void test_motor_reverse_ignores_autopilot_throttle_and_stops_on_link_loss()
     TEST_ASSERT_EQUAL_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));
 }
 
+// Крутилка Knob::THROTTLE_LIMIT: полный стик = предел с крутилки,
+// разрешённое растянуто на весь ход стика.
+void test_throttle_limit_knob_stretches_allowed_throttle_over_the_stick()
+{
+    static constexpr Binding TABLE[] = { Bind::knob(Channels::VRB, Knob::THROTTLE_LIMIT) };
+    FakeBoard board;
+    FakeImu imu;
+    FakeBaro baro;
+    IBusReceiver receiver{ board.rcUart() };
+    ControlMixer mixer;
+    ThrottleManager throttle;
+    FlightOutputs outputs{ board };
+    Autopilot autopilot{ &imu, &baro };
+    PilotSwitches selector{ &autopilot, TABLE };
+    ArmingManager arming{ &autopilot };
+    FlightController controller{ receiver, mixer, throttle, arming, outputs, &autopilot, &selector };
+    outputs.begin();
+    controller.begin();
+    auto tick = [&](const RcChannels& rc) { board.rc.push(ibusFrame(rc)); fake::advanceMs(2); controller.update(); };
+    auto thr = [&]() { return controller.getOutputState().throttle; };
+
+    RcChannels rc;
+    tick(rc);
+    rc.set(Channels::ARM, 2000);
+    tick(rc);
+    TEST_ASSERT_TRUE(controller.isArmed());
+
+    rc.set(Channels::THROTTLE, 2000).set(Channels::VRB, 1000);   // крутилка вниз — 10 %
+    tick(rc);
+    TEST_ASSERT_EQUAL_UINT16(1000 + 10 * Config::THROTTLE_KNOB_MIN_PCT, thr());
+    rc.set(Channels::THROTTLE, 1500);                              // полстика — половина от 10 %
+    tick(rc);
+    TEST_ASSERT_EQUAL_UINT16(1000 + 5 * Config::THROTTLE_KNOB_MIN_PCT, thr());
+
+    rc.set(Channels::VRB, 1500).set(Channels::THROTTLE, 2000);   // центр — 55 %
+    tick(rc);
+    TEST_ASSERT_EQUAL_UINT16(1550, thr());
+    TEST_ASSERT_EQUAL_UINT16(escUs(1550), board.servos[ServoChannel::ESC].lastUs);
+
+    rc.set(Channels::VRB, 2000);                                   // вверх — без предела
+    tick(rc);
+    TEST_ASSERT_EQUAL_UINT16(cappedThrottleUs(2000), thr());
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -372,6 +416,7 @@ int main()
     RUN_TEST(test_takeoff_throttle_still_requires_arm);
     RUN_TEST(test_flaps_follow_switch_smoothly);
     RUN_TEST(test_manual_only_controller_without_autopilot);
+    RUN_TEST(test_throttle_limit_knob_stretches_allowed_throttle_over_the_stick);
     RUN_TEST(test_motor_reverse_switches_only_when_disarmed);
     RUN_TEST(test_motor_reverse_ignores_autopilot_throttle_and_stops_on_link_loss);
     return UNITY_END();

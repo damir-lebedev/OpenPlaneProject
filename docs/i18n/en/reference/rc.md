@@ -35,6 +35,7 @@ Common conversions of RC signals.
 | Method | Description |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | Limits to `PWM_MIN..PWM_MAX` |
+| `static uint16_t reversed(uint16_t value)` | A channel the other way round: `3000 − clamp(value)` (1000 ↔ 2000) — for `Config::CHANNEL_REVERSED` |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | Linear: 1000 → `−max`, 1500 → 0, 2000 → `+max` (the input is limited first); `reverse` flips the sign. The result is limited to ±`max` |
 
 Example: `centered(1750, 500) == 250`, `centered(1750, 500, true) == -250`.
@@ -75,3 +76,6 @@ Invariants:
   (all 1500) are not taken for transmitter commands.
 - The failsafe flag is recomputed on **every** correct frame — the link is
   restored by the very first frame with a normal throttle.
+- Channels with `Config::CHANNEL_REVERSED` are stored flipped
+  (`RcInput::reversed`); failsafe is detected from the **raw** throttle before
+  that, and reversing CH3 is forbidden by `static_assert`.

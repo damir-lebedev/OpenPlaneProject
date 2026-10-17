@@ -78,7 +78,7 @@ CONTROL परत डेटा के ऊपर का तर्क है, UART
 |---|---|
 | `ControlCommand fromSticks(const RcChannelState& rc) const` | CH1 → `roll` (2000 = दाईं ओर); CH2 → `pitch` **उलटे चिह्न के साथ** (2000 = अपने से दूर = नाक नीचे); CH4 → `yaw` |
 | `int16_t updateFlaps(float targetUs, uint32_t nowMs)` | फ़्लैप का लक्ष्य `FlightController` चुनता है (एयर ब्रेक → फ़्लैप का स्विच → नॉब), यहाँ — सहज गति |
-| `FlightOutputState mix(const ControlCommand& c) const` | कमांड → PWM। रोल/पिच/यॉ यात्रा (`*_MAX_US`) से सीमित; एलेरॉन: बायाँ = `flaps + roll`, दायाँ = `flaps − roll` (नीचे = “+”); PWM = `1500 ± विक्षेपण`, चिह्न `Config::*_REVERSED` से, 1000..2000 तक सीमित। `throttle` नहीं भरा जाता |
+| `FlightOutputState mix(const ControlCommand& c) const` | कमांड → PWM। रोल/पिच/यॉ यात्रा (`*_MAX_US`) से सीमित; एलेरॉन: बायाँ = `flaps + roll`, दायाँ = `flaps − roll` (नीचे = “+”); PWM = `1500 ± विक्षेपण`, चिह्न `Config::*_REVERSED`, फ़्लैप का चिह्न — `FLAPS_REVERSED` से, 1000..2000 तक सीमित। `throttle` नहीं भरा जाता |
 | `int16_t getFlaps() const` | फ़्लैप की मौजूदा स्थिति, µs |
 
 फ़्लैपरॉन: निकलते समय दोनों एलेरॉन `FLAPS_DEPLOYED_US` नीचे आते हैं (नया
@@ -242,10 +242,10 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 9. `command = autopilot->getCommand()` (या ऑटोपायलट के बिना स्टिक), फ़्लैप — अपने;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     आगे — `output.throttle = autopilot->applyThrottle(pilotThrottle)`, सीमा
-    `THROTTLE_LIMIT_PCT`; पीछे — पायलट का थ्रॉटल, सीमा
-    `min(REVERSE_THROTTLE_LIMIT_PCT, THROTTLE_LIMIT_PCT)`;
+    `THROTTLE_LIMIT_PCT` × नॉब `Knob::THROTTLE_LIMIT`; पीछे — पायलट का थ्रॉटल, सीमा
+    `min(REVERSE_THROTTLE_LIMIT_PCT, आगे की सीमा)`; अनुमत हिस्सा स्टिक की पूरी चाल पर फैलता है;
 11. ARM नहीं या `MOTOR_KILL` → `throttle = PWM_MIN` (सबसे अंत में);
-12. AUX1 — पेलोड (`PAYLOAD_DROP`), AUX2 — कैमरा (`Knob::CAMERA_TILT`, `CAMERA_STAB` पिच घटाता है);
+12. AUX1 — पेलोड (`PAYLOAD_DROP`), AUX2 — कैमरा (`Knob::CAMERA_TILT`, `CAMERA_STAB` पिच घटाता है); `AUX1_REVERSED`/`AUX2_REVERSED` पल्स को उलटते हैं।
 13. `outputs.write(output)`।
 
 `applyLinkLoss()`: अगर ऑटोपायलट failsafe में है (ARM: RTH या ग्लाइड) — कंट्रोल सरफ़ेस और

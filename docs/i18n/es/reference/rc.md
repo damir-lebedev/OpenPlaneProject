@@ -36,6 +36,7 @@ Conversiones comunes de las señales RC.
 | Método | Descripción |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | Limita a `PWM_MIN..PWM_MAX` |
+| `static uint16_t reversed(uint16_t value)` | Canal al revés: `3000 − clamp(value)` (1000 ↔ 2000), para `Config::CHANNEL_REVERSED` |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | Lineal: 1000 → `−max`, 1500 → 0, 2000 → `+max` (la entrada se limita primero); `reverse` invierte el signo. El resultado se limita a ±`max` |
 
 Ejemplo: `centered(1750, 500) == 250`, `centered(1750, 500, true) == -250`.
@@ -76,3 +77,6 @@ Invariantes:
   defecto (todos a 1500) no se toman por órdenes de la emisora.
 - El indicador de failsafe se recalcula en **cada** trama correcta: el enlace
   se restablece con la primera trama que traiga un acelerador normal.
+- Los canales con `Config::CHANNEL_REVERSED` se guardan invertidos
+  (`RcInput::reversed`); el failsafe se detecta antes, con el gas **en bruto**, y
+  la inversión de CH3 la prohíbe un `static_assert`.

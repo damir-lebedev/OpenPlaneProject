@@ -64,6 +64,7 @@ enum class Knob : uint8_t
     CAMERA_TILT,     // угол камеры, °
     RATES,           // чувствительность стиков, %
     LOITER_RADIUS,   // радиус кругов, м
+    THROTTLE_LIMIT,  // предел газа, %: разрешённое растягивается на весь ход стика
     COUNT
 };
 
@@ -140,6 +141,7 @@ namespace AutopilotNames
             case Knob::CAMERA_TILT:   return "CAMERA_TILT";
             case Knob::RATES:         return "RATES";
             case Knob::LOITER_RADIUS: return "LOITER_RADIUS";
+            case Knob::THROTTLE_LIMIT: return "THROTTLE_LIMIT";
             default:                  return "?";
         }
     }

@@ -311,7 +311,7 @@ in denselben Vorzeichen.
 Hinterkante jeder Fläche (Querruder: runter = „+“, links = `flaps + roll`,
 rechts = `flaps − roll`; Höhenruder: hoch = „+“; Seitenruder: rechts = „+“)
 und wandelt ihn in PWM `1500 ± Ausschlag` um, wobei das Vorzeichen bei Servos
-mit `Config::*_REVERSED = true` umgekehrt wird. Die Standardwerte
+mit `Config::*_REVERSED = true` (die Klappen extra – `FLAPS_REVERSED`; AUX, Motor und Senderkanäle – `AUX1/AUX2_REVERSED`, `MOTOR_REVERSED`, `CHANNEL_REVERSED`, alles im Block „Umkehr“) umgekehrt wird. Die Standardwerte
 reproduzieren das frühere Verhalten der Firmware für die Knüppel. Die Prüfung
 am fertig aufgebauten Flugzeug steht in der Checkliste vor dem Flug im
 [`PILOT_GUIDE.md`](PILOT_GUIDE.md). Die Umkehr muss in `Config.h` geändert
@@ -1016,7 +1016,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # prüfen, dass alle
   Port nicht.
 - `lib_deps`: `olikraus/U8g2` (OLED) ist die einzige externe Bibliothek.
 - `test/` — ausführlich im [`TESTING.md`](TESTING.md):
-  - `pio test -e native -e native-stm32` — 392 Tests am PC (Hardware-Attrappen
+  - `pio test -e native -e native-stm32` — 395 Tests am PC (Hardware-Attrappen
     in `test/native/support/`), Abdeckung — `gcovr`;
   - `pio test -e esp32-s3` — `test_feedback/` (die Simulation der Rückführung
     im geschlossenen Regelkreis) und `test_imu_orientation/` auf der Platine

@@ -44,7 +44,7 @@
 `GEOFENCE` و`HOME_RESET` و`CAMERA_STAB` و`MOTOR_REVERSE` و`COUNT`.
 
 ‏`enum class Knob : uint8_t` — المقابض: `STAB_GAIN` و`MAX_BANK` و
-`CRUISE_SPEED` و`FLAPS` و`CAMERA_TILT` و`RATES` و`LOITER_RADIUS` و`COUNT`.
+`CRUISE_SPEED` و`FLAPS` و`CAMERA_TILT` و`RATES` و`LOITER_RADIUS` و`THROTTLE_LIMIT` و`COUNT`.
 
 ‏`namespace AutopilotNames` — `mode()` و`modeShort()` (حتى 5 أحرف) و
 `feature()` و`knob()`: أسماء للسجل وOLED ولوحة المعلومات وMAVLink.

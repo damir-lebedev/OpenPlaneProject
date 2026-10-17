@@ -230,6 +230,7 @@ Mitten på en ratt = standardvärdet från `Config.h`; ändlägena är minimum o
 | `CAMERA_TILT` | −90° … 0° … +30° | kameravinkeln (AUX2) |
 | `RATES` | 30 … 65 … 100 % av spakutslaget | alla lägen: spakkänslighet |
 | `LOITER_RADIUS` | 25 … 50 … 150 m | LOITER och cirklar över hempunkten |
+| `THROTTLE_LIMIT` | gasgräns 10 … 55 … 100 % | alla lägen: full gasspak = gränsen från ratten, det tillåtna sträcks ut över hela spakens slag; autopilotens gas begränsas på samma sätt |
 
 > Ett användbart knep: ratten `STAB_GAIN` på VrA är ”levande” justering av koefficienterna under flygning. Om det svänger – vrid ned; om det är trögt – vrid upp; för sedan över multiplikatorn till `Config.h`.
 
@@ -299,7 +300,7 @@ ARM/DISARM från marken **avvisas** – bara med sändarens brytare. För att ko
 
 ## Inställning av ett nytt flygplan, steg för steg
 
-1. **MANUAL på marken:** rodrens riktningar (`*_REVERSED` i `Config.h`), klaffar ned, AUX. Kontrollera utgångarna med `p` i konsolen (propellern av!).
+1. **MANUAL på marken:** riktningarna för roder, motor och klaffar (blocket ”Reversering” i `Config.h`), klaffar ned, AUX. Kontrollera utgångarna med `p` i konsolen (propellern av!).
 2. **Sensorer på marken:** `b` – bussavsökning, `s` – status; `o` – kalibrering av IMU-monteringen (3 positioner, en gång), `m` – kompass.
 3. **STABILIZE på marken:** luta flygplanet åt höger – det högra skevrodret ska gå **ned** (för att räta upp det). Nosen upp – höjdrodret ned. Om inte – reverseringarna eller IMU-monteringen är förväxlade.
 4. **Den första flygningen i MANUAL**, stig till minst 50 m → STABILIZE. Om det svänger – sänk `STAB_GAIN`; om det är trögt – höj den.

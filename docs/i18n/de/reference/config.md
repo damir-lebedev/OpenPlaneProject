@@ -100,6 +100,7 @@ Variante.
 | `PWM_MIN` / `PWM_CENTER` / `PWM_MAX` | 1000 / 1500 / 2000 | Der Standard-RC-Impuls, µs |
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Ausschlag aus der Mitte bei vollem Knüppelweg, µs. Das Seitenruder ist kleiner: am selben Servo hängt das Fahrwerksrad |
 | `THROTTLE_LIMIT_PCT` | 100 | Die Gasobergrenze zum ESC, %, gleich für den Knüppel und den Autopiloten (`FlightController::capThrottle`). Für Prüfstandtests mit einem schwachen 3S1P-Akku wurde 50 gesetzt; die Tests berechnen die erwartete Ausgabe aus diesem Wert |
+| `THROTTLE_KNOB_MIN_PCT` | 10 | Drehregler `Knob::THROTTLE_LIMIT`: Gasgrenze 10 … 55 … 100 % zusätzlich zu `THROTTLE_LIMIT_PCT`, der erlaubte Bereich wird über den ganzen Knüppelweg gestreckt. Nicht belegt – keine Grenze |
 
 ### ESC und Motorumkehr
 
@@ -118,13 +119,26 @@ Variante.
 | `FLAPS_DEPLOYED_US` | 220 | Ausschlag jedes Querruders nach unten, µs (~20° des MG90S-Hebels) |
 | `FLAPS_TRANSITION_MS` | 1000 | Die Zeit für das vollständige Aus-/Einfahren |
 
-### Servo-Richtung
+### Umkehr
 
-`AILERON_LEFT_REVERSED`, `AILERON_RIGHT_REVERSED` (`true` — die Querruderservos sind spiegelbildlich eingebaut), `ELEVATOR_REVERSED` (`true`),
-`RUDDER_REVERSED` — die einzige Stelle, an der die Umkehr festgelegt wird.
-`ControlMixer` rechnet in physikalischen Vorzeichen und kehrt das Vorzeichen
-nur hier um, deshalb können Knüppel und Autopilot nicht auseinanderlaufen. Die
-Umkehr am Sender **darf nicht** verwendet werden.
+Alles steht in einem Block von `Config.h`: eine Zeile – eine Sache, sonst wird nichts berührt.
+
+| Flag | Standard | Was es umkehrt |
+|---|---|---|
+| `AILERON_LEFT_REVERSED` / `AILERON_RIGHT_REVERSED` | `false` / `true` | jedes Querruder einzeln (die Servos im Flügel sind spiegelbildlich) |
+| `ELEVATOR_REVERSED` | `true` | das Höhenruder |
+| `RUDDER_REVERSED` | `false` | das Seitenruder und das Bugrad (ein Servo) |
+| `AUX1_REVERSED` | `false` | das Servo des Lastabwurfs: offen ↔ zu |
+| `AUX2_REVERSED` | `false` | das Kameraservo |
+| `MOTOR_REVERSED` | `false` | die Drehrichtung des Motors – statt zwei Kabel umzulöten; nur mit `ESC_BIDIRECTIONAL` (sonst schlägt der Build fehl) |
+| `FLAPS_REVERSED` | `false` | Klappen und Luftbremse auf den Querrudern; das Rollen bleibt unberührt |
+| `CHANNEL_REVERSED[10]` | `false` ×10 | Senderkanäle CH1…CH10, wie Reverse im Sendermenü: ein Knüppel, Schalter oder Drehregler arbeitet umgekehrt. CH3 (Gas) ist nicht erlaubt: Verbindungsverlust wird am rohen Gas < 950 µs erkannt (`static_assert`) |
+
+`ControlMixer` rechnet in physikalischen Vorzeichen, und das Vorzeichen wird nur
+hier umgekehrt, deshalb können Knüppel und Autopilot nicht auseinanderlaufen.
+Ein Ruder läuft sowohl vom Knüppel als auch vom Autopiloten falsch herum – das
+ist ein Ausgangs-Flag; nur vom Knüppel – ein Kanal-Flag.
+`Config::directedUs(us, reversed)` spiegelt einen Impuls um 1500.
 
 ### Einbau der Sensoren
 

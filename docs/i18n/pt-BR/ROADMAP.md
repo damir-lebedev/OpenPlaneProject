@@ -13,7 +13,7 @@ O OpenPlaneProject é hoje um protótipo de planador que já voou, mas ainda ima
 
 A montagem atual migrou para o ESP32-S3 (N16R8) com motor D3548 1100KV e ESC de 60–80A, e na bancada estão ligados a ela todos os sensores do piloto automático: IMU (MPU6500), barômetro BMP388, bússola QMC5883P e uma tela OLED de status. Verificado ao vivo: controle manual por rádio via iBUS com mixer de ailerons, profundor, leme (com a roda direcional) e flaps (flaperons); ARM por uma chave separada; failsafe com o rádio desligado; ciclo de controle de 500 Hz; dashboard web ao vivo por Wi-Fi. Sobre a mesa, a estabilização responde às inclinações no sentido certo.
 
-De lá para cá, o firmware ganhou 12 modos de piloto automático (estabilização, manutenção de altitude, cruzeiro, círculos e retorno ao ponto de origem por GPS, lançamento manual, pouso automático, voo planado em térmicas, “resgate”), geofence, retorno ao ponto de origem na perda de sinal, lançamento de carga, um tubo de Pitot feito de dois barômetros, suporte a novos sensores (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) e um firmware completo para o STM32H743 com telemetria MAVLink para o QGroundControl. Tudo isso foi verificado por 392 testes automatizados e simulações de voo em malha fechada (o firmware inteiro pilota um modelo de avião), mas **ainda não foi testado no ar**. Em outras palavras: até agora só o controle manual voou; o piloto automático está escrito, verificado por tudo que dá para usar sem voar, e aguarda os testes em voo.
+De lá para cá, o firmware ganhou 12 modos de piloto automático (estabilização, manutenção de altitude, cruzeiro, círculos e retorno ao ponto de origem por GPS, lançamento manual, pouso automático, voo planado em térmicas, “resgate”), geofence, retorno ao ponto de origem na perda de sinal, lançamento de carga, um tubo de Pitot feito de dois barômetros, suporte a novos sensores (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) e um firmware completo para o STM32H743 com telemetria MAVLink para o QGroundControl. Tudo isso foi verificado por 395 testes automatizados e simulações de voo em malha fechada (o firmware inteiro pilota um modelo de avião), mas **ainda não foi testado no ar**. Em outras palavras: até agora só o controle manual voou; o piloto automático está escrito, verificado por tudo que dá para usar sem voar, e aguarda os testes em voo.
 
 ## 2. Por que isso importa
 
@@ -66,7 +66,7 @@ Gravar o firmware: `pio run -t upload`. Monitor: `pio device monitor` (115200).
 | CH9 | VRA | intensidade da estabilização |
 | CH10 | VRB | velocidade de cruzeiro |
 
-CH6–CH10 são atribuídos com uma única linha em `include/config/Controls.h`: qualquer um dos 12 modos, 11 funções (flaps, freio, lançamento de carga, geofence, reversão…) e 7 potenciômetros — [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 são atribuídos com uma única linha em `include/config/Controls.h`: qualquer um dos 12 modos, 11 funções (flaps, freio, lançamento de carga, geofence, reversão…) e 8 potenciômetros — [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 ### 4.3 Fluxo de controle (`FlightController::update()`)
 
@@ -156,7 +156,7 @@ Em outras palavras, o elemento da futura estação de solo mais arriscado quanto
 
 Para que o roteiro não pareça marketing, registramos à parte o que ainda não foi feito ou foi feito só em parte:
 
-- O piloto automático foi verificado na bancada, por 392 testes automatizados e por simulações em malha fechada, mas nunca foi testado em voo — até agora só o controle manual voou (no primeiro protótipo). O modelo do avião nas simulações é simplificado e os coeficientes são valores iniciais.
+- O piloto automático foi verificado na bancada, por 395 testes automatizados e por simulações em malha fechada, mas nunca foi testado em voo — até agora só o controle manual voou (no primeiro protótipo). O modelo do avião nas simulações é simplificado e os coeficientes são valores iniciais.
 - Os novos sensores (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) foram verificados por emuladores de registradores feitos a partir dos datasheets; no hardware, ainda não.
 - STM32H743: o firmware inteiro roda no PC sobre fakes do STM32duino; ainda não há uma placa física.
 - O horizonte para a estabilização é a posição da aeronave ao ligar (a IMU é calibrada a cada partida), ou a calibração da instalação a partir de três posições.

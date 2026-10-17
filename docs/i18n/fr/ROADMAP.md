@@ -13,7 +13,7 @@ OpenPlaneProject est aujourd’hui un prototype de planeur qui a déjà volé ma
 
 La version actuelle est passée à l’ESP32-S3 (N16R8), avec un moteur D3548 1100KV et un ESC de 60–80A, et tous les capteurs du pilote automatique y sont connectés sur le banc : une IMU (MPU6500), un baromètre BMP388, une boussole QMC5883P, plus un écran OLED d’état. Vérifié en direct : commande manuelle par radio via l’iBUS avec un mixeur d’ailerons, de gouverne de profondeur, de gouverne de direction (avec la roulette orientable) et de volets (flaperons) ; ARM par un interrupteur dédié ; failsafe avec la radio éteinte ; une boucle de contrôle à 500 Hz ; un tableau de bord web en direct par Wi-Fi. Sur la table, la stabilisation répond aux inclinaisons dans le bon sens.
 
-Depuis, le firmware a gagné 12 modes de pilote automatique (stabilisation, maintien d’altitude, croisière, cercles et retour au point de départ par GPS, lancement à la main, atterrissage automatique, vol à voile dans les thermiques, « sauvetage »), un géorepérage, le retour au point de départ en cas de perte de signal, le largage de charge, un tube de Pitot fait de deux baromètres, la prise en charge de nouveaux capteurs (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) et un firmware complet pour la STM32H743 avec télémétrie MAVLink pour QGroundControl. Tout cela a été vérifié par 392 tests automatiques et des simulations de vol en boucle fermée (le firmware entier pilote un modèle d’avion), mais **n’a pas encore été éprouvé en vol**. Autrement dit : jusqu’ici, seule la commande manuelle a volé ; le pilote automatique est écrit, vérifié par tout ce qui permet de le vérifier sans voler, et attend les essais en vol.
+Depuis, le firmware a gagné 12 modes de pilote automatique (stabilisation, maintien d’altitude, croisière, cercles et retour au point de départ par GPS, lancement à la main, atterrissage automatique, vol à voile dans les thermiques, « sauvetage »), un géorepérage, le retour au point de départ en cas de perte de signal, le largage de charge, un tube de Pitot fait de deux baromètres, la prise en charge de nouveaux capteurs (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) et un firmware complet pour la STM32H743 avec télémétrie MAVLink pour QGroundControl. Tout cela a été vérifié par 395 tests automatiques et des simulations de vol en boucle fermée (le firmware entier pilote un modèle d’avion), mais **n’a pas encore été éprouvé en vol**. Autrement dit : jusqu’ici, seule la commande manuelle a volé ; le pilote automatique est écrit, vérifié par tout ce qui permet de le vérifier sans voler, et attend les essais en vol.
 
 ## 2. Pourquoi c’est important
 
@@ -66,7 +66,7 @@ Téléverser le firmware : `pio run -t upload`. Moniteur : `pio device monitor
 | CH9 | VRA | force de la stabilisation |
 | CH10 | VRB | vitesse de croisière |
 
-CH6–CH10 s’affectent avec une seule ligne dans `include/config/Controls.h` : n’importe lequel des 12 modes, 11 fonctions (volets, frein, largage de charge, géorepérage, inversion…) et 7 potentiomètres — [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
+CH6–CH10 s’affectent avec une seule ligne dans `include/config/Controls.h` : n’importe lequel des 12 modes, 11 fonctions (volets, frein, largage de charge, géorepérage, inversion…) et 8 potentiomètres — [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md).
 
 ### 4.3 Flux de contrôle (`FlightController::update()`)
 
@@ -156,7 +156,7 @@ Autrement dit, l’élément de la future station sol le plus risqué du point d
 
 Pour que la feuille de route ne ressemble pas à du marketing, nous consignons à part ce qui n’est pas encore fait ou n’est fait que partiellement :
 
-- Le pilote automatique a été vérifié sur le banc, par 392 tests automatiques et par des simulations en boucle fermée, mais il n’a jamais été éprouvé en vol — jusqu’ici, seule la commande manuelle a volé (sur le premier prototype). Le modèle d’avion des simulations est simplifié et les coefficients sont des valeurs de départ.
+- Le pilote automatique a été vérifié sur le banc, par 395 tests automatiques et par des simulations en boucle fermée, mais il n’a jamais été éprouvé en vol — jusqu’ici, seule la commande manuelle a volé (sur le premier prototype). Le modèle d’avion des simulations est simplifié et les coefficients sont des valeurs de départ.
 - Les nouveaux capteurs (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) ont été vérifiés par des émulateurs de registres construits d’après les fiches techniques ; sur le matériel, pas encore.
 - STM32H743 : tout le firmware tourne sur un PC au-dessus de fakes de STM32duino ; il n’y a pas encore de carte physique.
 - L’horizon pour la stabilisation est l’attitude de l’appareil à la mise sous tension (l’IMU s’étalonne à chaque démarrage), ou l’étalonnage du montage à partir de trois positions.

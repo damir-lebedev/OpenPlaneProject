@@ -1296,6 +1296,20 @@ private:
         if (headerLength + 64 > sizeof(header)) info("header=обрезан");
     }
 
+    // Номера реверсированных каналов пульта ("-" — ни одного).
+    static String reversedChannels()
+    {
+        String out;
+        for (uint8_t ch = 0; ch < Config::IBUS_CHANNELS; ++ch)
+        {
+            if (!Config::CHANNEL_REVERSED[ch]) continue;
+            if (out.length()) out += ',';
+            out += "CH";
+            out += static_cast<int>(ch + 1);
+        }
+        return out.length() ? out : String("-");
+    }
+
     static const char* boardName()
     {
 #if defined(BOARD_ESP32_S3)
@@ -1323,6 +1337,13 @@ private:
         BB_CFG_INT(AILERON_RIGHT_REVERSED);
         BB_CFG_INT(ELEVATOR_REVERSED);
         BB_CFG_INT(RUDDER_REVERSED);
+        BB_CFG_INT(AUX1_REVERSED);
+        BB_CFG_INT(AUX2_REVERSED);
+        BB_CFG_INT(MOTOR_REVERSED);
+        BB_CFG_INT(FLAPS_REVERSED);
+        info("cfg.CHANNEL_REVERSED=%s", reversedChannels().c_str());
+        BB_CFG_INT(ESC_BIDIRECTIONAL);
+        BB_CFG_INT(REVERSE_THROTTLE_LIMIT_PCT);
         BB_CFG_INT(FLAPS_DEPLOYED_US);
         BB_CFG_INT(AIRBRAKE_US);
         BB_CFG_INT(IMU_ROTATION_CW_DEG);

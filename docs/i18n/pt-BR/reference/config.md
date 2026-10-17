@@ -98,6 +98,7 @@ O console `Serial` é a LPUART1 (PA9 TX / PA10 RX), o padrão da variante.
 | `PWM_MIN` / `PWM_CENTER` / `PWM_MAX` | 1000 / 1500 / 2000 | O pulso RC padrão, µs |
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Deflexão a partir do centro com o curso total do stick, µs. O leme é menor: no mesmo servo fica a roda do trem de pouso |
 | `THROTTLE_LIMIT_PCT` | 100 | O teto do acelerador para o ESC, %, igual para o stick e para o piloto automático (`FlightController::capThrottle`). Para os testes de bancada com uma bateria 3S1P fraca foi usado 50; os testes calculam a saída esperada a partir desse valor |
+| `THROTTLE_KNOB_MIN_PCT` | 10 | Potenciômetro `Knob::THROTTLE_LIMIT`: limite de acelerador 10 … 55 … 100% sobre `THROTTLE_LIMIT_PCT`, o permitido é esticado por todo o curso do stick. Sem vínculo — sem limite |
 
 ### ESC e reversão do motor
 
@@ -116,13 +117,26 @@ O console `Serial` é a LPUART1 (PA9 TX / PA10 RX), o padrão da variante.
 | `FLAPS_DEPLOYED_US` | 220 | Deflexão para baixo de cada aileron, µs (~20° do braço do MG90S) |
 | `FLAPS_TRANSITION_MS` | 1000 | O tempo da extensão/recolhimento completo |
 
-### Sentido dos servos
+### Reversão
 
-`AILERON_LEFT_REVERSED`, `AILERON_RIGHT_REVERSED` (`true` — os servos dos ailerons estão em espelho), `ELEVATOR_REVERSED` (`true`),
-`RUDDER_REVERSED` — o único lugar onde a reversão é definida. O `ControlMixer`
-calcula em sinais físicos e inverte o sinal somente aqui, por isso os sticks e
-o piloto automático não podem divergir. A reversão no rádio **não deve** ser
-usada.
+Tudo fica num único bloco do `Config.h`: uma linha — uma coisa, nada mais é afetado.
+
+| Flag | Padrão | O que inverte |
+|---|---|---|
+| `AILERON_LEFT_REVERSED` / `AILERON_RIGHT_REVERSED` | `false` / `true` | cada aileron separadamente (os servos na asa ficam em espelho) |
+| `ELEVATOR_REVERSED` | `true` | o profundor |
+| `RUDDER_REVERSED` | `false` | o leme e a roda de direção (um servo) |
+| `AUX1_REVERSED` | `false` | o servo de lançamento de carga: aberto ↔ fechado |
+| `AUX2_REVERSED` | `false` | o servo da câmera |
+| `MOTOR_REVERSED` | `false` | o sentido de rotação do motor — em vez de ressoldar dois fios; só com `ESC_BIDIRECTIONAL` (senão a compilação falha) |
+| `FLAPS_REVERSED` | `false` | os flaps e o freio aerodinâmico nos ailerons; a rolagem não é afetada |
+| `CHANNEL_REVERSED[10]` | `false` ×10 | canais do rádio CH1…CH10, como Reverse no menu do rádio: um stick, chave ou potenciômetro funciona ao contrário. CH3 (acelerador) não é permitido: a perda de link é detectada pelo acelerador bruto < 950 µs (`static_assert`) |
+
+O `ControlMixer` calcula em sinais físicos e o sinal só é invertido aqui, por
+isso os sticks e o piloto automático não podem divergir. Uma superfície se move
+ao contrário tanto pelo stick quanto pelo piloto automático — é flag de saída;
+só pelo stick — flag de canal. `Config::directedUs(us, reversed)` espelha um
+pulso em torno de 1500.
 
 ### Instalação dos sensores
 

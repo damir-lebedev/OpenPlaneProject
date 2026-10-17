@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-392%20passing-3fb950?style=for-the-badge" alt="392 testes">
+  <img src="https://img.shields.io/badge/tests-395%20passing-3fb950?style=for-the-badge" alt="395 testes">
   <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="cobertura de 98%">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 builds sem avisos">
   <br>
@@ -61,7 +61,7 @@
 | **O que é** | Um controlador de voo e piloto automático abertos para aviões radiocontrolados. A placa principal é a STM32H743 (placa da classe Pixhawk): em uma placa DevEBox o firmware **já está rodando e é pilotado pelo rádio** — [há vídeo](#-a-stm32h743-ganhou-vida-na-placa), e os sensores estão sendo ligados agora. A base anterior é um ESP32-S3 de uns US$ 10, que passou pela bancada com todos os sensores. |
 | **O que faz** | 12 modos de voo — da estabilização ao retorno para casa, círculos por GPS, lançamento manual, pouso automático e **voo planado em térmicas**. Tubo de Pitot feito com dois barômetros baratos. Telemetria MAVLink para o QGroundControl e o Mission Planner. |
 | **O grande trunfo** | Qualquer chave ou potenciômetro do rádio = qualquer função. **Uma linha** no `Controls.h` — e a SwD deixa de ser a reversão do motor e vira lançamento de carga. |
-| **Por que confiar** | 392 testes automatizados (mais 9 na própria placa, com um cartão SD de verdade), 98% do código coberto por testes, 24 builds "placa × sensores" sem um único aviso, simulações em malha fechada de cada modo. |
+| **Por que confiar** | 395 testes automatizados (mais 9 na própria placa, com um cartão SD de verdade), 98% do código coberto por testes, 24 builds "placa × sensores" sem um único aviso, simulações em malha fechada de cada modo. |
 | **Com honestidade** | Até agora só o modo manual voou (o primeiro protótipo). A STM32H743 foi testada apenas na bancada, sem sensores. O piloto automático foi verificado na bancada, em testes e em simulações, e aguarda os testes de voo — [status abaixo](#-situação-real). |
 
 ---
@@ -81,7 +81,7 @@ constexpr Binding BINDINGS[] = {
 
 Quer o voo planado em térmicas na SwD em vez da reversão do motor? `Bind::mode(Channels::SWD, MODE_SOARING)`. Lançamento de carga na SwB? `Bind::feature(Channels::SWB, Feature::PAYLOAD_DROP)`. Errou — por exemplo, pôs dois modos na mesma chave ou ocupou um stick — **o build não passa**: a tabela é verificada pelo compilador (`static_assert`). Ao ligar, a própria aeronave imprime o que está em cada chave.
 
-**12 modos · 11 funções · 7 potenciômetros** — tudo com exemplos na [referência do piloto automático](AUTOPILOT_GUIDE.md).
+**12 modos · 11 funções · 8 potenciômetros** — tudo com exemplos na [referência do piloto automático](AUTOPILOT_GUIDE.md).
 
 ---
 
@@ -205,7 +205,7 @@ O que isso prova: a cadeia "rádio → iBUS → firmware → PWM" funciona em ha
 
 | | |
 |---|---|
-| **392 testes automatizados** | módulos, drivers verificados no nível dos registradores do chip, voos em malha fechada, o firmware de ESP32 e STM32 **inteiro** no PC; além de 9 testes na própria placa STM32 com um cartão SD de verdade |
+| **395 testes automatizados** | módulos, drivers verificados no nível dos registradores do chip, voos em malha fechada, o firmware de ESP32 e STM32 **inteiro** no PC; além de 9 testes na própria placa STM32 com um cartão SD de verdade |
 | **98,3% das linhas, 87,7% dos ramos** | cobertura do `gcovr`, inclusive do código da STM32 |
 | **24/24 builds** | 4 placas × 6 kits de sensores, `-Wall -Wextra`, zero avisos |
 | **0 apontamentos** | cppcheck e clang-tidy em todo o código |

@@ -35,6 +35,7 @@ RC 신호의 공통 변환입니다.
 | 메서드 | 설명 |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | `PWM_MIN..PWM_MAX`로 제한 |
+| `static uint16_t reversed(uint16_t value)` | 채널을 반대로: `3000 − clamp(value)`(1000 ↔ 2000) — `Config::CHANNEL_REVERSED`용 |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | 선형 변환: 1000 → `−max`, 1500 → 0, 2000 → `+max`(입력을 먼저 제한함). `reverse`는 부호를 뒤집습니다. 결과는 ±`max`로 제한 |
 
 예: `centered(1750, 500) == 250`, `centered(1750, 500, true) == -250`.
@@ -75,3 +76,4 @@ FlySky iBUS 프로토콜을 한 바이트씩 해석하는 파서입니다.
   송신기의 명령으로 착각하지 않습니다.
 - failsafe 표시는 **올바른 프레임마다** 다시 계산됩니다. 스로틀이 정상인 첫
   프레임만으로 링크가 복구됩니다.
+- `Config::CHANNEL_REVERSED`인 채널은 뒤집힌 값으로 저장됩니다(`RcInput::reversed`). failsafe는 그 전에 **원시** 스로틀로 판정하고, CH3 반전은 `static_assert`로 금지합니다.

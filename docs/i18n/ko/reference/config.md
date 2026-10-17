@@ -96,6 +96,7 @@
 | `PWM_MIN` / `PWM_CENTER` / `PWM_MAX` | 1000 / 1500 / 2000 | 표준 RC 펄스(µs) |
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | 스틱을 끝까지 움직였을 때 중심에서의 변위(µs). 방향타가 작은 것은 같은 서보에 착륙장치 바퀴가 달려 있기 때문 |
 | `THROTTLE_LIMIT_PCT` | 100 | ESC로 가는 스로틀의 상한(%)이며 스틱과 오토파일럿에 똑같이 적용됨(`FlightController::capThrottle`). 출력이 약한 3S1P 배터리로 테스트 벤치 시험을 할 때는 50으로 두었으며, 테스트는 이 값으로 기대 출력을 계산함 |
+| `THROTTLE_KNOB_MIN_PCT` | 10 | 노브 `Knob::THROTTLE_LIMIT`: `THROTTLE_LIMIT_PCT` 위에 스로틀 상한 10 … 55 … 100%, 허용 범위를 스틱 전체 행정으로 늘림. 지정 안 함 — 상한 없음 |
 
 ### ESC와 모터 역회전
 
@@ -114,12 +115,22 @@
 | `FLAPS_DEPLOYED_US` | 220 | 각 에일러론을 아래로 내리는 변위(µs)(MG90S 혼으로 약 20°) |
 | `FLAPS_TRANSITION_MS` | 1000 | 완전히 펼치거나 접는 데 걸리는 시간 |
 
-### 서보 방향
+### 리버스
 
-`AILERON_LEFT_REVERSED`, `AILERON_RIGHT_REVERSED`(`true`는 에일러론 서보가 거울 배치), `ELEVATOR_REVERSED`(`true`),
-`RUDDER_REVERSED`는 리버스를 지정하는 유일한 장소입니다. `ControlMixer`는 물리적 부호로
-계산하고 부호 반전을 여기서만 하므로 스틱과 오토파일럿의 방향이 어긋날 수 없습니다.
-송신기에서 리버스를 설정해서는 **안 됩니다**.
+모두 `Config.h`의 한 블록에 있습니다. 한 줄은 한 가지만 뒤집고, 나머지는 건드리지 않습니다.
+
+| 플래그 | 기본값 | 무엇을 뒤집는가 |
+|---|---|---|
+| `AILERON_LEFT_REVERSED` / `AILERON_RIGHT_REVERSED` | `false` / `true` | 에일러론을 하나씩 따로(날개 안 서보는 거울 배치) |
+| `ELEVATOR_REVERSED` | `true` | 엘리베이터 |
+| `RUDDER_REVERSED` | `false` | 러더와 조향 바퀴(서보 하나) |
+| `AUX1_REVERSED` | `false` | 화물 투하 서보: 열림 ↔ 닫힘 |
+| `AUX2_REVERSED` | `false` | 카메라 서보 |
+| `MOTOR_REVERSED` | `false` | 모터 회전 방향 — 모터 선 두 가닥을 다시 납땜하는 대신; `ESC_BIDIRECTIONAL`일 때만(아니면 빌드 실패) |
+| `FLAPS_REVERSED` | `false` | 에일러론의 플랩과 에어브레이크, 롤은 건드리지 않음 |
+| `CHANNEL_REVERSED[10]` | `false` ×10 | 조종기 채널 CH1…CH10, 조종기 메뉴의 Reverse처럼 스틱, 스위치, 노브가 반대로 동작. CH3(스로틀)는 불가: 통신 두절을 원시 스로틀 < 950 µs로 판정하기 때문(`static_assert`) |
+
+`ControlMixer`는 물리적 부호로 계산하고 부호는 여기서만 뒤집으므로 스틱과 오토파일럿이 어긋날 수 없습니다. 조종면이 스틱에서도 오토파일럿에서도 반대로 움직이면 출력 플래그, 스틱에서만 반대면 채널 플래그입니다. `Config::directedUs(us, reversed)`는 펄스를 1500을 중심으로 뒤집습니다.
 
 ### 센서 장착
 

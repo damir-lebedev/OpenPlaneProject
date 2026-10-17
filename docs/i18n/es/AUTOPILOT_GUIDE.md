@@ -230,6 +230,7 @@ El centro del potenciómetro = valor por defecto de `Config.h`; los extremos son
 | `CAMERA_TILT` | −90° … 0° … +30° | ángulo de la cámara (AUX2) |
 | `RATES` | 30 … 65 … 100 % del recorrido de los sticks | todos los modos: sensibilidad de los sticks |
 | `LOITER_RADIUS` | 25 … 50 … 150 m | LOITER y círculos sobre el punto de origen |
+| `THROTTLE_LIMIT` | límite de gas 10 … 55 … 100 % | todos los modos: stick de gas a fondo = el límite del potenciómetro, lo permitido se estira por todo el recorrido del stick; el gas del piloto automático se limita igual |
 
 > Un truco útil: el potenciómetro `STAB_GAIN` en VrA es un ajuste «en vivo» de los coeficientes durante el vuelo. Si oscila, redúcelo; si está flojo, auméntalo; después pasa el multiplicador a `Config.h`.
 
@@ -299,7 +300,7 @@ El ARM/DISARM desde tierra **se rechaza**: solo con el interruptor de la emisora
 
 ## Orden de puesta a punto de un avión nuevo
 
-1. **MANUAL en el suelo:** sentidos de las superficies (`*_REVERSED` en `Config.h`), flaps hacia abajo, AUX. Comprobación de las salidas con `p` en la consola (¡sin hélice!).
+1. **MANUAL en el suelo:** sentidos de las superficies, del motor y de los flaps (el bloque «Inversión» de `Config.h`), flaps hacia abajo, AUX. Comprobación de las salidas con `p` en la consola (¡sin hélice!).
 2. **Sensores en el suelo:** `b`: exploración de los buses; `s`: estado; `o`: calibración de la instalación del IMU (3 posturas, una sola vez); `m`: brújula.
 3. **STABILIZE en el suelo:** inclina el avión hacia la derecha: el alerón derecho debe ir **hacia abajo** (para nivelar). Morro arriba: timón de profundidad hacia abajo. Si no es así, los reversos o la instalación del IMU están mal.
 4. **Primer vuelo en MANUAL**, ascenso a más de 50 m → STABILIZE. Si oscila, `STAB_GAIN` menor; si está flojo, mayor.

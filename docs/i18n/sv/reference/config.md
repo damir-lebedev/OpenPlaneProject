@@ -97,6 +97,7 @@ Konsolen `Serial` är LPUART1 (PA9 TX / PA10 RX), variantens standard.
 | `PWM_MIN` / `PWM_CENTER` / `PWM_MAX` | 1000 / 1500 / 2000 | Standard-RC-pulsen, µs |
 | `AILERON_MAX_US`, `ELEVATOR_MAX_US`, `RUDDER_MAX_US` | 500 / 500 / 300 | Utslag från mitten vid fullt spakutslag, µs. Sidrodret är mindre: landningsställets hjul sitter på samma servo |
 | `THROTTLE_LIMIT_PCT` | 100 | Gastaket till ESC:n, %, samma för spaken och autopiloten (`FlightController::capThrottle`). För bänktester med ett svagt 3S1P-batteri var det satt till 50; testerna räknar ut den förväntade utdatan från det här värdet |
+| `THROTTLE_KNOB_MIN_PCT` | 10 | Ratten `Knob::THROTTLE_LIMIT`: gasgräns 10 … 55 … 100 % ovanpå `THROTTLE_LIMIT_PCT`, det tillåtna sträcks ut över hela spakens slag. Inte kopplad – ingen gräns |
 
 ### ESC och motorreversering
 
@@ -115,12 +116,25 @@ Konsolen `Serial` är LPUART1 (PA9 TX / PA10 RX), variantens standard.
 | `FLAPS_DEPLOYED_US` | 220 | Nedåtgående utslag för varje skevroder, µs (~20° på MG90S-armen) |
 | `FLAPS_TRANSITION_MS` | 1000 | Tiden för en fullständig utfällning/infällning |
 
-### Servoriktning
+### Reversering
 
-`AILERON_LEFT_REVERSED`, `AILERON_RIGHT_REVERSED` (`true` – skevroderservona är spegelvända), `ELEVATOR_REVERSED` (`true`),
-`RUDDER_REVERSED` – det enda stället där reversering anges. `ControlMixer`
-räknar med fysiska tecken och vänder tecknet bara här, så spakarna och
-autopiloten kan inte bli oense. Reversering på sändaren **får inte** användas.
+Allt finns i ett block i `Config.h`: en rad – en sak, inget annat påverkas.
+
+| Flagga | Standard | Vad den vänder |
+|---|---|---|
+| `AILERON_LEFT_REVERSED` / `AILERON_RIGHT_REVERSED` | `false` / `true` | varje skevroder för sig (servona i vingen är spegelvända) |
+| `ELEVATOR_REVERSED` | `true` | höjdrodret |
+| `RUDDER_REVERSED` | `false` | sidrodret och styrhjulet (ett servo) |
+| `AUX1_REVERSED` | `false` | lastsläppets servo: öppen ↔ stängd |
+| `AUX2_REVERSED` | `false` | kamerans servo |
+| `MOTOR_REVERSED` | `false` | motorns rotationsriktning – i stället för att löda om två ledningar; bara med `ESC_BIDIRECTIONAL` (annars går bygget inte igenom) |
+| `FLAPS_REVERSED` | `false` | klaffar och luftbroms på skevrodren; rollen påverkas inte |
+| `CHANNEL_REVERSED[10]` | `false` ×10 | sändarens kanaler CH1…CH10, som Reverse i sändarens meny: en spak, brytare eller ratt fungerar tvärtom. CH3 (gas) går inte: förlorad förbindelse upptäcks på rå gas < 950 µs (`static_assert`) |
+
+`ControlMixer` räknar med fysiska tecken och tecknet vänds bara här, så spakarna
+och autopiloten kan inte bli oense. Går en roderyta fel håll både från spaken och
+från autopiloten – det är en utgångsflagga; bara från spaken – en kanalflagga.
+`Config::directedUs(us, reversed)` speglar en puls kring 1500.
 
 ### Sensormontering
 

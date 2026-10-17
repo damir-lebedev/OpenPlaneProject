@@ -37,6 +37,7 @@
 | الدالة | الوصف |
 |---|---|
 | `static uint16_t clamp(uint16_t value)` | التقييد بين `PWM_MIN..PWM_MAX` |
+| `static uint16_t reversed(uint16_t value)` | القناة بالعكس: `3000 − clamp(value)` ‏(1000 ↔ 2000) — لأجل `Config::CHANNEL_REVERSED` |
 | `static int16_t centered(uint16_t input, int16_t maxDeflection, bool reverse = false)` | خطي: 1000 ← `−max`، و1500 ← 0، و2000 ← `+max` (يُقيَّد المدخل أولًا)؛ و`reverse` يقلب الإشارة. والنتيجة مقيَّدة بـ ±`max` |
 
 مثال: `centered(1750, 500) == 250`، و`centered(1750, 500, true) == -250`.
@@ -77,5 +78,7 @@
   (كلها 1500) على أنها أوامر من جهاز التحكم.
 - تُعاد حسابات علامة failsafe عند **كل** إطار صحيح — فيعود الاتصال بأول
   إطار يحمل خانقًا طبيعيًّا.
+- تُحفظ القنوات ذات `Config::CHANNEL_REVERSED` معكوسة (`RcInput::reversed`)؛
+  ويُكتشف failsafe قبل ذلك من الخانق **الخام**، ويمنع `static_assert` عكس CH3.
 
 </div>

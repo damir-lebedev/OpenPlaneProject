@@ -43,7 +43,7 @@ of `/api/setmode`, `/api/status` and into `MavlinkModes`):
 `GEOFENCE`, `HOME_RESET`, `CAMERA_STAB`, `MOTOR_REVERSE`, `COUNT`.
 
 `enum class Knob : uint8_t` — the knobs: `STAB_GAIN`, `MAX_BANK`,
-`CRUISE_SPEED`, `FLAPS`, `CAMERA_TILT`, `RATES`, `LOITER_RADIUS`, `COUNT`.
+`CRUISE_SPEED`, `FLAPS`, `CAMERA_TILT`, `RATES`, `LOITER_RADIUS`, `THROTTLE_LIMIT`, `COUNT`.
 
 `namespace AutopilotNames` — `mode()`, `modeShort()` (≤ 5 characters),
 `feature()`, `knob()`: names for the log, OLED, dashboard, MAVLink.

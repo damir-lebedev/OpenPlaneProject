@@ -303,7 +303,7 @@ PID는 `오차 = 목표 − 실제`를 계산합니다. 오른쪽 롤(roll > 0) 
 **4. 명령 → PWM.** `ControlMixer::mix()`는 각 조종면의 뒷전 변위를 계산하고
 (에일러론: 아래 = “+”, 왼쪽 = `flaps + roll`, 오른쪽 = `flaps − roll`,
 승강타: 위 = “+”, 방향타: 오른쪽 = “+”) PWM `1500 ± 변위`로 변환하며,
-`Config::*_REVERSED = true`인 서보는 부호를 뒤집습니다. 기본값은 스틱에 대한
+`Config::*_REVERSED = true`(플랩은 따로 `FLAPS_REVERSED`, AUX와 모터와 조종기 채널은 `AUX1/AUX2_REVERSED`, `MOTOR_REVERSED`, `CHANNEL_REVERSED`, 모두 “리버스” 블록에)인 서보는 부호를 뒤집습니다. 기본값은 스틱에 대한
 펌웨어의 기존 동작을 그대로 재현합니다. 조립이 끝난 기체에서의 확인은
 [`PILOT_GUIDE.md`](PILOT_GUIDE.md)의 비행 전 점검 목록에 있습니다. 리버스는
 `Config.h`에서 바꿔야 하며, **송신기에서 바꾸면 안 됩니다**. 그렇지 않으면
@@ -932,7 +932,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 모든 보드가 �
 - 포트 모니터가 열려 있는 동안에는 같은 포트로 업로드할 수 없습니다.
 - `lib_deps`: `olikraus/U8g2`(OLED)가 유일한 외부 라이브러리입니다.
 - `test/` — 자세한 내용은 [`TESTING.md`](TESTING.md)에 있습니다.
-  - `pio test -e native -e native-stm32` — PC에서 392개 테스트(하드웨어 대역은
+  - `pio test -e native -e native-stm32` — PC에서 395개 테스트(하드웨어 대역은
     `test/native/support/`), 커버리지는 `gcovr`.
   - `pio test -e esp32-s3` — 보드에서 `test_feedback/`(피드백 폐루프 시뮬레이션)과
     `test_imu_orientation/`을 실행합니다. 각각 테스트 펌웨어를 기록하므로, 그 뒤에

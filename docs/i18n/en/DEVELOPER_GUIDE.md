@@ -319,7 +319,7 @@ are added to the stick command **before** the mixer, in the same signs.
 deflection of each surface (ailerons: down = "+", left = `flaps + roll`,
 right = `flaps − roll`; elevator: up = "+"; rudder: right = "+") and
 converts it to PWM `1500 ± deflection`, flipping the sign for servos with
-`Config::*_REVERSED = true`. The default values reproduce the firmware's
+`Config::*_REVERSED = true` (the flaps separately — `FLAPS_REVERSED`; AUX, the motor and the transmitter channels — `AUX1/AUX2_REVERSED`, `MOTOR_REVERSED`, `CHANNEL_REVERSED`, all in the “Reverse” block). The default values reproduce the firmware's
 earlier behavior for the sticks. The check on the assembled airplane is in
 the preflight checklist of [`PILOT_GUIDE.md`](PILOT_GUIDE.md). The reversal
 must be changed in `Config.h`, **not on the transmitter** — otherwise the
@@ -1001,7 +1001,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # check that all the
 - While the port monitor is open, uploading to the same port will not work.
 - `lib_deps`: `olikraus/U8g2` (OLED) is the only external library.
 - `test/` — in detail in [`TESTING.md`](TESTING.md):
-  - `pio test -e native -e native-stm32` — 392 tests on a PC (hardware fakes
+  - `pio test -e native -e native-stm32` — 395 tests on a PC (hardware fakes
     in `test/native/support/`), coverage — `gcovr`;
   - `pio test -e esp32-s3` — `test_feedback/` (the closed-loop feedback
     simulation) and `test_imu_orientation/` on the board itself; each one

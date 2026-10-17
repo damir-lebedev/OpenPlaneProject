@@ -89,6 +89,7 @@ STM32duino 内核（以及其他 Arduino 内核）中，`PIN_SPI_SCK/MISO/MOSI` 
 | `PWM_MIN` / `PWM_CENTER` / `PWM_MAX` | 1000 / 1500 / 2000 | 标准的 RC 脉冲，µs |
 | `AILERON_MAX_US`、`ELEVATOR_MAX_US`、`RUDDER_MAX_US` | 500 / 500 / 300 | 摇杆满行程时相对中心的偏转量，µs。方向舵较小：同一个舵机上还带着起落架的前轮 |
 | `THROTTLE_LIMIT_PCT` | 100 | 送往电调的油门上限，%，对摇杆和自动驾驶仪相同（`FlightController::capThrottle`）。在较弱的 3S1P 电池上做台架测试时曾设为 50；测试会按该值计算预期输出 |
+| `THROTTLE_KNOB_MIN_PCT` | 10 | `Knob::THROTTLE_LIMIT` 旋钮：在 `THROTTLE_LIMIT_PCT` 之上再限制油门 10 … 55 … 100%，允许的范围拉伸到整个摇杆行程。未绑定——不限制 |
 
 ### 电调与电机反转
 
@@ -107,11 +108,22 @@ STM32duino 内核（以及其他 Arduino 内核）中，`PIN_SPI_SCK/MISO/MOSI` 
 | `FLAPS_DEPLOYED_US` | 220 | 每个副翼向下的偏转量，µs（MG90S 摇臂约 20°） |
 | `FLAPS_TRANSITION_MS` | 1000 | 完全放出/收起所需的时间 |
 
-### 舵机方向
+### 反向
 
-`AILERON_LEFT_REVERSED`、`AILERON_RIGHT_REVERSED`（`true`——副翼舵机是镜像安装的）、`ELEVATOR_REVERSED`（`true`）、
-`RUDDER_REVERSED`——这是设置舵机反向的唯一位置。`ControlMixer`
-按物理符号计算，只在这里改变符号，因此摇杆和自动驾驶仪不会出现方向不一致。**不能**在遥控器上设置反向。
+全部集中在 `Config.h` 的一个块里：一行只管一样东西，其他都不受影响。
+
+| 标志 | 默认值 | 反转什么 |
+|---|---|---|
+| `AILERON_LEFT_REVERSED` / `AILERON_RIGHT_REVERSED` | `false` / `true` | 每个副翼单独设置（机翼里的舵机是镜像安装的） |
+| `ELEVATOR_REVERSED` | `true` | 升降舵 |
+| `RUDDER_REVERSED` | `false` | 方向舵和转向轮（同一个舵机） |
+| `AUX1_REVERSED` | `false` | 投放舵机：打开 ↔ 关闭 |
+| `AUX2_REVERSED` | `false` | 相机舵机 |
+| `MOTOR_REVERSED` | `false` | 电机旋转方向——代替对调两根电机线；只在 `ESC_BIDIRECTIONAL` 时可用（否则编译不通过） |
+| `FLAPS_REVERSED` | `false` | 副翼上的襟翼和减速板；横滚不受影响 |
+| `CHANNEL_REVERSED[10]` | `false` ×10 | 遥控器通道 CH1…CH10，相当于遥控器菜单里的 Reverse：摇杆、开关或旋钮反向工作。CH3（油门）不允许：信号丢失是按原始油门 < 950 µs 判断的（`static_assert`） |
+
+`ControlMixer` 按物理符号计算，只在这里改变符号，因此摇杆和自动驾驶仪不会出现方向不一致。舵面无论来自摇杆还是自动驾驶仪都反了——改输出标志；只有摇杆反了——改通道标志。`Config::directedUs(us, reversed)` 把脉冲以 1500 为中心镜像。
 
 ### 传感器的安装
 

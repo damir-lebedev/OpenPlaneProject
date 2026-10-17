@@ -309,7 +309,7 @@ sinais.
 fuga de cada superfície (ailerons: para baixo = “+”, esquerdo = `flaps + roll`,
 direito = `flaps − roll`; profundor: para cima = “+”; leme: para a direita =
 “+”) e a converte em PWM `1500 ± deflexão`, invertendo o sinal nos servos com
-`Config::*_REVERSED = true`. Os valores padrão reproduzem o comportamento
+`Config::*_REVERSED = true` (os flaps à parte — `FLAPS_REVERSED`; AUX, o motor e os canais do rádio — `AUX1/AUX2_REVERSED`, `MOTOR_REVERSED`, `CHANNEL_REVERSED`, tudo no bloco “Reversão”). Os valores padrão reproduzem o comportamento
 anterior do firmware para os sticks. A verificação na aeronave montada está
 na lista de verificação pré-voo do [`PILOT_GUIDE.md`](PILOT_GUIDE.md). A
 reversão deve ser alterada no `Config.h`, **e não no rádio** — senão o stick
@@ -989,7 +989,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # verificar se todas
   funcionará.
 - `lib_deps`: `olikraus/U8g2` (OLED) é a única biblioteca externa.
 - `test/` — em detalhe no [`TESTING.md`](TESTING.md):
-  - `pio test -e native -e native-stm32` — 392 testes no PC (simulacros do
+  - `pio test -e native -e native-stm32` — 395 testes no PC (simulacros do
     hardware em `test/native/support/`), cobertura — `gcovr`;
   - `pio test -e esp32-s3` — `test_feedback/` (a simulação em malha fechada da
     realimentação) e `test_imu_orientation/` na própria placa; cada um grava

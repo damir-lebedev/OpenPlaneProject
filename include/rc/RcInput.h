@@ -22,6 +22,12 @@ public:
         );
     }
 
+    // Канал наоборот (Config::CHANNEL_REVERSED): 1000 <-> 2000.
+    static uint16_t reversed(uint16_t value)
+    {
+        return static_cast<uint16_t>(Config::PWM_MIN + Config::PWM_MAX - clamp(value));
+    }
+
     // 1000 -> -maximumDeflection, 1500 -> 0, 2000 -> +maximumDeflection.
     // reverse инвертирует направление канала.
     static int16_t centered(

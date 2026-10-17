@@ -23,6 +23,6 @@ struct FlightOutputState
     uint16_t rudder       = Config::PWM_CENTER;
     uint16_t throttle     = Config::PWM_MIN;
     bool motorReverse     = false;                      // мотор назад (MotorReverse)
-    uint16_t aux1         = Config::PAYLOAD_CLOSED_US;  // сброс груза
+    uint16_t aux1         = Config::directedUs(Config::PAYLOAD_CLOSED_US, Config::AUX1_REVERSED);  // сброс груза
     uint16_t aux2         = Config::PWM_CENTER;         // камера
 };

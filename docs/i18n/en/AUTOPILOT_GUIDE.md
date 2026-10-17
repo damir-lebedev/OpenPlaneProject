@@ -230,6 +230,7 @@ The center of a knob = the default value from `Config.h`; the edges are the mini
 | `CAMERA_TILT` | −90° … 0° … +30° | the camera angle (AUX2) |
 | `RATES` | 30 … 65 … 100 % of stick travel | all modes: stick sensitivity |
 | `LOITER_RADIUS` | 25 … 50 … 150 m | LOITER and circles over home |
+| `THROTTLE_LIMIT` | throttle limit 10 … 55 … 100% | all modes: full throttle stick = the limit from the knob, the allowed range is stretched over the whole stick travel; the autopilot throttle is limited the same way |
 
 > A useful trick: the `STAB_GAIN` knob on VrA is "live" tuning of the coefficients in flight. If it oscillates — turn it down; if it is sluggish — turn it up; then move the multiplier into `Config.h`.
 
@@ -299,7 +300,7 @@ ARM/DISARM from the ground is **rejected** — only with the transmitter switch.
 
 ## Setting up a new airplane, step by step
 
-1. **MANUAL on the ground:** the surface directions (`*_REVERSED` in `Config.h`), flaps down, AUX. Check the outputs with `p` in the console (propeller off!).
+1. **MANUAL on the ground:** the directions of the surfaces, the motor and the flaps (the “Reverse” block in `Config.h`), flaps down, AUX. Check the outputs with `p` in the console (propeller off!).
 2. **Sensors on the ground:** `b` — bus scan, `s` — status; `o` — IMU mounting calibration (3 poses, once), `m` — compass.
 3. **STABILIZE on the ground:** tilt the airplane to the right — the right aileron should go **down** (to level it). Nose up — elevator down. If not — the reverses or the IMU mounting are mixed up.
 4. **The first flight in MANUAL**, climb 50+ m → STABILIZE. If it oscillates — lower `STAB_GAIN`; if it is sluggish — raise it.

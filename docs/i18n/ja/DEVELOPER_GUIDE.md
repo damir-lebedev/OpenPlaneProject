@@ -286,7 +286,7 @@ Z は上です。行列は次のいずれかから得ます。
 PID は `誤差 = 目標 − 実測` を計算します。右ロール（roll > 0）→ ロールのコマンドが負 → 機体が水平に戻ります。オートパイロットの補正は、ミキサーの**前**でスティックのコマンドに同じ符号で加算されます。
 
 **4. コマンド → PWM。** `ControlMixer::mix()` は各舵面の後縁の舵角を計算し（エルロン：下げ = 「+」、左 = `flaps + roll`、右 = `flaps − roll`、エレベーター：上げ = 「+」、ラダー：右 = 「+」）、PWM `1500 ± 舵角` に変換します。
-`Config::*_REVERSED = true` のサーボでは符号を反転します。デフォルト値は、スティックに対するファームウェアのこれまでの挙動を再現します。組み立て済みの機体での確認は、
+`Config::*_REVERSED = true`（フラップは別に `FLAPS_REVERSED`、AUX、モーター、送信機のチャンネルは `AUX1/AUX2_REVERSED`、`MOTOR_REVERSED`、`CHANNEL_REVERSED`。すべて「リバース」ブロック） のサーボでは符号を反転します。デフォルト値は、スティックに対するファームウェアのこれまでの挙動を再現します。組み立て済みの機体での確認は、
 [`PILOT_GUIDE.md`](PILOT_GUIDE.md) の飛行前チェックリストにあります。リバースは
 `Config.h` で変更してください。**送信機側では変更しないでください**。そうしないとスティックとオートパイロットの向きが食い違います。
 
@@ -784,7 +784,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # すべてのボー
 - ポートモニターを開いている間は、同じポートへの書き込みは通りません。
 - `lib_deps`：`olikraus/U8g2`（OLED）が唯一の外部ライブラリです。
 - `test/` の詳細は [`TESTING.md`](TESTING.md) にあります。
-  - `pio test -e native -e native-stm32`：PC 上で 392 件のテスト（ハードウェアの代役は `test/native/support/`）。カバレッジは `gcovr`。
+  - `pio test -e native -e native-stm32`：PC 上で 395 件のテスト（ハードウェアの代役は `test/native/support/`）。カバレッジは `gcovr`。
   - `pio test -e esp32-s3`：基板上で `test_feedback/`（フィードバックの閉ループシミュレーション）と `test_imu_orientation/` を実行します。それぞれテスト用ファームウェアを書き込むので、そのあと `pio run -t upload` で通常のファームウェアを書き戻してください。
 - 静的解析：`pio check -e esp32-s3`（cppcheck）、`pio check -e stm32h743`（`hal/stm32/` と `src/stm32/` に対する
   cppcheck）、`tools/clang-tidy.sh`（`.clang-tidy` のプロファイル）。
