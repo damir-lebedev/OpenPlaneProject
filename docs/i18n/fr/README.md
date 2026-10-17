@@ -35,8 +35,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-395%20passing-3fb950?style=for-the-badge" alt="395 tests">
-  <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="couverture de 98 %">
+  <img src="https://img.shields.io/badge/tests-431%20passing-3fb950?style=for-the-badge" alt="431 tests">
+  <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="couverture de 94 %">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 compilations sans avertissement">
   <br>
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
@@ -61,7 +61,7 @@
 | **Ce que c’est** | Un contrôleur de vol et pilote automatique ouverts pour avions radiocommandés. La carte principale est la STM32H743 (une carte de la classe Pixhawk) : sur une carte DevEBox, le firmware **tourne déjà et se pilote avec la radio** — [il y a une vidéo](#-le-stm32h743sanime-sur-la-carte), et les capteurs sont en cours de branchement. L’ancienne base est un ESP32-S3 à environ 10 $, qui a passé le banc avec tous les capteurs. |
 | **Ce qu’il sait faire** | 12 modes de vol, de la stabilisation au retour à la maison, en passant par les cercles au GPS, le lancer à la main, l’atterrissage automatique et le **vol à voile en thermiques**. Un tube de Pitot fait de deux baromètres bon marché. Télémétrie MAVLink vers QGroundControl et Mission Planner. |
 | **L’atout principal** | N’importe quel interrupteur ou potentiomètre de la radio = n’importe quelle fonction. **Une seule ligne** dans `Controls.h`, et SwD n’est plus l’inversion du moteur mais un largage de charge. |
-| **Pourquoi lui faire confiance** | 395 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 98 % du code couvert par les tests, 24 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
+| **Pourquoi lui faire confiance** | 431 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 94 % du code couvert par les tests, 24 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
 | **En toute franchise** | Pour l’instant, seul le mode manuel a volé (le premier prototype). Le STM32H743 n’a été vérifié que sur le banc, sans capteurs. Le pilote automatique a été vérifié sur le banc, par des tests et des simulations, et attend les essais en vol — [état des lieux plus bas](#-état-réel). |
 
 ---
@@ -96,19 +96,19 @@ Vous voulez le vol à voile en thermiques sur SwD au lieu de l’inversion du mo
 | 🛣️ | **CRUISE** | cap, altitude et vitesse se maintiennent seuls ; les sticks ne font que corriger |
 | ⭕ | **LOITER** | cercles autour d’un point GPS (le rayon se règle avec un potentiomètre) |
 | 🏠 | **RTH** | retour à la maison à 40 m, puis cercles au-dessus de vous ; s’active seul en cas de perte de signal |
-| 🛫 | **AUTO_TAKEOFF** | décollage depuis la piste aux gaz du pilote |
+| 🛫 | **AUTO_TAKEOFF** | Décollage depuis une piste : roulette de queue ou de nez, la queue se lève d’abord, c’est l’aile qui fait décoller |
 | 🤾 | **LAUNCH** | lancer à la main : le moteur démarre après le lancer, puis montée |
 | 🛬 | **AUTO_LAND** | plané et arrondi près du sol |
 | 🦅 | **SOARING** | moteur coupé, il trouve les thermiques et y tourne en cercle |
 | 🆘 | **RESCUE** | « à l’aide » : ailes à plat, nez vers le haut — à partir de n’importe quelle spirale |
 
-En plus : géorepérage, auto-trim pour un avion « de travers », coordination des virages, protection contre le décrochage grâce au tube de Pitot, volets et aérofrein, largage de charge, caméra stabilisée et un buzzer « retrouvez-moi dans l’herbe ».
+En plus : calibration au sol depuis la radio (horizon et assiette au sol, étapes signalées par le moteur et les gouvernes), géorepérage, auto-trim pour un avion « de travers », coordination des virages, protection contre le décrochage grâce au tube de Pitot, volets et aérofrein, largage de charge, caméra stabilisée et un buzzer « retrouvez-moi dans l’herbe ».
 
 ---
 
 ## 📈 Chaque mode vole — en boucle fermée
 
-Pas « une fonction a renvoyé un nombre », mais un **vol** : radio → trame iBUS → firmware → PWM → braquage des gouvernes → modèle d’avion avec portance, décrochage, vent et thermiques → capteurs → de nouveau le firmware. 14 vols de ce genre font partie des tests ordinaires (`pio test -e native`).
+Pas « une fonction a renvoyé un nombre », mais un **vol** : radio → trame iBUS → firmware → PWM → braquage des gouvernes → modèle d’avion avec portance, décrochage, vent et thermiques → capteurs → de nouveau le firmware. 17 vols de ce genre font partie des tests ordinaires (`pio test -e native`).
 
 <p align="center"><img src="../../images/sim/missions.png" alt="RTH, LOITER, géorepérage et perte de signal — vue de dessus"></p>
 
@@ -205,8 +205,8 @@ Ce que cela prouve : la chaîne « radio → iBUS → firmware → PWM » fon
 
 | | |
 |---|---|
-| **395 tests automatiques** | modules, pilotes vérifiés au niveau des registres des puces, vols en boucle fermée, firmware ESP32 et STM32 **complet** sur PC ; plus 9 tests sur la carte STM32 elle-même avec une vraie carte SD |
-| **98,3 % des lignes, 87,7 % des branches** | couverture `gcovr`, code STM32 compris |
+| **431 tests automatiques** | modules, pilotes vérifiés au niveau des registres des puces, vols en boucle fermée, firmware ESP32 et STM32 **complet** sur PC ; plus 9 tests sur la carte STM32 elle-même avec une vraie carte SD |
+| **93,9 % des lignes, 85,7 % des branches** | couverture `gcovr`, code STM32 compris |
 | **24/24 compilations** | 4 cartes × 6 kits de capteurs, `-Wall -Wextra`, zéro avertissement |
 | **0 remarque** | cppcheck et clang-tidy sur tout le code |
 | **Des références, pas des copies de code** | formules des capteurs d’après les fiches techniques (Bosch, ST, TDK, Goertek), MAVLink d’après pymavlink |
@@ -263,6 +263,7 @@ Dans le moniteur série : `h` — menu, `b` — quelles puces sont visibles sur
 | Pilotage manuel, mixeur | ✈️ en vol (premier prototype, C3) |
 | ARM, failsafe, volets, servos, moteur | 🔧 sur le banc (S3) |
 | ESC bidirectionnel BLHeli 80A, inversion uniquement en DISARM | 🧪 tests ; pas encore essayé avec le vrai ESC |
+| Décollage automatique avec roulette de queue ou de nez, calibration au sol depuis la radio, signaux par le moteur et les gouvernes | 🧪 tests et simulations avec un modèle de train d’atterrissage ; la mélodie de l’ESC après la pause des impulsions reste à vérifier sur le banc |
 | STABILIZE | 🔧 sur le banc : les gouvernes réagissent aux inclinaisons dans le bon sens |
 | Capteurs du banc (MPU6500, BMP388, QMC5883P), OLED, tableau de bord | 🔧 sur le banc |
 | Autres modes, navigation, tube de Pitot, MAVLink | 🧪 tests et simulations en boucle fermée |

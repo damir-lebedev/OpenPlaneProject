@@ -127,6 +127,7 @@ A single PWM output. The implementation fixes the pin.
 | `writeMicroseconds(us)` | Pulse width, µs (limited to the `attach` range) |
 | `bool isAttached() const` | The result of `attach()` |
 | `virtual int32_t measurePulseUs()` | Diagnostics: the real pulse width on the pin or `-1`. The default implementation returns `-1` |
+| `virtual void stopPulses()` | Remove the pulses (the pin stays low) until the next write — the motor signal: without pulses the ESC decides the signal is lost and plays its ready tune when they come back. By default does nothing (the motor then stays silent) |
 
 ---
 
@@ -321,6 +322,7 @@ blocks (GPIO6/7 repeated GPIO4/5).
 | `attach(minUs, maxUs)` | Stores the range; pin < 0 → `false`; otherwise `ledcSetup() != 0` → `ledcAttachPin()` |
 | `writeMicroseconds(us)` | Not attached — nothing; otherwise `constrain(us, min, max) * MAX_DUTY / PERIOD_US` → `ledcWrite` |
 | `measurePulseUs()` | Enables the input buffer of the same GPIO (`PIN_INPUT_ENABLE`, the output is not touched) and measures `pulseIn(pin, HIGH, 30 ms)`; no pulse → `-1` |
+| `stopPulses()` | Duty 0 (`ledcWrite(channel, 0)`) — no pulse |
 
 Channels 2n and 2n+1 share an LEDC timer — all outputs run at 50 Hz, so there is no conflict.
 
@@ -426,7 +428,8 @@ which toggles the pins from the interrupt of a single timer and produces jitter.
 | `Stm32ServoOutput(int16_t pin)` | Pin `< 0` — the output is not routed |
 | `attach(minUs, maxUs)` | The timer and channel come from `PinMap_TIM` by pin (`pinmap_peripheral`, `STM_PIN_CHANNEL`), as in `analogWrite()`. No timer on the pin or the pool is exhausted → `false`. Otherwise `setMode(PWM1)`, compare 0 (no pulse until the first write), `resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`. The compare register is preloaded — the value takes effect from the next period |
-| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` without reconfiguring the pin: on the STM32 the IDR register sees the level even in alternate-function mode |
+| `stopPulses()` | Compare value 0 — no pulse, as right after `attach()` |
+| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` without reconfiguring the pin: on the STM32 the IDR register sees the level in the alternate-function mode too. The core’s `pulseIn()` measures the **low** level on pins with bit number 8+ (PD14, PD15, PE9) — its level mask is a `uint8_t`; a servo pulse is always shorter than half the period, so a longer reading is the gap and the pulse is `PERIOD_US` minus it |
 | `static acquireTimer(TIM_TypeDef*)` | A shared pool: **one `HardwareTimer` per TIMx**. A second object for the same timer would overwrite the core's handler (`HardwareTimer_Handle[index]`). The period is set at the first output on the timer; `setOverflow(MICROSEC_FORMAT)` picks the prescaler — a step of ~0.3 µs at a timer clock of 240 MHz |
 
 ## `Stm32FlashStorage`

@@ -175,8 +175,23 @@ Kurs mot hempunkten (ARM-punkten), höjd `RTH_ALTITUDE_M` = 40 m (under den – 
 **Behöver:** IMU + barometer + GPS med hempunkt.
 
 ### AUTO_TAKEOFF (TKOFF) – ”start på gas”
-Efter ARM händer ingenting förrän piloten höjer gasen över mitten. Sedan programmet: 1 s acceleration till 100 % gas med vingarna plana, 2 s rotation med tippning 15°, sedan stigning med tippning 10° tills piloten byter läge. Spakarna läggs ovanpå programmet – du kan räta upp kursen under startrullningen.
-**Behöver:** IMU.
+
+Start från bana i etapper – efter vad flygplanet faktiskt gör, inte efter en timer. Vilket hjul som styr bestäms av en rad: `LANDING_GEAR` i `Config.h` (standard `TAIL_WHEEL`: två hjul fram, styrhjulet bak). Före den första starten görs markkalibreringen av flygplanet (horisont och markläge, se [PILOT_GUIDE.md](PILOT_GUIDE.md)); utan den går ett flygplan med sporrhjul inte att armera i det här läget.
+
+1. **Väntan.** Efter ARM står motorn still tills piloten för gasen över mitten.
+2. **Kontroll.** Flygplanet står stilla ~1 s och vinklarna stämmer med markläget (±4° tippning, ±5° roll). Annars startar inte motorn, orsaken går till konsolen och rodren nickar tre gånger: inte på hjulen, sluttning, trasigt hjul, flyttat kort.
+3. **Stjärten upp** (sporrhjul). Gasen ökar mjukt till 100 % på 2 s, höjdrodret går **nedåt** (spaken framåt) – propellerströmmen lyfter stjärten; ju mer flygplanet planar ut, desto mindre utslag, och under målet drar rodret uppåt så att flygplanet inte ställer sig på propellern.
+4. **Plan rullning.** På huvudhjulen vid +1° tippning: sporrhjulet är i luften och bär ingenting. Sidrodret och hjulet håller kursen efter gyroskopet.
+5. **Rotation.** Tippningsmålet ökar med 2°/s, men så länge lättningen inte har upptäckts ligger det 3° under markläget: stjärten kan inte nudda banan, det är vingen som lyfter flygplanet. Rotationsfarten kommer från pitotröret eller GPS:en; utan dem räknas den som nådd efter 2,5 s rullning.
+6. **Stigning.** Tippning +8°, vingarna plana, kursen med sidrodret – till 30 m över startpunkten (utan barometer i 15 s).
+7. **Klart.** Håller kurs och höjd, gasen sköts automatiskt – som CRUISE (utan barometer plan flygning). Ta över: byt läge.
+
+Noshjul (`NOSE_WHEEL`) – utan ”stjärten upp”: rullning med höjdrodret i neutralläge, vid rotationsfarten lyfts nosen med 5°/s, nära marken högst till 10°.
+
+**Gasen sköts av programmet**, gasspaken betyder bara ”start” och ”avbryt”. **Avbruten start** – motorn av, höjdrodret i neutralläge, vingar och kurs hålls medan flygplanet rullar: gasspaken nedåt, förlorad förbindelse på banan, IMU-fel, roll över 15°, kursavvikelse över 30°, nosen 3° under horisonten, stjärten inte uppe efter 6 s, ingen lättning efter 15 s. Nytt försök: gasen ned en sekund och upp igen. Efter lättningen avbryter gasspaken inte längre – på 2 m höjd får motorn inte stanna. Förlorad förbindelse under stigningen är den vanliga failsafen; kommer förbindelsen tillbaka fortsätter stigningen.
+
+Under rullningen styr bara gyroskopet vinklarna: accelerometern tar accelerationen framåt för en lyft nos (0,5 g motsvarar +27°). Gyroskopets nollpunkt finjusteras vid kontrollen före starten. Spakarna läggs ovanpå programmet, startlagarnas styrka följer ratten `STAB_GAIN`. I simuleringen med en modell av landningsstället överstiger lasten på sporrhjulet efter motorstarten aldrig lasten i vila, varken propellern eller stjärten nuddar banan, kursen avviker mindre än 10° och 30 m nås.
+**Behöver:** IMU; barometer, pitotrör eller GPS gör det bättre (lättning och höjd efter sensorer i stället för efter tid).
 
 ### LAUNCH (LNCH) – ”handstart”
 1. Armerat, gas över mitten – starten är **förberedd**, motorn står still.
@@ -245,6 +260,7 @@ Mitten på en ratt = standardvärdet från `Config.h`; ändlägena är minimum o
 | Situation | Vad planet gör |
 |---|---|
 | på marken (inte armerat) | motor 0, ytor till neutralläge; efter 10 s – summern |
+| på banan i AUTO_TAKEOFF, före lättningen | avbruten start: motorn av, ytor till neutralläge (ingen RTH från banan) |
 | i luften, GPS och hempunkt finns | **RTH** med motor, över hempunkten – cirklar på 40 m |
 | i luften, ingen GPS | **glidflykt**: motorn av, vingarna plana, nosen −3° |
 | förbindelsen är tillbaka | direkt läget från pilotens brytare |
@@ -301,7 +317,7 @@ ARM/DISARM från marken **avvisas** – bara med sändarens brytare. För att ko
 ## Inställning av ett nytt flygplan, steg för steg
 
 1. **MANUAL på marken:** riktningarna för roder, motor och klaffar (blocket ”Reversering” i `Config.h`), klaffar ned, AUX. Kontrollera utgångarna med `p` i konsolen (propellern av!).
-2. **Sensorer på marken:** `b` – bussavsökning, `s` – status; `o` – kalibrering av IMU-monteringen (3 positioner, en gång), `m` – kompass.
+2. **Sensorer på marken:** `b` – bussavsökning, `s` – status; `o` – kalibrering av IMU-monteringen (3 positioner, en gång), därefter markkalibreringen av flygplanet (SwB ned och upp tre gånger utan ARM, eller `c`), `m` – kompass.
 3. **STABILIZE på marken:** luta flygplanet åt höger – det högra skevrodret ska gå **ned** (för att räta upp det). Nosen upp – höjdrodret ned. Om inte – reverseringarna eller IMU-monteringen är förväxlade.
 4. **Den första flygningen i MANUAL**, stig till minst 50 m → STABILIZE. Om det svänger – sänk `STAB_GAIN`; om det är trögt – höj den.
 5. **AUTO_TRIM** i planflykt i 20–30 s, landa, DISARM – trimmet sparas.
@@ -313,6 +329,7 @@ ARM/DISARM från marken **avvisas** – bara med sändarens brytare. För att ko
 
 - [ ] Fördelningen som skrivs ut vid start är den du förväntar dig.
 - [ ] Konsol/OLED: IMU ok, IMU-kontrollen före flygning godkänd (flygplanet stod stilla vid start).
+- [ ] Markkalibreringen av flygplanet är gjord: vid start skriver loggen ”стоянка на колёсах — тангаж …” (”på hjulen – tippning …”); utan den går AUTO_TAKEOFF med sporrhjul inte att armera.
 - [ ] Barometern är nollställd på marken (höjd ~0 på OLED-skärmen).
 - [ ] Med pitotrör: hastighet ~0 på marken, blås i röret – den stiger.
 - [ ] GPS: 3D-fix, ≥ 6 satelliter **före ARM** – annars blir det ingen hempunkt och ingen RTH.
@@ -333,7 +350,7 @@ ARM/DISARM från marken **avvisas** – bara med sändarens brytare. För att ko
 | CRUISE | ● | ● | ○ | ○ | ○ | auto | kurs från gyroskopet (driver), höjden hos piloten |
 | LOITER | ● | ● | ● | | ○ | auto | en cirkel med krängning på stället |
 | RTH | ● | ● | ● | | ○ | auto | cirklar på stället |
-| AUTO_TAKEOFF | ● | | | | | program | ytor = spakar + pilotens gas |
+| AUTO_TAKEOFF | ● | ○ | ○ | | ○ | program | utan IMU ingen ARM; utan barometer lättning och stigning efter tid |
 | LAUNCH | ● | ○ | | | | program | ytor till neutralläge |
 | AUTO_LAND | ● | ● | | ○ | | 0 | ingen flare |
 | SOARING | ● | ● | ○ | | ○ | 0 / motor | ingen termik – glidflykt |

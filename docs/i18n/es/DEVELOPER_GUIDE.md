@@ -182,10 +182,12 @@ Las reglas que mantienen limpia la arquitectura:
 | `EscSignal.h` | Gas + sentido → pulso del variador: en el BLHeli bidireccional 1500 = parado, hacia delante 1500..2000, hacia atrás 1500..1000 |
 | `MotorReverse.h` | Inversión del motor con `Feature::MOTOR_REVERSE`, solo en DISARM; tras cambiar el sentido, el ARM se rechaza durante `REVERSE_SETTLE_MS` |
 | `ArmingManager.h` | ARM con el interruptor SwA (una transición OFF→ON con el acelerador abajo + las comprobaciones de sensores del modo), DISARM instantáneo |
-| `FlightOutputState.h` | Los PWM deseados: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % en cualquier sentido), `motorReverse`, `aux1` (carga), `aux2` (cámara) |
+| `FlightOutputState.h` | Los PWM deseados: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % en cualquier sentido), `motorReverse`, `escPulsesOff` (señal del motor), `aux1` (carga), `aux2` (cámara) |
 | `Beeper.h` | El zumbador: por la función `BEEPER` o «modelo perdido» en tierra |
+| `GroundCalibration.h` | Calibración en tierra del avión: gesto del interruptor; paso 1, el horizonte (cola arriba); paso 2, la actitud en tierra; se guarda con `ImuSensor::setGroundCalibration()` |
+| `SignalPlayer.h` | Señales al piloto: cabezada de los timones, pausa de pulsos del variador (toca su melodía de listo, solo sin ARM), zumbador/LED; cuenta 1/2/3 |
 | `FlightOutputs.h` | La tabla de salidas (`outputInfo()`: clave, nombre, pin, si es obligatoria, campo de estado) y todo lo que va encima en un bucle: `begin()`, `write()`, `setFailsafe()`, estado, `printPulseSelfTest()` |
-| `FlightController.h` | El orden de las operaciones por ciclo, la pérdida de señal (`applyLinkLoss()`), getters para la telemetría |
+| `FlightController.h` | El orden de las operaciones por ciclo, la pérdida de señal (`applyLinkLoss()`), la calibración y las señales sobre las salidas, getters para la telemetría |
 
 ### `autopilot/`
 
@@ -198,6 +200,7 @@ Las reglas que mantienen limpia la arquitectura:
 | `Navigation.h` | `Geo` (distancia, rumbo, desplazamiento), `Guidance` (alabeo hacia un rumbo, el campo vectorial del círculo) |
 | `AltitudeSpeedController.h` | Cabeceo para la altitud, acelerador para la velocidad aerodinámica (TECS-lite) |
 | `LaunchController.h`, `SoaringController.h` | Las máquinas de estados del lanzamiento a mano y del vuelo a vela |
+| `TakeoffController.h` | Despegue automático desde pista: etapas para rueda de cola y de morro (`Config::LANDING_GEAR`), leyes del timón de profundidad y del rumbo sobre las ruedas, despegue abortado |
 | `AutoTrim.h` | Autotrim, guardado en NVS/flash |
 | `PidController.h` | PID: D sobre la velocidad del sensor (giroscopio, variómetro), anti-windup, integrador congelado sin ARM |
 | `feedback/*` | **Base preparada, no conectada:** realimentación adaptativa, despegue y aterrizaje; véase [Realimentación](#realimentación-base-preparada-no-conectada) |
@@ -584,6 +587,8 @@ bloquean el ciclo y por eso solo están disponibles sin ARM.
 | `s` | `printStatus()` de todos los sensores: datos, contadores de errores del bus, calibraciones, la comprobación prevuelo |
 | `i` | Calibración del giroscopio + comprobación prevuelo (2 s inmóvil) |
 | `o` | Calibración del montaje de la IMU con tres posturas, se guarda en NVS |
+| `c` | Calibración en tierra del avión (horizonte y actitud en tierra): no bloquea el ciclo; si está en marcha, la cancela. Desde la emisora: interruptor `CAL_SWITCH` tres veces abajo y arriba sin ARM |
+| `e` | Señal: cabezada de los timones y pausa de pulsos del variador; comprueba que toca su melodía de listo (¡quita la hélice!) |
 | `m` | Calibración de la brújula (15 s girando), se guarda en NVS |
 | `p` | Autocomprobación de las salidas: el pulso real en cada pin frente al esperado |
 
@@ -784,7 +789,7 @@ Una interfaz nueva en `include/hal/`, la implementación en
    a `stabilizeOrNeutral()` (sin IMU, neutro). Sin el sensor necesario, un
    comportamiento seguro y no un fallo. El integrador se acumula solo con
    `armed`.
-3. Acelerador: `throttleMode` (`PILOT` / `AUTO` / `AT_LEAST`) y
+3. Acelerador: `throttleMode` (`PILOT` / `AUTO`) y
    `autoThrottlePct`, o `autoThrottle()`: el acelerador de crucero desde el
    potenciómetro o desde el tubo de Pitot. `FlightController` no cambia.
 4. En la emisora, una sola línea en `config/Controls.h`

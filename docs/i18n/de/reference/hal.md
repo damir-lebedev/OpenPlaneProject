@@ -127,6 +127,7 @@ Ein einzelner PWM-Ausgang. Den Pin legt die Implementierung fest.
 | `writeMicroseconds(us)` | Impulsbreite, µs (auf den Bereich von `attach` begrenzt) |
 | `bool isAttached() const` | Das Ergebnis von `attach()` |
 | `virtual int32_t measurePulseUs()` | Diagnose: die tatsächliche Impulsbreite am Pin oder `-1`. Die Standardimplementierung liefert `-1` |
+| `virtual void stopPulses()` | Impulse wegnehmen (Pin bleibt low) bis zum nächsten Schreiben – das Motorsignal: Ohne Impulse hält der Regler das Signal für verloren und spielt, wenn sie zurückkommen, seine Bereitschaftsmelodie. Standardmäßig nichts (der Motor bleibt dann stumm) |
 
 ---
 
@@ -320,6 +321,7 @@ MCPWM-Blöcke (GPIO6/7 wiederholten GPIO4/5).
 | `attach(minUs, maxUs)` | Merkt sich den Bereich; Pin < 0 → `false`; sonst `ledcSetup() != 0` → `ledcAttachPin()` |
 | `writeMicroseconds(us)` | Nicht attached — nichts; sonst `constrain(us, min, max) * MAX_DUTY / PERIOD_US` → `ledcWrite` |
 | `measurePulseUs()` | Schaltet den Eingangspuffer desselben GPIO ein (`PIN_INPUT_ENABLE`, der Ausgang bleibt unberührt) und misst `pulseIn(pin, HIGH, 30 ms)`; kein Impuls → `-1` |
+| `stopPulses()` | Tastgrad 0 (`ledcWrite(channel, 0)`) – kein Impuls |
 
 Die Kanäle 2n und 2n+1 teilen sich einen LEDC-Timer — alle Ausgänge laufen mit 50 Hz, es gibt also keinen Konflikt.
 
@@ -425,7 +427,8 @@ die die Pins aus dem Interrupt eines einzigen Timers schaltet und Jitter erzeugt
 | `Stm32ServoOutput(int16_t pin)` | Pin `< 0` — der Ausgang ist nicht herausgeführt |
 | `attach(minUs, maxUs)` | Timer und Kanal kommen anhand des Pins aus `PinMap_TIM` (`pinmap_peripheral`, `STM_PIN_CHANNEL`), wie bei `analogWrite()`. Kein Timer am Pin oder der Vorrat ist erschöpft → `false`. Sonst `setMode(PWM1)`, Vergleich 0 (bis zum ersten Schreiben kein Impuls), `resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`. Das Vergleichsregister ist vorgeladen — der Wert gilt ab der nächsten Periode |
-| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` ohne den Pin umzukonfigurieren: Beim STM32 sieht das IDR-Register den Pegel auch im Modus der alternativen Funktion |
+| `stopPulses()` | Vergleichswert 0 – kein Impuls, wie direkt nach `attach()` |
+| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` ohne Umkonfigurieren des Pins: Beim STM32 sieht das IDR-Register den Pegel auch im Alternate-Function-Modus. Das `pulseIn()` des Cores misst an Pins mit Bitnummer 8+ (PD14, PD15, PE9) den **Low**-Pegel – seine Pegelmaske ist `uint8_t`; ein Servoimpuls ist immer kürzer als die halbe Periode, ein längerer Messwert ist also die Pause, und der Impuls ist `PERIOD_US` minus sie |
 | `static acquireTimer(TIM_TypeDef*)` | Ein gemeinsamer Vorrat: **ein `HardwareTimer` je TIMx**. Ein zweites Objekt für denselben Timer würde den Handler des Kerns überschreiben (`HardwareTimer_Handle[index]`). Die Periode wird beim ersten Ausgang auf dem Timer festgelegt; `setOverflow(MICROSEC_FORMAT)` wählt den Teiler — ein Schritt von ~0,3 µs bei einem Timertakt von 240 MHz |
 
 ## `Stm32FlashStorage`

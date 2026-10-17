@@ -175,8 +175,23 @@ Rumbo al punto de origen (el punto del ARM), altitud `RTH_ALTITUDE_M` = 40 m (si
 **Necesita:** IMU + barómetro + GPS con punto de origen.
 
 ### AUTO_TAKEOFF (TKOFF) — «despegue con el acelerador»
-Tras el ARM no pasa nada hasta que el piloto sube el gas por encima de la mitad. Después, el programa: 1 s de aceleración hasta el 100 % de gas con las alas niveladas, 2 s de rotación con un cabeceo de 15° y luego ascenso con un cabeceo de 10°, hasta que el piloto cambie de modo. Los sticks se suman al programa: se puede corregir el rumbo durante la carrera de despegue.
-**Necesita:** IMU.
+
+Despegue desde pista por etapas: según lo que hace de verdad el avión, no según un temporizador. Qué rueda es la direccional lo decide una línea: `LANDING_GEAR` en `Config.h` (por defecto `TAIL_WHEEL`: dos ruedas delante y la direccional detrás). Antes del primer despegue hay que hacer la calibración en tierra del avión (horizonte y actitud en tierra, véase [PILOT_GUIDE.md](PILOT_GUIDE.md)); sin ella, un avión con rueda de cola no se arma en este modo.
+
+1. **Espera.** Tras el ARM, el motor sigue parado hasta que el piloto sube el gas por encima de la mitad.
+2. **Comprobación.** El avión está quieto ~1 s y sus ángulos coinciden con la actitud en tierra (±4° de cabeceo, ±5° de alabeo). Si no, el motor no arranca, el motivo va a la consola y los timones dan tres cabezadas: no está sobre sus ruedas, hay pendiente, una rueda rota, la placa se ha movido.
+3. **Cola arriba** (rueda de cola). El gas sube suavemente hasta el 100 % en 2 s y el timón de profundidad va **a picar** (stick hacia delante): el flujo de la hélice levanta la cola; cuanto más se nivela el avión, menor es la deflexión, y por debajo del objetivo el timón tira hacia arriba para que el avión no se apoye en la hélice.
+4. **Carrera nivelada.** Sobre las ruedas principales a +1° de cabeceo: la rueda de cola va en el aire y no soporta nada. El timón de dirección y la rueda mantienen el rumbo según el giroscopio.
+5. **Rotación.** El objetivo de cabeceo sube a 2°/s, pero mientras no se detecte el despegue se queda 3° por debajo de la actitud en tierra: la cola no puede tocar la pista, es el ala la que despega el avión. La velocidad de rotación viene del tubo de Pitot o del GPS; sin ellos se considera alcanzada tras 2.5 s de carrera.
+6. **Ascenso.** Cabeceo +8°, alas niveladas, rumbo con el timón de dirección, hasta 30 m sobre el punto de partida (sin barómetro, durante 15 s).
+7. **Listo.** Mantiene el rumbo y la altitud, el gas es automático: como CRUISE (sin barómetro, vuelo nivelado). Para retomar el control, cambia de modo.
+
+Rueda de morro (`NOSE_WHEEL`), sin «cola arriba»: carrera con el timón de profundidad en neutro; a la velocidad de rotación el morro sube a 5°/s, cerca del suelo como mucho hasta 10°.
+
+**El gas lo lleva el programa**; el stick de gas solo sirve para «arrancar» y «abortar». **Despegue abortado**: motor apagado, profundidad en neutro, alas y rumbo mantenidos mientras el avión rueda: gas abajo, pérdida de señal en la pista, fallo del IMU, alabeo de más de 15°, desvío de rumbo de más de 30°, morro 3° por debajo del horizonte, cola sin subir a los 6 s, sin despegue a los 15 s. Nuevo intento: gas abajo un segundo y otra vez arriba. Tras el despegue, el stick de gas ya no aborta: a 2 m de altura el motor no debe pararse. Perder la señal durante el ascenso es el failsafe habitual; si la señal vuelve, el ascenso continúa.
+
+Durante la carrera, los ángulos los lleva solo el giroscopio: el acelerómetro confunde la aceleración hacia delante con un morro levantado (0.5 g equivalen a +27°). El cero del giroscopio se ajusta en la comprobación antes del arranque. Los sticks se suman al programa y la intensidad de las leyes del despegue sigue al potenciómetro `STAB_GAIN`. En la simulación con modelo del tren de aterrizaje, la carga sobre la rueda de cola tras arrancar el motor nunca supera la carga en reposo, ni la hélice ni la cola tocan la pista, el rumbo se desvía menos de 10° y se alcanzan los 30 m.
+**Necesita:** IMU; el barómetro, el tubo de Pitot o el GPS lo mejoran (despegue y altitud según los sensores en lugar de según el tiempo).
 
 ### LAUNCH (LNCH) — «lanzamiento a mano»
 1. Armado y con el gas por encima de la mitad: el lanzamiento queda **preparado**, el motor está parado.
@@ -245,6 +260,7 @@ El centro del potenciómetro = valor por defecto de `Config.h`; los extremos son
 | Situación | Qué hace la aeronave |
 |---|---|
 | en el suelo (sin armar) | motor 0, superficies en neutro; a los 10 s, el zumbador |
+| en la pista en AUTO_TAKEOFF, antes del despegue | despegue abortado: motor apagado, superficies en neutro (sin RTH desde la pista) |
 | en el aire, con GPS y punto de origen | **RTH** con motor; sobre el punto de origen, círculos a 40 m |
 | en el aire, sin GPS | **planeo**: motor apagado, alas niveladas, morro −3° |
 | la señal vuelve | enseguida, el modo del interruptor del piloto |
@@ -301,7 +317,7 @@ El ARM/DISARM desde tierra **se rechaza**: solo con el interruptor de la emisora
 ## Orden de puesta a punto de un avión nuevo
 
 1. **MANUAL en el suelo:** sentidos de las superficies, del motor y de los flaps (el bloque «Inversión» de `Config.h`), flaps hacia abajo, AUX. Comprobación de las salidas con `p` en la consola (¡sin hélice!).
-2. **Sensores en el suelo:** `b`: exploración de los buses; `s`: estado; `o`: calibración de la instalación del IMU (3 posturas, una sola vez); `m`: brújula.
+2. **Sensores en el suelo:** `b`: exploración de los buses; `s`: estado; `o`: calibración de la instalación del IMU (3 posturas, una sola vez) y después la calibración en tierra del avión (SwB tres veces abajo y arriba sin ARM, o `c`); `m`: brújula.
 3. **STABILIZE en el suelo:** inclina el avión hacia la derecha: el alerón derecho debe ir **hacia abajo** (para nivelar). Morro arriba: timón de profundidad hacia abajo. Si no es así, los reversos o la instalación del IMU están mal.
 4. **Primer vuelo en MANUAL**, ascenso a más de 50 m → STABILIZE. Si oscila, `STAB_GAIN` menor; si está flojo, mayor.
 5. **AUTO_TRIM** en vuelo nivelado durante 20–30 s, aterrizaje, DISARM: el trim se guardará.
@@ -313,6 +329,7 @@ El ARM/DISARM desde tierra **se rechaza**: solo con el interruptor de la emisora
 
 - [ ] La distribución impresa al encender es la que esperas.
 - [ ] Consola/OLED: IMU ok, la comprobación previa al vuelo del IMU superada (el avión estaba quieto al encender).
+- [ ] La calibración en tierra del avión está hecha: al encender, el registro muestra «стоянка на колёсах — тангаж …» («en tierra sobre las ruedas — cabeceo …»); sin ella, AUTO_TAKEOFF con rueda de cola no se arma.
 - [ ] El barómetro está a cero en el suelo (altitud ~0 en la OLED).
 - [ ] Con tubo de Pitot: velocidad ~0 en el suelo; si soplas en el tubo, sube.
 - [ ] GPS: fijación 3D, ≥ 6 satélites **antes del ARM**; si no, no habrá punto de origen ni RTH.
@@ -333,7 +350,7 @@ El ARM/DISARM desde tierra **se rechaza**: solo con el interruptor de la emisora
 | CRUISE | ● | ● | ○ | ○ | ○ | auto | rumbo por giroscopio (se desvía), altitud a cargo del piloto |
 | LOITER | ● | ● | ● | | ○ | auto | círculo con alabeo en el sitio |
 | RTH | ● | ● | ● | | ○ | auto | círculos en el sitio |
-| AUTO_TAKEOFF | ● | | | | | programa | superficies = sticks + gas del piloto |
+| AUTO_TAKEOFF | ● | ○ | ○ | | ○ | programa | sin IMU no hay ARM; sin barómetro, despegue y ascenso por tiempo |
 | LAUNCH | ● | ○ | | | | programa | superficies en neutro |
 | AUTO_LAND | ● | ● | | ○ | | 0 | sin redondeo |
 | SOARING | ● | ● | ○ | | ○ | 0 / motor | sin térmicas: planeo |

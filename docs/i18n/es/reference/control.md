@@ -43,6 +43,7 @@ neutro y acelerador a `PWM_MIN`.
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
 | `bool motorReverse` | `false`: el motor gira hacia delante |
+| `bool escPulsesOff` | `false`; `true`: ningún pulso al variador (señal del motor, solo sin ARM) |
 | `aux1` | `PAYLOAD_CLOSED_US`: el lanzamiento de carga está cerrado |
 | `aux2` | `PWM_CENTER`: la cámara |
 
@@ -193,10 +194,10 @@ autocomprobación la recorren en un bucle.
 | `explicit FlightOutputs(IBoard& board)` | |
 | `bool begin()` | `attach(PWM_MIN, PWM_MAX)` de cada salida, imprime el estado y el tipo de variador; `true` si todas las **obligatorias** han obtenido canal |
 | `bool isAttached(uint8_t ch) const` | La salida está conectada (un índice fuera de rango → `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Pulso en el pin de la salida: el campo según la tabla; en el variador, mediante `EscSignal::pulseUs(throttle, motorReverse)` |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Pulso en el pin de la salida: el campo según la tabla; en el variador, mediante `EscSignal::pulseUs(throttle, motorReverse)`; con `escPulsesOff`, 0 |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | El pulso medido frente al esperado en cada pin cableado; «OK» si la discrepancia es ≤ 15 µs |
-| `void write(const FlightOutputState&)` | Escribir todas las salidas y recordar el estado |
+| `void write(const FlightOutputState&)` | Escribir todas las salidas y recordar el estado; el variador con `escPulsesOff`: `IServoOutput::stopPulses()` |
 | `void setFailsafe()` | Superficies de mando en neutro (`FAILSAFE_*`), gas `FAILSAFE_THROTTLE` (1500 en el pin de un variador bidireccional); AUX como estaban (la carga no se suelta por perder el enlace) |
 | `void setBuzzer(bool on)` | el zumbador de la placa (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | El último estado escrito |
@@ -210,7 +211,7 @@ Para añadir una salida: una fila en la tabla + un campo en
 ## `FlightController`
 
 **Archivo:** `control/FlightController.h` · **Capa:** COORDINATION ·
-**Depende de:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
+**Depende de:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 El único coordinador del ciclo de control: no analiza la UART, no toca el PWM
 ni calcula el mezclador; solo llama a los demás en el orden correcto. El
@@ -231,6 +232,9 @@ diagrama detallado está en [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-el-ciclo-
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | Los interruptores y potenciómetros de este ciclo |
 | `bool isLostModelBeeping() const` | El zumbador de «estoy aquí» está sonando |
 | `const MotorReverse& getMotorReverse() const` | Sentido del motor e inversión pendiente |
+| `void toggleGroundCalibration()` | Consola `c`: calibración en tierra del avión; la inicia (solo sin ARM) o, si está en marcha, la cancela |
+| `void playSignal(uint8_t count)` | Consola `e`: una señal (sin ARM, también con el motor) |
+| `const GroundCalibration& getCalibration() const`, `const SignalPlayer& getSignals() const` | Para el OLED, el registro y la caja negra |
 
 El orden de `update()`:
 
@@ -242,24 +246,19 @@ El orden de `update()`:
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → de forma suave, al perder el enlace: 0;
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)`: **siempre**;
    en inversión, en lugar de `pilotThrottle` se pasa `PWM_MIN` (para el piloto automático el motor está apagado);
-6. el zumbador: `Beeper::update(BEEPER, armed, failsafe, now)`;
+6. la calibración: un movimiento del ARM durante ella la cancela; sin ARM y con enlace, el gesto `CAL_SWITCH`; un paso de `GroundCalibration::update()`; sus señales y la señal de rechazo del despegue automático van a `SignalPlayer`; el zumbador: `Beeper::update(BEEPER, armed, failsafe, now)` o la luz de la señal;
 7. enlace perdido → `applyLinkLoss()` y salida del ciclo;
-8. `arming.update(rc, false, reverse.armBlockReason(now))` y luego
-   `reverse.update(MOTOR_REVERSE, armed, now)`: con el DISARM el sentido cambia en
-   el mismo ciclo;
-9. `command = autopilot->getCommand()` (o los sticks sin piloto automático), los flaps, los suyos;
+8. `arming.update(rc, false, motivo)`: el ARM se rechaza mientras hay una calibración en marcha o suena una señal (y en el ciclo en que un movimiento del ARM canceló una calibración); si no, `reverse.armBlockReason(now)`; luego `reverse.update(MOTOR_REVERSE, armed, now)`: con el DISARM el sentido cambia en el mismo ciclo;
+9. `command = autopilot->getCommand()` (o los sticks sin piloto automático), los flaps, los suyos; la cabezada de la señal va a los timones de profundidad y de dirección;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     hacia delante, `output.throttle = autopilot->applyThrottle(pilotThrottle)` con el
     límite `THROTTLE_LIMIT_PCT` × el potenciómetro `Knob::THROTTLE_LIMIT`; hacia atrás, el gas del piloto con el límite
     `min(REVERSE_THROTTLE_LIMIT_PCT, límite hacia delante)`; lo permitido se estira por todo el recorrido del stick;
-11. no armado o `MOTOR_KILL` → `throttle = PWM_MIN` (lo último);
+11. no armado o `MOTOR_KILL` → `throttle = PWM_MIN` (lo último); sin ARM, la señal del motor pone `escPulsesOff`;
 12. AUX1: la carga (`PAYLOAD_DROP`), AUX2: la cámara (`Knob::CAMERA_TILT`, `CAMERA_STAB` resta el cabeceo); `AUX1_REVERSED`/`AUX2_REVERSED` reflejan el pulso.
 13. `outputs.write(output)`.
 
-`applyLinkLoss()`: si el piloto automático está en failsafe (armado: RTH o
-planeo), las superficies y el acelerador siguen la orden del piloto automático
-(los flaps se recogen suavemente, `MOTOR_KILL` sigue apagando el motor, AUX
-como estaban); si no, `outputs.setFailsafe()`. En inversión el motor siempre está parado.
+`applyLinkLoss()`: si el piloto automático está en failsafe (armado: RTH o planeo), las superficies y el acelerador siguen la orden del piloto automático (los flaps se recogen suavemente, `MOTOR_KILL` y la inversión apagan el motor, AUX como estaban); si no, `outputs.setFailsafe()` y, mientras suena una señal, neutro con cabezada y pausa de pulsos del variador (la emisora se dejó a un lado: la calibración está en marcha).
 
 ---
 
@@ -271,3 +270,41 @@ como estaban); si no, `outputs.setFailsafe()`. En inversión el motor siempre es
 |---|---|
 | `bool update(bool requested, bool armed, bool linkLost, uint32_t nowMs)` | el estado del zumbador: 2 Hz si hay `Feature::BEEPER` o «modelo perdido» (no armado, sin enlace durante más de `LOST_MODEL_BEEP_DELAY_MS`) |
 | `bool isLostModel() const` | el modo «búsqueme en la hierba» |
+
+---
+
+## `GroundCalibration`
+
+**Archivo:** `control/GroundCalibration.h` · **Depende de:** `Config`, `RcChannelState`, `ImuSensor`, `ImuOrientation`
+
+Calibración en tierra del avión: paso 1, cola arriba y fuselaje horizontal (el horizonte, `ImuOrientation::withLevel()`); paso 2, sobre las ruedas (la actitud en tierra). Un paso se acepta solo tras `CAL_STILL_MS` de quietud; el paso 2 espera a que se mueva el avión, o `CAL_PARK_WAIT_MS`. Se guarda solo completa (`ImuSensor::setGroundCalibration()`), tras comprobar la actitud en tierra según `LANDING_GEAR`. No bloquea el ciclo.
+
+`Stage`: `IDLE`, `LEVEL`, `PARK`, `DONE`, `FAILED`.
+
+| Método | Descripción |
+|---|---|
+| `bool watchSwitch(const RcChannelState&, uint32_t nowMs)` | el gesto: `CAL_SWITCH` `CAL_SWITCH_FLIPS` veces abajo y arriba en menos de `CAL_SWITCH_WINDOW_MS`, con el gas abajo; la primera lectura y el gas no abajo reinician la cuenta |
+| `void forgetSwitch()` | ARM o sin enlace: la cuenta vuelve a empezar |
+| `bool start(const ImuSensor*, uint32_t nowMs, const char* source)` | iniciar (señal 1); sin IMU o sin soporte, error (señal 3) |
+| `void cancel(const char* why)` | cancelación sin señal |
+| `void update(ImuSensor*, bool armed, bool signalBusy, uint32_t nowMs)` | un paso: el ARM cancela; mientras suena una señal no se acepta nada; agotado `CAL_STEP_TIMEOUT_MS`, error |
+| `isActive()`, `getStage()`, `getStageSinceMs()`, `getFailure()`, `getParkPitch()`, `getParkRoll()` | estado y resultado |
+| `uint8_t takeSignal()` | cuántas señales tocar: 1, iniciada / paso 1; 2, terminada; 3, error (se lee una vez) |
+| `static const char* stageShort(Stage)` | `CAL1`, `CAL2`, `CALOK`, `CALER`, para el OLED |
+
+---
+
+## `SignalPlayer`
+
+**Archivo:** `control/SignalPlayer.h` · **Depende de:** `Config`
+
+Señales al piloto: una función del tiempo desde el inicio de la serie. Una señal: cabezada de los timones de profundidad y dirección (`SIGNAL_NOD_US` arriba y luego abajo, `SIGNAL_NOD_MS` cada uno); sin ARM, los pulsos del variador se pausan durante `SIGNAL_ESC_PAUSE_MS` (después el variador toca su melodía de listo); la luz del zumbador se enciende durante la cabezada; la siguiente señal llega tras `SIGNAL_PERIOD_MS`.
+
+| Método | Descripción |
+|---|---|
+| `void play(uint8_t count, uint32_t nowMs, bool motor)` | una serie; `motor`: si se puede tocar el variador (y `SIGNAL_MOTOR`) |
+| `void stop()` | silencio |
+| `bool isBusy(uint32_t nowMs) const`, `uint8_t getCount(uint32_t nowMs) const` | hay una serie en marcha (mientras tanto el ARM se rechaza) |
+| `bool escPulsesOff(uint32_t nowMs) const` | quitar ahora los pulsos del variador |
+| `int16_t nodUs(uint32_t nowMs) const` | cabezada de los timones, µs (`SIGNAL_SURFACES`) |
+| `bool light(uint32_t nowMs) const` | zumbador / LED en `PIN_BUZZER` |

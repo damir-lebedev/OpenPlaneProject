@@ -50,6 +50,12 @@
 | `void setYaw(float)` | 방위를 설정합니다 (예를 들어 시작할 때 나침반으로) |
 | `virtual void calibrateOrientation()` | 기판 장착 방향의 보정 (기본적으로는 지원하지 않음) |
 | `virtual const char* getPreflightProblem() const` | 비행 전 점검에서 발견된 문제 또는 `nullptr` (기본값은 `nullptr`) |
+| `virtual bool readChipUp(float[3]) const` | 지상 캘리브레이션: 칩 축에서의 가속도계 최신 값, g, 보정 없음(기본값 `false`) |
+| `virtual bool getOrientation(ImuOrientation&) const` | 보드의 현재 설치(기본값 `false`: 지상 캘리브레이션 미지원) |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | 수평 기준과 주기 자세를 채택하고 플래시에 저장 |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | 바퀴로 선 자세, 수평 기준에서의 °. `false`는 랜딩기어 캘리브레이션 없음 |
+| `virtual void setAccelCorrection(bool)` | 자동 이륙: `false`면 수평 기준을 자이로만으로 구함 |
+| `virtual void trimGyroBias(const float residualDps[3])` | 정지한 비행기의 평균 각속도로 자이로 영점을 보정(축과 부호는 `ImuData`와 같음) |
 
 ### `BarometerSensor : Sensor`
 
@@ -169,6 +175,9 @@ Y는 왼쪽)으로 변환합니다. `rotationCwDeg`는 칩의 X축이 향하는 
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | 수직축을 중심으로 90° 단위로 회전합니다. 기판은 칩이 위를 향함 |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | 세 가지 자세로 하는 보정 (칩의 축에서 가속도계가 읽은 “위” 값). `nullptr`이면 성공, 아니면 거부 사유 |
 | `void apply(const float chip[3], float body[3]) const` | 회전을 적용합니다 |
+| `void applyInverse(const float body[3], float chip[3]) const` | 역회전(`R`의 전치) |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | “수평” 자세로 얻는 수평 기준: Z = 잰 “위”, 기수는 유지하고 Z에 ⟂이 되도록 바로잡음. 이전 수평 기준에서 45°를 넘으면 거부 |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | 어떤 자세의 피치와 롤(가속도계로 구하는 `AttitudeEstimator`와 같음): 주기 자세 |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | 측정한 “위”와 기체의 Z축 사이의 각도 (벡터가 0이면 180°) |
 | `bool load(const char* ns)` | NVS에서 불러옵니다. 정규직교가 아니거나 왼손 좌표계인 세 벡터는 거부합니다 |
 | `void save(const char* ns) const` | NVS에 저장합니다 |
@@ -198,11 +207,12 @@ rightWingDown의 ⟂ Z 성분, X₂ = Y × Z, X = norm(X₁ + X₂), Y = Z × X.
 | `void setYaw(float deg)` | 방위를 설정합니다 (±180으로 정규화됨) |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | 기체의 축에서의 가속도(g), 각속도(°/s) |
 | `getRoll()`, `getPitch()`, `getYaw()` | ° |
+| `setAccelCorrection(bool)`, `isAccelCorrectionEnabled()` | `false`면 자이로만(자동 이륙의 가속: 앞쪽으로 0.5 g는 피치 +27°처럼 보임) |
 
 `roll_acc = atan2(ay, az)`, `pitch_acc = atan2(ax, √(ay² + az²))`,
 `angle = 0.98·(angle + rate·dt) + 0.02·angle_acc` (2 ms일 때 τ ≈ 0.1초).
 `reset()` 이후 첫 호출은 곧바로 가속도계의 각도를 줍니다. `dt ≤ 0`이거나 0.1초보다 크면
-그 단계를 건너뜁니다 (일시 정지, 버스 멈춤).
+그 단계를 건너뜁니다 (일시 정지, 버스 멈춤). 가속도계 없이는 `angle + rate·dt`.
 
 ---
 
@@ -227,7 +237,11 @@ rightWingDown의 ⟂ Z 성분, X₂ = Y × Z, X = norm(X₁ + X₂), Y = Z × X.
 | `void calibrate()` | 샘플 200개 × 10 ms: 자이로 오프셋, 노이즈, “위”. 장착 방향 보정이 없으면 수평 = 현재 자세입니다. 이어서 비행 전 점검을 합니다 |
 | `void calibrateOrientation()` | 세 가지 자세 (`capturePose`: 약 1초 정지, 이전 자세와 20° 이상 달라야 함, 제한 시간 30초), `ImuOrientation::fromPoses`, NVS에 저장. 비행 전 점검의 장착 관련 문제를 해소합니다 |
 | `const char* getPreflightProblem() const` | 문제의 텍스트 또는 `nullptr` |
-| `void setYaw(float)`, `getSensorType()`, `printStatus()` | |
+| `readChipUp()`, `getOrientation()` | 지상 캘리브레이션: 칩 축에서의 최신 “위”, 설치 |
+| `bool setGroundCalibration(level, parkChipUp)` | 설치 = `level`(수평 기준), 주기 자세는 같은 NVS 네임스페이스의 키 `park`에 저장. 비행 전 점검의 설치 문제를 해제. 새 `o`는 주기 자세를 지움(이전 수평 기준에서 잰 값이므로) |
+| `bool getParkingAttitude(pitch, roll) const` | 현재 설치를 거친 주기 자세 |
+| `setAccelCorrection(bool)`, `trimGyroBias(residual)` | 자동 이륙: 가속도계 없는 필터. 잔여 영점은 역회전을 거쳐 자이로 오프셋에 더함 |
+| `void setYaw(float)`, `getSensorType()`, `printStatus()` | `printStatus()`는 `park(pitch,roll)=…` 또는 `park=NONE`으로 끝남 |
 
 드라이버용 protected API:
 

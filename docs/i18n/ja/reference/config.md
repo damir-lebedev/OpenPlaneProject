@@ -133,6 +133,22 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 | `IMU_ROTATION_CW_DEG` | 90 | IMU チップの軸を鉛直軸まわりに回す角度（0/90/180/270）、つまりチップの X 軸が向く方向。NVS に取り付け校正 `o` がない間だけ使われる |
 | `MAG_ROTATION_CW_DEG` | 0 | コンパスについて同じ設定（コンパスには取り付け校正がない） |
 
+### 降着装置、地上校正、合図
+
+| 定数 | 値 | 意味 |
+|---|---|---|
+| `LANDING_GEAR` | `LandingGear::TAIL_WHEEL` | どの車輪で操向するか：`TAIL_WHEEL` は尾輪（地上では機首上げ、滑走ではまず尾部が上がる）、`NOSE_WHEEL` は前輪 |
+| `CAL_SWITCH` | `Channels::SWB` | 地上校正の操作に使うスイッチ（SwD は不可：モーター逆転に使う） |
+| `CAL_SWITCH_FLIPS` / `CAL_SWITCH_WINDOW_MS` | 3 / 4000 | ARM なし、スロットル下げ：この時間内にこの回数だけ上げ下げすると校正を開始（もう一度で中止） |
+| `CAL_STILL_MS`, `CAL_STILL_DPS`, `CAL_STILL_G` | 2000, 3.0, 0.15 | この ms の間、角速度がこの値未満で、荷重が 1g ± この値ならステップを記録 |
+| `CAL_PARK_WAIT_MS` | 5000 | ステップ 2 は機体が動かされるのを待つか、この時間だけ待つ（前輪：同じ姿勢のまま） |
+| `CAL_STEP_TIMEOUT_MS` | 60 000 | この時間内に静止しなければ校正を中止（エラー） |
+| `CAL_TAIL_PARK_MIN/MAX_DEG` | 3 / 25 | 尾輪：駐機時のピッチがこの範囲内。外れればエラー（「尾部を下ろしていない」） |
+| `CAL_NOSE_PARK_MAX_DEG`, `CAL_PARK_MAX_ROLL_DEG` | 6, 10 | 前輪：駐機時はほぼ水平。駐機時のロールはこの値まで |
+| `SIGNAL_MOTOR` / `SIGNAL_SURFACES` | `true` / `true` | モーターによる合図（ESC へのパルスを止める：ESC が準備完了のメロディを鳴らす）と舵面のうなずき |
+| `SIGNAL_NOD_US`, `SIGNAL_NOD_MS` | 200, 150 | エレベーターとラダーのうなずき：この µs だけ上、次に下へ、それぞれこの ms |
+| `SIGNAL_ESC_PAUSE_MS`, `SIGNAL_PERIOD_MS` | 1000, 3000 | ESC へのパルスがない時間。合図はこの周期で続く（メロディが鳴り終わる） |
+
 ### ARM
 
 | 定数 | 値 | 意味 |
@@ -167,6 +183,9 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 | 旋回円とホーム | `LOITER_RADIUS_M` 50（25…150）, `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
 | ジオフェンス | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
 | 手投げ発進 | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| 自動離陸 | `TAKEOFF_TRIGGER_US` 1500。チェック：`TAKEOFF_CHECK_MS` 1000, `_CHECK_TIMEOUT_MS` 5000, `TAKEOFF_PARK_PITCH/ROLL_TOL_DEG` 4/5, `TAKEOFF_UNCALIBRATED_TILT_DEG` 10。スロットル `TAKEOFF_THROTTLE_PCT` 100 を `TAKEOFF_THROTTLE_RAMP_MS` 2000 で。針路 `TAKEOFF_HEADING_KP` 10, `TAKEOFF_YAW_RATE_KD` 2。`TAKEOFF_ROTATE_SPEED_MS` 11。浮揚 `TAKEOFF_LIFTOFF_MS` 3000, `_LIFTOFF_ALT_M` 1, `_LIFTOFF_CONFIRM_MS` 500。上昇 `TAKEOFF_CLIMB_PITCH_DEG` 8 で `TAKEOFF_SAFE_ALTITUDE_M` 30 まで（気圧センサーなしでは `TAKEOFF_CLIMB_MS` 15 000）。中止：`TAKEOFF_ABORT_ROLL_DEG` 15, `_ABORT_HEADING_DEG` 30, `TAKEOFF_NOSE_DOWN_MS` 300, `TAKEOFF_GROUND_TIMEOUT_MS` 15 000。「ジャイロのみ」：`TAKEOFF_GYRO_ONLY_CLIMB/MAX/ABORT_MS` 5000/30 000/3000 |
+| 尾輪 | `TD_TAIL_UP_ELEVATOR_US` 250（下げ舵の上限）, `TD_ROLL_PITCH_DEG` 1, `TD_PITCH_KP` 40（尾部を上げる）, `TD_ROLL_PITCH_KP` 15（滑走と引き起こし）, `TD_PITCH_KD` 3, `TD_TAIL_UP_DONE_DEG` 2, `TD_TAIL_UP_TIMEOUT_MS` 6000, `TD_ROLL_MS` 2500, `TD_ROTATE_RATE_DPS` 2, `TD_TAIL_CLEARANCE_DEG` 3, `TD_MIN_PITCH_DEG` −3 |
+| 前輪 | `TRI_ROLL_ELEVATOR_US` 0, `TRI_ROLL_MS` 3000, `TRI_ROTATE_RATE_DPS` 5, `TRI_MAX_GROUND_PITCH_DEG` 10 |
 | 着陸 | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
 | ソアリング | `SOAR_*`：滑空 −3°、サーマル > 0.5 m/s が 1.5 秒、旋回 25°、離脱 < −0.2 m/s が 8 秒、30 m 未満では 100 m までモーター使用、400 m を超えたらホームへ |
 | RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |

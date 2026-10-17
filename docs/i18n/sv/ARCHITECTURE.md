@@ -64,8 +64,8 @@ flowchart TD
     APP["APPLIKATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["KOORDINERING<br/>control/FlightController"]
     TELE["TELEMETRI<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["STYRNING<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["STYRNING<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["ÅTERKOPPLING (inte ansluten)<br/>FeedbackSupervisor och moduler"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORER<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -420,22 +420,23 @@ sequenceDiagram
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(mål från funktionerna)
     FC->>AP: update(armed, linkLost, pilotens gas (0 i reversering), spakar)
     Note over AP: sensorerna läses ALLTID,<br/>navigering, failsafe, geofence,<br/>läge, koordinering, autotrimning
-    FC->>OUT: setBuzzer(Beeper)
+    Note over FC: Markkalibrering: brytargest (utan ARM),<br/>steg i GroundCalibration, signaler → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper eller signalljus)
     alt förbindelsen förlorad
         alt armerat och autopilotens failsafe (RTH / GLIDE)
             FC->>MX: mix(autopilotens kommando)
             FC->>OUT: write(roderytor, autopilotens gas (0 i reversering), AUX oförändrade)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() (medan en signal spelas – neutralläge med nickning och ESC-paus)
         end
         Note over FC: return — ARM och brytarna läses inte
     else förbindelse finns
-        FC->>AM: update(rc, MR.armBlockReason) — ARM-brytaren
+        FC->>AM: update(rc, orsak) – ARM-brytaren (spärrad medan kalibrering eller signal pågår)
         FC->>MR: update(MOTOR_REVERSE, armed) — riktning bara utan ARM
         FC->>AP: getCommand() — det slutliga roderkommandot
         FC->>MX: mix(kommando) → PWM med reversering
         FC->>AP: applyThrottle(pilotens gas) — bara framåt
-        Note over FC: bakåt – pilotens gas ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed eller MOTOR_KILL → gas = PWM_MIN (tillämpas sist)
+        Note over FC: bakåt – pilotens gas ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed eller MOTOR_KILL → gas = PWM_MIN (tillämpas sist)<br/>signalens nickning går till rodren, utan ARM – ESC-pulspaus
         FC->>OUT: write(utdata + AUX1 last, AUX2 kamera)
         Note over OUT: ESC: gas + riktning → puls (EscSignal),<br/>dubbelriktad ESC: 1500 = stopp
     end
@@ -507,15 +508,29 @@ stateDiagram-v2
     GLIDE --> FRTH : GPS erhållen
 ```
 
-Failsafe är inte ett separat `AutopilotMode` utan en flagga ovanpå det aktuella läget; en hemflygning som har börjat övergår inte till glidflykt vid en kort GPS-förlust; efter att förbindelsen återställts återupptas läget från brytarna (autostart och handstart – bara på nytt). De interna tillståndsmaskinerna: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE) och `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
+Failsafe är inte ett separat `AutopilotMode` utan en flagga ovanpå det aktuella läget; en hemflygning som har börjat övergår inte till glidflykt vid en kort GPS-förlust; efter att förbindelsen återställts återupptas läget från brytarna (handstart – bara på nytt; autostart på banan – bara på nytt, under stigningen fortsätter den). I AUTO_TAKEOFF på banan är förlorad förbindelse inget överlägg utan en avbruten start: motorn av, rodren i neutralläge. De interna tillståndsmaskinerna: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE), `TakeoffController` (nedan) och `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
 
-**AUTO_TAKEOFF** (efter tid från start, när armerat och gasen ≥ 1500 µs):
+**AUTO_TAKEOFF** (`TakeoffController`; gasen sköts av programmet, gasspaken startar och avbryter):
 
-| Tid | Gas (program) | Tippning |
-|---|---|---|
-| 0–1 s | mjukt 0 → 100 % | 0° |
-| 1–3 s | 100 % | +15° |
-| > 3 s | 100 % | +10° |
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : gas ≥ 1500 µs (efter att ha varit nere)
+    CHECK --> TAIL_UP : 1 s stilla, vinklar = markläget (sporrhjul)
+    CHECK --> ROLL : likaså (noshjul)
+    CHECK --> ABORTED : står inte som vid kalibreringen – signal ×3
+    TAIL_UP --> ROLL : tippning nära horisonten
+    ROLL --> LIFTOFF : rotationsfart / 2,5 s
+    LIFTOFF --> CLIMB : lättning enligt barometer / gräns + 3 s
+    CLIMB --> DONE : 30 m / 15 s utan barometer
+    TAIL_UP --> ABORTED : gas ned, förbindelse, IMU, roll, kurs, nos, 6 s
+    ROLL --> ABORTED : gas ned, förbindelse, IMU, roll, kurs, nos, 15 s
+    LIFTOFF --> ABORTED : likaså
+    ABORTED --> IDLE : gasen nere 1 s
+```
+
+Höjdrodret på hjulen styrs direkt (stjärten upp: nedåt ≤ 250 µs mot +1° tippning; rotation: målet ökar med 2°/s, nära marken högst markläget minus 3°), i stigningen – PID mot +8°; kursen hålls av sidroder och hjul. Från motorstarten kommer horisonten bara från gyroskopet (`ImuSensor::setAccelCorrection(false)`): accelerometern skulle ta accelerationen för en lyft nos.
 
 ### Start och landning (återkopplingsslingan, inte ansluten)
 
@@ -567,7 +582,7 @@ korrigeringar i alla lägen, inklusive glidflykt), och `ArmingManager` armerar i
 lägena med stabilisering.
 
 Konsumenterna reagerar likadant: **ingen sensor (`nullptr`) eller den är otillgänglig –
-inga effekter**, och flygplanet styrs som i MANUAL.
+inga effekter**, och flygplanet styrs som i MANUAL. Undantaget är autostart på banan: ett IMU-fel är där en avbruten start, motorn av.
 
 ### Förbindelse (`IBusReceiver::isSignalLost()`)
 
@@ -586,7 +601,7 @@ Ramar med fel CRC kasseras och räknas (`getBadFrameCount()`).
 `FlightOutputs::begin()` följs direkt av `setFailsafe()` – ytor till neutralläge, motorn
 av, redan innan sensorerna läses. En utgång med stift `-1` (sidrodret på C3)
 ansluts helt enkelt inte; `attached` i JSON visar om en LEDC-kanal har tilldelats.
-Den verkliga pulsen på varje stift kontrolleras av `printPulseSelfTest()` (konsol `p`).
+Den verkliga pulsen på varje stift kontrolleras av `printPulseSelfTest()` (konsol `p`). Motorsignalen är `IServoOutput::stopPulses()` på ESC-utgången (bara utan ARM): utan pulser tror ESC:n att signalen förlorats och spelar, när neutralläget kommer tillbaka, sin redo-melodi.
 
 ---
 

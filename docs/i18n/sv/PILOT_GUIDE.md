@@ -36,7 +36,7 @@ Satsen i det nuvarande bygget (firmwaren har verifierats på den):
 - **En FS-i6-sändare + FS-iA6B-mottagare** (iBUS-protokoll, 10 kanaler). Du behöver en datatråd – iBUS SERVO-porten. Sändaren måste kunna ställa in failsafe – den inställningen är obligatorisk, se avsnittet om failsafe.
 - **2 MG90S-servon** för skevrodren – ett för varje vinghalva (två oberoende servon, inte ett för båda vingarna).
 - **1 MG90S-servo** för höjdrodret.
-- **1 MG90S-servo** för sidrodret – landningsställets styrhjul sitter på samma axel (styrning på marken).
+- **1 MG90S-servo** för sidrodret – landningsställets styrhjul sitter på samma axel (styrning på marken). Landningsstället: två hjul fram och ett styrbart sporrhjul (`LANDING_GEAR = TAIL_WHEEL` i `Config.h`; ett landningsställ med noshjul är `NOSE_WHEEL`).
 - **Ett elektroniskt fartreglage (ESC) BLHeli 80A, dubbelriktat** (läget Bidirectional/3D) med en 5 V BEC (BEC:en driver servona och mottagaren). Ett vanligt enkelriktat fartreglage fungerar också – `ESC_BIDIRECTIONAL = false` i `Config.h`, se [Motorreversering](#motorreversering-swd).
 - **En D3548 1100KV-motor** + **en 10x5-propeller**.
 - **Ett 3S LiPo-batteri**.
@@ -217,7 +217,7 @@ Kort sagt – standardfördelningen (`include/config/Controls.h`):
 | **VrA / VrB** (CH9/10) | stabiliseringens styrka / marschfart |
 
 - **STABILIZE – ”spaken anger vinkeln”.** Fullt spakutslag är 45° roll och 25° tippning; släpp spaken och flygplanet rätar upp sig självt. Gasen är din.
-- **AUTO_TAKEOFF.** Efter ARM händer ingenting förrän du själv höjer gasen över hälften. Sedan: 0–1 s – gasen mjukt upp till 100 %, vingarna plana; 1–3 s – tippning +15°; därefter +10° tills du slår om SwC. Gas = det högsta av spaken och programmet.
+- **AUTO_TAKEOFF.** Start från bana i etapper. Efter ARM står motorn still tills du för gasen över hälften; flygplanet kontrollerar i ~1 s att det står som vid kalibreringen och gör sedan allt självt: stjärten upp med höjdrodret nedåt, rullning, lättning med vingen, stigning till 30 m, därefter håller det kurs och höjd. Gasen tillhör programmet; gasspaken nedåt före lättningen betyder avbruten start. Kräver [markkalibreringen av flygplanet](#markkalibrering-av-flygplanet-horisont-och-markläge).
 - **RTH.** Kurs mot ARM-punkten, höjd 40 m, cirklar över hempunkten. Kräver GPS med 3D-fix **före ARM**.
 
 Alla 12 lägen (ALT_HOLD, ACRO, CRUISE, LOITER, hand-LAUNCH, AUTO_LAND, SOARING, RESCUE…), vilka sensorer vart och ett kräver och hur det läggs på en brytare finns i [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md). Ett läge som valts från panelen eller markstationen gäller tills du slår om lägesbrytaren.
@@ -340,6 +340,8 @@ Ett tangenttryck verkar direkt; Enter behövs inte (i en monitor som skickar rad
 | `s` | detaljerad status för alla sensorer (inklusive I2C-felräknarna) |
 | `i` | kalibrera om gyroskopet och kör IMU-kontrollen före flygning – 2 s, rör inte flygplanet |
 | `o` | **kalibrering av IMU-monteringen** – en gång, efter att kortet monterats i flygplanet (se nedan) |
+| `c` | **markkalibrering av flygplanet** – horisont och markläge (se nedan); pågår den, avbryts den |
+| `e` | signal: rodren nickar och ESC-melodin – kontrollera att ESC:n spelar den (ta av propellern!) |
 | `m` | kompasskalibrering – rotera kortet/flygplanet runt alla axlar i 15 s. Resultatet sparas i flash och överlever en omstart |
 | `p` | kontroll av utgångar: den faktiska pulsen på varje stift |
 
@@ -365,13 +367,26 @@ Medan menyn är öppen är loggen tyst så att menyn inte rullar bort; när du l
 Kortet med IMU:n kan monteras i flygplanet **hur det passar** – i vilken vinkel som helst, på sidan, upp och ned: firmwaren räknar själv ut var dess nos och ovansida är. Det görs **en gång** efter monteringen (och igen om kortet har flyttats):
 
 1. Flygplanet på bordet, ingen sändare behövs, motorn inte armerad. Tryck `o` i seriemonitorn.
-2. **Steg 1:** flygplanet står plant, som i planflykt (för ett flygplan med sporrhjul, lägg något under stjärten). Rör det inte i ~3 s.
+2. **Steg 1:** flygplanet står plant, som i planflykt (ett flygplan med sporrhjul får stå på hjulen – horisonten sätts sedan av markkalibreringen av flygplanet). Rör det inte i ~3 s.
 3. **Steg 2:** höj **nosen** 30–60°, vingarna plana, och håll stilla i ~1 s.
 4. **Steg 3:** nosen tillbaka ned, sänk den **högra vingen** 30–60° och håll i ~1 s.
 
 Varje steg räknas av sig självt (loggen skriver ”засчитано”, det vill säga ”godkänt”). I slutet visas vad som kom fram (”нос = +Y чипа, верх = −Z чипа”, det vill säga ”nos = kretsens +Y, upp = kretsens −Z”) och ”установка сохранена” (”monteringen sparad”). Om du har blandat ihop något (sänkt nosen i stället för att höja den, vänster vinge i stället för höger) avvisas kalibreringen med en förklaring; upprepa bara `o`. Resultatet lagras i flash och överlever en omstart. Kontroll: nosen upp → P på OLED-skärmen blir positivt; höger vinge ned → R blir positivt.
 
-Så länge ingen monteringskalibrering finns gäller den gamla metoden: kortet måste ligga med kretsen uppåt, och rotationen är `IMU_ROTATION_CW_DEG` i `Config.h`.
+Så länge ingen monteringskalibrering finns gäller den gamla metoden: kortet måste ligga med kretsen uppåt, och rotationen är `IMU_ROTATION_CW_DEG` i `Config.h`. Gör om markkalibreringen av flygplanet efter `o`: markläget mättes från den gamla horisonten.
+
+### Markkalibrering av flygplanet: horisont och markläge
+
+Ett flygplan med sporrhjul står på marken med nosen uppåt – hur mycket vet ingen i förväg. Kalibreringen mäter det själv och sparar det i flash: **horisonten** (0° tippning och roll för alla lägen – inte längre ”som det stod vid start”) och **markläget**, ur vilket autostarten räknar ut hur högt stjärten ska lyftas och var sporrhjulet skulle nudda banan. En gång efter monteringen (och igen om kortet har flyttats eller efter `o`). Ingen dator behövs:
+
+1. Flygplanet på plan mark, sändaren på, **ingen ARM**, gasen nere.
+2. **SwB (klaffar) ned och upp tre gånger i rad** (inom 4 s) – eller `c` i konsolen. En signal – det har börjat.
+3. **Steg 1 – horisont.** Lyft stjärten tills flygkroppen ligger vågrätt som i flykt (huvudhjulen på marken; en vattenpass-app i mobilen ovanpå flygkroppen hjälper) och håll stilla i ~2 s. Titta samtidigt på utrymmet mellan propellern och marken: ungefär så rullar flygplanet vid starten. En signal – godkänt.
+4. **Steg 2 – markläge.** Ställ flygplanet på sina tre hjul och släpp det. Efter ~2 s – två signaler: klart, loggen skriver ”Стоянка: нос вверх на 9.4°, крен 0.3°” (”markläge: nosen 9,4° upp, roll 0,3°”).
+
+Tre signaler – ett fel, ingenting sparas (orsaken står i konsolen): flygplanet blev inte stilla på en minut, i markläget är nosen knappt lyft (stjärten inte nedsatt) eller mer än 25°, eller rollen är över 10°. Avbryta: samma SwB-gest eller slå om ARM-brytaren kort (den omslagningen armerar inte). Med noshjul (`NOSE_WHEEL`) kan steg 1 göras direkt på hjulen om flygplanet står plant: steg 2 godkänns då av sig självt efter 5 s. Brytaren för gesten är `CAL_SWITCH` i `Config.h` (inte SwD: den styr motorreverseringen).
+
+**Signaler.** En signal: höjd- och sidroder nickar (i steg 1 håller du stjärten och känner det), och utan ARM sjunger motorn: pulserna till ESC:n försvinner i en sekund, ESC:n tror att signalen förlorats och spelar, när pulserna kommer tillbaka, sin redo-melodi – som vid start. Motorn snurrar inte. Någon annan ”pip”-order känner en ESC inte till via PWM, så prova på bänken (**propellern av**): tangenten `e` i konsolen – melodin ska höras. Hörs den inte, sätt `SIGNAL_MOTOR = false` i `Config.h`, då blir nickningarna kvar. En summer eller en LED med motstånd på PE15 (S3: GPIO38) lyser under nickningen; lysdioden D2 på själva DevEBox sitter på PA1, utgången för höger skevroder, och duger därför inte till signaler. Medan en signal spelas nekas ARM: ESC:n har kanske inte armerat sig igen. På OLED-skärmen visar vinkelraden `CAL1`, `CAL2` och till sist `CALOK` eller `CALER`.
 
 ### Kontroll före flygning vid start
 
@@ -381,7 +396,7 @@ Vid varje start ägnar IMU:n ~2 s åt att kalibrera gyroskopet och kontrollerar 
 - accelerometern i vila visar 1g;
 - **”upp” stämmer med monteringskalibreringen** – om kortet har flyttats eller vänts syns det direkt (ett flygplan på sporrhjulet eller i en sluttning är inget problem; toleransen är 45°).
 
-**Slå på flygplanet medan det står stilla.** Det behöver inte stå plant om monteringen är kalibrerad (annars blir läget vid start horisonten). Resultatet syns i loggen: `предполётная проверка пройдена` (”kontrollen före flygning godkänd”) eller `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` (”KONTROLLEN FÖRE FLYGNING EJ GODKÄND” följt av orsaken). Om den misslyckades är **ARM i STABILIZE och AUTO_TAKEOFF förbjuden** (orsaken skrivs ut när du försöker), och autopiloten ger inga korrigeringar i något läge, inklusive glidflykt vid förlorad förbindelse: med fel vinklar skulle den styra åt fel håll. ARM i MANUAL är fortfarande möjlig. Så åtgärdar du det: ställ ned flygplanet orörligt och anslut batteriet på nytt (eller tryck `i`); om kortet har flyttats, tryck `o`.
+**Slå på flygplanet medan det står stilla.** Det behöver inte stå plant om monteringen är kalibrerad (`o` eller markkalibreringen av flygplanet; annars blir läget vid start horisonten). Resultatet syns i loggen: `предполётная проверка пройдена` (”kontrollen före flygning godkänd”) eller `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` (”KONTROLLEN FÖRE FLYGNING EJ GODKÄND” följt av orsaken). Om den misslyckades är **ARM i STABILIZE och AUTO_TAKEOFF förbjuden** (orsaken skrivs ut när du försöker), och autopiloten ger inga korrigeringar i något läge, inklusive glidflykt vid förlorad förbindelse: med fel vinklar skulle den styra åt fel håll. ARM i MANUAL är fortfarande möjlig. Så åtgärdar du det: ställ ned flygplanet orörligt och anslut batteriet på nytt (eller tryck `i`); om kortet har flyttats, tryck `o`.
 
 ### OLED-skärm
 
@@ -389,7 +404,7 @@ Om OLED-skärmen är ansluten (GPIO1/GPIO2) visar den följande 5 gånger per se
 
 ```
 RX ok disarm STAB        <- förbindelse / ARM / läge / REV – motorn bakåt (vid förlorad förbindelse inverteras raden)
-R  +1.2 P  -0.4          <- roll / tippning, °
+R  +1.2 P  -0.4 ROLL     <- roll / tippning, °; kalibreringssteg eller startetapp
 Alt +0.3 Vz +0.1         <- höjd från startpunkten, m / vertikal hastighet, m/s
 Hdg 123  Thr 1000        <- kompasskurs / gas 1000..2000 = 0..100 % (även bakåt), µs
 L1500 R1500 E1500        <- PWM för skevrodren och höjdrodret, µs
@@ -470,6 +485,7 @@ Läs det här avsnittet i sin helhet **före** den första starten, inte efter e
   - i STABILIZE, luta flygplanet med höger vinge ned → **höger skevroder ned, vänster skevroder upp** (ytorna för tillbaka det till plant läge); nosen ned → **höjdrodret upp**.
   Om något är fel, ändra en rad i blocket ”Reversering” i `include/config/Config.h`: varje skevroder, höjdrodret, sidrodret, AUX, motorn (`MOTOR_REVERSED`) och klaffarna (`FLAPS_REVERSED`) vänds var för sig, inget annat påverkas. Reversera inte servon på sändaren – då blir spaken och autopiloten oense; en kanal åt andra hållet (spak, brytare, ratt) – `CHANNEL_REVERSED` på samma ställe.
 - [ ] Vid start stod flygplanet stilla, och loggen eller panelen visar inte `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА`; när du lutar flygplanet i händerna ändras P och R på OLED-skärmen åt rätt håll.
+- [ ] För AUTO_TAKEOFF: markkalibreringen av flygplanet är gjord (vid start skriver loggen ”стоянка на колёсах — тангаж …”), sporrhjulet är helt, flygplanet står på banan mot vinden. De första rullningarna med gasbegränsning (ratten `THROTTLE_LIMIT`) och handen på gasen: nedåt betyder avbruten start.
 - [ ] Failsafe är inställt i sändaren och provat: stäng av sändaren → `RX LOST` på OLED-skärmen/i Serial (se avsnittet om failsafe).
 - [ ] Sändarens räckvidd har kontrollerats, och sändarens batteri är laddat.
 - [ ] Vid start visar loggen `BlackBox: ... стёрто впереди N МБ (≈M мин)` – det finns tillräckligt med utrymme för flygningen. Den föregående flygningen har hämtats (`python tools/blackbox.py download`), om du behöver den.
@@ -497,6 +513,12 @@ Gör kalibreringen av IMU-monteringen (`o`, se ”IMU-montering”) – den bero
 
 **ARM nekad: ”IMU: ...”**
 IMU-kontrollen före flygning gick inte igenom (se ”Kontroll före flygning vid start”): flygplanet rördes vid start – ställ ned det orörligt och anslut batteriet på nytt; ”upp” stämmer inte med kalibreringen – kortet har flyttats, gör `o`; ”kortet ligger inte med kretsen uppåt” – monteringen är inte kalibrerad, gör `o`.
+
+**ARM nekad: ”нет калибровки шасси” (ingen kalibrering av landningsstället)**
+AUTO_TAKEOFF med sporrhjul vet inte var stjärten skulle nudda banan. Gör markkalibreringen av flygplanet: SwB ned och upp tre gånger utan ARM (eller `c`).
+
+**”Автовзлёт: старт отменён — тангаж не стояночный” (starten avbruten – tippningen är inte markläget; rodren nickade tre gånger)**
+Flygplanet står inte som vid kalibreringen: inte på tre hjul, sluttning, trasigt sporrhjul eller flyttat kort. Ställ det plant; har kortet flyttats, gör om `o` och markkalibreringen.
 
 **Ett servo eller ESC:n reagerar på fel spak / reagerar inte**
 Kommandot `p` i konsolen mäter den verkliga pulsen på varje utgång (GPIO4–7) och jämför den med den förväntade. Om allt är ”OK” men servot inte rör sig ligger problemet utanför kortet: (1) servot får ingen ström (BEC/5V, gemensam jord); (2) signaltråden sitter på fel stift; (3) mekanismen har fastnat. ”НЕ СОВПАДАЕТ” (”STÄMMER INTE”) betyder att problemet finns i firmwaren eller kringutrustningen – rapportera det till utvecklaren.

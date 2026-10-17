@@ -120,6 +120,7 @@ CS の切り替えは `SpiRegisterDevice` が行います。
 | `writeMicroseconds(us)` | パルス幅、µs（`attach` の範囲に制限されます） |
 | `bool isAttached() const` | `attach()` の結果 |
 | `virtual int32_t measurePulseUs()` | 診断用: ピン上の実際のパルス幅、または `-1`。既定の実装は `-1` を返します |
+| `virtual void stopPulses()` | 次の書き込みまでパルスを止めます（ピンは Low のまま）。モーターの合図で、パルスがなくなると ESC は信号を失ったと判断し、パルスが戻ると準備完了のメロディを鳴らします。既定では何もしません（その場合モーターは鳴りません） |
 
 ---
 
@@ -298,6 +299,7 @@ LEDC を使って直接 PWM を出力します（Arduino core 2.x の `ledcSetup
 | `attach(minUs, maxUs)` | 範囲を保持します。ピン < 0 なら `false`。そうでなければ `ledcSetup() != 0` → `ledcAttachPin()` |
 | `writeMicroseconds(us)` | attached でなければ何もしません。そうでなければ `constrain(us, min, max) * MAX_DUTY / PERIOD_US` → `ledcWrite` |
 | `measurePulseUs()` | 同じ GPIO の入力バッファを有効にし（`PIN_INPUT_ENABLE`。出力には触れません）、`pulseIn(pin, HIGH, 30 ms)` を測定します。パルスがなければ `-1` |
+| `stopPulses()` | デューティ 0（`ledcWrite(channel, 0)`）：パルスなし |
 
 チャンネル 2n と 2n+1 は LEDC のタイマーを共有しますが、すべての出力が 50 Hz なので競合はありません。
 
@@ -393,7 +395,8 @@ MAVLink のフレームを待たずに出すため）。
 | `Stm32ServoOutput(int16_t pin)` | ピン `< 0` は出力が配線されていないことを表します |
 | `attach(minUs, maxUs)` | タイマーとチャンネルは、ピンから `PinMap_TIM`（`pinmap_peripheral`、`STM_PIN_CHANNEL`）で求めます。`analogWrite()` と同じです。ピンにタイマーがない、またはプールが尽きた場合は `false`。そうでなければ `setMode(PWM1)`、比較値 0（最初の書き込みまではパルスなし）、`resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`。比較レジスタはプリロード付きなので、値は次の周期から有効になります |
-| `measurePulseUs()` | ピンを再設定せずに `pulseIn(pin, HIGH, 30 ms)`。STM32 では、IDR レジスタが代替機能モードでもレベルを読み取れます |
+| `stopPulses()` | 比較値 0：`attach()` 直後と同じくパルスなし |
+| `measurePulseUs()` | ピンを再設定せずに `pulseIn(pin, HIGH, 30 ms)`。STM32 では、IDR レジスタが代替機能モードでもレベルを読み取れます。コアの `pulseIn()` は、ビット番号 8 以上のピン（PD14、PD15、PE9）では **Low** のレベルを測ってしまいます（レベルのマスクが `uint8_t` のため）。サーボのパルスは常に半周期より短いので、それより長い測定値は休止で、パルスは `PERIOD_US` からそれを引いた値です |
 | `static acquireTimer(TIM_TypeDef*)` | 共有プール: **TIMx ごとに `HardwareTimer` を1つ**だけ持ちます。同じタイマーに2つ目のオブジェクトを作ると、コアのハンドラ（`HardwareTimer_Handle[index]`）を上書きしてしまいます。周期はタイマー上の最初の出力で決まります。`setOverflow(MICROSEC_FORMAT)` が分周比を選び、タイマーのクロックが 240 MHz のときのステップは約 0.3 µs です |
 
 ## `Stm32FlashStorage`

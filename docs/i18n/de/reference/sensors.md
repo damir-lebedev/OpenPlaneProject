@@ -50,6 +50,12 @@ Welcher Chip einkompiliert wird, entscheidet `SensorSelection.h`.
 | `void setYaw(float)` | Den Kurs setzen (zum Beispiel beim Start nach dem Kompass) |
 | `virtual void calibrateOrientation()` | Kalibrierung des Einbaus der Platine (standardmäßig nicht unterstützt) |
 | `virtual const char* getPreflightProblem() const` | Das Problem der Prüfung vor dem Flug oder `nullptr` (standardmäßig `nullptr`) |
+| `virtual bool readChipUp(float[3]) const` | Bodenkalibrierung: letzter Messwert des Beschleunigungssensors in Chipachsen, g, unkorrigiert (Standard `false`) |
+| `virtual bool getOrientation(ImuOrientation&) const` | Aktueller Einbau der Platine (Standard `false` – Bodenkalibrierung nicht unterstützt) |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | Horizont und Standlage übernehmen, im Flash speichern |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | Standwinkel auf den Rädern, ° vom Horizont; `false` – keine Fahrwerkskalibrierung |
+| `virtual void setAccelCorrection(bool)` | Autostart: `false` – Horizont nur aus dem Gyroskop |
+| `virtual void trimGyroBias(const float residualDps[3])` | Gyro-Nullpunkt aus der mittleren Drehrate des stehenden Flugzeugs nachführen (Achsen und Vorzeichen von `ImuData`) |
 
 ### `BarometerSensor : Sensor`
 
@@ -169,6 +175,9 @@ Die Drehmatrix `R` von den Chipachsen in die Achsen des Flugzeugs: `body = R · 
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | Eine Drehung um die Vertikale in Schritten von 90°, die Platine mit dem Chip nach oben |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | Kalibrierung aus drei Lagen (der Messwert „oben“ des Beschleunigungssensors in den Chipachsen). `nullptr` — Erfolg, sonst der Grund der Ablehnung |
 | `void apply(const float chip[3], float body[3]) const` | Die Drehung anwenden |
+| `void applyInverse(const float body[3], float chip[3]) const` | Umgekehrte Drehung (transponierte `R`) |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | Horizont aus der Lage „waagerecht“: Z = gemessenes „oben“, die Nase bleibt, ⟂ Z begradigt. Mehr als 45° vom alten Horizont – abgelehnt |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | Nick und Roll einer Lage (wie `AttitudeEstimator` aus dem Beschleunigungssensor) – die Standlage |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | Der Winkel zwischen dem gemessenen „oben“ und der Z-Achse des Flugzeugs (180°, wenn der Vektor null ist) |
 | `bool load(const char* ns)` | Aus dem NVS laden; weist ein nicht orthonormales oder linkshändiges Tripel zurück |
 | `void save(const char* ns) const` | Im NVS speichern |
@@ -198,11 +207,12 @@ Ein Komplementärfilter für Rollen/Nicken und ein Integral für das Gieren, una
 | `void setYaw(float deg)` | Den Kurs setzen (auf ±180 reduziert) |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | Die Beschleunigung in g in den Achsen des Flugzeugs, die Raten in °/s |
 | `getRoll()`, `getPitch()`, `getYaw()` | ° |
+| `setAccelCorrection(bool)`, `isAccelCorrectionEnabled()` | `false` – nur Gyroskop (Beschleunigung beim Autostart: 0,5 g nach vorn wirken wie +27° Nick) |
 
 `roll_acc = atan2(ay, az)`, `pitch_acc = atan2(ax, √(ay² + az²))`;
 `angle = 0.98·(angle + rate·dt) + 0.02·angle_acc` (τ ≈ 0,1 s bei 2 ms).
 Der erste Aufruf nach `reset()` liefert sofort die Winkel des Beschleunigungssensors; bei `dt ≤ 0` oder über 0,1 s
-wird der Schritt übersprungen (eine Pause, ein hängender Bus).
+wird der Schritt übersprungen (eine Pause, ein hängender Bus). Ohne Beschleunigungssensor – `angle + rate·dt`.
 
 ---
 
@@ -227,7 +237,11 @@ Rohproben − Offsets (ADC) → Skalierung (g, °/s) → ImuOrientation (Achsen 
 | `void calibrate()` | 200 Proben × 10 ms: der Offset des Gyroskops, das Rauschen, „oben“; ohne Einbaukalibrierung — der Horizont = die aktuelle Lage. Danach die Prüfung vor dem Flug |
 | `void calibrateOrientation()` | Drei Lagen (`capturePose`: ~1 s ruhig, die Lage weicht von den vorigen um ≥ 20° ab, Timeout von 30 s), `ImuOrientation::fromPoses`, Speichern im NVS. Beseitigt die Einbauprobleme der Prüfung vor dem Flug |
 | `const char* getPreflightProblem() const` | Der Text des Problems oder `nullptr` |
-| `void setYaw(float)`, `getSensorType()`, `printStatus()` | |
+| `readChipUp()`, `getOrientation()` | Bodenkalibrierung: letztes „oben“ in Chipachsen, der Einbau |
+| `bool setGroundCalibration(level, parkChipUp)` | Einbau = `level` (der Horizont), die Standlage unter dem Schlüssel `park` im selben NVS-Namensraum; hebt die Einbauprobleme der Vorflugprüfung auf. Ein neues `o` löscht die Standlage (sie wurde vom alten Horizont gemessen) |
+| `bool getParkingAttitude(pitch, roll) const` | Standlage über den aktuellen Einbau |
+| `setAccelCorrection(bool)`, `trimGyroBias(residual)` | Autostart: Filter ohne Beschleunigungssensor; der Rest-Nullpunkt geht über die umgekehrte Drehung in den Gyro-Offset |
+| `void setYaw(float)`, `getSensorType()`, `printStatus()` | `printStatus()` endet mit `park(pitch,roll)=…` oder `park=NONE` |
 
 Die geschützte API für Treiber:
 

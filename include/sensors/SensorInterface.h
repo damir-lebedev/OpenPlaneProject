@@ -105,6 +105,8 @@ public:
 // ИНТЕРФЕЙС ДЛЯ IMU ДАТЧИКОВ (Гироскоп + Акселерометр)
 // ============================================================
 
+class ImuOrientation;   // sensors/imu/ImuOrientation.h
+
 class ImuSensor : public Sensor
 {
 public:
@@ -145,6 +147,56 @@ public:
     // порядке. С проблемой углам верить нельзя: ARM в режимах со
     // стабилизацией запрещён, автопилот не даёт коррекций.
     virtual const char* getPreflightProblem() const { return nullptr; }
+
+    // ========================================================
+    // НАЗЕМНАЯ КАЛИБРОВКА САМОЛЁТА (control/GroundCalibration.h)
+    // ========================================================
+    // Горизонт и стояночный угол — оба по "верху" в осях чипа (среднее
+    // показание акселерометра в покое, g). По умолчанию не поддерживается.
+
+    // Последнее показание акселерометра в осях чипа, g, без поправок.
+    virtual bool readChipUp(float chipUp[3]) const
+    {
+        (void)chipUp;
+        return false;
+    }
+
+    // Текущая установка платы (оси чипа -> оси самолёта).
+    virtual bool getOrientation(ImuOrientation& out) const
+    {
+        (void)out;
+        return false;
+    }
+
+    // Записать горизонт (установка с уточнённой осью Z) и стоянку,
+    // сохранить во флеш. false — не умеет.
+    virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])
+    {
+        (void)level;
+        (void)parkChipUp;
+        return false;
+    }
+
+    // Стояночные углы — тангаж и крен на колёсах, ° от горизонта.
+    // false — калибровки шасси нет.
+    virtual bool getParkingAttitude(float& pitchDeg, float& rollDeg) const
+    {
+        (void)pitchDeg;
+        (void)rollDeg;
+        return false;
+    }
+
+    // ========================================================
+    // АВТОВЗЛЁТ (autopilot/TakeoffController.h)
+    // ========================================================
+
+    // false — горизонт ведёт только гироскоп: разгон по полосе
+    // акселерометр принимает за задранный нос.
+    virtual void setAccelCorrection(bool enabled) { (void)enabled; }
+
+    // Уточнить ноль гироскопа: средняя угловая скорость неподвижного
+    // самолёта (°/с, оси и знаки ImuData) — остаточное смещение.
+    virtual void trimGyroBias(const float residualDps[3]) { (void)residualDps; }
 };
 
 // ============================================================

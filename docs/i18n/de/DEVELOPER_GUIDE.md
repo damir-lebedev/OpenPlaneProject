@@ -182,10 +182,12 @@ Die Regeln, die die Architektur sauber halten:
 | `EscSignal.h` | Gas + Richtung → ESC-Impuls: beim bidirektionalen BLHeli 1500 = Stopp, vorwärts 1500..2000, rückwärts 1500..1000 |
 | `MotorReverse.h` | Motorumkehr über `Feature::MOTOR_REVERSE` – nur im DISARM; nach einem Richtungswechsel wird ARM für `REVERSE_SETTLE_MS` abgelehnt |
 | `ArmingManager.h` | ARM über den Schalter SwA (ein Wechsel OFF→ON bei Gas unten + die Sensorprüfungen des Modus), DISARM sofort |
-| `FlightOutputState.h` | Die gewünschten PWM-Werte: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % in jeder Richtung), `motorReverse`, `aux1` (Nutzlast), `aux2` (Kamera) |
+| `FlightOutputState.h` | Die gewünschten PWM-Werte: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % in beide Richtungen), `motorReverse`, `escPulsesOff` (Motorsignal), `aux1` (Last), `aux2` (Kamera) |
 | `Beeper.h` | Der Summer: über die Funktion `BEEPER` oder „Modell verloren“ am Boden |
+| `GroundCalibration.h` | Bodenkalibrierung des Flugzeugs: Schaltergeste, Schritt 1 – Horizont (Heck hoch), Schritt 2 – Standlage; speichert über `ImuSensor::setGroundCalibration()` |
+| `SignalPlayer.h` | Signale an den Piloten: Rudernicken, ESC-Impulspause (der Regler spielt die Bereitschaftsmelodie, nur ohne ARM), Summer/LED; Zählung 1/2/3 |
 | `FlightOutputs.h` | Die Tabelle der Ausgänge (`outputInfo()`: Schlüssel, Name, Pin, Pflichtangabe, Statusfeld) und alles, was in einer Schleife darübergelegt ist: `begin()`, `write()`, `setFailsafe()`, Status, `printPulseSelfTest()` |
-| `FlightController.h` | Die Reihenfolge der Operationen in jedem Zyklus, der Signalverlust (`applyLinkLoss()`), Getter für die Telemetrie |
+| `FlightController.h` | Reihenfolge der Operationen pro Takt, Signalverlust (`applyLinkLoss()`), Kalibrierung und Signale über den Ausgängen, Getter für die Telemetrie |
 
 ### `autopilot/`
 
@@ -198,6 +200,7 @@ Die Regeln, die die Architektur sauber halten:
 | `Navigation.h` | `Geo` (Entfernung, Peilung, Versatz), `Guidance` (Rollen auf einen Kurs, das Vektorfeld des Kreises) |
 | `AltitudeSpeedController.h` | Nicken für die Höhe, Gas für die Fluggeschwindigkeit (TECS-lite) |
 | `LaunchController.h`, `SoaringController.h` | Die Zustandsautomaten für den Handstart und den Segelflug |
+| `TakeoffController.h` | Autostart von der Piste: Etappen für Spornrad und Bugrad (`Config::LANDING_GEAR`), Höhenruder- und Kursregler auf den Rädern, Startabbruch |
 | `AutoTrim.h` | Autotrimmung, gespeichert im NVS/Flash |
 | `PidController.h` | PID: D auf der Rate des Sensors (Gyroskop, Variometer), Anti-Windup, Integrator ohne ARM eingefroren |
 | `feedback/*` | **Vorarbeit, nicht angeschlossen:** adaptive Rückführung, Start und Landung — siehe [Rückführung](#rückführung-vorarbeit-nicht-angeschlossen) |
@@ -585,6 +588,8 @@ blockieren die Schleife und sind deshalb nur ohne ARM verfügbar.
 | `s` | `printStatus()` aller Sensoren: Daten, Fehlerzähler des Busses, Kalibrierungen, die Prüfung vor dem Flug |
 | `i` | Gyro-Kalibrierung + Prüfung vor dem Flug (2 s ruhig) |
 | `o` | Kalibrierung des IMU-Einbaus über drei Lagen, wird im NVS gespeichert |
+| `c` | Bodenkalibrierung des Flugzeugs (Horizont und Standlage) – blockiert den Takt nicht; läuft sie, Abbruch. Vom Sender – Schalter `CAL_SWITCH` dreimal runter und hoch ohne ARM |
+| `e` | Signal: Rudernicken und ESC-Impulspause – prüfen, ob der Regler seine Bereitschaftsmelodie spielt (Propeller abnehmen!) |
 | `m` | Kompasskalibrierung (15 s Drehen), wird im NVS gespeichert |
 | `p` | Selbsttest der Ausgänge: der echte Impuls an jedem Pin gegenüber dem erwarteten |
 
@@ -787,7 +792,7 @@ Eine neue Schnittstelle in `include/hal/`, die Implementierung in
    auf (ohne IMU liegen die Ruder beim Piloten) oder `stabilizeOrNeutral()`
    (ohne IMU — Neutral). Ohne den nötigen Sensor — sicheres Verhalten, kein
    Absturz. Der Integrator sammelt nur bei `armed`.
-3. Gas: `throttleMode` (`PILOT` / `AUTO` / `AT_LEAST`) und `autoThrottlePct`,
+3. Gas: `throttleMode` (`PILOT` / `AUTO`) und `autoThrottlePct`,
    oder `autoThrottle()` — das Reisegas vom Drehregler / vom Pitotrohr.
    `FlightController` ändert sich dabei nicht.
 4. Am Sender — eine einzige Zeile in `config/Controls.h`

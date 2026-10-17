@@ -41,6 +41,7 @@ CONTROL 계층은 UART, PWM, Wi-Fi 없이 데이터 위에서 동작하는 로�
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
 | `bool motorReverse` | `false` — 모터 전진 |
+| `bool escPulsesOff` | `false`. `true`면 ESC로 펄스를 전혀 보내지 않음(모터 알림, ARM이 아닐 때만) |
 | `aux1` | `PAYLOAD_CLOSED_US` — 페이로드 투하기는 닫힘 |
 | `aux2` | `PWM_CENTER` — 카메라 |
 
@@ -187,10 +188,10 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
 | `explicit FlightOutputs(IBoard& board)` | |
 | `bool begin()` | 각 출력의 `attach(PWM_MIN, PWM_MAX)`, 상태와 ESC 종류 출력. **필수** 출력이 모두 채널을 얻으면 `true` |
 | `bool isAttached(uint8_t ch) const` | 출력이 연결되어 있음(범위를 벗어난 인덱스는 `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | 출력 핀의 펄스: 표에 따른 필드, ESC는 `EscSignal::pulseUs(throttle, motorReverse)`를 거침 |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | 출력 핀의 펄스: 표에 따른 필드, ESC는 `EscSignal::pulseUs(throttle, motorReverse)`를 거치고, `escPulsesOff`면 0 |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | 배선된 각 핀에서 측정한 펄스를 기대값과 비교. 차이가 15 µs 이하이면 “OK” |
-| `void write(const FlightOutputState&)` | 모든 출력을 기록하고 상태를 기억 |
+| `void write(const FlightOutputState&)` | 모든 출력을 기록하고 상태를 기억. `escPulsesOff`인 ESC는 `IServoOutput::stopPulses()` |
 | `void setFailsafe()` | 조종면 중립(`FAILSAFE_*`), 스로틀 `FAILSAFE_THROTTLE`(양방향 ESC 핀에서는 1500). AUX는 그대로(통신이 끊겨도 화물은 투하하지 않음) |
 | `void setBuzzer(bool on)` | 보드의 부저(`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | 마지막으로 기록한 상태 |
@@ -203,7 +204,7 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
 ## `FlightController`
 
 **파일:** `control/FlightController.h` · **계층:** COORDINATION ·
-**의존:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
+**의존:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 제어 루프의 유일한 조율자입니다. 직접 UART를 해석하지 않고, PWM을 건드리지 않고,
 믹서를 계산하지도 않으며, 다른 클래스를 올바른 순서로 호출할 뿐입니다. 자세한 도표는
@@ -224,6 +225,9 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | 이번 주기의 스위치와 노브 |
 | `bool isLostModelBeeping() const` | “여기 있어요” 부저가 울리는 중 |
 | `const MotorReverse& getMotorReverse() const` | 모터 방향과 대기 중인 역회전 |
+| `void toggleGroundCalibration()` | 콘솔 `c`: 비행기 지상 캘리브레이션 시작(ARM이 아닐 때만), 진행 중이면 취소 |
+| `void playSignal(uint8_t count)` | 콘솔 `e`: 알림 한 번(ARM이 아니면 모터로도) |
+| `const GroundCalibration& getCalibration() const`, `const SignalPlayer& getSignals() const` | OLED, 로그, 블랙박스용 |
 
 `update()`의 순서:
 
@@ -235,22 +239,19 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → 부드럽게, 링크를 잃으면 0.
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)`를 **항상** 실행.
    역회전 중에는 `pilotThrottle` 대신 `PWM_MIN`을 넘김(오토파일럿에게 모터는 꺼진 상태);
-6. 부저: `Beeper::update(BEEPER, armed, failsafe, now)`.
+6. 캘리브레이션: 캘리브레이션 중에 ARM 스위치를 젖히면 취소. ARM이 아니고 통신이 있으면 `CAL_SWITCH` 동작을 봄. `GroundCalibration::update()`를 한 단계. 그 알림과 자동 이륙 거부 알림은 `SignalPlayer`로. 부저: `Beeper::update(BEEPER, armed, failsafe, now)` 또는 알림 불빛.
 7. 링크 상실 → `applyLinkLoss()`를 실행하고 주기를 빠져나감.
-8. `arming.update(rc, false, reverse.armBlockReason(now))`, 이어서
-   `reverse.update(MOTOR_REVERSE, armed, now)` — DISARM 시 같은 주기에 방향이 바뀜;
-9. `command = autopilot->getCommand()`(오토파일럿이 없으면 스틱). 플랩은 자체 값.
+8. `arming.update(rc, false, 이유)`: 캘리브레이션 중이거나 알림이 나는 동안 ARM 거부(ARM 스위치로 캘리브레이션을 취소한 주기도), 그 밖에는 `reverse.armBlockReason(now)`. 이어서 `reverse.update(MOTOR_REVERSE, armed, now)`: DISARM 때 같은 주기에 방향이 바뀜.
+9. `command = autopilot->getCommand()`(오토파일럿이 없으면 스틱). 플랩은 자체 값. 알림의 끄덕임을 승강타와 방향타에 더함.
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     전진 — `output.throttle = autopilot->applyThrottle(pilotThrottle)`, 상한
     `THROTTLE_LIMIT_PCT` × 노브 `Knob::THROTTLE_LIMIT`; 후진 — 파일럿 스로틀, 상한
     `min(REVERSE_THROTTLE_LIMIT_PCT, 전진 상한)`; 허용 범위를 스틱 전체 행정으로 늘림;
-11. ARM하지 않았거나 `MOTOR_KILL` → `throttle = PWM_MIN`(맨 마지막에).
+11. ARM하지 않았거나 `MOTOR_KILL` → `throttle = PWM_MIN`(맨 마지막에). ARM이 아니면 모터 알림이 `escPulsesOff`를 켬.
 12. AUX1은 페이로드(`PAYLOAD_DROP`), AUX2는 카메라(`Knob::CAMERA_TILT`, `CAMERA_STAB`은 피치를 뺌). `AUX1_REVERSED`/`AUX2_REVERSED`는 펄스를 뒤집음.
 13. `outputs.write(output)`.
 
-`applyLinkLoss()`: 오토파일럿이 failsafe 상태(ARM 상태에서는 RTH 또는 활공)이면 조종면과
-스로틀은 오토파일럿의 명령을 따릅니다(플랩은 부드럽게 접히고, `MOTOR_KILL`은 여전히
-모터를 멈추며, AUX는 그대로). 그렇지 않으면 `outputs.setFailsafe()`를 실행합니다. 역회전 중에는 모터가 항상 멈춰 있습니다.
+`applyLinkLoss()`: 오토파일럿이 failsafe 상태(ARM 상태에서는 RTH 또는 활공)이면 조종면과 스로틀은 오토파일럿의 명령을 따릅니다(플랩은 부드럽게 접히고, `MOTOR_KILL`과 역회전은 모터를 멈추며, AUX는 그대로). 그렇지 않으면 `outputs.setFailsafe()`를 실행하고, 알림이 나는 동안에는 중립에 끄덕임과 ESC 펄스 멈춤을 더합니다(조종기를 내려놓고 캘리브레이션하는 중).
 
 ---
 
@@ -262,3 +263,41 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
 |---|---|
 | `bool update(bool requested, bool armed, bool linkLost, uint32_t nowMs)` | 부저 상태: `Feature::BEEPER`이거나 “기체 분실”(ARM하지 않았고 `LOST_MODEL_BEEP_DELAY_MS`보다 오래 링크가 없음)이면 2 Hz로 울림 |
 | `bool isLostModel() const` | “풀숲에서 나를 찾아 줘” 모드 |
+
+---
+
+## `GroundCalibration`
+
+**파일:** `control/GroundCalibration.h` · **의존:** `Config`, `RcChannelState`, `ImuSensor`, `ImuOrientation`
+
+비행기 지상 캘리브레이션: 1단계는 꼬리를 들어 동체를 수평으로(수평 기준, `ImuOrientation::withLevel()`), 2단계는 바퀴로 세움(주기 자세). `CAL_STILL_MS` 동안 정지하면 단계를 자동으로 기록. 2단계는 비행기를 옮길 때까지, 또는 `CAL_PARK_WAIT_MS`만큼 기다림. 저장은 한꺼번에만(`ImuSensor::setGroundCalibration()`), 그 전에 주기 자세를 `LANDING_GEAR`에 맞춰 점검. 루프를 멈추지 않음.
+
+`Stage`: `IDLE`, `LEVEL`, `PARK`, `DONE`, `FAILED`.
+
+| 메서드 | 설명 |
+|---|---|
+| `bool watchSwitch(const RcChannelState&, uint32_t nowMs)` | 동작: `CAL_SWITCH`를 `CAL_SWITCH_WINDOW_MS` 안에 `CAL_SWITCH_FLIPS`번 내렸다 올림, 스로틀은 내린 채. 첫 읽기와 스로틀이 내려가 있지 않을 때는 다시 셈 |
+| `void forgetSwitch()` | ARM 또는 통신 없음: 다시 셈 |
+| `bool start(const ImuSensor*, uint32_t nowMs, const char* source)` | 시작(알림 1). IMU가 없거나 지원하지 않으면 오류(알림 3) |
+| `void cancel(const char* why)` | 알림 없이 취소 |
+| `void update(ImuSensor*, bool armed, bool signalBusy, uint32_t nowMs)` | 한 단계: ARM이면 취소. 알림이 나는 동안에는 아무것도 기록하지 않음. `CAL_STEP_TIMEOUT_MS`를 넘으면 오류 |
+| `isActive()`, `getStage()`, `getStageSinceMs()`, `getFailure()`, `getParkPitch()`, `getParkRoll()` | 상태와 결과 |
+| `uint8_t takeSignal()` | 낼 알림의 수: 1은 시작 / 1단계, 2는 완료, 3은 오류(한 번만 꺼냄) |
+| `static const char* stageShort(Stage)` | `CAL1`, `CAL2`, `CALOK`, `CALER`: OLED용 |
+
+---
+
+## `SignalPlayer`
+
+**파일:** `control/SignalPlayer.h` · **의존:** `Config`
+
+파일럿에게 보내는 알림. 한 묶음의 알림이 시작된 뒤의 시간에 대한 함수. 알림 한 번: 승강타와 방향타가 끄덕이고(`SIGNAL_NOD_US` 위로, 다음에 아래로, 각각 `SIGNAL_NOD_MS`), ARM이 아니면 ESC 펄스를 `SIGNAL_ESC_PAUSE_MS` 동안 멈추고(그 뒤 ESC가 준비 완료 멜로디를 냄), 끄덕이는 동안 부저 불빛이 켜짐. 다음 알림은 `SIGNAL_PERIOD_MS` 뒤.
+
+| 메서드 | 설명 |
+|---|---|
+| `void play(uint8_t count, uint32_t nowMs, bool motor)` | 알림 한 묶음. `motor`는 ESC를 건드려도 되는지(`SIGNAL_MOTOR`도) |
+| `void stop()` | 멈춤 |
+| `bool isBusy(uint32_t nowMs) const`, `uint8_t getCount(uint32_t nowMs) const` | 알림이 진행 중(그동안 ARM 거부) |
+| `bool escPulsesOff(uint32_t nowMs) const` | 지금 ESC 펄스를 멈출지 |
+| `int16_t nodUs(uint32_t nowMs) const` | 조종면 끄덕임, µs(`SIGNAL_SURFACES`) |
+| `bool light(uint32_t nowMs) const` | `PIN_BUZZER`의 부저 / LED |

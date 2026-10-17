@@ -140,6 +140,22 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `IMU_ROTATION_CW_DEG` | 90 | Поворот осей чипа IMU вокруг вертикали (0/90/180/270), куда смотрит ось X чипа. Используется, только пока нет калибровки установки `o` в NVS |
 | `MAG_ROTATION_CW_DEG` | 0 | То же для компаса (калибровки установки у компаса нет) |
 
+### Шасси, калибровка на земле, сигналы
+
+| Константа | Значение | Смысл |
+|---|---|---|
+| `LANDING_GEAR` | `LandingGear::TAIL_WHEEL` | Какое колесо рулевое: `TAIL_WHEEL` — хвостовое (на стоянке нос задран, на разбеге сначала хвост вверх), `NOSE_WHEEL` — носовое |
+| `CAL_SWITCH` | `Channels::SWB` | Тумблер жеста калибровки самолёта на земле (не SwD — он переключает реверс мотора) |
+| `CAL_SWITCH_FLIPS` / `CAL_SWITCH_WINDOW_MS` | 3 / 4000 | Без ARM, газ внизу: столько раз вниз-вверх за это время — калибровка (повтор — отмена) |
+| `CAL_STILL_MS`, `CAL_STILL_DPS`, `CAL_STILL_G` | 2000, 3.0, 0.15 | Шаг засчитывается: столько мс подряд вращение меньше и перегрузка 1g ± столько |
+| `CAL_PARK_WAIT_MS` | 5000 | Шаг 2 ждёт, пока самолёт переставят, — или столько (носовое колесо: та же поза) |
+| `CAL_STEP_TIMEOUT_MS` | 60 000 | Не замер за это время — калибровка отменяется (ошибка) |
+| `CAL_TAIL_PARK_MIN/MAX_DEG` | 3 / 25 | Хвостовое колесо: стояночный тангаж в этих пределах, иначе ошибка («хвост не опустили») |
+| `CAL_NOSE_PARK_MAX_DEG`, `CAL_PARK_MAX_ROLL_DEG` | 6, 10 | Носовое колесо: стоянка почти ровно; крен на стоянке — не больше |
+| `SIGNAL_MOTOR` / `SIGNAL_SURFACES` | `true` / `true` | Сигнал мотором (пауза импульсов ESC — регулятор играет мелодию готовности) и кивком рулей |
+| `SIGNAL_NOD_US`, `SIGNAL_NOD_MS` | 200, 150 | Кивок рулей высоты и направления: столько мкс вверх, потом вниз, по столько мс |
+| `SIGNAL_ESC_PAUSE_MS`, `SIGNAL_PERIOD_MS` | 1000, 3000 | Импульсы на ESC пропадают на столько; сигналы идут с таким периодом (мелодия успевает доиграть) |
+
 ### ARM
 
 | Константа | Значение | Смысл |
@@ -175,6 +191,9 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | Круги и дом | `LOITER_RADIUS_M` 50 (25…150), `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
 | Геозабор | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
 | Запуск с руки | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| Автовзлёт | `TAKEOFF_TRIGGER_US` 1500; проверка: `TAKEOFF_CHECK_MS` 1000, `_CHECK_TIMEOUT_MS` 5000, `TAKEOFF_PARK_PITCH/ROLL_TOL_DEG` 4/5, `TAKEOFF_UNCALIBRATED_TILT_DEG` 10; газ `TAKEOFF_THROTTLE_PCT` 100 за `TAKEOFF_THROTTLE_RAMP_MS` 2000; курс `TAKEOFF_HEADING_KP` 10, `TAKEOFF_YAW_RATE_KD` 2; `TAKEOFF_ROTATE_SPEED_MS` 11; отрыв `TAKEOFF_LIFTOFF_MS` 3000, `_LIFTOFF_ALT_M` 1, `_LIFTOFF_CONFIRM_MS` 500; набор `TAKEOFF_CLIMB_PITCH_DEG` 8 до `TAKEOFF_SAFE_ALTITUDE_M` 30 (без барометра — `TAKEOFF_CLIMB_MS` 15 000); прерывание: `TAKEOFF_ABORT_ROLL_DEG` 15, `_ABORT_HEADING_DEG` 30, `TAKEOFF_NOSE_DOWN_MS` 300, `TAKEOFF_GROUND_TIMEOUT_MS` 15 000; «только гироскоп»: `TAKEOFF_GYRO_ONLY_CLIMB/MAX/ABORT_MS` 5000/30 000/3000 |
+| Хвостовое колесо | `TD_TAIL_UP_ELEVATOR_US` 250 (руль от себя не больше), `TD_ROLL_PITCH_DEG` 1, `TD_PITCH_KP` 40 (хвост вверх), `TD_ROLL_PITCH_KP` 15 (разбег и отрыв), `TD_PITCH_KD` 3, `TD_TAIL_UP_DONE_DEG` 2, `TD_TAIL_UP_TIMEOUT_MS` 6000, `TD_ROLL_MS` 2500, `TD_ROTATE_RATE_DPS` 2, `TD_TAIL_CLEARANCE_DEG` 3, `TD_MIN_PITCH_DEG` −3 |
+| Носовое колесо | `TRI_ROLL_ELEVATOR_US` 0, `TRI_ROLL_MS` 3000, `TRI_ROTATE_RATE_DPS` 5, `TRI_MAX_GROUND_PITCH_DEG` 10 |
 | Посадка | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
 | Парение | `SOAR_*`: планирование −3°, термик > 0.5 м/с за 1.5 с, круг 25°, выход < −0.2 м/с за 8 с, мотор ниже 30 м до 100 м, домой дальше 400 м |
 | RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |

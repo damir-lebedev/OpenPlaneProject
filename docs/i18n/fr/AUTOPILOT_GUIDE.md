@@ -175,8 +175,23 @@ Cap sur le point de départ (le point de l’ARM), altitude `RTH_ALTITUDE_M` = 4
 **Il faut :** l’IMU + le baromètre + le GPS avec un point de départ.
 
 ### AUTO_TAKEOFF (TKOFF) — « décollage aux gaz »
-Après l’ARM, rien ne se passe tant que le pilote n’a pas poussé les gaz au-delà du milieu. Ensuite, le programme : 1 s d’accélération jusqu’à 100 % de gaz, ailes à plat ; 2 s de rotation avec un tangage de 15° ; puis une montée avec un tangage de 10° jusqu’à ce que le pilote change de mode. Les sticks s’ajoutent au programme : on peut redresser le cap pendant la course au décollage.
-**Il faut :** l’IMU.
+
+Décollage depuis une piste par étapes — selon ce que fait réellement l’avion, et non selon une minuterie. Quelle roue est directrice, une seule ligne le décide : `LANDING_GEAR` dans `Config.h` (par défaut `TAIL_WHEEL` : deux roues à l’avant, la roue directrice à l’arrière). Avant le premier décollage, faites la calibration au sol de l’avion (horizon et assiette au sol, voir [PILOT_GUIDE.md](PILOT_GUIDE.md)) ; sans elle, un avion à roulette de queue ne s’arme pas dans ce mode.
+
+1. **Attente.** Après l’ARM, le moteur reste arrêté tant que le pilote n’a pas poussé les gaz au-delà du milieu.
+2. **Contrôle.** L’avion reste immobile ~1 s et ses angles correspondent à l’assiette au sol (±4° en tangage, ±5° en roulis). Sinon, le moteur ne démarre pas, la raison part dans la console et les gouvernes hochent trois fois : pas sur ses roues, pente, roue cassée, carte déplacée.
+3. **Queue en l’air** (roulette de queue). Les gaz montent en douceur jusqu’à 100 % en 2 s, la profondeur est **à piquer** (stick vers l’avant) — le souffle de l’hélice soulève la queue ; plus l’avion se met à l’horizontale, plus le braquage diminue, et sous la cible la profondeur cabre pour que l’avion ne bascule pas sur l’hélice.
+4. **Course à plat.** Sur les roues principales à +1° de tangage : la roulette de queue est en l’air et ne porte rien. La direction et la roue tiennent le cap d’après le gyroscope.
+5. **Rotation.** La cible de tangage monte à 2°/s, mais tant que le décollage n’est pas détecté, elle reste 3° sous l’assiette au sol : la queue ne peut pas toucher la piste, c’est l’aile qui fait décoller l’avion. La vitesse de rotation vient du tube de Pitot ou du GPS ; sans eux, elle est réputée atteinte après 2,5 s de course.
+6. **Montée.** Tangage +8°, ailes à plat, cap à la gouverne de direction — jusqu’à 30 m au-dessus du point de départ (sans baromètre, pendant 15 s).
+7. **Terminé.** L’avion tient le cap et l’altitude, les gaz sont automatiques — comme CRUISE (sans baromètre, vol à plat). Pour reprendre la main : changez de mode.
+
+Roulette de nez (`NOSE_WHEEL`) — sans « queue en l’air » : course avec la profondeur au neutre, à la vitesse de rotation le nez se lève à 5°/s, au plus de 10° près du sol.
+
+**Les gaz sont menés par le programme**, le manche des gaz ne sert qu’à « départ » et « interruption ». **Décollage interrompu** — moteur coupé, profondeur au neutre, ailes et cap tenus tant que l’avion roule : manche des gaz en bas, perte de liaison sur la piste, panne de l’IMU, roulis au-delà de 15°, écart de cap au-delà de 30°, nez 3° sous l’horizon, queue toujours basse au bout de 6 s, pas de décollage au bout de 15 s. Nouvel essai : gaz en bas une seconde, puis de nouveau en haut. Après le décollage, le manche des gaz n’interrompt plus rien — à 2 m de hauteur, le moteur ne doit pas s’arrêter. Une perte de liaison pendant la montée est le failsafe habituel ; si la liaison revient, la montée continue.
+
+Pendant la course, seul le gyroscope mène les angles : l’accéléromètre prend l’accélération vers l’avant pour un nez levé (0,5 g donnent +27°). Le zéro du gyroscope est affiné lors du contrôle avant le départ. Les sticks s’ajoutent au programme, la force des lois de décollage suit le potentiomètre `STAB_GAIN`. En simulation avec un modèle de train d’atterrissage, la charge sur la roulette de queue après le démarrage du moteur ne dépasse jamais la charge à l’arrêt, ni l’hélice ni la queue ne touchent la piste, le cap s’écarte de moins de 10° et les 30 m sont atteints.
+**Il faut :** l’IMU ; le baromètre, le tube de Pitot ou le GPS l’améliorent (décollage et altitude d’après les capteurs plutôt que d’après le temps).
 
 ### LAUNCH (LNCH) — « lancement à la main »
 1. L’appareil est armé, les gaz au-delà du milieu : le lancement est **en attente**, le moteur est arrêté.
@@ -245,6 +260,7 @@ Le centre du potentiomètre = valeur par défaut de `Config.h` ; les extrémité
 | Situation | Ce que fait l’appareil |
 |---|---|
 | au sol (non armé) | moteur 0, gouvernes au neutre ; au bout de 10 s — le buzzer |
+| sur la piste en AUTO_TAKEOFF, avant le décollage | décollage interrompu : moteur coupé, gouvernes au neutre (pas de RTH depuis la piste) |
 | en vol, GPS et point de départ disponibles | **RTH** avec moteur, au-dessus du point de départ — des cercles à 40 m |
 | en vol, pas de GPS | **plané** : moteur coupé, ailes à plat, nez −3° |
 | la liaison est revenue | aussitôt le mode de l’interrupteur du pilote |
@@ -301,7 +317,7 @@ L’ARM/DISARM depuis le sol est **refusé** : uniquement par l’interrupteur 
 ## Ordre de réglage d’un nouvel avion
 
 1. **MANUAL au sol :** sens des gouvernes, du moteur et des volets (le bloc « Inversion » de `Config.h`), volets vers le bas, AUX. Contrôle des sorties avec `p` dans la console (hélice retirée !).
-2. **Capteurs au sol :** `b` : interrogation des bus ; `s` : état ; `o` : calibration du montage de l’IMU (3 positions, une seule fois) ; `m` : boussole.
+2. **Capteurs au sol :** `b` : interrogation des bus ; `s` : état ; `o` : calibration du montage de l’IMU (3 positions, une seule fois), puis la calibration au sol de l’avion (SwB trois fois en bas et en haut sans ARM, ou `c`) ; `m` : boussole.
 3. **STABILIZE au sol :** inclinez l’avion vers la droite : l’aileron droit doit aller **vers le bas** (pour redresser). Nez en haut : gouverne de profondeur vers le bas. Sinon, les inversions ou le montage de l’IMU sont faux.
 4. **Premier vol en MANUAL**, montée à plus de 50 m → STABILIZE. Si ça oscille, `STAB_GAIN` plus petit ; si c’est mou, plus grand.
 5. **AUTO_TRIM** en vol en palier pendant 20–30 s, atterrissage, DISARM : le trim sera enregistré.
@@ -313,6 +329,7 @@ L’ARM/DISARM depuis le sol est **refusé** : uniquement par l’interrupteur 
 
 - [ ] La disposition affichée à la mise sous tension est celle que vous attendez.
 - [ ] Console/OLED : IMU ok, le contrôle avant vol de l’IMU est réussi (l’avion était immobile à la mise sous tension).
+- [ ] La calibration au sol de l’avion est faite : à la mise sous tension, le journal affiche « стоянка на колёсах — тангаж … » (« au sol sur les roues — tangage … ») ; sans elle, AUTO_TAKEOFF avec roulette de queue ne s’arme pas.
 - [ ] Le baromètre est mis à zéro au sol (altitude ~0 sur l’OLED).
 - [ ] Avec un tube de Pitot : vitesse ~0 au sol ; si vous soufflez dans le tube, elle augmente.
 - [ ] GPS : fix 3D, ≥ 6 satellites **avant l’ARM** ; sinon, pas de point de départ ni de RTH.
@@ -333,7 +350,7 @@ L’ARM/DISARM depuis le sol est **refusé** : uniquement par l’interrupteur 
 | CRUISE | ● | ● | ○ | ○ | ○ | auto | cap au gyroscope (dérive), altitude au pilote |
 | LOITER | ● | ● | ● | | ○ | auto | cercle incliné sur place |
 | RTH | ● | ● | ● | | ○ | auto | cercles sur place |
-| AUTO_TAKEOFF | ● | | | | | programme | gouvernes = sticks + gaz du pilote |
+| AUTO_TAKEOFF | ● | ○ | ○ | | ○ | programme | sans IMU, pas d’ARM ; sans baromètre, décollage et montée selon le temps |
 | LAUNCH | ● | ○ | | | | programme | gouvernes au neutre |
 | AUTO_LAND | ● | ● | | ○ | | 0 | sans arrondi |
 | SOARING | ● | ● | ○ | | ○ | 0 / moteur | sans thermiques — plané |

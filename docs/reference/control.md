@@ -39,6 +39,7 @@ ESC её вместе с `motorReverse` переводит `FlightOutputs` (че
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
 | `bool motorReverse` | `false` — мотор вперёд |
+| `bool escPulsesOff` | `false`; `true` — импульсов на ESC нет вовсе (сигнал мотором, только без ARM) |
 | `aux1` | `PAYLOAD_CLOSED_US` — сброс груза закрыт |
 | `aux2` | `PWM_CENTER` — камера |
 
@@ -188,10 +189,10 @@ ARM отдельным тумблером SwA (CH5). Автомат — в
 | `explicit FlightOutputs(IBoard& board)` | |
 | `bool begin()` | `attach(PWM_MIN, PWM_MAX)` каждого выхода, печать статуса и типа ESC; `true`, если все **обязательные** получили канал |
 | `bool isAttached(uint8_t ch) const` | Выход подключён (индекс вне диапазона → `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Импульс на пине выхода: поле по таблице, у ESC — через `EscSignal::pulseUs(throttle, motorReverse)` |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Импульс на пине выхода: поле по таблице, у ESC — через `EscSignal::pulseUs(throttle, motorReverse)`, при `escPulsesOff` — 0 |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | Измеренный импульс против ожидаемого на каждом разведённом пине; «OK» при расхождении ≤ 15 мкс |
-| `void write(const FlightOutputState&)` | Записать все выходы и запомнить состояние |
+| `void write(const FlightOutputState&)` | Записать все выходы и запомнить состояние; ESC при `escPulsesOff` — `IServoOutput::stopPulses()` |
 | `void setFailsafe()` | Нейтраль рулей (`FAILSAFE_*`), газ `FAILSAFE_THROTTLE` (на пине двунаправленного ESC — 1500); AUX — как были (груз не сбрасывается от потери связи) |
 | `void setBuzzer(bool on)` | пищалка платы (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | Последнее записанное состояние |
@@ -204,7 +205,7 @@ ARM отдельным тумблером SwA (CH5). Автомат — в
 ## `FlightController`
 
 **Файл:** `control/FlightController.h` · **Слой:** COORDINATION ·
-**Зависит от:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
+**Зависит от:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 Единственный координатор цикла управления: сам не парсит UART, не трогает
 PWM, не считает микшер — только вызывает остальных в правильном порядке.
@@ -225,6 +226,9 @@ PWM, не считает микшер — только вызывает оста
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | Тумблеры и крутилки этого такта |
 | `bool isLostModelBeeping() const` | Пищалка «я здесь» работает |
 | `const MotorReverse& getMotorReverse() const` | Направление мотора и ожидающий реверс |
+| `void toggleGroundCalibration()` | Консоль `c`: калибровка самолёта на земле — запустить (только без ARM), идёт — отменить |
+| `void playSignal(uint8_t count)` | Консоль `e`: сигнал (без ARM — и мотором) |
+| `const GroundCalibration& getCalibration() const`, `const SignalPlayer& getSignals() const` | Для OLED, лога и чёрного ящика |
 
 Порядок `update()`:
 
@@ -236,24 +240,32 @@ PWM, не считает микшер — только вызывает оста
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → плавно, при потере связи — 0;
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)` — **всегда**; в
    реверсе вместо `pilotThrottle` — `PWM_MIN` (для автопилота мотор выключен);
-6. пищалка: `Beeper::update(BEEPER, armed, failsafe, now)`;
+6. калибровка: щелчок ARM во время неё — отмена; без ARM и при связи — жест
+   тумблером `CAL_SWITCH`; шаг `GroundCalibration::update()`; её сигналы и
+   сигнал отказа автовзлёта — в `SignalPlayer`; пищалка:
+   `Beeper::update(BEEPER, armed, failsafe, now)` или свет сигнала;
 7. связь потеряна → `applyLinkLoss()` и выход из такта;
-8. `arming.update(rc, false, reverse.armBlockReason(now))`, затем
-   `reverse.update(MOTOR_REVERSE, armed, now)` — на DISARM направление меняется
-   в том же такте;
-9. `command = autopilot->getCommand()` (или стики без автопилота), закрылки — свои;
+8. `arming.update(rc, false, причина)` — ARM нельзя, пока идёт калибровка или
+   звучит сигнал (и в такт, когда щелчок ARM отменил калибровку), иначе
+   `reverse.armBlockReason(now)`; затем `reverse.update(MOTOR_REVERSE, armed, now)`
+   — на DISARM направление меняется в том же такте;
+9. `command = autopilot->getCommand()` (или стики без автопилота), закрылки —
+   свои; кивок сигнала — к рулям высоты и направления;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     вперёд — `output.throttle = autopilot->applyThrottle(pilotThrottle)` с пределом
     `THROTTLE_LIMIT_PCT` × крутилка `Knob::THROTTLE_LIMIT`, назад — газ пилота с пределом
     `min(REVERSE_THROTTLE_LIMIT_PCT, передний предел)`; разрешённое растягивается
     на весь ход стика;
-11. не armed или `MOTOR_KILL` → `throttle = PWM_MIN` (последним);
+11. не armed или `MOTOR_KILL` → `throttle = PWM_MIN` (последним); без ARM
+    сигнал мотором — `escPulsesOff`;
 12. AUX1 — груз (`PAYLOAD_DROP`), AUX2 — камера (`Knob::CAMERA_TILT`, `CAMERA_STAB` вычитает тангаж); `AUX1_REVERSED`/`AUX2_REVERSED` зеркалят импульс;
 13. `outputs.write(output)`.
 
 `applyLinkLoss()`: если автопилот в failsafe (armed: RTH или планирование) —
 рули и газ по команде автопилота (закрылки плавно убираются, `MOTOR_KILL` и
-реверс глушат мотор, AUX — как были); иначе `outputs.setFailsafe()`.
+реверс глушат мотор, AUX — как были); иначе `outputs.setFailsafe()`, а пока
+звучит сигнал — нейтраль с кивком и паузой импульсов ESC (пульт положили —
+калибровка идёт).
 
 ---
 
@@ -265,3 +277,50 @@ PWM, не считает микшер — только вызывает оста
 |---|---|
 | `bool update(bool requested, bool armed, bool linkLost, uint32_t nowMs)` | состояние пищалки: 2 Гц, если `Feature::BEEPER` или «модель потеряна» (не заармлен, связи нет дольше `LOST_MODEL_BEEP_DELAY_MS`) |
 | `bool isLostModel() const` | режим «ищите меня в траве» |
+
+---
+
+## `GroundCalibration`
+
+**Файл:** `control/GroundCalibration.h` · **Зависит от:** `Config`, `RcChannelState`, `ImuSensor`, `ImuOrientation`
+
+Наземная калибровка самолёта: шаг 1 — хвост поднят, фюзеляж горизонтально
+(горизонт, `ImuOrientation::withLevel()`), шаг 2 — на колёсах (стояночный
+угол). Шаг засчитывается сам: неподвижность `CAL_STILL_MS`; шаг 2 ждёт, пока
+самолёт переставят, или `CAL_PARK_WAIT_MS`. Сохраняется только целиком
+(`ImuSensor::setGroundCalibration()`), после проверки стояночного угла для
+`LANDING_GEAR`. Не блокирует цикл.
+
+`Stage`: `IDLE`, `LEVEL`, `PARK`, `DONE`, `FAILED`.
+
+| Метод | Описание |
+|---|---|
+| `bool watchSwitch(const RcChannelState&, uint32_t nowMs)` | жест: тумблер `CAL_SWITCH` вниз-вверх `CAL_SWITCH_FLIPS` раз за `CAL_SWITCH_WINDOW_MS`, газ внизу; первый взгляд и газ не внизу — счёт заново |
+| `void forgetSwitch()` | ARM или нет связи — счёт заново |
+| `bool start(const ImuSensor*, uint32_t nowMs, const char* source)` | начать (сигнал 1); нет IMU или не умеет — ошибка (сигнал 3) |
+| `void cancel(const char* why)` | отмена без сигнала |
+| `void update(ImuSensor*, bool armed, bool signalBusy, uint32_t nowMs)` | шаг: ARM — отмена; пока звучит сигнал — не засчитывается; таймаут `CAL_STEP_TIMEOUT_MS` — ошибка |
+| `isActive()`, `getStage()`, `getStageSinceMs()`, `getFailure()`, `getParkPitch()`, `getParkRoll()` | состояние и итог |
+| `uint8_t takeSignal()` | сколько сигналов сыграть: 1 — начали / шаг 1, 2 — готово, 3 — ошибка (забирается один раз) |
+| `static const char* stageShort(Stage)` | `CAL1`, `CAL2`, `CALOK`, `CALER` — для OLED |
+
+---
+
+## `SignalPlayer`
+
+**Файл:** `control/SignalPlayer.h` · **Зависит от:** `Config`
+
+Сигналы пилоту — функция времени от старта серии. Один сигнал: кивок рулей
+высоты и направления (`SIGNAL_NOD_US` вверх, потом вниз, по `SIGNAL_NOD_MS`),
+без ARM — пауза импульсов ESC `SIGNAL_ESC_PAUSE_MS` (регулятор потом играет
+мелодию готовности), свет пищалки на время кивка; следующий — через
+`SIGNAL_PERIOD_MS`.
+
+| Метод | Описание |
+|---|---|
+| `void play(uint8_t count, uint32_t nowMs, bool motor)` | серия; `motor` — можно ли трогать ESC (и `SIGNAL_MOTOR`) |
+| `void stop()` | тишина |
+| `bool isBusy(uint32_t nowMs) const`, `uint8_t getCount(uint32_t nowMs) const` | серия звучит (ARM в это время запрещён) |
+| `bool escPulsesOff(uint32_t nowMs) const` | импульсы на ESC убрать сейчас |
+| `int16_t nodUs(uint32_t nowMs) const` | кивок рулей, мкс (`SIGNAL_SURFACES`) |
+| `bool light(uint32_t nowMs) const` | пищалка / светодиод на `PIN_BUZZER` |

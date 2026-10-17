@@ -81,8 +81,8 @@ Nos fakes comuns foi adicionado, para a STM32: `TwoWire(sda, scl)`, `setSDA/SCL`
 | Arquivo | O que é |
 |---|---|
 | `ChipEmulators.h` | LSM6DSV, ICM-45686 (com registradores indiretos IPREG), QMC6309, SPL06-001, BMP581, quadros NAV-PVT da u-blox: mapas de registradores em I2C ou SPI, com dados do "mundo" `World` (ângulos e velocidades, altitude, velocidade do ar, rumo, coordenadas), nos eixos do chip, levando em conta o `IMU_ROTATION_CW_DEG` |
-| `PlaneSim.h` | um modelo de avião de ~1,2 kg: uma massa pontual + rotação em rolagem/arfagem, CL(α) com estol, arrasto, empuxo, vento, térmicas, solo |
-| `SimHarness.h` | um laço fechado: rádio → quadro iBUS → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → deflexões das superfícies → `PlaneSim` → sensores (inclusive um tubo de Pitot sobre dois barômetros ruidosos). Uma trajetória em CSV com `OPENPLANE_SIM_DIR` |
+| `PlaneSim.h` | um modelo de avião de ~1,2 kg: uma massa pontual + rotação em rolagem/arfagem, CL(α) com estol, arrasto, empuxo, vento, térmicas, solo; trem de pouso com bequilha ou roda de nariz: o avião balança sobre as rodas principais, contam-se a carga na bequilha, as batidas da cauda e os toques da hélice, a guinada no solo com o torque da hélice e a roda direcional |
+| `SimHarness.h` | um laço fechado: rádio → quadro iBUS → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → deflexões das superfícies → `PlaneSim` → sensores (inclusive um tubo de Pitot sobre dois barômetros ruidosos). Uma trajetória em CSV com `OPENPLANE_SIM_DIR`; com `realisticImu`, o `AttitudeEstimator` real calcula os ângulos a partir da força específica: vê a aceleração na pista como a bordo |
 
 O `test/native/helpers/TestSupport.h` é o que os conjuntos têm em comum: `resetWorld()` (chamado de `setUp()`), os substitutos `FakeUart`/`FakeServo`/`FakeBoard` e dos sensores (`FakeImu`, `FakeBaro`, `FakeMag`, `FakeGps`), o montador de quadros `ibusFrame()`, as bancadas `I2cRig`/`SpiRig` (um driver sobre os `Esp32I2CBus`/`Esp32SpiBus` reais e um `*RegisterDevice` com um chip simulado).
 
@@ -94,21 +94,22 @@ Os testes da placa (`test_feedback`, `test_imu_orientation`) são portáteis: co
 
 | Conjunto | Testes | O que verifica |
 |---|---|---|
-| `native/test_hal` | 17 | Os auxiliares de `II2CBus` (NACK, leitura curta — o buffer não é tocado), `I2cRegisterDevice`, `SpiRegisterDevice` (bit de leitura, byte fictício do BMP388), `Esp32I2CBus` (timeout de 5 ms), `Esp32SpiBus` (modos 0–3), `Esp32UartPort` (8N1, pinos), `Esp32ServoOutput` (50 Hz/14 bits, limitação do pulso, falha do LEDC, medição pelo buffer de entrada), `Esp32Board` (barramentos, UART, ordem dos canais, AUX, buzzer) |
+| `native/test_hal` | 18 | Os auxiliares de `II2CBus` (NACK, leitura curta — o buffer não é tocado), `I2cRegisterDevice`, `SpiRegisterDevice` (bit de leitura, byte fictício do BMP388), `Esp32I2CBus` (timeout de 5 ms), `Esp32SpiBus` (modos 0–3), `Esp32UartPort` (8N1, pinos), `Esp32ServoOutput` (50 Hz/14 bits, limitação do pulso, falha do LEDC, medição pelo buffer de entrada), `Esp32Board` (barramentos, UART, ordem dos canais, AUX, buzzer); “sem pulsos” (`stopPulses()`) para o sinal do motor |
 | `native/test_rc` | 16 | `RcChannelState`, `RcInput`, análise do iBUS: quadros que chegam em pedaços, CRC, valores de 12 bits, failsafe do rádio, timeout de 500 ms (inclusive com o estouro de `micros()`), lixo, ressincronização |
-| `native/test_control` | 26 | Flaps (velocidade, primeira chamada, pausas), o mixer (sinais, reversão, flaperons), acelerador, a máquina de estados do ARM e as verificações dos sensores dos modos, a tabela de saídas e a autoverificação dos pulsos, pulso do ESC bidirecional, reversão do motor só em DISARM e ARM bloqueado depois de trocar o sentido, auxiliares de reversão (espelho do pulso, canal ao contrário, motor ao contrário) |
-| `native/test_autopilot` | 22 | PID (termo D a partir da taxa do sensor, integral, anti-windup, `dt`), STABILIZE como modo de ângulos, decolagem automática por tempo, ALT_HOLD com o profundor, planeio na perda de sinal |
+| `native/test_control` | 26 | Flaps (velocidade, primeira chamada, pausas), o mixer (sinais, reversão, flaperons), acelerador, a máquina de estados do ARM e as verificações dos sensores dos modos, a tabela de saídas e a autoverificação dos pulsos, pulso do ESC bidirecional, reversão do motor só em DISARM e ARM bloqueado depois de trocar o sentido, auxiliares de reversão (espelho do pulso, canal ao contrário, motor ao contrário); AUTO_TAKEOFF com bequilha só com a calibração do trem |
+| `native/test_autopilot` | 22 | PID (termo D a partir da taxa do sensor, integral, anti-windup, `dt`), STABILIZE como modo de ângulos, decolagem automática (motor parado até a partida, acelerador do programa, DISARM), ALT_HOLD com o profundor, planeio na perda de sinal, perda de sinal na subida — a subida continua |
 | `native/test_autopilot_modes` | 31 | Os 12 modos e a reação de cada um à falta de um sensor, a tabela de atribuições e `static_assert`, funções e potenciômetros, navegação (rumo, círculo, ponto de origem, geofence), failsafe RTH/planeio, lançamento manual, voo planado (soaring), auto-trim (gravação só no solo) |
-| `native/test_flight_controller` | 15 | Um ciclo completo do `FlightController` com as classes reais: prioridades perda de sinal > ARM > sticks/piloto automático > acelerador; AUX, `MOTOR_KILL`, buzzer; reversão na SwD: só em DISARM, 3 s sem ARM, 50% de acelerador para trás, sem acelerador do piloto automático, o motor para na perda de link; o potenciômetro de limite de acelerador estica o permitido por todo o curso do stick |
+| `native/test_flight_controller` | 20 | Um ciclo completo do `FlightController` com as classes reais: prioridades perda de sinal > ARM > sticks/piloto automático > acelerador; AUX, `MOTOR_KILL`, buzzer; reversão na SwD: só em DISARM, 3 s sem ARM, 50% de acelerador para trás, sem acelerador do piloto automático, o motor para na perda de link; o potenciômetro de limite de acelerador estica o permitido por todo o curso do stick; calibração em solo pelo gesto da SwB e pelo console, sinais nas saídas (aceno das superfícies; os pulsos do ESC somem só sem ARM), ARM bloqueado durante a calibração e o sinal, um movimento do ARM cancela a calibração, uma recusa da decolagem acena sem mexer no ESC, o sinal toca também sem link |
 | `native/test_imu` | 21 | MPU6050/6500/9250 e ICM-42688: identificação, registradores, escalas, rotação dos eixos e sinais aeronáuticos, erros de barramento, calibração do giroscópio e verificação pré-voo, calibração da instalação a partir de três posições, NVS, filtro de orientação |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`, BMP388 por I2C e SPI, BME280/BMP280 conforme a referência da Bosch, bússolas (rumo, calibração hard-iron no NVS), u-blox M10 (CFG-VALSET, NAV-PVT, quadros corrompidos, timeout), `SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV (16X/32X, endereço alternativo, SPI), ICM-45686 (registradores indiretos), QMC6309, SPL06-001 (fórmulas do datasheet), BMP581 (DRDY e o caminho reserva), o tubo de Pitot (zero, filtro, densidade, mangueiras trocadas, dados desatualizados, um “voo” com o ruído de dois barômetros) |
 | `native/test_storage` | 16 | `KeyValueStore` (recarga, desgaste — um valor idêntico não é regravado, estouro sem perda de dados, CRC, falta de energia durante o apagamento, lixo, versão do formato), `KvPreferences` (comportamento como o NVS do ESP32) |
 | `native/test_mavlink` | 20 | O codec contra quadros de referência do pymavlink (v1, v2, assinado), CRC, ressincronização; telemetria: frequências dos fluxos, HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS, parâmetros do PID (lista, leitura, gravação, recusa de valores ruins), troca de modo a partir do solo, ARM a partir do solo — recusado, missões — 0, um buffer de UART cheio não trava o laço |
-| `native/test_blackbox` | 19 | A caixa-preta: formato e CRC, o anel de setores sobre um fake de NOR (partição nova sem apagamento, lixo é sempre apagado, voos antigos são apagados inteiros e só para liberar espaço, o último nunca é tocado, volta ao fim do anel, a cabeça após a reinicialização, falta de energia, um registro escrito pela metade detectado pelo CRC), gravação do voo com os `FlightController`/`Autopilot` reais: início por ARM e acelerador com pré-gravação, parada após o DISARM e “parado no solo”, a perda de sinal não a interrompe, gravação após uma reinicialização com falha, início manual, eventos, bateria, a flash acabou no ar, um voo mais longo que a partição, download em quadros com CRC e troca de velocidade, o menu do console `k`, sem partição — desativada |
+| `native/test_blackbox` | 20 | A caixa-preta: formato e CRC, o anel de setores sobre um fake de NOR (partição nova sem apagamento, lixo é sempre apagado, voos antigos são apagados inteiros e só para liberar espaço, o último nunca é tocado, volta ao fim do anel, a cabeça após a reinicialização, falta de energia, um registro escrito pela metade detectado pelo CRC), gravação do voo com os `FlightController`/`Autopilot` reais: início por ARM e acelerador com pré-gravação, parada após o DISARM e “parado no solo”, a perda de sinal não a interrompe, gravação após uma reinicialização com falha, início manual, eventos, bateria, a flash acabou no ar, um voo mais longo que a partição, download em quadros com CRC e troca de velocidade, o menu do console `k`, sem partição — desativada; eventos da calibração em solo e das etapas da decolagem automática |
 | `native/test_blackbox_scan` | 3 | A verificação por amostragem do anel na inicialização contra a completa: 300 históricos aleatórios do anel × 5 passos de sondagem (a cabeça, os números e a lista de voos coincidem, e quando o quadro não fecha, cede à verificação completa) e o custo em uma área de SD de 64 MB (≈530 leituras em vez de 32 mil) |
-| `native/test_telemetry` | 28 | `LoopStats`, `LogSettings` (NVS, versão), `DebugLogger` (todos os canais, NAV), `DebugConsole` (menu, teclas de atalho, sondagem dos barramentos `b`, proibida com ARM, salvamento só sem ARM), `WebDebugServer` (rotas, JSON, caixa de correio), `OledDisplay` (bytes por I2C, quadro, inversão na perda de sinal) |
-| `native/test_sim` | 15 | Voos em malha fechada de todo o firmware com o modelo do avião: recuperação de uma inclinação lateral, CRUISE com vento de través, LOITER, RTH, failsafe RTH/planeio, geofence, decolagem automática de uma pista, lançamento manual, pouso automático, uma térmica, RESCUE a partir de uma espiral, manutenção da velocidade e proteção contra estol, um tubo de Pitot real na malha, auto-trim de um avião “torto”, falhas de sensores em voo (IMU, barômetro, tubo de Pitot, GPS) |
+| `native/test_telemetry` | 30 | `LoopStats`, `LogSettings` (NVS, versão), `DebugLogger` (todos os canais, NAV), `DebugConsole` (menu, teclas de atalho, sondagem dos barramentos `b`, proibida com ARM, salvamento só sem ARM), `WebDebugServer` (rotas, JSON, caixa de correio), `OledDisplay` (bytes por I2C, quadro, inversão na perda de sinal); calibração `c` e sinal `e` no console, etapa da decolagem na linha de log `AP`, passo da calibração e etapa da decolagem no OLED |
+| `native/test_sim` | 18 | Voos em malha fechada de todo o firmware com o modelo do avião: recuperação de uma inclinação lateral, CRUISE com vento de través, LOITER, RTH, failsafe RTH/planeio, geofence, decolagem automática com bequilha (carga na bequilha nunca acima da carga parada, nem a hélice nem a cauda tocam a pista, um filtro de ângulos honesto; com e sem barômetro), com roda de nariz, uma decolagem abortada pelo acelerador, lançamento manual, pouso automático, uma térmica, RESCUE a partir de uma espiral, manutenção da velocidade e proteção contra estol, um tubo de Pitot real na malha, auto-trim de um avião “torto”, falhas de sensores em voo (IMU, barômetro, tubo de Pitot, GPS) |
+| `native/test_takeoff` | 23 | Decolagem automática e calibração em solo do avião: horizonte a partir da posição “cauda levantada” e atitude em solo (`ImuOrientation`), filtro de ângulos sem acelerômetro na corrida, calibração do trem na flash de um `ImuSensorBase` real (horizonte depois de ligar sobre as rodas, `o` apaga a atitude em solo, refino do zero do giroscópio), `GroundCalibration` (dois passos, verificação dos ângulos, cancelamento, gesto na chave), `SignalPlayer`, etapas do `TakeoffController` para bequilha e roda de nariz, leis das superfícies, decolagem abortada (acelerador, link, falha do IMU, rolagem, rumo, nariz, cauda, sem decolar), sem barômetro por tempo, a janela “só giroscópio” |
 | `native/test_feedback_units` | 14 | Os módulos de realimentação um a um: fontes de velocidade, no ar/no solo, a estimativa RLS, o controlador, sinais de estol, cancelamentos da decolagem e do pouso |
 | `native/test_app` | 10 | `src/main.cpp` no ESP32-S3 com o kit de bancada MPU6500/BMP581/QMC5883P/OLED: período do `loop()`, rádio → servos, ARM, modos, perda de sinal, console, dashboard, tela, caixa-preta (uma tarefa no núcleo 0, gravação com o acelerador, voo após o DISARM, `bb list`) |
 | `native/test_app_lsm6dsv_pitot` | 9 | `src/main.cpp` no ESP32-S3 com o kit de voo: LSM6DSV + QMC6309 + SPL06 + BMP581 no tubo + GPS — identificação de todos os chips, zero do tubo e velocidade, altitude, ponto de origem pelo GPS, STABILIZE pelos ângulos do chip, RTH até o ponto de origem, sondagem dos barramentos, dashboard; a SwD (reversão) não atua em voo até o DISARM |
@@ -117,10 +118,10 @@ Os testes da placa (`test_feedback`, `test_imu_orientation`) são portáteis: co
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743 com o ICM-45686 e o BMP581 **por SPI** + QMC6309: flash corrompida na inicialização, ALT_HOLD a partir da GCS mantém a altitude, perda de sinal → RTH, visível no MAVLink; regravação de uma imagem danificada |
 | `native_stm32/test_blackbox_sd` | 29 | A caixa-preta no cartão SD: FAT32 (com e sem MBR, um diretório em dois clusters, entradas de ruído, um volume alheio/fragmentado/vazio), `SdFileRegion` (blocos incompletos, cache, apagamento, limites, falhas), o driver real `Stm32SdCard` sobre um `HAL_SD` falso (4 bits, velocidades reserva, nova tentativa, cartão ocupado, buffers desalinhados), o anel no cartão (reinicialização, falta de energia, custo da verificação), a marca “anel vazio”, gravação do voo em um `FlightController`, uma reinicialização com falha detectada por `RCC->RSR`, o ADC da bateria, erros do cartão em voo, um cartão lento, download pelo console, a tecla `D` |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | `src/stm32/main.cpp` com cartão: a inicialização encontra o cartão e o arquivo, a tarefa `bbox` grava o voo, o período do ciclo não se alonga, `bb list` |
-| `native_stm32/test_app_stm32_no_sd` | 2 | `src/stm32/main.cpp` sem cartão: a caixa-preta fica desativada e explica o motivo, o avião voa, o menu `k` não quebra |
+| `native_stm32/test_app_stm32_no_sd` | 3 | `src/stm32/main.cpp` sem cartão: a caixa-preta fica desativada e explica o motivo, o avião voa, o menu `k` não quebra; autoverificação das saídas no PD14 (contorno do bug do `pulseIn()` do core), sinal do motor `e` |
 | `test_feedback` | 10 | Simulação do avião em malha fechada com o laço de realimentação (no PC e na placa) |
 | `test_imu_orientation` | 5 | Calibração da instalação da IMU em 300 instalações aleatórias (no PC e na placa) |
-| **Total** | **395** | 348 em `native` + 47 em `native-stm32` (mais 9 só na placa — `test_blackbox_sd`) |
+| **Total** | **431** | 383 em `native` + 48 em `native-stm32` (mais 9 só na placa — `test_blackbox_sd`) |
 
 ### Testes na placa STM32
 
@@ -167,18 +168,19 @@ Para gravar: `pio run -d test/bench/elevator_sweep -t upload`. Para voltar ao fi
 
 | Camada | Linhas | Ramificações |
 |---|---|---|
-| `autopilot` | 920/943 (97,6%) | 645/731 (88,2%) |
-| `autopilot/feedback` | 683/702 (97,3%) | 501/570 (87,9%) |
-| `control` | 252/256 (98,4%) | 171/189 (90,5%) |
-| `hal` | 98/102 (96,1%) | 26/26 (100%) |
-| `hal/esp32` | 101/102 (99,0%) | 21/22 (95,5%) |
-| `hal/stm32` | 149/158 (94,3%) | 35/52 (67,3%) |
-| `rc` | 92/92 (100%) | 41/42 (97,6%) |
-| `sensors` (todos) | 1444/1446 (99,9%) | 716/835 (85,7%) |
-| `storage` | 220/220 (100%) | 158/178 (88,8%) |
-| `telemetry` | 1413/1440 (98,1%) | 1123/1269 (88,5%) |
-| `src` (`main.cpp`, `stm32/main.cpp`) | 118/123 (95,9%) | 20/29 (69,0%) |
-| **Total** | **5490/5584 (98,3%)** | **3457/3943 (87,7%)**; funções 877/902 (97,2%) |
+| `autopilot` | 1328/1395 (95,2%) | 921/1039 (88,6%) |
+| `autopilot/feedback` | 682/713 (95,7%) | 502/571 (87,9%) |
+| `config` | 2/2 (100%) | 2/2 (100%) |
+| `control` | 561/584 (96,1%) | 438/469 (93,4%) |
+| `hal` | 238/301 (79,1%) | 130/168 (77,4%) |
+| `hal/esp32` | 117/148 (79,1%) | 32/38 (84,2%) |
+| `hal/stm32` | 241/288 (83,7%) | 115/144 (79,9%) |
+| `rc` | 93/100 (93,0%) | 44/46 (95,7%) |
+| `sensors` (todos) | 1533/1625 (94,3%) | 835/994 (84,0%) |
+| `storage` | 350/364 (96,2%) | 275/334 (82,3%) |
+| `telemetry` | 2775/2920 (95,0%) | 2082/2464 (84,5%) |
+| `src` (`main.cpp`, `stm32/main.cpp`) | 145/150 (96,7%) | 26/32 (81,2%) |
+| **Total** | **8065/8590 (93,9%)** | **5402/6301 (85,7%)**; funções 1204/1245 (96,7%) |
 
 O que continua sem cobertura e por quê:
 
@@ -186,7 +188,8 @@ O que continua sem cobertura e por quê:
 - **Dependente da placa:** uma saída sem pino (`PIN_RUDDER = -1` só ocorre na C3), GPS sem pino TX (C3) — os testes nativos exercitam a pinagem da S3, da de 38 pinos e da STM32, mas não a da C3 (a C3 é verificada pela matriz de builds).
 - **STM32:** os ramos de erro do núcleo (não há timer no pino, o conjunto de timers se esgotou), a mensagem `FreeRTOS не запустился` (“o FreeRTOS não iniciou”) — no PC o `vTaskStartScheduler()` sempre retorna.
 - **Ramos defensivos** que não dá para alcançar pela API pública: `default`/`Count` em um `switch` sobre enumerações, `return "?"`.
-- Arquivos sem linhas executáveis (`Config.h`, `Channels.h`, `FeedbackConfig.h`, as estruturas `ControlCommand`/`FlightOutputState`/`FlightSnapshot`/`FeedbackOutput`/`PhaseTargets`, as macros do `SensorSelection.h`, o HTML do dashboard) não aparecem no relatório — eles são compilados nos testes, mas o gcov não tem o que contar neles.
+- **Destrutores e implementações padrão das interfaces** (`IBoard`, `IUartPort`, `ImuSensor` etc.) — todas as implementações os sobrescrevem, e com `-fkeep-inline-functions` o gcov conta também essas linhas.
+- Arquivos sem linhas executáveis (`Channels.h`, `FeedbackConfig.h`, as estruturas `ControlCommand`/`FlightOutputState`/`FlightSnapshot`/`FeedbackOutput`/`PhaseTargets`, as macros do `SensorSelection.h`, o HTML do dashboard) não aparecem no relatório — eles são compilados nos testes, mas o gcov não tem o que contar neles.
 
 ---
 

@@ -68,6 +68,15 @@ namespace
             tick(rc);
         }
 
+        // Стоит на колёсах, калибровка шасси есть (нос вверх на 10°).
+        void standOnWheels()
+        {
+            imu.park(10.0f);
+            imu.data.pitch = 10.0f;
+            imu.data.accelX = sinf(10.0f * 0.0174533f);
+            imu.data.accelZ = cosf(10.0f * 0.0174533f);
+        }
+
         uint16_t pwm(uint8_t channel) const { return board.servos[channel].lastUs; }
     };
 }
@@ -208,6 +217,7 @@ void test_autopilot_corrections_are_added_to_sticks_and_clamped()
 void test_takeoff_throttle_still_requires_arm()
 {
     Plane plane;
+    plane.standOnWheels();
     RcChannels rc;
     rc.set(Channels::SWC, 2000).set(Channels::THROTTLE, 1000);
     plane.tick(rc);
@@ -217,7 +227,11 @@ void test_takeoff_throttle_still_requires_arm()
     plane.tick(rc);
     TEST_ASSERT_TRUE(plane.controller.isArmed());
     rc.set(Channels::THROTTLE, 1600);
-    for (int i = 0; i < 600; ++i) plane.tick(rc);   // 1.2 с программы
+    // Проверка перед стартом — мотор стоит; потом разгон газа программы.
+    const int checkTicks = Config::TAKEOFF_CHECK_MS / 2 - 20;
+    for (int i = 0; i < checkTicks; ++i) plane.tick(rc);
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::PWM_MIN), plane.pwm(ServoChannel::ESC));
+    for (int i = 0; i < static_cast<int>(Config::TAKEOFF_THROTTLE_RAMP_MS / 2) + 60; ++i) plane.tick(rc);
     TEST_ASSERT_EQUAL_UINT16(escUs(cappedThrottleUs(2000)), plane.pwm(ServoChannel::ESC));   // 100% программы
 
     rc.set(Channels::ARM, 1000);   // DISARM — газ сразу в ноль, хотя режим хочет 100 %
@@ -335,6 +349,7 @@ void test_motor_reverse_switches_only_when_disarmed()
 void test_motor_reverse_ignores_autopilot_throttle_and_stops_on_link_loss()
 {
     Plane plane;
+    plane.standOnWheels();
     RcChannels rc;
     rc.set(Channels::SWD, 2000);
     plane.tick(rc);
@@ -401,6 +416,214 @@ void test_throttle_limit_knob_stretches_allowed_throttle_over_the_stick()
     TEST_ASSERT_EQUAL_UINT16(cappedThrottleUs(2000), thr());
 }
 
+// ------------------------------------------------------------
+// Наземная калибровка и сигналы
+// ------------------------------------------------------------
+
+namespace
+{
+    // Элерон/руль высоты: отклонение от нейтрали в физическом знаке (+ — вверх).
+    int elevatorNod(const Plane& plane)
+    {
+        const int d = static_cast<int>(plane.pwm(ServoChannel::ELEVATOR)) - 1500;
+        return Config::ELEVATOR_REVERSED ? -d : d;
+    }
+
+    // Тумблер калибровки вниз-вверх count раз (по 100 мс).
+    void flipCalibrationSwitch(Plane& plane, RcChannels& rc, int count)
+    {
+        for (int i = 0; i < count; ++i)
+        {
+            rc.set(Config::CAL_SWITCH, 2000);
+            for (int t = 0; t < 50; ++t) plane.tick(rc);
+            rc.set(Config::CAL_SWITCH, 1000);
+            for (int t = 0; t < 50; ++t) plane.tick(rc);
+        }
+    }
+
+    void ticks(Plane& plane, const RcChannels& rc, uint32_t ms)
+    {
+        for (uint32_t t = 0; t < ms; t += 2) plane.tick(rc);
+    }
+}
+
+void test_switch_gesture_starts_calibration_with_motor_and_surface_signal()
+{
+    Plane plane;
+    plane.imu.data.accelZ = 1.0f;   // стоит ровно
+    RcChannels rc;
+    plane.tick(rc);
+
+    flipCalibrationSwitch(plane, rc, Config::CAL_SWITCH_FLIPS - 1);
+    TEST_ASSERT_FALSE(plane.controller.getCalibration().isActive());
+
+    // Последний щелчок: вниз, а на возврате вверх — старт и сигнал.
+    rc.set(Config::CAL_SWITCH, 2000);
+    for (int t = 0; t < 50; ++t) plane.tick(rc);
+    rc.set(Config::CAL_SWITCH, 1000);
+    plane.tick(rc);
+    TEST_ASSERT_TRUE(plane.controller.getCalibration().isActive());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "Калибровка самолёта (пульт)"));
+    TEST_ASSERT_EQUAL_UINT8(1, plane.controller.getSignals().getCount(millis()));
+
+    // Мотор: импульсов на ESC нет (регулятор потом сыграет мелодию готовности).
+    TEST_ASSERT_TRUE(plane.board.servos[ServoChannel::ESC].pulsesOff);
+    TEST_ASSERT_EQUAL_UINT16(0, FlightOutputs::valueOf(plane.outputs.getLastState(), ServoChannel::ESC));
+    // Рули кивают: вверх, потом вниз; руль направления — тоже.
+    TEST_ASSERT_EQUAL_INT(Config::SIGNAL_NOD_US, elevatorNod(plane));
+    TEST_ASSERT_NOT_EQUAL(1500, plane.pwm(ServoChannel::RUDDER));
+    ticks(plane, rc, Config::SIGNAL_NOD_MS);
+    TEST_ASSERT_EQUAL_INT(-Config::SIGNAL_NOD_US, elevatorNod(plane));
+    ticks(plane, rc, Config::SIGNAL_NOD_MS);
+    TEST_ASSERT_EQUAL_INT(0, elevatorNod(plane));
+
+    // Пауза кончилась — импульсы снова, нейтраль (мотор стоит).
+    ticks(plane, rc, Config::SIGNAL_ESC_PAUSE_MS);
+    TEST_ASSERT_FALSE(plane.board.servos[ServoChannel::ESC].pulsesOff);
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::PWM_MIN), plane.pwm(ServoChannel::ESC));
+
+    // ARM во время калибровки: щелчок отменяет её, но сам не армит.
+    rc.set(Channels::ARM, 2000);
+    plane.tick(rc);
+    TEST_ASSERT_FALSE(plane.controller.getCalibration().isActive());
+    TEST_ASSERT_FALSE(plane.controller.isArmed());
+    TEST_ASSERT_TRUE(contains(plane.controller.getArming().getLastRefusalReason(), "отменена калибровка"));
+
+    // Сигнал ещё звучит — ARM нельзя; отзвучал — можно.
+    rc.set(Channels::ARM, 1000);
+    plane.tick(rc);
+    rc.set(Channels::ARM, 2000);
+    plane.tick(rc);
+    TEST_ASSERT_FALSE(plane.controller.isArmed());
+    TEST_ASSERT_TRUE(contains(plane.controller.getArming().getLastRefusalReason(), "звучит сигнал"));
+    rc.set(Channels::ARM, 1000);
+    ticks(plane, rc, Config::SIGNAL_PERIOD_MS);
+    rc.set(Channels::ARM, 2000);
+    plane.tick(rc);
+    TEST_ASSERT_TRUE(plane.controller.isArmed());
+
+    // С ARM жест не работает (и щелчки не копятся).
+    flipCalibrationSwitch(plane, rc, Config::CAL_SWITCH_FLIPS);
+    TEST_ASSERT_FALSE(plane.controller.getCalibration().isActive());
+}
+
+void test_full_ground_calibration_from_transmitter_enables_tail_wheel_takeoff()
+{
+    Plane plane;
+    plane.imu.data.accelZ = 1.0f;
+    RcChannels rc;
+    rc.set(Channels::SWC, 2000);   // AUTO_TAKEOFF
+    plane.tick(rc);
+
+    // Без калибровки шасси хвостовому колесу ARM в AUTO_TAKEOFF нельзя.
+    rc.set(Channels::ARM, 2000);
+    plane.tick(rc);
+    TEST_ASSERT_FALSE(plane.controller.isArmed());
+    TEST_ASSERT_TRUE(contains(plane.controller.getArming().getLastRefusalReason(), "нет калибровки шасси"));
+    rc.set(Channels::ARM, 1000);
+    plane.tick(rc);
+
+    flipCalibrationSwitch(plane, rc, Config::CAL_SWITCH_FLIPS);
+    TEST_ASSERT_TRUE(plane.controller.getCalibration().isActive());
+
+    // Шаг 1: хвост поднят — горизонтально, неподвижно.
+    ticks(plane, rc, Config::SIGNAL_PERIOD_MS + Config::CAL_STILL_MS + 100);
+    TEST_ASSERT_EQUAL(GroundCalibration::Stage::PARK, plane.controller.getCalibration().getStage());
+    TEST_ASSERT_EQUAL_UINT8(1, plane.controller.getSignals().getCount(millis()));
+
+    // Шаг 2: на колёса — нос вверх на 9°.
+    ticks(plane, rc, Config::SIGNAL_PERIOD_MS);
+    plane.imu.data.gyroY = 20.0f;
+    ticks(plane, rc, 200);
+    plane.imu.data.gyroY = 0.0f;
+    const float up[3] = { sinf(9.0f * 0.0174533f), 0.0f, cosf(9.0f * 0.0174533f) };
+    for (int i = 0; i < 3; ++i) plane.imu.chipUp[i] = up[i];
+    plane.imu.data.pitch = 9.0f;
+    plane.imu.data.accelX = up[0];
+    plane.imu.data.accelZ = up[2];
+    ticks(plane, rc, Config::CAL_STILL_MS + 100);
+    TEST_ASSERT_EQUAL(GroundCalibration::Stage::DONE, plane.controller.getCalibration().getStage());
+    TEST_ASSERT_EQUAL_UINT8(2, plane.controller.getSignals().getCount(millis()));
+    TEST_ASSERT_TRUE(plane.imu.parkingValid);
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 9.0f, plane.imu.parkingPitch);
+
+    // Отзвучало — ARM в AUTO_TAKEOFF разрешён.
+    ticks(plane, rc, 2 * Config::SIGNAL_PERIOD_MS);
+    rc.set(Channels::ARM, 2000);
+    plane.tick(rc);
+    TEST_ASSERT_TRUE(plane.controller.isArmed());
+}
+
+void test_takeoff_refusal_nods_surfaces_but_leaves_esc_alone()
+{
+    Plane plane;
+    plane.standOnWheels();
+    RcChannels rc;
+    rc.set(Channels::SWC, 2000);
+    plane.tick(rc);
+    rc.set(Channels::ARM, 2000);
+    plane.tick(rc);
+    TEST_ASSERT_TRUE(plane.controller.isArmed());
+
+    plane.imu.data.pitch = 1.0f;   // стоит не как на калибровке
+    rc.set(Channels::THROTTLE, 1600);
+    ticks(plane, rc, Config::TAKEOFF_CHECK_MS + 100);
+    TEST_ASSERT_EQUAL(TakeoffController::Stage::ABORTED, plane.autopilot.getTakeoffStage());
+    TEST_ASSERT_EQUAL_UINT8(3, plane.controller.getSignals().getCount(millis()));
+    TEST_ASSERT_EQUAL_UINT32(0u, plane.board.servos[ServoChannel::ESC].stops);   // заармлено — ESC не трогаем
+
+    // Кивок следующего сигнала виден на руле высоты.
+    bool nodded = false;
+    for (uint32_t t = 0; t < Config::SIGNAL_PERIOD_MS; t += 2)
+    {
+        plane.tick(rc);
+        nodded = nodded || elevatorNod(plane) == Config::SIGNAL_NOD_US;
+    }
+    TEST_ASSERT_TRUE(nodded);
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::PWM_MIN), plane.pwm(ServoChannel::ESC));
+}
+
+void test_signal_plays_on_without_link()
+{
+    Plane plane;
+    RcChannels rc;
+    plane.tick(rc);
+    plane.controller.playSignal(2);
+    // Пульт выключили: кадров нет, но сигнал звучит — второй кивок и пауза ESC.
+    for (uint32_t t = 0; t < Config::SIGNAL_PERIOD_MS; t += 2) plane.tickWithoutFrame();
+    TEST_ASSERT_TRUE(plane.controller.isReceiverFailsafe());
+    TEST_ASSERT_EQUAL_INT(Config::SIGNAL_NOD_US, elevatorNod(plane));
+    TEST_ASSERT_TRUE(plane.board.servos[ServoChannel::ESC].pulsesOff);
+
+    // Отзвучал — обычный failsafe: нейтраль, мотор стоит.
+    for (uint32_t t = 0; t < Config::SIGNAL_PERIOD_MS; t += 2) plane.tickWithoutFrame();
+    TEST_ASSERT_EQUAL_INT(0, elevatorNod(plane));
+    TEST_ASSERT_FALSE(plane.board.servos[ServoChannel::ESC].pulsesOff);
+    TEST_ASSERT_EQUAL_UINT16(escUs(Config::FAILSAFE_THROTTLE), plane.pwm(ServoChannel::ESC));
+}
+
+void test_console_calibration_toggle()
+{
+    Plane plane;
+    plane.imu.data.accelZ = 1.0f;
+    RcChannels rc;
+    plane.tick(rc);
+    plane.controller.toggleGroundCalibration();
+    TEST_ASSERT_TRUE(plane.controller.getCalibration().isActive());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "Калибровка самолёта (консоль)"));
+    plane.controller.toggleGroundCalibration();
+    TEST_ASSERT_FALSE(plane.controller.getCalibration().isActive());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "отменена: из консоли"));
+
+    // Заармлено — нельзя.
+    ticks(plane, rc, Config::SIGNAL_PERIOD_MS);
+    plane.arm();
+    TEST_ASSERT_TRUE(plane.controller.isArmed());
+    plane.controller.toggleGroundCalibration();
+    TEST_ASSERT_FALSE(plane.controller.getCalibration().isActive());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "только без ARM"));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -419,5 +642,10 @@ int main()
     RUN_TEST(test_throttle_limit_knob_stretches_allowed_throttle_over_the_stick);
     RUN_TEST(test_motor_reverse_switches_only_when_disarmed);
     RUN_TEST(test_motor_reverse_ignores_autopilot_throttle_and_stops_on_link_loss);
+    RUN_TEST(test_switch_gesture_starts_calibration_with_motor_and_surface_signal);
+    RUN_TEST(test_full_ground_calibration_from_transmitter_enables_tail_wheel_takeoff);
+    RUN_TEST(test_takeoff_refusal_nods_surfaces_but_leaves_esc_alone);
+    RUN_TEST(test_signal_plays_on_without_link);
+    RUN_TEST(test_console_calibration_toggle);
     return UNITY_END();
 }

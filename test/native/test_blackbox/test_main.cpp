@@ -702,6 +702,60 @@ void test_events_mode_sensors_gps_and_features()
     TEST_ASSERT_TRUE(countType(recs, REC_NAV) >= 3);
 }
 
+// Наземная калибровка и этапы автовзлёта — события в ящике, этап — в NAV.
+void test_events_ground_calibration_and_takeoff_stages()
+{
+    Rig rig;
+    rig.box.requestManualStart();
+    rig.tick();
+
+    // Калибровка с пульта: SwB вниз-вверх; шаг 1 — ровно.
+    for (int i = 0; i < Config::CAL_SWITCH_FLIPS; ++i)
+    {
+        rig.rc.set(Config::CAL_SWITCH, 2000);
+        rig.run(100);
+        rig.rc.set(Config::CAL_SWITCH, 1000);
+        rig.run(100);
+    }
+    rig.run(Config::SIGNAL_PERIOD_MS + Config::CAL_STILL_MS + 100);
+    // Шаг 2 — на колёсах, нос вверх на 10°.
+    rig.run(Config::SIGNAL_PERIOD_MS);
+    rig.imu.data.gyroY = 20.0f;
+    rig.run(200);
+    rig.imu.data.gyroY = 0.0f;
+    const float s10 = sinf(10.0f * 0.0174533f), c10 = cosf(10.0f * 0.0174533f);
+    rig.imu.chipUp[0] = s10;
+    rig.imu.chipUp[2] = c10;
+    rig.imu.data.pitch = 10.0f;
+    rig.imu.data.accelX = s10;
+    rig.imu.data.accelZ = c10;
+    rig.run(Config::CAL_STILL_MS + 100);
+    rig.run(2 * Config::SIGNAL_PERIOD_MS);
+
+    // Автовзлёт: ARM, газ вверх — проверка, хвост вверх.
+    rig.rc.set(Channels::SWC, 2000);
+    rig.run(100);
+    rig.rc.set(Channels::ARM, 2000);
+    rig.run(100);
+    rig.rc.set(Channels::THROTTLE, 1600);
+    rig.run(Config::TAKEOFF_CHECK_MS + 200);
+    rig.rc.set(Channels::THROTTLE, 1000);   // прервал
+    rig.run(100);
+
+    rig.box.requestManualStop();
+    rig.tick();
+    rig.drain();
+    BlackBoxStorage st(rig.flash);
+    st.begin();
+    const std::vector<Rec> recs = readFlight(st, 1);
+    TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "калибровка самолёта: шаг 1"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "калибровка самолёта: шаг 2"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "калибровка самолёта: сохранена, стоянка тангаж 10.0"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "автовзлёт: CHECK"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "автовзлёт: TAIL_UP"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "автовзлёт: ABORTED — газ убран"));
+}
+
 void test_power_record_scales_battery_and_current_dividers()
 {
     fake::gpio().analogMv[Config::PIN_VBAT_ADC] = 1818;      // 3S ~12.0 В за делителем 56k/10k
@@ -947,6 +1001,7 @@ int main()
     RUN_TEST(test_crash_reset_starts_recording_at_boot_and_holds_it);
     RUN_TEST(test_manual_recording_on_the_bench_ignores_disarm);
     RUN_TEST(test_events_mode_sensors_gps_and_features);
+    RUN_TEST(test_events_ground_calibration_and_takeoff_stages);
     RUN_TEST(test_power_record_scales_battery_and_current_dividers);
     RUN_TEST(test_flash_full_in_the_air_keeps_data_in_ring_and_flushes_after_landing);
     RUN_TEST(test_flight_longer_than_the_partition_is_closed_without_its_tail);

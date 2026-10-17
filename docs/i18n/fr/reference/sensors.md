@@ -50,6 +50,12 @@ La puce qui est compilée est décidée par `SensorSelection.h`.
 | `void setYaw(float)` | Fixer le cap (par exemple d’après le compas au démarrage) |
 | `virtual void calibrateOrientation()` | Étalonnage du montage de la carte (non pris en charge par défaut) |
 | `virtual const char* getPreflightProblem() const` | Le problème de la vérification avant le vol ou `nullptr` (par défaut `nullptr`) |
+| `virtual bool readChipUp(float[3]) const` | Calibration au sol : la dernière mesure de l’accéléromètre dans les axes de la puce, g, sans correction (par défaut `false`) |
+| `virtual bool getOrientation(ImuOrientation&) const` | Le montage actuel de la carte (par défaut `false` — calibration au sol non prise en charge) |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | Adopter l’horizon et l’assiette au sol, les enregistrer en flash |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | L’assiette au sol sur les roues, ° depuis l’horizon ; `false` — pas de calibration du train |
+| `virtual void setAccelCorrection(bool)` | Décollage automatique : `false` — l’horizon d’après le seul gyroscope |
+| `virtual void trimGyroBias(const float residualDps[3])` | Affiner le zéro du gyroscope d’après la vitesse angulaire moyenne de l’avion à l’arrêt (axes et signes de `ImuData`) |
 
 ### `BarometerSensor : Sensor`
 
@@ -169,6 +175,9 @@ La matrice de rotation `R` des axes de la puce vers les axes de l’avion : `bo
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | Une rotation autour de la verticale par pas de 90°, la carte avec la puce vers le haut |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | Étalonnage à partir de trois poses (la lecture « haut » de l’accéléromètre dans les axes de la puce). `nullptr` — succès, sinon la raison du refus |
 | `void apply(const float chip[3], float body[3]) const` | Appliquer la rotation |
+| `void applyInverse(const float body[3], float chip[3]) const` | La rotation inverse (`R` transposée) |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | L’horizon d’après la pose « à plat » : Z = le « haut » mesuré, le nez reste, redressé ⟂ Z. Plus de 45° de l’ancien horizon — refusé |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | Le tangage et le roulis d’une pose (comme `AttitudeEstimator` d’après l’accéléromètre) — l’assiette au sol |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | L’angle entre le « haut » mesuré et l’axe Z de l’avion (180° si le vecteur est nul) |
 | `bool load(const char* ns)` | Charger depuis la NVS ; rejette un trièdre non orthonormé ou indirect |
 | `void save(const char* ns) const` | Enregistrer dans la NVS |
@@ -198,11 +207,12 @@ Un filtre complémentaire de roulis/tangage et une intégrale de lacet, indépen
 | `void setYaw(float deg)` | Fixer le cap (ramené à ±180) |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | L’accélération en g dans les axes de l’avion, les vitesses en °/s |
 | `getRoll()`, `getPitch()`, `getYaw()` | ° |
+| `setAccelCorrection(bool)`, `isAccelCorrectionEnabled()` | `false` — gyroscope seul (l’accélération au décollage automatique : 0,5 g vers l’avant ressemblent à +27° de tangage) |
 
 `roll_acc = atan2(ay, az)`, `pitch_acc = atan2(ax, √(ay² + az²))` ;
 `angle = 0.98·(angle + rate·dt) + 0.02·angle_acc` (τ ≈ 0,1 s à 2 ms).
 Le premier appel après `reset()` donne aussitôt les angles de l’accéléromètre ; avec `dt ≤ 0` ou supérieur à 0,1 s,
-le pas est ignoré (une pause, un bus bloqué).
+le pas est ignoré (une pause, un bus bloqué). Sans accéléromètre — `angle + rate·dt`.
 
 ---
 
@@ -227,7 +237,11 @@ La chaîne `update()` → `process()` :
 | `void calibrate()` | 200 échantillons × 10 ms : le décalage du gyroscope, le bruit, le « haut » ; sans étalonnage du montage — l’horizon = la position actuelle. Puis la vérification avant le vol |
 | `void calibrateOrientation()` | Trois poses (`capturePose` : immobile ~1 s, la pose diffère des précédentes d’au moins 20°, délai de 30 s), `ImuOrientation::fromPoses`, enregistrement dans la NVS. Supprime les problèmes de montage de la vérification avant le vol |
 | `const char* getPreflightProblem() const` | Le texte du problème ou `nullptr` |
-| `void setYaw(float)`, `getSensorType()`, `printStatus()` | |
+| `readChipUp()`, `getOrientation()` | Calibration au sol : le dernier « haut » dans les axes de la puce, le montage |
+| `bool setGroundCalibration(level, parkChipUp)` | Montage = `level` (l’horizon), l’assiette au sol sous la clé `park` dans le même espace de noms NVS ; lève les problèmes de montage du contrôle avant vol. Un nouveau `o` efface l’assiette au sol (elle a été mesurée depuis l’ancien horizon) |
+| `bool getParkingAttitude(pitch, roll) const` | L’assiette au sol à travers le montage actuel |
+| `setAccelCorrection(bool)`, `trimGyroBias(residual)` | Décollage automatique : filtre sans accéléromètre ; le zéro résiduel passe par la rotation inverse dans l’offset du gyroscope |
+| `void setYaw(float)`, `getSensorType()`, `printStatus()` | `printStatus()` se termine par `park(pitch,roll)=…` ou `park=NONE` |
 
 L’API protégée pour les pilotes :
 

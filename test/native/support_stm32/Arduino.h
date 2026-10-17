@@ -197,9 +197,14 @@ public:
         const uint32_t pin = channelPin[channel];
         fake::timerPulses()[pin] = static_cast<long>(value);
         // pulseIn() видит импульс таймера (вход GPIO STM32 читает пин в AF-режиме).
+        // Как у настоящего ядра: на пинах с номером бита 8+ (PD14, PE9...)
+        // pulseIn(HIGH) меряет низкий уровень — маска у него uint8_t.
         if (pin < fake::GPIO_COUNT)
         {
-            fake::gpio().pulseOverride[pin] = static_cast<long>(value);
+            const bool highBit = (pin & 0x0F) >= 8;
+            const long seen = highBit && value > 0 && periodUs > value ? static_cast<long>(periodUs - value)
+                                                                         : static_cast<long>(value);
+            fake::gpio().pulseOverride[pin] = seen;
             fake::gpio().inputEnabled[pin] = true;
         }
     }

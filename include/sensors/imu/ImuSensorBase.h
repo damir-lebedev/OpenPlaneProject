@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <Preferences.h>
 
 #include "config/Config.h"
 #include "sensors/SensorInterface.h"
@@ -30,6 +31,11 @@
 //     может стоять как угодно; поворот и горизонт хранятся в NVS;
 //   • нет — поворот из Config::IMU_ROTATION_CW_DEG, плата обязана
 //     лежать чипом вверх, горизонт — положение при включении.
+//
+// Наземная калибровка самолёта (control/GroundCalibration.h) уточняет
+// горизонт установки (поднятый хвост) и запоминает стоянку (на колёсах)
+// — "верх" в осях чипа рядом с установкой. Новая калибровка установки
+// ('o') задаёт свой горизонт, поэтому стоянку стирает: её надо повторить.
 //
 // Предполётная проверка при каждой калибровке гироскопа (включение,
 // команда 'i'): самолёт неподвижен, акселерометр видит 1g, "верх"
@@ -204,6 +210,12 @@ public:
         orientation.save(nvsNamespace);
         accelOffset[0] = accelOffset[1] = accelOffset[2] = 0;
         estimator.reset();
+        if (parkValid)
+        {
+            // Стоянка считалась от прежнего горизонта.
+            forgetParking();
+            Serial.println("  Калибровка шасси сброшена — повторите её (с пульта без ARM или 'c').");
+        }
         // Установка только что измерена — проблемы с ней сняты; шум
         // гироскопа при включении — нет (калибровку гироскопа это не
         // повторяет).
@@ -249,6 +261,72 @@ public:
         imuData.yaw = estimator.getYaw();
     }
 
+    // --- наземная калибровка самолёта ---
+
+    bool readChipUp(float chipUp[3]) const override
+    {
+        if (!haveChipUp) return false;
+        for (uint8_t i = 0; i < 3; ++i) chipUp[i] = lastChipUp[i];
+        return true;
+    }
+
+    bool getOrientation(ImuOrientation& out) const override
+    {
+        out = orientation;
+        return true;
+    }
+
+    bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3]) override
+    {
+        orientation = level;
+        orientationCalibrated = true;
+        orientation.save(nvsNamespace);
+        accelOffset[0] = accelOffset[1] = accelOffset[2] = 0;
+        estimator.reset();
+
+        for (uint8_t i = 0; i < 3; ++i) parkUp[i] = parkChipUp[i];
+        parkValid = true;
+        Preferences prefs;
+        if (prefs.begin(nvsNamespace, false))
+        {
+            prefs.putBytes(PARK_KEY, parkUp, sizeof(parkUp));
+            prefs.end();
+        }
+
+        // Горизонт только что измерен — проблемы установки сняты.
+        if (preflightProblem == PreflightProblem::MountingMismatch ||
+            preflightProblem == PreflightProblem::NotChipUp)
+        {
+            preflightProblem = PreflightProblem::None;
+        }
+        return true;
+    }
+
+    bool getParkingAttitude(float& pitchDeg, float& rollDeg) const override
+    {
+        if (!parkValid) return false;
+        orientation.attitudeOf(parkUp, pitchDeg, rollDeg);
+        return true;
+    }
+
+    // --- автовзлёт ---
+
+    void setAccelCorrection(bool enabled) override
+    {
+        estimator.setAccelCorrection(enabled);
+    }
+
+    // residualDps — в осях и знаках ImuData: крен вокруг X как есть,
+    // тангаж и рысканье — с обратным знаком (см. process()).
+    void trimGyroBias(const float residualDps[3]) override
+    {
+        const float body[3] = { residualDps[0], -residualDps[1], -residualDps[2] };
+        float chip[3];
+        orientation.applyInverse(body, chip);
+        const float scale = gyroLsbPerDps();
+        for (uint8_t axis = 0; axis < 3; ++axis) gyroOffset[axis] += chip[axis] * scale;
+    }
+
     const char* getSensorType() const override
     {
         return name;
@@ -272,7 +350,17 @@ public:
         Serial.print(" yaw="); Serial.print(imuData.yaw, 1);
         Serial.print(" temp="); Serial.print(imuData.temperature, 1);
         Serial.print(" preflight=");
-        Serial.println(getPreflightProblem() ? getPreflightProblem() : "OK");
+        Serial.print(getPreflightProblem() ? getPreflightProblem() : "OK");
+        float parkPitch, parkRoll;
+        if (getParkingAttitude(parkPitch, parkRoll))
+        {
+            Serial.print(" park(pitch,roll)="); Serial.print(parkPitch, 1);
+            Serial.print(","); Serial.println(parkRoll, 1);
+        }
+        else
+        {
+            Serial.println(" park=NONE");
+        }
     }
 
 
@@ -340,6 +428,16 @@ private:
 
     ImuOrientation orientation;
     bool orientationCalibrated = false;
+
+    // Стоянка из наземной калибровки: "верх" на колёсах в осях чипа.
+    static constexpr const char* PARK_KEY = "park";
+    float parkUp[3] = {};
+    bool parkValid = false;
+
+    // Последнее показание акселерометра в осях чипа (readChipUp()).
+    float lastChipUp[3] = {};
+    bool haveChipUp = false;
+
     enum class PreflightProblem : uint8_t
     {
         None, NotResponding, Moved, NotOneG, MountingMismatch, NotChipUp
@@ -376,6 +474,52 @@ private:
             Serial.print(Config::IMU_ROTATION_CW_DEG);
             Serial.println("°, плата чипом вверх); поставить как угодно — команда 'o'");
         }
+
+        loadParking();
+        float parkPitch, parkRoll;
+        Serial.print(name);
+        if (getParkingAttitude(parkPitch, parkRoll))
+        {
+            Serial.print(": стоянка на колёсах — тангаж ");
+            Serial.print(parkPitch, 1);
+            Serial.print("°, крен ");
+            Serial.print(parkRoll, 1);
+            Serial.println("°");
+        }
+        else
+        {
+            Serial.println(": калибровки шасси нет — с пульта без ARM или 'c' в консоли");
+        }
+    }
+
+    void loadParking()
+    {
+        // На запись, хотя только читаем — как в ImuOrientation::load().
+        Preferences prefs;
+        parkValid = false;
+        if (!prefs.begin(nvsNamespace, false)) return;
+        if (prefs.getBytesLength(PARK_KEY) == sizeof(parkUp))
+        {
+            float loaded[3] = {};
+            const bool ok = prefs.getBytes(PARK_KEY, loaded, sizeof(loaded)) == sizeof(loaded);
+            const float g = sqrtf(loaded[0] * loaded[0] + loaded[1] * loaded[1] + loaded[2] * loaded[2]);
+            // Мусор во флеше — не стоянка: "верх" в покое около 1g.
+            if (ok && fabsf(g - 1.0f) < 0.5f)
+            {
+                for (uint8_t i = 0; i < 3; ++i) parkUp[i] = loaded[i];
+                parkValid = true;
+            }
+        }
+        prefs.end();
+    }
+
+    void forgetParking()
+    {
+        parkValid = false;
+        Preferences prefs;
+        if (!prefs.begin(nvsNamespace, false)) return;
+        prefs.remove(PARK_KEY);
+        prefs.end();
     }
 
     void runPreflightCheck(float gyroNoiseDps, const float chipUp[3])
@@ -490,6 +634,11 @@ private:
     {
         const float accelScale = accelLsbPerG();
         const float gyroScale = gyroLsbPerDps();
+
+        lastChipUp[0] = s.accelX / accelScale;
+        lastChipUp[1] = s.accelY / accelScale;
+        lastChipUp[2] = s.accelZ / accelScale;
+        haveChipUp = true;
 
         // Калибровка и масштаб — в осях чипа.
         const float chipAccel[3] = { (s.accelX - accelOffset[0]) / accelScale,

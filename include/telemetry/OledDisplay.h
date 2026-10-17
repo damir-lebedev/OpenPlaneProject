@@ -4,8 +4,10 @@
 
 #include "autopilot/Autopilot.h"
 #include "autopilot/AutopilotTypes.h"
+#include "autopilot/TakeoffController.h"
 #include "control/FlightController.h"
 #include "control/FlightOutputState.h"
+#include "control/GroundCalibration.h"
 #include "hal/II2CBus.h"
 #include "hal/Rtos.h"
 #include "sensors/SensorInterface.h"
@@ -33,7 +35,8 @@
 // без сдвига на 2 столбца, как было бы у SH1106).
 //
 //   RX ok ARM STAB FL       связь / ARM / режим / закрылки
-//   R  +1.2 P  -0.4         крен / тангаж, °
+//   R  +1.2 P  -0.4 ROLL    крен / тангаж, ° / шаг калибровки (CAL1,
+//                           CAL2, CALOK, CALER) или этап автовзлёта
 //   Alt +0.3 Vz +0.1        высота, м / вертикальная скорость, м/с
 //   H123 T1000 Y1500        курс / газ / руль направления, мкс
 //   L1500 R1500 E1500       элероны / руль высоты, мкс
@@ -83,6 +86,7 @@ private:
 
     static constexpr uint8_t I2C_ADDRESS = 0x3C;
     static constexpr uint32_t REFRESH_MS = 200;
+    static constexpr uint32_t CALIBRATION_RESULT_MS = 10000;
 
     FlightController& controller;
     Autopilot* autopilot;
@@ -198,12 +202,36 @@ private:
     String attitudeText() const
     {
         const ImuSensor* imu = autopilot ? autopilot->getImuSensor() : nullptr;
-        if (!imu || !imu->isAvailable()) return "IMU --";
+        const char* tag = stageTag();
+        char line[40];
+        if (!imu || !imu->isAvailable())
+        {
+            snprintf(line, sizeof(line), *tag ? "IMU --          %s" : "IMU --", tag);
+            return line;
+        }
 
-        char line[32];
         const ImuData& d = imu->getImuData();
-        snprintf(line, sizeof(line), "R%+6.1f P%+6.1f", d.roll, d.pitch);
+        if (*tag) snprintf(line, sizeof(line), "R%+6.1f P%+6.1f %s", d.roll, d.pitch, tag);
+        else snprintf(line, sizeof(line), "R%+6.1f P%+6.1f", d.roll, d.pitch);
         return line;
+    }
+
+    // Шаг наземной калибровки (итог — ещё CALIBRATION_RESULT_MS) или
+    // этап автовзлёта.
+    const char* stageTag() const
+    {
+        const GroundCalibration& cal = controller.getCalibration();
+        const bool finished = cal.getStage() == GroundCalibration::Stage::DONE ||
+                              cal.getStage() == GroundCalibration::Stage::FAILED;
+        if (cal.isActive() || (finished && millis() - cal.getStageSinceMs() < CALIBRATION_RESULT_MS))
+        {
+            return GroundCalibration::stageShort(cal.getStage());
+        }
+        if (autopilot && autopilot->getMode() == MODE_AUTO_TAKEOFF && !autopilot->isFailsafeActive())
+        {
+            return TakeoffController::stageShort(autopilot->getTakeoffStage());
+        }
+        return "";
     }
 
     String baroText() const

@@ -105,7 +105,7 @@ C++11): `channelIsFree` و`channelsFree` و`channelsUnique` و
 
 ## ‏`Autopilot`
 
-**الملف:** `autopilot/Autopilot.h` · **يعتمد على:** `PidController` و`Navigation` و`AltitudeSpeedController` و`LaunchController` و`SoaringController` و`AutoTrim` والحساسات (كلها يمكن أن تكون فارغة)
+**الملف:** `autopilot/Autopilot.h` · **يعتمد على:** `PidController` و`Navigation` و`AltitudeSpeedController` و`LaunchController` و`TakeoffController` و`SoaringController` و`AutoTrim` والحساسات (كلها يمكن أن تكون فارغة)
 
 ### دورة الحياة
 
@@ -116,7 +116,7 @@ C++11): `channelIsFree` و`channelsFree` و`channelsUnique` و
 | `void setInputs(const PilotInputs&)` | مفاتيح هذه الدورة ومقابضها (قبل `update`) |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | مرة في كل دورة: الحساسات (دائمًا) ← الملاحة ونقطة الانطلاق ← حفظ المعدِّل على الأرض ← failsafe ← السياج الجغرافي ← الوضع ← تنسيق الانعطاف ← الضبط التلقائي |
 | `ControlCommand getCommand() const` | أوامر الأسطح النهائية (roll/pitch/yaw، µs) |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | خانق الوضع: `PILOT` — خانق الطيار؛ و`AUTO` — الخانق الخاص؛ و`AT_LEAST` — لا يقل عن الخاص (الإقلاع التلقائي). أما ARM و`MOTOR_KILL` فيعالجهما `FlightController` |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | خانق الوضع: `PILOT` — خانق الطيار؛ و`AUTO` — الخانق الخاص (وكذلك في الإقلاع الآلي: عصا الخانق تبدأ وتُلغي فقط). ويتولى `FlightController` أمر ARM و`MOTOR_KILL` |
 
 ### الأوضاع
 
@@ -127,6 +127,10 @@ C++11): `channelIsFree` و`channelsFree` و`channelsUnique` و
 | `isFailsafeActive()` و`isFailsafeGliding()` و`isFailsafeReturning()` | failsafe فوق الوضع |
 | `isAutoThrottle()` و`getThrottleCorrection()` | خانق الوضع (بالنسبة المئوية، للسجل ولوحة المعلومات) |
 | `getLaunchState()` و`getSoaringState()` | آلتا حالات LAUNCH وSOARING |
+| `getTakeoffStage()` و`getTakeoffAbortReason()` | مرحلة الإقلاع الآلي وسبب إلغائه (`nullptr` — لم يُلغَ) |
+| `bool takeTakeoffRefusal()` | رفض الإقلاع الآلي في الفحص الذي يسبق البدء — ويعزف `FlightController` تنبيهًا (يُؤخذ مرة واحدة) |
+| `getLandingGear()` و`setLandingGear(LandingGear)` | عجلات الهبوط (الافتراضي `Config::LANDING_GEAR`؛ وتغيّرها الاختبارات) |
+| `bool isGyroOnlyAttitude() const` | الأفق الآن يقوده الجيروسكوب وحده (نافذة التسارع في الإقلاع الآلي) |
 
 ### المخرجات والتشخيص
 
@@ -152,7 +156,8 @@ C++11): `channelIsFree` و`channelsFree` و`channelsUnique` و
 - ‏`looksLanded()` — قرب الأرض بحسب مقياس الضغط، ودون سرعة رأسية تقريبًا،
   وأبطأ من عتبة أنبوب بيتو/GPS: عندها فقط يُكتب المعدِّل في الفلاش.
 - ‏Failsafe: مع GPS ونقطة انطلاق — RTH بالمحرك، وإلا انسياب؛ ولا يُترك RTH بدأ
-  بسبب فقدان قصير لـ GPS.
+  بسبب فقدان قصير لـ GPS. وفي AUTO_TAKEOFF على المدرج (المراحل التي فيها `holdsGround()`) يكون فقدان الاتصال إلغاءً للإقلاع لا failsafe؛ وأثناء الصعود هو failsafe، وبعد عودة الاتصال يستمر الصعود.
+- نافذة «الجيروسكوب فقط» (`manageAccelCorrection()`): تشغيل المحرك في الإقلاع الآلي يُبعد مقياس التسارع عن دعم الأفق (`ImuSensor::setAccelCorrection`)؛ ويعيده الزمن منذ بدء الصعود (`TAKEOFF_GYRO_ONLY_CLIMB_MS`)، والحد الأعلى، والإقلاع الملغى، وDISARM — لا تغيير الوضع.
 
 ---
 
@@ -192,6 +197,28 @@ C++11): `channelIsFree` و`channelsFree` و`channelsUnique` و
 والميل `LAUNCH_CLIMB_PITCH_DEG`) `→ DONE` (`LAUNCH_CLIMB_MS` أو
 `LAUNCH_ALTITUDE_M`). تحريك العصي قبل الرمي — إلغاء. الدوال: `update(...)`،
 و`reset()`، و`getState()`، و`motorOn()`، و`pitchTargetDeg()`، و`stateName()`.
+
+## ‏`TakeoffController`
+
+**الملف:** `autopilot/TakeoffController.h` · **يعتمد على:** `Config`
+
+الإقلاع الآلي من المدرج — مراحل بحسب الحساسات، دون حساسات أو أسطح خاصة به: يدخل إليه `Inputs` (ARM، والاتصال، وخانق الطيار، والزوايا والسرعات الزاوية، والحمل، وزاوية الوقوف، والارتفاع، والسرعة، والمقبض `STAB_GAIN`، والزمن)، ويخرج منه ما يجب فعله في هذه الدورة.
+
+‏`Stage`: ‏`IDLE` (المحرك متوقف؛ الخانق فوق `TAKEOFF_TRIGGER_US` بعد أن كان في الأسفل) `→ CHECK` (سكون لمدة `TAKEOFF_CHECK_MS`، والزوايا = زاوية الوقوف؛ وإلا فـ`ABORTED` وتنبيه) `→ TAIL_UP` (عجلة الذيل: دفة الارتفاع إلى الأسفل، ورفع الذيل) `→ ROLL` (الجري؛ `TD_ROLL_MS` / `TRI_ROLL_MS` أو سرعة رفع الأنف) `→ LIFTOFF` (يرتفع هدف الميل، وقرب الأرض لا يتجاوز زاوية الوقوف ناقص `TD_TAIL_CLEARANCE_DEG`) `→ CLIMB` (مغادرة الأرض بحسب مقياس الضغط أو الزمن؛ والصعود حتى `TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS`) `→ DONE`. و`ABORTED` — إقلاع ملغى؛ والخانق في الأسفل 1 s — يعود `IDLE`.
+
+| الدالة | الوصف |
+|---|---|
+| `void update(const Inputs&)` | مرة في كل دورة: تغيير المرحلة، ثم مخارج هذه المرحلة؛ ودون ARM — `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | إلغاء من الخارج (فقدان الاتصال)؛ وفي `IDLE`/`DONE` — لا شيء |
+| `void reset()` و`setGear()` و`getGear()` | |
+| `getStage()` و`stageName()` و`stageShort()` و`getAbortReason()` | المرحلة (الاسم القصير لشاشة OLED) |
+| `bool holdsGround() const` | على الأرض (`IDLE`…`LIFTOFF`، و`ABORTED`): فقدان الاتصال إلغاء للإقلاع، ومكاملات PID تبقى عند الصفر |
+| `isAirborneStage()` و`isDone()` | في الجو (الصعود/الانتهاء)؛ انتهى الإقلاع |
+| `getThrottlePct()` | خانق البرنامج، % (تصاعد خلال `TAKEOFF_THROTTLE_RAMP_MS`) |
+| `getRollTargetDeg()` و`getPitchTargetDeg()` | هدف الدوران الجانبي (على العجلات — دوران الوقوف) وهدف الميل (في الصعود — لـ PID) |
+| `hasElevatorCommand()` و`getElevatorUs()` | على العجلات تُقاد دفة الارتفاع مباشرة: نحو الهدف بـ `TD_PITCH_KP` / `TD_ROLL_PITCH_KP` µs لكل درجة، والتخميد `TD_PITCH_KD`، وإلى الأسفل بحد أقصى `TD_TAIL_UP_ELEVATOR_US` |
+| `hasRudderCommand()` و`getRudderUs()` | المسار بدفة الاتجاه والعجلة: `TAKEOFF_HEADING_KP` µs لكل درجة، و`TAKEOFF_YAW_RATE_KD` لكل °/s |
+| `bool takeRefusal()` و`bool takeGyroTrim(float[3])` | أحداث لمرة واحدة: الرفض في الفحص؛ وبقية صفر الجيروسكوب المقيسة في السكون |
 
 ## ‏`SoaringController`
 

@@ -48,6 +48,12 @@
 | `void setYaw(float)` | Задать курс (например, по компасу при старте) |
 | `virtual void calibrateOrientation()` | Калибровка установки платы (по умолчанию не поддерживается) |
 | `virtual const char* getPreflightProblem() const` | Проблема предполётной проверки или `nullptr` (по умолчанию `nullptr`) |
+| `virtual bool readChipUp(float[3]) const` | Калибровка на земле: последнее показание акселерометра в осях чипа, g, без поправок (по умолчанию `false`) |
+| `virtual bool getOrientation(ImuOrientation&) const` | Текущая установка платы (по умолчанию `false` — калибровка на земле не поддерживается) |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | Записать горизонт и стоянку, сохранить во флеш |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | Стояночные углы на колёсах, ° от горизонта; `false` — калибровки шасси нет |
+| `virtual void setAccelCorrection(bool)` | Автовзлёт: `false` — горизонт только по гироскопу |
+| `virtual void trimGyroBias(const float residualDps[3])` | Уточнить ноль гироскопа по средней скорости неподвижного самолёта (оси и знаки `ImuData`) |
 
 ### `BarometerSensor : Sensor`
 
@@ -167,6 +173,9 @@ Y влево). `rotationCwDeg` — куда смотрит ось X чипа, п
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | Поворот вокруг вертикали шагами 90°, плата чипом вверх |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | Калибровка по трём позам (показания акселерометра «верх» в осях чипа). `nullptr` — успех, иначе причина отказа |
 | `void apply(const float chip[3], float body[3]) const` | Применить поворот |
+| `void applyInverse(const float body[3], float chip[3]) const` | Обратный поворот (транспонированная `R`) |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | Горизонт по позе «ровно»: Z = измеренный «верх», нос — прежний, выпрямленный ⟂ Z. Больше 45° от прежнего горизонта — отказ |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | Тангаж и крен позы (как у `AttitudeEstimator` по акселерометру) — стояночный угол |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | Угол между измеренным «верхом» и осью Z самолёта (180°, если вектор нулевой) |
 | `bool load(const char* ns)` | Загрузить из NVS; отклоняет не-ортонормированную или левую тройку |
 | `void save(const char* ns) const` | Сохранить в NVS |
@@ -196,9 +205,11 @@ rightWingDown ⟂ Z, X₂ = Y × Z; X = норм(X₁ + X₂), Y = Z × X. От�
 | `void setYaw(float deg)` | Задать курс (приводится к ±180) |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | Ускорение в g в осях самолёта, скорости °/с |
 | `getRoll()`, `getPitch()`, `getYaw()` | ° |
+| `setAccelCorrection(bool)`, `isAccelCorrectionEnabled()` | `false` — только гироскоп (разгон автовзлёта: 0.5 g вперёд акселерометр принимает за +27° тангажа) |
 
 `roll_acc = atan2(ay, az)`, `pitch_acc = atan2(ax, √(ay² + az²))`;
-`angle = 0.98·(angle + rate·dt) + 0.02·angle_acc` (τ ≈ 0.1 с при 2 мс).
+`angle = 0.98·(angle + rate·dt) + 0.02·angle_acc` (τ ≈ 0.1 с при 2 мс); без
+акселерометра — `angle + rate·dt`.
 Первый вызов после `reset()` — сразу углы акселерометра; `dt ≤ 0` или > 0.1 с —
 шаг пропускается (пауза, зависание шины).
 
@@ -225,7 +236,11 @@ rightWingDown ⟂ Z, X₂ = Y × Z; X = норм(X₁ + X₂), Y = Z × X. От�
 | `void calibrate()` | 200 отсчётов × 10 мс: смещение гироскопа, шум, «верх»; без калибровки установки — горизонт = положение сейчас. Затем предполётная проверка |
 | `void calibrateOrientation()` | Три позы (`capturePose`: неподвижно ~1 с, поза отличается от прошлых ≥ 20°, таймаут 30 с), `ImuOrientation::fromPoses`, сохранение в NVS. Снимает проблемы установки предполётной проверки |
 | `const char* getPreflightProblem() const` | Текст проблемы или `nullptr` |
-| `void setYaw(float)`, `getSensorType()`, `printStatus()` | |
+| `readChipUp()`, `getOrientation()` | Калибровка на земле: последний «верх» в осях чипа, установка |
+| `bool setGroundCalibration(level, parkChipUp)` | Установка = `level` (горизонт), стоянка — ключ `park` в том же пространстве NVS; снимает проблемы установки предполётной проверки. Новая `o` стоянку стирает (считалась от прежнего горизонта) |
+| `bool getParkingAttitude(pitch, roll) const` | Стоянка через текущую установку |
+| `setAccelCorrection(bool)`, `trimGyroBias(residual)` | Автовзлёт: фильтр без акселерометра; остаток нуля — в смещение гироскопа через обратный поворот |
+| `void setYaw(float)`, `getSensorType()`, `printStatus()` | `printStatus()` в конце — `park(pitch,roll)=…` или `park=NONE` |
 
 Защищённое API для драйверов:
 

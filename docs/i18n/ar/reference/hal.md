@@ -129,6 +129,7 @@
 | `writeMicroseconds(us)` | عرض النبضة، µs (محدود بمدى `attach`) |
 | `bool isAttached() const` | نتيجة `attach()` |
 | `virtual int32_t measurePulseUs()` | تشخيص: العرض الفعلي للنبضة على الطرف أو `-1`. والتنفيذ الافتراضي يُرجع `-1` |
+| `virtual void stopPulses()` | إيقاف النبضات (يبقى الطرف منخفضًا) حتى الكتابة التالية — تنبيه المحرك: دون نبضات يظن ESC أن الإشارة فُقدت، وعند عودتها يعزف لحن الجاهزية. والافتراضي لا شيء (فيبقى المحرك صامتًا) |
 
 ---
 
@@ -319,6 +320,7 @@ rx, tx)`؛ و`tx = -1` تعني الاستقبال فقط. والباقي تفو
 | `attach(minUs, maxUs)` | تحفظ المدى؛ الطرف < 0 ← `false`؛ وإلا `ledcSetup() != 0` ← `ledcAttachPin()` |
 | `writeMicroseconds(us)` | إن لم يكن attached فلا شيء؛ وإلا `constrain(us, min, max) * MAX_DUTY / PERIOD_US` ← `ledcWrite` |
 | `measurePulseUs()` | تفعّل مخزن الإدخال لنفس GPIO (`PIN_INPUT_ENABLE`، ولا يُمَسّ المخرج) وتقيس `pulseIn(pin, HIGH, 30 ms)`؛ وإن لم توجد نبضة ← `-1` |
+| `stopPulses()` | دورة عمل 0 (`ledcWrite(channel, 0)`) — لا نبضة |
 
 القناتان 2n و2n+1 تتشاركان مؤقّت LEDC واحدًا — وجميع المخارج تعمل بتردد 50 Hz فلا تعارض.
 
@@ -424,7 +426,8 @@ USB CDC)، ويجتاز cppcheck والاختبارات على الحاسوب (�
 | `Stm32ServoOutput(int16_t pin)` | الطرف `< 0` يعني أن المخرج غير موصول |
 | `attach(minUs, maxUs)` | يؤخذ المؤقّت والقناة من `PinMap_TIM` بحسب الطرف (`pinmap_peripheral`، `STM_PIN_CHANNEL`)، كما في `analogWrite()`. إن لم يكن على الطرف مؤقّت أو نفد المخزون ← `false`. وإلا `setMode(PWM1)`، والمقارنة 0 (لا نبضة حتى أول كتابة)، ثم `resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` ← `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`. سجل المقارنة مُسبَق التحميل — فتسري القيمة من الدورة التالية |
-| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` دون إعادة ضبط الطرف: ففي STM32 يرى السجل IDR المستوى حتى في وضع الوظيفة البديلة |
+| `stopPulses()` | قيمة مقارنة 0 — لا نبضة، كما بعد `attach()` مباشرة |
+| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` دون إعادة ضبط الطرف: ففي STM32 يرى السجل IDR المستوى حتى في وضع الوظيفة البديلة. ويقيس `pulseIn()` في النواة على الأطراف ذات رقم البت 8 فما فوق (PD14 وPD15 وPE9) المستوى **المنخفض** — فقناع المستوى فيه `uint8_t`؛ ونبضة السيرفو أقصر دائمًا من نصف الدور، فالقياس الأطول هو الفاصل، والنبضة هي `PERIOD_US` ناقص هذا الفاصل |
 | `static acquireTimer(TIM_TypeDef*)` | مخزون مشترك: **مؤقّت `HardwareTimer` واحد لكل TIMx**. فكائن ثانٍ على المؤقّت نفسه سيكتب فوق معالج النواة (`HardwareTimer_Handle[index]`). وتُحدَّد الدورة عند أول مخرج على المؤقّت؛ وتختار `setOverflow(MICROSEC_FORMAT)` المقسّم — بخطوة نحو 0.3 µs عند ساعة مؤقّت 240 MHz |
 
 ## ‏`Stm32FlashStorage`

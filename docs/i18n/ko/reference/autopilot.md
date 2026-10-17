@@ -101,7 +101,7 @@ JSON과 `MavlinkModes`에 쓰임):
 
 ## `Autopilot`
 
-**파일:** `autopilot/Autopilot.h` · **의존:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, 각 센서(모두 null 가능)
+**파일:** `autopilot/Autopilot.h` · **의존:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, 각 센서(모두 null 가능)
 
 ### 생명 주기
 
@@ -112,7 +112,7 @@ JSON과 `MavlinkModes`에 쓰임):
 | `void setInputs(const PilotInputs&)` | 이번 주기의 스위치와 노브(`update` 전에 호출) |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | 주기마다 한 번: 센서(항상) → 내비게이션과 홈 → 지상에서 트림 저장 → failsafe → 지오펜스 → 모드 → 선회 협조 → 자동 트림 |
 | `ControlCommand getCommand() const` | 최종 조종면 명령(roll/pitch/yaw, µs) |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | 모드의 스로틀: `PILOT`은 조종자의 것, `AUTO`는 자체 값, `AT_LEAST`는 자체 값 이상(자동 이륙). ARM과 `MOTOR_KILL`은 `FlightController`가 처리 |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | 모드의 스로틀: `PILOT`은 조종자의 것, `AUTO`는 자체 값(자동 이륙도 마찬가지: 스로틀 스틱은 시작과 중단만). ARM과 `MOTOR_KILL`은 `FlightController`가 처리 |
 
 ### 모드
 
@@ -123,6 +123,10 @@ JSON과 `MavlinkModes`에 쓰임):
 | `isFailsafeActive()`, `isFailsafeGliding()`, `isFailsafeReturning()` | 모드 위에 덮어씌우는 failsafe |
 | `isAutoThrottle()`, `getThrottleCorrection()` | 모드의 스로틀(%, 로그와 대시보드용) |
 | `getLaunchState()`, `getSoaringState()` | LAUNCH와 SOARING의 상태 기계 |
+| `getTakeoffStage()`, `getTakeoffAbortReason()` | 자동 이륙의 단계와 중단된 이유(`nullptr`은 중단 없음) |
+| `bool takeTakeoffRefusal()` | 자동 이륙이 시작 전 점검에서 거부함: `FlightController`가 알림을 냄(한 번만 꺼냄) |
+| `getLandingGear()`, `setLandingGear(LandingGear)` | 랜딩기어(기본값 `Config::LANDING_GEAR`. 테스트에서 바꿈) |
+| `bool isGyroOnlyAttitude() const` | 지금은 수평 기준을 자이로만으로 구함(자동 이륙의 가속 구간) |
 
 ### 출력과 진단
 
@@ -148,7 +152,8 @@ JSON과 `MavlinkModes`에 쓰임):
 - `looksLanded()` — 기압계로 보아 지면 근처이고, 수직 속도가 거의 없으며, 피토관/GPS의
   임계값보다 느린 경우. 이때만 트림을 플래시에 기록한다.
 - Failsafe: GPS와 홈이 있으면 모터를 쓰는 RTH, 없으면 활공. 이미 시작한 RTH는 GPS를
-  잠깐 놓쳤다고 중단하지 않는다.
+  잠깐 놓쳤다고 중단하지 않는다. 활주로 위의 AUTO_TAKEOFF(`holdsGround()`인 단계)에서는 통신 두절이 failsafe가 아니라 이륙 중단입니다. 상승 중에는 failsafe이고, 통신이 돌아오면 상승을 계속합니다.
+- “자이로만” 구간(`manageAccelCorrection()`): 자동 이륙이 모터를 시동하면 수평 기준의 지지대로서 가속도계를 뺍니다(`ImuSensor::setAccelCorrection`). 다시 넣는 것은 상승 시작 뒤의 시간(`TAKEOFF_GYRO_ONLY_CLIMB_MS`), 상한, 이륙 중단, DISARM이며, 모드 전환으로는 돌아오지 않습니다.
 
 ---
 
@@ -188,6 +193,28 @@ JSON과 `MavlinkModes`에 쓰임):
 피치 `LAUNCH_CLIMB_PITCH_DEG`) `→ DONE`(`LAUNCH_CLIMB_MS` 또는
 `LAUNCH_ALTITUDE_M`). 던지기 전에 스틱을 움직이면 취소. 메서드: `update(...)`,
 `reset()`, `getState()`, `motorOn()`, `pitchTargetDeg()`, `stateName()`.
+
+## `TakeoffController`
+
+**파일:** `autopilot/TakeoffController.h` · **의존:** `Config`
+
+활주로에서의 자동 이륙. 센서에 따른 단계로 진행하며 자체 센서와 조종면은 없음: 입력은 `Inputs`(ARM, 통신, 조종자의 스로틀, 각도와 각속도, 하중, 주기 자세, 고도, 속도, 노브 `STAB_GAIN`, 시간), 출력은 이번 주기에 할 일.
+
+`Stage`: `IDLE`(모터 정지. 스로틀을 한 번 내렸다가 `TAKEOFF_TRIGGER_US` 위로) `→ CHECK`(`TAKEOFF_CHECK_MS` 동안 정지, 각도 = 주기 자세. 아니면 `ABORTED`와 알림) `→ TAIL_UP`(꼬리 바퀴: 승강타를 내려 꼬리를 듦) `→ ROLL`(활주. `TD_ROLL_MS` / `TRI_ROLL_MS` 또는 기수 들기 속도) `→ LIFTOFF`(피치 목표를 올림. 지면 가까이에서는 주기 자세에서 `TD_TAIL_CLEARANCE_DEG`를 뺀 값까지) `→ CLIMB`(기압계나 시간으로 부양 판단, `TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS`까지 상승) `→ DONE`. `ABORTED`는 이륙 중단이며, 스로틀을 1초 내리면 다시 `IDLE`.
+
+| 메서드 | 설명 |
+|---|---|
+| `void update(const Inputs&)` | 주기마다 한 번: 단계 전환 뒤 그 단계의 출력. ARM이 없으면 `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | 외부에서의 중단(통신 두절). `IDLE`/`DONE`에서는 아무것도 하지 않음 |
+| `void reset()`, `setGear()`, `getGear()` | |
+| `getStage()`, `stageName()`, `stageShort()`, `getAbortReason()` | 단계(OLED용 짧은 이름) |
+| `bool holdsGround() const` | 지상(`IDLE`…`LIFTOFF`, `ABORTED`): 통신 두절은 이륙 중단, PID 적분기는 0으로 유지 |
+| `isAirborneStage()`, `isDone()` | 공중(상승/완료), 이륙 종료 |
+| `getThrottlePct()` | 프로그램 스로틀, %(`TAKEOFF_THROTTLE_RAMP_MS`에 걸쳐 올림) |
+| `getRollTargetDeg()`, `getPitchTargetDeg()` | 롤 목표(바퀴 위에서는 주기 상태의 롤)와 피치 목표(상승 중, PID용) |
+| `hasElevatorCommand()`, `getElevatorUs()` | 바퀴 위에서는 승강타를 직접: 목표 쪽으로 `TD_PITCH_KP` / `TD_ROLL_PITCH_KP`(1°당 µs), 감쇠 `TD_PITCH_KD`, 아래 타각은 최대 `TD_TAIL_UP_ELEVATOR_US` |
+| `hasRudderCommand()`, `getRudderUs()` | 방향타와 조향 바퀴로 침로 유지: 1°당 `TAKEOFF_HEADING_KP` µs, 1 °/s당 `TAKEOFF_YAW_RATE_KD` |
+| `bool takeRefusal()`, `bool takeGyroTrim(float[3])` | 한 번뿐인 이벤트: 점검에서의 거부, 정지 상태에서 잰 자이로 잔여 영점 |
 
 ## `SoaringController`
 

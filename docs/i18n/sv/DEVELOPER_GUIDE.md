@@ -193,10 +193,12 @@ Reglerna som håller arkitekturen ren:
 | `EscSignal.h` | Gas + riktning → ESC-puls: på dubbelriktad BLHeli 1500 = stopp, framåt 1500..2000, bakåt 1500..1000 |
 | `MotorReverse.h` | Motorreversering via `Feature::MOTOR_REVERSE` – bara i DISARM; efter ett riktningsbyte nekas ARM i `REVERSE_SETTLE_MS` |
 | `ArmingManager.h` | ARM med brytaren SwA (en övergång OFF→ON med gasen i botten + lägets sensorkontroller), omedelbar DISARM |
-| `FlightOutputState.h` | Önskad PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % åt vilket håll som helst), `motorReverse`, `aux1` (last), `aux2` (kamera) |
+| `FlightOutputState.h` | Önskad PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % åt vilket håll som helst), `motorReverse`, `escPulsesOff` (motorsignal), `aux1` (last), `aux2` (kamera) |
 | `Beeper.h` | Summern: via funktionen `BEEPER` eller ”modellen borttappad” på marken |
+| `GroundCalibration.h` | Markkalibrering av flygplanet: brytargest, steg 1 – horisonten (stjärten upp), steg 2 – markläget; sparas via `ImuSensor::setGroundCalibration()` |
+| `SignalPlayer.h` | Signaler till piloten: rodren nickar, ESC-pulspaus (ESC:n spelar sin redo-melodi, bara utan ARM), summer/LED; räkning 1/2/3 |
 | `FlightOutputs.h` | Utgångstabellen (`outputInfo()`: nyckel, namn, stift, om den är obligatorisk, tillståndsfältet) och allt ovanpå den i en slinga: `begin()`, `write()`, `setFailsafe()`, status, `printPulseSelfTest()` |
-| `FlightController.h` | Operationsordningen per cykel, förlorad förbindelse (`applyLinkLoss()`), getters för telemetri |
+| `FlightController.h` | Operationsordningen per cykel, förlorad förbindelse (`applyLinkLoss()`), kalibrering och signaler ovanpå utgångarna, getters för telemetri |
 
 ### `autopilot/`
 
@@ -209,6 +211,7 @@ Reglerna som håller arkitekturen ren:
 | `Navigation.h` | `Geo` (avstånd, bäring, förskjutning), `Guidance` (roll för en kurs, cirkelns vektorfält) |
 | `AltitudeSpeedController.h` | Tippning för höjd, gas för lufthastighet (TECS-lite) |
 | `LaunchController.h`, `SoaringController.h` | Tillståndsmaskinerna för handstart och termikflygning |
+| `TakeoffController.h` | Autostart från bana: etapper för sporrhjul och noshjul (`Config::LANDING_GEAR`), höjdroder- och kurslagar på hjulen, avbruten start |
 | `AutoTrim.h` | Autotrimning, lagrad i NVS/flash |
 | `PidController.h` | PID: D från sensorns hastighet (gyroskop, variometer), anti-windup, integratorn fryst utan ARM |
 | `feedback/*` | **Förarbete, inte anslutet:** adaptiv återkoppling, start och landning – se [Återkoppling](#återkoppling-förarbete-inte-ansluten) |
@@ -582,6 +585,8 @@ slingan och är därför bara tillgängliga utan ARM.
 | `s` | `printStatus()` för alla sensorer: data, räknare för bussfel, kalibreringar, kontrollen före flygning |
 | `i` | Gyrokalibrering + kontroll före flygning (2 s orörligt) |
 | `o` | Kalibrering av IMU-monteringen med tre positioner, sparas i NVS |
+| `c` | Markkalibrering av flygplanet (horisont och markläge) – blockerar inte cykeln; pågår den, avbryts den. Från sändaren – brytaren `CAL_SWITCH` ned och upp tre gånger utan ARM |
+| `e` | Signal: rodren nickar och ESC-pulspaus – kontrollera att ESC:n spelar sin redo-melodi (ta av propellern!) |
 | `m` | Kompasskalibrering (15 s rotation), sparas i NVS |
 | `p` | Självtest av utgångar: den verkliga pulsen på varje stift mot den förväntade |
 
@@ -782,7 +787,7 @@ och i `include/hal/stm32/`, åtkomst via `IBoard`.
    `stabilizeOrNeutral()` (utan IMU – neutralläge). Utan den nödvändiga
    sensorn – säkert beteende, inte en krasch. Integratorn ackumulerar bara när
    `armed`.
-3. Gas: `throttleMode` (`PILOT` / `AUTO` / `AT_LEAST`) och
+3. Gas: `throttleMode` (`PILOT` / `AUTO`) och
    `autoThrottlePct`, eller `autoThrottle()` – marschgasen från
    ratten / från pitotröret. `FlightController` ändras inte.
 4. På sändaren – en enda rad i `config/Controls.h`

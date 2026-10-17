@@ -9,6 +9,7 @@
 #include "autopilot/Navigation.h"
 #include "autopilot/PidController.h"
 #include "autopilot/SoaringController.h"
+#include "autopilot/TakeoffController.h"
 #include "config/Config.h"
 #include "control/ControlCommand.h"
 #include "sensors/SensorInterface.h"
@@ -35,7 +36,8 @@
 //               новый курс/высота
 //   LOITER      круги над точкой включения (без GPS — круги на месте)
 //   RTH         домой на высоте RTH_ALTITUDE_M, над домом — круги
-//   AUTO_TAKEOFF автовзлёт по газу пилота (программа тангажа и газа)
+//   AUTO_TAKEOFF автовзлёт с полосы этапами по датчикам (TakeoffController):
+//               хвостовое колесо — сначала хвост вверх, отрывает крыло
 //   LAUNCH      запуск с руки (LaunchController)
 //   AUTO_LAND   планирование с выключенным мотором и выравнивание
 //   SOARING     парение в термиках (SoaringController)
@@ -52,7 +54,15 @@
 //
 // Потеря связи в воздухе (armed): при живом GPS и известном доме —
 // возврат домой с мотором (Config::FAILSAFE_RTH), иначе —
-// планирование с выключенным мотором (FAILSAFE_GLIDE_*).
+// планирование с выключенным мотором (FAILSAFE_GLIDE_*). На земле в
+// AUTO_TAKEOFF (до отрыва) потеря связи — прерванный взлёт: мотор стоп,
+// рули в нейтраль (FlightController), а не RTH с полосы.
+//
+// Углы на разбеге: с запуска мотора автовзлётом горизонт ведёт только
+// гироскоп (ImuSensor::setAccelCorrection(false)) — разгон акселерометр
+// принимает за задранный нос. Окно закрывается по времени
+// (TAKEOFF_GYRO_ONLY_*), а не сменой режима: переключился пилот в
+// STABILIZE в наборе — разгон тот же.
 // ============================================================
 
 struct NavStatus
@@ -145,7 +155,13 @@ public:
             trimSavePending = false;
         }
 
-        setFailsafe(linkLost && armed);
+        // На полосе (взлёт до отрыва) потеря связи — прерванный взлёт, не
+        // failsafe: RTH поднял бы мотор прямо на земле, а планирование
+        // опустило бы нос разогнанного самолёта.
+        const bool takeoffOnGround = currentMode == MODE_AUTO_TAKEOFF && takeoff.holdsGround();
+        if (linkLost && armed && takeoffOnGround) takeoff.abort("связь потеряна", nowMs);
+        linkLostNow = linkLost;
+        setFailsafe(linkLost && armed && !takeoffOnGround);
         if (failsafe == Failsafe::NONE) checkGeofence();
 
         output = pilot;
@@ -159,6 +175,7 @@ public:
 
         applyTurnCoordination();
         applyAutoTrim();
+        manageAccelCorrection();
 
         nav.targetCourseDeg = targetCourse;
         previousInputs = inputs;
@@ -171,15 +188,7 @@ public:
     // ARM и выключение мотора учитывает FlightController.
     uint16_t applyThrottle(uint16_t pilotThrottleUs) const
     {
-        switch (throttleMode)
-        {
-            case ThrottleMode::AUTO:
-                return percentToUs(autoThrottlePct);
-            case ThrottleMode::AT_LEAST:
-                return max(pilotThrottleUs, percentToUs(autoThrottlePct));
-            default:
-                return pilotThrottleUs;
-        }
+        return throttleMode == ThrottleMode::AUTO ? percentToUs(autoThrottlePct) : pilotThrottleUs;
     }
 
     void setMode(AutopilotMode mode)
@@ -229,6 +238,23 @@ public:
     const PilotInputs& getInputs() const { return inputs; }
 
     LaunchController::State getLaunchState() const { return launch.getState(); }
+    TakeoffController::Stage getTakeoffStage() const { return takeoff.getStage(); }
+    const char* getTakeoffAbortReason() const { return takeoff.getAbortReason(); }
+    // Горизонт сейчас ведёт только гироскоп (окно автовзлёта).
+    bool isGyroOnlyAttitude() const { return !accelCorrectionOn; }
+
+    // Шасси (Config::LANDING_GEAR; тесты меняют).
+    Config::LandingGear getLandingGear() const { return takeoff.getGear(); }
+    void setLandingGear(Config::LandingGear gear) { takeoff.setGear(gear); }
+
+    // Автовзлёт отказал на проверке перед стартом — FlightController
+    // играет пилоту сигнал (забирается один раз).
+    bool takeTakeoffRefusal()
+    {
+        const bool r = takeoffRefused;
+        takeoffRefused = false;
+        return r;
+    }
     SoaringController::State getSoaringState() const { return soaring.getState(); }
     const AutoTrim& getAutoTrim() const { return autoTrim; }
     CourseSource getCourseSource() const { return courseSource; }
@@ -260,14 +286,11 @@ public:
 
 private:
 
-    enum class ThrottleMode : uint8_t { PILOT, AUTO, AT_LEAST };
+    enum class ThrottleMode : uint8_t { PILOT, AUTO };
     enum class Failsafe : uint8_t { NONE, GLIDE, RTH };
 
-    // Автовзлёт: программа стартует, когда пилот поднял газ выше этого
-    // порога (защита от раскрутки мотора сразу после ARM). Тот же порог
-    // взводит запуск с руки.
-    static constexpr uint16_t TAKEOFF_TRIGGER_US = 1500;
-    static constexpr uint32_t TAKEOFF_THROTTLE_RAMP_MS = 1000;
+    // Запуск с руки взводится тем же порогом газа, что и автовзлёт.
+    static constexpr uint16_t TAKEOFF_TRIGGER_US = Config::TAKEOFF_TRIGGER_US;
 
     // Стик ближе к центру — "пилот отпустил".
     static constexpr int16_t STICK_DEADBAND_US = 25;
@@ -289,6 +312,7 @@ private:
     PidController pidPitch;
     AltitudeSpeedController altitudeControl;
     LaunchController launch;
+    TakeoffController takeoff;
     SoaringController soaring;
     AutoTrim autoTrim;
     bool trimSavePending = false;   // DISARM был, запись ждёт, пока самолёт встанет
@@ -320,9 +344,16 @@ private:
     bool loiterHasCenter = false;
     bool rthArrived = false;
 
-    bool takeoffStarted = false;
-    uint32_t takeoffStartMs = 0;
+    bool takeoffCaptured = false;   // автовзлёт окончен — курс и высота взяты
+    bool takeoffRefused = false;
     bool launchCaptured = false;
+    bool linkLostNow = false;
+
+    // Окно "горизонт только по гироскопу" (разгон автовзлёта).
+    TakeoffController::Stage lastTakeoffStage = TakeoffController::Stage::IDLE;
+    bool gyroOnlyActive = false;
+    uint32_t gyroOnlyUntilMs = 0;
+    bool accelCorrectionOn = true;
 
     float lastAirspeed = 0;
     float airspeedRate = 0;
@@ -534,7 +565,9 @@ private:
 
         const Failsafe previous = failsafe;
         failsafe = next;
-        takeoffStarted = false;  // автовзлёт после восстановления связи — только заново
+        // Автовзлёт на земле после связи — только заново; уже в наборе —
+        // продолжается (самолёт в воздухе, мотор ему нужен).
+        if (!takeoff.isAirborneStage()) takeoff.reset();
         launch.reset();
         pidRoll.reset();
         pidPitch.reset();
@@ -552,7 +585,7 @@ private:
         {
             Serial.print("Autopilot: связь восстановлена — снова режим ");
             Serial.println(AutopilotNames::mode(currentMode));
-            initializeMode();
+            initializeMode(true);
         }
     }
 
@@ -570,18 +603,21 @@ private:
     // Режимы
     // --------------------------------------------------------
 
-    void initializeMode()
+    // afterLinkLoss — режим тот же, вернулась связь: автовзлёт, уже
+    // набиравший высоту, не начинается заново.
+    void initializeMode(bool afterLinkLoss = false)
     {
         output = pilot;   // коррекции прошлого режима больше не действуют
         pidRoll.reset();
         pidPitch.reset();
         altitudeControl.reset();
         launch.reset();
+        if (!(afterLinkLoss && takeoff.isAirborneStage())) takeoff.reset();
         soaring.reset(millis());
 
         desiredRoll = 0;
         desiredPitch = 0;
-        takeoffStarted = false;
+        takeoffCaptured = false;
         launchCaptured = false;
         rthArrived = false;
         targetCourse = nav.courseDeg;
@@ -766,49 +802,116 @@ private:
         stabilizeOrNeutral();
     }
 
-    // Автовзлёт (разбег или с руки по газу): после ARM ждём, пока пилот
-    // поднимет газ выше TAKEOFF_TRIGGER_US, затем:
-    //   0..1 с — газ плавно до 100%, тангаж 0° (набор скорости);
-    //   1..3 с — 100%, тангаж +15° (отрыв);
-    //   дальше — 100%, тангаж +10° (набор высоты), пока пилот не
-    //   переключит режим. Крылья ровно; стики добавляются поверх.
+    // Автовзлёт с полосы: этапы — TakeoffController, здесь — датчики на
+    // входе и рули на выходе. Крен — ПИД к цели взлёта (на колёсах —
+    // стояночный крен), руль высоты на колёсах — закон взлёта напрямую, в
+    // наборе — ПИД к цели тангажа; руль направления — курс взлёта. Стики
+    // пилота — поверх программы. Набор окончен — как CRUISE.
     void runAutoTakeoff()
     {
-        if (!armed)
+        takeoff.update(takeoffInputs());
+
+        float trim[3];
+        if (takeoff.takeGyroTrim(trim) && imuSensor) imuSensor->trimGyroBias(trim);
+        if (takeoff.takeRefusal()) takeoffRefused = true;
+
+        if (takeoff.isDone())
         {
-            takeoffStarted = false;
-        }
-        else if (!takeoffStarted && pilotThrottle >= TAKEOFF_TRIGGER_US)
-        {
-            takeoffStarted = true;
-            takeoffStartMs = nowMs;
-            Serial.println("Autopilot: автовзлёт — старт");
+            if (!takeoffCaptured)
+            {
+                takeoffCaptured = true;
+                targetCourse = nav.courseDeg;
+                targetAltitude = altitude();
+                altitudeControl.reset();
+            }
+            runCruise();
+            return;
         }
 
-        desiredRoll = 0;
-        if (!takeoffStarted)
-        {
-            desiredPitch = 0;
-            autoThrottlePct = 0;
-        }
-        else
-        {
-            const uint32_t elapsed = nowMs - takeoffStartMs;
-            autoThrottlePct = elapsed < TAKEOFF_THROTTLE_RAMP_MS ? 100.0f * elapsed / TAKEOFF_THROTTLE_RAMP_MS : 100.0f;
+        throttleMode = ThrottleMode::AUTO;
+        autoThrottlePct = takeoff.getThrottlePct();
+        desiredRoll = takeoff.getRollTargetDeg();
+        desiredPitch = takeoff.getPitchTargetDeg();
 
-            if (elapsed < 1000)      desiredPitch = 0;
-            else if (elapsed < 3000) desiredPitch = 15;
-            else                     desiredPitch = 10;
-        }
-        throttleMode = ThrottleMode::AT_LEAST;
+        const TakeoffController::Stage stage = takeoff.getStage();
+        const bool waiting = stage == TakeoffController::Stage::IDLE || stage == TakeoffController::Stage::CHECK;
+        if (waiting || !imuReady()) return;   // мотор стоит или углов нет — рули = стики
 
-        // Стики пилота — поверх программы (как раньше).
-        if (imuReady())
+        stabilize();
+        // Законы взлёта уже с крутилкой STAB_GAIN (TakeoffController).
+        if (takeoff.hasElevatorCommand()) output.pitch = clampCommand(takeoff.getElevatorUs());
+        if (takeoff.hasRudderCommand()) output.yaw = clampCommand(takeoff.getRudderUs() + pilot.yaw);
+        output.roll = clampCommand(output.roll + pilot.roll);
+        output.pitch = clampCommand(output.pitch + pilot.pitch);
+    }
+
+    TakeoffController::Inputs takeoffInputs() const
+    {
+        TakeoffController::Inputs in;
+        in.armed = armed;
+        in.linkLost = linkLostNow;
+        in.pilotThrottleUs = pilotThrottle;
+        in.imuOk = imuReady();
+        if (imuSensor)
         {
-            stabilize();
-            output.roll = clampCommand(output.roll + pilot.roll);
-            output.pitch = clampCommand(output.pitch + pilot.pitch);
+            const ImuData& d = imuSensor->getImuData();
+            in.pitchDeg = d.pitch;
+            in.rollDeg = d.roll;
+            in.yawDeg = d.yaw;
+            in.pitchRateDps = d.gyroY;
+            in.rollRateDps = d.gyroX;
+            in.yawRateDps = d.gyroZ;
+            in.accelG = sqrtf(d.accelX * d.accelX + d.accelY * d.accelY + d.accelZ * d.accelZ);
+            in.parkingValid = imuSensor->getParkingAttitude(in.parkingPitchDeg, in.parkingRollDeg);
         }
+        in.altitudeValid = baroReady();
+        in.altitudeM = altitude();
+        // Скорость отрыва — только измеренная (трубка или GPS), не "типичная".
+        in.speedValid = airspeedReady() || nav.gpsGood;
+        in.speedMs = nav.speedMs;
+        in.gain = stabGain();
+        in.nowMs = nowMs;
+        return in;
+    }
+
+    // Окно "горизонт только по гироскопу": открывает запуск мотора
+    // автовзлётом, закрывают время после начала набора, общий предел,
+    // прерванный взлёт (самолёт тормозит) и DISARM. Смена режима окно не
+    // закрывает — разгон от неё не кончается.
+    void manageAccelCorrection()
+    {
+        const TakeoffController::Stage stage = takeoff.getStage();
+        if (stage != lastTakeoffStage)
+        {
+            using S = TakeoffController::Stage;
+            if (lastTakeoffStage == S::CHECK && (stage == S::TAIL_UP || stage == S::ROLL))
+            {
+                gyroOnlyActive = true;
+                gyroOnlyUntilMs = nowMs + Config::TAKEOFF_GYRO_ONLY_MAX_MS;
+            }
+            else if (stage == S::CLIMB) shortenGyroOnly(Config::TAKEOFF_GYRO_ONLY_CLIMB_MS);
+            else if (stage == S::ABORTED) shortenGyroOnly(Config::TAKEOFF_GYRO_ONLY_ABORT_MS);
+            else if (stage == S::DONE) shortenGyroOnly(0);
+            lastTakeoffStage = stage;
+        }
+        if (!armed || (gyroOnlyActive && static_cast<int32_t>(nowMs - gyroOnlyUntilMs) >= 0))
+        {
+            gyroOnlyActive = false;
+        }
+
+        const bool wantAccel = !gyroOnlyActive;
+        if (wantAccel == accelCorrectionOn) return;
+        accelCorrectionOn = wantAccel;
+        if (imuSensor) imuSensor->setAccelCorrection(wantAccel);
+        Serial.println(wantAccel ? "Autopilot: горизонт снова по акселерометру"
+                                 : "Autopilot: разгон — горизонт только по гироскопу");
+    }
+
+    void shortenGyroOnly(uint32_t ms)
+    {
+        if (!gyroOnlyActive) return;
+        const uint32_t until = nowMs + ms;
+        if (static_cast<int32_t>(until - gyroOnlyUntilMs) < 0) gyroOnlyUntilMs = until;
     }
 
     void runLaunch()
@@ -967,7 +1070,7 @@ private:
     bool waitingForStart() const
     {
         if (failsafe != Failsafe::NONE) return false;
-        if (currentMode == MODE_AUTO_TAKEOFF) return !takeoffStarted;
+        if (currentMode == MODE_AUTO_TAKEOFF) return takeoff.holdsGround();
         if (currentMode == MODE_LAUNCH)
         {
             const LaunchController::State s = launch.getState();
@@ -1004,7 +1107,8 @@ private:
 
     void applyTurnCoordination()
     {
-        const bool navigating = failsafe == Failsafe::RTH || isNavigationMode(currentMode);
+        const bool navigating = failsafe == Failsafe::RTH || isNavigationMode(currentMode) ||
+                                (currentMode == MODE_AUTO_TAKEOFF && takeoff.isDone());
         const bool enabled = inputs.has(Feature::TURN_COORDINATION) ||
                              (Config::TURN_COORD_IN_NAV_MODES && navigating && failsafe != Failsafe::GLIDE);
         if (!enabled) return;

@@ -40,10 +40,10 @@ På de andra korten (ESP32-C3, den vanliga ESP32) finns inget lagringsutrymme: d
 | `MAG` | upp till 50 Hz | fältet på tre axlar, kurs |
 | `GPS` | varje lösning | koordinater, höjd, hastighet, kurs, satelliter, fix, noggrannhet |
 | `AIR` | upp till 50 Hz | pitotrör: tryckskillnad, indikerad och sann lufthastighet, densitet |
-| `NAV` | 10 Hz | hempunkt (avstånd, bäring), kurs och kursmål, navigeringshastighet, kurskälla, steg för handstart och termikflygning, autotrimning |
+| `NAV` | 10 Hz | hempunkt (avstånd, bäring), kurs och kursmål, navigeringshastighet, kurskälla, steg för handstart och termikflygning, autotrimning, autostartens etapp (`takeoff_stage`) |
 | `POWER` | 10 Hz | batterispänning och strömsensorns utsignal (spänningsdelarna på flygkontrollerkortet, [FC_BOARD.md](FC_BOARD.md), block B) |
 | `SYS` | 1 Hz | styrslingans frekvens och sämsta cykel, ledigt minne, iBUS-räknare, IMU-temperatur, den svarta lådans kö, förlorade poster, den längsta flashskrivningen, ledigt utrymme |
-| `EVENT` | vid en händelse | ARM/DISARM, en ARM-vägran med orsak, lägesbyte, förbindelse förlorad/återställd, sensor felade/återhämtade sig, GPS-fix, hempunkt registrerad, brytarfunktioner, geofence, överstegringsskydd, steg för handstart och termikflygning |
+| `EVENT` | vid en händelse | ARM/DISARM, en ARM-vägran med orsak, lägesbyte, förbindelse förlorad/återställd, sensor felade/återhämtade sig, GPS-fix, hempunkt registrerad, brytarfunktioner, geofence, överstegringsskydd, steg för handstart och termikflygning, autostartens etapper (avbrott – med orsak), markkalibreringens steg och resultat (markläge eller fel) |
 
 I början av varje flygning kommer parametrarna: firmwaren (byggdatum), orsaken till starten och till den senaste omstarten, vilka sensorer som finns och om de klarade kontrollen före flygning, PID-koefficienterna (inklusive ändringar från panelen), trimmen, viktiga `Config`-värden och brytarbindningarna.
 

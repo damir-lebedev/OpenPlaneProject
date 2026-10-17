@@ -97,7 +97,7 @@ C++11 编译）：`channelIsFree`、`channelsFree`、`channelsUnique`、
 
 ## `Autopilot`
 
-**文件：** `autopilot/Autopilot.h` · **依赖：** `PidController`、`Navigation`、`AltitudeSpeedController`、`LaunchController`、`SoaringController`、`AutoTrim`、各传感器（均可为空）
+**文件：** `autopilot/Autopilot.h` · **依赖：** `PidController`、`Navigation`、`AltitudeSpeedController`、`LaunchController`、`TakeoffController`、`SoaringController`、`AutoTrim`、各传感器（均可为空）
 
 ### 生命周期
 
@@ -108,7 +108,7 @@ C++11 编译）：`channelIsFree`、`channelsFree`、`channelsUnique`、
 | `void setInputs(const PilotInputs&)` | 本周期的拨杆和旋钮（在 `update` 之前调用） |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | 每个周期一次：传感器（始终）→ 导航与返航点 → 在地面保存配平 → failsafe → 地理围栏 → 模式 → 转弯协调 → 自动配平 |
 | `ControlCommand getCommand() const` | 最终的舵面指令（roll/pitch/yaw，µs） |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | 该模式的油门：`PILOT`——飞手油门；`AUTO`——自己的油门；`AT_LEAST`——不低于自己的油门（自动起飞）。ARM 和 `MOTOR_KILL` 由 `FlightController` 处理 |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | 该模式的油门：`PILOT`——飞手油门；`AUTO`——自己的油门（自动起飞也是如此：油门杆只用来开始和中止）。ARM 和 `MOTOR_KILL` 由 `FlightController` 处理 |
 
 ### 模式
 
@@ -119,6 +119,10 @@ C++11 编译）：`channelIsFree`、`channelsFree`、`channelsUnique`、
 | `isFailsafeActive()`、`isFailsafeGliding()`、`isFailsafeReturning()` | 叠加在模式之上的 failsafe |
 | `isAutoThrottle()`、`getThrottleCorrection()` | 该模式的油门（%，用于日志和仪表盘） |
 | `getLaunchState()`、`getSoaringState()` | LAUNCH 和 SOARING 的状态机 |
+| `getTakeoffStage()`、`getTakeoffAbortReason()` | 自动起飞的阶段，以及中止的原因（`nullptr`——未中止） |
+| `bool takeTakeoffRefusal()` | 自动起飞在起飞前检查时拒绝了——`FlightController` 播放提示（只取一次） |
+| `getLandingGear()`、`setLandingGear(LandingGear)` | 起落架（默认 `Config::LANDING_GEAR`；测试中会修改） |
+| `bool isGyroOnlyAttitude() const` | 当前只用陀螺仪推算水平基准（自动起飞的加速窗口） |
 
 ### 输出与诊断
 
@@ -142,7 +146,8 @@ C++11 编译）：`channelIsFree`、`channelsFree`、`channelsUnique`、
 - 导航所用速度：皮托管 → GPS → `NAV_ASSUMED_SPEED_MS`。
 - `looksLanded()`——根据气压计判断贴近地面，几乎没有垂直速度，速度低于皮托管/GPS 的阈值：只有此时才会把配平写入闪存。
 - Failsafe：有 GPS 和返航点时——带动力 RTH，否则滑翔；已经开始的 RTH
-  不会因 GPS 短暂丢失而放弃。
+  不会因 GPS 短暂丢失而放弃。在跑道上的 AUTO_TAKEOFF（`holdsGround()` 为真的阶段）中，信号丢失意味着中止起飞，而不是 failsafe；爬升中则是 failsafe，信号恢复后继续爬升。
+- “仅陀螺仪”窗口（`manageAccelCorrection()`）：自动起飞启动电机时，不再用加速度计作为水平基准的依据（`ImuSensor::setAccelCorrection`）；让它恢复的是爬升开始后经过的时间（`TAKEOFF_GYRO_ONLY_CLIMB_MS`）、上限、中止起飞和 DISARM——而不是切换模式。
 
 ---
 
@@ -180,6 +185,28 @@ C++11 编译）：`channelIsFree`、`channelsFree`、`channelsUnique`、
 且持续超过 `LAUNCH_ACCEL_TIME_MS`）`→ CLIMB`（经过 `LAUNCH_MOTOR_DELAY_MS`：电机启动，俯仰 `LAUNCH_CLIMB_PITCH_DEG`）`→ DONE`（`LAUNCH_CLIMB_MS` 或
 `LAUNCH_ALTITUDE_M`）。抛出之前动摇杆——取消。方法：`update(...)`、
 `reset()`、`getState()`、`motorOn()`、`pitchTargetDeg()`、`stateName()`。
+
+## `TakeoffController`
+
+**文件：** `autopilot/TakeoffController.h` · **依赖：** `Config`
+
+从跑道自动起飞——按传感器分阶段，自身没有传感器和舵面：输入 `Inputs`（ARM、信号、飞手油门、角度和角速度、过载、停机姿态、高度、速度、旋钮 `STAB_GAIN`、时间），输出本周期该做什么。
+
+`Stage`：`IDLE`（电机不转；油门先在最低、再推过 `TAKEOFF_TRIGGER_US`）`→ CHECK`（静止 `TAKEOFF_CHECK_MS`，角度 = 停机姿态；否则 `ABORTED` 并提示）`→ TAIL_UP`（尾轮：升降舵下压，抬尾）`→ ROLL`（滑跑；`TD_ROLL_MS` / `TRI_ROLL_MS` 或达到抬头速度）`→ LIFTOFF`（俯仰目标增大，贴近地面时最多为停机姿态减 `TD_TAIL_CLEARANCE_DEG`）`→ CLIMB`（按气压计或时间判断离地；爬升到 `TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS`）`→ DONE`。`ABORTED`——中止起飞；油门在最低 1 s——回到 `IDLE`。
+
+| 方法 | 说明 |
+|---|---|
+| `void update(const Inputs&)` | 每个周期一次：切换阶段，然后给出该阶段的输出；未 ARM 时——`reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | 外部中止（信号丢失）；在 `IDLE`/`DONE` 中——不做任何事 |
+| `void reset()`、`setGear()`、`getGear()` | |
+| `getStage()`、`stageName()`、`stageShort()`、`getAbortReason()` | 阶段（OLED 用短名） |
+| `bool holdsGround() const` | 在地面（`IDLE`…`LIFTOFF`、`ABORTED`）：信号丢失即中止起飞，PID 积分器保持为零 |
+| `isAirborneStage()`、`isDone()` | 在空中（爬升/完成）；起飞结束 |
+| `getThrottlePct()` | 程序油门，%（在 `TAKEOFF_THROTTLE_RAMP_MS` 内逐渐加大） |
+| `getRollTargetDeg()`、`getPitchTargetDeg()` | 横滚目标（在轮子上——停放时的横滚）和俯仰目标（爬升中——给 PID） |
+| `hasElevatorCommand()`、`getElevatorUs()` | 在轮子上直接控制升降舵：按 `TD_PITCH_KP` / `TD_ROLL_PITCH_KP`（每度 µs）趋向目标，阻尼 `TD_PITCH_KD`，下压最多 `TD_TAIL_UP_ELEVATOR_US` |
+| `hasRudderCommand()`、`getRudderUs()` | 用方向舵和转向轮保持航向：每度 `TAKEOFF_HEADING_KP` µs，每 °/s `TAKEOFF_YAW_RATE_KD` |
+| `bool takeRefusal()`、`bool takeGyroTrim(float[3])` | 一次性事件：检查时拒绝；静止时测得的陀螺仪残余零点 |
 
 ## `SoaringController`
 

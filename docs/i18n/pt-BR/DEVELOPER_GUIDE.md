@@ -182,10 +182,12 @@ As regras que mantêm a arquitetura limpa:
 | `EscSignal.h` | Acelerador + sentido → pulso do ESC: no BLHeli bidirecional 1500 = parado, para a frente 1500..2000, para trás 1500..1000 |
 | `MotorReverse.h` | Reversão do motor por `Feature::MOTOR_REVERSE` — só em DISARM; depois de trocar o sentido, o ARM é recusado por `REVERSE_SETTLE_MS` |
 | `ArmingManager.h` | ARM pela chave SwA (uma transição OFF→ON com o acelerador embaixo + as verificações dos sensores do modo), DISARM instantâneo |
-| `FlightOutputState.h` | Os PWM desejados: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100% em qualquer sentido), `motorReverse`, `aux1` (carga), `aux2` (câmera) |
+| `FlightOutputState.h` | Os PWM desejados: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100% em qualquer sentido), `motorReverse`, `escPulsesOff` (sinal do motor), `aux1` (carga), `aux2` (câmera) |
 | `Beeper.h` | O buzzer: pela função `BEEPER` ou “modelo perdido” no solo |
+| `GroundCalibration.h` | Calibração em solo do avião: gesto na chave, passo 1 — o horizonte (cauda levantada), passo 2 — a atitude em solo; grava via `ImuSensor::setGroundCalibration()` |
+| `SignalPlayer.h` | Sinais para o piloto: aceno das superfícies, pausa dos pulsos do ESC (ele toca a melodia de pronto, só sem ARM), buzzer/LED; contagem 1/2/3 |
 | `FlightOutputs.h` | A tabela de saídas (`outputInfo()`: chave, nome, pino, se é obrigatória, campo de estado) e tudo o que fica por cima, em um laço: `begin()`, `write()`, `setFailsafe()`, status, `printPulseSelfTest()` |
-| `FlightController.h` | A ordem das operações por ciclo, a perda de sinal (`applyLinkLoss()`), getters para a telemetria |
+| `FlightController.h` | A ordem das operações por ciclo, a perda de sinal (`applyLinkLoss()`), a calibração e os sinais por cima das saídas, getters para a telemetria |
 
 ### `autopilot/`
 
@@ -198,6 +200,7 @@ As regras que mantêm a arquitetura limpa:
 | `Navigation.h` | `Geo` (distância, rumo, deslocamento), `Guidance` (rolagem para um rumo, o campo vetorial do círculo) |
 | `AltitudeSpeedController.h` | Arfagem para a altitude, acelerador para a velocidade do ar (TECS-lite) |
 | `LaunchController.h`, `SoaringController.h` | As máquinas de estados do lançamento manual e do voo planado |
+| `TakeoffController.h` | Decolagem automática da pista: etapas para bequilha e roda de nariz (`Config::LANDING_GEAR`), leis do profundor e do rumo sobre as rodas, decolagem abortada |
 | `AutoTrim.h` | Auto-trim, guardado no NVS/flash |
 | `PidController.h` | PID: D sobre a taxa do sensor (giroscópio, variômetro), anti-windup, integrador congelado sem ARM |
 | `feedback/*` | **Base preparada, não conectada:** realimentação adaptativa, decolagem e pouso — veja [Realimentação](#realimentação-base-preparada-não-conectada) |
@@ -574,6 +577,8 @@ bloqueiam o ciclo e por isso só ficam disponíveis sem ARM.
 | `s` | `printStatus()` de todos os sensores: dados, contadores de erros do barramento, calibrações, a verificação pré-voo |
 | `i` | Calibração do giroscópio + verificação pré-voo (2 s parada) |
 | `o` | Calibração da instalação da IMU por três posições, salva no NVS |
+| `c` | Calibração em solo do avião (horizonte e atitude em solo) — não bloqueia o ciclo; em andamento — cancela. Pelo rádio — a chave `CAL_SWITCH` três vezes para baixo e para cima sem ARM |
+| `e` | Sinal: aceno das superfícies e pausa dos pulsos do ESC — verificar se ele toca a melodia de pronto (tire a hélice!) |
 | `m` | Calibração da bússola (15 s girando), salva no NVS |
 | `p` | Autoteste das saídas: o pulso real em cada pino contra o esperado |
 
@@ -769,7 +774,7 @@ Uma nova interface em `include/hal/`, a implementação em
    `stabilizeOrNeutral()` (sem IMU — neutro). Sem o sensor necessário — um
    comportamento seguro, e não uma falha. O integrador só acumula com
    `armed`.
-3. Acelerador: `throttleMode` (`PILOT` / `AUTO` / `AT_LEAST`) e
+3. Acelerador: `throttleMode` (`PILOT` / `AUTO`) e
    `autoThrottlePct`, ou `autoThrottle()` — o acelerador de cruzeiro vindo do
    potenciômetro / do tubo de Pitot. O `FlightController` não muda.
 4. No rádio — uma única linha em `config/Controls.h`

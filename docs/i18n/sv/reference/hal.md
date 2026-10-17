@@ -127,6 +127,7 @@ En enda PWM-utgång. Implementeringen fixerar stiftet.
 | `writeMicroseconds(us)` | Pulsbredd, µs (begränsad till intervallet från `attach`) |
 | `bool isAttached() const` | Resultatet av `attach()` |
 | `virtual int32_t measurePulseUs()` | Diagnostik: den verkliga pulsbredden på stiftet eller `-1`. Standardimplementeringen returnerar `-1` |
+| `virtual void stopPulses()` | Ta bort pulserna (stiftet ligger lågt) till nästa skrivning – motorsignalen: utan pulser tror ESC:n att signalen förlorats och spelar, när de kommer tillbaka, sin redo-melodi. Standard: ingenting (motorn förblir då tyst) |
 
 ---
 
@@ -321,6 +322,7 @@ blocken (GPIO6/7 upprepade GPIO4/5).
 | `attach(minUs, maxUs)` | Sparar intervallet; stift < 0 → `false`; annars `ledcSetup() != 0` → `ledcAttachPin()` |
 | `writeMicroseconds(us)` | Inte ansluten – ingenting; annars `constrain(us, min, max) * MAX_DUTY / PERIOD_US` → `ledcWrite` |
 | `measurePulseUs()` | Slår på ingångsbufferten för samma GPIO (`PIN_INPUT_ENABLE`, utgången rörs inte) och mäter `pulseIn(pin, HIGH, 30 ms)`; ingen puls → `-1` |
+| `stopPulses()` | Pulskvot 0 (`ledcWrite(channel, 0)`) – ingen puls |
 
 Kanalerna 2n och 2n+1 delar en LEDC-timer – alla utgångar går på 50 Hz, så det finns ingen konflikt.
 
@@ -426,7 +428,8 @@ som växlar stiften från avbrottet i en enda timer och ger jitter.
 | `Stm32ServoOutput(int16_t pin)` | Stift `< 0` – utgången är inte dragen |
 | `attach(minUs, maxUs)` | Timern och kanalen tas från `PinMap_TIM` efter stift (`pinmap_peripheral`, `STM_PIN_CHANNEL`), som i `analogWrite()`. Ingen timer på stiftet eller poolen är uttömd → `false`. Annars `setMode(PWM1)`, compare 0 (ingen puls före den första skrivningen), `resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`. Compare-registret förladdas – värdet träder i kraft från nästa period |
-| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` utan att konfigurera om stiftet: på STM32 ser registret IDR nivån även i läget för alternativ funktion |
+| `stopPulses()` | Jämförelsevärde 0 – ingen puls, som direkt efter `attach()` |
+| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` utan att konfigurera om stiftet: på STM32 ser registret IDR nivån även i läget för alternativ funktion. Kärnans `pulseIn()` mäter på stift med bitnummer 8+ (PD14, PD15, PE9) den **låga** nivån – dess nivåmask är `uint8_t`; en servopuls är alltid kortare än halva perioden, så ett längre mätvärde är pausen, och pulsen är `PERIOD_US` minus den |
 | `static acquireTimer(TIM_TypeDef*)` | En gemensam pool: **en `HardwareTimer` per TIMx**. Ett andra objekt för samma timer skulle skriva över kärnans hanterare (`HardwareTimer_Handle[index]`). Perioden ställs in vid den första utgången på timern; `setOverflow(MICROSEC_FORMAT)` väljer förskalaren – ett steg på ~0,3 µs vid en timerklocka på 240 MHz |
 
 ## `Stm32FlashStorage`

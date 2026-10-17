@@ -104,6 +104,7 @@ RC   1:1500 2:1500 3:1000 …
 OUT  AIL-L 1500 AIL-R 1500 ELE 1500 RUD 1500 ESC 1000
 ATT  R +1.2 P -0.4 Y 123.0
 AP   STABILIZE want R +0.0 P +0.0 corr R -6 P +2 THR +0
+AP   AUTO_TAKEOFF/ROLL GYRO want R +0.0 P +1.0 corr R +0 P -22 THR +100
 ALT  0.3 m  Vz +0.10 m/s  目标 0.0 m
 MAG  航向 123°
 GPS  fix=3 sats=12 lat … lon … v 0.0 m/s hacc 1.2 m
@@ -112,7 +113,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s 内最差) | iBUS ok=… crc_err
 ```
 
 `RX=` 区分 `LOST(无帧)` 和 `LOST(遥控器失效保护)`；`IMU=` 为
-`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`。
+`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`。AUTO_TAKEOFF 时，模式名后面跟着起飞阶段（`/CHECK`、`/TAIL_UP`、`/ROLL`…），`GYRO` 表示当前水平基准只来自陀螺仪（正在加速）。
 
 ---
 
@@ -132,13 +133,13 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s 内最差) | iBUS ok=… crc_err
 快捷键（菜单之外）：`h`/`?`——主菜单；`l`——日志菜单；空格——
 暂停日志；`s`——传感器状态；`i`——陀螺仪校准；`o`——
 IMU 安装方向校准；`m`——指南针校准；`p`——输出自检；
-`b`——扫描 I2C 总线（0x08..0x7F——一直扫到 0x7F，因为 QMC6309 位于 0x7C），并给出芯片名称；其他——提示。`\r`/`\n` 会被忽略。
+`b`——扫描 I2C 总线（0x08..0x7F——一直扫到 0x7F，因为 QMC6309 位于 0x7C），并给出芯片名称；其他——提示。`\r`/`\n` 会被忽略。另外还有 `c`——飞机地面校准（正在进行时则取消；主菜单第 9 项）和 `e`——用舵面和电调提示音发出一次提示（检查电调在脉冲暂停后是否会播放）。
 
 日志菜单：`1`..`9`——循环切换通道 0..8 的模式，`n`——NAV，`s`——SYS，`p`——周期，`a`——
 全部“变化时”，`x`——全部关，`d`——恢复默认，`0`/`q`——返回，`l`/`h`——
 关闭。
 
-会阻塞的操作（`i`、`o`、`m`、`p`）**在 ARM 时被禁止**。菜单打开期间，日志被挂起（`DebugLogger::suspend`）。菜单项的宽度按 UTF-8 字符而不是字节计算（西里尔字母占 2 字节）。
+会阻塞的操作（`i`、`o`、`m`、`p`）**在 ARM 时被禁止**。菜单打开期间，日志被挂起（`DebugLogger::suspend`）。菜单项的宽度按 UTF-8 字符而不是字节计算（西里尔字母占 2 字节）。飞机校准和提示（`c`、`e`——它们会动舵面和电调）在 ARM 时同样被禁止。
 
 ---
 
@@ -201,7 +202,7 @@ U8g2 通过建立在 `II2CBus` 之上的 `byteCallback` 发送字节（屏幕并
 
 ```
 RX ok ARM STAB FL       链路（丢失——反色行）/ ARM / 模式 / REV——电机反转 / 襟翼
-R  +1.2 P  -0.4         滚转 / 俯仰，°           (IMU --)
+R  +1.2 P  -0.4 ROLL    滚转 / 俯仰，°；校准步骤（CAL1、CAL2，结果 CALOK/CALER 显示 10 s）或起飞阶段（WAIT、CHECK、TAIL、ROLL、LIFT、CLIMB、DONE、ABORT）   (IMU --)
 Alt +0.3 Vz +0.1 A14    高度 / 垂直速度 / 空速（如果有皮托管） (BARO --)
 H123 T1000 Y1500        航向 / 油门 1000..2000 = 任一方向的 0..100% / 方向舵 (H---)
 L1500 R1500 E1500       副翼 / 升降舵
@@ -228,6 +229,8 @@ Loop 500Hz max1100us    频率和一秒内最差的节拍
 | `State getState()` / `bool isRecording()` | `Off`、`Idle`、`Recording`、`Stopping`（先把队列写完，再记录 END） |
 | `printStatus(Print&)` / `printFlights(Print&)` / `eraseAll()` | 供控制台使用 |
 | `void handleHostCommand(const char*)` | `bb list`、`bb get <n> [波特率]`——供 `tools/blackbox.py` 使用（在 USB CDC 上速率没有任何影响） |
+
+地面校准的事件（步骤、带停机姿态的结果、带原因的错误、取消）和自动起飞各阶段的事件（`ABORTED`——带原因）；阶段还记录在 NAV 记录的 `takeoff_stage` 字段中；飞行参数包含 `LANDING_GEAR` 和主要的起飞参数。
 
 各平台不同的部分：重启原因——`readResetCause()`；电池电压和电流——
 ADC（S3 用 `analogReadMilliVolts`，STM32 用 12 位的 `analogRead`）；存储介质错误（`BlackBoxStorage::writeErrors`/`eraseErrors`）每秒一次以“存储介质：写入错误 …”

@@ -15,8 +15,8 @@ Todas las rutas son relativas a `include/`, salvo `src/`. Todas las clases son s
 | [hal.md](hal.md) | HAL | `IBoard`, `ServoChannel`, `II2CBus`, `ISpiBus`, `IUartPort`, `IServoOutput`, `IRegisterDevice`, `I2cRegisterDevice`, `SpiRegisterDevice`, `Rtos`, `Esp32Board`, `Esp32I2CBus`, `Esp32SpiBus`, `Esp32UartPort`, `Esp32ServoOutput`; STM32H743: `Stm32Board`, `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`, `Stm32ServoOutput`, `Stm32FlashStorage`, `compat/Preferences` |
 | [storage.md](storage.md) | STORAGE | `IFlashStorage`, `KeyValueStore`, `KvPreferences` |
 | [rc.md](rc.md) | RC | `RcChannelState`, `RcInput`, `IBusReceiver` |
-| [control.md](control.md) | CONTROL / COORDINATION | `ControlCommand`, `FlightOutputState`, `FlapsController`, `ControlMixer`, `ThrottleManager`, `EscSignal`, `MotorReverse`, `ArmingManager`, `FlightOutputs`, `Beeper`, `FlightController` |
-| [autopilot.md](autopilot.md) | AUTOPILOT | `AutopilotMode`, `Feature`, `Knob`, `PilotInputs`, `Binding`/`Bind`/`BindingCheck`, `PilotSwitches`, `Autopilot`, `NavStatus`, `Geo`/`Guidance`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, `PidController` |
+| [control.md](control.md) | CONTROL / COORDINATION | `ControlCommand`, `FlightOutputState`, `FlapsController`, `ControlMixer`, `ThrottleManager`, `EscSignal`, `MotorReverse`, `ArmingManager`, `FlightOutputs`, `Beeper`, `FlightController`, `GroundCalibration`, `SignalPlayer` |
+| [autopilot.md](autopilot.md) | AUTOPILOT | `AutopilotMode`, `Feature`, `Knob`, `PilotInputs`, `Binding`/`Bind`/`BindingCheck`, `PilotSwitches`, `Autopilot`, `NavStatus`, `Geo`/`Guidance`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, `PidController` |
 | [feedback.md](feedback.md) | AUTOPILOT / feedback | `FeedbackConfig`, `FeedbackMath`, `FlightSnapshot`, `FeedbackOutput`, `PhaseTargets`, `SpeedEstimator`, `AirborneDetector`, `ControlEffectivenessEstimator`, `AxisModel`, `AdaptiveRateController`, `StallGuard`, `TakeoffSequencer`, `LandingSequencer`, `FeedbackSupervisor` |
 | [sensors.md](sensors.md) | SENSORS | interfaces y datos, `SensorMounting`, `SensorSelection`, `ImuOrientation`, `AttitudeEstimator`, `ImuSensorBase`, `MPU6050_Sensor`, `ICM42688_Sensor`, `LSM6DSV_Sensor`, `ICM45686_Sensor`, `BarometerBase`, `BMP388_Sensor`, `BME280_Sensor`, `SPL06_Sensor`, `BMP581_Sensor`, `MagnetometerBase`, `QMC5883P_Sensor`, `QMC5883L_Sensor`, `QMC6309_Sensor`, `UbloxM10_Gps`, `AirspeedSensor`, `PitotDualBaroAirspeed` |
 | [telemetry.md](telemetry.md) | TELEMETRY | `LoopStats`, `LogChannel`, `LogMode`, `LogSettings`, `DebugLogger`, `DebugConsole`, `WebDashboardPage`, `WebDebugServer`, `OledDisplay`, `Mavlink` (códec), `MavlinkModes`, `MavlinkTelemetry` |
@@ -69,6 +69,7 @@ Todas las rutas son relativas a `include/`, salvo `src/`. Todas las clases son s
 | `FlightSnapshot` | struct | `autopilot/feedback/FlightSnapshot.h` | [feedback](feedback.md#flightsnapshot) |
 | `Geo`, `Guidance`, `GeoPoint` | namespace, struct | `autopilot/Navigation.h` | [autopilot](autopilot.md#geo-guidance-geopoint) |
 | `GpsData`, `GpsSensor` | struct, interface | `sensors/SensorInterface.h` | [sensors](sensors.md#interfaces-y-estructuras-de-datos) |
+| `GroundCalibration` | class | `control/GroundCalibration.h` | [control](control.md#groundcalibration) |
 | `I2cRegisterDevice` | class | `hal/RegisterDevice.h` | [hal](hal.md#i2cregisterdevice) |
 | `IBoard` | interface | `hal/IBoard.h` | [hal](hal.md#iboard) |
 | `IBusReceiver` | class | `rc/IBusReceiver.h` | [rc](rc.md#ibusreceiver) |
@@ -113,6 +114,7 @@ Todas las rutas son relativas a `include/`, salvo `src/`. Todas las clases son s
 | `SensorMounting` | namespace | `sensors/SensorMounting.h` | [sensors](sensors.md#namespace-sensormounting) |
 | `SensorSelection.h` | macros | `sensors/SensorSelection.h` | [sensors](sensors.md#sensorselectionh) |
 | `ServoChannel` | namespace | `hal/IBoard.h` | [hal](hal.md#namespace-servochannel) |
+| `SignalPlayer` | class | `control/SignalPlayer.h` | [control](control.md#signalplayer) |
 | `SoaringController` | class | `autopilot/SoaringController.h` | [autopilot](autopilot.md#soaringcontroller) |
 | `SpeedEstimator` | class | `autopilot/feedback/SpeedEstimator.h` | [feedback](feedback.md#speedestimator) |
 | `SpiRegisterDevice` | class | `hal/RegisterDevice.h` | [hal](hal.md#spiregisterdevice) |
@@ -124,6 +126,7 @@ Todas las rutas son relativas a `include/`, salvo `src/`. Todas las clases son s
 | `Stm32ServoOutput` | class | `hal/stm32/Stm32ServoOutput.h` | [hal](hal.md#stm32servooutput) |
 | `Stm32SpiBus` | class | `hal/stm32/Stm32SpiBus.h` | [hal](hal.md#stm32spibus) |
 | `Stm32UartPort` | class | `hal/stm32/Stm32UartPort.h` | [hal](hal.md#stm32uartport) |
+| `TakeoffController` | class | `autopilot/TakeoffController.h` | [autopilot](autopilot.md#takeoffcontroller) |
 | `TakeoffSequencer` | class | `autopilot/feedback/TakeoffSequencer.h` | [feedback](feedback.md#takeoffsequencer) |
 | `ThrottleManager` | class | `control/ThrottleManager.h` | [control](control.md#throttlemanager) |
 | `UbloxM10_Gps` | class | `sensors/gps/UbloxM10_Gps.h` | [sensors](sensors.md#ubloxm10_gps) |

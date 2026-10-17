@@ -50,6 +50,11 @@
 // FlightController передаёт сюда MotorReverse::armBlockReason() —
 // мотор после смены направления ещё не остановился.
 //
+// AUTO_TAKEOFF с хвостовым колесом (Config::LANDING_GEAR) ещё и требует
+// наземную калибровку самолёта (control/GroundCalibration.h): без
+// стояночного угла автовзлёт не знает, где хвостовое колесо коснётся
+// полосы. Барометр автовзлёту не обязателен — без него набор по времени.
+//
 // GPS-фикс в проверки намеренно НЕ включён: LOITER и RTH без GPS
 // не опасны — они кружат на месте с удержанием высоты (см.
 // Autopilot::orbit()), а дом записывается при первом хорошем фиксе.
@@ -161,6 +166,18 @@ private:
             if (imu && imu->getPreflightProblem())
             {
                 return imu->getPreflightProblem();
+            }
+        }
+
+        // Автовзлёту с хвостовым колесом нужна стоянка: от неё он считает,
+        // насколько поднять хвост и где хвостовое колесо коснётся полосы.
+        if (mode == MODE_AUTO_TAKEOFF && autopilot->getLandingGear() == Config::LandingGear::TAIL_WHEEL)
+        {
+            const ImuSensor* imu = autopilot->getImuSensor();
+            float parkPitch, parkRoll;
+            if (imu && !imu->getParkingAttitude(parkPitch, parkRoll))
+            {
+                return "нет калибровки шасси (горизонт и стоянка) — с пульта без ARM или 'c' в консоли";
             }
         }
 

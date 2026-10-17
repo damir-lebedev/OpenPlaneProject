@@ -50,6 +50,12 @@ Vilken krets som kompileras in avgörs av `SensorSelection.h`.
 | `void setYaw(float)` | Sätt kursen (till exempel från kompassen vid start) |
 | `virtual void calibrateOrientation()` | Kalibrering av kortets montering (stöds inte som standard) |
 | `virtual const char* getPreflightProblem() const` | Problemet i kontrollen före flygning eller `nullptr` (`nullptr` som standard) |
+| `virtual bool readChipUp(float[3]) const` | Markkalibrering: accelerometerns senaste mätning i kretsens axlar, g, okorrigerad (standard `false`) |
+| `virtual bool getOrientation(ImuOrientation&) const` | Kortets aktuella montering (standard `false` – markkalibrering stöds inte) |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | Anta horisonten och markläget, spara dem i flash |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | Markläget på hjulen, ° från horisonten; `false` – ingen kalibrering av landningsstället |
+| `virtual void setAccelCorrection(bool)` | Autostart: `false` – horisonten bara från gyroskopet |
+| `virtual void trimGyroBias(const float residualDps[3])` | Finjustera gyroskopets nollpunkt efter det stillastående flygplanets medelvinkelhastighet (axlar och tecken som i `ImuData`) |
 
 ### `BarometerSensor : Sensor`
 
@@ -169,6 +175,9 @@ Rotationsmatrisen `R` från kretsens axlar till flygplanets axlar: `body = R · 
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | En rotation kring vertikalen i steg om 90°, kortet med kretsen uppåt |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | Kalibrering från tre positioner (accelerometerns avläsning av ”upp” i kretsens axlar). `nullptr` – lyckat, annars orsaken till vägran |
 | `void apply(const float chip[3], float body[3]) const` | Tillämpa rotationen |
+| `void applyInverse(const float body[3], float chip[3]) const` | Den omvända rotationen (transponerad `R`) |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | Horisonten ur läget ”plant”: Z = det uppmätta ”upp”, nosen behålls, rätas ut ⟂ Z. Mer än 45° från den gamla horisonten – nekas |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | Tippning och roll för ett läge (som `AttitudeEstimator` ur accelerometern) – markläget |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | Vinkeln mellan det uppmätta ”upp” och flygplanets Z-axel (180° om vektorn är noll) |
 | `bool load(const char* ns)` | Ladda från NVS; avvisar en icke-ortonormal eller vänsterhänt trippel |
 | `void save(const char* ns) const` | Spara i NVS |
@@ -198,11 +207,12 @@ Ett komplementärfilter för roll/tippning och en girintegral, oberoende av kret
 | `void setYaw(float deg)` | Sätt kursen (omslagen till ±180) |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | Accelerationen i g i flygplanets axlar, hastigheterna i °/s |
 | `getRoll()`, `getPitch()`, `getYaw()` | ° |
+| `setAccelCorrection(bool)`, `isAccelCorrectionEnabled()` | `false` – bara gyroskop (accelerationen vid autostart: 0,5 g framåt ser ut som +27° tippning) |
 
 `roll_acc = atan2(ay, az)`, `pitch_acc = atan2(ax, √(ay² + az²))`;
 `angle = 0.98·(angle + rate·dt) + 0.02·angle_acc` (τ ≈ 0,1 s vid 2 ms).
 Det första anropet efter `reset()` ger accelerometerns vinklar direkt; `dt ≤ 0` eller > 0,1 s –
-steget hoppas över (en paus, en buss som hängt sig).
+steget hoppas över (en paus, en buss som hängt sig). Utan accelerometer – `angle + rate·dt`.
 
 ---
 
@@ -227,7 +237,11 @@ råa mätningar − förskjutningar (ADC) → skala (g, °/s) → ImuOrientation
 | `void calibrate()` | 200 mätningar × 10 ms: gyroskopets förskjutning, bruset, ”upp”; utan monteringskalibrering – horisonten = det aktuella läget. Därefter kontrollen före flygning |
 | `void calibrateOrientation()` | Tre positioner (`capturePose`: stilla i ~1 s, positionen skiljer sig från de föregående med ≥ 20°, en tidsgräns på 30 s), `ImuOrientation::fromPoses`, sparande i NVS. Rensar kontrollens problem med monteringen |
 | `const char* getPreflightProblem() const` | Problemets text eller `nullptr` |
-| `void setYaw(float)`, `getSensorType()`, `printStatus()` | |
+| `readChipUp()`, `getOrientation()` | Markkalibrering: senaste ”upp” i kretsens axlar, monteringen |
+| `bool setGroundCalibration(level, parkChipUp)` | Montering = `level` (horisonten), markläget under nyckeln `park` i samma NVS-namnrymd; tar bort monteringsproblemen i kontrollen före flygning. En ny `o` raderar markläget (det mättes från den gamla horisonten) |
+| `bool getParkingAttitude(pitch, roll) const` | Markläget genom den aktuella monteringen |
+| `setAccelCorrection(bool)`, `trimGyroBias(residual)` | Autostart: filter utan accelerometer; restnollpunkten går via den omvända rotationen in i gyroskopets offset |
+| `void setYaw(float)`, `getSensorType()`, `printStatus()` | `printStatus()` slutar med `park(pitch,roll)=…` eller `park=NONE` |
 
 Det skyddade API:t för drivrutiner:
 

@@ -81,8 +81,8 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | 文件 | 说明 |
 |---|---|
 | `ChipEmulators.h` | LSM6DSV、ICM-45686（带 IPREG 间接寄存器）、QMC6309、SPL06-001、BMP581，以及 u-blox 的 NAV-PVT 帧——I2C 或 SPI 上的寄存器映射，数据取自 `World`“世界”（角度和角速度、高度、空速、航向、坐标），按芯片自身的坐标轴给出，并考虑了 `IMU_ROTATION_CW_DEG` |
-| `PlaneSim.h` | 约 1.2 kg 的飞机模型：质点 + 横滚/俯仰转动，带失速的 CL(α)，阻力、推力、风、热气流、地面 |
-| `SimHarness.h` | 闭环：遥控器 → iBUS 帧 → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面偏转 → `PlaneSim` → 传感器（包括基于两个带噪声气压计的皮托管）。设置 `OPENPLANE_SIM_DIR` 时输出 CSV 轨迹 |
+| `PlaneSim.h` | 约 1.2 kg 的飞机模型：质点 + 横滚/俯仰转动，带失速的 CL(α)，阻力、推力、风、热气流、地面；尾轮或前轮起落架——飞机在主轮上前后摆动，统计尾轮载荷、机尾撞击和螺旋桨触地，地面偏航包含螺旋桨力矩和转向轮 |
+| `SimHarness.h` | 闭环：遥控器 → iBUS 帧 → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面偏转 → `PlaneSim` → 传感器（包括基于两个带噪声气压计的皮托管）。设置 `OPENPLANE_SIM_DIR` 时输出 CSV 轨迹；开启 `realisticImu` 时由真实的 `AttitudeEstimator` 按比力计算角度——它看到的跑道加速度和机上一样 |
 
 `test/native/helpers/TestSupport.h` 是各测试集共用的部分：`resetWorld()`（在 `setUp()` 中调用）、`FakeUart`/`FakeServo`/`FakeBoard` 以及各传感器（`FakeImu`、`FakeBaro`、`FakeMag`、`FakeGps`）的替身、帧构造器 `ibusFrame()`、台架 `I2cRig`/`SpiRig`（真实的 `Esp32I2CBus`/`Esp32SpiBus` 和带模拟芯片的 `*RegisterDevice` 之上的驱动）。
 
@@ -94,21 +94,22 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 
 | 测试集 | 测试数 | 检查内容 |
 |---|---|---|
-| `native/test_hal` | 17 | `II2CBus` 的辅助函数（NACK、短读取——缓冲区保持不变）、`I2cRegisterDevice`、`SpiRegisterDevice`（读位、BMP388 的哑字节）、`Esp32I2CBus`（5 ms 超时）、`Esp32SpiBus`（模式 0–3）、`Esp32UartPort`（8N1、引脚）、`Esp32ServoOutput`（50 Hz/14 位、脉宽限制、LEDC 故障、通过输入缓冲区测量）、`Esp32Board`（总线、UART、通道顺序、AUX、蜂鸣器） |
+| `native/test_hal` | 18 | `II2CBus` 的辅助函数（NACK、短读取——缓冲区保持不变）、`I2cRegisterDevice`、`SpiRegisterDevice`（读位、BMP388 的哑字节）、`Esp32I2CBus`（5 ms 超时）、`Esp32SpiBus`（模式 0–3）、`Esp32UartPort`（8N1、引脚）、`Esp32ServoOutput`（50 Hz/14 位、脉宽限制、LEDC 故障、通过输入缓冲区测量）、`Esp32Board`（总线、UART、通道顺序、AUX、蜂鸣器）；电机提示用的“无脉冲”（`stopPulses()`） |
 | `native/test_rc` | 16 | `RcChannelState`、`RcInput`，iBUS 解析：分段到达的帧、CRC、12 位数值、遥控器的失控保护、500 ms 超时（包括 `micros()` 溢出时）、乱码数据、重新同步 |
-| `native/test_control` | 26 | 襟翼（速度、首次调用、暂停）、混控器（符号、反向、襟副翼）、油门、ARM 状态机与模式传感器检查、输出表与脉冲自检、双向电调脉冲、电机反转只在 DISARM 时切换以及改变方向后禁止 ARM、反向辅助函数（脉冲镜像、通道反向、电机反向） |
-| `native/test_autopilot` | 22 | PID（取自传感器角速度的 D 项、积分、抗积分饱和、`dt`）、作为角度模式的 STABILIZE、按时间的自动起飞、用升降舵实现的 ALT_HOLD、信号丢失时的滑翔 |
+| `native/test_control` | 26 | 襟翼（速度、首次调用、暂停）、混控器（符号、反向、襟副翼）、油门、ARM 状态机与模式传感器检查、输出表与脉冲自检、双向电调脉冲、电机反转只在 DISARM 时切换以及改变方向后禁止 ARM、反向辅助函数（脉冲镜像、通道反向、电机反向）；尾轮式 AUTO_TAKEOFF 必须先有起落架校准 |
+| `native/test_autopilot` | 22 | PID（取自传感器角速度的 D 项、积分、抗积分饱和、`dt`）、作为角度模式的 STABILIZE、自动起飞（起飞前电机不转、程序控制油门、DISARM）、用升降舵实现的 ALT_HOLD、信号丢失时的滑翔、爬升中信号丢失——继续爬升 |
 | `native/test_autopilot_modes` | 31 | 全部 12 种模式及各自对传感器缺失的反应、绑定表与 `static_assert`、功能与旋钮、导航（航向、绕圈、返航点、地理围栏）、failsafe RTH/滑翔、手抛起飞、翱翔、自动配平（仅在地面写入） |
-| `native/test_flight_controller` | 15 | 在真实的类上完整运行一个 `FlightController` 控制周期：优先级为 信号丢失 > ARM > 摇杆/自动驾驶仪 > 油门；AUX、`MOTOR_KILL`、蜂鸣器；SwD 反转：只在 DISARM 时、3 s 内不能 ARM、反转 50% 油门、自动驾驶仪不给油门、失去信号时电机停转；油门上限旋钮把允许的范围拉伸到整个摇杆行程 |
+| `native/test_flight_controller` | 20 | 在真实的类上完整运行一个 `FlightController` 控制周期：优先级为 信号丢失 > ARM > 摇杆/自动驾驶仪 > 油门；AUX、`MOTOR_KILL`、蜂鸣器；SwD 反转：只在 DISARM 时、3 s 内不能 ARM、反转 50% 油门、自动驾驶仪不给油门、失去信号时电机停转；油门上限旋钮把允许的范围拉伸到整个摇杆行程；通过 SwB 手势和控制台进行地面校准，输出上的提示（舵面点头；只有未解锁时才停掉电调脉冲），校准和提示期间禁止 ARM，拨一下 ARM 会取消校准，起飞被拒时只点头不碰电调，没有信号时提示照常进行 |
 | `native/test_imu` | 21 | MPU6050/6500/9250 与 ICM-42688：识别、寄存器、比例系数、轴旋转与航空坐标符号约定、总线错误、陀螺仪校准与飞行前检查、基于三个姿态的安装校准、NVS、姿态滤波器 |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`、通过 I2C 和 SPI 的 BMP388、对照 Bosch 参考算法的 BME280/BMP280、电子罗盘（航向、NVS 中的 hard-iron 校准）、u-blox M10（CFG-VALSET、NAV-PVT、损坏的帧、超时）、`SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV（16X/32X、备用地址、SPI）、ICM-45686（间接寄存器）、QMC6309、SPL06-001（数据手册公式）、BMP581（DRDY 与备用路径）、皮托管（零点、滤波、空气密度、软管接反、过期数据、带两个气压计噪声的“飞行”） |
 | `native/test_storage` | 16 | `KeyValueStore`（重新加载、磨损——相同的值不重复写入、溢出不丢数据、CRC、擦除时断电、乱码数据、格式版本）、`KvPreferences`（行为与 ESP32 的 NVS 相同） |
 | `native/test_mavlink` | 20 | 编解码器对照 pymavlink 的参考帧（v1、v2、带签名）、CRC、重新同步；遥测：各数据流的频率、HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS、PID 参数（列表、读取、写入、拒绝非法值）、从地面切换模式、从地面 ARM——被拒绝、任务——0、UART 缓冲区写满也不会阻塞循环 |
-| `native/test_blackbox` | 19 | 黑匣子：格式与 CRC，NOR 模拟件上的扇区环（全新分区无需擦除、垃圾数据总会被擦除、旧飞行记录整段擦除且仅为腾出空间、最新一次飞行从不触碰、环尾回绕、重启后的头指针、断电、写了一半的记录由 CRC 识别），在真实的 `FlightController`/`Autopilot` 上记录飞行：按 ARM 和油门启动并带预录、DISARM 且“停在地面”后停止、信号丢失不会停止记录、异常重启后的记录、手动启动、事件、电池、空中闪存写满、飞行时长超过分区、按带 CRC 的帧导出并切换速率、控制台菜单 `k`、没有分区——黑匣子关闭 |
+| `native/test_blackbox` | 20 | 黑匣子：格式与 CRC，NOR 模拟件上的扇区环（全新分区无需擦除、垃圾数据总会被擦除、旧飞行记录整段擦除且仅为腾出空间、最新一次飞行从不触碰、环尾回绕、重启后的头指针、断电、写了一半的记录由 CRC 识别），在真实的 `FlightController`/`Autopilot` 上记录飞行：按 ARM 和油门启动并带预录、DISARM 且“停在地面”后停止、信号丢失不会停止记录、异常重启后的记录、手动启动、事件、电池、空中闪存写满、飞行时长超过分区、按带 CRC 的帧导出并切换速率、控制台菜单 `k`、没有分区——黑匣子关闭；地面校准和自动起飞各阶段的事件 |
 | `native/test_blackbox_scan` | 3 | 开机时环的抽样核对与完整核对的对比：300 段随机的环历史 × 5 个探测步（头指针、编号和飞行列表一致；当情况对不上时则退回完整核对），以及在 64 MB SD 区域上的开销（约 530 次读取，而不是 32,000 次） |
-| `native/test_telemetry` | 28 | `LoopStats`、`LogSettings`（NVS、版本）、`DebugLogger`（所有通道、NAV）、`DebugConsole`（菜单、热键、总线探测 `b`、ARM 时禁用、仅在未 ARM 时保存）、`WebDebugServer`（路由、JSON、邮箱）、`OledDisplay`（通过 I2C 发送的字节、帧、信号丢失时反色） |
-| `native/test_sim` | 15 | 整套固件与飞机模型的闭环飞行：从倾斜姿态改平、侧风中的 CRUISE、LOITER、RTH、failsafe RTH/滑翔、地理围栏、从跑道自动起飞、手抛起飞、自动降落、热气流、从螺旋中 RESCUE、速度保持与失速保护、回路中的真实皮托管、“歪”飞机的自动配平、飞行中的传感器故障（IMU、气压计、皮托管、GPS） |
+| `native/test_telemetry` | 30 | `LoopStats`、`LogSettings`（NVS、版本）、`DebugLogger`（所有通道、NAV）、`DebugConsole`（菜单、热键、总线探测 `b`、ARM 时禁用、仅在未 ARM 时保存）、`WebDebugServer`（路由、JSON、邮箱）、`OledDisplay`（通过 I2C 发送的字节、帧、信号丢失时反色）；控制台中的校准 `c` 和提示 `e`，日志行 `AP` 中的起飞阶段，OLED 上的校准步骤和起飞阶段 |
+| `native/test_sim` | 18 | 整套固件与飞机模型的闭环飞行：从倾斜姿态改平、侧风中的 CRUISE、LOITER、RTH、failsafe RTH/滑翔、地理围栏、尾轮式自动起飞（尾轮载荷从不超过停机载荷，螺旋桨和机尾都不触及跑道，真实的姿态滤波器；有气压计和无气压计）、前轮式起飞、用油门中止的起飞、手抛起飞、自动降落、热气流、从螺旋中 RESCUE、速度保持与失速保护、回路中的真实皮托管、“歪”飞机的自动配平、飞行中的传感器故障（IMU、气压计、皮托管、GPS） |
+| `native/test_takeoff` | 23 | 自动起飞和飞机地面校准：由“抬尾”姿态得到水平基准和停机姿态（`ImuOrientation`），滑跑时不用加速度计的姿态滤波器，真实 `ImuSensorBase` 闪存中的起落架校准（停在轮子上上电后的水平基准、`o` 清除停机姿态、陀螺仪零点修正），`GroundCalibration`（两个步骤、角度检查、取消、开关手势），`SignalPlayer`，`TakeoffController` 尾轮式和前轮式的各阶段，舵面控制律，中止起飞（油门、信号、IMU 故障、横滚、航向、机头、机尾、未离地），无气压计时按时间，“仅陀螺仪”窗口 |
 | `native/test_feedback_units` | 14 | 各反馈模块的单独测试：速度来源、空中/地面判断、RLS 估计、控制器、失速征兆、起飞/降落中止 |
 | `native/test_app` | 10 | 在 ESP32-S3 上运行 `src/main.cpp`，配台架套件 MPU6500/BMP581/QMC5883P/OLED：`loop()` 周期、遥控器 → 舵机、ARM、模式、信号丢失、控制台、仪表盘、屏幕、黑匣子（运行在核心 0 上的任务、按油门记录、DISARM 之后的飞行、`bb list`） |
 | `native/test_app_lsm6dsv_pitot` | 9 | 在 ESP32-S3 上运行 `src/main.cpp`，配飞行套件：LSM6DSV + QMC6309 + SPL06 + 皮托管内的 BMP581 + GPS——识别所有芯片、皮托管零点与速度、高度、按 GPS 确定的返航点、按芯片给出的角度做 STABILIZE、RTH 返回返航点、总线探测、仪表盘；飞行中 SwD（反转）在 DISARM 之前不起作用 |
@@ -117,10 +118,10 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743 配 **SPI 接口**的 ICM-45686 和 BMP581 + QMC6309：开机时闪存已损坏、从 GCS 发起的 ALT_HOLD 保持高度、信号丢失 → RTH、在 MAVLink 中可见；改写损坏的映像 |
 | `native_stm32/test_blackbox_sd` | 29 | SD 卡上的黑匣子：FAT32（有 MBR 与无 MBR、占两个簇的目录、噪声条目、他人的/碎片化的/空的卷）、`SdFileRegion`（不完整的块、缓存、擦除、边界、故障）、基于模拟 `HAL_SD` 的真实 `Stm32SdCard` 驱动（4 位、回退速率、重试、卡忙、未对齐的缓冲区）、卡上的环（重启、断电、核对开销）、“环为空”标记、在 `FlightController` 上记录飞行、通过 `RCC->RSR` 识别的异常重启、电池 ADC、飞行中的卡错误、慢速卡、通过控制台导出、`D` 键 |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | 带卡的 `src/stm32/main.cpp`：启动时能找到卡和文件、`bbox` 任务记录飞行、循环周期不被拉长、`bb list` |
-| `native_stm32/test_app_stm32_no_sd` | 2 | 不带卡的 `src/stm32/main.cpp`：黑匣子关闭并说明原因、飞机照常飞行、菜单 `k` 不出错 |
+| `native_stm32/test_app_stm32_no_sd` | 3 | 不带卡的 `src/stm32/main.cpp`：黑匣子关闭并说明原因、飞机照常飞行、菜单 `k` 不出错；PD14 上的输出自检（绕过核心库 `pulseIn()` 的缺陷），电机提示 `e` |
 | `test_feedback` | 10 | 带反馈回路的飞机闭环仿真（在电脑和开发板上） |
 | `test_imu_orientation` | 5 | 在 300 种随机安装方式下校准 IMU 的安装姿态（在电脑和开发板上） |
-| **合计** | **395** | `native` 中 348 个 + `native-stm32` 中 47 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
+| **合计** | **431** | `native` 中 383 个 + `native-stm32` 中 48 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
 
 ### STM32 开发板上的测试
 
@@ -167,18 +168,19 @@ pio test -e stm32h743-devebox -f test_feedback -f test_imu_orientation
 
 | 层 | 行 | 分支 |
 |---|---|---|
-| `autopilot` | 920/943 (97.6%) | 645/731 (88.2%) |
-| `autopilot/feedback` | 683/702 (97.3%) | 501/570 (87.9%) |
-| `control` | 252/256 (98.4%) | 171/189 (90.5%) |
-| `hal` | 98/102 (96.1%) | 26/26 (100%) |
-| `hal/esp32` | 101/102 (99.0%) | 21/22 (95.5%) |
-| `hal/stm32` | 149/158 (94.3%) | 35/52 (67.3%) |
-| `rc` | 92/92 (100%) | 41/42 (97.6%) |
-| `sensors`（全部） | 1444/1446 (99.9%) | 716/835 (85.7%) |
-| `storage` | 220/220 (100%) | 158/178 (88.8%) |
-| `telemetry` | 1413/1440 (98.1%) | 1123/1269 (88.5%) |
-| `src`（`main.cpp`、`stm32/main.cpp`） | 118/123 (95.9%) | 20/29 (69.0%) |
-| **总计** | **5490/5584 (98.3%)** | **3457/3943 (87.7%)**；函数 877/902 (97.2%) |
+| `autopilot` | 1328/1395 (95.2%) | 921/1039 (88.6%) |
+| `autopilot/feedback` | 682/713 (95.7%) | 502/571 (87.9%) |
+| `config` | 2/2 (100%) | 2/2 (100%) |
+| `control` | 561/584 (96.1%) | 438/469 (93.4%) |
+| `hal` | 238/301 (79.1%) | 130/168 (77.4%) |
+| `hal/esp32` | 117/148 (79.1%) | 32/38 (84.2%) |
+| `hal/stm32` | 241/288 (83.7%) | 115/144 (79.9%) |
+| `rc` | 93/100 (93.0%) | 44/46 (95.7%) |
+| `sensors`（全部） | 1533/1625 (94.3%) | 835/994 (84.0%) |
+| `storage` | 350/364 (96.2%) | 275/334 (82.3%) |
+| `telemetry` | 2775/2920 (95.0%) | 2082/2464 (84.5%) |
+| `src`（`main.cpp`、`stm32/main.cpp`） | 145/150 (96.7%) | 26/32 (81.2%) |
+| **总计** | **8065/8590 (93.9%)** | **5402/6301 (85.7%)**；函数 1204/1245 (96.7%) |
 
 仍未覆盖的部分及原因：
 
@@ -186,7 +188,8 @@ pio test -e stm32h743-devebox -f test_feedback -f test_imu_orientation
 - **与开发板相关的部分**：没有引脚的输出（`PIN_RUDDER = -1` 只会出现在 C3 上）、没有 TX 引脚的 GPS（C3）——原生测试覆盖 S3、38 针版和 STM32 的引脚分配，但不覆盖 C3（C3 由构建矩阵检查）。
 - **STM32**：内核的错误分支（引脚上没有定时器、定时器池耗尽）、消息 `FreeRTOS не запустился`（“FreeRTOS 未能启动”）——在电脑上 `vTaskStartScheduler()` 总是会返回。
 - **防御性分支**，无法通过公共 API 到达：对枚举做 `switch` 时的 `default`/`Count`、`return "?"`。
-- 没有可执行行的文件（`Config.h`、`Channels.h`、`FeedbackConfig.h`、结构体 `ControlCommand`/`FlightOutputState`/`FlightSnapshot`/`FeedbackOutput`/`PhaseTargets`、`SensorSelection.h` 中的宏、仪表盘的 HTML）不会出现在报告中——它们会被编译进测试，但 gcov 没有可统计的内容。
+- **接口中的析构函数和默认实现**（`IBoard`、`IUartPort`、`ImuSensor` 等）——所有实现都会覆盖它们，而开启 `-fkeep-inline-functions` 后 gcov 也会统计这些行。
+- 没有可执行行的文件（`Channels.h`、`FeedbackConfig.h`、结构体 `ControlCommand`/`FlightOutputState`/`FlightSnapshot`/`FeedbackOutput`/`PhaseTargets`、`SensorSelection.h` 中的宏、仪表盘的 HTML）不会出现在报告中——它们会被编译进测试，但 gcov 没有可统计的内容。
 
 ---
 

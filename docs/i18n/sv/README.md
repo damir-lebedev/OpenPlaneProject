@@ -35,8 +35,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-395%20passing-3fb950?style=for-the-badge" alt="395 tester">
-  <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="98 % testtäckning">
+  <img src="https://img.shields.io/badge/tests-431%20passing-3fb950?style=for-the-badge" alt="431 tester">
+  <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94 % testtäckning">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 byggen utan varningar">
   <br>
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
@@ -61,7 +61,7 @@
 | **Vad det är** | En öppen flygkontroller och autopilot för radiostyrda flygplan. Huvudkortet är STM32H743 (ett kort i Pixhawk-klassen): på ett DevEBox-kort är firmwaren **redan igång och styrs från sändaren** – [det finns en video](#-stm32h743-har-vaknat-till-liv-på-kortet), och sensorerna kopplas in just nu. Den tidigare basen är en ESP32-S3 för cirka 10 $, som klarade testbänken med alla sensorer. |
 | **Vad den kan** | 12 flyglägen – från stabilisering till hemflygning, GPS-cirklar, handstart, autolandning och **termikflygning**. Ett pitotrör av två billiga barometrar. MAVLink-telemetri till QGroundControl och Mission Planner. |
 | **Huvudtricket** | Vilken brytare eller ratt som helst på sändaren = vilken funktion som helst. **En rad** i `Controls.h` – och SwD är inte längre motorreversering utan lastsläpp. |
-| **Varför man kan lita på den** | 395 automatiska tester (plus 9 på själva kortet med ett riktigt SD-kort), 98 % av koden täckt av tester, 24 bygg ”kort × sensorer” utan en enda varning, simuleringar i sluten slinga av varje läge. |
+| **Varför man kan lita på den** | 431 automatiska tester (plus 9 på själva kortet med ett riktigt SD-kort), 94 % av koden täckt av tester, 24 bygg ”kort × sensorer” utan en enda varning, simuleringar i sluten slinga av varje läge. |
 | **Ärligt talat** | Hittills har bara manuellt läge flugit (den första prototypen). STM32H743 har hittills bara provats på bänken, utan sensorer. Autopiloten är verifierad på bänken, med tester och simuleringar och väntar på flygprov – [status nedan](#-ärlig-status). |
 
 ---
@@ -96,19 +96,19 @@ Vill du ha termikflygning på SwD i stället för motorreversering? `Bind::mode(
 | 🛣️ | **CRUISE** | kurs, höjd och fart hålls av sig själva; spakarna justerar bara |
 | ⭕ | **LOITER** | cirklar över en GPS-punkt (radien ställs in med en ratt) |
 | 🏠 | **RTH** | hem på 40 m och cirklar ovanför; slås på av sig självt när förbindelsen bryts |
-| 🛫 | **AUTO_TAKEOFF** | start från bana med pilotens gas |
+| 🛫 | **AUTO_TAKEOFF** | Start från bana: sporrhjul eller noshjul, först lyfts stjärten, vingen lyfter planet |
 | 🤾 | **LAUNCH** | handstart: motorn startar efter kastet, sedan stigning |
 | 🛬 | **AUTO_LAND** | glidflykt och flare nära marken |
 | 🦅 | **SOARING** | motorn av, hittar termik och cirklar i den |
 | 🆘 | **RESCUE** | ”hjälp!”: vingarna plana, nosen upp – ut ur vilken spiral som helst |
 
-Dessutom: geofence, autotrimning för ett ”snett” plan, koordinerade svängar, överstegringsskydd med pitotröret, klaffar och luftbroms, lastsläpp, en stabiliserad kamera och en summer som säger ”hitta mig i gräset”.
+Dessutom: markkalibrering från sändaren (horisont och markläge, stegen signaleras med motor och roder), geofence, autotrimning för ett ”snett” plan, koordinerade svängar, överstegringsskydd med pitotröret, klaffar och luftbroms, lastsläpp, en stabiliserad kamera och en summer som säger ”hitta mig i gräset”.
 
 ---
 
 ## 📈 Varje läge flyger – i sluten slinga
 
-Inte ”en funktion returnerade ett tal”, utan en **flygning**: sändare → iBUS-ram → firmware → PWM → roderutslag → en flygplansmodell med lyftkraft, överstegring, vind och termik → sensorer → tillbaka till firmwaren. 14 sådana flygningar ingår i de vanliga testerna (`pio test -e native`).
+Inte ”en funktion returnerade ett tal”, utan en **flygning**: sändare → iBUS-ram → firmware → PWM → roderutslag → en flygplansmodell med lyftkraft, överstegring, vind och termik → sensorer → tillbaka till firmwaren. 17 sådana flygningar ingår i de vanliga testerna (`pio test -e native`).
 
 <p align="center"><img src="../../images/sim/missions.png" alt="RTH, LOITER, geofence och förlorad förbindelse – vy ovanifrån"></p>
 
@@ -205,8 +205,8 @@ Vad det bevisar: kedjan ”sändare → iBUS → firmware → PWM” fungerar p�
 
 | | |
 |---|---|
-| **395 automatiska tester** | moduler, kretsdrivrutiner kontrollerade på registernivå, flygningar i sluten slinga, firmwaren för ESP32 och STM32 **i sin helhet** på en dator; plus 9 tester på själva STM32-kortet med ett riktigt SD-kort |
-| **98,3 % av raderna, 87,7 % av grenarna** | täckning med `gcovr`, inklusive STM32-koden |
+| **431 automatiska tester** | moduler, kretsdrivrutiner kontrollerade på registernivå, flygningar i sluten slinga, firmwaren för ESP32 och STM32 **i sin helhet** på en dator; plus 9 tester på själva STM32-kortet med ett riktigt SD-kort |
+| **93,9 % av raderna, 85,7 % av grenarna** | täckning med `gcovr`, inklusive STM32-koden |
 | **24/24 bygg** | 4 kort × 6 sensorsatser, `-Wall -Wextra`, noll varningar |
 | **0 anmärkningar** | cppcheck och clang-tidy över all kod |
 | **Referenser, inte kopior av kod** | sensorformlerna följer databladen (Bosch, ST, TDK, Goertek), MAVLink följer pymavlink |
@@ -263,6 +263,7 @@ I seriemonitorn: `h` – meny, `b` – vilka kretsar som syns på bussarna, `s` 
 | Manuell styrning, mixer | ✈️ under flygning (första prototypen, C3) |
 | ARM, failsafe, klaffar, servon, motor | 🔧 på bänken (S3) |
 | Dubbelriktad ESC BLHeli 80A, reversering bara i DISARM | 🧪 tester; ännu inte provad med riktig ESC |
+| Autostart med sporrhjul eller noshjul, markkalibrering från sändaren, signaler med motor och roder | 🧪 tester och simuleringar med en modell av landningsstället; ESC-melodin efter pulspausen ska fortfarande provas på bänken |
 | STABILIZE | 🔧 på bänken: roderytorna reagerar på lutning åt rätt håll |
 | Bänksensorer (MPU6500, BMP388, QMC5883P), OLED, panel | 🔧 på bänken |
 | Övriga lägen, navigering, pitotrör, MAVLink | 🧪 tester och simuleringar i sluten slinga |

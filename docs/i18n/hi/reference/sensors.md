@@ -50,6 +50,12 @@
 | `void setYaw(float)` | हेडिंग तय करना (जैसे शुरू में कंपास से) |
 | `virtual void calibrateOrientation()` | बोर्ड के लगने का कैलिब्रेशन (डिफ़ॉल्ट रूप से समर्थित नहीं) |
 | `virtual const char* getPreflightProblem() const` | उड़ान-पूर्व जाँच की समस्या या `nullptr` (डिफ़ॉल्ट `nullptr`) |
+| `virtual bool readChipUp(float[3]) const` | ग्राउंड कैलिब्रेशन: चिप के अक्षों में एक्सेलेरोमीटर की आख़िरी माप, g, बिना सुधार (डिफ़ॉल्ट `false`) |
+| `virtual bool getOrientation(ImuOrientation&) const` | बोर्ड की मौजूदा स्थापना (डिफ़ॉल्ट `false` — ग्राउंड कैलिब्रेशन समर्थित नहीं) |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | क्षितिज और पार्किंग कोण अपनाना, उन्हें फ़्लैश में सहेजना |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | पहियों पर पार्किंग कोण, क्षितिज से °; `false` — लैंडिंग गियर का कैलिब्रेशन नहीं |
+| `virtual void setAccelCorrection(bool)` | ऑटो-टेकऑफ़: `false` — क्षितिज केवल जाइरोस्कोप से |
+| `virtual void trimGyroBias(const float residualDps[3])` | खड़े विमान की औसत कोणीय गति से जाइरोस्कोप का शून्य ठीक करना (अक्ष और चिह्न `ImuData` जैसे) |
 
 ### `BarometerSensor : Sensor`
 
@@ -169,6 +175,9 @@ Y बाएँ) में घुमाता है। `rotationCwDeg` बता
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | ऊर्ध्वाधर के गिर्द 90° के क़दमों में घुमाव, बोर्ड चिप ऊपर की ओर |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | तीन मुद्राओं से कैलिब्रेशन (चिप की धुरियों में एक्सेलेरोमीटर का “ऊपर” वाला पाठ्यांक)। `nullptr` — सफल, नहीं तो इनकार का कारण |
 | `void apply(const float chip[3], float body[3]) const` | घुमाव लागू करना |
+| `void applyInverse(const float body[3], float chip[3]) const` | उलटा घुमाव (`R` का ट्रांसपोज़) |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | “सीधी” मुद्रा से क्षितिज: Z = नापा गया “ऊपर”, नाक वही रहती है, ⟂ Z करके सीधी की जाती है। पुराने क्षितिज से 45° से ज़्यादा — इनकार |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | किसी मुद्रा की पिच और रोल (जैसे `AttitudeEstimator` एक्सेलेरोमीटर से) — पार्किंग कोण |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | नापे गए “ऊपर” और विमान की Z धुरी के बीच का कोण (वेक्टर शून्य हो तो 180°) |
 | `bool load(const char* ns)` | NVS से लोड करना; ऑर्थोनॉर्मल न होने वाली या बाएँ हाथ की तिकड़ी को ठुकराता है |
 | `void save(const char* ns) const` | NVS में सहेजना |
@@ -198,11 +207,12 @@ rightWingDown का ⟂ Z हिस्सा, X₂ = Y × Z; X = norm(X₁ + X�
 | `void setYaw(float deg)` | हेडिंग तय करना (±180 में लाई जाती है) |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | विमान की धुरियों में त्वरण g में, गतियाँ °/s में |
 | `getRoll()`, `getPitch()`, `getYaw()` | ° |
+| `setAccelCorrection(bool)`, `isAccelCorrectionEnabled()` | `false` — केवल जाइरोस्कोप (ऑटो-टेकऑफ़ में त्वरण: आगे की ओर 0.5 g, +27° पिच जैसा दिखता है) |
 
 `roll_acc = atan2(ay, az)`, `pitch_acc = atan2(ax, √(ay² + az²))`;
 `angle = 0.98·(angle + rate·dt) + 0.02·angle_acc` (2 ms पर τ ≈ 0.1 s)।
 `reset()` के बाद पहली कॉल सीधे एक्सेलेरोमीटर के कोण देती है; `dt ≤ 0` या 0.1 s से अधिक होने पर
-क़दम छोड़ दिया जाता है (विराम, बस का अटकना)।
+क़दम छोड़ दिया जाता है (विराम, बस का अटकना)। एक्सेलेरोमीटर के बिना — `angle + rate·dt`।
 
 ---
 
@@ -227,7 +237,11 @@ rightWingDown का ⟂ Z हिस्सा, X₂ = Y × Z; X = norm(X₁ + X�
 | `void calibrate()` | 200 नमूने × 10 ms: जायरोस्कोप का ऑफ़सेट, शोर, “ऊपर”; माउंटिंग कैलिब्रेशन के बिना — क्षितिज = अभी की स्थिति। फिर उड़ान-पूर्व जाँच |
 | `void calibrateOrientation()` | तीन मुद्राएँ (`capturePose`: ~1 s स्थिर, मुद्रा पिछली से ≥ 20° अलग, 30 s का टाइमआउट), `ImuOrientation::fromPoses`, NVS में सहेजना। उड़ान-पूर्व जाँच की माउंटिंग की समस्याएँ हटाता है |
 | `const char* getPreflightProblem() const` | समस्या का पाठ या `nullptr` |
-| `void setYaw(float)`, `getSensorType()`, `printStatus()` | |
+| `readChipUp()`, `getOrientation()` | ग्राउंड कैलिब्रेशन: चिप के अक्षों में आख़िरी “ऊपर”, स्थापना |
+| `bool setGroundCalibration(level, parkChipUp)` | स्थापना = `level` (क्षितिज), पार्किंग कोण उसी NVS नेमस्पेस में `park` कुंजी के नीचे; उड़ान-पूर्व जाँच की स्थापना वाली समस्याएँ हटाता है। नया `o` पार्किंग कोण मिटा देता है (वह पुराने क्षितिज से नापा गया था) |
+| `bool getParkingAttitude(pitch, roll) const` | मौजूदा स्थापना से पार्किंग कोण |
+| `setAccelCorrection(bool)`, `trimGyroBias(residual)` | ऑटो-टेकऑफ़: एक्सेलेरोमीटर के बिना फ़िल्टर; बचा हुआ शून्य उलटे घुमाव से जाइरोस्कोप के ऑफ़सेट में जाता है |
+| `void setYaw(float)`, `getSensorType()`, `printStatus()` | `printStatus()` `park(pitch,roll)=…` या `park=NONE` पर ख़त्म होता है |
 
 ड्राइवरों के लिए सुरक्षित API:
 

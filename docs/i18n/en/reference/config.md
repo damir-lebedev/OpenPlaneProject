@@ -144,6 +144,22 @@ around 1500.
 | `IMU_ROTATION_CW_DEG` | 90 | The rotation of the IMU chip axes about the vertical (0/90/180/270), where the chip's X axis points. Used only while there is no mounting calibration `o` in NVS |
 | `MAG_ROTATION_CW_DEG` | 0 | The same for the compass (the compass has no mounting calibration) |
 
+### Landing gear, ground calibration, signals
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `LANDING_GEAR` | `LandingGear::TAIL_WHEEL` | Which wheel steers: `TAIL_WHEEL` — the tail wheel (nose up when parked, the tail comes up first on the takeoff roll), `NOSE_WHEEL` — the nose wheel |
+| `CAL_SWITCH` | `Channels::SWB` | Switch for the ground-calibration gesture (not SwD — it toggles the motor reverse) |
+| `CAL_SWITCH_FLIPS` / `CAL_SWITCH_WINDOW_MS` | 3 / 4000 | Without ARM and with the throttle down: this many down-and-up flips within this time start the calibration (repeating cancels it) |
+| `CAL_STILL_MS`, `CAL_STILL_DPS`, `CAL_STILL_G` | 2000, 3.0, 0.15 | A step is accepted after this many ms in a row with rotation below this rate and the load factor within 1g ± this |
+| `CAL_PARK_WAIT_MS` | 5000 | Step 2 waits until the airplane is moved, or this long (nose wheel: the same pose) |
+| `CAL_STEP_TIMEOUT_MS` | 60 000 | Not still within this time — the calibration is cancelled (error) |
+| `CAL_TAIL_PARK_MIN/MAX_DEG` | 3 / 25 | Tail wheel: the parking pitch must lie within these limits, otherwise an error (“the tail was not lowered”) |
+| `CAL_NOSE_PARK_MAX_DEG`, `CAL_PARK_MAX_ROLL_DEG` | 6, 10 | Nose wheel: parked almost level; the parking roll must not exceed this |
+| `SIGNAL_MOTOR` / `SIGNAL_SURFACES` | `true` / `true` | Signal by the motor (ESC pulses pause — the ESC plays its ready tune) and by a control-surface nod |
+| `SIGNAL_NOD_US`, `SIGNAL_NOD_MS` | 200, 150 | Elevator and rudder nod: this many µs up, then down, for this many ms each |
+| `SIGNAL_ESC_PAUSE_MS`, `SIGNAL_PERIOD_MS` | 1000, 3000 | The ESC pulses disappear for this long; signals follow with this period (the tune has time to finish) |
+
 ### ARM
 
 | Constant | Value | Meaning |
@@ -179,6 +195,9 @@ comments; what they mean for the pilot is in [AUTOPILOT_GUIDE.md](../AUTOPILOT_G
 | Circles and home | `LOITER_RADIUS_M` 50 (25…150), `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
 | Geofence | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
 | Hand launch | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| Auto takeoff | `TAKEOFF_TRIGGER_US` 1500; check: `TAKEOFF_CHECK_MS` 1000, `_CHECK_TIMEOUT_MS` 5000, `TAKEOFF_PARK_PITCH/ROLL_TOL_DEG` 4/5, `TAKEOFF_UNCALIBRATED_TILT_DEG` 10; throttle `TAKEOFF_THROTTLE_PCT` 100 over `TAKEOFF_THROTTLE_RAMP_MS` 2000; heading `TAKEOFF_HEADING_KP` 10, `TAKEOFF_YAW_RATE_KD` 2; `TAKEOFF_ROTATE_SPEED_MS` 11; liftoff `TAKEOFF_LIFTOFF_MS` 3000, `_LIFTOFF_ALT_M` 1, `_LIFTOFF_CONFIRM_MS` 500; climb `TAKEOFF_CLIMB_PITCH_DEG` 8 to `TAKEOFF_SAFE_ALTITUDE_M` 30 (without a barometer `TAKEOFF_CLIMB_MS` 15 000); abort: `TAKEOFF_ABORT_ROLL_DEG` 15, `_ABORT_HEADING_DEG` 30, `TAKEOFF_NOSE_DOWN_MS` 300, `TAKEOFF_GROUND_TIMEOUT_MS` 15 000; “gyro only”: `TAKEOFF_GYRO_ONLY_CLIMB/MAX/ABORT_MS` 5000/30 000/3000 |
+| Tail wheel | `TD_TAIL_UP_ELEVATOR_US` 250 (at most this much down elevator), `TD_ROLL_PITCH_DEG` 1, `TD_PITCH_KP` 40 (tail up), `TD_ROLL_PITCH_KP` 15 (roll and liftoff), `TD_PITCH_KD` 3, `TD_TAIL_UP_DONE_DEG` 2, `TD_TAIL_UP_TIMEOUT_MS` 6000, `TD_ROLL_MS` 2500, `TD_ROTATE_RATE_DPS` 2, `TD_TAIL_CLEARANCE_DEG` 3, `TD_MIN_PITCH_DEG` −3 |
+| Nose wheel | `TRI_ROLL_ELEVATOR_US` 0, `TRI_ROLL_MS` 3000, `TRI_ROTATE_RATE_DPS` 5, `TRI_MAX_GROUND_PITCH_DEG` 10 |
 | Landing | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
 | Soaring | `SOAR_*`: gliding −3°, a thermal > 0.5 m/s for 1.5 s, a 25° circle, exit < −0.2 m/s for 8 s, motor below 30 m up to 100 m, home beyond 400 m |
 | RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |

@@ -104,7 +104,7 @@ vinner den översta raden.
 
 ## `Autopilot`
 
-**Fil:** `autopilot/Autopilot.h` · **Beror på:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, sensorerna (alla nullbara)
+**Fil:** `autopilot/Autopilot.h` · **Beror på:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, sensorerna (alla nullbara)
 
 ### Livscykel
 
@@ -115,7 +115,7 @@ vinner den översta raden.
 | `void setInputs(const PilotInputs&)` | den här cykelns brytare och rattar (före `update`) |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | en gång per cykel: sensorer (alltid) → navigering och hempunkt → sparande av trimmet på marken → failsafe → geofence → läge → koordinerade svängar → autotrimning |
 | `ControlCommand getCommand() const` | de slutliga roderkommandona (roll/pitch/yaw, µs) |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | lägets gas: `PILOT` – pilotens gas; `AUTO` – sin egen; `AT_LEAST` – inte mindre än sin egen (automatisk start). ARM och `MOTOR_KILL` hanteras av `FlightController` |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | lägets gas: `PILOT` – pilotens gas; `AUTO` – sin egen (även vid autostart: gasspaken bara startar och avbryter). ARM och `MOTOR_KILL` hanteras av `FlightController` |
 
 ### Lägen
 
@@ -126,6 +126,10 @@ vinner den översta raden.
 | `isFailsafeActive()`, `isFailsafeGliding()`, `isFailsafeReturning()` | failsafe ovanpå läget |
 | `isAutoThrottle()`, `getThrottleCorrection()` | lägets gas (%, för loggen och panelen) |
 | `getLaunchState()`, `getSoaringState()` | tillståndsmaskinerna för LAUNCH och SOARING |
+| `getTakeoffStage()`, `getTakeoffAbortReason()` | autostartens etapp och varför den avbröts (`nullptr` – inte avbruten) |
+| `bool takeTakeoffRefusal()` | autostarten vägrade vid kontrollen före starten – `FlightController` spelar en signal (hämtas en gång) |
+| `getLandingGear()`, `setLandingGear(LandingGear)` | landningsstället (standard `Config::LANDING_GEAR`; testerna ändrar det) |
+| `bool isGyroOnlyAttitude() const` | horisonten styrs just nu bara av gyroskopet (autostartens accelerationsfönster) |
 
 ### Utdata och diagnostik
 
@@ -153,7 +157,8 @@ vinner den översta raden.
   hastighet, långsammare än tröskeln för pitot/GPS: bara då skrivs trimmet till
   flash.
 - Failsafe: med GPS och en hempunkt – RTH med motor, annars glidflykt;
-  en påbörjad RTH överges inte på grund av en kort GPS-förlust.
+  en påbörjad RTH överges inte på grund av en kort GPS-förlust. I AUTO_TAKEOFF på banan (etapper med `holdsGround()`) är förlorad förbindelse en avbruten start, inte failsafe; under stigningen är det failsafe, och när förbindelsen återkommer fortsätter stigningen.
+- Fönstret ”bara gyroskop” (`manageAccelCorrection()`): autostartens motorstart tar bort accelerometern som stöd för horisonten (`ImuSensor::setAccelCorrection`); tillbaka sätter den tiden från stigningens början (`TAKEOFF_GYRO_ONLY_CLIMB_MS`), övre gränsen, en avbruten start och DISARM – inte ett lägesbyte.
 
 ---
 
@@ -194,6 +199,28 @@ motorn, tippning `LAUNCH_CLIMB_PITCH_DEG`) `→ DONE` (`LAUNCH_CLIMB_MS` eller
 `LAUNCH_ALTITUDE_M`). Spakrörelse före kastet – avbryt. Metoder:
 `update(...)`, `reset()`, `getState()`, `motorOn()`, `pitchTargetDeg()`,
 `stateName()`.
+
+## `TakeoffController`
+
+**Fil:** `autopilot/TakeoffController.h` · **Beror på:** `Config`
+
+Autostart från bana – etapper efter sensorerna, utan egna sensorer och roder: in går `Inputs` (ARM, förbindelse, pilotens gas, vinklar och vinkelhastigheter, last, markläge, höjd, fart, ratten `STAB_GAIN`, tid), ut kommer vad som ska göras i den här takten.
+
+`Stage`: `IDLE` (motorn av; gas över `TAKEOFF_TRIGGER_US` efter att ha varit nere) `→ CHECK` (stilla i `TAKEOFF_CHECK_MS`, vinklar = markläget; annars `ABORTED` och en signal) `→ TAIL_UP` (sporrhjul: höjdroder nedåt, stjärten upp) `→ ROLL` (rullning; `TD_ROLL_MS` / `TRI_ROLL_MS` eller rotationsfarten) `→ LIFTOFF` (tippningsmålet ökar, nära marken högst markläget minus `TD_TAIL_CLEARANCE_DEG`) `→ CLIMB` (lättning enligt barometer eller tid; stigning till `TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS`) `→ DONE`. `ABORTED` – avbruten start; gasen nere i 1 s – `IDLE` igen.
+
+| Metod | Beskrivning |
+|---|---|
+| `void update(const Inputs&)` | en gång per takt: etappbyte, sedan etappens utgångar; utan ARM – `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | avbrott utifrån (förlorad förbindelse); i `IDLE`/`DONE` – ingenting |
+| `void reset()`, `setGear()`, `getGear()` | |
+| `getStage()`, `stageName()`, `stageShort()`, `getAbortReason()` | etappen (kort namn för OLED) |
+| `bool holdsGround() const` | på marken (`IDLE`…`LIFTOFF`, `ABORTED`): förlorad förbindelse är en avbruten start, PID-integratorerna står på noll |
+| `isAirborneStage()`, `isDone()` | i luften (stigning/klart); starten avslutad |
+| `getThrottlePct()` | programmets gas, % (ramp över `TAKEOFF_THROTTLE_RAMP_MS`) |
+| `getRollTargetDeg()`, `getPitchTargetDeg()` | rollmål (på hjulen – rollen i vila) och tippningsmål (i stigningen – för PID) |
+| `hasElevatorCommand()`, `getElevatorUs()` | på hjulen höjdrodret direkt: mot målet med `TD_PITCH_KP` / `TD_ROLL_PITCH_KP` µs per grad, dämpning `TD_PITCH_KD`, högst `TD_TAIL_UP_ELEVATOR_US` nedåt |
+| `hasRudderCommand()`, `getRudderUs()` | kursen med sidroder och hjul: `TAKEOFF_HEADING_KP` µs per grad, `TAKEOFF_YAW_RATE_KD` per °/s |
+| `bool takeRefusal()`, `bool takeGyroTrim(float[3])` | engångshändelser: vägran vid kontrollen; gyroskopets restnollpunkt uppmätt i vila |
 
 ## `SoaringController`
 

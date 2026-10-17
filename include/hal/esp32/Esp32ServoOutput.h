@@ -66,6 +66,13 @@ public:
 
     bool isAttached() const override { return attached; }
 
+    // Скважность 0 — на пине ноль, импульса нет.
+    void stopPulses() override
+    {
+        if (!attached) return;
+        ledcWrite(channel, 0);
+    }
+
     // Включаем входной буфер того же GPIO (бит FUN_IE в IO_MUX) —
     // выход PWM при этом не трогается, а digitalRead()/pulseIn()
     // видят уровень, который пин реально выдаёт.

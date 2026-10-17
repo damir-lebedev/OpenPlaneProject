@@ -182,10 +182,12 @@ Les règles qui gardent l’architecture propre :
 | `EscSignal.h` | Gaz + sens → impulsion de l’ESC : sur le BLHeli bidirectionnel 1500 = arrêt, en avant 1500..2000, en arrière 1500..1000 |
 | `MotorReverse.h` | Inversion du moteur via `Feature::MOTOR_REVERSE` — uniquement en DISARM ; après un changement de sens, l’ARM est refusé pendant `REVERSE_SETTLE_MS` |
 | `ArmingManager.h` | ARM par l’interrupteur SwA (une transition OFF→ON avec les gaz en bas + les vérifications des capteurs du mode), DISARM instantané |
-| `FlightOutputState.h` | Les PWM voulus : `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % dans un sens comme dans l’autre), `motorReverse`, `aux1` (charge utile), `aux2` (caméra) |
+| `FlightOutputState.h` | Les PWM voulus : `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100 % dans un sens comme dans l’autre), `motorReverse`, `escPulsesOff` (signal moteur), `aux1` (charge utile), `aux2` (caméra) |
 | `Beeper.h` | Le buzzer : par la fonction `BEEPER` ou « modèle perdu » au sol |
+| `GroundCalibration.h` | La calibration au sol de l’avion : geste à l’interrupteur, étape 1 — l’horizon (queue levée), étape 2 — l’assiette au sol ; enregistrée via `ImuSensor::setGroundCalibration()` |
+| `SignalPlayer.h` | Les signaux au pilote : hochement des gouvernes, pause des impulsions de l’ESC (il joue sa mélodie de disponibilité, seulement sans ARM), buzzer/LED ; compte 1/2/3 |
 | `FlightOutputs.h` | Le tableau des sorties (`outputInfo()` : clé, nom, broche, caractère obligatoire, champ d’état) et tout ce qui se fait par-dessus en boucle : `begin()`, `write()`, `setFailsafe()`, état, `printPulseSelfTest()` |
-| `FlightController.h` | L’ordre des opérations à chaque cycle, la perte de signal (`applyLinkLoss()`), les accesseurs pour la télémétrie |
+| `FlightController.h` | L’ordre des opérations à chaque cycle, la perte de signal (`applyLinkLoss()`), la calibration et les signaux par-dessus les sorties, les accesseurs pour la télémétrie |
 
 ### `autopilot/`
 
@@ -198,6 +200,7 @@ Les règles qui gardent l’architecture propre :
 | `Navigation.h` | `Geo` (distance, relèvement, décalage), `Guidance` (roulis vers un cap, le champ de vecteurs du cercle) |
 | `AltitudeSpeedController.h` | Tangage pour l’altitude, gaz pour la vitesse air (TECS-lite) |
 | `LaunchController.h`, `SoaringController.h` | Les machines à états du lancer à la main et du vol à voile |
+| `TakeoffController.h` | Le décollage automatique depuis une piste : étapes pour roulette de queue et de nez (`Config::LANDING_GEAR`), lois de la profondeur et du cap sur les roues, décollage interrompu |
 | `AutoTrim.h` | Auto-trim, sauvegardé dans la NVS/flash |
 | `PidController.h` | PID : D sur la vitesse du capteur (gyroscope, variomètre), anti-windup, intégrateur gelé sans ARM |
 | `feedback/*` | **Ébauche, non connectée :** rétroaction adaptative, décollage et atterrissage — voir [Rétroaction](#rétroaction-ébauche-non-branchée) |
@@ -591,6 +594,8 @@ ARM.
 | `s` | `printStatus()` de tous les capteurs : données, compteurs d’erreurs du bus, calibrations, la vérification avant vol |
 | `i` | Calibration du gyroscope + vérification avant vol (2 s immobile) |
 | `o` | Calibration du montage de l’IMU selon trois poses, sauvegardée dans la NVS |
+| `c` | Calibration au sol de l’avion (horizon et assiette au sol) — ne bloque pas la boucle ; en cours — l’annule. Depuis la radio : l’interrupteur `CAL_SWITCH` trois fois en bas et en haut sans ARM |
+| `e` | Signal : hochement des gouvernes et pause des impulsions de l’ESC — vérifier qu’il joue sa mélodie de disponibilité (hélice retirée !) |
 | `m` | Calibration de la boussole (15 s de rotation), sauvegardée dans la NVS |
 | `p` | Autotest des sorties : l’impulsion réelle sur chaque broche face à l’impulsion attendue |
 
@@ -797,7 +802,7 @@ Une nouvelle interface dans `include/hal/`, une implémentation dans
    `stabilizeOrNeutral()` (sans IMU — neutre). Sans le capteur requis — un
    comportement sûr, et non un plantage. L’intégrateur ne s’accumule qu’avec
    `armed`.
-3. Gaz : `throttleMode` (`PILOT` / `AUTO` / `AT_LEAST`) et `autoThrottlePct`,
+3. Gaz : `throttleMode` (`PILOT` / `AUTO`) et `autoThrottlePct`,
    ou `autoThrottle()` — les gaz de croisière issus du potentiomètre / du tube
    de Pitot. `FlightController` ne change pas.
 4. Sur la radiocommande — une seule ligne dans `config/Controls.h`

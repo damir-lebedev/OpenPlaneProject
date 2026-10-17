@@ -193,23 +193,163 @@ void test_sim_geofence_brings_plane_back()
     TEST_ASSERT_EQUAL(MODE_RTH, sim.autopilot.getMode());
 }
 
+namespace
+{
+    // Что было на взлёте — для проверок.
+    struct TakeoffTrace
+    {
+        bool motorStarted = false;
+        bool liftedOff = false;
+        double maxTailLoadN = 0;     // после старта мотора
+        double worstHeadingDeg = 0;  // уход курса от начального
+        double worstRollDeg = 0;
+        double worstPitchErrorDeg = 0;   // фильтр углов против правды, пока колёса на земле
+        double liftoffSpeed = 0;
+    };
+
+    // Самолёт на полосе, AUTO_TAKEOFF, газ вверх — seconds секунд.
+    TakeoffTrace runTakeoff(Sim& sim, double seconds)
+    {
+        TakeoffTrace t;
+        const double heading = sim.headingDeg();
+        sim.rc.set(Channels::SWC, SWITCH_UP);
+        sim.arm();
+        sim.autopilot.setMode(MODE_AUTO_TAKEOFF);
+        sim.run(0.5);
+        sim.rc.set(Channels::THROTTLE, 1600);
+        const int steps = static_cast<int>(seconds / 0.01);
+        for (int i = 0; i < steps; ++i)
+        {
+            sim.run(0.01);
+            const TakeoffController::Stage stage = sim.autopilot.getTakeoffStage();
+            if (stage == TakeoffController::Stage::TAIL_UP || stage == TakeoffController::Stage::ROLL) t.motorStarted = true;
+            if (t.motorStarted) t.maxTailLoadN = std::max(t.maxTailLoadN, sim.plane.tailLoadN);
+            if (!sim.plane.s.onGround && !t.liftedOff)
+            {
+                t.liftedOff = true;
+                t.liftoffSpeed = sim.plane.s.speed;
+            }
+            if (sim.plane.s.onGround && t.motorStarted)
+            {
+                t.worstPitchErrorDeg = std::max(t.worstPitchErrorDeg,
+                                                std::fabs(static_cast<double>(sim.imu.data.pitch) - sim.pitchDeg()));
+            }
+            double dh = sim.headingDeg() - heading;
+            while (dh > 180) dh -= 360;
+            while (dh < -180) dh += 360;
+            t.worstHeadingDeg = std::max(t.worstHeadingDeg, std::fabs(dh));
+            t.worstRollDeg = std::max(t.worstRollDeg, std::fabs(sim.rollDeg()));
+        }
+        return t;
+    }
+
+    void placeTailDragger(Sim& sim)
+    {
+        sim.realisticImu = true;
+        sim.plane.gear = SimGear::TAIL_WHEEL;
+        sim.plane.placeOnGround();
+        sim.imu.park(static_cast<float>(sim.plane.parkPitch / PlaneSim::DEG));   // калибровка шасси
+    }
+}
+
+// Хвостовое колесо: хвост поднимается рулём от себя, разбег на основных
+// колёсах, отрывает крыло — колесо ни разу не нагружено сверх стоянки,
+// винт не касается, хвост не бьёт о полосу. Углы — честный фильтр.
 void test_sim_auto_takeoff_from_runway()
 {
     Sim sim(TABLE, false, false, "takeoff");
+    placeTailDragger(sim);
+    const TakeoffTrace t = runTakeoff(sim, 30);
+
+    char info[200];
+    snprintf(info, sizeof(info), "tail %.2f N (static %.2f) impact %.1f dps prop %d heading %.1f roll %.1f pitchErr %.1f h %.1f stage %s",
+             t.maxTailLoadN, PlaneSim::staticTailLoadN(), sim.plane.maxTailImpactDps, sim.plane.propStrikes,
+             t.worstHeadingDeg, t.worstRollDeg, t.worstPitchErrorDeg, sim.plane.s.height,
+             TakeoffController::stageName(sim.autopilot.getTakeoffStage()));
+    TEST_ASSERT_TRUE_MESSAGE(t.motorStarted, info);
+    TEST_ASSERT_TRUE_MESSAGE(t.liftedOff, info);
+    TEST_ASSERT_LESS_OR_EQUAL_FLOAT_MESSAGE(PlaneSim::staticTailLoadN() * 1.02, t.maxTailLoadN, info);
+    TEST_ASSERT_LESS_THAN_FLOAT_MESSAGE(3.0f, sim.plane.maxTailImpactDps, info);
+    TEST_ASSERT_EQUAL_MESSAGE(0, sim.plane.propStrikes, info);
+    TEST_ASSERT_EQUAL_MESSAGE(0, sim.plane.touchdowns, info);
+    TEST_ASSERT_LESS_THAN_FLOAT_MESSAGE(10.0f, t.worstHeadingDeg, info);
+    TEST_ASSERT_LESS_THAN_FLOAT_MESSAGE(5.0f, t.worstRollDeg, info);
+    TEST_ASSERT_LESS_THAN_FLOAT_MESSAGE(2.0f, t.worstPitchErrorDeg, info);   // разгон не задирает "нос" фильтра
+    TEST_ASSERT_GREATER_THAN_FLOAT_MESSAGE(Config::TAKEOFF_SAFE_ALTITUDE_M - 3.0f, sim.plane.s.height, info);
+    TEST_ASSERT_EQUAL_MESSAGE(TakeoffController::Stage::DONE, sim.autopilot.getTakeoffStage(), info);
+}
+
+// Без барометра — набор по времени, отрыв всё равно не задевает хвост.
+void test_sim_tail_wheel_takeoff_without_barometer()
+{
+    Sim sim(TABLE, false, false, "takeoff_nobaro");
+    placeTailDragger(sim);
+    sim.baro.available = false;
+    const TakeoffTrace t = runTakeoff(sim, 30);
+
+    char info[160];
+    snprintf(info, sizeof(info), "tail %.2f N prop %d heading %.1f h %.1f stage %s", t.maxTailLoadN,
+             sim.plane.propStrikes, t.worstHeadingDeg, sim.plane.s.height,
+             TakeoffController::stageName(sim.autopilot.getTakeoffStage()));
+    TEST_ASSERT_TRUE_MESSAGE(t.liftedOff, info);
+    TEST_ASSERT_LESS_OR_EQUAL_FLOAT_MESSAGE(PlaneSim::staticTailLoadN() * 1.02, t.maxTailLoadN, info);
+    TEST_ASSERT_EQUAL_MESSAGE(0, sim.plane.propStrikes, info);
+    TEST_ASSERT_EQUAL_MESSAGE(0, sim.plane.touchdowns, info);
+    TEST_ASSERT_GREATER_THAN_FLOAT_MESSAGE(15.0f, sim.plane.s.height, info);
+    TEST_ASSERT_EQUAL_MESSAGE(TakeoffController::Stage::DONE, sim.autopilot.getTakeoffStage(), info);
+}
+
+// Носовое колесо: разбег на трёх колёсах, нос вверх на скорости — хвост
+// не чиркает.
+void test_sim_nose_wheel_takeoff()
+{
+    Sim sim(TABLE, false, false, "takeoff_nose");
+    sim.realisticImu = true;
+    sim.plane.gear = SimGear::NOSE_WHEEL;
+    sim.plane.placeOnGround();
+    sim.autopilot.setLandingGear(Config::LandingGear::NOSE_WHEEL);
+    const TakeoffTrace t = runTakeoff(sim, 30);
+
+    char info[160];
+    snprintf(info, sizeof(info), "tailStrikes %d heading %.1f h %.1f stage %s", sim.plane.tailStrikes,
+             t.worstHeadingDeg, sim.plane.s.height, TakeoffController::stageName(sim.autopilot.getTakeoffStage()));
+    TEST_ASSERT_TRUE_MESSAGE(t.liftedOff, info);
+    TEST_ASSERT_EQUAL_MESSAGE(0, sim.plane.tailStrikes, info);
+    TEST_ASSERT_EQUAL_MESSAGE(0, sim.plane.touchdowns, info);
+    TEST_ASSERT_LESS_THAN_FLOAT_MESSAGE(10.0f, t.worstHeadingDeg, info);
+    TEST_ASSERT_GREATER_THAN_FLOAT_MESSAGE(Config::TAKEOFF_SAFE_ALTITUDE_M - 3.0f, sim.plane.s.height, info);
+}
+
+// Пилот убрал газ на разбеге: мотор стоп, хвост плавно опускается, самолёт
+// катится и встаёт, винт не касается.
+void test_sim_takeoff_aborted_by_throttle()
+{
+    Sim sim(TABLE, false, false, "takeoff_abort");
+    placeTailDragger(sim);
     sim.rc.set(Channels::SWC, SWITCH_UP);
     sim.arm();
     sim.autopilot.setMode(MODE_AUTO_TAKEOFF);
-    sim.rc.set(Channels::THROTTLE, 1600);   // газ вверх — старт программы
-    double worstRoll = 0;
-    for (int i = 0; i < 150; ++i)
-    {
-        sim.run(0.1);
-        worstRoll = std::max(worstRoll, fabs(sim.rollDeg()));
-    }
-    TEST_ASSERT_FALSE(sim.plane.s.onGround);
-    TEST_ASSERT_GREATER_THAN_FLOAT(20.0f, sim.plane.s.height);
-    TEST_ASSERT_LESS_THAN_FLOAT(5.0f, worstRoll);
-    TEST_ASSERT_EQUAL(0, sim.plane.touchdowns);
+    sim.run(0.5);
+    sim.rc.set(Channels::THROTTLE, 1600);
+    TEST_ASSERT_TRUE(sim.runUntil([&] { return sim.autopilot.getTakeoffStage() == TakeoffController::Stage::ROLL; }, 8));
+    sim.run(0.3);
+    const double speedAtAbort = sim.plane.s.speed;
+    sim.rc.set(Channels::THROTTLE, 1000);
+    sim.run(0.1);
+    TEST_ASSERT_EQUAL(TakeoffController::Stage::ABORTED, sim.autopilot.getTakeoffStage());
+    sim.run(20);   // катится до остановки; газ внизу — взлёт снова ждёт
+
+    char info[160];
+    snprintf(info, sizeof(info), "v0 %.1f v %.1f pitch %.1f prop %d impact %.1f stage %s", speedAtAbort,
+             sim.plane.s.speed, sim.pitchDeg(), sim.plane.propStrikes, sim.plane.maxTailImpactDps,
+             TakeoffController::stageName(sim.autopilot.getTakeoffStage()));
+    TEST_ASSERT_GREATER_THAN_FLOAT_MESSAGE(3.0f, speedAtAbort, info);
+    TEST_ASSERT_EQUAL_MESSAGE(TakeoffController::Stage::IDLE, sim.autopilot.getTakeoffStage(), info);
+    TEST_ASSERT_TRUE_MESSAGE(sim.plane.s.onGround, info);
+    TEST_ASSERT_LESS_THAN_FLOAT_MESSAGE(1.5f, sim.plane.s.speed, info);
+    TEST_ASSERT_EQUAL_MESSAGE(0, sim.plane.propStrikes, info);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.5f, sim.plane.parkPitch / PlaneSim::DEG, sim.pitchDeg(), info);   // снова на трёх колёсах
+    TEST_ASSERT_EQUAL_FLOAT_MESSAGE(0.0f, sim.lastControl().throttle, info);
 }
 
 void test_sim_hand_launch()
@@ -433,6 +573,9 @@ int main()
     RUN_TEST(test_sim_failsafe_returns_home_or_glides);
     RUN_TEST(test_sim_geofence_brings_plane_back);
     RUN_TEST(test_sim_auto_takeoff_from_runway);
+    RUN_TEST(test_sim_tail_wheel_takeoff_without_barometer);
+    RUN_TEST(test_sim_nose_wheel_takeoff);
+    RUN_TEST(test_sim_takeoff_aborted_by_throttle);
     RUN_TEST(test_sim_hand_launch);
     RUN_TEST(test_sim_auto_land);
     RUN_TEST(test_sim_soaring_climbs_in_thermal);

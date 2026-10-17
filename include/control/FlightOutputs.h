@@ -89,11 +89,12 @@ public:
         return channel < ServoChannel::COUNT && attached[channel];
     }
 
-    // Импульс на пине выхода channel в состоянии state, мкс.
+    // Импульс на пине выхода channel в состоянии state, мкс (0 — импульсов нет).
     static uint16_t valueOf(const FlightOutputState& state, uint8_t channel)
     {
         const uint16_t value = state.*(outputInfo(channel).field);
-        return channel == ServoChannel::ESC ? EscSignal::pulseUs(value, state.motorReverse) : value;
+        if (channel != ServoChannel::ESC) return value;
+        return state.escPulsesOff ? 0 : EscSignal::pulseUs(value, state.motorReverse);
     }
 
     void printStatus() const
@@ -154,6 +155,11 @@ public:
     {
         for (uint8_t ch = 0; ch < ServoChannel::COUNT; ++ch)
         {
+            if (ch == ServoChannel::ESC && state.escPulsesOff)
+            {
+                board.servo(ch).stopPulses();
+                continue;
+            }
             board.servo(ch).writeMicroseconds(valueOf(state, ch));
         }
 

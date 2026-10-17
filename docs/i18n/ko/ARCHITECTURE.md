@@ -58,8 +58,8 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK(연결되지 않음)<br/>FeedbackSupervisor와 모듈"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -374,22 +374,23 @@ sequenceDiagram
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(기능에 따른 목표)
     FC->>AP: update(armed, linkLost, 조종사 스로틀 (역회전 시 0), 스틱)
     Note over AP: 센서는 항상 읽음,<br/>항법, failsafe, 지오펜스,<br/>모드, 조율, 오토 트림
-    FC->>OUT: setBuzzer(Beeper)
+    Note over FC: 지상 캘리브레이션: 스위치 동작(ARM 없이),<br/>GroundCalibration 한 단계, 알림 → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper 또는 알림 불빛)
     alt 통신 상실
         alt armed이고 오토파일럿 failsafe(RTH / GLIDE)
             FC->>MX: mix(오토파일럿 명령)
             FC->>OUT: write(조종면, 오토파일럿 스로틀 (역회전 시 0), AUX는 그대로)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() (알림 중에는 중립에 끄덕임과 ESC 멈춤)
         end
         Note over FC: return — ARM과 스위치는 읽지 않음
     else 통신 있음
-        FC->>AM: update(rc, MR.armBlockReason) — ARM 스위치
+        FC->>AM: update(rc, 이유) — ARM 스위치(캘리브레이션이나 알림 중에는 거부)
         FC->>MR: update(MOTOR_REVERSE, armed) — 방향은 ARM이 아닐 때만
         FC->>AP: getCommand() — 최종 조종면 명령
         FC->>MX: mix(command) → 리버스가 있는 PWM
         FC->>AP: applyThrottle(조종사 스로틀) — 전진일 때만
-        Note over FC: 후진 — 파일럿 스로틀 ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed 또는 MOTOR_KILL → throttle = PWM_MIN(맨 마지막)
+        Note over FC: 후진 — 파일럿 스로틀 ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed 또는 MOTOR_KILL → throttle = PWM_MIN(맨 마지막)<br/>알림의 끄덕임을 조종면에 더하고, ARM이 아니면 ESC 펄스를 멈춤
         FC->>OUT: write(output + AUX1 화물, AUX2 카메라)
         Note over OUT: ESC: 스로틀 + 방향 → 펄스(EscSignal),<br/>양방향 ESC: 1500 = 정지
     end
@@ -458,15 +459,29 @@ stateDiagram-v2
     GLIDE --> FRTH : GPS 확보
 ```
 
-failsafe는 별개의 `AutopilotMode`가 아니라 현재 모드 위에 얹는 플래그입니다. 이미 시작된 귀환은 GPS를 잠깐 잃었다고 활공으로 바뀌지 않습니다. 통신이 복구되면 스위치로 정한 모드가 이어집니다(자동 이륙과 손으로 던져 이륙은 처음부터 다시). 내부 상태 머신은 `LaunchController`(IDLE → READY → THROWN → CLIMB → DONE)와 `SoaringController`(GLIDE → THERMAL → MOTOR_CLIMB → RETURN)입니다.
+failsafe는 별개의 `AutopilotMode`가 아니라 현재 모드 위에 얹는 플래그입니다. 이미 시작된 귀환은 GPS를 잠깐 잃었다고 활공으로 바뀌지 않습니다. 통신이 복구되면 스위치로 정한 모드가 이어집니다(손으로 던져 이륙은 처음부터 다시. 활주로의 자동 이륙도 처음부터 다시이며, 상승 중이면 상승을 계속). 활주로 위의 AUTO_TAKEOFF에서 통신 두절은 덧씌우기가 아니라 이륙 중단입니다: 모터 정지, 조종면 중립. 내부 상태 머신은 `LaunchController`(IDLE → READY → THROWN → CLIMB → DONE), `TakeoffController`(아래), `SoaringController`(GLIDE → THERMAL → MOTOR_CLIMB → RETURN)입니다.
 
-**AUTO_TAKEOFF**(시작으로부터의 시간에 따라, armed이고 스로틀 ≥ 1500 µs일 때):
+**AUTO_TAKEOFF**(`TakeoffController`. 스로틀은 프로그램이 조작하고, 스로틀 스틱은 시작과 중단):
 
-| 시간 | 스로틀(프로그램) | 피치 |
-|---|---|---|
-| 0–1초 | 0 → 100 %까지 부드럽게 | 0° |
-| 1–3초 | 100 % | +15° |
-| > 3초 | 100 % | +10° |
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : 스로틀 ≥ 1500 µs(한 번 내린 뒤)
+    CHECK --> TAIL_UP : 1초 정지, 각도 = 주기 자세(꼬리 바퀴)
+    CHECK --> ROLL : 같음(앞바퀴)
+    CHECK --> ABORTED : 캘리브레이션 때처럼 서 있지 않음 — 알림 ×3
+    TAIL_UP --> ROLL : 피치가 수평에 가까움
+    ROLL --> LIFTOFF : 기수 들기 속도 / 2.5초
+    LIFTOFF --> CLIMB : 기압계로 부양 / 상한 + 3초
+    CLIMB --> DONE : 30 m / 기압계 없이 15초
+    TAIL_UP --> ABORTED : 스로틀 내림, 통신, IMU, 롤, 침로, 기수, 6초
+    ROLL --> ABORTED : 스로틀 내림, 통신, IMU, 롤, 침로, 기수, 15초
+    LIFTOFF --> ABORTED : 같음
+    ABORTED --> IDLE : 스로틀 1초 내림
+```
+
+바퀴 위에서는 승강타를 직접 조작하고(꼬리 들기: +1° 피치를 향해 아래 타각 ≤ 250 µs. 기수 들기: 목표가 2°/s로 커지고, 지면 가까이에서는 주기 자세에서 3°를 뺀 값까지), 상승 중에는 +8°로 가는 PID입니다. 침로는 방향타와 조향 바퀴로 유지합니다. 모터를 시동한 순간부터 수평 기준은 자이로에서만 옵니다(`ImuSensor::setAccelCorrection(false)`). 가속도계는 가속을 기수 들림으로 착각하기 때문입니다.
 
 ### 이륙과 착륙(피드백 루프, 연결되지 않음)
 
@@ -513,7 +528,7 @@ stateDiagram-v2
 
 이에 더해 IMU에는 **비행 전 점검**(`getPreflightProblem()`)이 있습니다. 자이로 보정 중의 정지, |a| ≈ 1g, “위쪽” 방향이 저장된 장착과 일치하는지입니다. 통과하지 못하면 `Autopilot::imuReady() == false`가 되어(활공을 포함한 모든 모드에서 보정이 0) `ArmingManager`가 안정화를 쓰는 모드를 ARM하지 않습니다.
 
-사용하는 쪽의 반응은 모두 같습니다. **센서가 없거나(`nullptr`) 사용할 수 없으면 아무 영향도 없고**, 비행기는 MANUAL처럼 조종됩니다.
+사용하는 쪽의 반응은 모두 같습니다. **센서가 없거나(`nullptr`) 사용할 수 없으면 아무 영향도 없고**, 비행기는 MANUAL처럼 조종됩니다. 예외는 활주로 위의 자동 이륙으로, IMU가 고장 나면 이륙 중단이 되고 모터를 멈춥니다.
 
 ### 통신(`IBusReceiver::isSignalLost()`)
 
@@ -526,7 +541,7 @@ CRC가 잘못된 프레임은 버려지고 집계됩니다(`getBadFrameCount()`)
 
 ### 출력
 
-`FlightOutputs::begin()` 바로 뒤에 `setFailsafe()`가 호출되어, 센서를 읽기도 전에 조종면은 중립, 모터는 꺼집니다. 핀이 `-1`인 출력(C3의 방향타)은 그냥 연결되지 않습니다. JSON의 `attached`는 LEDC 채널이 할당되었는지를 보여 줍니다. 각 핀의 실제 펄스는 `printPulseSelfTest()`(콘솔의 `p`)가 확인합니다.
+`FlightOutputs::begin()` 바로 뒤에 `setFailsafe()`가 호출되어, 센서를 읽기도 전에 조종면은 중립, 모터는 꺼집니다. 핀이 `-1`인 출력(C3의 방향타)은 그냥 연결되지 않습니다. JSON의 `attached`는 LEDC 채널이 할당되었는지를 보여 줍니다. 각 핀의 실제 펄스는 `printPulseSelfTest()`(콘솔의 `p`)가 확인합니다. 모터 알림은 ESC 출력에 대한 `IServoOutput::stopPulses()`입니다(ARM이 아닐 때만). 펄스가 없으면 ESC는 신호를 잃었다고 판단하고, 중립이 돌아오면 준비 완료 멜로디를 냅니다.
 
 ---
 

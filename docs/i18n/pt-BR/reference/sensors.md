@@ -50,6 +50,12 @@ Qual chip é compilado é decidido por `SensorSelection.h`.
 | `void setYaw(float)` | Define o rumo (por exemplo, pela bússola na partida) |
 | `virtual void calibrateOrientation()` | Calibração da montagem da placa (por padrão não é suportada) |
 | `virtual const char* getPreflightProblem() const` | O problema da verificação pré-voo ou `nullptr` (por padrão `nullptr`) |
+| `virtual bool readChipUp(float[3]) const` | Calibração em solo: a última leitura do acelerômetro nos eixos do chip, g, sem correção (por padrão `false`) |
+| `virtual bool getOrientation(ImuOrientation&) const` | A instalação atual da placa (por padrão `false` — calibração em solo sem suporte) |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | Adotar o horizonte e a atitude em solo e gravá-los na flash |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | A atitude em solo sobre as rodas, ° a partir do horizonte; `false` — sem calibração do trem |
+| `virtual void setAccelCorrection(bool)` | Decolagem automática: `false` — horizonte só pelo giroscópio |
+| `virtual void trimGyroBias(const float residualDps[3])` | Refinar o zero do giroscópio pela taxa angular média do avião parado (eixos e sinais de `ImuData`) |
 
 ### `BarometerSensor : Sensor`
 
@@ -169,6 +175,9 @@ A matriz de rotação `R` dos eixos do chip para os eixos do avião: `body = R �
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | Uma rotação em torno da vertical em passos de 90°, com a placa e o chip para cima |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | Calibração a partir de três poses (a leitura de “cima” do acelerômetro nos eixos do chip). `nullptr` — sucesso; caso contrário, o motivo da recusa |
 | `void apply(const float chip[3], float body[3]) const` | Aplica a rotação |
+| `void applyInverse(const float body[3], float chip[3]) const` | A rotação inversa (`R` transposta) |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | O horizonte a partir da posição “nivelado”: Z = o “topo” medido, o nariz se mantém, endireitado ⟂ Z. Mais de 45° do horizonte antigo — recusado |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | A arfagem e a rolagem de uma posição (como o `AttitudeEstimator` pelo acelerômetro) — a atitude em solo |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | O ângulo entre o “cima” medido e o eixo Z do avião (180° se o vetor for nulo) |
 | `bool load(const char* ns)` | Carrega da NVS; rejeita uma tripla não ortonormal ou levógira |
 | `void save(const char* ns) const` | Salva na NVS |
@@ -198,11 +207,12 @@ Um filtro complementar de rolagem/arfagem e uma integral de guinada, independent
 | `void setYaw(float deg)` | Define o rumo (reduzido a ±180) |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | A aceleração em g nos eixos do avião, as velocidades em °/s |
 | `getRoll()`, `getPitch()`, `getYaw()` | ° |
+| `setAccelCorrection(bool)`, `isAccelCorrectionEnabled()` | `false` — só giroscópio (a aceleração da decolagem automática: 0,5 g para a frente parecem +27° de arfagem) |
 
 `roll_acc = atan2(ay, az)`, `pitch_acc = atan2(ax, √(ay² + az²))`;
 `angle = 0.98·(angle + rate·dt) + 0.02·angle_acc` (τ ≈ 0,1 s com 2 ms).
 A primeira chamada após `reset()` dá de imediato os ângulos do acelerômetro; com `dt ≤ 0` ou maior que 0,1 s
-o passo é ignorado (uma pausa, um barramento travado).
+o passo é ignorado (uma pausa, um barramento travado). Sem acelerômetro — `angle + rate·dt`.
 
 ---
 
@@ -227,7 +237,11 @@ amostras brutas − deslocamentos (ADC) → escala (g, °/s) → ImuOrientation 
 | `void calibrate()` | 200 amostras × 10 ms: o deslocamento do giroscópio, o ruído, o “cima”; sem calibração da montagem — o horizonte = a posição atual. Depois, a verificação pré-voo |
 | `void calibrateOrientation()` | Três poses (`capturePose`: parado por ~1 s, a pose difere das anteriores em ≥ 20°, tempo limite de 30 s), `ImuOrientation::fromPoses`, gravação na NVS. Elimina os problemas de montagem da verificação pré-voo |
 | `const char* getPreflightProblem() const` | O texto do problema ou `nullptr` |
-| `void setYaw(float)`, `getSensorType()`, `printStatus()` | |
+| `readChipUp()`, `getOrientation()` | Calibração em solo: o último “topo” nos eixos do chip, a instalação |
+| `bool setGroundCalibration(level, parkChipUp)` | Instalação = `level` (o horizonte), a atitude em solo na chave `park` no mesmo namespace do NVS; tira os problemas de instalação da verificação pré-voo. Um novo `o` apaga a atitude em solo (ela foi medida a partir do horizonte antigo) |
+| `bool getParkingAttitude(pitch, roll) const` | A atitude em solo pela instalação atual |
+| `setAccelCorrection(bool)`, `trimGyroBias(residual)` | Decolagem automática: filtro sem acelerômetro; o zero residual passa pela rotação inversa para o offset do giroscópio |
+| `void setYaw(float)`, `getSensorType()`, `printStatus()` | `printStatus()` termina com `park(pitch,roll)=…` ou `park=NONE` |
 
 A API protegida para os drivers:
 

@@ -40,6 +40,7 @@
 #endif
 #include "sensors/SensorInterface.h"
 #include "sensors/airspeed/AirspeedSensor.h"
+#include "sensors/imu/ImuOrientation.h"
 
 // Что выйдет на ESC при стике газа stickUs: верх хода ограничен
 // Config::THROTTLE_LIMIT_PCT (FlightController::capThrottle) — тесты не
@@ -200,6 +201,8 @@ public:
     uint16_t lastUs = 0;
     unsigned writes = 0;
     int32_t pulse = -1;
+    bool pulsesOff = false;   // stopPulses() — импульсов нет до следующей записи
+    unsigned stops = 0;
 
     bool attach(uint16_t min, uint16_t max) override
     {
@@ -213,6 +216,13 @@ public:
     {
         lastUs = us;
         writes++;
+        pulsesOff = false;
+    }
+
+    void stopPulses() override
+    {
+        pulsesOff = true;
+        stops++;
     }
 
     bool isAttached() const override { return attached; }
@@ -344,6 +354,77 @@ public:
     void setYaw(float y) override { yaw = y; }
     void calibrateOrientation() override { orientationCalibrations++; }
     const char* getPreflightProblem() const override { return preflightProblem; }
+
+    // Наземная калибровка: "верх" в осях чипа (тест задаёт), установка,
+    // стоянка — и что сохранено.
+    float chipUp[3] = { 0.0f, 0.0f, 1.0f };
+    bool hasChipUp = true;
+    bool supportsGround = true;
+    bool refuseGroundCalibration = false;   // setGroundCalibration() не смог сохранить
+    ImuOrientation orientation;
+    bool parkingValid = false;
+    float parkingPitch = 0, parkingRoll = 0;
+    unsigned groundCalibrationsSaved = 0;
+    float savedPark[3] = {};
+
+    // Автовзлёт: опора горизонта и уточнения нуля гироскопа.
+    bool accelCorrection = true;
+    unsigned accelCorrectionChanges = 0;
+    unsigned gyroTrims = 0;
+    float lastGyroTrim[3] = {};
+
+    bool readChipUp(float up[3]) const override
+    {
+        if (!hasChipUp) return false;
+        for (int i = 0; i < 3; ++i) up[i] = chipUp[i];
+        return true;
+    }
+
+    bool getOrientation(ImuOrientation& out) const override
+    {
+        if (!supportsGround) return false;
+        out = orientation;
+        return true;
+    }
+
+    bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3]) override
+    {
+        if (refuseGroundCalibration) return false;
+        orientation = level;
+        for (int i = 0; i < 3; ++i) savedPark[i] = parkChipUp[i];
+        level.attitudeOf(parkChipUp, parkingPitch, parkingRoll);
+        parkingValid = true;
+        groundCalibrationsSaved++;
+        return true;
+    }
+
+    bool getParkingAttitude(float& pitchDeg, float& rollDeg) const override
+    {
+        if (!parkingValid) return false;
+        pitchDeg = parkingPitch;
+        rollDeg = parkingRoll;
+        return true;
+    }
+
+    void setAccelCorrection(bool enabled) override
+    {
+        if (enabled != accelCorrection) accelCorrectionChanges++;
+        accelCorrection = enabled;
+    }
+
+    void trimGyroBias(const float residualDps[3]) override
+    {
+        gyroTrims++;
+        for (int i = 0; i < 3; ++i) lastGyroTrim[i] = residualDps[i];
+    }
+
+    // Поставить стоянку (как будто калибровка уже была).
+    void park(float pitchDeg, float rollDeg = 0.0f)
+    {
+        parkingValid = true;
+        parkingPitch = pitchDeg;
+        parkingRoll = rollDeg;
+    }
 };
 
 class FakeBaro : public BarometerSensor

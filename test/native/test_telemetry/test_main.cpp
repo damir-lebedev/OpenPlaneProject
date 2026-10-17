@@ -547,7 +547,7 @@ void test_console_blocks_calibrations_while_armed()
     ConsoleRig c;
     c.plane.arm();
     takeSerial();
-    for (const char* key : { "i", "o", "m", "p" })
+    for (const char* key : { "i", "o", "m", "p", "c", "e" })
     {
         TEST_ASSERT_TRUE(contains(c.type(key), "недоступна, пока заармлено"));
     }
@@ -919,7 +919,9 @@ void test_oled_mode_names_glide_and_missing_sensors()
     RcChannels rc;
     rig.plane.tick(rc);
     rig.plane.autopilot.setMode(MODE_AUTO_TAKEOFF);
-    TEST_ASSERT_TRUE(contains(drawFrame(*rig.display)[0], "TKOFF"));
+    std::vector<std::string> takeoff = drawFrame(*rig.display);
+    TEST_ASSERT_TRUE(contains(takeoff[0], "TKOFF"));
+    TEST_ASSERT_EQUAL_STRING("R  +0.0 P  +0.0 WAIT", takeoff[1].c_str());   // этап взлёта
     rig.plane.autopilot.setMode(MODE_ALT_HOLD);
     TEST_ASSERT_TRUE(contains(drawFrame(*rig.display)[0], "ALT"));
     rig.plane.autopilot.setMode(MODE_RTH);
@@ -950,6 +952,59 @@ void test_oled_mode_names_glide_and_missing_sensors()
     TEST_ASSERT_EQUAL_STRING("IMU --", bareLines[1].c_str());
 }
 
+void test_console_ground_calibration_and_signal()
+{
+    ConsoleRig c;
+    c.plane.imu.data.accelZ = 1.0f;
+    std::string out = c.type("h");
+    TEST_ASSERT_TRUE(contains(out, "Калибровка самолёта на земле"));
+    TEST_ASSERT_TRUE(contains(out, "мелодия ESC"));
+    TEST_ASSERT_TRUE(contains(c.type("9"), "Калибровка самолёта (консоль)"));
+    TEST_ASSERT_TRUE(c.plane.controller.getCalibration().isActive());
+    TEST_ASSERT_TRUE(contains(c.type("c"), "отменена: из консоли"));
+    TEST_ASSERT_FALSE(c.plane.controller.getCalibration().isActive());
+
+    out = c.type("e");
+    TEST_ASSERT_TRUE(contains(out, "регулятор должен сыграть мелодию готовности"));
+    TEST_ASSERT_EQUAL_UINT8(1, c.plane.controller.getSignals().getCount(millis()));
+    c.type("h");
+    TEST_ASSERT_TRUE(contains(c.type("e"), "Меню закрыто"));
+}
+
+void test_oled_and_log_show_calibration_and_takeoff_stage()
+{
+    OledRig rig;
+    rig.wire.attach(0x3C, &rig.screen);
+    rig.oled.begin(&rig.bus);
+    rig.plane.imu.data.accelZ = 1.0f;
+    RcChannels rc;
+    rig.plane.tick(rc);
+
+    rig.plane.controller.toggleGroundCalibration();
+    TEST_ASSERT_EQUAL_STRING("R  +0.0 P  +0.0 CAL1", drawFrame(*rig.display)[1].c_str());
+    rig.plane.controller.toggleGroundCalibration();   // отмена
+    TEST_ASSERT_EQUAL_STRING("R  +0.0 P  +0.0", drawFrame(*rig.display)[1].c_str());
+
+    // Без IMU — метка всё равно видна.
+    rig.plane.controller.toggleGroundCalibration();
+    rig.plane.tick(rc);   // IMU есть — калибровка идёт
+    rig.plane.imu.available = false;
+    TEST_ASSERT_EQUAL_STRING("IMU --          CAL1", drawFrame(*rig.display)[1].c_str());
+    rig.plane.tick(rc);   // IMU пропал — ошибка, итог ещё виден
+    TEST_ASSERT_TRUE(contains(drawFrame(*rig.display)[1], "CALER"));
+    rig.plane.imu.available = true;
+
+    // Лог AP: режим с этапом взлёта.
+    DebugLogger logger(rig.plane.controller, &rig.plane.autopilot);
+    rig.plane.autopilot.setMode(MODE_AUTO_TAKEOFF);
+    takeSerial();
+    logger.update();
+    fake::advanceMs(200);
+    logger.getSettings().setAll(LogMode::OnChange);
+    logger.update();
+    TEST_ASSERT_TRUE(contains(takeSerial(), "AP   AUTO_TAKEOFF/IDLE want"));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -958,6 +1013,8 @@ int main()
     RUN_TEST(test_log_settings_persist_and_reject_foreign_data);
     RUN_TEST(test_logger_prints_enabled_channels_then_only_changes);
     RUN_TEST(test_logger_channel_contents_with_all_sensors);
+    RUN_TEST(test_console_ground_calibration_and_signal);
+    RUN_TEST(test_oled_and_log_show_calibration_and_takeoff_stage);
     RUN_TEST(test_logger_messages_for_missing_and_silent_sensors);
     RUN_TEST(test_logger_status_reports_failsafe_arm_and_flaps);
     RUN_TEST(test_logger_on_change_uses_deadband);

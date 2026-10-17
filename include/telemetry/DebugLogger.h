@@ -3,6 +3,7 @@
 
 #include "autopilot/Autopilot.h"
 #include "autopilot/AutopilotTypes.h"
+#include "autopilot/TakeoffController.h"
 #include "config/Config.h"
 #include "control/FlightController.h"
 #include "control/FlightOutputState.h"
@@ -298,8 +299,15 @@ private:
     {
         if (!autopilot) { line.print("нет"); return; }
 
-        line.printf("%s want R %+.1f P %+.1f corr R %+.0f P %+.0f THR %+.0f",
-                    autopilot->getModeName(),
+        // Автовзлёт — с этапом: AUTO_TAKEOFF/ROLL.
+        line.print(autopilot->getModeName());
+        if (autopilot->getMode() == MODE_AUTO_TAKEOFF && !autopilot->isFailsafeActive())
+        {
+            line.print("/");
+            line.print(TakeoffController::stageName(autopilot->getTakeoffStage()));
+        }
+        if (autopilot->isGyroOnlyAttitude()) line.print(" GYRO");
+        line.printf(" want R %+.1f P %+.1f corr R %+.0f P %+.0f THR %+.0f",
                     wantRoll.update(autopilot->getDesiredRoll(), k * 0.5f),
                     wantPitch.update(autopilot->getDesiredPitch(), k * 0.5f),
                     corrRoll.update(autopilot->getRollCorrection(), k * 2.0f),

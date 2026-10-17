@@ -42,6 +42,7 @@
 | `aileronLeft` و`aileronRight` و`elevator` و`rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
 | `bool motorReverse` | `false` — المحرك إلى الأمام |
+| `bool escPulsesOff` | `false`؛ و`true` — لا نبضات إطلاقًا إلى ESC (تنبيه المحرك، دون ARM فقط) |
 | `aux1` | `PAYLOAD_CLOSED_US` — جهاز إسقاط الحمولة مغلق |
 | `aux2` | `PWM_CENTER` — الكاميرا |
 
@@ -187,10 +188,10 @@
 | `explicit FlightOutputs(IBoard& board)` | |
 | `bool begin()` | ‏`attach(PWM_MIN, PWM_MAX)` لكل مخرج، وطباعة الحالة ونوع ESC؛ و`true` إن حصلت كل المخارج **الإلزامية** على قناة |
 | `bool isAttached(uint8_t ch) const` | المخرج موصول (فهرس خارج المدى ← `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | النبضة على طرف المخرج: الحقل بحسب الجدول، وللـ ESC — عبر `EscSignal::pulseUs(throttle, motorReverse)` |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | النبضة على طرف المخرج: الحقل بحسب الجدول، وللـ ESC — عبر `EscSignal::pulseUs(throttle, motorReverse)`، ومع `escPulsesOff` — 0 |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | النبضة المقيسة مقابل المتوقعة على كل طرف موصول؛ و«OK» عندما يكون الفرق ≤ 15 µs |
-| `void write(const FlightOutputState&)` | كتابة جميع المخارج وتذكّر الحالة |
+| `void write(const FlightOutputState&)` | كتابة جميع المخارج وتذكّر الحالة؛ وESC مع `escPulsesOff` — `IServoOutput::stopPulses()` |
 | `void setFailsafe()` | أسطح التحكم في الوضع المحايد (`FAILSAFE_*`)، والخانق `FAILSAFE_THROTTLE` ‏(1500 على طرف ESC ثنائي الاتجاه)؛ وAUX كما كانت (لا تُسقَط الحمولة بفقدان الاتصال) |
 | `void setBuzzer(bool on)` | صافرة اللوحة (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | آخر حالة مكتوبة |
@@ -203,7 +204,7 @@
 ## ‏`FlightController`
 
 **الملف:** `control/FlightController.h` · **الطبقة:** COORDINATION ·
-**يعتمد على:** `IBusReceiver` و`ControlMixer` و`ThrottleManager` و`ArmingManager` و`FlightOutputs` و`Autopilot*` و`PilotSwitches*` و`Beeper` و`MotorReverse`
+**يعتمد على:** `IBusReceiver` و`ControlMixer` و`ThrottleManager` و`ArmingManager` و`FlightOutputs` و`Autopilot*` و`PilotSwitches*` و`Beeper` و`MotorReverse` و`GroundCalibration` و`SignalPlayer`
 
 المنسِّق الوحيد لحلقة التحكم: لا يحلل UART بنفسه، ولا يمس PWM، ولا يحسب
 الخلّاط — بل يستدعي الآخرين بالترتيب الصحيح فقط. والمخطط المفصّل في
@@ -224,6 +225,9 @@
 | `const PilotSwitches* getSwitches() const` و`const PilotInputs& getInputs() const` | مفاتيح هذه الدورة ومقابضها |
 | `bool isLostModelBeeping() const` | صافرة «أنا هنا» تعمل |
 | `const MotorReverse& getMotorReverse() const` | اتجاه المحرك والعكس المنتظر |
+| `void toggleGroundCalibration()` | وحدة التحكم النصية `c`: معايرة الطائرة على الأرض — بدؤها (دون ARM فقط)، وإن كانت جارية — إلغاؤها |
+| `void playSignal(uint8_t count)` | وحدة التحكم النصية `e`: تنبيه واحد (ودون ARM — بالمحرك أيضًا) |
+| `const GroundCalibration& getCalibration() const` و`const SignalPlayer& getSignals() const` | لشاشة OLED والسجل والصندوق الأسود |
 
 ترتيب `update()`:
 
@@ -235,22 +239,19 @@
    `FLAPS_DEPLOYED_US`، و`Knob::FLAPS` ← بسلاسة، وعند فقدان الاتصال — 0؛
 5. ‏`autopilot->update(armed, failsafe, pilotThrottle, sticks)` — **دائمًا**؛
    وفي العكس يُمرَّر `PWM_MIN` بدل `pilotThrottle` (المحرك مطفأ بالنسبة إلى الطيار الآلي)؛
-6. الصافرة: `Beeper::update(BEEPER, armed, failsafe, now)`؛
+6. المعايرة: قلب ARM أثناءها يلغيها؛ ودون ARM ومع الاتصال — حركة `CAL_SWITCH`؛ وخطوة من `GroundCalibration::update()`؛ وتذهب تنبيهاتها وتنبيه رفض الإقلاع الآلي إلى `SignalPlayer`؛ والصافرة: `Beeper::update(BEEPER, armed, failsafe, now)` أو ضوء التنبيه؛
 7. الاتصال مفقود ← `applyLinkLoss()` والخروج من الدورة؛
-8. ‏`arming.update(rc, false, reverse.armBlockReason(now))`، ثم
-   `reverse.update(MOTOR_REVERSE, armed, now)` — عند DISARM يتبدّل الاتجاه في الدورة نفسها؛
-9. ‏`command = autopilot->getCommand()` (أو العصي دون طيار آلي)، والفلابات — خاصتها؛
+8. ‏`arming.update(rc, false, السبب)` — يُرفض ARM ما دامت معايرة جارية أو تنبيه يُعزف (وفي الدورة التي ألغى فيها قلبُ ARM معايرةً)، وإلا فـ`reverse.armBlockReason(now)`؛ ثم `reverse.update(MOTOR_REVERSE, armed, now)` — عند DISARM يتغير الاتجاه في الدورة نفسها؛
+9. ‏`command = autopilot->getCommand()` (أو العصي دون طيار آلي)، والفلابات — خاصتها؛ وتُضاف إيماءة التنبيه إلى دفتي الارتفاع والاتجاه؛
 10. ‏`output = mixer.mix(command)`؛ و`output.motorReverse = reverse.isReversed()`؛
     إلى الأمام — `output.throttle = autopilot->applyThrottle(pilotThrottle)` بحدّ
     `THROTTLE_LIMIT_PCT` × المقبض `Knob::THROTTLE_LIMIT`، وإلى الخلف — خانق الطيار بحدّ
     `min(REVERSE_THROTTLE_LIMIT_PCT, الحدّ الأمامي)`؛ ويُمدّ المسموح على كامل شوط العصا؛
-11. غير مُفعَّل أو `MOTOR_KILL` ← `throttle = PWM_MIN` (آخر خطوة)؛
+11. غير مُفعَّل أو `MOTOR_KILL` ← `throttle = PWM_MIN` (آخر خطوة)؛ ودون ARM يضبط تنبيه المحرك `escPulsesOff`؛
 12. ‏AUX1 — الحمولة (`PAYLOAD_DROP`)، وAUX2 — الكاميرا (`Knob::CAMERA_TILT`، و`CAMERA_STAB` يطرح الميل)؛ وتعكس `AUX1_REVERSED`/`AUX2_REVERSED` النبضة.
 13. ‏`outputs.write(output)`.
 
-‏`applyLinkLoss()`: إذا كان الطيار الآلي في failsafe (مُفعَّل: RTH أو
-انسياب) — فالأسطح والخانق وفق أمر الطيار الآلي (تُسحب الفلابات بسلاسة،
-و`MOTOR_KILL` ما زال يُسكت المحرك، وAUX كما كانت)؛ وإلا فـ`outputs.setFailsafe()`. وفي العكس يبقى المحرك متوقفًا دائمًا.
+‏`applyLinkLoss()`: إذا كان الطيار الآلي في failsafe (مُفعَّل: RTH أو انسياب) — فالأسطح والخانق وفق أمر الطيار الآلي (تُسحب الفلابات بسلاسة، و`MOTOR_KILL` والعكس يُسكتان المحرك، وAUX كما كانت)؛ وإلا فـ`outputs.setFailsafe()`، وما دام التنبيه يُعزف — الوضع المحايد مع الإيماءة وتوقف نبضات ESC (وُضع جهاز التحكم جانبًا — المعايرة جارية).
 
 ---
 
@@ -264,3 +265,41 @@
 | `bool isLostModel() const` | وضع «ابحث عني في العشب» |
 
 </div>
+
+---
+
+## ‏`GroundCalibration`
+
+**الملف:** `control/GroundCalibration.h` · **يعتمد على:** `Config` و`RcChannelState` و`ImuSensor` و`ImuOrientation`
+
+معايرة الطائرة على الأرض: الخطوة 1 — الذيل مرفوع وجسم الطائرة أفقي (الأفق، `ImuOrientation::withLevel()`)، والخطوة 2 — على العجلات (زاوية الوقوف). تُسجَّل الخطوة من تلقاء نفسها بعد سكون مدته `CAL_STILL_MS`؛ وتنتظر الخطوة 2 نقل الطائرة، أو `CAL_PARK_WAIT_MS`. ولا تُحفظ إلا كاملة (`ImuSensor::setGroundCalibration()`)، بعد فحص زاوية الوقوف وفق `LANDING_GEAR`. ولا توقف الحلقة.
+
+‏`Stage`: ‏`IDLE` و`LEVEL` و`PARK` و`DONE` و`FAILED`.
+
+| الدالة | الوصف |
+|---|---|
+| `bool watchSwitch(const RcChannelState&, uint32_t nowMs)` | الحركة: `CAL_SWITCH` إلى الأسفل وإلى الأعلى `CAL_SWITCH_FLIPS` مرات خلال `CAL_SWITCH_WINDOW_MS`، والخانق في الأسفل؛ والقراءة الأولى والخانق غير المنخفض يعيدان العدّ من البداية |
+| `void forgetSwitch()` | ARM أو لا اتصال — يبدأ العدّ من جديد |
+| `bool start(const ImuSensor*, uint32_t nowMs, const char* source)` | البدء (تنبيه 1)؛ ولا IMU أو لا دعم — خطأ (تنبيه 3) |
+| `void cancel(const char* why)` | إلغاء دون تنبيه |
+| `void update(ImuSensor*, bool armed, bool signalBusy, uint32_t nowMs)` | خطوة: ARM يلغي؛ وما دام التنبيه يُعزف لا يُسجَّل شيء؛ وتجاوز `CAL_STEP_TIMEOUT_MS` — خطأ |
+| `isActive()` و`getStage()` و`getStageSinceMs()` و`getFailure()` و`getParkPitch()` و`getParkRoll()` | الحالة والنتيجة |
+| `uint8_t takeSignal()` | كم تنبيهًا يُعزف: 1 — بدأت / الخطوة 1، و2 — انتهت، و3 — خطأ (يُؤخذ مرة واحدة) |
+| `static const char* stageShort(Stage)` | `CAL1` و`CAL2` و`CALOK` و`CALER` — لشاشة OLED |
+
+---
+
+## ‏`SignalPlayer`
+
+**الملف:** `control/SignalPlayer.h` · **يعتمد على:** `Config`
+
+تنبيهات للطيار — دالة في الزمن منذ بدء السلسلة. تنبيه واحد: تومئ دفتا الارتفاع والاتجاه (`SIGNAL_NOD_US` إلى الأعلى ثم إلى الأسفل، `SIGNAL_NOD_MS` لكل منهما)، ودون ARM تتوقف نبضات ESC مدة `SIGNAL_ESC_PAUSE_MS` (ثم يعزف ESC لحن الجاهزية)، ويضيء ضوء الصافرة أثناء الإيماءة؛ ويأتي التنبيه التالي بعد `SIGNAL_PERIOD_MS`.
+
+| الدالة | الوصف |
+|---|---|
+| `void play(uint8_t count, uint32_t nowMs, bool motor)` | سلسلة؛ `motor` — هل يجوز لمس ESC (و`SIGNAL_MOTOR`) |
+| `void stop()` | سكوت |
+| `bool isBusy(uint32_t nowMs) const` و`uint8_t getCount(uint32_t nowMs) const` | سلسلة جارية (ويُرفض ARM خلالها) |
+| `bool escPulsesOff(uint32_t nowMs) const` | هل تُقطع نبضات ESC الآن |
+| `int16_t nodUs(uint32_t nowMs) const` | إيماءة الأسطح، µs (`SIGNAL_SURFACES`) |
+| `bool light(uint32_t nowMs) const` | الصافرة / LED على `PIN_BUZZER` |

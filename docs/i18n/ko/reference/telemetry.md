@@ -111,6 +111,7 @@ RC   1:1500 2:1500 3:1000 …
 OUT  AIL-L 1500 AIL-R 1500 ELE 1500 RUD 1500 ESC 1000
 ATT  R +1.2 P -0.4 Y 123.0
 AP   STABILIZE want R +0.0 P +0.0 corr R -6 P +2 THR +0
+AP   AUTO_TAKEOFF/ROLL GYRO want R +0.0 P +1.0 corr R +0 P -22 THR +100
 ALT  0.3 m  Vz +0.10 m/s  목표 0.0 m
 MAG  방위 123°
 GPS  fix=3 sats=12 lat … lon … v 0.0 m/s hacc 1.2 m
@@ -119,7 +120,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10초 중 최악) | iBUS ok=… crc_e
 ```
 
 `RX=`는 `LOST(프레임 없음)`과 `LOST(송신기 페일세이프)`를 구분합니다. `IMU=`는
-`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK` 중 하나입니다.
+`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK` 중 하나입니다. AUTO_TAKEOFF에서는 모드 이름 뒤에 이륙 단계(`/CHECK`, `/TAIL_UP`, `/ROLL`…)가 붙고, `GYRO`는 지금 수평 기준이 자이로에서만 온다는 뜻입니다(가속 중).
 
 ---
 
@@ -140,7 +141,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10초 중 최악) | iBUS ok=… crc_e
 로그 일시 정지, `s` — 센서 상태, `i` — 자이로 보정, `o` —
 IMU 장착 방향 보정, `m` — 나침반 보정, `p` — 출력 자가 점검,
 `b` — I2C 버스 스캔 (0x08..0x7F — QMC6309가 0x7C에 있으므로 0x7F까지)과
-칩 이름 표시, 그 밖의 키 — 도움말. `\r`/`\n`은 무시합니다.
+칩 이름 표시, 그 밖의 키 — 도움말. `\r`/`\n`은 무시합니다. 그 밖에 `c`는 비행기 지상 캘리브레이션(진행 중이면 취소. 주 메뉴 9번), `e`는 조종면과 ESC 멜로디로 내는 알림입니다(펄스를 멈춘 뒤 ESC가 멜로디를 내는지 확인).
 
 로그 메뉴: `1`..`9` — 채널 0..8의 모드를 순환, `n` — NAV, `s` — SYS, `p` — 주기, `a` —
 모두 “변경 시”, `x` — 모두 끄기, `d` — 기본값, `0`/`q` — 뒤로, `l`/`h` —
@@ -148,7 +149,7 @@ IMU 장착 방향 보정, `m` — 나침반 보정, `p` — 출력 자가 점검
 
 작업을 막는 동작 (`i`, `o`, `m`, `p`)은 **ARM 중에는 금지**됩니다. 메뉴가
 열려 있는 동안 로그는 일시 중단됩니다 (`DebugLogger::suspend`). 메뉴 항목의 폭은
-바이트가 아니라 UTF-8 문자 수로 셉니다 (키릴 문자는 2바이트).
+바이트가 아니라 UTF-8 문자 수로 셉니다 (키릴 문자는 2바이트). 비행기 캘리브레이션과 알림(`c`, `e`: 조종면을 움직이고 ESC를 건드림)도 ARM 중에는 금지됩니다.
 
 ---
 
@@ -215,7 +216,7 @@ U8g2는 `II2CBus` 위에 얹은 `byteCallback`으로 바이트를 보냅니다 (
 
 ```
 RX ok ARM STAB FL       링크 (끊기면 반전 줄) / ARM / 모드 / REV — 모터 역회전 / 플랩
-R  +1.2 P  -0.4         롤 / 피치, °           (IMU --)
+R  +1.2 P  -0.4 ROLL    롤 / 피치, °. 캘리브레이션 단계(CAL1, CAL2, 결과 CALOK/CALER는 10초 동안) 또는 이륙 단계(WAIT, CHECK, TAIL, ROLL, LIFT, CLIMB, DONE, ABORT)   (IMU --)
 Alt +0.3 Vz +0.1 A14    고도 / 수직 속도 / 대기속도 (피토관이 있을 때) (BARO --)
 H123 T1000 Y1500        방위 / 스로틀 1000..2000 = 어느 방향이든 0..100% / 러더 (H---)
 L1500 R1500 E1500       에일러론 / 엘리베이터
@@ -243,6 +244,8 @@ Loop 500Hz max1100us    주파수와 1초 중 최악의 틱
 | `State getState()` / `bool isRecording()` | `Off`, `Idle`, `Recording`, `Stopping` (END를 기록하기 전에 큐를 끝까지 씁니다) |
 | `printStatus(Print&)` / `printFlights(Print&)` / `eraseAll()` | 콘솔용 |
 | `void handleHostCommand(const char*)` | `bb list`, `bb get <n> [보율]` — `tools/blackbox.py`용 (USB CDC에서는 속도가 아무 영향도 주지 않습니다) |
+
+지상 캘리브레이션의 이벤트(단계, 주기 자세가 담긴 결과, 이유가 담긴 오류, 취소)와 자동 이륙 단계의 이벤트(`ABORTED`는 이유 포함). 단계는 NAV 레코드의 `takeoff_stage` 필드에도 들어갑니다. 비행 파라미터에는 `LANDING_GEAR`와 주요 이륙 값이 들어 있습니다.
 
 플랫폼마다 다른 부분: 재부팅 원인은 `readResetCause()`, 배터리 전압과 전류는
 ADC (S3는 `analogReadMilliVolts`, STM32는 12비트 `analogRead`), 매체 오류

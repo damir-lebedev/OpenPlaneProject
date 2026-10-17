@@ -52,6 +52,12 @@
 | `void setYaw(float)` | ضبط الاتجاه (مثلًا من البوصلة عند التشغيل) |
 | `virtual void calibrateOrientation()` | معايرة تركيب اللوحة (غير مدعومة افتراضيًا) |
 | `virtual const char* getPreflightProblem() const` | مشكلة الفحص قبل الإقلاع أو `nullptr` (والافتراضي `nullptr`) |
+| `virtual bool readChipUp(float[3]) const` | المعايرة على الأرض: آخر قراءة لمقياس التسارع في محاور الشريحة، g، دون تصحيح (الافتراضي `false`) |
+| `virtual bool getOrientation(ImuOrientation&) const` | تركيب اللوحة الحالي (الافتراضي `false` — المعايرة على الأرض غير مدعومة) |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | اعتماد الأفق وزاوية الوقوف وحفظهما في الفلاش |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | زاوية الوقوف على العجلات، ° من الأفق؛ و`false` — لا معايرة لعجلات الهبوط |
+| `virtual void setAccelCorrection(bool)` | الإقلاع الآلي: `false` — الأفق من الجيروسكوب وحده |
+| `virtual void trimGyroBias(const float residualDps[3])` | تصحيح صفر الجيروسكوب بمتوسط السرعة الزاوية للطائرة الساكنة (المحاور والإشارات كما في `ImuData`) |
 
 ### ‏`BarometerSensor : Sensor`
 
@@ -171,6 +177,9 @@ BMP581 داخل الأنبوب (الضغط الكلي)، و`stat` هو مقيا�
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | دوران حول الرأسي بخطوات من 90°، واللوحة والرقاقة لأعلى |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | معايرة من ثلاثة أوضاع (قراءة «الأعلى» من مقياس التسارع في محاور الرقاقة). `nullptr` — نجاح، وإلا فسبب الرفض |
 | `void apply(const float chip[3], float body[3]) const` | تطبيق الدوران |
+| `void applyInverse(const float body[3], float chip[3]) const` | الدوران العكسي (`R` المنقولة) |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | الأفق من وضع «مستوٍ»: Z = «الأعلى» المقيس، ويُحفظ الأنف بعد تقويمه ⟂ Z. وأكثر من 45° عن الأفق القديم — رفض |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | ميل وضعٍ ما ودورانه الجانبي (كما يحسبهما `AttitudeEstimator` من مقياس التسارع) — زاوية الوقوف |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | الزاوية بين «الأعلى» المقيس ومحور Z للطائرة (180° إذا كان المتجه صفرًا) |
 | `bool load(const char* ns)` | التحميل من NVS؛ ويرفض ثلاثية غير متعامدة أحادية أو يسارية |
 | `void save(const char* ns) const` | الحفظ في NVS |
@@ -200,11 +209,12 @@ rightWingDown العمودية على Z، وX₂ = Y × Z؛ X = norm(X₁ + X₂
 | `void setYaw(float deg)` | ضبط الاتجاه (يُختزل إلى ±180) |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | التسارع بوحدة g في محاور الطائرة، والمعدلات بوحدة °/s |
 | `getRoll()`، `getPitch()`، `getYaw()` | ° |
+| `setAccelCorrection(bool)` و`isAccelCorrectionEnabled()` | `false` — الجيروسكوب وحده (التسارع في الإقلاع الآلي: 0.5 g إلى الأمام تبدو كميل +27°) |
 
 ‏`roll_acc = atan2(ay, az)`، و`pitch_acc = atan2(ax, √(ay² + az²))`؛
 `angle = 0.98·(angle + rate·dt) + 0.02·angle_acc` (τ ≈ 0.1 s عند 2 ms).
 أول استدعاء بعد `reset()` يعطي زوايا مقياس التسارع مباشرة؛ وإذا كان `dt ≤ 0` أو أكبر من 0.1 s
-فتُتخطّى الخطوة (توقف، أو تعليق في الناقل).
+فتُتخطّى الخطوة (توقف، أو تعليق في الناقل). ودون مقياس التسارع — `angle + rate·dt`.
 
 ---
 
@@ -233,7 +243,11 @@ rightWingDown العمودية على Z، وX₂ = Y × Z؛ X = norm(X₁ + X₂
 | `void calibrate()` | 200 عيّنة × 10 ms: إزاحة الجيروسكوب والضجيج و«الأعلى»؛ ودون معايرة التركيب — الأفق = الوضع الحالي. ثم الفحص قبل الإقلاع |
 | `void calibrateOrientation()` | ثلاثة أوضاع (`capturePose`: ساكنة ~1 s، والوضع يختلف عن السابقة بما لا يقل عن 20°، ومهلة 30 s)، ثم `ImuOrientation::fromPoses`، والحفظ في NVS. تُزيل مشكلات التركيب في الفحص قبل الإقلاع |
 | `const char* getPreflightProblem() const` | نص المشكلة أو `nullptr` |
-| `void setYaw(float)`، `getSensorType()`، `printStatus()` | |
+| `readChipUp()` و`getOrientation()` | المعايرة على الأرض: آخر «أعلى» في محاور الشريحة، والتركيب |
+| `bool setGroundCalibration(level, parkChipUp)` | التركيب = `level` (الأفق)، وزاوية الوقوف تحت المفتاح `park` في فضاء أسماء NVS نفسه؛ ويرفع مشكلات التركيب في فحص ما قبل الطيران. و`o` جديد يمحو زاوية الوقوف (فقد قيست من الأفق القديم) |
+| `bool getParkingAttitude(pitch, roll) const` | زاوية الوقوف عبر التركيب الحالي |
+| `setAccelCorrection(bool)` و`trimGyroBias(residual)` | الإقلاع الآلي: مرشّح دون مقياس التسارع؛ وتمر بقية الصفر عبر الدوران العكسي إلى إزاحة الجيروسكوب |
+| `void setYaw(float)` و`getSensorType()` و`printStatus()` | ينتهي `printStatus()` بـ `park(pitch,roll)=…` أو `park=NONE` |
 
 الواجهة البرمجية المحمية للمشغّلات:
 

@@ -35,8 +35,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-395%20passing-3fb950?style=for-the-badge" alt="395 pruebas">
-  <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="cobertura del 98 %">
+  <img src="https://img.shields.io/badge/tests-431%20passing-3fb950?style=for-the-badge" alt="431 pruebas">
+  <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="cobertura del 94 %">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 compilaciones sin avisos">
   <br>
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
@@ -61,7 +61,7 @@
 | **Qué es** | Un controlador de vuelo y piloto automático abiertos para aviones de radiocontrol. La placa principal es la STM32H743 (una placa de la clase Pixhawk): en una placa DevEBox el firmware **ya está en marcha y se pilota con la emisora** ([hay vídeo](#-la-stm32h743-cobra-vida-en-la-placa)), y ahora se están conectando los sensores. La base anterior es un ESP32-S3 de unos 10 $, que pasó el banco con todos los sensores. |
 | **Qué hace** | 12 modos de vuelo: desde la estabilización hasta el regreso a casa, círculos por GPS, lanzamiento a mano, aterrizaje automático y **vuelo a vela en térmicas**. Un tubo de Pitot hecho con dos barómetros baratos. Telemetría MAVLink para QGroundControl y Mission Planner. |
 | **Lo principal** | Cualquier interruptor o potenciómetro de la emisora = cualquier función. **Una línea** en `Controls.h` y SwD deja de ser la inversión del motor para convertirse en lanzamiento de carga. |
-| **Por qué fiarse** | 395 pruebas automáticas (y 9 más en la propia placa, con una tarjeta SD real), el 98 % del código cubierto por pruebas, 24 compilaciones «placa × sensores» sin un solo aviso y simulaciones en lazo cerrado de cada modo. |
+| **Por qué fiarse** | 431 pruebas automáticas (y 9 más en la propia placa, con una tarjeta SD real), el 94 % del código cubierto por pruebas, 24 compilaciones «placa × sensores» sin un solo aviso y simulaciones en lazo cerrado de cada modo. |
 | **Con honestidad** | De momento solo ha volado el modo manual (el primer prototipo). La STM32H743 solo se ha probado en el banco, sin sensores. El piloto automático se ha verificado en el banco, con pruebas y con simulaciones, y está a la espera de los ensayos en vuelo: [estado más abajo](#-estado-real). |
 
 ---
@@ -96,19 +96,19 @@ constexpr Binding BINDINGS[] = {
 | 🛣️ | **CRUISE** | rumbo, altitud y velocidad se mantienen solos; los sticks solo corrigen |
 | ⭕ | **LOITER** | círculos sobre un punto GPS (el radio se ajusta con un potenciómetro) |
 | 🏠 | **RTH** | a casa a 40 m y círculos sobre tu cabeza; se activa solo si se pierde la señal |
-| 🛫 | **AUTO_TAKEOFF** | despegue desde la pista con el acelerador del piloto |
+| 🛫 | **AUTO_TAKEOFF** | Despegue desde pista: rueda de cola o de morro, primero sube la cola, el ala despega el avión |
 | 🤾 | **LAUNCH** | lanzamiento a mano: el motor arranca tras el lanzamiento y comienza el ascenso |
 | 🛬 | **AUTO_LAND** | planeo y recogida cerca del suelo |
 | 🦅 | **SOARING** | motor apagado; encuentra térmicas y da vueltas en ellas |
 | 🆘 | **RESCUE** | «¡socorro!»: alas niveladas y morro arriba, desde cualquier espiral |
 
-Además: geovalla, autotrim para un avión «torcido», coordinación de virajes, protección contra la pérdida de sustentación con el tubo de Pitot, flaps y aerofreno, lanzamiento de carga, cámara estabilizada y un zumbador de «búscame en la hierba».
+Además: calibración en tierra desde la emisora (horizonte y actitud en tierra, pasos señalados con el motor y los timones), geovalla, autotrim para un avión «torcido», coordinación de virajes, protección contra la pérdida de sustentación con el tubo de Pitot, flaps y aerofreno, lanzamiento de carga, cámara estabilizada y un zumbador de «búscame en la hierba».
 
 ---
 
 ## 📈 Cada modo vuela, en lazo cerrado
 
-No es «una función devolvió un número», sino un **vuelo**: emisora → trama iBUS → firmware → PWM → deflexión de las superficies de control → modelo de avión con sustentación, pérdida, viento y térmicas → sensores → de nuevo el firmware. 14 vuelos así forman parte de las pruebas habituales (`pio test -e native`).
+No es «una función devolvió un número», sino un **vuelo**: emisora → trama iBUS → firmware → PWM → deflexión de las superficies de control → modelo de avión con sustentación, pérdida, viento y térmicas → sensores → de nuevo el firmware. 17 vuelos así forman parte de las pruebas habituales (`pio test -e native`).
 
 <p align="center"><img src="../../images/sim/missions.png" alt="RTH, LOITER, geovalla y pérdida de señal: vista desde arriba"></p>
 
@@ -205,8 +205,8 @@ Lo que esto demuestra: la cadena «emisora → iBUS → firmware → PWM» funci
 
 | | |
 |---|---|
-| **395 pruebas automáticas** | módulos, controladores comprobados a nivel de registros del chip, vuelos en lazo cerrado, el firmware de ESP32 y STM32 **completo** en el PC; además, 9 pruebas en la propia placa STM32 con una tarjeta SD real |
-| **98.3 % de líneas, 87.7 % de ramas** | cobertura de `gcovr`, incluido el código de STM32 |
+| **431 pruebas automáticas** | módulos, controladores comprobados a nivel de registros del chip, vuelos en lazo cerrado, el firmware de ESP32 y STM32 **completo** en el PC; además, 9 pruebas en la propia placa STM32 con una tarjeta SD real |
+| **93.9 % de líneas, 85.7 % de ramas** | cobertura de `gcovr`, incluido el código de STM32 |
 | **24/24 compilaciones** | 4 placas × 6 kits de sensores, `-Wall -Wextra`, cero avisos |
 | **0 observaciones** | cppcheck y clang-tidy sobre todo el código |
 | **Referencias, no copias de código** | las fórmulas de los sensores siguen las hojas de datos (Bosch, ST, TDK, Goertek) y MAVLink sigue pymavlink |
@@ -263,6 +263,7 @@ En el monitor serie: `h`, menú; `b`, qué chips se ven en los buses; `s`, senso
 | Control manual, mezclador | ✈️ en vuelo (primer prototipo, C3) |
 | ARM, failsafe, flaps, servos, motor | 🔧 en el banco (S3) |
 | Variador (ESC) bidireccional BLHeli 80A, inversión solo en DISARM | 🧪 pruebas; aún sin probar con el ESC real |
+| Despegue automático con rueda de cola o de morro, calibración en tierra desde la emisora, señales con el motor y los timones | 🧪 pruebas y simulaciones con un modelo del tren de aterrizaje; la melodía del variador tras la pausa de pulsos aún hay que comprobarla en el banco |
 | STABILIZE | 🔧 en el banco: las superficies de control responden a las inclinaciones en el sentido correcto |
 | Sensores del banco (MPU6500, BMP388, QMC5883P), OLED, panel web | 🔧 en el banco |
 | Resto de modos, navegación, tubo de Pitot, MAVLink | 🧪 pruebas y simulaciones en lazo cerrado |

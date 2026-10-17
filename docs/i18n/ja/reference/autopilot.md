@@ -94,7 +94,7 @@ JSON、および `MavlinkModes` で使われる）：
 
 ## `Autopilot`
 
-**ファイル：** `autopilot/Autopilot.h` · **依存先：** `PidController`、`Navigation`、`AltitudeSpeedController`、`LaunchController`、`SoaringController`、`AutoTrim`、各センサー（すべて null 可）
+**ファイル：** `autopilot/Autopilot.h` · **依存先：** `PidController`、`Navigation`、`AltitudeSpeedController`、`LaunchController`、`TakeoffController`、`SoaringController`、`AutoTrim`、各センサー（すべて null 可）
 
 ### ライフサイクル
 
@@ -105,7 +105,7 @@ JSON、および `MavlinkModes` で使われる）：
 | `void setInputs(const PilotInputs&)` | この周期のスイッチとノブ（`update` の前に呼ぶ） |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | 周期ごとに 1 回：センサー（常に）→ ナビゲーションとホーム → 地上でのトリム保存 → failsafe → ジオフェンス → モード → 旋回の協調 → オートトリム |
 | `ControlCommand getCommand() const` | 最終的な舵面コマンド（roll/pitch/yaw、µs） |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | モードのスロットル：`PILOT` はパイロットのもの、`AUTO` は自前、`AT_LEAST` は自前の値以上（自動離陸）。ARM と `MOTOR_KILL` は `FlightController` が扱う |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | モードのスロットル：`PILOT` はパイロットのもの、`AUTO` は自前（自動離陸でも同じ：スロットルスティックは開始と中止だけ）。ARM と `MOTOR_KILL` は `FlightController` が扱う |
 
 ### モード
 
@@ -116,6 +116,10 @@ JSON、および `MavlinkModes` で使われる）：
 | `isFailsafeActive()`、`isFailsafeGliding()`、`isFailsafeReturning()` | モードの上に重なる failsafe |
 | `isAutoThrottle()`、`getThrottleCorrection()` | モードのスロットル（%、ログとダッシュボード用） |
 | `getLaunchState()`、`getSoaringState()` | LAUNCH と SOARING のステートマシン |
+| `getTakeoffStage()`、`getTakeoffAbortReason()` | 自動離陸の段階と、中止した理由（`nullptr` は中止なし） |
+| `bool takeTakeoffRefusal()` | 自動離陸が開始前のチェックで拒否した：`FlightController` が合図を鳴らす（1 回だけ取り出す） |
+| `getLandingGear()`、`setLandingGear(LandingGear)` | 降着装置（既定は `Config::LANDING_GEAR`。テストが切り替える） |
+| `bool isGyroOnlyAttitude() const` | 今は水平基準をジャイロだけで求めている（自動離陸の加速の時間帯） |
 
 ### 出力と診断
 
@@ -139,7 +143,8 @@ JSON、および `MavlinkModes` で使われる）：
 - ナビゲーション用の速度：ピトー管 → GPS → `NAV_ASSUMED_SPEED_MS`。
 - `looksLanded()`：気圧計で地面近くにあり、垂直速度がほぼなく、ピトー管／GPS のしきい値より遅い場合。このときだけトリムをフラッシュに書き込む。
 - Failsafe：GPS とホームがあればモーターを使った RTH、なければ滑空。開始済みの RTH は
-  GPS の短い喪失では中断しない。
+  GPS の短い喪失では中断しない。滑走路上の AUTO_TAKEOFF（`holdsGround()` の段階）では、通信途絶は failsafe ではなく離陸中止です。上昇中は failsafe で、通信が戻れば上昇を続けます。
+- 「ジャイロのみ」の時間帯（`manageAccelCorrection()`）：自動離陸でモーターを始動すると、水平基準の支えとしての加速度センサーを外します（`ImuSensor::setAccelCorrection`）。元に戻すのは、上昇開始からの時間（`TAKEOFF_GYRO_ONLY_CLIMB_MS`）、上限、離陸中止、DISARM で、モードの切り替えでは戻りません。
 
 ---
 
@@ -177,6 +182,28 @@ JSON、および `MavlinkModes` で使われる）：
 `LAUNCH_ACCEL_TIME_MS` より長く続く）`→ CLIMB`（`LAUNCH_MOTOR_DELAY_MS` 後：モーター始動、ピッチ `LAUNCH_CLIMB_PITCH_DEG`）`→ DONE`（`LAUNCH_CLIMB_MS` または
 `LAUNCH_ALTITUDE_M`）。投げる前にスティックを動かすとキャンセル。メソッド：
 `update(...)`、`reset()`、`getState()`、`motorOn()`、`pitchTargetDeg()`、`stateName()`。
+
+## `TakeoffController`
+
+**ファイル：** `autopilot/TakeoffController.h` · **依存先：** `Config`
+
+滑走路からの自動離陸。センサーに基づく段階で進み、自分ではセンサーも舵面も持たない：入力は `Inputs`（ARM、通信、パイロットのスロットル、角度と角速度、荷重、駐機姿勢、高度、速度、ノブ `STAB_GAIN`、時間）、出力はこの周期に行うこと。
+
+`Stage`：`IDLE`（モーター停止。スロットルをいったん下げてから `TAKEOFF_TRIGGER_US` より上へ）`→ CHECK`（`TAKEOFF_CHECK_MS` の間静止、角度 = 駐機姿勢。そうでなければ `ABORTED` と合図）`→ TAIL_UP`（尾輪：下げ舵で尾部を上げる）`→ ROLL`（滑走。`TD_ROLL_MS` / `TRI_ROLL_MS` または引き起こしの速度）`→ LIFTOFF`（ピッチの目標を上げる。地面の近くでは駐機姿勢から `TD_TAIL_CLEARANCE_DEG` を引いた値まで）`→ CLIMB`（気圧センサーまたは時間で浮揚を判断し、`TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS` まで上昇）`→ DONE`。`ABORTED` は離陸中止。スロットルを 1 秒下げると再び `IDLE`。
+
+| メソッド | 説明 |
+|---|---|
+| `void update(const Inputs&)` | 周期ごとに 1 回：段階を切り替え、その段階の出力を出す。ARM なしなら `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | 外からの中止（通信途絶）。`IDLE`/`DONE` では何もしない |
+| `void reset()`、`setGear()`、`getGear()` | |
+| `getStage()`、`stageName()`、`stageShort()`、`getAbortReason()` | 段階（OLED 用の短い名前） |
+| `bool holdsGround() const` | 地上（`IDLE`…`LIFTOFF`、`ABORTED`）：通信途絶は離陸中止、PID の積分器はゼロのまま |
+| `isAirborneStage()`、`isDone()` | 空中（上昇 / 完了）、離陸の終了 |
+| `getThrottlePct()` | プログラムのスロットル、%（`TAKEOFF_THROTTLE_RAMP_MS` で徐々に上げる） |
+| `getRollTargetDeg()`、`getPitchTargetDeg()` | ロールの目標（車輪の上では駐機時のロール）とピッチの目標（上昇中、PID 用） |
+| `hasElevatorCommand()`、`getElevatorUs()` | 車輪の上ではエレベーターを直接：目標へ `TD_PITCH_KP` / `TD_ROLL_PITCH_KP`（1° あたり µs）、ダンピング `TD_PITCH_KD`、下げ舵は最大 `TD_TAIL_UP_ELEVATOR_US` |
+| `hasRudderCommand()`、`getRudderUs()` | ラダーと操向輪で針路を保つ：1° あたり `TAKEOFF_HEADING_KP` µs、1 °/s あたり `TAKEOFF_YAW_RATE_KD` |
+| `bool takeRefusal()`、`bool takeGyroTrim(float[3])` | 1 回きりのイベント：チェックでの拒否、静止中に測ったジャイロの残留ゼロ点 |
 
 ## `SoaringController`
 

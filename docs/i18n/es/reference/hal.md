@@ -127,6 +127,7 @@ Una única salida PWM. El pin lo fija la implementación.
 | `writeMicroseconds(us)` | Anchura del pulso, µs (se limita al rango de `attach`) |
 | `bool isAttached() const` | El resultado de `attach()` |
 | `virtual int32_t measurePulseUs()` | Diagnóstico: la anchura real del pulso en el pin o `-1`. La implementación por defecto devuelve `-1` |
+| `virtual void stopPulses()` | Quitar los pulsos (el pin queda en nivel bajo) hasta la siguiente escritura: la señal del motor. Sin pulsos, el variador cree que ha perdido la señal y, cuando vuelven, toca su melodía de listo. Por defecto no hace nada (el motor se queda mudo) |
 
 ---
 
@@ -321,6 +322,7 @@ MCPWM (GPIO6/7 repetían GPIO4/5).
 | `attach(minUs, maxUs)` | Guarda el rango; pin < 0 → `false`; si no, `ledcSetup() != 0` → `ledcAttachPin()` |
 | `writeMicroseconds(us)` | Si no está attached, nada; si lo está, `constrain(us, min, max) * MAX_DUTY / PERIOD_US` → `ledcWrite` |
 | `measurePulseUs()` | Activa el búfer de entrada del mismo GPIO (`PIN_INPUT_ENABLE`, la salida no se toca) y mide `pulseIn(pin, HIGH, 30 ms)`; sin pulso → `-1` |
+| `stopPulses()` | Ciclo de trabajo 0 (`ledcWrite(channel, 0)`): sin pulso |
 
 Los canales 2n y 2n+1 comparten un temporizador LEDC: todas las salidas van a 50 Hz, así que no hay conflicto.
 
@@ -427,7 +429,8 @@ y provoca jitter.
 | `Stm32ServoOutput(int16_t pin)` | Pin `< 0` — la salida no está cableada |
 | `attach(minUs, maxUs)` | El temporizador y el canal salen de `PinMap_TIM` según el pin (`pinmap_peripheral`, `STM_PIN_CHANNEL`), igual que en `analogWrite()`. Sin temporizador en el pin o con el conjunto agotado → `false`. Si no, `setMode(PWM1)`, comparación 0 (no hay pulso hasta la primera escritura), `resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`. El registro de comparación tiene precarga: el valor entra en vigor en el siguiente periodo |
-| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` sin reconfigurar el pin: en el STM32 el registro IDR ve el nivel incluso en modo de función alternativa |
+| `stopPulses()` | Valor de comparación 0: sin pulso, como justo después de `attach()` |
+| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` sin reconfigurar el pin: en el STM32 el registro IDR ve el nivel incluso en modo de función alternativa. El `pulseIn()` del núcleo mide en los pines con número de bit 8+ (PD14, PD15, PE9) el nivel **bajo**: su máscara de nivel es `uint8_t`; un pulso de servo siempre es más corto que medio periodo, así que una medida más larga es la pausa, y el pulso es `PERIOD_US` menos ella |
 | `static acquireTimer(TIM_TypeDef*)` | Un conjunto compartido: **un `HardwareTimer` por TIMx**. Un segundo objeto para el mismo temporizador sobrescribiría el manejador del núcleo (`HardwareTimer_Handle[index]`). El periodo se fija con la primera salida del temporizador; `setOverflow(MICROSEC_FORMAT)` elige el divisor — un paso de ~0.3 µs con un reloj del temporizador de 240 MHz |
 
 ## `Stm32FlashStorage`

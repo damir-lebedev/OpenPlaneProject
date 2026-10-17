@@ -182,10 +182,12 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
 | `EscSignal.h` | 스로틀 + 방향 → ESC 펄스: 양방향 BLHeli에서 1500 = 정지, 전진 1500..2000, 후진 1500..1000 |
 | `MotorReverse.h` | `Feature::MOTOR_REVERSE`에 의한 모터 역회전 — DISARM 상태에서만, 방향을 바꾼 뒤 `REVERSE_SETTLE_MS` 동안 ARM 거부 |
 | `ArmingManager.h` | SwA 스위치로 ARM(스로틀을 맨 아래에 둔 상태에서 OFF→ON 전환 + 해당 모드에 필요한 센서 점검), DISARM은 즉시 |
-| `FlightOutputState.h` | 원하는 PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`(어느 방향이든 0..100%), `motorReverse`, `aux1`(페이로드), `aux2`(카메라) |
+| `FlightOutputState.h` | 원하는 PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle`(어느 방향이든 0..100%), `motorReverse`, `escPulsesOff`(모터 알림), `aux1`(페이로드), `aux2`(카메라) |
 | `Beeper.h` | 부저: `BEEPER` 기능에 의해, 또는 지상에서 “기체 분실” 시 울림 |
+| `GroundCalibration.h` | 비행기 지상 캘리브레이션: 스위치 동작, 1단계는 수평 기준(꼬리 들기), 2단계는 주기 자세. `ImuSensor::setGroundCalibration()`으로 저장 |
+| `SignalPlayer.h` | 파일럿에게 보내는 알림: 조종면 끄덕임, ESC 펄스 멈춤(ESC가 준비 완료 멜로디를 냄, ARM이 아닐 때만), 부저/LED. 횟수 1/2/3 |
 | `FlightOutputs.h` | 출력 표(`outputInfo()`: 키, 이름, 핀, 필수 여부, 상태 필드)와 그 위에서 루프로 처리하는 모든 것: `begin()`, `write()`, `setFailsafe()`, 상태, `printPulseSelfTest()` |
-| `FlightController.h` | 주기마다 작업을 수행하는 순서, 신호 상실(`applyLinkLoss()`), 텔레메트리용 게터 |
+| `FlightController.h` | 주기마다 작업을 수행하는 순서, 신호 상실(`applyLinkLoss()`), 출력 위에 얹는 캘리브레이션과 알림, 텔레메트리용 게터 |
 
 ### `autopilot/`
 
@@ -198,6 +200,7 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
 | `Navigation.h` | `Geo`(거리, 방위, 오프셋), `Guidance`(침로를 향한 롤, 원 궤도의 벡터장) |
 | `AltitudeSpeedController.h` | 고도는 피치로, 대기속도는 스로틀로 제어(TECS-lite) |
 | `LaunchController.h`, `SoaringController.h` | 손 발사와 소어링의 상태 기계 |
+| `TakeoffController.h` | 활주로에서의 자동 이륙: 꼬리 바퀴와 앞바퀴의 단계(`Config::LANDING_GEAR`), 바퀴 위에서의 승강타와 침로 제어 법칙, 이륙 중단 |
 | `AutoTrim.h` | 자동 트림. NVS/플래시에 저장 |
 | `PidController.h` | PID: D 항은 센서의 변화율(자이로스코프, 승강계)에서 가져오고, anti-windup 적용. ARM하지 않은 동안 적분기는 고정 |
 | `feedback/*` | **준비 단계, 미연결**: 적응형 피드백, 이륙과 착륙 — [피드백](#피드백기초-작업-연결되지-않음) 참고 |
@@ -556,6 +559,8 @@ Enter는 필요 없습니다. 보정과 `p`는 루프를 멈추게 하므로 ARM
 | `s` | 모든 센서의 `printStatus()`: 데이터, 버스 오류 카운터, 보정, 비행 전 점검 |
 | `i` | 자이로 보정 + 비행 전 점검(2초간 정지) |
 | `o` | 세 가지 자세로 IMU 장착 보정, NVS에 저장 |
+| `c` | 비행기 지상 캘리브레이션(수평 기준과 주기 자세). 루프를 멈추지 않으며, 진행 중이면 취소. 조종기로는 ARM 없이 스위치 `CAL_SWITCH`를 세 번 내렸다 올림 |
+| `e` | 알림: 조종면 끄덕임과 ESC 펄스 멈춤. ESC가 준비 완료 멜로디를 내는지 확인(프로펠러를 빼세요!) |
 | `m` | 나침반 보정(15초간 회전), NVS에 저장 |
 | `p` | 출력 자가 점검: 각 핀의 실제 펄스를 기대값과 비교 |
 
@@ -741,7 +746,7 @@ DevEBox H743 보드**입니다: 부팅, USB 콘솔, SD 카드, 블랙박스
    조종자가 직접 조작) 또는 `stabilizeOrNeutral()`(IMU가 없으면 중립)을
    호출합니다. 필요한 센서가 없으면 비정상 종료가 아니라 안전한 동작이어야
    합니다. 적분기는 `armed`일 때만 누적됩니다.
-3. 스로틀: `throttleMode`(`PILOT` / `AUTO` / `AT_LEAST`)와 `autoThrottlePct`, 또는
+3. 스로틀: `throttleMode`(`PILOT` / `AUTO`)와 `autoThrottlePct`, 또는
    `autoThrottle()` — 노브 / 피토관에서 얻는 순항 스로틀. 이 경우
    `FlightController`는 바뀌지 않습니다.
 4. 송신기 쪽은 `config/Controls.h`에 한 줄만 추가하면 됩니다

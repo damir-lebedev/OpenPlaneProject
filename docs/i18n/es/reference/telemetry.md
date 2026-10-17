@@ -111,6 +111,7 @@ RC   1:1500 2:1500 3:1000 …
 OUT  AIL-L 1500 AIL-R 1500 ELE 1500 RUD 1500 ESC 1000
 ATT  R +1.2 P -0.4 Y 123.0
 AP   STABILIZE want R +0.0 P +0.0 corr R -6 P +2 THR +0
+AP   AUTO_TAKEOFF/ROLL GYRO want R +0.0 P +1.0 corr R +0 P -22 THR +100
 ALT  0.3 m  Vz +0.10 m/s  objetivo 0.0 m
 MAG  rumbo 123°
 GPS  fix=3 sats=12 lat … lon … v 0.0 m/s hacc 1.2 m
@@ -119,7 +120,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (el peor en 10 s) | iBUS ok=… crc_er
 ```
 
 `RX=` distingue `LOST(sin tramas)` de `LOST(failsafe del mando)`; `IMU=` es
-`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`.
+`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`. En AUTO_TAKEOFF, tras el nombre del modo va la etapa del despegue (`/CHECK`, `/TAIL_UP`, `/ROLL`…); `GYRO` significa que el horizonte lo da ahora solo el giroscopio (aceleración).
 
 ---
 
@@ -140,7 +141,7 @@ Teclas rápidas (fuera del menú): `h`/`?` — el menú principal; `l` — el me
 pausa del registro; `s` — estado de los sensores; `i` — calibración del giroscopio; `o` —
 calibración del montaje de la IMU; `m` — calibración de la brújula; `p` — autocomprobación de las salidas;
 `b` — sondeo de los buses I2C (0x08..0x7F — hasta 0x7F, porque el QMC6309 está en 0x7C) con
-los nombres de los chips; cualquier otra — una pista. `\r`/`\n` se ignoran.
+los nombres de los chips; cualquier otra — una pista. `\r`/`\n` se ignoran. Además, `c`: calibración en tierra del avión (si está en marcha, se cancela; punto 9 del menú principal), y `e`: una señal con los timones y la melodía del variador (comprueba que la toca tras la pausa de pulsos).
 
 El menú del registro: `1`..`9` — cambian cíclicamente el modo de los canales 0..8, `n` — NAV, `s` — SYS, `p` — periodo, `a` —
 todo «al cambiar», `x` — todo apagado, `d` — valores por defecto, `0`/`q` — volver, `l`/`h` —
@@ -148,7 +149,7 @@ cerrar.
 
 Las acciones bloqueantes (`i`, `o`, `m`, `p`) están **prohibidas con ARM**. Mientras el menú
 está abierto, el registro queda suspendido (`DebugLogger::suspend`). El ancho de los puntos del menú
-se cuenta en caracteres UTF-8 y no en bytes (el cirílico ocupa 2 bytes).
+se cuenta en caracteres UTF-8 y no en bytes (el cirílico ocupa 2 bytes). También la calibración del avión y la señal (`c`, `e`: mueven los timones y tocan el variador) están prohibidas con ARM.
 
 ---
 
@@ -215,7 +216,7 @@ La pantalla:
 
 ```
 RX ok ARM STAB FL       enlace (pérdida — línea invertida) / ARM / modo / REV: motor hacia atrás / flaps
-R  +1.2 P  -0.4         alabeo / cabeceo, °           (IMU --)
+R  +1.2 P  -0.4 ROLL    alabeo / cabeceo, °; paso de calibración (CAL1, CAL2, resultado CALOK/CALER durante 10 s) o etapa del despegue (WAIT, CHECK, TAIL, ROLL, LIFT, CLIMB, DONE, ABORT)   (IMU --)
 Alt +0.3 Vz +0.1 A14    altitud / velocidad vertical / velocidad del aire, si hay tubo de Pitot (BARO --)
 H123 T1000 Y1500        rumbo / gases 1000..2000 = 0..100 % en cualquier sentido / timón de dirección (H---)
 L1500 R1500 E1500       alerones / timón de profundidad
@@ -243,6 +244,8 @@ La grabación del vuelo en la flash (ESP32-S3) o en una tarjeta SD (STM32H743). 
 | `State getState()` / `bool isRecording()` | `Off`, `Idle`, `Recording`, `Stopping` (termina de escribir la cola antes de grabar END) |
 | `printStatus(Print&)` / `printFlights(Print&)` / `eraseAll()` | Para la consola |
 | `void handleHostCommand(const char*)` | `bb list`, `bb get <n> [baudios]` — para `tools/blackbox.py` (por USB CDC la velocidad no influye en nada) |
+
+Eventos de la calibración en tierra (pasos, resultado con la actitud en tierra, error con el motivo, cancelación) y de las etapas del despegue automático (`ABORTED`, con el motivo); la etapa va además en el campo `takeoff_stage` del registro NAV; los parámetros del vuelo incluyen `LANDING_GEAR` y los principales valores del despegue.
 
 Lo específico de cada plataforma: la causa del reinicio — `readResetCause()`; la tensión y la corriente de la batería —
 el ADC (`analogReadMilliVolts` en el S3, un `analogRead` de 12 bits en el STM32); los errores del soporte

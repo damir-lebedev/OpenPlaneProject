@@ -111,6 +111,7 @@ RC   1:1500 2:1500 3:1000 …
 OUT  AIL-L 1500 AIL-R 1500 ELE 1500 RUD 1500 ESC 1000
 ATT  R +1.2 P -0.4 Y 123.0
 AP   STABILIZE want R +0.0 P +0.0 corr R -6 P +2 THR +0
+AP   AUTO_TAKEOFF/ROLL GYRO want R +0.0 P +1.0 corr R +0 P -22 THR +100
 ALT  0.3 m  Vz +0.10 m/s  Ziel 0.0 m
 MAG  Kurs 123°
 GPS  fix=3 sats=12 lat … lon … v 0.0 m/s hacc 1.2 m
@@ -119,7 +120,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (der schlechteste in 10 s) | iBUS ok=�
 ```
 
 `RX=` unterscheidet `LOST(keine Frames)` von `LOST(Failsafe des Senders)`; `IMU=` ist
-`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`.
+`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`. In AUTO_TAKEOFF folgt auf den Modusnamen die Startetappe (`/CHECK`, `/TAIL_UP`, `/ROLL`…), `GYRO` heißt, dass der Horizont gerade nur aus dem Gyroskop kommt (Beschleunigung).
 
 ---
 
@@ -140,7 +141,7 @@ Hotkeys (außerhalb des Menüs): `h`/`?` — das Hauptmenü; `l` — das Protoko
 das Protokoll pausieren; `s` — Status der Sensoren; `i` — Kalibrierung des Gyroskops; `o` —
 Kalibrierung des IMU-Einbaus; `m` — Kalibrierung des Kompasses; `p` — Selbsttest der Ausgänge;
 `b` — Scan der I2C-Busse (0x08..0x7F — bis 0x7F, weil der QMC6309 auf 0x7C sitzt) mit
-den Namen der Chips; alles andere — ein Hinweis. `\r`/`\n` werden ignoriert.
+den Namen der Chips; alles andere — ein Hinweis. `\r`/`\n` werden ignoriert. Außerdem `c` – Bodenkalibrierung des Flugzeugs (läuft sie, Abbruch; Hauptmenüpunkt 9) und `e` – ein Signal per Rudern und ESC-Melodie (prüft, ob der Regler sie nach der Impulspause spielt).
 
 Das Protokollmenü: `1`..`9` — schalten den Modus der Kanäle 0..8 reihum um, `n` — NAV, `s` — SYS, `p` — Periode, `a` —
 alles „bei Änderung“, `x` — alles aus, `d` — Standard, `0`/`q` — zurück, `l`/`h` —
@@ -148,7 +149,7 @@ schließen.
 
 Die blockierenden Aktionen (`i`, `o`, `m`, `p`) sind **bei ARM verboten**. Solange das Menü
 offen ist, ist das Protokoll angehalten (`DebugLogger::suspend`). Die Breite der Menüpunkte
-wird in UTF-8-Zeichen gezählt, nicht in Bytes (Kyrillisch belegt 2 Bytes).
+wird in UTF-8-Zeichen gezählt, nicht in Bytes (Kyrillisch belegt 2 Bytes). Auch Flugzeugkalibrierung und Signal (`c`, `e` – sie bewegen die Ruder und fassen den ESC an) sind bei ARM gesperrt.
 
 ---
 
@@ -215,7 +216,7 @@ Das Display:
 
 ```
 RX ok ARM STAB FL       Verbindung (Verlust — invertierte Zeile) / ARM / Modus / REV – Motor rückwärts / Klappen
-R  +1.2 P  -0.4         Rollen / Nicken, °           (IMU --)
+R  +1.2 P  -0.4 ROLL    Roll / Nick, °; Kalibrierschritt (CAL1, CAL2, Ergebnis CALOK/CALER 10 s lang) oder Startetappe (WAIT, CHECK, TAIL, ROLL, LIFT, CLIMB, DONE, ABORT)   (IMU --)
 Alt +0.3 Vz +0.1 A14    Höhe / Vertikalgeschwindigkeit / Fluggeschwindigkeit, falls ein Pitotrohr da ist (BARO --)
 H123 T1000 Y1500        Kurs / Gas 1000..2000 = 0..100 % in beiden Richtungen / Seitenruder (H---)
 L1500 R1500 E1500       Querruder / Höhenruder
@@ -243,6 +244,8 @@ Aufzeichnung des Flugs im Flash (ESP32-S3) oder auf einer SD-Karte (STM32H743). 
 | `State getState()` / `bool isRecording()` | `Off`, `Idle`, `Recording`, `Stopping` (schreibt die Warteschlange zu Ende, bevor END aufgezeichnet wird) |
 | `printStatus(Print&)` / `printFlights(Print&)` / `eraseAll()` | Für die Konsole |
 | `void handleHostCommand(const char*)` | `bb list`, `bb get <n> [Baud]` — für `tools/blackbox.py` (über USB CDC hat die Geschwindigkeit keinen Einfluss) |
+
+Ereignisse der Bodenkalibrierung (Schritte, Ergebnis mit der Standlage, Fehler mit Grund, Abbruch) und der Autostart-Etappen (`ABORTED` – mit Grund); die Etappe steht außerdem im Feld `takeoff_stage` des NAV-Datensatzes; die Flugparameter enthalten `LANDING_GEAR` und die wichtigsten Startwerte.
 
 Die plattformabhängigen Teile: der Grund für den Neustart — `readResetCause()`; Batteriespannung und -strom —
 der ADC (`analogReadMilliVolts` beim S3, ein 12-Bit-`analogRead` beim STM32); die Fehler des Trägers

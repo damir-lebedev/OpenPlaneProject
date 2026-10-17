@@ -36,7 +36,7 @@ Der Bausatz des aktuellen Aufbaus (die Firmware wurde darauf geprüft):
 - **Ein Sender FS-i6 + Empfänger FS-iA6B** (iBUS-Protokoll, 10 Kanäle). Benötigt wird eine einzige Datenleitung – der Anschluss iBUS SERVO. Der Sender muss Failsafe einstellen können – diese Einstellung ist Pflicht, siehe den Abschnitt zu Failsafe.
 - **2 Servos MG90S** für die Querruder – eines für jede Tragflächenhälfte (zwei unabhängige Servos, nicht eines für beide Flächen).
 - **1 Servo MG90S** für das Höhenruder.
-- **1 Servo MG90S** für das Seitenruder – auf dessen Achse sitzt auch das Lenkrad des Fahrwerks (Rollen am Boden).
+- **1 Servo MG90S** für das Seitenruder – auf dessen Achse sitzt auch das Lenkrad des Fahrwerks (Rollen am Boden). Das Fahrwerk: zwei Räder vorn und ein lenkbares Spornrad (`LANDING_GEAR = TAIL_WHEEL` in `Config.h`; ein Bugradfahrwerk ist `NOSE_WHEEL`).
 - **Ein Fahrtregler (ESC) BLHeli 80A, bidirektional** (Modus Bidirectional/3D) mit 5-V-BEC (das BEC versorgt die Servos und den Empfänger). Ein gewöhnlicher Regler mit nur einer Drehrichtung geht auch – `ESC_BIDIRECTIONAL = false` in `Config.h`, siehe [Motorumkehr](#motorumkehr-swd).
 - **Ein Motor D3548 1100KV** + **ein Propeller 10x5**.
 - **Ein LiPo-Akku 3S**.
@@ -217,7 +217,7 @@ Kurz gesagt – die Standardbelegung (`include/config/Controls.h`):
 | **VrA / VrB** (CH9/10) | Stärke der Stabilisierung / Reisegeschwindigkeit |
 
 - **STABILIZE – „der Knüppel gibt den Winkel vor“.** Voller Knüppel bedeutet 45° Rollen und 25° Nicken; loslassen, und das Flugzeug richtet sich von selbst waagerecht aus. Das Gas gehört Ihnen.
-- **AUTO_TAKEOFF.** Nach dem ARM passiert nichts, bis Sie das Gas selbst über die Hälfte schieben. Dann: 0–1 s – Gas sanft bis 100 %, Flügel waagerecht; 1–3 s – Nicken +15°; danach +10°, bis Sie SwC umlegen. Gas = das Maximum aus Knüppel und Programm.
+- **AUTO_TAKEOFF.** Start von der Piste in Etappen. Nach ARM bleibt der Motor stehen, bis Sie das Gas über die Hälfte schieben; das Flugzeug prüft ~1 s lang, ob es so steht wie bei der Kalibrierung, und macht dann alles selbst: Heck hoch mit Tiefenruder, Startlauf, Abheben über die Tragfläche, Steigflug auf 30 m, danach hält es Kurs und Höhe. Das Gas gehört dem Programm; Gasknüppel nach unten vor dem Abheben bedeutet Startabbruch. Braucht die [Bodenkalibrierung des Flugzeugs](#bodenkalibrierung-des-flugzeugs-horizont-und-standlage).
 - **RTH.** Kurs auf den ARM-Punkt, Höhe 40 m, über dem Startpunkt Kreise. Ein GPS mit 3D-Fix wird **vor dem ARM** benötigt.
 
 Alle 12 Modi (ALT_HOLD, ACRO, CRUISE, LOITER, LAUNCH per Hand, AUTO_LAND, SOARING, RESCUE …), welche Sensoren jeder braucht und wie man ihn auf einen Schalter legt, steht in [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md). Ein vom Dashboard oder von der Bodenstation gewählter Modus bleibt bestehen, bis Sie den Modusschalter betätigen.
@@ -340,6 +340,8 @@ Ein Tastendruck wirkt sofort, Enter ist nicht nötig (bei einem Monitor, der zei
 | `s` | ausführlicher Status aller Sensoren (einschließlich der I2C-Fehlerzähler) |
 | `i` | Gyroskop neu kalibrieren und IMU-Prüfung vor dem Flug – 2 s, das Flugzeug nicht bewegen |
 | `o` | **Kalibrierung der IMU-Einbaulage** – einmalig, nachdem die Platine ins Flugzeug eingebaut wurde (siehe unten) |
+| `c` | **Bodenkalibrierung des Flugzeugs** – Horizont und Standlage (siehe unten); läuft sie, wird sie abgebrochen |
+| `e` | Signal: Rudernicken und ESC-Melodie – prüfen, ob der Regler sie spielt (Propeller abnehmen!) |
 | `m` | Kompasskalibrierung – 15 s lang die Platine bzw. das Flugzeug um alle Achsen drehen. Das Ergebnis wird im Flash gespeichert und übersteht einen Neustart |
 | `p` | Ausgangsprüfung: der tatsächliche Impuls an jedem Pin |
 
@@ -365,13 +367,26 @@ Solange das Menü offen ist, schweigt das Log, damit das Menü nicht wegscrollt;
 Die Platine mit der IMU lässt sich **so, wie es bequem ist,** ins Flugzeug einbauen – in jedem Winkel, auf der Seite, auf dem Kopf: Die Firmware stellt selbst fest, wo ihre Nase und ihre Oberseite sind. Das geschieht **einmalig** nach dem Einbau (und erneut, wenn die Platine umgesetzt wurde):
 
 1. Das Flugzeug auf dem Tisch, der Sender wird nicht gebraucht, der Motor ist nicht scharfgeschaltet. Im seriellen Monitor `o` drücken.
-2. **Schritt 1:** Das Flugzeug steht waagerecht wie im Horizontalflug (bei einem Flugzeug mit Spornrad legen Sie etwas unter das Heck). Etwa 3 s lang nicht berühren.
+2. **Schritt 1:** Das Flugzeug steht waagerecht wie im Geradeausflug (ein Spornradflugzeug darf auf den Rädern stehen – den Horizont setzt später die Bodenkalibrierung des Flugzeugs). ~3 s nicht berühren.
 3. **Schritt 2:** Heben Sie die **Nase** um 30–60° an, die Flügel bleiben waagerecht, und halten Sie etwa 1 s still.
 4. **Schritt 3:** Nase wieder zurück, senken Sie den **rechten Flügel** um 30–60° und halten Sie etwa 1 s.
 
 Jeder Schritt wird von selbst gewertet (im Log steht „засчитано“, also „gewertet“). Am Ende steht, was dabei herausgekommen ist („нос = +Y чипа, верх = −Z чипа“, also „Nase = +Y des Chips, oben = −Z des Chips“), und „установка сохранена“ („Einbaulage gespeichert“). Haben Sie etwas verwechselt (die Nase gesenkt statt gehoben, den linken Flügel statt des rechten), wird die Kalibrierung mit einer Erklärung abgelehnt; wiederholen Sie einfach `o`. Das Ergebnis liegt im Flash und übersteht einen Neustart. Kontrolle: Nase hoch → P auf dem OLED wird positiv; rechter Flügel nach unten → R wird positiv.
 
-Solange es keine Einbaukalibrierung gibt, gilt das alte Verfahren: Die Platine muss mit dem Chip nach oben liegen, die Drehung ist `IMU_ROTATION_CW_DEG` in `Config.h`.
+Solange es keine Einbaukalibrierung gibt, gilt das alte Verfahren: Die Platine muss mit dem Chip nach oben liegen, die Drehung ist `IMU_ROTATION_CW_DEG` in `Config.h`. Nach `o` die Bodenkalibrierung des Flugzeugs wiederholen: Die Standlage wurde vom alten Horizont aus gemessen.
+
+### Bodenkalibrierung des Flugzeugs: Horizont und Standlage
+
+Ein Spornradflugzeug steht am Boden mit erhobener Nase – um wie viel, weiß vorher niemand. Die Kalibrierung misst das selbst und speichert es im Flash: den **Horizont** (0° Nick und Roll für alle Modi – nicht mehr „wie es beim Einschalten stand“) und die **Standlage**, aus der der Autostart ableitet, wie weit das Heck hoch muss und wo das Spornrad die Piste berühren würde. Einmal nach dem Zusammenbau (und erneut, wenn die Platine versetzt wurde oder nach `o`). Kein Laptop nötig:
+
+1. Flugzeug auf ebenem Grund, Sender an, **kein ARM**, Gas unten.
+2. **SwB (Klappen) dreimal hintereinander runter und hoch** (innerhalb von 4 s) – oder `c` in der Konsole. Ein Signal – es geht los.
+3. **Schritt 1 – Horizont.** Heben Sie das Heck, bis der Rumpf waagerecht steht wie im Flug (Haupträder am Boden; eine Wasserwaagen-App auf dem Handy oben auf dem Rumpf hilft), und halten Sie ~2 s still. Schauen Sie dabei, wie viel Platz zwischen Propeller und Boden bleibt: Etwa so rollt das Flugzeug beim Start. Ein Signal – übernommen.
+4. **Schritt 2 – Standlage.** Stellen Sie das Flugzeug auf seine drei Räder und nehmen Sie die Hände weg. Nach ~2 s – zwei Signale: fertig, im Log steht „Стоянка: нос вверх на 9.4°, крен 0.3°“ (Standlage: Nase 9,4° hoch, Roll 0,3°).
+
+Drei Signale – ein Fehler, nichts gespeichert (der Grund steht in der Konsole): Das Flugzeug stand eine Minute lang nicht still, in der Standlage ist die Nase kaum erhoben (Heck nicht abgesetzt) oder um mehr als 25°, oder der Roll liegt über 10°. Abbrechen: dieselbe SwB-Geste oder ARM kurz umlegen (dieses Umlegen schaltet nicht scharf). Mit Bugrad (`NOSE_WHEEL`) kann Schritt 1 direkt auf den Rädern erfolgen, wenn das Flugzeug waagerecht steht: Schritt 2 wird dann nach 5 s von selbst übernommen. Der Schalter für die Geste ist `CAL_SWITCH` in `Config.h` (SwD geht nicht: Er schaltet die Motorumkehr).
+
+**Signale.** Ein Signal: Höhen- und Seitenruder nicken (in Schritt 1 haben Sie das Heck in der Hand und spüren es), und ohne ARM singt der Motor: Die Impulse zum ESC verschwinden für eine Sekunde, der Regler hält das Signal für verloren und spielt, wenn die Impulse zurückkommen, seine Bereitschaftsmelodie – wie beim Einschalten. Der Motor dreht sich dabei nicht. Einen anderen „Piep“-Befehl kennt ein Regler über PWM nicht, deshalb auf dem Prüfstand testen (**Propeller ab**): Taste `e` in der Konsole – die Melodie muss erklingen. Erklingt sie nicht, `SIGNAL_MOTOR = false` in `Config.h` setzen, dann bleibt das Nicken. Ein Summer oder eine LED mit Vorwiderstand an PE15 (S3: GPIO38) leuchtet während des Nickens; die LED D2 auf der DevEBox selbst hängt an PA1, dem Ausgang des rechten Querruders, und taugt deshalb nicht für Signale. Solange ein Signal läuft, wird ARM abgelehnt: Der Regler hat sich vielleicht noch nicht wieder scharfgeschaltet. Auf dem OLED zeigt die Lagezeile `CAL1`, `CAL2`, als Ergebnis `CALOK` oder `CALER`.
 
 ### Prüfung vor dem Flug beim Einschalten
 
@@ -381,7 +396,7 @@ Bei jedem Einschalten kalibriert die IMU ca. 2 s lang das Gyroskop und prüft da
 - der Beschleunigungssensor zeigt in Ruhe 1g;
 - **„oben“ stimmt mit der Einbaukalibrierung überein** – wurde die Platine umgesetzt oder umgedreht, sieht man das sofort (ein Flugzeug auf dem Spornrad oder an einem Hang ist unproblematisch, die Toleranz beträgt 45°).
 
-**Schalten Sie das Flugzeug im Stillstand ein.** Waagerecht muss es nicht stehen, wenn der Einbau kalibriert ist (sonst wird die Lage beim Einschalten zum Horizont). Das Ergebnis steht im Log: `предполётная проверка пройдена` („Prüfung vor dem Flug bestanden“) oder `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` („PRÜFUNG VOR DEM FLUG NICHT BESTANDEN“, gefolgt vom Grund). Wurde sie nicht bestanden, ist **ARM in STABILIZE und AUTO_TAKEOFF verboten** (der Grund wird beim Versuch ausgegeben), und der Autopilot gibt in keinem Modus Korrekturen aus, auch nicht beim Gleitflug bei Verbindungsverlust: Mit falschen Winkeln würde er in die falsche Richtung steuern. ARM in MANUAL ist möglich. Abhilfe: das Flugzeug ruhig hinstellen und den Akku neu anstecken (oder `i`); wurde die Platine umgesetzt, `o`.
+**Schalten Sie das Flugzeug im Stillstand ein.** Waagerecht muss es nicht stehen, wenn der Einbau kalibriert ist (`o` oder die Bodenkalibrierung des Flugzeugs; sonst wird die Lage beim Einschalten zum Horizont). Das Ergebnis steht im Log: `предполётная проверка пройдена` („Prüfung vor dem Flug bestanden“) oder `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` („PRÜFUNG VOR DEM FLUG NICHT BESTANDEN“, gefolgt vom Grund). Wurde sie nicht bestanden, ist **ARM in STABILIZE und AUTO_TAKEOFF verboten** (der Grund wird beim Versuch ausgegeben), und der Autopilot gibt in keinem Modus Korrekturen aus, auch nicht beim Gleitflug bei Verbindungsverlust: Mit falschen Winkeln würde er in die falsche Richtung steuern. ARM in MANUAL ist möglich. Abhilfe: das Flugzeug ruhig hinstellen und den Akku neu anstecken (oder `i`); wurde die Platine umgesetzt, `o`.
 
 ### OLED-Display
 
@@ -389,7 +404,7 @@ Ist ein OLED angeschlossen (GPIO1/GPIO2), zeigt es 5-mal pro Sekunde Folgendes:
 
 ```
 RX ok disarm STAB        <- Verbindung / ARM / Modus / REV – Motor rückwärts (bei Verbindungsverlust ist die Zeile invertiert)
-R  +1.2 P  -0.4          <- Rollen / Nicken, °
+R  +1.2 P  -0.4 ROLL     <- Roll / Nick, °; Kalibrierschritt oder Startetappe
 Alt +0.3 Vz +0.1         <- Höhe ab dem Einschaltpunkt, m / Vertikalgeschwindigkeit, m/s
 Hdg 123  Thr 1000        <- Kompasskurs / Gas 1000..2000 = 0..100 % (auch rückwärts), µs
 L1500 R1500 E1500        <- PWM von Querrudern und Höhenruder, µs
@@ -470,6 +485,7 @@ Lesen Sie diesen Abschnitt vollständig **vor** dem ersten Einschalten, nicht er
   - in STABILIZE das Flugzeug mit dem rechten Flügel nach unten neigen → **rechtes Querruder runter, linkes hoch** (die Ruder bringen es zurück in die Waagerechte); Nase nach unten → **Höhenruder hoch**.
   Stimmt etwas nicht, ändern Sie eine Zeile im Block „Umkehr“ von `include/config/Config.h`: jedes Querruder, Höhenruder, Seitenruder, AUX, der Motor (`MOTOR_REVERSED`) und die Klappen (`FLAPS_REVERSED`) werden einzeln umgekehrt, sonst wird nichts berührt. Servos nicht im Sender umkehren – sonst gehen Knüppel und Autopilot auseinander; einen Kanal umgekehrt (Knüppel, Schalter, Drehregler) – `CHANNEL_REVERSED` an derselben Stelle.
 - [ ] Beim Einschalten stand das Flugzeug still, und im Log bzw. im Dashboard steht kein `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА`; beim Neigen des Flugzeugs in den Händen ändern sich P und R auf dem OLED in die richtige Richtung.
+- [ ] Für AUTO_TAKEOFF: Die Bodenkalibrierung des Flugzeugs ist gemacht (beim Einschalten steht im Log „стоянка на колёсах — тангаж …“), das Spornrad ist heil, das Flugzeug steht gegen den Wind auf der Piste. Die ersten Läufe mit Gasbegrenzung (Drehregler `THROTTLE_LIMIT`) und der Hand am Gas: nach unten heißt Startabbruch.
 - [ ] Failsafe ist im Sender eingerichtet und geprüft: Sender ausgeschaltet → `RX LOST` auf dem OLED bzw. in Serial (siehe den Abschnitt zu Failsafe).
 - [ ] Die Reichweite des Senders wurde geprüft, der Senderakku ist geladen.
 - [ ] Beim Einschalten steht im Log `BlackBox: ... стёрто впереди N МБ (≈M мин)` – der Platz reicht für den Flug. Der vorige Flug wurde heruntergeladen (`python tools/blackbox.py download`), falls Sie ihn brauchen.
@@ -497,6 +513,12 @@ Führen Sie die Kalibrierung des IMU-Einbaus durch (`o`, siehe „IMU-Einbau“)
 
 **ARM abgelehnt: „IMU: ...“**
 Die IMU-Prüfung vor dem Flug wurde nicht bestanden (siehe „Prüfung vor dem Flug beim Einschalten“): Das Flugzeug wurde beim Einschalten bewegt – ruhig hinstellen und den Akku neu anstecken; „oben“ stimmt nicht mit der Kalibrierung überein – die Platine wurde umgesetzt, führen Sie `o` aus; „die Platine liegt nicht mit dem Chip nach oben“ – der Einbau ist nicht kalibriert, führen Sie `o` aus.
+
+**ARM abgelehnt: „нет калибровки шасси“ (keine Fahrwerkskalibrierung)**
+AUTO_TAKEOFF mit Spornrad weiß nicht, wo das Heck die Piste berühren würde. Führen Sie die Bodenkalibrierung des Flugzeugs durch: SwB dreimal runter und hoch ohne ARM (oder `c`).
+
+**„Автовзлёт: старт отменён — тангаж не стояночный“ (Startabbruch vor dem Start – Nick ist nicht die Standlage; die Ruder haben dreimal genickt)**
+Das Flugzeug steht nicht so wie bei der Kalibrierung: nicht auf drei Rädern, Hang, gebrochenes Spornrad oder verschobene Platine. Stellen Sie es eben hin; wurde die Platine versetzt, `o` und die Bodenkalibrierung wiederholen.
 
 **Ein Servo oder der ESC reagiert auf den falschen Knüppel / reagiert nicht**
 Der Befehl `p` in der Konsole misst den tatsächlichen Impuls an jedem Ausgang (GPIO4–7) und vergleicht ihn mit dem erwarteten. Ist alles „OK“ und das Servo bewegt sich trotzdem nicht, liegt das Problem hinter dem Board: (1) das Servo ist nicht versorgt (BEC/5V, gemeinsame Masse); (2) die Signalleitung hängt am falschen Pin; (3) die Mechanik klemmt. „НЕ СОВПАДАЕТ“ („STIMMT NICHT ÜBEREIN“) bedeutet, dass das Problem in der Firmware oder der Peripherie liegt – melden Sie es dem Entwickler.

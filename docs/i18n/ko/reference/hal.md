@@ -126,6 +126,7 @@ PWM 출력 하나입니다. 핀은 구현이 고정합니다.
 | `writeMicroseconds(us)` | 펄스 폭, µs (`attach`의 범위로 제한됩니다) |
 | `bool isAttached() const` | `attach()`의 결과 |
 | `virtual int32_t measurePulseUs()` | 진단: 핀에서 실제로 측정한 펄스 폭 또는 `-1`. 기본 구현은 `-1`을 반환합니다 |
+| `virtual void stopPulses()` | 다음 기록까지 펄스를 멈춥니다(핀은 Low 유지). 모터 알림: 펄스가 없으면 ESC는 신호를 잃었다고 판단하고, 펄스가 돌아오면 준비 완료 멜로디를 냅니다. 기본값은 아무것도 하지 않음(그러면 모터는 소리를 내지 않음) |
 
 ---
 
@@ -316,6 +317,7 @@ ESP32Servo 라이브러리는 **사용하지 않습니다**. S3에서 3.2.1 버�
 | `attach(minUs, maxUs)` | 범위를 저장합니다. 핀 < 0이면 `false`, 아니면 `ledcSetup() != 0` → `ledcAttachPin()` |
 | `writeMicroseconds(us)` | attached가 아니면 아무것도 하지 않고, 아니면 `constrain(us, min, max) * MAX_DUTY / PERIOD_US` → `ledcWrite` |
 | `measurePulseUs()` | 같은 GPIO의 입력 버퍼를 켜고 (`PIN_INPUT_ENABLE`, 출력은 건드리지 않습니다) `pulseIn(pin, HIGH, 30 ms)`를 측정합니다. 펄스가 없으면 `-1` |
+| `stopPulses()` | 듀티 0(`ledcWrite(channel, 0)`): 펄스 없음 |
 
 채널 2n과 2n+1은 LEDC 타이머를 공유하지만, 모든 출력이 50 Hz이므로 충돌은 없습니다.
 
@@ -421,7 +423,8 @@ STM32용 `Servo` 라이브러리와는 다릅니다.
 | `Stm32ServoOutput(int16_t pin)` | 핀 `< 0`은 출력이 배선되지 않았음을 뜻합니다 |
 | `attach(minUs, maxUs)` | 타이머와 채널은 핀으로 `PinMap_TIM`에서 구합니다 (`pinmap_peripheral`, `STM_PIN_CHANNEL`). `analogWrite()`와 같습니다. 핀에 타이머가 없거나 풀이 소진되면 `false`입니다. 아니면 `setMode(PWM1)`, 비교값 0 (첫 쓰기 전까지 펄스 없음), `resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`. 비교 레지스터는 프리로드 방식이어서, 값은 다음 주기부터 적용됩니다 |
-| `measurePulseUs()` | 핀을 다시 설정하지 않고 `pulseIn(pin, HIGH, 30 ms)`를 측정합니다. STM32에서는 IDR 레지스터가 대체 기능 모드에서도 레벨을 읽을 수 있습니다 |
+| `stopPulses()` | 비교 값 0: `attach()` 직후처럼 펄스 없음 |
+| `measurePulseUs()` | 핀을 다시 설정하지 않고 `pulseIn(pin, HIGH, 30 ms)`를 측정합니다. STM32에서는 IDR 레지스터가 대체 기능 모드에서도 레벨을 읽을 수 있습니다. 코어의 `pulseIn()`은 비트 번호 8 이상인 핀(PD14, PD15, PE9)에서 **Low** 레벨을 잽니다. 레벨 마스크가 `uint8_t`이기 때문입니다. 서보 펄스는 언제나 반주기보다 짧으므로 그보다 긴 측정값은 쉬는 구간이고, 펄스는 `PERIOD_US`에서 그 값을 뺀 것입니다 |
 | `static acquireTimer(TIM_TypeDef*)` | 공유 풀: **TIMx마다 `HardwareTimer` 하나**만 둡니다. 같은 타이머에 두 번째 객체를 만들면 코어의 핸들러 (`HardwareTimer_Handle[index]`)를 덮어쓰게 됩니다. 주기는 그 타이머의 첫 출력에서 정해지며, `setOverflow(MICROSEC_FORMAT)`가 분주비를 고릅니다. 타이머 클럭이 240 MHz일 때 한 단계는 ~0.3 µs입니다 |
 
 ## `Stm32FlashStorage`

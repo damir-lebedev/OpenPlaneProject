@@ -28,6 +28,12 @@
 //
 // Горизонт при этом тоже берётся из позы "ровно": смещение нуля
 // акселерометра входит в неё и потому не мешает.
+//
+// Наземная калибровка самолёта (control/GroundCalibration.h) уточняет
+// только горизонт — withLevel(): ось Z — новый "верх", нос остаётся,
+// где был. Самолёт с хвостовым колесом на колёсах стоит носом вверх,
+// поэтому горизонт меряется с поднятым хвостом, а стоянка — отдельно
+// (attitudeOf()).
 // ============================================================
 
 class ImuOrientation
@@ -109,11 +115,64 @@ public:
         return nullptr;
     }
 
+    // Горизонт по позе "ровно" (chipUp — "верх" в осях чипа): ось Z
+    // самолёта — измеренный "верх", нос — прежний, выпрямленный
+    // перпендикулярно новой Z. Где у платы нос, не меняется — только
+    // наклон горизонта. Поправка больше MAX_LEVEL_CHANGE_DEG — это уже не
+    // "почти ровно": плата перевёрнута (а установки из калибровки нет)
+    // или самолёт держали не так. nullptr — успех.
+    const char* withLevel(const float chipUp[3], ImuOrientation& out) const
+    {
+        float z[3];
+        if (!normalize(chipUp, z)) return "нет показаний акселерометра";
+        if (tiltFromLevelDeg(chipUp) > MAX_LEVEL_CHANGE_DEG)
+        {
+            return "самолёт наклонён больше 45° от прежнего горизонта — поставьте ровно "
+                   "(или плата не чипом вверх: сначала калибровка установки, 'o')";
+        }
+
+        // При поправке до 45° нос не может смотреть вдоль новой вертикали,
+        // но проверка дешевле, чем мусор в осях.
+        float x[3], y[3];
+        if (!perpendicularPart(r[0], z, x)) return "нос платы смотрит вдоль вертикали — сначала калибровка установки, 'o'";
+        cross(z, x, y);
+
+        ImuOrientation o(NoInit{});
+        for (uint8_t i = 0; i < 3; ++i)
+        {
+            o.r[0][i] = x[i];
+            o.r[1][i] = y[i];
+            o.r[2][i] = z[i];
+        }
+        out = o;
+        return nullptr;
+    }
+
+    // Тангаж и крен позы chipUp ("верх" в осях чипа), ° в авиационных
+    // знаках — та же формула, что у AttitudeEstimator по акселерометру.
+    void attitudeOf(const float chipUp[3], float& pitchDeg, float& rollDeg) const
+    {
+        float b[3];
+        apply(chipUp, b);
+        rollDeg = atan2f(b[1], b[2]) * static_cast<float>(RAD_TO_DEG);
+        pitchDeg = atan2f(b[0], sqrtf(b[1] * b[1] + b[2] * b[2])) * static_cast<float>(RAD_TO_DEG);
+    }
+
     void apply(const float chip[3], float body[3]) const
     {
         for (uint8_t i = 0; i < 3; ++i)
         {
             body[i] = r[i][0] * chip[0] + r[i][1] * chip[1] + r[i][2] * chip[2];
+        }
+    }
+
+    // Обратный поворот: оси самолёта -> оси чипа (R ортонормирована,
+    // обратная — транспонированная).
+    void applyInverse(const float body[3], float chip[3]) const
+    {
+        for (uint8_t i = 0; i < 3; ++i)
+        {
+            chip[i] = r[0][i] * body[0] + r[1][i] * body[1] + r[2][i] * body[2];
         }
     }
 
@@ -172,6 +231,10 @@ private:
     static constexpr float MIN_TILT_DEG = 20.0f;
     static constexpr float MAX_TILT_DEG = 80.0f;
 
+    // Наземная калибровка: насколько новый горизонт может отличаться от
+    // прежнего (как допуск предполётной проверки при включении).
+    static constexpr float MAX_LEVEL_CHANGE_DEG = 45.0f;
+
     // Оценки носа по шагам 2 и 3 должны совпасть с точностью ~25°.
     static constexpr float AGREEMENT_MIN_COS = 0.9f;
 
@@ -197,12 +260,12 @@ private:
         return true;
     }
 
-    // Единичная часть v, перпендикулярная единичному axis.
-    static void perpendicularPart(const float v[3], const float axis[3], float out[3])
+    // Единичная часть v, перпендикулярная единичному axis; false — v вдоль axis.
+    static bool perpendicularPart(const float v[3], const float axis[3], float out[3])
     {
         const float along = dot(v, axis);
         const float p[3] = { v[0] - along * axis[0], v[1] - along * axis[1], v[2] - along * axis[2] };
-        normalize(p, out);
+        return normalize(p, out);
     }
 
     static bool tiltInRange(const float levelUnit[3], const float poseUnit[3])

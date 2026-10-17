@@ -182,10 +182,12 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
 | `EscSignal.h` | 油门 + 方向 → 电调脉冲：双向 BLHeli 上 1500 = 停止，正转 1500..2000，反转 1500..1000 |
 | `MotorReverse.h` | 通过 `Feature::MOTOR_REVERSE` 反转电机——只在 DISARM 时；改变方向后 `REVERSE_SETTLE_MS` 内拒绝 ARM |
 | `ArmingManager.h` | 用 SwA 拨杆 ARM（油门在底时 OFF→ON 的切换 + 该模式所需的传感器检查），DISARM 立即生效 |
-| `FlightOutputState.h` | 期望的 PWM：`aileronLeft`、`aileronRight`、`elevator`、`rudder`、`throttle`（任一方向的 0..100%）、`motorReverse`、`aux1`（载荷）、`aux2`（相机） |
+| `FlightOutputState.h` | 期望的 PWM：`aileronLeft`、`aileronRight`、`elevator`、`rudder`、`throttle`（任一方向的 0..100%）、`motorReverse`、`escPulsesOff`（电机提示）、`aux1`（载荷）、`aux2`（相机） |
 | `Beeper.h` | 蜂鸣器：由 `BEEPER` 功能触发，或在地面时“模型丢失” |
+| `GroundCalibration.h` | 飞机地面校准：开关手势，第 1 步——水平基准（抬尾），第 2 步——停机姿态；通过 `ImuSensor::setGroundCalibration()` 保存 |
+| `SignalPlayer.h` | 给飞手的提示：舵面点头、暂停电调脉冲（电调播放就绪提示音，仅在未解锁时）、蜂鸣器/LED；计数 1/2/3 |
 | `FlightOutputs.h` | 输出表（`outputInfo()`：键、名称、引脚、是否必需、状态字段），以及在它之上循环完成的所有工作：`begin()`、`write()`、`setFailsafe()`、状态、`printPulseSelfTest()` |
-| `FlightController.h` | 每个周期内的操作顺序、信号丢失（`applyLinkLoss()`）、供遥测使用的取值函数 |
+| `FlightController.h` | 每个周期内的操作顺序、信号丢失（`applyLinkLoss()`）、叠加在输出上的校准和提示、供遥测使用的取值函数 |
 
 ### `autopilot/`
 
@@ -198,6 +200,7 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
 | `Navigation.h` | `Geo`（距离、方位、偏移）、`Guidance`（按航向给出横滚、圆周的向量场） |
 | `AltitudeSpeedController.h` | 用俯仰控制高度，用油门控制空速（TECS-lite） |
 | `LaunchController.h`、`SoaringController.h` | 手抛起飞和翱翔的状态机 |
+| `TakeoffController.h` | 从跑道自动起飞：尾轮式和前轮式的各阶段（`Config::LANDING_GEAR`），轮上的升降舵和航向控制律，中止起飞 |
 | `AutoTrim.h` | 自动配平，存于 NVS/闪存 |
 | `PidController.h` | PID：D 项取自传感器的速度（陀螺仪、升降速度计），抗积分饱和，未 ARM 时积分器冻结 |
 | `feedback/*` | **雏形，未接入**：自适应反馈、起飞与降落——见[反馈](#反馈雏形未接入) |
@@ -503,6 +506,8 @@ PID 表单。每 200 ms 轮询一次 `/api/status`。
 | `s` | 所有传感器的 `printStatus()`：数据、总线错误计数、校准、飞行前检查 |
 | `i` | 陀螺仪校准 + 飞行前检查（静止 2 s） |
 | `o` | 按三种姿态校准 IMU 的安装，保存到 NVS |
+| `c` | 飞机地面校准（水平基准和停机姿态）——不阻塞循环；正在进行时则取消。用遥控器：不解锁时把开关 `CAL_SWITCH` 上下拨三次 |
+| `e` | 提示：舵面点头并暂停电调脉冲——检查电调是否播放就绪提示音（先拆下螺旋桨！） |
 | `m` | 电子罗盘校准（旋转 15 s），保存到 NVS |
 | `p` | 输出自检：把每个引脚上的实际脉冲与预期值对比 |
 
@@ -648,7 +653,7 @@ STM32H743VIT6（Cortex-M7 480 MHz，2 MB 闪存，1 MB RAM）运行**完整固�
    `MODE_COUNT` 之前），并在 `AutopilotNames::mode()` / `modeShort()` 中给出名称和简称（最多 5 个字符，用于 OLED）。
 2. 增加处理函数 `run<Mode>()`，并在 `Autopilot::runMode()` 中加一个分支；初始目标（航向、高度、盘旋圆心）写在 `initializeMode()` 中。该模式设定
    `desiredRoll`/`desiredPitch`，并调用 `stabilizeOrManual()`（没有 IMU 时舵面交给飞手）或 `stabilizeOrNeutral()`（没有 IMU 时——中立位）。缺少所需传感器时应表现为安全行为，而不是崩溃。积分器只在 `armed` 时累积。
-3. 油门：`throttleMode`（`PILOT` / `AUTO` / `AT_LEAST`）和 `autoThrottlePct`，或者 `autoThrottle()`——来自旋钮或皮托管的巡航油门。这时
+3. 油门：`throttleMode`（`PILOT` / `AUTO`）和 `autoThrottlePct`，或者 `autoThrottle()`——来自旋钮或皮托管的巡航油门。这时
    `FlightController` 无需改动。
 4. 在遥控器上——只需在 `config/Controls.h` 中加一行（`Bind::mode(Channels::SWD, MODE_NEW)`）。仪表盘和 MAVLink 会按编号识别该模式；对于 MAVLink——在 `MavlinkModes::toCustomMode()` /
    `fromCustomMode()` 中映射到最接近的 ArduPlane 模式。

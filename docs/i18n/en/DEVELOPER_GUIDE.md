@@ -193,10 +193,12 @@ The rules that keep the architecture clean:
 | `EscSignal.h` | Throttle + direction → ESC pulse: on the bidirectional BLHeli 1500 = stop, forwards 1500..2000, backwards 1500..1000 |
 | `MotorReverse.h` | Motor reverse via `Feature::MOTOR_REVERSE` — only when disarmed; after a direction change ARM is refused for `REVERSE_SETTLE_MS` |
 | `ArmingManager.h` | ARM with the SwA switch (an OFF→ON transition with the throttle down + the mode's sensor checks), instant DISARM |
-| `FlightOutputState.h` | The desired PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100% in either direction), `motorReverse`, `aux1` (payload), `aux2` (camera) |
+| `FlightOutputState.h` | The desired PWM: `aileronLeft`, `aileronRight`, `elevator`, `rudder`, `throttle` (0..100% in either direction), `motorReverse`, `escPulsesOff` (motor signal), `aux1` (payload), `aux2` (camera) |
 | `Beeper.h` | The buzzer: by the `BEEPER` function or “model lost” on the ground |
+| `GroundCalibration.h` | Ground calibration of the airplane: switch gesture, step 1 — the horizon (tail up), step 2 — the parking attitude; saves through `ImuSensor::setGroundCalibration()` |
+| `SignalPlayer.h` | Signals to the pilot: control-surface nod, ESC pulse pause (the ESC plays its ready tune, only without ARM), buzzer/LED; the count 1/2/3 |
 | `FlightOutputs.h` | The output table (`outputInfo()`: key, name, pin, whether it is mandatory, the state field) and everything on top of it in a loop: `begin()`, `write()`, `setFailsafe()`, status, `printPulseSelfTest()` |
-| `FlightController.h` | The order of operations per tick, link loss (`applyLinkLoss()`), getters for telemetry |
+| `FlightController.h` | The order of operations per tick, link loss (`applyLinkLoss()`), calibration and signals on top of the outputs, getters for telemetry |
 
 ### `autopilot/`
 
@@ -209,6 +211,7 @@ The rules that keep the architecture clean:
 | `Navigation.h` | `Geo` (distance, bearing, offset), `Guidance` (roll for a course, the circle vector field) |
 | `AltitudeSpeedController.h` | Pitch for altitude, throttle for airspeed (TECS-lite) |
 | `LaunchController.h`, `SoaringController.h` | The hand-launch and soaring state machines |
+| `TakeoffController.h` | Auto takeoff from a runway: stages for the tail and nose wheel (`Config::LANDING_GEAR`), elevator and heading laws on the wheels, aborted takeoff |
 | `AutoTrim.h` | Auto-trim, stored in NVS/flash |
 | `PidController.h` | PID: D on the sensor rate (gyroscope, variometer), anti-windup, the integrator frozen without ARM |
 | `feedback/*` | **Groundwork, not connected:** adaptive feedback, takeoff and landing — see [Feedback](#feedback-groundwork-not-connected) |
@@ -583,6 +586,8 @@ loop and are therefore available only without ARM.
 | `s` | `printStatus()` of all sensors: data, bus error counters, calibrations, the preflight check |
 | `i` | Gyro calibration + preflight check (2 s motionless) |
 | `o` | IMU mounting calibration by three poses, saved to NVS |
+| `c` | Ground calibration of the airplane (horizon and parking attitude) — does not block the loop; cancels while it runs. From the transmitter — the `CAL_SWITCH` switch down and up 3 times without ARM |
+| `e` | A signal: control-surface nod and ESC pulse pause — check that the ESC plays its ready tune (remove the propeller!) |
 | `m` | Compass calibration (15 s of rotation), saved to NVS |
 | `p` | Output self-test: the real pulse on each pin against the expected one |
 
@@ -783,7 +788,7 @@ and in `include/hal/stm32/`, access through `IBoard`.
    `stabilizeOrNeutral()` (without an IMU — neutral). Without the required
    sensor — safe behavior, not a crash. The integrator accumulates only when
    `armed`.
-3. Throttle: `throttleMode` (`PILOT` / `AUTO` / `AT_LEAST`) and
+3. Throttle: `throttleMode` (`PILOT` / `AUTO`) and
    `autoThrottlePct`, or `autoThrottle()` — the cruise throttle from the
    knob / from the pitot tube. `FlightController` does not change.
 4. On the transmitter — a single line in `config/Controls.h`

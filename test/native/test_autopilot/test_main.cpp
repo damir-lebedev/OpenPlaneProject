@@ -215,43 +215,47 @@ void test_no_corrections_without_ready_imu()
     TEST_ASSERT_EQUAL_FLOAT(0.0f, noImu.getRollCorrection());
 }
 
+// Автовзлёт целиком — test_takeoff (этапы) и test_sim (полёт с моделью
+// шасси); здесь — что режим включается и не крутит мотор без старта.
 void test_auto_takeoff_program()
 {
     Rig rig;
+    rig.imu.data.accelZ = 1.0f;
+    rig.imu.data.pitch = 10.0f;
+    rig.imu.data.accelX = sinf(10.0f * 0.0174533f);
+    rig.imu.data.accelZ = cosf(10.0f * 0.0174533f);
+    rig.imu.park(10.0f);
     rig.autopilot.setMode(MODE_AUTO_TAKEOFF);
     TEST_ASSERT_EQUAL_STRING("AUTO_TAKEOFF", rig.autopilot.getModeName());
 
-    // Не заармлен или газ ниже порога — программа не стартует.
+    // Не заармлен или газ ниже порога — мотор стоит.
     rig.autopilot.update(false, false, 1800);
     TEST_ASSERT_EQUAL_FLOAT(0.0f, rig.autopilot.getThrottleCorrection());
+    rig.autopilot.update(true, false, 1000);
     rig.autopilot.update(true, false, 1400);
-    TEST_ASSERT_EQUAL_FLOAT(0.0f, rig.autopilot.getThrottleCorrection());
-    TEST_ASSERT_EQUAL_UINT16(1400, rig.autopilot.applyThrottle(1400));
+    TEST_ASSERT_EQUAL_UINT16(Config::PWM_MIN, rig.autopilot.applyThrottle(1400));
+    TEST_ASSERT_EQUAL(TakeoffController::Stage::IDLE, rig.autopilot.getTakeoffStage());
 
-    rig.autopilot.update(true, false, 1500);   // старт
-    TEST_ASSERT_TRUE(contains(takeSerial(), "автовзлёт — старт"));
-
+    // Газ выше порога — проверка (мотор ещё стоит), затем программа.
+    rig.autopilot.update(true, false, 1500);
+    TEST_ASSERT_EQUAL(TakeoffController::Stage::CHECK, rig.autopilot.getTakeoffStage());
+    TEST_ASSERT_EQUAL_UINT16(Config::PWM_MIN, rig.autopilot.applyThrottle(1500));
+    for (int i = 0; i < 120; ++i)
+    {
+        fake::advanceMs(10);
+        rig.autopilot.update(true, false, 1500);
+    }
+    TEST_ASSERT_EQUAL(TakeoffController::Stage::TAIL_UP, rig.autopilot.getTakeoffStage());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "проверка пройдена"));
     fake::advanceMs(500);
     rig.autopilot.update(true, false, 1500);
-    TEST_ASSERT_FLOAT_WITHIN(0.5f, 50.0f, rig.autopilot.getThrottleCorrection());   // разгон газа
-    TEST_ASSERT_EQUAL_FLOAT(0.0f, rig.autopilot.getDesiredPitch());
-    TEST_ASSERT_EQUAL_UINT16(1500, rig.autopilot.applyThrottle(1500));   // max(пилот, программа)
-    TEST_ASSERT_EQUAL_UINT16(1700, rig.autopilot.applyThrottle(1700));
-
-    fake::advanceMs(1000);
-    rig.autopilot.update(true, false, 1500);
-    TEST_ASSERT_EQUAL_FLOAT(100.0f, rig.autopilot.getThrottleCorrection());
-    TEST_ASSERT_EQUAL_FLOAT(15.0f, rig.autopilot.getDesiredPitch());
-    TEST_ASSERT_EQUAL_UINT16(2000, rig.autopilot.applyThrottle(1000));
-
-    fake::advanceMs(2000);
-    rig.autopilot.update(true, false, 1000);   // газ убран — программа идёт дальше
-    TEST_ASSERT_EQUAL_FLOAT(10.0f, rig.autopilot.getDesiredPitch());
-    TEST_ASSERT_EQUAL_FLOAT(0.0f, rig.autopilot.getDesiredRoll());
+    TEST_ASSERT_GREATER_THAN_FLOAT(0.0f, rig.autopilot.getThrottleCorrection());   // газ растёт
+    TEST_ASSERT_LESS_THAN_UINT16(1900, rig.autopilot.applyThrottle(1900));          // программы, плавно, а не стика
 
     // DISARM сбрасывает программу.
     rig.autopilot.update(false, false, 1000);
     TEST_ASSERT_EQUAL_FLOAT(0.0f, rig.autopilot.getThrottleCorrection());
+    TEST_ASSERT_EQUAL(TakeoffController::Stage::IDLE, rig.autopilot.getTakeoffStage());
 }
 
 void test_alt_hold_holds_altitude_at_mode_entry()
@@ -336,19 +340,49 @@ void test_link_loss_on_ground_does_not_glide()
     TEST_ASSERT_FALSE(rig.autopilot.isFailsafeGliding());
 }
 
+// В воздухе (набор) потеря связи — обычный failsafe; связь вернулась —
+// набор продолжается. На земле — взлёт заново и только после газа вниз.
 void test_glide_restarts_takeoff_only_anew()
 {
     Rig rig;
+    rig.gps.available = false;
+    rig.imu.data.pitch = 10.0f;
+    rig.imu.data.accelX = sinf(10.0f * 0.0174533f);
+    rig.imu.data.accelZ = cosf(10.0f * 0.0174533f);
+    rig.imu.park(10.0f);
     rig.autopilot.setMode(MODE_AUTO_TAKEOFF);
-    rig.autopilot.update(true, false, 1600);
-    fake::advanceMs(2000);
-    rig.autopilot.update(true, false, 1600);
-    TEST_ASSERT_EQUAL_FLOAT(15.0f, rig.autopilot.getDesiredPitch());
+    auto run = [&](int ms, uint16_t throttle, bool linkLost) {
+        for (int t = 0; t < ms; t += 10)
+        {
+            fake::advanceMs(10);
+            rig.autopilot.update(true, linkLost, throttle);
+        }
+    };
+    run(20, 1000, false);
+    run(1100, 1600, false);
+    rig.imu.data.pitch = 2.0f;   // хвост поднят
+    run(Config::TD_ROLL_MS + 100, 1600, false);
+    rig.baro.data.altitude = 3.0f;   // оторвался
+    run(Config::TAKEOFF_LIFTOFF_CONFIRM_MS + 100, 1600, false);
+    TEST_ASSERT_EQUAL(TakeoffController::Stage::CLIMB, rig.autopilot.getTakeoffStage());
 
-    rig.autopilot.update(true, true, 1000);   // связь пропала — планирование
-    rig.autopilot.update(true, false, 1000);  // вернулась, газ пилота внизу
+    run(10, 1000, true);   // связь пропала в воздухе — планирование
+    TEST_ASSERT_TRUE(rig.autopilot.isFailsafeGliding());
+
+    TEST_ASSERT_EQUAL(TakeoffController::Stage::CLIMB, rig.autopilot.getTakeoffStage());
+
+    run(10, 1000, false);  // вернулась — набор продолжается, мотор нужен
+    TEST_ASSERT_FALSE(rig.autopilot.isFailsafeActive());
+    TEST_ASSERT_EQUAL(TakeoffController::Stage::CLIMB, rig.autopilot.getTakeoffStage());
+    TEST_ASSERT_GREATER_THAN_FLOAT(0.0f, rig.autopilot.getThrottleCorrection());
+
+    // Режим сменили — взлёт сначала: снова AUTO_TAKEOFF, стик газа вверху —
+    // мотор стоит, пока газ не побывает внизу.
+    rig.autopilot.setMode(MODE_STABILIZE);
+    rig.autopilot.setMode(MODE_AUTO_TAKEOFF);
+    run(100, 1600, false);
+    TEST_ASSERT_EQUAL(TakeoffController::Stage::IDLE, rig.autopilot.getTakeoffStage());
     TEST_ASSERT_EQUAL_FLOAT(0.0f, rig.autopilot.getThrottleCorrection());
-    TEST_ASSERT_EQUAL_FLOAT(0.0f, rig.autopilot.getDesiredPitch());
 }
 
 void test_set_pid_gains_from_dashboard()

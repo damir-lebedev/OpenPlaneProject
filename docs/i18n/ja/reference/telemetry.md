@@ -106,6 +106,7 @@ RC   1:1500 2:1500 3:1000 …
 OUT  AIL-L 1500 AIL-R 1500 ELE 1500 RUD 1500 ESC 1000
 ATT  R +1.2 P -0.4 Y 123.0
 AP   STABILIZE want R +0.0 P +0.0 corr R -6 P +2 THR +0
+AP   AUTO_TAKEOFF/ROLL GYRO want R +0.0 P +1.0 corr R +0 P -22 THR +100
 ALT  0.3 m  Vz +0.10 m/s  目標 0.0 m
 MAG  方位 123°
 GPS  fix=3 sats=12 lat … lon … v 0.0 m/s hacc 1.2 m
@@ -114,7 +115,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10秒間の最悪値) | iBUS ok=… c
 ```
 
 `RX=` は `LOST(フレームなし)` と `LOST(送信機のフェイルセーフ)` を区別します。`IMU=` は
-`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK` のいずれかです。
+`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK` のいずれかです。AUTO_TAKEOFF では、モード名の後に離陸の段階（`/CHECK`、`/TAIL_UP`、`/ROLL`…）が続きます。`GYRO` は、今は水平基準がジャイロだけから来ている（加速中）ことを示します。
 
 ---
 
@@ -134,13 +135,13 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10秒間の最悪値) | iBUS ok=… c
 ホットキー（メニューの外）: `h`/`?` — メインメニュー、`l` — ログのメニュー、スペース —
 ログの一時停止、`s` — センサーの状態、`i` — ジャイロの較正、`o` —
 IMU の取り付けの較正、`m` — コンパスの較正、`p` — 出力のセルフテスト、
-`b` — I2C バスのスキャン（0x08..0x7F — 0x7F まで。QMC6309 が 0x7C にあるため）でチップ名を表示します。それ以外はヒントを表示します。`\r`/`\n` は無視します。
+`b` — I2C バスのスキャン（0x08..0x7F — 0x7F まで。QMC6309 が 0x7C にあるため）でチップ名を表示します。それ以外はヒントを表示します。`\r`/`\n` は無視します。さらに `c` は機体の地上校正（実行中なら中止。メインメニューの 9 番）、`e` は舵面と ESC のメロディによる合図です（パルス停止の後に ESC が鳴らすかを確認）。
 
 ログのメニュー: `1`..`9` — チャンネル 0..8 のモードを巡回、`n` — NAV、`s` — SYS、`p` — 周期、`a` —
 すべて「変化時」、`x` — すべてオフ、`d` — 既定値、`0`/`q` — 戻る、`l`/`h` —
 閉じる。
 
-ブロックする操作（`i`、`o`、`m`、`p`）は **ARM 中は禁止**です。メニューが開いている間は、ログを停止します（`DebugLogger::suspend`）。メニュー項目の幅はバイト数ではなく UTF-8 の文字数で数えます（キリル文字は 2 バイト）。
+ブロックする操作（`i`、`o`、`m`、`p`）は **ARM 中は禁止**です。メニューが開いている間は、ログを停止します（`DebugLogger::suspend`）。メニュー項目の幅はバイト数ではなく UTF-8 の文字数で数えます（キリル文字は 2 バイト）。機体の校正と合図（`c`、`e`：舵面を動かし ESC に触れる）も ARM 中は禁止です。
 
 ---
 
@@ -200,7 +201,7 @@ U8g2 は `II2CBus` の上に載せた `byteCallback` でバイトを送ります
 
 ```
 RX ok ARM STAB FL       リンク（喪失時は反転行）/ ARM / モード / REV：モーター逆転 / フラップ
-R  +1.2 P  -0.4         ロール / ピッチ、°           (IMU --)
+R  +1.2 P  -0.4 ROLL    ロール / ピッチ、°。校正ステップ（CAL1、CAL2、結果 CALOK/CALER は 10 秒間）または離陸の段階（WAIT、CHECK、TAIL、ROLL、LIFT、CLIMB、DONE、ABORT）   (IMU --)
 Alt +0.3 Vz +0.1 A14    高度 / 垂直速度 / 対気速度（ピトー管がある場合）(BARO --)
 H123 T1000 Y1500        方位 / スロットル 1000..2000 = どちらの方向でも 0..100% / ラダー (H---)
 L1500 R1500 E1500       エルロン / エレベーター
@@ -227,6 +228,8 @@ Loop 500Hz max1100us    周波数と、1秒間で最悪のティック
 | `State getState()` / `bool isRecording()` | `Off`、`Idle`、`Recording`、`Stopping`（END を記録する前に、キューを最後まで書き出します） |
 | `printStatus(Print&)` / `printFlights(Print&)` / `eraseAll()` | コンソール用 |
 | `void handleHostCommand(const char*)` | `bb list`、`bb get <n> [ボー]` — `tools/blackbox.py` 用（USB CDC では速度は何にも影響しません） |
+
+地上校正のイベント（ステップ、駐機姿勢つきの結果、理由つきのエラー、中止）と自動離陸の段階のイベント（`ABORTED` は理由つき）。段階は NAV レコードの `takeoff_stage` フィールドにも入ります。飛行パラメーターには `LANDING_GEAR` と主な離陸の値が含まれます。
 
 プラットフォームごとに異なる部分: 再起動の原因は `readResetCause()`、バッテリーの電圧と電流は
 ADC（S3 は `analogReadMilliVolts`、STM32 は 12 ビットの `analogRead`）、媒体のエラー（`BlackBoxStorage::writeErrors`/`eraseErrors`）は1秒に1回、「媒体: 書き込みエラー …」というイベントとしてログに入り、飛行の妨げにはなりません。

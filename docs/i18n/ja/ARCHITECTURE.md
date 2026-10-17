@@ -58,8 +58,8 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK（未接続）<br/>FeedbackSupervisor とモジュール"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -374,22 +374,23 @@ sequenceDiagram
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(機能から決まる目標)
     FC->>AP: update(armed, linkLost, パイロットのスロットル（逆転中は 0）, スティック)
     Note over AP: センサーは常に読む,<br/>ナビゲーション、failsafe、ジオフェンス,<br/>モード、協調、オートトリム
-    FC->>OUT: setBuzzer(Beeper)
+    Note over FC: 地上校正：スイッチ操作（ARM なし）、<br/>GroundCalibration を 1 ステップ、合図 → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper または合図の光)
     alt 通信喪失
         alt armed かつオートパイロットの failsafe（RTH / GLIDE）
             FC->>MX: mix(オートパイロットの指令)
             FC->>OUT: write(舵面、オートパイロットのスロットル（逆転中は 0）、AUX は据え置き)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() （合図中はニュートラルにうなずきと ESC の停止）
         end
         Note over FC: return — ARM とスイッチは読まない
     else 通信あり
-        FC->>AM: update(rc, MR.armBlockReason) — ARM スイッチ
+        FC->>AM: update(rc, 理由) — ARM スイッチ（校正中・合図中は拒否）
         FC->>MR: update(MOTOR_REVERSE, armed) — 方向は ARM していないときのみ
         FC->>AP: getCommand() — 最終的な舵面の指令
         FC->>MX: mix(command) → リバース付き PWM
         FC->>AP: applyThrottle(パイロットのスロットル) — 前進時のみ
-        Note over FC: 後退：パイロットのスロットル ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed または MOTOR_KILL → throttle = PWM_MIN（最後に適用）
+        Note over FC: 後退：パイロットのスロットル ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed または MOTOR_KILL → throttle = PWM_MIN（最後に適用）<br/>合図のうなずきを舵面に加え、ARM なしなら ESC のパルスを止める
         FC->>OUT: write(output + AUX1 ペイロード、AUX2 カメラ)
         Note over OUT: ESC：スロットル＋方向 → パルス（EscSignal）、<br/>双方向 ESC：1500 = 停止
     end
@@ -458,15 +459,29 @@ stateDiagram-v2
     GLIDE --> FRTH : GPS が復帰
 ```
 
-failsafe は独立した `AutopilotMode` ではなく、現在のモードに重なるフラグです。始まった帰還は、GPS の短い喪失で滑空に切り替わることはありません。通信が戻ると、スイッチによるモードが続きます（自動離陸と手投げ発進は、最初からやり直しのみ）。内部のステートマシンは、`LaunchController`（IDLE → READY → THROWN → CLIMB → DONE）と `SoaringController`（GLIDE → THERMAL → MOTOR_CLIMB → RETURN）です。
+failsafe は独立した `AutopilotMode` ではなく、現在のモードに重なるフラグです。始まった帰還は、GPS の短い喪失で滑空に切り替わることはありません。通信が戻ると、スイッチによるモードが続きます（手投げ発進は最初からやり直しのみ。滑走路での自動離陸も最初からやり直しのみで、上昇中なら上昇を続けます）。滑走路上の AUTO_TAKEOFF では、通信途絶は重ね合わせではなく離陸中止です：モーター停止、舵面はニュートラル。内部のステートマシンは、`LaunchController`（IDLE → READY → THROWN → CLIMB → DONE）、`TakeoffController`（下記）、`SoaringController`（GLIDE → THERMAL → MOTOR_CLIMB → RETURN）です。
 
-**AUTO_TAKEOFF**（開始からの時間に基づく。armed かつスロットル ≥ 1500 µs のとき）：
+**AUTO_TAKEOFF**（`TakeoffController`。スロットルはプログラムが操作し、スロットルスティックは開始と中止）：
 
-| 時間 | スロットル（プログラム） | ピッチ |
-|---|---|---|
-| 0–1 秒 | 0 → 100 % へなめらかに | 0° |
-| 1–3 秒 | 100 % | +15° |
-| > 3 秒 | 100 % | +10° |
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : スロットル ≥ 1500 µs（いったん下げた後）
+    CHECK --> TAIL_UP : 1 秒静止、角度 = 駐機姿勢（尾輪）
+    CHECK --> ROLL : 同じ（前輪）
+    CHECK --> ABORTED : 校正時と同じように立っていない — 合図 ×3
+    TAIL_UP --> ROLL : ピッチが水平に近い
+    ROLL --> LIFTOFF : 引き起こしの速度 / 2.5 秒
+    LIFTOFF --> CLIMB : 気圧センサーで浮揚 / 上限 + 3 秒
+    CLIMB --> DONE : 30 m / 気圧センサーなしで 15 秒
+    TAIL_UP --> ABORTED : スロットル下げ、通信、IMU、ロール、針路、機首、6 秒
+    ROLL --> ABORTED : スロットル下げ、通信、IMU、ロール、針路、機首、15 秒
+    LIFTOFF --> ABORTED : 同じ
+    ABORTED --> IDLE : スロットルを 1 秒下げる
+```
+
+車輪の上ではエレベーターを直接操作し（尾部を上げる：+1° のピッチに向けて下げ舵 ≤ 250 µs。引き起こし：目標が 2°/s で増え、地面の近くでは駐機姿勢から 3° を引いた値まで）、上昇中は +8° への PID です。針路はラダーと操向輪で保ちます。モーターの始動からは、水平基準をジャイロだけから求めます（`ImuSensor::setAccelCorrection(false)`）。加速度センサーは加速を機首上げと取り違えるからです。
 
 ### 離陸と着陸（フィードバックループ、未接続）
 
@@ -513,7 +528,7 @@ stateDiagram-v2
 
 加えて、IMU には**飛行前チェック**（`getPreflightProblem()`）があります。ジャイロ校正中の静止、|a| ≈ 1g、「上」の向きが保存済みの取り付けと一致していることです。通らなかった場合は `Autopilot::imuReady() == false` となり（滑空を含むすべてのモードで補正がゼロ）、`ArmingManager` はスタビライゼーションを使うモードの ARM を許可しません。
 
-利用側の反応はどれも同じです。**センサーがない（`nullptr`）か、利用できない場合は何も起こらず**、飛行機は MANUAL のように操縦されます。
+利用側の反応はどれも同じです。**センサーがない（`nullptr`）か、利用できない場合は何も起こらず**、飛行機は MANUAL のように操縦されます。例外は滑走路上の自動離陸で、IMU が故障すると離陸中止となり、モーターを止めます。
 
 ### 通信（`IBusReceiver::isSignalLost()`）
 
@@ -526,7 +541,7 @@ CRC の誤ったフレームは破棄され、数えられます（`getBadFrameC
 
 ### 出力
 
-`FlightOutputs::begin()` の直後に `setFailsafe()` が呼ばれ、センサーを読むより前に、舵面はニュートラル、モーターは停止になります。ピンが `-1` の出力（C3 の方向舵）は、単に接続されません。JSON の `attached` は、LEDC チャンネルが割り当てられたかどうかを示します。各ピンの実際のパルスは `printPulseSelfTest()`（コンソールの `p`）で確認します。
+`FlightOutputs::begin()` の直後に `setFailsafe()` が呼ばれ、センサーを読むより前に、舵面はニュートラル、モーターは停止になります。ピンが `-1` の出力（C3 の方向舵）は、単に接続されません。JSON の `attached` は、LEDC チャンネルが割り当てられたかどうかを示します。各ピンの実際のパルスは `printPulseSelfTest()`（コンソールの `p`）で確認します。モーターの合図は、ESC の出力に対する `IServoOutput::stopPulses()` です（ARM なしのときだけ）。パルスがなくなると ESC は信号を失ったと判断し、ニュートラルが戻ると準備完了のメロディを鳴らします。
 
 ---
 

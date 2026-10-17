@@ -81,8 +81,8 @@ Added to the shared fakes for STM32: `TwoWire(sda, scl)`, `setSDA/SCL` and `fake
 | File | What it is |
 |---|---|
 | `ChipEmulators.h` | LSM6DSV, ICM-45686 (with IPREG indirect registers), QMC6309, SPL06-001, BMP581, u-blox NAV-PVT frames — register maps on I2C or SPI, with data from the `World` "world" (angles and rates, altitude, airspeed, heading, coordinates), in the chip's axes with `IMU_ROTATION_CW_DEG` taken into account |
-| `PlaneSim.h` | a ~1.2 kg airplane model: a point mass + rotation in roll/pitch, CL(α) with stall, drag, thrust, wind, thermals, ground |
-| `SimHarness.h` | a closed loop: transmitter → iBUS frame → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → surface deflections → `PlaneSim` → sensors (including a pitot tube on two noisy barometers). A CSV trajectory with `OPENPLANE_SIM_DIR` |
+| `PlaneSim.h` | a ~1.2 kg airplane model: a point mass + rotation in roll/pitch, CL(α) with stall, drag, thrust, wind, thermals, ground; landing gear with a tail wheel or a nose wheel — the airplane rocks on its main wheels, the tail-wheel load, tail strikes and propeller strikes are counted, ground yaw with propeller torque and the steering wheel |
+| `SimHarness.h` | a closed loop: transmitter → iBUS frame → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → surface deflections → `PlaneSim` → sensors (including a pitot tube on two noisy barometers). A CSV trajectory with `OPENPLANE_SIM_DIR`; with `realisticImu` the angles come from the real `AttitudeEstimator` fed with the specific force — it sees the runway acceleration exactly as on board |
 
 `test/native/helpers/TestSupport.h` is what the suites share: `resetWorld()` (called from `setUp()`), the stand-ins `FakeUart`/`FakeServo`/`FakeBoard` and for the sensors (`FakeImu`, `FakeBaro`, `FakeMag`, `FakeGps`), the frame builder `ibusFrame()`, the rigs `I2cRig`/`SpiRig` (a driver on top of the real `Esp32I2CBus`/`Esp32SpiBus` and `*RegisterDevice` with a simulated chip).
 
@@ -94,21 +94,22 @@ The board tests (`test_feedback`, `test_imu_orientation`) are portable: with `AR
 
 | Suite | Tests | What it checks |
 |---|---|---|
-| `native/test_hal` | 17 | `II2CBus` helpers (NACK, short read — the buffer is left untouched), `I2cRegisterDevice`, `SpiRegisterDevice` (read bit, BMP388 dummy byte), `Esp32I2CBus` (5 ms timeout), `Esp32SpiBus` (modes 0–3), `Esp32UartPort` (8N1, pins), `Esp32ServoOutput` (50 Hz/14-bit, pulse limiting, LEDC failure, measurement through the input buffer), `Esp32Board` (buses, UART, channel order, AUX, buzzer) |
+| `native/test_hal` | 18 | `II2CBus` helpers (NACK, short read — the buffer is left untouched), `I2cRegisterDevice`, `SpiRegisterDevice` (read bit, BMP388 dummy byte), `Esp32I2CBus` (5 ms timeout), `Esp32SpiBus` (modes 0–3), `Esp32UartPort` (8N1, pins), `Esp32ServoOutput` (50 Hz/14-bit, pulse limiting, LEDC failure, measurement through the input buffer), `Esp32Board` (buses, UART, channel order, AUX, buzzer); “no pulses” (`stopPulses()`) for the motor signal |
 | `native/test_rc` | 16 | `RcChannelState`, `RcInput`, iBUS parsing: frames arriving in pieces, CRC, 12-bit values, transmitter failsafe, 500 ms timeout (also across a `micros()` overflow), garbage, resynchronization |
-| `native/test_control` | 26 | Flaps (speed, first call, pauses), the mixer (signs, reverse, flaperons), throttle, the ARM state machine and the mode sensor checks, the output table and the pulse self-test, the bidirectional ESC pulse, motor reverse only when disarmed and no ARM after a direction change, the reverse helpers (pulse mirror, channel reversal, motor reversal) |
-| `native/test_autopilot` | 22 | PID (D term from the sensor rate, integral, anti-windup, `dt`), STABILIZE as an angle mode, time-based auto-takeoff, ALT_HOLD with the elevator, gliding on link loss |
+| `native/test_control` | 26 | Flaps (speed, first call, pauses), the mixer (signs, reverse, flaperons), throttle, the ARM state machine and the mode sensor checks, the output table and the pulse self-test, the bidirectional ESC pulse, motor reverse only when disarmed and no ARM after a direction change, the reverse helpers (pulse mirror, channel reversal, motor reversal); AUTO_TAKEOFF with a tail wheel is armed only with a landing-gear calibration |
+| `native/test_autopilot` | 22 | PID (D from the sensor rate, integral, anti-windup, `dt`), STABILIZE as an angle mode, auto takeoff (motor stopped until the start, program throttle, DISARM), ALT_HOLD by the elevator, gliding on link loss, link loss during the climb — the climb continues |
 | `native/test_autopilot_modes` | 31 | All 12 modes and how each reacts to a missing sensor, the binding table and `static_assert`, functions and knobs, navigation (heading, circle, home, geofence), failsafe RTH/gliding, hand launch, soaring, auto-trim (written only on the ground) |
-| `native/test_flight_controller` | 15 | A full `FlightController` tick on the real classes: priorities link loss > ARM > sticks/autopilot > throttle; AUX, `MOTOR_KILL`, buzzer; SwD reverse: only when disarmed, 3 s without ARM, 50% throttle backwards, no autopilot throttle, the motor stops on link loss; the throttle limit knob stretches the allowed range over the whole stick travel |
+| `native/test_flight_controller` | 20 | A full `FlightController` tick on the real classes: priorities link loss > ARM > sticks/autopilot > throttle; AUX, `MOTOR_KILL`, buzzer; SwD reverse: only when disarmed, 3 s without ARM, 50% throttle backwards, no autopilot throttle, the motor stops on link loss; the throttle limit knob stretches the allowed range over the whole stick travel; ground calibration by the SwB gesture and from the console, signals on the outputs (surface nods, ESC pulses dropped only without ARM), ARM refused during calibration and signals, an ARM flick cancels the calibration, a takeoff refusal nods without touching the ESC, the signal plays on without a link |
 | `native/test_imu` | 21 | MPU6050/6500/9250 and ICM-42688: identification, registers, scales, axis rotation and aviation sign conventions, bus errors, gyroscope calibration and the pre-flight check, mounting calibration from three poses, NVS, the orientation filter |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`, BMP388 over I2C and SPI, BME280/BMP280 against the Bosch reference, compasses (heading, hard-iron calibration in NVS), u-blox M10 (CFG-VALSET, NAV-PVT, corrupted frames, timeout), `SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV (16X/32X, alternate address, SPI), ICM-45686 (indirect registers), QMC6309, SPL06-001 (datasheet formulas), BMP581 (DRDY and the fallback path), the pitot tube (zero, filter, density, swapped hoses, stale data, a “flight” with the noise of two barometers) |
 | `native/test_storage` | 16 | `KeyValueStore` (reload, wear — an identical value is not rewritten, overflow without data loss, CRC, power loss during erase, garbage, format version), `KvPreferences` (behaves like the ESP32 NVS) |
 | `native/test_mavlink` | 20 | The codec against reference pymavlink frames (v1, v2, signed), CRC, resynchronization; telemetry: stream rates, HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS, PID parameters (list, read, write, rejection of bad values), mode change from the ground, ARM from the ground — refused, missions — 0, an overfull UART buffer does not block the loop |
-| `native/test_blackbox` | 19 | The black box: format and CRC, the sector ring on a NOR fake (a fresh partition without erasing, garbage is always erased, old flights are erased whole and only to free space, the latest is never touched, wrap-around at the end of the ring, the head after a reboot, power loss, a half-written record caught by CRC), flight recording on the real `FlightController`/`Autopilot`: start on ARM and throttle with pre-recording, stop after DISARM and “sitting on the ground”, link loss does not stop it, recording after a faulty reboot, manual start, events, battery, flash ran out in the air, a flight longer than the partition, download in CRC frames with a speed change, the console menu `k`, no partition — disabled |
+| `native/test_blackbox` | 20 | The black box: format and CRC, the sector ring on a NOR fake (a fresh partition without erasing, garbage is always erased, old flights are erased whole and only to free space, the latest is never touched, wrap-around at the end of the ring, the head after a reboot, power loss, a half-written record caught by CRC), flight recording on the real `FlightController`/`Autopilot`: start on ARM and throttle with pre-recording, stop after DISARM and “sitting on the ground”, link loss does not stop it, recording after a faulty reboot, manual start, events, battery, flash ran out in the air, a flight longer than the partition, download in CRC frames with a speed change, the console menu `k`, no partition — disabled; events of the ground calibration and of the auto-takeoff stages |
 | `native/test_blackbox_scan` | 3 | A sampled ring check at power-up against the full one: 300 random ring histories × 5 probe steps (the head, the numbers and the flight list match, and when the picture does not add up — it falls back to the full scan) and the cost on a 64 MB SD area (≈530 reads instead of 32,000) |
-| `native/test_telemetry` | 28 | `LoopStats`, `LogSettings` (NVS, version), `DebugLogger` (all channels, NAV), `DebugConsole` (menu, hotkeys, bus probing `b`, forbidden during ARM, saving only without ARM), `WebDebugServer` (routes, JSON, mailbox), `OledDisplay` (bytes over I2C, frame, inversion on link loss) |
-| `native/test_sim` | 15 | Closed-loop flights of the whole firmware with the airplane model: recovery from a bank, CRUISE in a crosswind, LOITER, RTH, failsafe RTH/gliding, geofence, auto-takeoff from a runway, hand launch, auto-landing, a thermal, RESCUE from a spiral, speed hold and stall protection, a real pitot tube in the loop, auto-trim of a “crooked” airplane, sensor failures in flight (IMU, barometer, pitot tube, GPS) |
+| `native/test_telemetry` | 30 | `LoopStats`, `LogSettings` (NVS, version), `DebugLogger` (all channels, NAV), `DebugConsole` (menu, hotkeys, bus probing `b`, forbidden during ARM, saving only without ARM), `WebDebugServer` (routes, JSON, mailbox), `OledDisplay` (bytes over I2C, frame, inversion on link loss); console calibration `c` and signal `e`, the takeoff stage in the `AP` log line, the calibration step and takeoff stage on the OLED |
+| `native/test_sim` | 18 | Closed-loop flights of the whole firmware with the airplane model: recovery from a bank, CRUISE in a crosswind, LOITER, RTH, failsafe RTH/gliding, geofence, auto takeoff with a tail wheel (tail-wheel load never above the parking load, neither the propeller nor the tail touches the runway, an honest attitude filter; with and without a barometer), with a nose wheel, a takeoff aborted by the throttle, hand launch, auto landing, a thermal, RESCUE from a spiral, airspeed hold and stall protection, a real pitot tube in the loop, auto-trim of a “crooked” airplane, sensor failures in flight (IMU, barometer, pitot tube, GPS) |
+| `native/test_takeoff` | 23 | Auto takeoff and ground calibration of the airplane: the horizon from the “tail up” pose and the parking attitude (`ImuOrientation`), the attitude filter without the accelerometer on the takeoff roll, the landing-gear calibration in flash of a real `ImuSensorBase` (horizon after powering on standing on the wheels, `o` erases the parking attitude, gyro zero refinement), `GroundCalibration` (two steps, angle checks, cancellation, switch gesture), `SignalPlayer`, `TakeoffController` stages for the tail and nose wheel, the control-surface laws, aborted takeoff (throttle, link, IMU failure, roll, heading, nose, tail, no liftoff), without a barometer — by time, the “gyro only” window |
 | `native/test_feedback_units` | 14 | The feedback modules one by one: speed sources, in the air/on the ground, the RLS estimate, the controller, stall indicators, takeoff/landing aborts |
 | `native/test_app` | 10 | `src/main.cpp` on the ESP32-S3 with the bench kit MPU6500/BMP581/QMC5883P/OLED: `loop()` period, transmitter → servos, ARM, modes, link loss, console, dashboard, display, black box (a task on core 0, recording on throttle, a flight after DISARM, `bb list`) |
 | `native/test_app_lsm6dsv_pitot` | 9 | `src/main.cpp` on the ESP32-S3 with the flight kit: LSM6DSV + QMC6309 + SPL06 + BMP581 in the pitot tube + GPS — identification of all chips, pitot zero and speed, altitude, home from GPS, STABILIZE by the angles from the chip, RTH to home, bus probing, dashboard; SwD (reverse) has no effect in flight until DISARM |
@@ -117,10 +118,10 @@ The board tests (`test_feedback`, `test_imu_orientation`) are portable: with `AR
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743 with the ICM-45686 and BMP581 **over SPI** + QMC6309: corrupted flash at power-up, ALT_HOLD from the GCS holds altitude, link loss → RTH, visible in MAVLink; rewriting a damaged image |
 | `native_stm32/test_blackbox_sd` | 29 | The black box on an SD card: FAT32 (with and without MBR, a directory spanning two clusters, noise entries, a foreign/fragmented/empty volume), `SdFileRegion` (partial blocks, cache, erase, boundaries, failures), the real `Stm32SdCard` driver on top of a fake `HAL_SD` (4 bits, fallback speeds, retry, busy card, unaligned buffers), the ring on the card (reboot, power loss, scan cost), the “ring is empty” marker, flight recording on a `FlightController`, a faulty reboot detected via `RCC->RSR`, the battery ADC, card errors in flight, a slow card, download through the console, the `D` key |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | `src/stm32/main.cpp` with a card: boot finds the card and the file, the `bbox` task writes the flight, the loop period does not stretch, `bb list` |
-| `native_stm32/test_app_stm32_no_sd` | 2 | `src/stm32/main.cpp` without a card: the black box is disabled and explains why, the airplane flies, the `k` menu does not break |
+| `native_stm32/test_app_stm32_no_sd` | 3 | `src/stm32/main.cpp` without a card: the black box is disabled and explains why, the airplane flies, the `k` menu does not break; output self-test on PD14 (workaround for the core’s `pulseIn()` bug), the `e` motor signal |
 | `test_feedback` | 10 | A closed-loop airplane simulation with a feedback loop (on the PC and on the board) |
 | `test_imu_orientation` | 5 | IMU mounting calibration on 300 random mountings (on the PC and on the board) |
-| **Total** | **395** | 348 in `native` + 47 in `native-stm32` (plus 9 only on the board — `test_blackbox_sd`) |
+| **Total** | **431** | 383 in `native` + 48 in `native-stm32` (plus 9 on the board only — `test_blackbox_sd`) |
 
 ### Tests on the STM32 board
 
@@ -167,18 +168,19 @@ It is computed by `gcovr` over `include/` and `src/` (everything that goes into 
 
 | Layer | Lines | Branches |
 |---|---|---|
-| `autopilot` | 920/943 (97.6%) | 645/731 (88.2%) |
-| `autopilot/feedback` | 683/702 (97.3%) | 501/570 (87.9%) |
-| `control` | 252/256 (98.4%) | 171/189 (90.5%) |
-| `hal` | 98/102 (96.1%) | 26/26 (100%) |
-| `hal/esp32` | 101/102 (99.0%) | 21/22 (95.5%) |
-| `hal/stm32` | 149/158 (94.3%) | 35/52 (67.3%) |
-| `rc` | 92/92 (100%) | 41/42 (97.6%) |
-| `sensors` (all) | 1444/1446 (99.9%) | 716/835 (85.7%) |
-| `storage` | 220/220 (100%) | 158/178 (88.8%) |
-| `telemetry` | 1413/1440 (98.1%) | 1123/1269 (88.5%) |
-| `src` (`main.cpp`, `stm32/main.cpp`) | 118/123 (95.9%) | 20/29 (69.0%) |
-| **Total** | **5490/5584 (98.3%)** | **3457/3943 (87.7%)**; functions 877/902 (97.2%) |
+| `autopilot` | 1328/1395 (95.2%) | 921/1039 (88.6%) |
+| `autopilot/feedback` | 682/713 (95.7%) | 502/571 (87.9%) |
+| `config` | 2/2 (100%) | 2/2 (100%) |
+| `control` | 561/584 (96.1%) | 438/469 (93.4%) |
+| `hal` | 238/301 (79.1%) | 130/168 (77.4%) |
+| `hal/esp32` | 117/148 (79.1%) | 32/38 (84.2%) |
+| `hal/stm32` | 241/288 (83.7%) | 115/144 (79.9%) |
+| `rc` | 93/100 (93.0%) | 44/46 (95.7%) |
+| `sensors` (all) | 1533/1625 (94.3%) | 835/994 (84.0%) |
+| `storage` | 350/364 (96.2%) | 275/334 (82.3%) |
+| `telemetry` | 2775/2920 (95.0%) | 2082/2464 (84.5%) |
+| `src` (`main.cpp`, `stm32/main.cpp`) | 145/150 (96.7%) | 26/32 (81.2%) |
+| **Total** | **8065/8590 (93.9%)** | **5402/6301 (85.7%)**; functions 1204/1245 (96.7%) |
 
 What remains uncovered, and why:
 
@@ -186,7 +188,8 @@ What remains uncovered, and why:
 - **Board-dependent code:** an output without a pin (`PIN_RUDDER = -1` occurs only on the C3), a GPS without a TX pin (C3) — the native tests exercise the pinouts of the S3, the 38-pin and the STM32, but not the C3 (the C3 is checked by the build matrix).
 - **STM32:** the error branches of the core (no timer on the pin, the timer pool exhausted), the message `FreeRTOS не запустился` (“FreeRTOS did not start”) — on the PC `vTaskStartScheduler()` always returns.
 - **Defensive branches** that cannot be reached through the public API: `default`/`Count` in a `switch` over enumerations, `return "?"`.
-- Files with no executable lines (`Config.h`, `Channels.h`, `FeedbackConfig.h`, the structs `ControlCommand`/`FlightOutputState`/`FlightSnapshot`/`FeedbackOutput`/`PhaseTargets`, the `SensorSelection.h` macros, the dashboard HTML) do not appear in the report — they are compiled into the tests, but gcov has nothing to count in them.
+- **Destructors and default implementations in interfaces** (`IBoard`, `IUartPort`, `ImuSensor` and others) — every implementation overrides them, and with `-fkeep-inline-functions` gcov counts these lines too.
+- Files with no executable lines (`Channels.h`, `FeedbackConfig.h`, the structs `ControlCommand`/`FlightOutputState`/`FlightSnapshot`/`FeedbackOutput`/`PhaseTargets`, the `SensorSelection.h` macros, the dashboard HTML) do not appear in the report — they are compiled into the tests, but gcov has nothing to count in them.
 
 ---
 

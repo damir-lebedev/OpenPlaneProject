@@ -62,8 +62,8 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (غير موصولة)<br/>FeedbackSupervisor والوحدات"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -402,22 +402,23 @@ sequenceDiagram
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(الهدف بحسب الوظائف)
     FC->>AP: update(armed, linkLost, خانق الطيار (0 في العكس), العصي)
     Note over AP: الحساسات تُقرأ دائمًا،<br/>والملاحة، وfailsafe، والسياج الجغرافي،<br/>والوضع، والتنسيق، والضبط التلقائي
-    FC->>OUT: setBuzzer(Beeper)
+    Note over FC: المعايرة على الأرض: حركة المفتاح (دون ARM)،<br/>خطوة GroundCalibration، والتنبيهات → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper أو ضوء التنبيه)
     alt فُقد الاتصال
         alt armed وfailsafe الطيار الآلي (RTH / GLIDE)
             FC->>MX: mix(أمر الطيار الآلي)
             FC->>OUT: write(الأسطح، وخانق الطيار الآلي (0 في العكس)، وAUX كما كانت)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() (أثناء التنبيه — الوضع المحايد مع الإيماءة وتوقف ESC)
         end
         Note over FC: return — لا يُقرأ ARM ولا المفاتيح
     else الاتصال موجود
-        FC->>AM: update(rc, MR.armBlockReason) — مفتاح ARM
+        FC->>AM: update(rc, السبب) — مفتاح ARM (يُرفض أثناء المعايرة أو التنبيه)
         FC->>MR: update(MOTOR_REVERSE, armed) — الاتجاه دون ARM فقط
         FC->>AP: getCommand() — الأمر النهائي للأسطح
         FC->>MX: mix(command) → PWM مع العكس
         FC->>AP: applyThrottle(خانق الطيار) — إلى الأمام فقط
-        Note over FC: إلى الخلف — خانق الطيار ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed أو MOTOR_KILL ← throttle = PWM_MIN (آخرًا)
+        Note over FC: إلى الخلف — خانق الطيار ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed أو MOTOR_KILL ← throttle = PWM_MIN (آخرًا)<br/>إيماءة التنبيه تُضاف إلى الأسطح، ودون ARM — توقف نبضات ESC
         FC->>OUT: write(output + AUX1 الحمولة، AUX2 الكاميرا)
         Note over OUT: ESC: الخانق + الاتجاه ← نبضة (EscSignal)،<br/>متحكم ثنائي الاتجاه: 1500 = توقف
     end
@@ -497,17 +498,29 @@ stateDiagram-v2
     GLIDE --> FRTH : ظهر GPS
 ```
 
-</div>
+الـ failsafe ليس `AutopilotMode` مستقلًّا بل علم فوق الوضع الحالي؛ والعودة التي بدأت لا تتحول إلى انسياب بسبب فقدان قصير لـ GPS؛ وبعد عودة الاتصال يستمر الوضع الذي حدّدته المفاتيح (الإطلاق باليد — من جديد فقط؛ والإقلاع الآلي على المدرج — من جديد فقط، وأثناء الصعود يستمر). وفي AUTO_TAKEOFF على المدرج لا يكون فقدان الاتصال طبقة فوقية بل إلغاءً للإقلاع: المحرك مطفأ، والأسطح في الوضع المحايد. آلات الحالات الداخلية: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE) و`TakeoffController` (أدناه) و`SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
 
-الـ failsafe ليس `AutopilotMode` مستقلًّا بل علم فوق الوضع الحالي؛ والعودة التي بدأت لا تتحول إلى انسياب بسبب فقدان قصير لـ GPS؛ وبعد عودة الاتصال يستمر الوضع الذي حدّدته المفاتيح (الإقلاع الآلي والإطلاق باليد — من جديد فقط). آلات الحالات الداخلية: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE) و`SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
+**‏AUTO_TAKEOFF** (`TakeoffController`؛ الخانق يقوده البرنامج، وعصا الخانق تبدأ وتُلغي):
 
-**‏AUTO_TAKEOFF** (بحسب الزمن منذ البدء، عند armed والخانق ≥ 1500 µs):
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : الخانق ≥ 1500 µs (بعد أن كان في الأسفل)
+    CHECK --> TAIL_UP : سكون 1 s، والزوايا = زاوية الوقوف (عجلة الذيل)
+    CHECK --> ROLL : كذلك (العجلة الأمامية)
+    CHECK --> ABORTED : لا تقف كما عند المعايرة — تنبيه ×3
+    TAIL_UP --> ROLL : الميل قريب من الأفق
+    ROLL --> LIFTOFF : سرعة رفع الأنف / 2.5 s
+    LIFTOFF --> CLIMB : مغادرة الأرض بمقياس الضغط / الحد + 3 s
+    CLIMB --> DONE : 30 m / 15 s دون مقياس الضغط
+    TAIL_UP --> ABORTED : الخانق إلى الأسفل، الاتصال، IMU، الدوران، المسار، الأنف، 6 s
+    ROLL --> ABORTED : الخانق إلى الأسفل، الاتصال، IMU، الدوران، المسار، الأنف، 15 s
+    LIFTOFF --> ABORTED : كذلك
+    ABORTED --> IDLE : الخانق في الأسفل 1 s
+```
 
-| الزمن | الخانق (برنامجي) | الميل |
-|---|---|---|
-| 0–1 s | تدريجيًّا من 0 إلى 100 % | 0° |
-| 1–3 s | 100 % | +15° |
-| > 3 s | 100 % | +10° |
+تُقاد دفة الارتفاع على العجلات مباشرة (رفع الذيل: إلى الأسفل ≤ 250 µs نحو ميل +1°؛ ورفع الأنف: يزداد الهدف بمعدل 2°/s، وقرب الأرض لا يتجاوز زاوية الوقوف ناقص 3°)، وفي الصعود — PID نحو +8°؛ ويحافظ على المسار دفة الاتجاه والعجلة. ومنذ تشغيل المحرك يأتي الأفق من الجيروسكوب وحده (`ImuSensor::setAccelCorrection(false)`): فمقياس التسارع كان سيظن التسارع أنفًا مرفوعًا.
 
 ### الإقلاع والهبوط (حلقة التغذية الراجعة، غير موصولة)
 
@@ -562,7 +575,7 @@ stateDiagram-v2
 
 وإضافةً إلى ذلك فلـ IMU **فحص قبل الإقلاع** (`getPreflightProblem()`): السكون أثناء معايرة الجيروسكوب، و|a| ≈ 1g، وتطابق اتجاه «الأعلى» مع التركيب المحفوظ. وإن لم يُجتز الفحص — `Autopilot::imuReady() == false` (تصحيحات صفرية في جميع الأوضاع، بما فيها الانسياب)، ولا يُسلِّح `ArmingManager` الأوضاع ذات التثبيت.
 
-وتتفاعل الجهات المستهلِكة بالطريقة نفسها: **لا حساس (`nullptr`) أو حساس غير متاح — لا أثر**، وتُقاد الطائرة كما في MANUAL.
+وتتفاعل الجهات المستهلِكة بالطريقة نفسها: **لا حساس (`nullptr`) أو حساس غير متاح — لا أثر**، وتُقاد الطائرة كما في MANUAL. والاستثناء هو الإقلاع الآلي على المدرج: فعطل IMU هناك إلغاء للإقلاع وإيقاف للمحرك.
 
 ### الاتصال (`IBusReceiver::isSignalLost()`)
 
@@ -575,7 +588,7 @@ stateDiagram-v2
 
 ### المخارج
 
-يتبع `FlightOutputs::begin()` فورًا `setFailsafe()` — أسطح التحكم إلى الوضع المحايد والمحرك مطفأ حتى قبل قراءة الحساسات. أما المخرج ذو الطرف `-1` (دفة الاتجاه على C3) فلا يُوصَل ببساطة؛ ويبيّن `attached` في JSON ما إذا خُصِّصت له قناة LEDC. وتفحص `printPulseSelfTest()` النبضة الفعلية على كل طرف (أمر الكونسول `p`).
+يتبع `FlightOutputs::begin()` فورًا `setFailsafe()` — أسطح التحكم إلى الوضع المحايد والمحرك مطفأ حتى قبل قراءة الحساسات. أما المخرج ذو الطرف `-1` (دفة الاتجاه على C3) فلا يُوصَل ببساطة؛ ويبيّن `attached` في JSON ما إذا خُصِّصت له قناة LEDC. وتفحص `printPulseSelfTest()` النبضة الفعلية على كل طرف (أمر الكونسول `p`). وتنبيه المحرك هو `IServoOutput::stopPulses()` على مخرج ESC (دون ARM فقط): دون نبضات يظن ESC أن الإشارة فُقدت، وعند عودة الوضع المحايد يعزف لحن الجاهزية.
 
 ---
 

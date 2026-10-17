@@ -127,6 +127,7 @@ UART в форме `HardwareSerial`, но `begin()` берёт только ск
 | `writeMicroseconds(us)` | Ширина импульса, мкс (ограничивается диапазоном `attach`) |
 | `bool isAttached() const` | Результат `attach()` |
 | `virtual int32_t measurePulseUs()` | Диагностика: реальная ширина импульса на пине или `-1`. Реализация по умолчанию возвращает `-1` |
+| `virtual void stopPulses()` | Убрать импульсы (на пине ноль) до следующей записи — сигнал мотором: регулятор решает, что сигнал потерян, и, когда импульсы вернутся, играет мелодию готовности. По умолчанию ничего (мотор тогда молчит) |
 
 ---
 
@@ -319,6 +320,7 @@ PWM напрямую через LEDC (`ledcSetup/ledcAttachPin/ledcWrite` Arduin
 | `attach(minUs, maxUs)` | Запоминает диапазон; пин < 0 → `false`; иначе `ledcSetup() != 0` → `ledcAttachPin()` |
 | `writeMicroseconds(us)` | Не attached — ничего; иначе `constrain(us, min, max) * MAX_DUTY / PERIOD_US` → `ledcWrite` |
 | `measurePulseUs()` | Включает входной буфер того же GPIO (`PIN_INPUT_ENABLE`, выход не трогается) и меряет `pulseIn(pin, HIGH, 30 мс)`; нет импульса → `-1` |
+| `stopPulses()` | Скважность 0 (`ledcWrite(channel, 0)`) — импульса нет |
 
 Каналы 2n и 2n+1 делят таймер LEDC — у всех выходов 50 Гц, конфликта нет.
 
@@ -424,7 +426,8 @@ STM32duino). На плате DevEBox **без датчиков** провере�
 | `Stm32ServoOutput(int16_t pin)` | Пин `< 0` — выход не разведён |
 | `attach(minUs, maxUs)` | Таймер и канал — из `PinMap_TIM` по пину (`pinmap_peripheral`, `STM_PIN_CHANNEL`), как у `analogWrite()`. Нет таймера на пине или пул исчерпан → `false`. Иначе `setMode(PWM1)`, сравнение 0 (импульса нет до первой записи), `resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`. Регистр сравнения с предзагрузкой — значение вступает со следующего периода |
-| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 мс)` без перенастройки пина: на STM32 регистр IDR видит уровень и в режиме альтернативной функции |
+| `stopPulses()` | Сравнение 0 — импульса нет, как сразу после `attach()` |
+| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 мс)` без перенастройки пина: на STM32 регистр IDR видит уровень и в режиме альтернативной функции. `pulseIn()` ядра на пинах с номером бита 8+ (PD14, PD15, PE9) меряет **низкий** уровень — маска уровня у него `uint8_t`; импульс серво всегда короче половины периода, поэтому намеренное дольше — это пауза, импульс = `PERIOD_US` минус она |
 | `static acquireTimer(TIM_TypeDef*)` | Общий пул: **один `HardwareTimer` на TIMx**. Второй объект на тот же таймер перезаписал бы обработчик ядра (`HardwareTimer_Handle[index]`). Период задаётся при первом выходе на таймере; `setOverflow(MICROSEC_FORMAT)` подбирает делитель — шаг ~0.3 мкс при тактовой таймера 240 МГц |
 
 ## `Stm32FlashStorage`

@@ -58,8 +58,8 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK（未接入）<br/>FeedbackSupervisor 及各模块"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -374,22 +374,23 @@ sequenceDiagram
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(按功能得到的目标)
     FC->>AP: update(armed, linkLost, 飞手油门（反转时为 0）, 摇杆)
     Note over AP: 传感器始终被读取,<br/>导航、failsafe、地理围栏,<br/>模式、协调、自动配平
-    FC->>OUT: setBuzzer(Beeper)
+    Note over FC: 地面校准：开关手势（未解锁时），<br/>执行一步 GroundCalibration，提示 → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper 或提示灯)
     alt 信号丢失
         alt 已 ARM 且自动驾驶仪处于 failsafe（RTH / GLIDE）
             FC->>MX: mix(自动驾驶仪的指令)
             FC->>OUT: write(舵面、自动驾驶仪的油门（反转时为 0）、AUX 保持不变)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() （提示进行中——回中并点头、暂停电调）
         end
         Note over FC: return — 不读取 ARM 和拨杆
     else 有信号
-        FC->>AM: update(rc, MR.armBlockReason) — ARM 拨杆
+        FC->>AM: update(rc, 原因)——ARM 开关（校准或提示进行中时拒绝）
         FC->>MR: update(MOTOR_REVERSE, armed) — 方向只在未解锁时改变
         FC->>AP: getCommand() — 最终的舵面指令
         FC->>MX: mix(command) → 带反向的 PWM
         FC->>AP: applyThrottle(飞手油门) — 只在正转时
-        Note over FC: 反转——飞手油门 ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed 或 MOTOR_KILL → throttle = PWM_MIN（最后执行）
+        Note over FC: 反转——飞手油门 ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed 或 MOTOR_KILL → throttle = PWM_MIN（最后执行）<br/>提示的点头加到舵面上，未解锁时暂停电调脉冲
         FC->>OUT: write(output + AUX1 载荷、AUX2 相机)
         Note over OUT: ESC：油门 + 方向 → 脉冲（EscSignal），<br/>双向电调：1500 = 停止
     end
@@ -458,15 +459,29 @@ stateDiagram-v2
     GLIDE --> FRTH : GPS 出现
 ```
 
-failsafe 不是单独的 `AutopilotMode`，而是叠加在当前模式之上的标志；已经开始的返航不会因为 GPS 短暂丢失而转入滑翔；信号恢复后继续执行拨杆选择的模式（自动起飞和手抛起飞——只能重新开始）。内部状态机：`LaunchController`（IDLE → READY → THROWN → CLIMB → DONE）和 `SoaringController`（GLIDE → THERMAL → MOTOR_CLIMB → RETURN）。
+failsafe 不是单独的 `AutopilotMode`，而是叠加在当前模式之上的标志；已经开始的返航不会因为 GPS 短暂丢失而转入滑翔；信号恢复后继续执行拨杆选择的模式（手抛起飞——只能重新开始；跑道上的自动起飞——只能重新开始，爬升中则继续）。在跑道上的 AUTO_TAKEOFF 中，信号丢失不是叠加，而是中止起飞：电机关闭，舵面回中。内部状态机：`LaunchController`（IDLE → READY → THROWN → CLIMB → DONE）、`TakeoffController`（见下）和 `SoaringController`（GLIDE → THERMAL → MOTOR_CLIMB → RETURN）。
 
-**AUTO_TAKEOFF**（从开始计时，在 armed 且油门 ≥ 1500 µs 时）：
+**AUTO_TAKEOFF**（`TakeoffController`；油门由程序控制，油门杆负责开始和中止）：
 
-| 时间 | 油门（程序设定） | 俯仰 |
-|---|---|---|
-| 0–1 s | 从 0 平滑增加到 100 % | 0° |
-| 1–3 s | 100 % | +15° |
-| > 3 s | 100 % | +10° |
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : 油门 ≥ 1500 µs（之前在最低）
+    CHECK --> TAIL_UP : 静止 1 s，角度 = 停机姿态（尾轮）
+    CHECK --> ROLL : 同上（前轮）
+    CHECK --> ABORTED : 停放与校准时不同——提示 ×3
+    TAIL_UP --> ROLL : 俯仰接近水平
+    ROLL --> LIFTOFF : 抬头速度 / 2.5 s
+    LIFTOFF --> CLIMB : 按气压计离地 / 上限 + 3 s
+    CLIMB --> DONE : 30 m / 无气压计 15 s
+    TAIL_UP --> ABORTED : 油门拉下、信号、IMU、横滚、航向、机头、6 s
+    ROLL --> ABORTED : 油门拉下、信号、IMU、横滚、航向、机头、15 s
+    LIFTOFF --> ABORTED : 同上
+    ABORTED --> IDLE : 油门在最低 1 s
+```
+
+在轮子上直接控制升降舵（抬尾：下压 ≤ 250 µs，趋向 +1° 俯仰；抬头：目标以 2°/s 增加，贴近地面时最多为停机姿态减 3°），爬升中——PID 控制到 +8°；航向由方向舵和转向轮保持。从电机启动开始，水平基准只来自陀螺仪（`ImuSensor::setAccelCorrection(false)`）：加速度计会把加速度当成机头抬起。
 
 ### 起飞与降落（反馈回路，未接入）
 
@@ -513,7 +528,7 @@ stateDiagram-v2
 
 此外，IMU 还有**飞行前检查**（`getPreflightProblem()`）：校准陀螺仪时保持静止、|a| ≈ 1g、“上”方向与保存的安装姿态一致。检查未通过时——`Autopilot::imuReady() == false`（所有模式下修正量都为零，包括滑翔），并且 `ArmingManager` 不会为带增稳的模式执行 ARM。
 
-各使用方的反应一致：**没有传感器（`nullptr`）或传感器不可用——不产生任何影响**，飞机按 MANUAL 方式操纵。
+各使用方的反应一致：**没有传感器（`nullptr`）或传感器不可用——不产生任何影响**，飞机按 MANUAL 方式操纵。例外是跑道上的自动起飞：IMU 故障即中止起飞，电机停转。
 
 ### 通信（`IBusReceiver::isSignalLost()`）
 
@@ -526,7 +541,7 @@ CRC 错误的帧会被丢弃并计数（`getBadFrameCount()`）。
 
 ### 输出
 
-`FlightOutputs::begin()` 之后立即执行 `setFailsafe()`——舵面回中、电机关闭，这发生在读取传感器之前。引脚为 `-1` 的输出（C3 上的方向舵）直接不接入；JSON 中的 `attached` 表示是否分配了 LEDC 通道。每个引脚上的实际脉冲由 `printPulseSelfTest()` 检查（控制台命令 `p`）。
+`FlightOutputs::begin()` 之后立即执行 `setFailsafe()`——舵面回中、电机关闭，这发生在读取传感器之前。引脚为 `-1` 的输出（C3 上的方向舵）直接不接入；JSON 中的 `attached` 表示是否分配了 LEDC 通道。每个引脚上的实际脉冲由 `printPulseSelfTest()` 检查（控制台命令 `p`）。电机提示就是在电调输出上调用 `IServoOutput::stopPulses()`（仅在未解锁时）：没有脉冲时电调以为信号丢了，回中信号恢复时播放就绪提示音。
 
 ---
 

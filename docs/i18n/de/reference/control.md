@@ -42,6 +42,7 @@ Neutralstellung und Gas `PWM_MIN`.
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
 | `bool motorReverse` | `false` – der Motor läuft vorwärts |
+| `bool escPulsesOff` | `false`; `true` – überhaupt keine Impulse zum ESC (Motorsignal, nur ohne ARM) |
 | `aux1` | `PAYLOAD_CLOSED_US` — der Nutzlastabwurf ist geschlossen |
 | `aux2` | `PWM_CENTER` — die Kamera |
 
@@ -193,10 +194,10 @@ Status und der Selbsttest laufen in einer Schleife darüber.
 | `explicit FlightOutputs(IBoard& board)` | |
 | `bool begin()` | `attach(PWM_MIN, PWM_MAX)` für jeden Ausgang, Ausgabe des Status und des ESC-Typs; `true`, wenn alle **Pflicht**ausgänge einen Kanal bekommen haben |
 | `bool isAttached(uint8_t ch) const` | Der Ausgang ist angeschlossen (ein Index außerhalb des Bereichs → `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Der Impuls am Pin des Ausgangs: das Feld laut Tabelle, beim ESC – über `EscSignal::pulseUs(throttle, motorReverse)` |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Impuls am Ausgangspin: das Feld laut Tabelle, beim ESC über `EscSignal::pulseUs(throttle, motorReverse)`, mit `escPulsesOff` – 0 |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | Der gemessene Impuls gegenüber dem erwarteten an jedem herausgeführten Pin; „OK“ bei einer Abweichung ≤ 15 µs |
-| `void write(const FlightOutputState&)` | Alle Ausgänge schreiben und den Zustand merken |
+| `void write(const FlightOutputState&)` | Alle Ausgänge schreiben und den Zustand merken; ESC mit `escPulsesOff` – `IServoOutput::stopPulses()` |
 | `void setFailsafe()` | Ruder neutral (`FAILSAFE_*`), Gas `FAILSAFE_THROTTLE` (1500 am Pin eines bidirektionalen ESC); AUX wie zuvor (die Last wird bei Verbindungsverlust nicht abgeworfen) |
 | `void setBuzzer(bool on)` | der Summer der Platine (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | Der zuletzt geschriebene Zustand |
@@ -210,7 +211,7 @@ LEDC-Kanal in `Esp32Board`).
 ## `FlightController`
 
 **Datei:** `control/FlightController.h` · **Schicht:** COORDINATION ·
-**Abhängig von:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
+**Abhängig von:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 Der einzige Koordinator der Regelschleife: er parst selbst nicht den UART,
 fasst das PWM nicht an und berechnet den Mischer nicht — er ruft nur die
@@ -232,6 +233,9 @@ anderen in der richtigen Reihenfolge auf. Ein ausführliches Diagramm steht in
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | Die Schalter und Drehregler dieses Zyklus |
 | `bool isLostModelBeeping() const` | Der „Ich bin hier“-Summer läuft |
 | `const MotorReverse& getMotorReverse() const` | Motorrichtung und anstehende Umkehr |
+| `void toggleGroundCalibration()` | Konsole `c`: Bodenkalibrierung des Flugzeugs – starten (nur ohne ARM), läuft sie – abbrechen |
+| `void playSignal(uint8_t count)` | Konsole `e`: ein Signal (ohne ARM – auch per Motor) |
+| `const GroundCalibration& getCalibration() const`, `const SignalPlayer& getSignals() const` | Für OLED, Log und Blackbox |
 
 Die Reihenfolge von `update()`:
 
@@ -243,24 +247,19 @@ Die Reihenfolge von `update()`:
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → sanft, bei Verbindungsverlust — 0;
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)` — **immer**;
    in der Umkehr wird statt `pilotThrottle` `PWM_MIN` übergeben (für den Autopiloten ist der Motor aus);
-6. der Summer: `Beeper::update(BEEPER, armed, failsafe, now)`;
-7. Verbindung verloren → `applyLinkLoss()` und Verlassen des Zyklus;
-8. `arming.update(rc, false, reverse.armBlockReason(now))`, danach
-   `reverse.update(MOTOR_REVERSE, armed, now)` – bei DISARM wechselt die Richtung im
-   selben Takt;
-9. `command = autopilot->getCommand()` (oder die Knüppel ohne Autopilot), die Klappen — ihre eigenen;
+6. Kalibrierung: ein ARM-Umlegen währenddessen bricht sie ab; ohne ARM und mit Verbindung – die Geste `CAL_SWITCH`; ein Schritt `GroundCalibration::update()`; ihre Signale und das Signal der Autostart-Ablehnung gehen an `SignalPlayer`; der Summer: `Beeper::update(BEEPER, armed, failsafe, now)` oder das Signallicht;
+7. Verbindung verloren → `applyLinkLoss()` und Verlassen des Takts;
+8. `arming.update(rc, false, Grund)` – ARM ist gesperrt, solange eine Kalibrierung läuft oder ein Signal spielt (und in dem Takt, in dem ein ARM-Umlegen eine Kalibrierung abgebrochen hat), sonst `reverse.armBlockReason(now)`; dann `reverse.update(MOTOR_REVERSE, armed, now)` – bei DISARM wechselt die Richtung im selben Takt;
+9. `command = autopilot->getCommand()` (oder die Knüppel ohne Autopilot), die Klappen – eigene; das Nicken des Signals geht auf Höhen- und Seitenruder;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     vorwärts – `output.throttle = autopilot->applyThrottle(pilotThrottle)` mit der
     Grenze `THROTTLE_LIMIT_PCT` × Drehregler `Knob::THROTTLE_LIMIT`, rückwärts – das Gas des Piloten mit der Grenze
     `min(REVERSE_THROTTLE_LIMIT_PCT, Vorwärtsgrenze)`; der erlaubte Bereich wird über den ganzen Knüppelweg gestreckt;
-11. nicht gearmt oder `MOTOR_KILL` → `throttle = PWM_MIN` (als Letztes);
+11. nicht scharf oder `MOTOR_KILL` → `throttle = PWM_MIN` (zuletzt); ohne ARM setzt das Motorsignal `escPulsesOff`;
 12. AUX1 — die Nutzlast (`PAYLOAD_DROP`), AUX2 — die Kamera (`Knob::CAMERA_TILT`, `CAMERA_STAB` zieht das Nicken ab); `AUX1_REVERSED`/`AUX2_REVERSED` spiegeln den Impuls.
 13. `outputs.write(output)`.
 
-`applyLinkLoss()`: ist der Autopilot im Failsafe (gearmt: RTH oder Gleiten) —
-folgen Ruder und Gas dem Kommando des Autopiloten (die Klappen fahren sanft
-ein, `MOTOR_KILL` schaltet den Motor weiterhin ab, AUX wie zuvor); sonst
-`outputs.setFailsafe()`. In der Umkehr steht der Motor immer.
+`applyLinkLoss()`: Ist der Autopilot im Failsafe (scharf: RTH oder Gleiten) – Ruder und Gas nach dem Befehl des Autopiloten (die Klappen fahren sanft ein, `MOTOR_KILL` und Umkehr stoppen den Motor, AUX wie zuvor); sonst `outputs.setFailsafe()`, und solange ein Signal spielt – Neutral mit Nicken und ESC-Impulspause (der Sender wurde während der Kalibrierung weggelegt).
 
 ---
 
@@ -272,3 +271,41 @@ ein, `MOTOR_KILL` schaltet den Motor weiterhin ab, AUX wie zuvor); sonst
 |---|---|
 | `bool update(bool requested, bool armed, bool linkLost, uint32_t nowMs)` | der Zustand des Summers: 2 Hz, wenn `Feature::BEEPER` oder „Modell verloren“ (nicht gearmt, länger als `LOST_MODEL_BEEP_DELAY_MS` keine Verbindung) |
 | `bool isLostModel() const` | der Modus „suchen Sie mich im Gras“ |
+
+---
+
+## `GroundCalibration`
+
+**Datei:** `control/GroundCalibration.h` · **Hängt ab von:** `Config`, `RcChannelState`, `ImuSensor`, `ImuOrientation`
+
+Bodenkalibrierung des Flugzeugs: Schritt 1 – Heck hoch, Rumpf waagerecht (der Horizont, `ImuOrientation::withLevel()`), Schritt 2 – auf den Rädern (die Standlage). Ein Schritt gilt von selbst nach `CAL_STILL_MS` Stillstand; Schritt 2 wartet, bis das Flugzeug umgestellt wird, oder `CAL_PARK_WAIT_MS`. Gespeichert wird nur als Ganzes (`ImuSensor::setGroundCalibration()`), nach der Prüfung der Standlage gegen `LANDING_GEAR`. Blockiert den Takt nicht.
+
+`Stage`: `IDLE`, `LEVEL`, `PARK`, `DONE`, `FAILED`.
+
+| Methode | Beschreibung |
+|---|---|
+| `bool watchSwitch(const RcChannelState&, uint32_t nowMs)` | die Geste: `CAL_SWITCH` `CAL_SWITCH_FLIPS`-mal runter und hoch innerhalb von `CAL_SWITCH_WINDOW_MS`, Gas unten; der erste Blick und Gas nicht unten beginnen die Zählung neu |
+| `void forgetSwitch()` | ARM oder keine Verbindung – Zählung von vorn |
+| `bool start(const ImuSensor*, uint32_t nowMs, const char* source)` | starten (Signal 1); keine IMU oder nicht unterstützt – Fehler (Signal 3) |
+| `void cancel(const char* why)` | Abbruch ohne Signal |
+| `void update(ImuSensor*, bool armed, bool signalBusy, uint32_t nowMs)` | ein Schritt: ARM bricht ab; während ein Signal spielt, wird nichts übernommen; Zeitüberschreitung `CAL_STEP_TIMEOUT_MS` – Fehler |
+| `isActive()`, `getStage()`, `getStageSinceMs()`, `getFailure()`, `getParkPitch()`, `getParkRoll()` | Zustand und Ergebnis |
+| `uint8_t takeSignal()` | wie viele Signale zu spielen sind: 1 – gestartet / Schritt 1, 2 – fertig, 3 – Fehler (wird einmal abgeholt) |
+| `static const char* stageShort(Stage)` | `CAL1`, `CAL2`, `CALOK`, `CALER` – für das OLED |
+
+---
+
+## `SignalPlayer`
+
+**Datei:** `control/SignalPlayer.h` · **Hängt ab von:** `Config`
+
+Signale an den Piloten – eine Funktion der Zeit seit Beginn der Serie. Ein Signal: Höhen- und Seitenruder nicken (`SIGNAL_NOD_US` hoch, dann runter, je `SIGNAL_NOD_MS`), ohne ARM pausieren die ESC-Impulse `SIGNAL_ESC_PAUSE_MS` lang (danach spielt der Regler seine Bereitschaftsmelodie), das Summerlicht leuchtet während des Nickens; das nächste Signal folgt nach `SIGNAL_PERIOD_MS`.
+
+| Methode | Beschreibung |
+|---|---|
+| `void play(uint8_t count, uint32_t nowMs, bool motor)` | eine Serie; `motor` – ob der ESC angefasst werden darf (und `SIGNAL_MOTOR`) |
+| `void stop()` | Ruhe |
+| `bool isBusy(uint32_t nowMs) const`, `uint8_t getCount(uint32_t nowMs) const` | eine Serie läuft (ARM ist solange gesperrt) |
+| `bool escPulsesOff(uint32_t nowMs) const` | ESC-Impulse jetzt wegnehmen |
+| `int16_t nodUs(uint32_t nowMs) const` | Rudernicken, µs (`SIGNAL_SURFACES`) |
+| `bool light(uint32_t nowMs) const` | Summer / LED an `PIN_BUZZER` |

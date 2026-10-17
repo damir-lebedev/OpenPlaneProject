@@ -36,7 +36,7 @@ Le kit de la version actuelle (le firmware a été vérifié dessus) :
 - **Une radio FS-i6 + un récepteur FS-iA6B** (protocole iBUS, 10 canaux). Il faut un seul fil de données : le port iBUS SERVO. La radio doit permettre de régler le failsafe ; ce réglage est obligatoire, voir la section sur le failsafe.
 - **2 servos MG90S** pour les ailerons — un par demi-aile (deux servos indépendants, et non un seul pour les deux ailes).
 - **1 servo MG90S** pour la gouverne de profondeur.
-- **1 servo MG90S** pour la gouverne de direction — la roue directrice du train d’atterrissage est montée sur son axe (pour rouler au sol).
+- **1 servo MG90S** pour la gouverne de direction — la roue directrice du train d’atterrissage est montée sur son axe (pour rouler au sol). Le train d’atterrissage : deux roues à l’avant et une roulette de queue orientable (`LANDING_GEAR = TAIL_WHEEL` dans `Config.h` ; un train à roulette de nez, c’est `NOSE_WHEEL`).
 - **Un variateur (ESC) BLHeli 80A bidirectionnel** (mode Bidirectional/3D) avec BEC 5 V (le BEC alimente les servos et le récepteur). Un variateur unidirectionnel ordinaire convient aussi — `ESC_BIDIRECTIONAL = false` dans `Config.h`, voir [Inversion du moteur](#inversion-du-moteur-swd).
 - **Un moteur D3548 1100KV** + **une hélice 10x5**.
 - **Une batterie LiPo 3S**.
@@ -217,7 +217,7 @@ En bref, l’affectation par défaut (`include/config/Controls.h`) :
 | **VrA / VrB** (CH9/10) | force de la stabilisation / vitesse de croisière |
 
 - **STABILIZE — « le stick fixe l’angle ».** Stick à fond : roulis de 45°, tangage de 25° ; relâché, l’avion se remet à l’horizontale tout seul. Les gaz sont à vous.
-- **AUTO_TAKEOFF.** Après l’ARM, rien ne se passe tant que vous n’avez pas poussé les gaz au-delà de la moitié. Ensuite : 0–1 s — gaz progressivement jusqu’à 100 %, ailes à plat ; 1–3 s — tangage +15° ; puis +10° jusqu’à ce que vous changiez SwC. Gaz = le maximum entre le stick et le programme.
+- **AUTO_TAKEOFF.** Décollage depuis une piste par étapes. Après l’ARM, le moteur reste arrêté tant que vous n’avez pas poussé les gaz au-delà de la moitié ; l’avion vérifie pendant ~1 s qu’il est posé comme lors de la calibration, puis fait tout lui-même : queue en l’air à piquer, course, décollage par l’aile, montée jusqu’à 30 m, puis il tient le cap et l’altitude. Les gaz appartiennent au programme ; manche des gaz en bas avant le décollage = décollage interrompu. Il faut la [calibration au sol de l’avion](#calibration-au-sol-de-lavion-horizon-et-assiette-au-sol).
 - **RTH.** Cap sur le point de l’ARM, altitude de 40 m, cercles au-dessus du point de départ. Il faut un GPS avec un fix 3D **avant l’ARM**.
 
 Les 12 modes (ALT_HOLD, ACRO, CRUISE, LOITER, LAUNCH à la main, AUTO_LAND, SOARING, RESCUE…), les capteurs qu’exige chacun d’eux et la façon de l’affecter à un interrupteur sont décrits dans [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md). Un mode choisi depuis le tableau de bord ou la station sol reste actif jusqu’à ce que vous actionniez l’interrupteur de mode.
@@ -340,6 +340,8 @@ Une touche agit immédiatement ; Entrée n’est pas nécessaire (dans un monit
 | `s` | état détaillé de tous les capteurs (y compris les compteurs d’erreurs I2C) |
 | `i` | recalibrer le gyroscope et faire le contrôle avant vol de l’IMU — 2 s, ne pas bouger l’avion |
 | `o` | **calibration du montage de l’IMU** — une seule fois, après avoir installé la carte dans l’avion (voir plus bas) |
+| `c` | **calibration au sol de l’avion** — horizon et assiette au sol (voir plus bas) ; si elle est en cours, l’annule |
+| `e` | signal : hochement des gouvernes et mélodie de l’ESC — vérifier que l’ESC la joue (hélice retirée !) |
 | `m` | calibration de la boussole — pendant 15 s, faire tourner la carte ou l’avion autour de tous les axes. Le résultat est enregistré en flash et survit à un redémarrage |
 | `p` | contrôle des sorties : l’impulsion réelle sur chaque broche |
 
@@ -365,13 +367,26 @@ Tant que le menu est ouvert, le journal reste muet pour que le menu ne défile p
 La carte avec l’IMU peut être installée dans l’avion **comme cela vous arrange** — sous n’importe quel angle, sur le côté, à l’envers : le firmware détermine lui-même où se trouvent son nez et son dessus. On le fait **une seule fois** après l’installation (et de nouveau si la carte a été déplacée) :
 
 1. L’avion sur la table, sans radio, moteur non armé. Dans le moniteur série, appuyez sur `o`.
-2. **Étape 1 :** l’avion repose à plat, comme en vol horizontal (pour un avion à roulette de queue, calez quelque chose sous la queue). Ne pas toucher pendant environ 3 s.
+2. **Étape 1 :** l’avion repose à plat, comme en vol horizontal (un avion à roulette de queue peut rester sur ses roues — l’horizon sera fixé ensuite par la calibration au sol de l’avion). Ne pas toucher pendant ~3 s.
 3. **Étape 2 :** relevez le **nez** de 30 à 60°, ailes à plat, et maintenez immobile pendant environ 1 s.
 4. **Étape 3 :** remettez le nez, abaissez l’**aile droite** de 30 à 60° et maintenez pendant environ 1 s.
 
 Chaque étape est validée automatiquement (le journal affiche « засчитано », c’est-à-dire « compté »). À la fin s’affiche le résultat (« нос = +Y чипа, верх = −Z чипа », c’est-à-dire « nez = +Y de la puce, haut = −Z de la puce ») et « установка сохранена » (« montage enregistré »). Si vous vous êtes trompé (nez abaissé au lieu d’être relevé, aile gauche au lieu de la droite), la calibration est rejetée avec une explication ; il suffit de refaire `o`. Le résultat est stocké en flash et survit à un redémarrage. Vérification : nez vers le haut → P sur l’OLED devient positif ; aile droite vers le bas → R devient positif.
 
-Tant qu’il n’y a pas de calibration du montage, l’ancienne méthode s’applique : la carte doit être posée puce vers le haut, et la rotation se règle avec `IMU_ROTATION_CW_DEG` dans `Config.h`.
+Tant qu’il n’y a pas de calibration du montage, l’ancienne méthode s’applique : la carte doit être posée puce vers le haut, et la rotation se règle avec `IMU_ROTATION_CW_DEG` dans `Config.h`. Après `o`, refaites la calibration au sol de l’avion : l’assiette au sol a été mesurée depuis l’ancien horizon.
+
+### Calibration au sol de l’avion : horizon et assiette au sol
+
+Un avion à roulette de queue repose au sol le nez levé — de combien, personne ne le sait d’avance. La calibration le mesure elle-même et l’enregistre en flash : l’**horizon** (0° de tangage et de roulis pour tous les modes — et non plus « comme il était posé à la mise sous tension ») et l’**assiette au sol**, d’où le décollage automatique déduit de combien lever la queue et où la roulette toucherait la piste. Une fois après l’assemblage (et de nouveau si la carte a été déplacée ou après `o`). Pas besoin d’ordinateur :
+
+1. L’avion sur un sol plat, la radio allumée, **sans ARM**, gaz en bas.
+2. **SwB (volets) trois fois de suite en bas puis en haut** (en moins de 4 s) — ou `c` dans la console. Un signal : c’est parti.
+3. **Étape 1 — horizon.** Levez la queue jusqu’à ce que le fuselage soit à l’horizontale, comme en vol (roues principales au sol ; une application de niveau à bulle sur un téléphone posé sur le fuselage aide), et tenez immobile ~2 s. Regardez au passage l’espace entre l’hélice et le sol : c’est à peu près ainsi que l’avion roulera au décollage. Un signal : validé.
+4. **Étape 2 — assiette au sol.** Posez l’avion sur ses trois roues et retirez les mains. Au bout de ~2 s, deux signaux : terminé, le journal affiche « Стоянка: нос вверх на 9.4°, крен 0.3° » (« assiette au sol : nez levé de 9,4°, roulis 0,3° »).
+
+Trois signaux : une erreur, rien n’est enregistré (la raison est dans la console) — l’avion n’est pas resté immobile pendant une minute, à l’étape 2 le nez est à peine levé (queue pas reposée) ou de plus de 25°, ou le roulis dépasse 10°. Pour annuler : le même geste de SwB, ou basculer l’interrupteur ARM (ce basculement n’arme pas). Avec une roulette de nez (`NOSE_WHEEL`), l’étape 1 peut se faire directement sur les roues si l’avion est à plat : l’étape 2 est alors validée d’elle-même au bout de 5 s. L’interrupteur du geste est `CAL_SWITCH` dans `Config.h` (pas SwD : il commande l’inversion du moteur).
+
+**Signaux.** Un signal : la profondeur et la direction hochent (à l’étape 1, vous tenez la queue et le sentez), et sans ARM le moteur chante : les impulsions vers l’ESC disparaissent pendant une seconde, l’ESC croit avoir perdu le signal et, quand les impulsions reviennent, joue sa mélodie de disponibilité — comme à la mise sous tension. Le moteur ne tourne pas. Un ESC piloté en PWM ne connaît pas d’autre commande « bip », vérifiez donc sur le banc (**hélice retirée**) : touche `e` dans la console — la mélodie doit retentir. Si elle ne retentit pas, mettez `SIGNAL_MOTOR = false` dans `Config.h` : il restera les hochements. Un buzzer ou une LED avec résistance sur PE15 (S3 : GPIO38) s’allume pendant les hochements ; la LED D2 de la DevEBox elle-même est sur PA1, la sortie de l’aileron droit, et ne convient donc pas aux signaux. Tant qu’un signal joue, l’ARM est refusé : l’ESC ne s’est peut-être pas encore réarmé. Sur l’OLED, la ligne des angles affiche `CAL1`, `CAL2`, et pour finir `CALOK` ou `CALER`.
 
 ### Contrôle avant vol à la mise sous tension
 
@@ -381,7 +396,7 @@ Tant qu’il n’y a pas de calibration du montage, l’ancienne méthode s’ap
 - l’accéléromètre au repos indique 1g ;
 - **le « haut » correspond à la calibration du montage** — si la carte a été déplacée ou retournée, cela se voit tout de suite (un avion posé sur sa roulette de queue ou sur une pente n’est pas un problème ; la tolérance est de 45°).
 
-**Allumez l’avion alors qu’il est immobile.** Il n’a pas besoin d’être à plat si le montage est calibré (sinon, la position à la mise sous tension devient l’horizon). Le résultat figure dans le journal : `предполётная проверка пройдена` (« contrôle avant vol réussi ») ou `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` (« CONTRÔLE AVANT VOL ÉCHOUÉ », suivi de la cause). En cas d’échec, **l’ARM en STABILIZE et en AUTO_TAKEOFF est interdit** (la cause est affichée à la tentative), et le pilote automatique ne donne aucune correction dans aucun mode, y compris le plané en cas de perte de liaison : avec des angles faux, il commanderait dans le mauvais sens. L’ARM en MANUAL reste possible. Pour corriger : posez l’avion immobile et reconnectez la batterie (ou appuyez sur `i`) ; si la carte a été déplacée, appuyez sur `o`.
+**Allumez l’avion alors qu’il est immobile.** Il n’a pas besoin d’être à plat si le montage est calibré (`o` ou la calibration au sol de l’avion ; sinon, la position à la mise sous tension devient l’horizon). Le résultat figure dans le journal : `предполётная проверка пройдена` (« contrôle avant vol réussi ») ou `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` (« CONTRÔLE AVANT VOL ÉCHOUÉ », suivi de la cause). En cas d’échec, **l’ARM en STABILIZE et en AUTO_TAKEOFF est interdit** (la cause est affichée à la tentative), et le pilote automatique ne donne aucune correction dans aucun mode, y compris le plané en cas de perte de liaison : avec des angles faux, il commanderait dans le mauvais sens. L’ARM en MANUAL reste possible. Pour corriger : posez l’avion immobile et reconnectez la batterie (ou appuyez sur `i`) ; si la carte a été déplacée, appuyez sur `o`.
 
 ### Écran OLED
 
@@ -389,7 +404,7 @@ Si l’OLED est branché (GPIO1/GPIO2), il affiche ceci 5 fois par seconde :
 
 ```
 RX ok disarm STAB        <- liaison / ARM / mode / REV — moteur en arrière (si la liaison est perdue, la ligne est en inversé)
-R  +1.2 P  -0.4          <- roulis / tangage, °
+R  +1.2 P  -0.4 ROLL     <- roulis / tangage, ° ; étape de calibration ou de décollage
 Alt +0.3 Vz +0.1         <- altitude depuis le point de mise sous tension, m / vitesse verticale, m/s
 Hdg 123  Thr 1000        <- cap de la boussole / gaz 1000..2000 = 0..100 % (en arrière aussi), µs
 L1500 R1500 E1500        <- PWM des ailerons et de la profondeur, µs
@@ -470,6 +485,7 @@ Lisez cette section en entier **avant** la première mise sous tension, et non a
   - en STABILIZE, inclinez l’avion aile droite vers le bas → **aileron droit vers le bas, gauche vers le haut** (les gouvernes le ramènent à l’horizontale) ; nez vers le bas → **profondeur vers le haut**.
   Si quelque chose ne va pas, changez une ligne du bloc « Inversion » de `include/config/Config.h` : chaque aileron, la profondeur, la direction, AUX, le moteur (`MOTOR_REVERSED`) et les volets (`FLAPS_REVERSED`) s’inversent séparément, rien d’autre n’est touché. N’inversez pas les servos dans la radio — le manche et le pilote automatique divergeraient ; une voie à l’envers (manche, interrupteur, potentiomètre) — `CHANNEL_REVERSED`, au même endroit.
 - [ ] À la mise sous tension, l’avion était immobile, et le journal ou le tableau de bord n’affiche pas `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА` ; quand vous inclinez l’avion dans vos mains, P et R sur l’OLED changent dans le bon sens.
+- [ ] Pour AUTO_TAKEOFF : la calibration au sol de l’avion est faite (à la mise sous tension, le journal affiche « стоянка на колёсах — тангаж … »), la roulette de queue est intacte, l’avion est sur la piste face au vent. Les premiers roulages avec la limite des gaz (potentiomètre `THROTTLE_LIMIT`) et la main sur les gaz : en bas = décollage interrompu.
 - [ ] Le failsafe est réglé dans la radio et vérifié : éteignez la radio → `RX LOST` sur l’OLED ou dans Serial (voir la section sur le failsafe).
 - [ ] La portée de la radio a été vérifiée et la batterie de la radio est chargée.
 - [ ] À la mise sous tension, le journal affiche `BlackBox: ... стёрто впереди N МБ (≈M мин)` — il y a assez de place pour le vol. Le vol précédent a été téléchargé (`python tools/blackbox.py download`), si vous en avez besoin.
@@ -497,6 +513,12 @@ Faites la calibration du montage de l’IMU (`o`, voir « Montage de l’IMU �
 
 **ARM refusé : « IMU: ... »**
 Le contrôle avant vol de l’IMU n’a pas été réussi (voir « Contrôle avant vol à la mise sous tension ») : l’avion a bougé à la mise sous tension — posez-le immobile et rebranchez la batterie ; le « haut » ne correspond pas à la calibration — la carte a été déplacée, faites `o` ; « la carte n’est pas posée puce vers le haut » — le montage n’est pas calibré, faites `o`.
+
+**ARM refusé : « нет калибровки шасси » (pas de calibration du train)**
+AUTO_TAKEOFF avec roulette de queue ne sait pas où la queue toucherait la piste. Faites la calibration au sol de l’avion : SwB trois fois en bas et en haut sans ARM (ou `c`).
+
+**« Автовзлёт: старт отменён — тангаж не стояночный » (départ annulé : le tangage n’est pas celui de l’assiette au sol ; les gouvernes ont hoché trois fois)**
+L’avion n’est pas posé comme lors de la calibration : pas sur ses trois roues, une pente, une roulette de queue cassée ou une carte déplacée. Posez-le à plat ; si la carte a été déplacée, refaites `o` et la calibration au sol.
 
 **Un servo ou l’ESC réagit au mauvais stick / ne réagit pas**
 La commande `p` de la console mesure l’impulsion réelle sur chaque sortie (GPIO4–7) et la compare à celle attendue. Si tout est « OK » et que le servo ne bouge pas, le problème est au-delà de la carte : (1) le servo n’est pas alimenté (BEC/5V, masse commune) ; (2) le fil de signal n’est pas sur la bonne broche ; (3) la mécanique est bloquée. « НЕ СОВПАДАЕТ » (« NE CORRESPOND PAS ») signifie que le problème est dans le firmware ou les périphériques — signalez-le au développeur.

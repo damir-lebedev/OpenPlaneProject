@@ -104,7 +104,7 @@ ligados, vence a linha de cima.
 
 ## `Autopilot`
 
-**Arquivo:** `autopilot/Autopilot.h` · **Depende de:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, os sensores (todos anuláveis)
+**Arquivo:** `autopilot/Autopilot.h` · **Depende de:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, os sensores (todos anuláveis)
 
 ### Ciclo de vida
 
@@ -115,7 +115,7 @@ ligados, vence a linha de cima.
 | `void setInputs(const PilotInputs&)` | as chaves e os potenciômetros deste ciclo (antes de `update`) |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | uma vez por ciclo: sensores (sempre) → navegação e ponto de origem → gravação do compensador no solo → failsafe → geofence → modo → coordenação da curva → auto-trim |
 | `ControlCommand getCommand() const` | os comandos finais das superfícies (roll/pitch/yaw, µs) |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | o acelerador do modo: `PILOT` — o do piloto; `AUTO` — o próprio; `AT_LEAST` — não menor que o próprio (decolagem automática). O ARM e o `MOTOR_KILL` ficam por conta do `FlightController` |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | o acelerador do modo: `PILOT` — o do piloto; `AUTO` — o próprio (também na decolagem automática: o stick do acelerador só dá a partida e aborta). O ARM e o `MOTOR_KILL` ficam por conta do `FlightController` |
 
 ### Modos
 
@@ -126,6 +126,10 @@ ligados, vence a linha de cima.
 | `isFailsafeActive()`, `isFailsafeGliding()`, `isFailsafeReturning()` | o failsafe por cima do modo |
 | `isAutoThrottle()`, `getThrottleCorrection()` | o acelerador do modo (%, para o log e o dashboard) |
 | `getLaunchState()`, `getSoaringState()` | as máquinas de estados de LAUNCH e SOARING |
+| `getTakeoffStage()`, `getTakeoffAbortReason()` | a etapa da decolagem automática e por que ela foi abortada (`nullptr` — não foi) |
+| `bool takeTakeoffRefusal()` | a decolagem automática recusou na verificação antes da partida — o `FlightController` toca um sinal (lido uma vez) |
+| `getLandingGear()`, `setLandingGear(LandingGear)` | o trem de pouso (por padrão `Config::LANDING_GEAR`; os testes o trocam) |
+| `bool isGyroOnlyAttitude() const` | agora o horizonte é conduzido só pelo giroscópio (janela de aceleração da decolagem) |
 
 ### Saídas e diagnóstico
 
@@ -154,7 +158,8 @@ ligados, vence a linha de cima.
   mais lento que o limiar do tubo de Pitot/GPS: só então o compensador é
   gravado na flash.
 - Failsafe: com GPS e ponto de origem — RTH com o motor, senão planeio; um RTH
-  já iniciado não é abandonado por uma perda curta do GPS.
+  já iniciado não é abandonado por uma perda curta do GPS. No AUTO_TAKEOFF na pista (etapas com `holdsGround()`), a perda de link é uma decolagem abortada, não um failsafe; na subida é o failsafe, e com o link de volta a subida continua.
+- A janela “só giroscópio” (`manageAccelCorrection()`): a partida do motor na decolagem automática tira o acelerômetro como apoio do horizonte (`ImuSensor::setAccelCorrection`); quem o devolve são o tempo desde o início da subida (`TAKEOFF_GYRO_ONLY_CLIMB_MS`), o limite, uma decolagem abortada e o DISARM — não uma troca de modo.
 
 ---
 
@@ -195,6 +200,28 @@ motor, arfagem `LAUNCH_CLIMB_PITCH_DEG`) `→ DONE` (`LAUNCH_CLIMB_MS` ou
 `LAUNCH_ALTITUDE_M`). Mexer nos sticks antes do arremesso — cancelar. Métodos:
 `update(...)`, `reset()`, `getState()`, `motorOn()`, `pitchTargetDeg()`,
 `stateName()`.
+
+## `TakeoffController`
+
+**Arquivo:** `autopilot/TakeoffController.h` · **Depende de:** `Config`
+
+Decolagem automática da pista — etapas pelos sensores, sem sensores nem superfícies próprios: entram `Inputs` (ARM, link, acelerador do piloto, ângulos e taxas angulares, carga, atitude em solo, altitude, velocidade, potenciômetro `STAB_GAIN`, tempo), sai o que fazer neste ciclo.
+
+`Stage`: `IDLE` (motor parado; acelerador acima de `TAKEOFF_TRIGGER_US` depois de ter estado embaixo) `→ CHECK` (parado por `TAKEOFF_CHECK_MS`, ângulos = atitude em solo; senão `ABORTED` e um sinal) `→ TAIL_UP` (bequilha: picar, cauda para cima) `→ ROLL` (corrida; `TD_ROLL_MS` / `TRI_ROLL_MS` ou a velocidade de rotação) `→ LIFTOFF` (o alvo de arfagem sobe, perto do solo no máximo a atitude em solo menos `TD_TAIL_CLEARANCE_DEG`) `→ CLIMB` (decolagem pelo barômetro ou pelo tempo; subida até `TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS`) `→ DONE`. `ABORTED` — decolagem abortada; acelerador embaixo por 1 s — de novo `IDLE`.
+
+| Método | Descrição |
+|---|---|
+| `void update(const Inputs&)` | uma vez por ciclo: troca de etapa, depois as saídas dessa etapa; sem ARM — `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | aborto de fora (perda de link); em `IDLE`/`DONE` — nada |
+| `void reset()`, `setGear()`, `getGear()` | |
+| `getStage()`, `stageName()`, `stageShort()`, `getAbortReason()` | a etapa (nome curto para o OLED) |
+| `bool holdsGround() const` | no solo (`IDLE`…`LIFTOFF`, `ABORTED`): a perda de link é uma decolagem abortada, os integradores dos PID ficam em zero |
+| `isAirborneStage()`, `isDone()` | no ar (subida/pronto); decolagem terminada |
+| `getThrottlePct()` | acelerador do programa, % (rampa em `TAKEOFF_THROTTLE_RAMP_MS`) |
+| `getRollTargetDeg()`, `getPitchTargetDeg()` | alvo de rolagem (sobre as rodas — a rolagem parada) e de arfagem (na subida — para o PID) |
+| `hasElevatorCommand()`, `getElevatorUs()` | sobre as rodas, o profundor diretamente: rumo ao alvo com `TD_PITCH_KP` / `TD_ROLL_PITCH_KP` µs por grau, amortecimento `TD_PITCH_KD`, no máximo `TD_TAIL_UP_ELEVATOR_US` para picar |
+| `hasRudderCommand()`, `getRudderUs()` | o rumo pelo leme e pela roda: `TAKEOFF_HEADING_KP` µs por grau, `TAKEOFF_YAW_RATE_KD` por °/s |
+| `bool takeRefusal()`, `bool takeGyroTrim(float[3])` | eventos únicos: recusa na verificação; o zero residual do giroscópio medido parado |
 
 ## `SoaringController`
 

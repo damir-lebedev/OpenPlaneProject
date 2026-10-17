@@ -89,6 +89,8 @@ public:
         if (dsp < 0) return fail();
 
         const bool ok =
+            // PWR_STANDBY = 0 — поле регистра названо явно, как в даташите.
+            // cppcheck-suppress badBitmaskCheck
             device.writeRegister(REG_ODR_CONFIG, ODR_DEEP_DISABLE | (ODR_50HZ << 2) | PWR_STANDBY) &&
             device.writeRegister(REG_OSR_CONFIG, OSR_PRESS_EN | (OSR_16X << 3) | OSR_2X) &&
             device.writeRegister(REG_DSP_CONFIG, static_cast<uint8_t>(dsp | DSP_SHDW_IIR_T | DSP_SHDW_IIR_P)) &&

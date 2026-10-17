@@ -315,10 +315,27 @@ void test_stabilized_modes_require_responding_imu_without_preflight_problem()
     TEST_ASSERT_FALSE(arming.isArmed());
     TEST_ASSERT_EQUAL_STRING("IMU: самолёт двигали", arming.getLastRefusalReason());
 
+    // Хвостовое колесо: автовзлёту нужна калибровка шасси (стоянка).
     imu.preflightProblem = nullptr;
     arming.update(armRc(false), false);
     arming.update(armRc(true), false);
+    TEST_ASSERT_FALSE(arming.isArmed());
+    TEST_ASSERT_TRUE(contains(arming.getLastRefusalReason(), "нет калибровки шасси"));
+
+    imu.park(10.0f);
+    arming.update(armRc(false), false);
+    arming.update(armRc(true), false);
     TEST_ASSERT_TRUE(arming.isArmed());
+
+    // Носовому колесу калибровка не обязательна.
+    FakeImu noseImu;
+    Autopilot nose(&noseImu, &baro);
+    nose.setLandingGear(Config::LandingGear::NOSE_WHEEL);
+    nose.setMode(MODE_AUTO_TAKEOFF);
+    ArmingManager noseArming(&nose);
+    noseArming.update(armRc(false), false);
+    noseArming.update(armRc(true), false);
+    TEST_ASSERT_TRUE(noseArming.isArmed());
 }
 
 void test_alt_hold_requires_barometer_and_manual_needs_nothing()

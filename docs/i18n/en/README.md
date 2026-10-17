@@ -35,8 +35,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-395%20passing-3fb950?style=for-the-badge" alt="395 tests">
-  <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="98% coverage">
+  <img src="https://img.shields.io/badge/tests-431%20passing-3fb950?style=for-the-badge" alt="431 tests">
+  <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94% coverage">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 builds without warnings">
   <br>
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
@@ -61,7 +61,7 @@
 | **What it is** | An open flight controller and autopilot for radio-controlled airplanes. The main board is the STM32H743 (a Pixhawk-class board): on a DevEBox board the firmware is **already up and flown from the transmitter** — [there is a video](#-stm32h743-came-alive-on-the-board), and the sensors are being connected now. The former base is an ESP32-S3 at ~$10, which passed the bench with all the sensors. |
 | **What it can do** | 12 flight modes — from stabilization to return-home, GPS circles, hand launch, auto-landing and **thermal soaring**. A pitot tube made of two cheap barometers. MAVLink telemetry to QGroundControl and Mission Planner. |
 | **The main trick** | Any switch or knob on the transmitter = any function. **One line** in `Controls.h` — and SwD is no longer motor reverse but a payload drop. |
-| **Why you can trust it** | 395 automated tests (plus 9 on the board itself with a real SD card), 98% of the code under test, 24 "board × sensors" builds with not a single warning, closed-loop simulations of every mode. |
+| **Why you can trust it** | 431 automated tests (plus 9 on the board itself with a real SD card), 94% of the code under test, 24 "board × sensors" builds with not a single warning, closed-loop simulations of every mode. |
 | **Honestly** | So far only manual mode has flown (the first prototype). The STM32H743 has so far been checked only on the bench, without sensors. The autopilot has been verified on the bench, by tests and by simulations, and is waiting for flight trials — [status below](#-honest-status). |
 
 ---
@@ -96,19 +96,19 @@ Want thermal soaring on SwD instead of motor reverse? `Bind::mode(Channels::SWD,
 | 🛣️ | **CRUISE** | heading, altitude and speed hold themselves; the sticks only nudge |
 | ⭕ | **LOITER** | circles above a GPS point (the radius is set with a knob) |
 | 🏠 | **RTH** | home at 40 m and circles overhead; switches on by itself when the link is lost |
-| 🛫 | **AUTO_TAKEOFF** | runway takeoff on the pilot's throttle |
+| 🛫 | **AUTO_TAKEOFF** | takeoff from a runway: tail wheel or nose wheel, tail up first, the wing lifts it off |
 | 🤾 | **LAUNCH** | hand launch: the motor starts after the throw, then a climb |
 | 🛬 | **AUTO_LAND** | glide and flare near the ground |
 | 🦅 | **SOARING** | motor off, finds thermals and circles in them |
 | 🆘 | **RESCUE** | "help!": wings level, nose up — out of any spiral |
 
-Plus: geofence, auto-trim for a "crooked" airplane, turn coordination, stall protection using the pitot tube, flaps and an air brake, payload drop, a stabilized camera, and a buzzer that says "find me in the grass".
+Plus: ground calibration from the transmitter (horizon and parking attitude, steps signaled by the motor and the control surfaces), geofence, auto-trim for a "crooked" airplane, turn coordination, stall protection using the pitot tube, flaps and an air brake, payload drop, a stabilized camera, and a buzzer that says "find me in the grass".
 
 ---
 
 ## 📈 Every mode flies — in a closed loop
 
-Not "a function returned a number", but a **flight**: transmitter → iBUS frame → firmware → PWM → control surface deflections → an airplane model with lift, stalls, wind and thermals → sensors → back to the firmware. 14 such flights are part of the ordinary tests (`pio test -e native`).
+Not "a function returned a number", but a **flight**: transmitter → iBUS frame → firmware → PWM → control surface deflections → an airplane model with lift, stalls, wind and thermals → sensors → back to the firmware. 17 such flights are part of the ordinary tests (`pio test -e native`).
 
 <p align="center"><img src="../../images/sim/missions.png" alt="RTH, LOITER, geofence and link loss — top view"></p>
 
@@ -205,8 +205,8 @@ What this proves: the "transmitter → iBUS → firmware → PWM" chain works on
 
 | | |
 |---|---|
-| **395 automated tests** | modules, chip drivers checked at the register level, closed-loop flights, the ESP32 and STM32 firmware **in full** on a PC; plus 9 tests on the STM32 board itself with a real SD card |
-| **98.3% of lines, 87.7% of branches** | `gcovr` coverage, including the STM32 code |
+| **431 automated tests** | modules, chip drivers checked at the register level, closed-loop flights, the ESP32 and STM32 firmware **in full** on a PC; plus 9 tests on the STM32 board itself with a real SD card |
+| **93.9% of lines, 85.7% of branches** | `gcovr` coverage, including the STM32 code |
 | **24/24 builds** | 4 boards × 6 sensor kits, `-Wall -Wextra`, zero warnings |
 | **0 findings** | cppcheck and clang-tidy over all the code |
 | **References, not copies of code** | sensor formulas follow the datasheets (Bosch, ST, TDK, Goertek), MAVLink follows pymavlink |
@@ -263,6 +263,7 @@ In the serial monitor: `h` — menu, `b` — which chips are visible on the buse
 | Manual control, mixer | ✈️ in flight (first prototype, C3) |
 | ARM, failsafe, flaps, servos, motor | 🔧 on the bench (S3) |
 | Bidirectional BLHeli 80A ESC, reverse only when disarmed | 🧪 tests; not yet tried with the actual ESC |
+| Auto takeoff with a tail wheel or nose wheel, ground calibration from the transmitter, motor and control-surface signals | 🧪 tests and simulations with a landing-gear model; the ESC tune after the pulse pause is still to be checked on the bench |
 | STABILIZE | 🔧 on the bench: the control surfaces respond to tilts in the right direction |
 | Bench sensors (MPU6500, BMP388, QMC5883P), OLED, dashboard | 🔧 on the bench |
 | The other modes, navigation, pitot tube, MAVLink | 🧪 tests and closed-loop simulations |

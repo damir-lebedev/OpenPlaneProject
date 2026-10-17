@@ -111,6 +111,7 @@ RC   1:1500 2:1500 3:1000 …
 OUT  AIL-L 1500 AIL-R 1500 ELE 1500 RUD 1500 ESC 1000
 ATT  R +1.2 P -0.4 Y 123.0
 AP   STABILIZE want R +0.0 P +0.0 corr R -6 P +2 THR +0
+AP   AUTO_TAKEOFF/ROLL GYRO want R +0.0 P +1.0 corr R +0 P -22 THR +100
 ALT  0.3 m  Vz +0.10 m/s  cible 0.0 m
 MAG  cap 123°
 GPS  fix=3 sats=12 lat … lon … v 0.0 m/s hacc 1.2 m
@@ -119,7 +120,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (le pire sur 10 s) | iBUS ok=… crc_e
 ```
 
 `RX=` distingue `LOST(pas de trames)` de `LOST(failsafe de la radiocommande)` ; `IMU=` vaut
-`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`.
+`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`. En AUTO_TAKEOFF, le nom du mode est suivi de l’étape du décollage (`/CHECK`, `/TAIL_UP`, `/ROLL`…), `GYRO` signifie que l’horizon vient en ce moment du seul gyroscope (accélération).
 
 ---
 
@@ -140,7 +141,7 @@ Raccourcis clavier (hors menu) : `h`/`?` — le menu principal ; `l` — le me
 pause du journal ; `s` — état des capteurs ; `i` — étalonnage du gyroscope ; `o` —
 étalonnage du montage de l’IMU ; `m` — étalonnage du compas ; `p` — autotest des sorties ;
 `b` — balayage des bus I2C (0x08..0x7F — jusqu’à 0x7F, parce que le QMC6309 se trouve en 0x7C) avec
-les noms des puces ; toute autre touche — une aide. `\r`/`\n` sont ignorés.
+les noms des puces ; toute autre touche — une aide. `\r`/`\n` sont ignorés. Et aussi `c` — la calibration au sol de l’avion (en cours — annulation ; point 9 du menu principal) et `e` — un signal par les gouvernes et la mélodie de l’ESC (vérifie qu’il la joue après la pause des impulsions).
 
 Le menu du journal : `1`..`9` — fait tourner le mode des canaux 0..8, `n` — NAV, `s` — SYS, `p` — période, `a` —
 tout « au changement », `x` — tout désactivé, `d` — valeurs par défaut, `0`/`q` — retour, `l`/`h` —
@@ -148,7 +149,7 @@ fermer.
 
 Les actions bloquantes (`i`, `o`, `m`, `p`) sont **interdites en ARM**. Tant que le menu
 est ouvert, le journal est suspendu (`DebugLogger::suspend`). La largeur des entrées du menu
-est comptée en caractères UTF-8 et non en octets (le cyrillique occupe 2 octets).
+est comptée en caractères UTF-8 et non en octets (le cyrillique occupe 2 octets). La calibration de l’avion et le signal (`c`, `e` — ils bougent les gouvernes et touchent à l’ESC) sont aussi interdits pendant l’ARM.
 
 ---
 
@@ -215,7 +216,7 @@ L’écran :
 
 ```
 RX ok ARM STAB FL       liaison (perte — ligne inversée) / ARM / mode / REV — moteur en arrière / volets
-R  +1.2 P  -0.4         roulis / tangage, °           (IMU --)
+R  +1.2 P  -0.4 ROLL    roulis / tangage, ° ; étape de calibration (CAL1, CAL2, résultat CALOK/CALER pendant 10 s) ou étape du décollage (WAIT, CHECK, TAIL, ROLL, LIFT, CLIMB, DONE, ABORT)   (IMU --)
 Alt +0.3 Vz +0.1 A14    altitude / vitesse verticale / vitesse de l’air, s’il y a un tube de Pitot (BARO --)
 H123 T1000 Y1500        cap / gaz 1000..2000 = 0..100 % dans un sens comme dans l’autre / gouverne de direction (H---)
 L1500 R1500 E1500       ailerons / gouverne de profondeur
@@ -243,6 +244,8 @@ L’enregistrement du vol en flash (ESP32-S3) ou sur une carte SD (STM32H743). Q
 | `State getState()` / `bool isRecording()` | `Off`, `Idle`, `Recording`, `Stopping` (écrit le reste de la file avant d’enregistrer END) |
 | `printStatus(Print&)` / `printFlights(Print&)` / `eraseAll()` | Pour la console |
 | `void handleHostCommand(const char*)` | `bb list`, `bb get <n> [bauds]` — pour `tools/blackbox.py` (sur USB CDC, la vitesse n’a aucune influence) |
+
+Événements de la calibration au sol (étapes, résultat avec l’assiette au sol, erreur avec la raison, annulation) et des étapes du décollage automatique (`ABORTED` — avec la raison) ; l’étape figure aussi dans le champ `takeoff_stage` de l’enregistrement NAV ; les paramètres du vol contiennent `LANDING_GEAR` et les principales valeurs du décollage.
 
 Les points propres à chaque plateforme : la cause du redémarrage — `readResetCause()` ; la tension et le courant de la batterie —
 le CAN (`analogReadMilliVolts` sur le S3, un `analogRead` de 12 bits sur le STM32) ; les erreurs du support

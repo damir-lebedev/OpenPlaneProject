@@ -40,6 +40,7 @@ CONTROL レイヤーは、UART、PWM、Wi-Fi を含まない、データに対�
 | `aileronLeft`、`aileronRight`、`elevator`、`rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
 | `bool motorReverse` | `false`：モーターは前進 |
+| `bool escPulsesOff` | `false`。`true` なら ESC へのパルスをまったく出さない（モーターの合図、ARM なしのときだけ） |
 | `aux1` | `PAYLOAD_CLOSED_US`（ペイロード投下は閉じた状態） |
 | `aux2` | `PWM_CENTER`（カメラ） |
 
@@ -176,10 +177,10 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
 | `explicit FlightOutputs(IBoard& board)` | |
 | `bool begin()` | 各出力の `attach(PWM_MIN, PWM_MAX)`、状態と ESC の種類を表示。**必須**の出力がすべてチャンネルを得たら `true` |
 | `bool isAttached(uint8_t ch) const` | 出力が接続されている（範囲外のインデックスは `false`） |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | 出力ピンのパルス：表に従ったフィールド。ESC は `EscSignal::pulseUs(throttle, motorReverse)` を通す |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | 出力ピンのパルス：表に従ったフィールド。ESC は `EscSignal::pulseUs(throttle, motorReverse)` を通し、`escPulsesOff` なら 0 |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | 配線済みの各ピンで、測定したパルスを期待値と比較する。差が 15 µs 以内なら「OK」 |
-| `void write(const FlightOutputState&)` | すべての出力を書き込み、状態を記憶する |
+| `void write(const FlightOutputState&)` | すべての出力を書き込み、状態を記憶する。`escPulsesOff` の ESC は `IServoOutput::stopPulses()` |
 | `void setFailsafe()` | 舵面はニュートラル（`FAILSAFE_*`）、スロットルは `FAILSAFE_THROTTLE`（双方向 ESC のピンでは 1500）。AUX はそのまま（通信途絶でペイロードは投下しない） |
 | `void setBuzzer(bool on)` | 基板のブザー（`IBoard::setBuzzer`） |
 | `const FlightOutputState& getLastState() const` | 最後に書き込んだ状態 |
@@ -193,7 +194,7 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
 ## `FlightController`
 
 **ファイル：** `control/FlightController.h` · **レイヤー：** COORDINATION ·
-**依存先：** `IBusReceiver`、`ControlMixer`、`ThrottleManager`、`ArmingManager`、`FlightOutputs`、`Autopilot*`、`PilotSwitches*`、`Beeper`、`MotorReverse`
+**依存先：** `IBusReceiver`、`ControlMixer`、`ThrottleManager`、`ArmingManager`、`FlightOutputs`、`Autopilot*`、`PilotSwitches*`、`Beeper`、`MotorReverse`、`GroundCalibration`、`SignalPlayer`
 
 制御ループの唯一のコーディネーターです。自分では UART を解析せず、PWM にも触れず、ミキサーの計算もしません。ほかのクラスを正しい順序で呼ぶだけです。詳しい図は
 [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-制御周期flightcontrollerupdate) にあります。
@@ -213,6 +214,9 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
 | `const PilotSwitches* getSwitches() const`、`const PilotInputs& getInputs() const` | この周期のスイッチとノブ |
 | `bool isLostModelBeeping() const` | 「ここにいるよ」ブザーが鳴っている |
 | `const MotorReverse& getMotorReverse() const` | モーターの方向と保留中の逆転 |
+| `void toggleGroundCalibration()` | コンソールの `c`：機体の地上校正を開始（ARM なしのときだけ）、実行中なら中止 |
+| `void playSignal(uint8_t count)` | コンソールの `e`：合図 1 回（ARM なしならモーターでも） |
+| `const GroundCalibration& getCalibration() const`、`const SignalPlayer& getSignals() const` | OLED、ログ、ブラックボックス用 |
 
 `update()` の順序：
 
@@ -224,18 +228,16 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
    `FLAPS_DEPLOYED_US`、`Knob::FLAPS` → 滑らかに、リンク喪失時は 0。
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)` を**常に**実行。
    逆転中は `pilotThrottle` の代わりに `PWM_MIN` を渡す（オートパイロットにとってモーターは停止）。
-6. ブザー：`Beeper::update(BEEPER, armed, failsafe, now)`。
+6. 校正：校正中に ARM を切り替えると中止。ARM なしで通信があれば `CAL_SWITCH` の操作を見る。`GroundCalibration::update()` を 1 ステップ。その合図と自動離陸の拒否の合図は `SignalPlayer` へ。ブザー：`Beeper::update(BEEPER, armed, failsafe, now)` または合図の光。
 7. リンク喪失 → `applyLinkLoss()` を実行して周期を抜ける。
-8. `arming.update(rc, false, reverse.armBlockReason(now))`、続いて `reverse.update(MOTOR_REVERSE, armed, now)`。DISARM 時は同じ周期で方向が変わる。
-9. `command = autopilot->getCommand()`（オートパイロットがなければスティック）。フラップは専用の値。
+8. `arming.update(rc, false, 理由)`：校正中や合図中は ARM を拒否（ARM の切り替えで校正を中止した周期も）、それ以外は `reverse.armBlockReason(now)`。続いて `reverse.update(MOTOR_REVERSE, armed, now)`。DISARM 時は同じ周期で方向が変わる。
+9. `command = autopilot->getCommand()`（オートパイロットがなければスティック）。フラップは専用の値。合図のうなずきをエレベーターとラダーに加える。
 10. `output = mixer.mix(command)`。`output.motorReverse = reverse.isReversed()`。前進なら `output.throttle = autopilot->applyThrottle(pilotThrottle)` に上限 `THROTTLE_LIMIT_PCT` × ダイヤル `Knob::THROTTLE_LIMIT`、後退ならパイロットのスロットルに上限 `min(REVERSE_THROTTLE_LIMIT_PCT, 前進の上限)`。許された範囲はスティックの全ストロークに引き伸ばす。
-11. ARM していない、または `MOTOR_KILL` → `throttle = PWM_MIN`（最後に実行）。
+11. ARM していない、または `MOTOR_KILL` → `throttle = PWM_MIN`（最後に実行）。ARM なしなら、モーターの合図が `escPulsesOff` を立てる。
 12. AUX1 はペイロード（`PAYLOAD_DROP`）、AUX2 はカメラ（`Knob::CAMERA_TILT`、`CAMERA_STAB` はピッチを差し引く）。`AUX1_REVERSED`/`AUX2_REVERSED` はパルスを反転。
 13. `outputs.write(output)`。
 
-`applyLinkLoss()`：オートパイロットが failsafe 中（ARM 済みなら RTH または滑空）なら、舵面とスロットルはオートパイロットのコマンドに従います（フラップは滑らかに格納され、
-`MOTOR_KILL` は引き続きモーターを止め、AUX はそのまま）。そうでなければ
-`outputs.setFailsafe()` を実行します。逆転中、モーターは常に停止しています。
+`applyLinkLoss()`：オートパイロットが failsafe 中（ARM 済みなら RTH または滑空）なら、舵面とスロットルはオートパイロットのコマンドに従います（フラップは滑らかに格納され、`MOTOR_KILL` と逆転はモーターを止め、AUX はそのまま）。そうでなければ `outputs.setFailsafe()` を実行し、合図が鳴っている間はニュートラルにうなずきと ESC のパルス停止を重ねます（送信機を置いて校正している最中）。
 
 ---
 
@@ -247,3 +249,41 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
 |---|---|
 | `bool update(bool requested, bool armed, bool linkLost, uint32_t nowMs)` | ブザーの状態：`Feature::BEEPER` がある場合、または「機体ロスト」（ARM しておらず、`LOST_MODEL_BEEP_DELAY_MS` を超えてリンクがない）の場合に 2 Hz で鳴らす |
 | `bool isLostModel() const` | 「草むらで探して」モード |
+
+---
+
+## `GroundCalibration`
+
+**ファイル：** `control/GroundCalibration.h` · **依存先：** `Config`、`RcChannelState`、`ImuSensor`、`ImuOrientation`
+
+機体の地上校正：ステップ 1 は尾部を上げて胴体を水平に（水平基準、`ImuOrientation::withLevel()`）、ステップ 2 は車輪で立たせる（駐機姿勢）。`CAL_STILL_MS` の静止で自動的に記録する。ステップ 2 は機体が動かされるのを待つか、`CAL_PARK_WAIT_MS` だけ待つ。保存はまとめてだけ（`ImuSensor::setGroundCalibration()`）、その前に駐機姿勢を `LANDING_GEAR` に照らしてチェックする。ループを止めない。
+
+`Stage`：`IDLE`、`LEVEL`、`PARK`、`DONE`、`FAILED`。
+
+| メソッド | 説明 |
+|---|---|
+| `bool watchSwitch(const RcChannelState&, uint32_t nowMs)` | 操作：`CAL_SWITCH` を `CAL_SWITCH_WINDOW_MS` 以内に `CAL_SWITCH_FLIPS` 回上げ下げ、スロットルは下げたまま。最初の読み取りとスロットルが下がっていないときは数え直し |
+| `void forgetSwitch()` | ARM または通信なし：数え直し |
+| `bool start(const ImuSensor*, uint32_t nowMs, const char* source)` | 開始（合図 1）。IMU がない、または非対応ならエラー（合図 3） |
+| `void cancel(const char* why)` | 合図なしで中止 |
+| `void update(ImuSensor*, bool armed, bool signalBusy, uint32_t nowMs)` | 1 ステップ：ARM で中止。合図中は何も記録しない。`CAL_STEP_TIMEOUT_MS` を超えたらエラー |
+| `isActive()`、`getStage()`、`getStageSinceMs()`、`getFailure()`、`getParkPitch()`、`getParkRoll()` | 状態と結果 |
+| `uint8_t takeSignal()` | 鳴らす合図の数：1 は開始 / ステップ 1、2 は完了、3 はエラー（1 回だけ取り出す） |
+| `static const char* stageShort(Stage)` | `CAL1`、`CAL2`、`CALOK`、`CALER`：OLED 用 |
+
+---
+
+## `SignalPlayer`
+
+**ファイル：** `control/SignalPlayer.h` · **依存先：** `Config`
+
+パイロットへの合図。一連の合図が始まってからの時間の関数。合図 1 回：エレベーターとラダーがうなずく（`SIGNAL_NOD_US` 上、次に下、それぞれ `SIGNAL_NOD_MS`）、ARM なしなら ESC のパルスを `SIGNAL_ESC_PAUSE_MS` 止める（その後 ESC が準備完了のメロディを鳴らす）、うなずきの間はブザーの光が点く。次の合図は `SIGNAL_PERIOD_MS` 後。
+
+| メソッド | 説明 |
+|---|---|
+| `void play(uint8_t count, uint32_t nowMs, bool motor)` | 一連の合図。`motor` は ESC に触れてよいか（`SIGNAL_MOTOR` も） |
+| `void stop()` | 停止 |
+| `bool isBusy(uint32_t nowMs) const`、`uint8_t getCount(uint32_t nowMs) const` | 合図の途中（その間 ARM は拒否） |
+| `bool escPulsesOff(uint32_t nowMs) const` | 今 ESC のパルスを止めるか |
+| `int16_t nodUs(uint32_t nowMs) const` | 舵面のうなずき、µs（`SIGNAL_SURFACES`） |
+| `bool light(uint32_t nowMs) const` | `PIN_BUZZER` のブザー / LED |

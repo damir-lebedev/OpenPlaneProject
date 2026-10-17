@@ -105,7 +105,7 @@ activés, c’est la ligne du haut qui gagne.
 
 ## `Autopilot`
 
-**Fichier :** `autopilot/Autopilot.h` · **Dépend de :** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, les capteurs (tous nullables)
+**Fichier :** `autopilot/Autopilot.h` · **Dépend de :** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, les capteurs (tous nullables)
 
 ### Cycle de vie
 
@@ -116,7 +116,7 @@ activés, c’est la ligne du haut qui gagne.
 | `void setInputs(const PilotInputs&)` | les interrupteurs et potentiomètres de ce cycle (avant `update`) |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | une fois par cycle : capteurs (toujours) → navigation et point de départ → enregistrement du compensateur au sol → failsafe → géobarrière → mode → coordination du virage → auto-trim |
 | `ControlCommand getCommand() const` | les ordres finaux aux gouvernes (roll/pitch/yaw, µs) |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | les gaz du mode : `PILOT` — ceux du pilote ; `AUTO` — les siens ; `AT_LEAST` — pas moins que les siens (décollage automatique). L’ARM et `MOTOR_KILL` sont gérés par `FlightController` |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | les gaz du mode : `PILOT` — ceux du pilote ; `AUTO` — les siens (y compris au décollage automatique : le manche des gaz ne fait que lancer et interrompre). L’ARM et `MOTOR_KILL` sont gérés par `FlightController` |
 
 ### Modes
 
@@ -127,6 +127,10 @@ activés, c’est la ligne du haut qui gagne.
 | `isFailsafeActive()`, `isFailsafeGliding()`, `isFailsafeReturning()` | le failsafe par-dessus le mode |
 | `isAutoThrottle()`, `getThrottleCorrection()` | les gaz du mode (%, pour le journal et le tableau de bord) |
 | `getLaunchState()`, `getSoaringState()` | les automates LAUNCH et SOARING |
+| `getTakeoffStage()`, `getTakeoffAbortReason()` | l’étape du décollage automatique et pourquoi il a été interrompu (`nullptr` — pas interrompu) |
+| `bool takeTakeoffRefusal()` | le décollage automatique a refusé au contrôle avant le départ — `FlightController` joue un signal (lu une seule fois) |
+| `getLandingGear()`, `setLandingGear(LandingGear)` | le train d’atterrissage (par défaut `Config::LANDING_GEAR` ; les tests le changent) |
+| `bool isGyroOnlyAttitude() const` | l’horizon est mené en ce moment par le seul gyroscope (fenêtre d’accélération du décollage) |
 
 ### Sorties et diagnostic
 
@@ -155,7 +159,8 @@ activés, c’est la ligne du haut qui gagne.
   verticale, plus lent que le seuil du tube de Pitot/GPS : c’est alors seulement
   que le compensateur est écrit en flash.
 - Failsafe : avec GPS et point de départ — RTH avec le moteur, sinon plané ; un
-  RTH commencé n’est pas abandonné à cause d’une brève perte du GPS.
+  RTH commencé n’est pas abandonné à cause d’une brève perte du GPS. En AUTO_TAKEOFF sur la piste (étapes avec `holdsGround()`), la perte de liaison est un décollage interrompu, pas un failsafe ; en montée, c’est le failsafe, et au retour de la liaison la montée continue.
+- La fenêtre « gyroscope seul » (`manageAccelCorrection()`) : le démarrage du moteur au décollage automatique retire l’accéléromètre comme appui de l’horizon (`ImuSensor::setAccelCorrection`) ; le remettent le temps écoulé depuis le début de la montée (`TAKEOFF_GYRO_ONLY_CLIMB_MS`), la limite, un décollage interrompu et le DISARM — pas un changement de mode.
 
 ---
 
@@ -196,6 +201,28 @@ moteur, tangage `LAUNCH_CLIMB_PITCH_DEG`) `→ DONE` (`LAUNCH_CLIMB_MS` ou
 `LAUNCH_ALTITUDE_M`). Bouger les manches avant le lancer — annulation. Méthodes :
 `update(...)`, `reset()`, `getState()`, `motorOn()`, `pitchTargetDeg()`,
 `stateName()`.
+
+## `TakeoffController`
+
+**Fichier :** `autopilot/TakeoffController.h` · **Dépend de :** `Config`
+
+Le décollage automatique depuis une piste — des étapes d’après les capteurs, sans capteurs ni gouvernes à lui : en entrée des `Inputs` (ARM, liaison, gaz du pilote, angles et vitesses angulaires, facteur de charge, assiette au sol, altitude, vitesse, potentiomètre `STAB_GAIN`, temps), en sortie ce qu’il faut faire pendant ce cycle.
+
+`Stage` : `IDLE` (moteur arrêté ; gaz au-dessus de `TAKEOFF_TRIGGER_US` après avoir été en bas) `→ CHECK` (immobile pendant `TAKEOFF_CHECK_MS`, angles = assiette au sol ; sinon `ABORTED` et un signal) `→ TAIL_UP` (roulette de queue : à piquer, queue en l’air) `→ ROLL` (course ; `TD_ROLL_MS` / `TRI_ROLL_MS` ou la vitesse de rotation) `→ LIFTOFF` (la cible de tangage monte, près du sol au plus l’assiette au sol moins `TD_TAIL_CLEARANCE_DEG`) `→ CLIMB` (décollage d’après le baromètre ou le temps ; montée jusqu’à `TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS`) `→ DONE`. `ABORTED` — décollage interrompu ; gaz en bas 1 s — de nouveau `IDLE`.
+
+| Méthode | Description |
+|---|---|
+| `void update(const Inputs&)` | une fois par cycle : changement d’étape, puis les sorties de cette étape ; sans ARM — `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | interruption de l’extérieur (perte de liaison) ; en `IDLE`/`DONE` — rien |
+| `void reset()`, `setGear()`, `getGear()` | |
+| `getStage()`, `stageName()`, `stageShort()`, `getAbortReason()` | l’étape (nom court pour l’OLED) |
+| `bool holdsGround() const` | au sol (`IDLE`…`LIFTOFF`, `ABORTED`) : la perte de liaison est un décollage interrompu, les intégrateurs des PID restent à zéro |
+| `isAirborneStage()`, `isDone()` | en l’air (montée/terminé) ; décollage terminé |
+| `getThrottlePct()` | gaz du programme, % (rampe sur `TAKEOFF_THROTTLE_RAMP_MS`) |
+| `getRollTargetDeg()`, `getPitchTargetDeg()` | cible de roulis (sur les roues — le roulis à l’arrêt) et de tangage (en montée — pour le PID) |
+| `hasElevatorCommand()`, `getElevatorUs()` | sur les roues, la profondeur directement : vers la cible avec `TD_PITCH_KP` / `TD_ROLL_PITCH_KP` µs par degré, amortissement `TD_PITCH_KD`, au plus `TD_TAIL_UP_ELEVATOR_US` à piquer |
+| `hasRudderCommand()`, `getRudderUs()` | le cap à la direction et à la roue : `TAKEOFF_HEADING_KP` µs par degré, `TAKEOFF_YAW_RATE_KD` par °/s |
+| `bool takeRefusal()`, `bool takeGyroTrim(float[3])` | événements uniques : refus au contrôle ; le zéro résiduel du gyroscope mesuré à l’arrêt |
 
 ## `SoaringController`
 

@@ -15,8 +15,8 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | [hal.md](hal.md) | HAL | `IBoard`, `ServoChannel`, `II2CBus`, `ISpiBus`, `IUartPort`, `IServoOutput`, `IRegisterDevice`, `I2cRegisterDevice`, `SpiRegisterDevice`, `Rtos`, `Esp32Board`, `Esp32I2CBus`, `Esp32SpiBus`, `Esp32UartPort`, `Esp32ServoOutput`; STM32H743: `Stm32Board`, `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`, `Stm32ServoOutput`, `Stm32FlashStorage`, `compat/Preferences` |
 | [storage.md](storage.md) | LAGRING | `IFlashStorage`, `KeyValueStore`, `KvPreferences` |
 | [rc.md](rc.md) | RC | `RcChannelState`, `RcInput`, `IBusReceiver` |
-| [control.md](control.md) | STYRNING / KOORDINERING | `ControlCommand`, `FlightOutputState`, `FlapsController`, `ControlMixer`, `ThrottleManager`, `EscSignal`, `MotorReverse`, `ArmingManager`, `FlightOutputs`, `Beeper`, `FlightController` |
-| [autopilot.md](autopilot.md) | AUTOPILOT | `AutopilotMode`, `Feature`, `Knob`, `PilotInputs`, `Binding`/`Bind`/`BindingCheck`, `PilotSwitches`, `Autopilot`, `NavStatus`, `Geo`/`Guidance`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, `PidController` |
+| [control.md](control.md) | STYRNING / KOORDINERING | `ControlCommand`, `FlightOutputState`, `FlapsController`, `ControlMixer`, `ThrottleManager`, `EscSignal`, `MotorReverse`, `ArmingManager`, `FlightOutputs`, `Beeper`, `FlightController`, `GroundCalibration`, `SignalPlayer` |
+| [autopilot.md](autopilot.md) | AUTOPILOT | `AutopilotMode`, `Feature`, `Knob`, `PilotInputs`, `Binding`/`Bind`/`BindingCheck`, `PilotSwitches`, `Autopilot`, `NavStatus`, `Geo`/`Guidance`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, `PidController` |
 | [feedback.md](feedback.md) | AUTOPILOT / återkoppling | `FeedbackConfig`, `FeedbackMath`, `FlightSnapshot`, `FeedbackOutput`, `PhaseTargets`, `SpeedEstimator`, `AirborneDetector`, `ControlEffectivenessEstimator`, `AxisModel`, `AdaptiveRateController`, `StallGuard`, `TakeoffSequencer`, `LandingSequencer`, `FeedbackSupervisor` |
 | [sensors.md](sensors.md) | SENSORER | gränssnitt och data, `SensorMounting`, `SensorSelection`, `ImuOrientation`, `AttitudeEstimator`, `ImuSensorBase`, `MPU6050_Sensor`, `ICM42688_Sensor`, `LSM6DSV_Sensor`, `ICM45686_Sensor`, `BarometerBase`, `BMP388_Sensor`, `BME280_Sensor`, `SPL06_Sensor`, `BMP581_Sensor`, `MagnetometerBase`, `QMC5883P_Sensor`, `QMC5883L_Sensor`, `QMC6309_Sensor`, `UbloxM10_Gps`, `AirspeedSensor`, `PitotDualBaroAirspeed` |
 | [telemetry.md](telemetry.md) | TELEMETRI | `LoopStats`, `LogChannel`, `LogMode`, `LogSettings`, `DebugLogger`, `DebugConsole`, `WebDashboardPage`, `WebDebugServer`, `OledDisplay`, `Mavlink` (kodek), `MavlinkModes`, `MavlinkTelemetry` |
@@ -69,6 +69,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | `FlightSnapshot` | struktur | `autopilot/feedback/FlightSnapshot.h` | [feedback](feedback.md#flightsnapshot) |
 | `Geo`, `Guidance`, `GeoPoint` | namnrymd, struktur | `autopilot/Navigation.h` | [autopilot](autopilot.md#geo-guidance-geopoint) |
 | `GpsData`, `GpsSensor` | struktur, gränssnitt | `sensors/SensorInterface.h` | [sensors](sensors.md#gränssnitt-och-datastrukturer) |
+| `GroundCalibration` | klass | `control/GroundCalibration.h` | [control](control.md#groundcalibration) |
 | `I2cRegisterDevice` | klass | `hal/RegisterDevice.h` | [hal](hal.md#i2cregisterdevice) |
 | `IBoard` | gränssnitt | `hal/IBoard.h` | [hal](hal.md#iboard) |
 | `IBusReceiver` | klass | `rc/IBusReceiver.h` | [rc](rc.md#ibusreceiver) |
@@ -113,6 +114,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | `SensorMounting` | namnrymd | `sensors/SensorMounting.h` | [sensors](sensors.md#namnrymd-sensormounting) |
 | `SensorSelection.h` | makron | `sensors/SensorSelection.h` | [sensors](sensors.md#sensorselectionh) |
 | `ServoChannel` | namnrymd | `hal/IBoard.h` | [hal](hal.md#namnrymd-servochannel) |
+| `SignalPlayer` | klass | `control/SignalPlayer.h` | [control](control.md#signalplayer) |
 | `SoaringController` | klass | `autopilot/SoaringController.h` | [autopilot](autopilot.md#soaringcontroller) |
 | `SpeedEstimator` | klass | `autopilot/feedback/SpeedEstimator.h` | [feedback](feedback.md#speedestimator) |
 | `SpiRegisterDevice` | klass | `hal/RegisterDevice.h` | [hal](hal.md#spiregisterdevice) |
@@ -124,6 +126,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | `Stm32ServoOutput` | klass | `hal/stm32/Stm32ServoOutput.h` | [hal](hal.md#stm32servooutput) |
 | `Stm32SpiBus` | klass | `hal/stm32/Stm32SpiBus.h` | [hal](hal.md#stm32spibus) |
 | `Stm32UartPort` | klass | `hal/stm32/Stm32UartPort.h` | [hal](hal.md#stm32uartport) |
+| `TakeoffController` | klass | `autopilot/TakeoffController.h` | [autopilot](autopilot.md#takeoffcontroller) |
 | `TakeoffSequencer` | klass | `autopilot/feedback/TakeoffSequencer.h` | [feedback](feedback.md#takeoffsequencer) |
 | `ThrottleManager` | klass | `control/ThrottleManager.h` | [control](control.md#throttlemanager) |
 | `UbloxM10_Gps` | klass | `sensors/gps/UbloxM10_Gps.h` | [sensors](sensors.md#ubloxm10_gps) |

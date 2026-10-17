@@ -126,6 +126,7 @@ HAL अकेली ऐसी परत है जिसे किसी ख़�
 | `writeMicroseconds(us)` | पल्स की चौड़ाई, µs (`attach` के दायरे में सीमित) |
 | `bool isAttached() const` | `attach()` का नतीजा |
 | `virtual int32_t measurePulseUs()` | निदान: पिन पर पल्स की असली चौड़ाई या `-1`। डिफ़ॉल्ट क्रियान्वयन `-1` लौटाता है |
+| `virtual void stopPulses()` | अगले लिखने तक पल्स हटाना (पिन लो पर रहती है) — मोटर का संकेत: पल्स न हों तो ESC मान लेता है कि सिग्नल खो गया, और उनके लौटने पर तैयार होने की धुन बजाता है। डिफ़ॉल्ट रूप से कुछ नहीं (तब मोटर चुप रहती है) |
 
 ---
 
@@ -316,6 +317,7 @@ ESP32Servo लाइब्रेरी **इस्तेमाल नहीं �
 | `attach(minUs, maxUs)` | दायरा याद रखता है; पिन < 0 → `false`; नहीं तो `ledcSetup() != 0` → `ledcAttachPin()` |
 | `writeMicroseconds(us)` | attached न हो तो कुछ नहीं; नहीं तो `constrain(us, min, max) * MAX_DUTY / PERIOD_US` → `ledcWrite` |
 | `measurePulseUs()` | उसी GPIO का इनपुट बफ़र चालू करता है (`PIN_INPUT_ENABLE`, आउटपुट को छुआ नहीं जाता) और `pulseIn(pin, HIGH, 30 ms)` नापता है; पल्स नहीं → `-1` |
+| `stopPulses()` | ड्यूटी 0 (`ledcWrite(channel, 0)`) — कोई पल्स नहीं |
 
 चैनल 2n और 2n+1 एक LEDC टाइमर साझा करते हैं — सभी आउटपुट 50 Hz पर हैं, इसलिए टकराव नहीं होता।
 
@@ -421,7 +423,8 @@ MAVLink के फ़्रेम बिना इंतज़ार के)।
 | `Stm32ServoOutput(int16_t pin)` | पिन `< 0` — आउटपुट निकाला नहीं गया |
 | `attach(minUs, maxUs)` | टाइमर और चैनल पिन से `PinMap_TIM` से लिए जाते हैं (`pinmap_peripheral`, `STM_PIN_CHANNEL`), जैसे `analogWrite()` में। पिन पर टाइमर नहीं या पूल ख़त्म → `false`। नहीं तो `setMode(PWM1)`, तुलना 0 (पहली लिखाई तक पल्स नहीं), `resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`। तुलना रजिस्टर प्रीलोड वाला है — मान अगली अवधि से लागू होता है |
-| `measurePulseUs()` | पिन को दोबारा सेट किए बिना `pulseIn(pin, HIGH, 30 ms)`: STM32 पर IDR रजिस्टर वैकल्पिक फ़ंक्शन के मोड में भी स्तर देखता है |
+| `stopPulses()` | तुलना मान 0 — कोई पल्स नहीं, जैसे `attach()` के ठीक बाद |
+| `measurePulseUs()` | पिन को दोबारा सेट किए बिना `pulseIn(pin, HIGH, 30 ms)`: STM32 पर IDR रजिस्टर वैकल्पिक फ़ंक्शन के मोड में भी स्तर देखता है। कोर का `pulseIn()` बिट-संख्या 8+ वाली पिनों (PD14, PD15, PE9) पर **लो** स्तर नापता है — उसका स्तर-मास्क `uint8_t` है; सर्वो की पल्स हमेशा आधी अवधि से छोटी होती है, इसलिए लंबी माप ठहराव है, और पल्स = `PERIOD_US` घटा वह |
 | `static acquireTimer(TIM_TypeDef*)` | साझा पूल: **हर TIMx पर एक `HardwareTimer`**। उसी टाइमर पर दूसरा ऑब्जेक्ट कोर का हैंडलर (`HardwareTimer_Handle[index]`) अधिलेखित कर देता। अवधि टाइमर के पहले आउटपुट पर तय होती है; `setOverflow(MICROSEC_FORMAT)` भाजक चुनता है — टाइमर की घड़ी 240 MHz होने पर चरण ~0.3 µs |
 
 ## `Stm32FlashStorage`

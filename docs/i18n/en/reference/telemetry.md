@@ -111,6 +111,7 @@ RC   1:1500 2:1500 3:1000 …
 OUT  AIL-L 1500 AIL-R 1500 ELE 1500 RUD 1500 ESC 1000
 ATT  R +1.2 P -0.4 Y 123.0
 AP   STABILIZE want R +0.0 P +0.0 corr R -6 P +2 THR +0
+AP   AUTO_TAKEOFF/ROLL GYRO want R +0.0 P +1.0 corr R +0 P -22 THR +100
 ALT  0.3 m  Vz +0.10 m/s  target 0.0 m
 MAG  heading 123°
 GPS  fix=3 sats=12 lat … lon … v 0.0 m/s hacc 1.2 m
@@ -119,7 +120,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (worst in 10 s) | iBUS ok=… crc_err=
 ```
 
 `RX=` tells `LOST(no frames)` from `LOST(transmitter failsafe)`; `IMU=` is
-`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`.
+`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`. In AUTO_TAKEOFF the mode name is followed by the takeoff stage (`/CHECK`, `/TAIL_UP`, `/ROLL`…), and `GYRO` means the horizon currently comes from the gyro only (acceleration).
 
 ---
 
@@ -140,7 +141,7 @@ Hot keys (outside the menu): `h`/`?` — the main menu; `l` — the log menu; sp
 pause the log; `s` — sensor status; `i` — gyroscope calibration; `o` —
 IMU mounting calibration; `m` — compass calibration; `p` — output self-test;
 `b` — scan of the I2C buses (0x08..0x7F — up to 0x7F, because the QMC6309 sits at 0x7C) with
-chip names; anything else — a hint. `\r`/`\n` are ignored.
+chip names; anything else — a hint. `\r`/`\n` are ignored. Also `c` — ground calibration of the airplane (cancels while it runs; main-menu item 9) and `e` — a signal by the control surfaces and the ESC tune (checks that the ESC plays it after the pulse pause).
 
 The log menu: `1`..`9` — cycle the mode of channels 0..8, `n` — NAV, `s` — SYS, `p` — period, `a` —
 everything "on change", `x` — everything off, `d` — defaults, `0`/`q` — back, `l`/`h` —
@@ -148,7 +149,7 @@ close.
 
 The blocking actions (`i`, `o`, `m`, `p`) are **forbidden while ARMed**. While the menu
 is open, the log is suspended (`DebugLogger::suspend`). The width of the menu items
-is counted in UTF-8 characters rather than bytes (Cyrillic takes 2 bytes).
+is counted in UTF-8 characters rather than bytes (Cyrillic takes 2 bytes). The airplane calibration and the signal (`c`, `e` — they move the control surfaces and touch the ESC) are refused while armed as well.
 
 ---
 
@@ -215,7 +216,7 @@ The display:
 
 ```
 RX ok ARM STAB FL       link (a loss — an inverted line) / ARM / mode / REV — motor backwards / flaps
-R  +1.2 P  -0.4         roll / pitch, °           (IMU --)
+R  +1.2 P  -0.4 ROLL    roll / pitch, °; calibration step (CAL1, CAL2, result CALOK/CALER for 10 s) or takeoff stage (WAIT, CHECK, TAIL, ROLL, LIFT, CLIMB, DONE, ABORT)   (IMU --)
 Alt +0.3 Vz +0.1 A14    altitude / vertical speed / airspeed, if there is a pitot tube (BARO --)
 H123 T1000 Y1500        heading / throttle 1000..2000 = 0..100% in either direction / rudder (H---)
 L1500 R1500 E1500       ailerons / elevator
@@ -243,6 +244,8 @@ Recording of the flight to flash (ESP32-S3) or an SD card (STM32H743). What to d
 | `State getState()` / `bool isRecording()` | `Off`, `Idle`, `Recording`, `Stopping` (writes out the queue before recording END) |
 | `printStatus(Print&)` / `printFlights(Print&)` / `eraseAll()` | For the console |
 | `void handleHostCommand(const char*)` | `bb list`, `bb get <n> [baud]` — for `tools/blackbox.py` (over USB CDC the speed affects nothing) |
+
+Events of the ground calibration (steps, the result with the parking attitude, an error with its reason, cancellation) and of the auto-takeoff stages (`ABORTED` — with the reason); the stage is also the `takeoff_stage` field of the NAV record; the flight parameters include `LANDING_GEAR` and the main takeoff numbers.
 
 The platform-specific parts: the reset cause — `readResetCause()`; the battery voltage and current —
 the ADC (`analogReadMilliVolts` on the S3, a 12-bit `analogRead` on the STM32); the medium errors

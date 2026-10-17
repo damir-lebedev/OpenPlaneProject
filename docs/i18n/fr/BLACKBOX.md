@@ -40,10 +40,10 @@ Sur les autres cartes (ESP32-C3, ESP32 ordinaire), il n’y a pas de support de 
 | `MAG` | jusqu’à 50 Hz | le champ sur trois axes, cap |
 | `GPS` | à chaque solution | coordonnées, altitude, vitesse, route, satellites, fix, précision |
 | `AIR` | jusqu’à 50 Hz | tube de Pitot : différence de pression, vitesse indiquée et vraie, densité |
-| `NAV` | 10 Hz | point de départ (distance, relèvement), cap et consigne de cap, vitesse de navigation, source du cap, phases du lancement à la main et du vol à voile, auto-trim |
+| `NAV` | 10 Hz | point de départ (distance, relèvement), cap et consigne de cap, vitesse de navigation, source du cap, phases du lancement à la main et du vol à voile, auto-trim, étape du décollage automatique (`takeoff_stage`) |
 | `POWER` | 10 Hz | tension de la batterie et sortie du capteur de courant (les diviseurs de la carte du contrôleur de vol, [FC_BOARD.md](FC_BOARD.md), bloc B) |
 | `SYS` | 1 Hz | fréquence et pire cycle de la boucle de contrôle, mémoire libre, compteurs iBUS, température de l’IMU, file de la boîte noire, enregistrements perdus, l’écriture en flash la plus longue, espace libre |
-| `EVENT` | sur événement | ARM/DISARM, refus d’ARM avec la cause, changement de mode, liaison perdue/rétablie, capteur en panne/revenu, fix GPS, point de départ enregistré, fonctions des interrupteurs, géorepérage, protection contre le décrochage, phases du lancement à la main et du vol à voile |
+| `EVENT` | sur événement | ARM/DISARM, refus d’ARM avec la cause, changement de mode, liaison perdue/rétablie, capteur en panne/revenu, fix GPS, point de départ enregistré, fonctions des interrupteurs, géorepérage, protection contre le décrochage, phases du lancement à la main et du vol à voile, étapes du décollage automatique (interruption — avec la raison), étapes et résultat de la calibration au sol (assiette au sol ou erreur) |
 
 Au début de chaque vol figurent les paramètres : le firmware (date de compilation), la cause du démarrage et du dernier redémarrage, quels capteurs sont installés et s’ils ont réussi le contrôle avant vol, les coefficients du PID (y compris les modifications faites depuis le tableau de bord), les trims, les valeurs importantes de `Config` et les affectations des interrupteurs.
 

@@ -18,6 +18,12 @@
 // Рысканье — чистый интеграл гироскопа: абсолютной опоры нет,
 // медленно уплывает. Начальное значение задаёт setYaw() (например,
 // курс компаса при старте).
+//
+// Акселерометр видит не только тяжесть, но и разгон: на разбеге 0.5 g
+// вперёд для него — нос задран на +27°. Поэтому автовзлёт на время
+// разгона отключает его (setAccelCorrection(false)) — крен и тангаж ведёт
+// только гироскоп от точно известных стояночных углов. Включили обратно —
+// фильтр сам за ~0.1 с подтягивается к акселерометру.
 // ============================================================
 
 class AttitudeEstimator
@@ -35,6 +41,14 @@ public:
     {
         yaw = wrap180(yawDegrees);
     }
+
+    // false — акселерометр не опора горизонта, только гироскоп.
+    void setAccelCorrection(bool enabled)
+    {
+        accelCorrection = enabled;
+    }
+
+    bool isAccelCorrectionEnabled() const { return accelCorrection; }
 
     // ax/ay/az — ускорение, g, оси самолёта (X к носу, Y влево, Z вверх).
     // rollRate/pitchRate/yawRate — °/с, авиационные знаки.
@@ -64,8 +78,9 @@ public:
             return;
         }
 
-        roll = wrap180(ALPHA * (roll + rollRate * dt) + (1.0f - ALPHA) * accelRoll);
-        pitch = wrap180(ALPHA * (pitch + pitchRate * dt) + (1.0f - ALPHA) * accelPitch);
+        const float alpha = accelCorrection ? ALPHA : 1.0f;
+        roll = wrap180(alpha * (roll + rollRate * dt) + (1.0f - alpha) * accelRoll);
+        pitch = wrap180(alpha * (pitch + pitchRate * dt) + (1.0f - alpha) * accelPitch);
         yaw = wrap180(yaw + yawRate * dt);
     }
 
@@ -89,6 +104,7 @@ private:
 
     uint32_t lastUpdateUs = 0;
     bool initialized = false;
+    bool accelCorrection = true;
 
     static float wrap180(float angle)
     {

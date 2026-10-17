@@ -118,6 +118,7 @@ HAL 是唯一允许了解具体 MCU 的层。接口位于 `include/hal/`，实�
 | `writeMicroseconds(us)` | 脉冲宽度，µs（限制在 `attach` 的范围内） |
 | `bool isAttached() const` | `attach()` 的结果 |
 | `virtual int32_t measurePulseUs()` | 诊断：引脚上的实际脉冲宽度，或 `-1`。默认实现返回 `-1` |
+| `virtual void stopPulses()` | 停止输出脉冲（引脚保持低电平），直到下一次写入——即电机提示：没有脉冲时电调以为信号丢了，脉冲恢复后播放就绪提示音。默认什么也不做（电机就不会出声） |
 
 ---
 
@@ -297,6 +298,7 @@ rx, tx)`；`tx = -1` 表示只接收。其余都是委托。
 | `attach(minUs, maxUs)` | 保存范围；引脚 < 0 → `false`；否则 `ledcSetup() != 0` → `ledcAttachPin()` |
 | `writeMicroseconds(us)` | 未 attach 则什么也不做；否则 `constrain(us, min, max) * MAX_DUTY / PERIOD_US` → `ledcWrite` |
 | `measurePulseUs()` | 打开同一 GPIO 的输入缓冲（`PIN_INPUT_ENABLE`，不改动输出），并测量 `pulseIn(pin, HIGH, 30 ms)`；没有脉冲 → `-1` |
+| `stopPulses()` | 占空比 0（`ledcWrite(channel, 0)`）——无脉冲 |
 
 通道 2n 和 2n+1 共用一个 LEDC 定时器——所有输出都是 50 Hz，因此不会冲突。
 
@@ -392,7 +394,8 @@ MAVLink 帧无需等待）。
 | `Stm32ServoOutput(int16_t pin)` | 引脚 `< 0` 表示该输出未引出 |
 | `attach(minUs, maxUs)` | 定时器和通道按引脚从 `PinMap_TIM` 中取得（`pinmap_peripheral`、`STM_PIN_CHANNEL`），与 `analogWrite()` 相同。引脚上没有定时器或资源池耗尽 → `false`。否则 `setMode(PWM1)`，比较值为 0（第一次写入之前没有脉冲），`resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`。比较寄存器带预装载——新值从下一个周期开始生效 |
-| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)`，不重新配置引脚：在 STM32 上，即使处于复用功能模式，IDR 寄存器也能看到电平 |
+| `stopPulses()` | 比较值 0——无脉冲，和刚 `attach()` 之后一样 |
+| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)`，不重新配置引脚：在 STM32 上，即使处于复用功能模式，IDR 寄存器也能看到电平。核心库的 `pulseIn()` 在位号 8 及以上的引脚（PD14、PD15、PE9）上测的是**低**电平——它的电平掩码是 `uint8_t`；舵机脉冲总是短于半个周期，所以更长的测量值就是间隔，脉冲 = `PERIOD_US` 减去它 |
 | `static acquireTimer(TIM_TypeDef*)` | 共享资源池：**每个 TIMx 只有一个 `HardwareTimer`**。为同一个定时器再建一个对象，会覆盖内核的处理函数（`HardwareTimer_Handle[index]`）。周期在该定时器上的第一个输出处设定；`setOverflow(MICROSEC_FORMAT)` 选取分频系数——定时器时钟为 240 MHz 时，步长约 0.3 µs |
 
 ## `Stm32FlashStorage`

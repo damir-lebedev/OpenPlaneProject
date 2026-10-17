@@ -105,7 +105,7 @@ activados gana la fila superior.
 
 ## `Autopilot`
 
-**Archivo:** `autopilot/Autopilot.h` · **Depende de:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, los sensores (todos pueden ser nulos)
+**Archivo:** `autopilot/Autopilot.h` · **Depende de:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, los sensores (todos pueden ser nulos)
 
 ### Ciclo de vida
 
@@ -116,7 +116,7 @@ activados gana la fila superior.
 | `void setInputs(const PilotInputs&)` | los interruptores y potenciómetros de este ciclo (antes de `update`) |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | una vez por ciclo: sensores (siempre) → navegación y punto de origen → guardado de la compensación en tierra → failsafe → geovalla → modo → coordinación del viraje → autotrim |
 | `ControlCommand getCommand() const` | las órdenes finales a las superficies (roll/pitch/yaw, µs) |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | el acelerador del modo: `PILOT`: el del piloto; `AUTO`: el propio; `AT_LEAST`: no menos que el propio (despegue automático). El ARM y `MOTOR_KILL` los trata `FlightController` |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | el acelerador del modo: `PILOT`: el del piloto; `AUTO`: el propio (también en el despegue automático: el stick de gas solo arranca y aborta). El ARM y `MOTOR_KILL` los trata `FlightController` |
 
 ### Modos
 
@@ -127,6 +127,10 @@ activados gana la fila superior.
 | `isFailsafeActive()`, `isFailsafeGliding()`, `isFailsafeReturning()` | el failsafe por encima del modo |
 | `isAutoThrottle()`, `getThrottleCorrection()` | el acelerador del modo (%, para el registro y el dashboard) |
 | `getLaunchState()`, `getSoaringState()` | las máquinas de estados de LAUNCH y SOARING |
+| `getTakeoffStage()`, `getTakeoffAbortReason()` | la etapa del despegue automático y por qué se abortó (`nullptr`: no se abortó) |
+| `bool takeTakeoffRefusal()` | el despegue automático se negó en la comprobación antes del arranque: `FlightController` toca una señal (se lee una vez) |
+| `getLandingGear()`, `setLandingGear(LandingGear)` | el tren de aterrizaje (por defecto `Config::LANDING_GEAR`; las pruebas lo cambian) |
+| `bool isGyroOnlyAttitude() const` | ahora el horizonte lo lleva solo el giroscopio (ventana de aceleración del despegue) |
 
 ### Salidas y diagnóstico
 
@@ -155,7 +159,8 @@ activados gana la fila superior.
   vertical, más lento que el umbral del tubo de Pitot o el GPS: solo entonces
   se escribe la compensación en la flash.
 - Failsafe: con GPS y punto de origen, RTH con motor; si no, planeo; un RTH ya
-  iniciado no se abandona por una pérdida breve del GPS.
+  iniciado no se abandona por una pérdida breve del GPS. En AUTO_TAKEOFF en la pista (etapas con `holdsGround()`), la pérdida de señal es un despegue abortado, no un failsafe; en el ascenso es el failsafe, y al volver la señal el ascenso continúa.
+- La ventana «solo giroscopio» (`manageAccelCorrection()`): el arranque del motor del despegue automático quita el acelerómetro como apoyo del horizonte (`ImuSensor::setAccelCorrection`); lo devuelven el tiempo desde el inicio del ascenso (`TAKEOFF_GYRO_ONLY_CLIMB_MS`), el límite, un despegue abortado y el DISARM, no un cambio de modo.
 
 ---
 
@@ -196,6 +201,28 @@ motor, cabeceo `LAUNCH_CLIMB_PITCH_DEG`) `→ DONE` (`LAUNCH_CLIMB_MS` o
 `LAUNCH_ALTITUDE_M`). Mover los sticks antes del lanzamiento: cancelar. Métodos:
 `update(...)`, `reset()`, `getState()`, `motorOn()`, `pitchTargetDeg()`,
 `stateName()`.
+
+## `TakeoffController`
+
+**Archivo:** `autopilot/TakeoffController.h` · **Depende de:** `Config`
+
+Despegue automático desde pista: etapas según los sensores, sin sensores ni timones propios. Recibe `Inputs` (ARM, enlace, gas del piloto, ángulos y velocidades angulares, carga, actitud en tierra, altitud, velocidad, potenciómetro `STAB_GAIN`, tiempo) y devuelve qué hacer en este ciclo.
+
+`Stage`: `IDLE` (motor parado; gas por encima de `TAKEOFF_TRIGGER_US` después de haber estado abajo) `→ CHECK` (quieto durante `TAKEOFF_CHECK_MS`, ángulos = actitud en tierra; si no, `ABORTED` y una señal) `→ TAIL_UP` (rueda de cola: a picar, cola arriba) `→ ROLL` (carrera; `TD_ROLL_MS` / `TRI_ROLL_MS` o la velocidad de rotación) `→ LIFTOFF` (el objetivo de cabeceo sube, cerca del suelo como mucho la actitud en tierra menos `TD_TAIL_CLEARANCE_DEG`) `→ CLIMB` (despegue según el barómetro o el tiempo; ascenso hasta `TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS`) `→ DONE`. `ABORTED`: despegue abortado; gas abajo 1 s y otra vez `IDLE`.
+
+| Método | Descripción |
+|---|---|
+| `void update(const Inputs&)` | una vez por ciclo: cambio de etapa y luego las salidas de esa etapa; sin ARM, `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | aborto desde fuera (pérdida de señal); en `IDLE`/`DONE`, nada |
+| `void reset()`, `setGear()`, `getGear()` | |
+| `getStage()`, `stageName()`, `stageShort()`, `getAbortReason()` | la etapa (nombre corto para el OLED) |
+| `bool holdsGround() const` | en tierra (`IDLE`…`LIFTOFF`, `ABORTED`): la pérdida de señal es un despegue abortado, los integradores de los PID se quedan a cero |
+| `isAirborneStage()`, `isDone()` | en el aire (ascenso/listo); despegue terminado |
+| `getThrottlePct()` | gas del programa, % (rampa en `TAKEOFF_THROTTLE_RAMP_MS`) |
+| `getRollTargetDeg()`, `getPitchTargetDeg()` | objetivo de alabeo (sobre las ruedas, el alabeo en reposo) y de cabeceo (en el ascenso, para el PID) |
+| `hasElevatorCommand()`, `getElevatorUs()` | sobre las ruedas, el timón de profundidad directamente: hacia el objetivo con `TD_PITCH_KP` / `TD_ROLL_PITCH_KP` µs por grado, amortiguación `TD_PITCH_KD`, como mucho `TD_TAIL_UP_ELEVATOR_US` a picar |
+| `hasRudderCommand()`, `getRudderUs()` | el rumbo con el timón de dirección y la rueda: `TAKEOFF_HEADING_KP` µs por grado, `TAKEOFF_YAW_RATE_KD` por °/s |
+| `bool takeRefusal()`, `bool takeGyroTrim(float[3])` | eventos únicos: rechazo en la comprobación; el cero residual del giroscopio medido en reposo |
 
 ## `SoaringController`
 

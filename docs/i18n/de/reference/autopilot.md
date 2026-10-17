@@ -104,7 +104,7 @@ als C++11 gebaut): `channelIsFree`, `channelsFree`, `channelsUnique`,
 
 ## `Autopilot`
 
-**Datei:** `autopilot/Autopilot.h` · **Abhängig von:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, den Sensoren (alle nullbar)
+**Datei:** `autopilot/Autopilot.h` · **Abhängig von:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, den Sensoren (alle nullbar)
 
 ### Lebenszyklus
 
@@ -115,7 +115,7 @@ als C++11 gebaut): `channelIsFree`, `channelsFree`, `channelsUnique`,
 | `void setInputs(const PilotInputs&)` | die Schalter und Drehregler dieses Zyklus (vor `update`) |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | einmal pro Zyklus: Sensoren (immer) → Navigation und Startpunkt → Speichern des Trimmwerts am Boden → Failsafe → Geofence → Modus → Kurvenkoordination → Autotrimmung |
 | `ControlCommand getCommand() const` | die endgültigen Ruderkommandos (roll/pitch/yaw, µs) |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | das Gas des Modus: `PILOT` — das des Piloten; `AUTO` — das eigene; `AT_LEAST` — nicht weniger als das eigene (Automatikstart). ARM und `MOTOR_KILL` behandelt `FlightController` |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | Gas des Modus: `PILOT` – Gas des Piloten; `AUTO` – das eigene (auch beim Autostart: der Gasknüppel startet und bricht nur ab). ARM und `MOTOR_KILL` berücksichtigt `FlightController` |
 
 ### Modi
 
@@ -126,6 +126,10 @@ als C++11 gebaut): `channelIsFree`, `channelsFree`, `channelsUnique`,
 | `isFailsafeActive()`, `isFailsafeGliding()`, `isFailsafeReturning()` | Failsafe über dem Modus |
 | `isAutoThrottle()`, `getThrottleCorrection()` | das Gas des Modus (%, für Log und Dashboard) |
 | `getLaunchState()`, `getSoaringState()` | die Automaten LAUNCH und SOARING |
+| `getTakeoffStage()`, `getTakeoffAbortReason()` | Etappe des Autostarts und warum er abgebrochen wurde (`nullptr` – nicht abgebrochen) |
+| `bool takeTakeoffRefusal()` | Der Autostart hat bei der Prüfung vor dem Start abgelehnt – `FlightController` spielt ein Signal (wird einmal abgeholt) |
+| `getLandingGear()`, `setLandingGear(LandingGear)` | Fahrwerk (Standard `Config::LANDING_GEAR`; Tests ändern es) |
+| `bool isGyroOnlyAttitude() const` | Den Horizont führt gerade nur das Gyroskop (Beschleunigungsfenster des Autostarts) |
 
 ### Ausgaben und Diagnose
 
@@ -154,7 +158,8 @@ als C++11 gebaut): `channelIsFree`, `channelsFree`, `channelsUnique`,
   langsamer als die Schwelle des Pitotrohrs/GPS: nur dann wird der Trimmwert in
   den Flash geschrieben.
 - Failsafe: mit GPS und Startpunkt — RTH mit Motor, sonst Gleiten; ein begonnener
-  RTH wird wegen eines kurzen GPS-Verlusts nicht abgebrochen.
+  RTH wird wegen eines kurzen GPS-Verlusts nicht abgebrochen. In AUTO_TAKEOFF auf der Piste (Etappen mit `holdsGround()`) ist Signalverlust ein Startabbruch, kein Failsafe; im Steigflug ist es der Failsafe, und nach Rückkehr des Signals geht der Steigflug weiter.
+- Das Fenster „nur Gyroskop“ (`manageAccelCorrection()`): Der Motorstart des Autostarts schaltet den Beschleunigungssensor als Horizontstütze ab (`ImuSensor::setAccelCorrection`); wieder ein schalten ihn die Zeit nach Beginn des Steigflugs (`TAKEOFF_GYRO_ONLY_CLIMB_MS`), die Obergrenze, ein Startabbruch und DISARM – kein Moduswechsel.
 
 ---
 
@@ -195,6 +200,28 @@ Motor, Nicken `LAUNCH_CLIMB_PITCH_DEG`) `→ DONE` (`LAUNCH_CLIMB_MS` oder
 `LAUNCH_ALTITUDE_M`). Bewegen der Knüppel vor dem Wurf — Abbruch. Methoden:
 `update(...)`, `reset()`, `getState()`, `motorOn()`, `pitchTargetDeg()`,
 `stateName()`.
+
+## `TakeoffController`
+
+**Datei:** `autopilot/TakeoffController.h` · **Hängt ab von:** `Config`
+
+Autostart von der Piste – Etappen nach den Sensoren, ohne eigene Sensoren und Ruder: Hinein gehen `Inputs` (ARM, Verbindung, Gas des Piloten, Winkel und Drehraten, Belastung, Standwinkel, Höhe, Geschwindigkeit, Drehregler `STAB_GAIN`, Zeit), heraus kommt, was in diesem Takt zu tun ist.
+
+`Stage`: `IDLE` (Motor aus; Gas über `TAKEOFF_TRIGGER_US`, nachdem es unten war) `→ CHECK` (still für `TAKEOFF_CHECK_MS`, Winkel = Standlage; sonst `ABORTED` und Signal) `→ TAIL_UP` (Spornrad: Tiefenruder, Heck hoch) `→ ROLL` (Startlauf; `TD_ROLL_MS` / `TRI_ROLL_MS` oder Abhebegeschwindigkeit) `→ LIFTOFF` (das Nickziel steigt, in Bodennähe höchstens Standwinkel minus `TD_TAIL_CLEARANCE_DEG`) `→ CLIMB` (Abheben nach Barometer oder Zeit; Steigflug bis `TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS`) `→ DONE`. `ABORTED` – Startabbruch; Gas 1 s unten – wieder `IDLE`.
+
+| Methode | Beschreibung |
+|---|---|
+| `void update(const Inputs&)` | einmal pro Takt: Etappenwechsel, dann die Ausgaben dieser Etappe; ohne ARM – `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | Abbruch von außen (Signalverlust); in `IDLE`/`DONE` – nichts |
+| `void reset()`, `setGear()`, `getGear()` | |
+| `getStage()`, `stageName()`, `stageShort()`, `getAbortReason()` | die Etappe (Kurzname für das OLED) |
+| `bool holdsGround() const` | am Boden (`IDLE`…`LIFTOFF`, `ABORTED`): Signalverlust ist ein Startabbruch, die PID-Integratoren bleiben auf null |
+| `isAirborneStage()`, `isDone()` | in der Luft (Steigflug/fertig); Start beendet |
+| `getThrottlePct()` | Gas des Programms, % (Rampe über `TAKEOFF_THROTTLE_RAMP_MS`) |
+| `getRollTargetDeg()`, `getPitchTargetDeg()` | Rollziel (auf den Rädern – der Stand-Roll) und Nickziel (Steigflug – für den PID) |
+| `hasElevatorCommand()`, `getElevatorUs()` | auf den Rädern das Höhenruder direkt: zum Ziel mit `TD_PITCH_KP` / `TD_ROLL_PITCH_KP` µs pro Grad, Dämpfung `TD_PITCH_KD`, höchstens `TD_TAIL_UP_ELEVATOR_US` Tiefenruder |
+| `hasRudderCommand()`, `getRudderUs()` | Kurs per Seitenruder und Rad: `TAKEOFF_HEADING_KP` µs pro Grad, `TAKEOFF_YAW_RATE_KD` pro °/s |
+| `bool takeRefusal()`, `bool takeGyroTrim(float[3])` | einmalige Ereignisse: Ablehnung bei der Prüfung; der im Stillstand gemessene Rest-Nullpunkt des Gyroskops |
 
 ## `SoaringController`
 

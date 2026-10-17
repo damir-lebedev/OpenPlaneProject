@@ -64,8 +64,8 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (not connected)<br/>FeedbackSupervisor and modules"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -420,22 +420,23 @@ sequenceDiagram
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(target from the functions)
     FC->>AP: update(armed, linkLost, pilot throttle (0 in reverse), sticks)
     Note over AP: sensors are ALWAYS read,<br/>navigation, failsafe, geofence,<br/>mode, coordination, auto-trim
-    FC->>OUT: setBuzzer(Beeper)
+    Note over FC: ground calibration: switch gesture (without ARM),<br/>GroundCalibration step, signals → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper or the signal light)
     alt link lost
         alt armed and autopilot failsafe (RTH / GLIDE)
             FC->>MX: mix(autopilot command)
             FC->>OUT: write(surfaces, autopilot throttle (0 in reverse), AUX unchanged)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() (while a signal plays — neutral with the nod and the ESC pause)
         end
         Note over FC: return — ARM and the switches are not read
     else link present
-        FC->>AM: update(rc, MR.armBlockReason) — the ARM switch
+        FC->>AM: update(rc, reason) — the ARM switch (refused while a calibration or a signal runs)
         FC->>MR: update(MOTOR_REVERSE, armed) — direction only when disarmed
         FC->>AP: getCommand() — the final surface command
         FC->>MX: mix(command) → PWM with reverse
         FC->>AP: applyThrottle(pilot throttle) — forwards only
-        Note over FC: backwards — pilot throttle ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed or MOTOR_KILL → throttle = PWM_MIN (applied last)
+        Note over FC: backwards — pilot throttle ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed or MOTOR_KILL → throttle = PWM_MIN (applied last)<br/>the signal nod goes to the surfaces, without ARM — the ESC pulse pause
         FC->>OUT: write(output + AUX1 payload, AUX2 camera)
         Note over OUT: ESC: throttle + direction → pulse (EscSignal),<br/>bidirectional ESC: 1500 = stop
     end
@@ -507,15 +508,29 @@ stateDiagram-v2
     GLIDE --> FRTH : GPS acquired
 ```
 
-Failsafe is not a separate `AutopilotMode` but a flag on top of the current mode; a return that has begun is not dropped into gliding by a short GPS loss; after the link is restored, the mode from the switches resumes (auto-takeoff and hand launch — only anew). The internal state machines: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE) and `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
+Failsafe is not a separate `AutopilotMode` but a flag on top of the current mode; a return that has begun is not dropped into gliding by a short GPS loss; after the link comes back the mode from the switches continues (hand launch — only from scratch; auto takeoff on the runway — only from scratch, in the climb it continues). In AUTO_TAKEOFF on the runway a link loss is not an overlay but an aborted takeoff: motor stopped, surfaces to neutral. Inner state machines: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE), `TakeoffController` (below) and `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
 
-**AUTO_TAKEOFF** (by time from the start, when armed and the throttle ≥ 1500 µs):
+**AUTO_TAKEOFF** (`TakeoffController`; the program drives the throttle, the throttle stick starts and aborts):
 
-| Time | Throttle (program) | Pitch |
-|---|---|---|
-| 0–1 s | smoothly 0 → 100 % | 0° |
-| 1–3 s | 100 % | +15° |
-| > 3 s | 100 % | +10° |
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : throttle ≥ 1500 µs (after throttle down)
+    CHECK --> TAIL_UP : still for 1 s, angles = parking (tail wheel)
+    CHECK --> ROLL : the same (nose wheel)
+    CHECK --> ABORTED : not standing as calibrated — signal ×3
+    TAIL_UP --> ROLL : pitch near the horizon
+    ROLL --> LIFTOFF : liftoff speed / 2.5 s
+    LIFTOFF --> CLIMB : liftoff by barometer / limit + 3 s
+    CLIMB --> DONE : 30 m / 15 s without a barometer
+    TAIL_UP --> ABORTED : throttle down, link, IMU, roll, heading, nose, 6 s
+    ROLL --> ABORTED : throttle down, link, IMU, roll, heading, nose, 15 s
+    LIFTOFF --> ABORTED : the same
+    ABORTED --> IDLE : throttle down for 1 s
+```
+
+The elevator on the wheels is driven directly (tail up: down elevator ≤ 250 µs toward +1° of pitch; liftoff: the target rises by 2°/s, near the ground no higher than the parking angle minus 3°); in the climb — the PID toward +8°; the heading — the rudder and the wheel. From the motor start the horizon comes from the gyro only (`ImuSensor::setAccelCorrection(false)`): the accelerometer takes the acceleration for a raised nose.
 
 ### Takeoff and landing (feedback loop, not connected)
 
@@ -567,7 +582,7 @@ corrections in all modes, including gliding), and `ArmingManager` does not arm t
 modes with stabilization.
 
 The consumers react identically: **no sensor (`nullptr`) or it is unavailable —
-no effects**, and the airplane is controlled as in MANUAL.
+no effects**, and the airplane is controlled as in MANUAL. The exception is the auto takeoff on the runway: an IMU failure means an aborted takeoff, motor stopped.
 
 ### Link (`IBusReceiver::isSignalLost()`)
 
@@ -586,7 +601,7 @@ Frames with a bad CRC are discarded and counted (`getBadFrameCount()`).
 `FlightOutputs::begin()` is immediately followed by `setFailsafe()` — surfaces to neutral, the motor
 off, even before the sensors are read. An output with pin `-1` (the rudder on the C3)
 is simply not attached; `attached` in the JSON shows whether a LEDC channel has been allocated.
-The real pulse on each pin is checked by `printPulseSelfTest()` (console `p`).
+The real pulse on each pin is checked by `printPulseSelfTest()` (console `p`). The motor signal is `IServoOutput::stopPulses()` on the ESC output (only without ARM): without pulses the ESC decides the signal is lost, and when the neutral comes back it plays its ready tune.
 
 ---
 

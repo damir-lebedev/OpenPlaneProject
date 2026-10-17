@@ -4,9 +4,11 @@
 #include "autopilot/Autopilot.h"
 #include "autopilot/AutopilotTypes.h"
 #include "autopilot/PilotSwitches.h"
+#include "autopilot/TakeoffController.h"
 #include "config/Channels.h"
 #include "config/Config.h"
 #include "control/FlightController.h"
+#include "control/GroundCalibration.h"
 #include "hal/ResetCause.h"
 #include "hal/Rtos.h"
 #include "rc/IBusReceiver.h"
@@ -362,6 +364,8 @@ private:
         uint16_t features = 0;
         uint8_t launch = 0;
         uint8_t soaring = 0;
+        uint8_t takeoff = 0;
+        uint8_t calibration = 0;
     } seen;
 
     // --- сторона записи ---
@@ -619,6 +623,37 @@ private:
         {
             event("парение: стадия %u", soaring);
             seen.soaring = soaring;
+        }
+        const TakeoffController::Stage takeoff = autopilot.getTakeoffStage();
+        if (static_cast<uint8_t>(takeoff) != seen.takeoff)
+        {
+            if (takeoff == TakeoffController::Stage::ABORTED && autopilot.getTakeoffAbortReason())
+            {
+                event("автовзлёт: ABORTED — %s", autopilot.getTakeoffAbortReason());
+            }
+            else
+            {
+                event("автовзлёт: %s", TakeoffController::stageName(takeoff));
+            }
+            seen.takeoff = static_cast<uint8_t>(takeoff);
+        }
+        const GroundCalibration& calibration = controller.getCalibration();
+        if (static_cast<uint8_t>(calibration.getStage()) != seen.calibration)
+        {
+            switch (calibration.getStage())
+            {
+                case GroundCalibration::Stage::LEVEL:  event("калибровка самолёта: шаг 1 — горизонт"); break;
+                case GroundCalibration::Stage::PARK:   event("калибровка самолёта: шаг 2 — стоянка"); break;
+                case GroundCalibration::Stage::DONE:
+                    event("калибровка самолёта: сохранена, стоянка тангаж %.1f крен %.1f",
+                          static_cast<double>(calibration.getParkPitch()), static_cast<double>(calibration.getParkRoll()));
+                    break;
+                case GroundCalibration::Stage::FAILED:
+                    event("калибровка самолёта: ошибка — %s", calibration.getFailure() ? calibration.getFailure() : "?");
+                    break;
+                case GroundCalibration::Stage::IDLE:   event("калибровка самолёта: отменена"); break;
+            }
+            seen.calibration = static_cast<uint8_t>(calibration.getStage());
         }
 
         if (ring.dropped() != reportedDropped && nowMs - dropReportMs >= 1000)
@@ -935,6 +970,7 @@ private:
         r.courseSource = static_cast<uint8_t>(autopilot.getCourseSource());
         r.launchState = static_cast<uint8_t>(autopilot.getLaunchState());
         r.soaringState = static_cast<uint8_t>(autopilot.getSoaringState());
+        r.takeoffStage = static_cast<uint8_t>(autopilot.getTakeoffStage());
         r.trimRoll = i16(autopilot.getAutoTrim().getRoll() * 10.0f);
         r.trimPitch = i16(autopilot.getAutoTrim().getPitch() * 10.0f);
         pushRecord(BlackBoxFormat::REC_NAV, r);
@@ -1371,6 +1407,13 @@ private:
         BB_CFG_INT(GEOFENCE_ALWAYS_ON);
         BB_CFG_FLT(FENCE_RADIUS_M);
         BB_CFG_FLT(FENCE_ALTITUDE_M);
+        BB_CFG_INT(LANDING_GEAR);
+        BB_CFG_INT(TD_TAIL_UP_ELEVATOR_US);
+        BB_CFG_FLT(TD_ROLL_PITCH_DEG);
+        BB_CFG_FLT(TD_TAIL_CLEARANCE_DEG);
+        BB_CFG_FLT(TAKEOFF_CLIMB_PITCH_DEG);
+        BB_CFG_FLT(TAKEOFF_SAFE_ALTITUDE_M);
+        BB_CFG_FLT(TAKEOFF_HEADING_KP);
         BB_CFG_FLT(LAUNCH_ACCEL_G);
         BB_CFG_FLT(LAUNCH_CLIMB_PITCH_DEG);
         BB_CFG_FLT(LAND_GLIDE_PITCH_DEG);

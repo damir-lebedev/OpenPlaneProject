@@ -147,6 +147,22 @@ es un indicador de salida; si solo con el stick, de canal.
 | `IMU_ROTATION_CW_DEG` | 90 | El giro de los ejes del chip de la IMU alrededor de la vertical (0/90/180/270), hacia dónde mira el eje X del chip. Se usa solo mientras no haya una calibración del montaje `o` en NVS |
 | `MAG_ROTATION_CW_DEG` | 0 | Lo mismo para la brújula (la brújula no tiene calibración del montaje) |
 
+### Tren de aterrizaje, calibración en tierra, señales
+
+| Constante | Valor | Significado |
+|---|---|---|
+| `LANDING_GEAR` | `LandingGear::TAIL_WHEEL` | Qué rueda es la direccional: `TAIL_WHEEL`, rueda de cola (en tierra con el morro arriba; en la carrera primero sube la cola); `NOSE_WHEEL`, rueda de morro |
+| `CAL_SWITCH` | `Channels::SWB` | El interruptor del gesto de la calibración en tierra (no SwD: controla la inversión del motor) |
+| `CAL_SWITCH_FLIPS` / `CAL_SWITCH_WINDOW_MS` | 3 / 4000 | Sin ARM y con el gas abajo: tantas veces abajo y arriba en este tiempo inician la calibración (otra vez: la cancelan) |
+| `CAL_STILL_MS`, `CAL_STILL_DPS`, `CAL_STILL_G` | 2000, 3.0, 0.15 | Un paso se acepta cuando durante tantos ms la velocidad angular está por debajo y la carga es de 1g ± este valor |
+| `CAL_PARK_WAIT_MS` | 5000 | El paso 2 espera a que se mueva el avión, o este tiempo (rueda de morro: la misma postura) |
+| `CAL_STEP_TIMEOUT_MS` | 60 000 | Si en este tiempo no se queda quieto, la calibración se cancela (error) |
+| `CAL_TAIL_PARK_MIN/MAX_DEG` | 3 / 25 | Rueda de cola: cabeceo en tierra dentro de estos límites; si no, error («no se bajó la cola») |
+| `CAL_NOSE_PARK_MAX_DEG`, `CAL_PARK_MAX_ROLL_DEG` | 6, 10 | Rueda de morro: en tierra casi nivelado; alabeo en tierra como mucho este valor |
+| `SIGNAL_MOTOR` / `SIGNAL_SURFACES` | `true` / `true` | Señal con el motor (pausa de pulsos del variador: toca su melodía de listo) y con cabezadas de los timones |
+| `SIGNAL_NOD_US`, `SIGNAL_NOD_MS` | 200, 150 | Cabezada de los timones de profundidad y dirección: tantos µs arriba y luego abajo, tantos ms cada uno |
+| `SIGNAL_ESC_PAUSE_MS`, `SIGNAL_PERIOD_MS` | 1000, 3000 | Tiempo sin pulsos al variador; las señales se suceden con este periodo (la melodía llega a terminar) |
+
 ### ARM
 
 | Constante | Valor | Significado |
@@ -183,6 +199,9 @@ comentarios detallados; lo que significan para el piloto está en
 | Círculos y punto de origen | `LOITER_RADIUS_M` 50 (25…150), `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
 | Geovalla | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
 | Lanzamiento a mano | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| Despegue automático | `TAKEOFF_TRIGGER_US` 1500; comprobación: `TAKEOFF_CHECK_MS` 1000, `_CHECK_TIMEOUT_MS` 5000, `TAKEOFF_PARK_PITCH/ROLL_TOL_DEG` 4/5, `TAKEOFF_UNCALIBRATED_TILT_DEG` 10; gas `TAKEOFF_THROTTLE_PCT` 100 en `TAKEOFF_THROTTLE_RAMP_MS` 2000; rumbo `TAKEOFF_HEADING_KP` 10, `TAKEOFF_YAW_RATE_KD` 2; `TAKEOFF_ROTATE_SPEED_MS` 11; despegue `TAKEOFF_LIFTOFF_MS` 3000, `_LIFTOFF_ALT_M` 1, `_LIFTOFF_CONFIRM_MS` 500; ascenso `TAKEOFF_CLIMB_PITCH_DEG` 8 hasta `TAKEOFF_SAFE_ALTITUDE_M` 30 (sin barómetro `TAKEOFF_CLIMB_MS` 15 000); aborto: `TAKEOFF_ABORT_ROLL_DEG` 15, `_ABORT_HEADING_DEG` 30, `TAKEOFF_NOSE_DOWN_MS` 300, `TAKEOFF_GROUND_TIMEOUT_MS` 15 000; «solo giroscopio»: `TAKEOFF_GYRO_ONLY_CLIMB/MAX/ABORT_MS` 5000/30 000/3000 |
+| Rueda de cola | `TD_TAIL_UP_ELEVATOR_US` 250 (como mucho tanto a picar), `TD_ROLL_PITCH_DEG` 1, `TD_PITCH_KP` 40 (cola arriba), `TD_ROLL_PITCH_KP` 15 (carrera y rotación), `TD_PITCH_KD` 3, `TD_TAIL_UP_DONE_DEG` 2, `TD_TAIL_UP_TIMEOUT_MS` 6000, `TD_ROLL_MS` 2500, `TD_ROTATE_RATE_DPS` 2, `TD_TAIL_CLEARANCE_DEG` 3, `TD_MIN_PITCH_DEG` −3 |
+| Rueda de morro | `TRI_ROLL_ELEVATOR_US` 0, `TRI_ROLL_MS` 3000, `TRI_ROTATE_RATE_DPS` 5, `TRI_MAX_GROUND_PITCH_DEG` 10 |
 | Aterrizaje | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
 | Vuelo a vela | `SOAR_*`: planeo −3°, una térmica > 0.5 m/s durante 1.5 s, un círculo de 25°, salida < −0.2 m/s durante 8 s, motor por debajo de 30 m hasta 100 m, regreso a casa a más de 400 m |
 | RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |

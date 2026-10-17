@@ -58,8 +58,8 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (nicht angeschlossen)<br/>FeedbackSupervisor und Module"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -374,22 +374,23 @@ sequenceDiagram
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(Ziel nach den Funktionen)
     FC->>AP: update(armed, linkLost, Pilotengas (in Umkehr 0), Knüppel)
     Note over AP: Sensoren werden IMMER gelesen,<br/>Navigation, Failsafe, Geofence,<br/>Modus, Koordination, Auto-Trimm
-    FC->>OUT: setBuzzer(Beeper)
+    Note over FC: Bodenkalibrierung: Schaltergeste (ohne ARM),<br/>Schritt GroundCalibration, Signale → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper oder Signallicht)
     alt Verbindung verloren
         alt armed und Failsafe des Autopiloten (RTH / GLIDE)
             FC->>MX: mix(Kommando des Autopiloten)
             FC->>OUT: write(Ruder, Gas des Autopiloten (in Umkehr 0), AUX unverändert)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() (während ein Signal spielt – Neutral mit Nicken und ESC-Pause)
         end
         Note over FC: return — ARM und Schalter werden nicht gelesen
     else Verbindung vorhanden
-        FC->>AM: update(rc, MR.armBlockReason) — der ARM-Schalter
+        FC->>AM: update(rc, Grund) – ARM-Schalter (gesperrt, solange Kalibrierung oder Signal läuft)
         FC->>MR: update(MOTOR_REVERSE, armed) — Richtung nur ohne ARM
         FC->>AP: getCommand() — das endgültige Ruderkommando
         FC->>MX: mix(command) → PWM mit Umkehr
         FC->>AP: applyThrottle(Pilotengas) — nur vorwärts
-        Note over FC: rückwärts – Gas des Piloten ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed oder MOTOR_KILL → throttle = PWM_MIN (zuletzt)
+        Note over FC: rückwärts – Gas des Piloten ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed oder MOTOR_KILL → throttle = PWM_MIN (zuletzt)<br/>das Nicken des Signals geht auf die Ruder, ohne ARM – ESC-Impulspause
         FC->>OUT: write(output + AUX1 Last, AUX2 Kamera)
         Note over OUT: ESC: Gas + Richtung → Impuls (EscSignal),<br/>bidirektionaler ESC: 1500 = Stopp
     end
@@ -462,15 +463,29 @@ stateDiagram-v2
     GLIDE --> FRTH : GPS verfügbar
 ```
 
-Failsafe ist kein eigener `AutopilotMode`, sondern ein Flag über dem aktuellen Modus; eine begonnene Rückkehr wird bei einem kurzen GPS-Verlust nicht in den Gleitflug abgebrochen; nach der Wiederherstellung der Verbindung läuft der Modus von den Schaltern weiter (automatischer Start und Handstart – nur neu). Interne Zustandsautomaten: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE) und `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
+Failsafe ist kein eigener `AutopilotMode`, sondern ein Flag über dem aktuellen Modus; eine begonnene Rückkehr fällt bei kurzem GPS-Verlust nicht ins Gleiten; nach Rückkehr des Signals läuft der Modus der Schalter weiter (Handstart – nur von vorn; Autostart auf der Piste – nur von vorn, im Steigflug geht er weiter). In AUTO_TAKEOFF auf der Piste ist Signalverlust keine Überlagerung, sondern ein Startabbruch: Motor aus, Ruder neutral. Innere Automaten: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE), `TakeoffController` (unten) und `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
 
-**AUTO_TAKEOFF** (nach der Zeit ab dem Start, wenn armed und Gas ≥ 1500 µs):
+**AUTO_TAKEOFF** (`TakeoffController`; das Gas führt das Programm, der Gasknüppel startet und bricht ab):
 
-| Zeit | Gas (Programm) | Nick |
-|---|---|---|
-| 0–1 s | sanft von 0 → 100 % | 0° |
-| 1–3 s | 100 % | +15° |
-| > 3 s | 100 % | +10° |
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : Gas ≥ 1500 µs (nachdem es unten war)
+    CHECK --> TAIL_UP : 1 s still, Winkel = Standlage (Spornrad)
+    CHECK --> ROLL : ebenso (Bugrad)
+    CHECK --> ABORTED : steht nicht wie kalibriert – Signal ×3
+    TAIL_UP --> ROLL : Nick nahe dem Horizont
+    ROLL --> LIFTOFF : Abhebegeschwindigkeit / 2,5 s
+    LIFTOFF --> CLIMB : Abheben nach Barometer / Grenze + 3 s
+    CLIMB --> DONE : 30 m / 15 s ohne Barometer
+    TAIL_UP --> ABORTED : Gas runter, Signal, IMU, Roll, Kurs, Nase, 6 s
+    ROLL --> ABORTED : Gas runter, Signal, IMU, Roll, Kurs, Nase, 15 s
+    LIFTOFF --> ABORTED : ebenso
+    ABORTED --> IDLE : Gas 1 s unten
+```
+
+Das Höhenruder auf den Rädern wird direkt geführt (Heck hoch: Tiefenruder ≤ 250 µs zu +1° Nick; Abheben: das Ziel steigt mit 2°/s, in Bodennähe höchstens Standwinkel minus 3°), im Steigflug – PID auf +8°; den Kurs halten Seitenruder und Rad. Ab dem Motorstart kommt der Horizont nur aus dem Gyroskop (`ImuSensor::setAccelCorrection(false)`): Die Beschleunigung hält der Beschleunigungssensor für eine erhobene Nase.
 
 ### Start und Landung (Rückführungskreis, nicht angeschlossen)
 
@@ -517,7 +532,7 @@ stateDiagram-v2
 
 Zusätzlich hat die IMU eine **Vorflugprüfung** (`getPreflightProblem()`): Ruhe während der Gyroskop-Kalibrierung, |a| ≈ 1g, die Richtung „oben“ stimmt mit dem gespeicherten Einbau überein. Besteht sie nicht — `Autopilot::imuReady() == false` (Korrekturen null in allen Modi, auch im Gleitflug), und `ArmingManager` armt die Modi mit Stabilisierung nicht.
 
-Die Verbraucher reagieren gleich: **kein Sensor (`nullptr`) oder er ist nicht verfügbar — keinerlei Wirkung**, das Flugzeug wird wie in MANUAL gesteuert.
+Die Verbraucher reagieren gleich: **kein Sensor (`nullptr`) oder er ist nicht verfügbar — keinerlei Wirkung**, das Flugzeug wird wie in MANUAL gesteuert. Ausnahme ist der Autostart auf der Piste: Fällt die IMU aus, ist das ein Startabbruch, Motor aus.
 
 ### Verbindung (`IBusReceiver::isSignalLost()`)
 
@@ -530,7 +545,7 @@ Frames mit falschem CRC werden verworfen und gezählt (`getBadFrameCount()`).
 
 ### Ausgänge
 
-Auf `FlightOutputs::begin()` folgt sofort `setFailsafe()` — Ruder in Neutral, Motor aus, noch bevor die Sensoren gelesen werden. Ein Ausgang mit Pin `-1` (das Seitenruder beim C3) wird einfach nicht angeschlossen; `attached` im JSON zeigt, ob ein LEDC-Kanal belegt wurde. Den realen Impuls an jedem Pin prüft `printPulseSelfTest()` (Konsole `p`).
+Auf `FlightOutputs::begin()` folgt sofort `setFailsafe()` — Ruder in Neutral, Motor aus, noch bevor die Sensoren gelesen werden. Ein Ausgang mit Pin `-1` (das Seitenruder beim C3) wird einfach nicht angeschlossen; `attached` im JSON zeigt, ob ein LEDC-Kanal belegt wurde. Den realen Impuls an jedem Pin prüft `printPulseSelfTest()` (Konsole `p`). Das Motorsignal ist `IServoOutput::stopPulses()` am ESC-Ausgang (nur ohne ARM): Ohne Impulse hält der Regler das Signal für verloren und spielt, wenn die Neutralstellung zurückkommt, seine Bereitschaftsmelodie.
 
 ---
 

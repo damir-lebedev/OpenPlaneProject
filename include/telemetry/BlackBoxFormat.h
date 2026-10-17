@@ -231,6 +231,7 @@ namespace BlackBoxFormat
         uint8_t courseSource;
         uint8_t launchState;
         uint8_t soaringState;
+        uint8_t takeoffStage;   // TakeoffController::Stage
         int16_t trimRoll;   // 0.1 мкс
         int16_t trimPitch;
     };
@@ -310,7 +311,7 @@ namespace BlackBoxFormat
         "t_us:I dp_pa:f ias_ms:h/100 tas_ms:h/100 rho:H/10000";
     constexpr const char* NAV_FIELDS =
         "t_us:I flags:B home_dist_m:f home_bearing:H/100 course:H/100 target_course:H/100 "
-        "speed_ms:h/100 course_source:B launch_state:B soaring_state:B trim_roll:h/10 trim_pitch:h/10";
+        "speed_ms:h/100 course_source:B launch_state:B soaring_state:B takeoff_stage:B trim_roll:h/10 trim_pitch:h/10";
     constexpr const char* SYS_FIELDS =
         "t_us:I loop_hz:H loop_avg_us:H loop_max_us:H heap_free:I ibus_good:I ibus_bad:I "
         "imu_temp_c:h/100 ring_used:I dropped:I flash_max_us:H free_kb:H";

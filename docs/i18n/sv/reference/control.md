@@ -42,6 +42,7 @@ gas `PWM_MIN`.
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
 | `bool motorReverse` | `false` – motorn går framåt |
+| `bool escPulsesOff` | `false`; `true` – inga pulser alls till ESC:n (motorsignal, bara utan ARM) |
 | `aux1` | `PAYLOAD_CLOSED_US` – lastsläppet är stängt |
 | `aux2` | `PWM_CENTER` – kameran |
 
@@ -191,10 +192,10 @@ går igenom den i en slinga.
 | `explicit FlightOutputs(IBoard& board)` | |
 | `bool begin()` | `attach(PWM_MIN, PWM_MAX)` för varje utgång, skriver ut status och ESC-typ; `true` om alla **obligatoriska** fick en kanal |
 | `bool isAttached(uint8_t ch) const` | Utgången är ansluten (ett index utanför intervallet → `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Pulsen på utgångens stift: fältet enligt tabellen, för ESC – via `EscSignal::pulseUs(throttle, motorReverse)` |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | Pulsen på utgångens stift: fältet enligt tabellen, för ESC – via `EscSignal::pulseUs(throttle, motorReverse)`, med `escPulsesOff` – 0 |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | Den uppmätta pulsen mot den förväntade på varje draget stift; ”OK” när avvikelsen är ≤ 15 µs |
-| `void write(const FlightOutputState&)` | Skriv alla utgångar och kom ihåg tillståndet |
+| `void write(const FlightOutputState&)` | Skriv alla utgångar och kom ihåg tillståndet; ESC med `escPulsesOff` – `IServoOutput::stopPulses()` |
 | `void setFailsafe()` | Roderytor i neutral (`FAILSAFE_*`), gas `FAILSAFE_THROTTLE` (1500 på stiftet till en dubbelriktad ESC); AUX som de var (lasten släpps inte vid förlorad förbindelse) |
 | `void setBuzzer(bool on)` | kortets summer (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | Det senast skrivna tillståndet |
@@ -207,7 +208,7 @@ För att lägga till en utgång: en tabellrad + ett fält i `FlightOutputState` 
 ## `FlightController`
 
 **Fil:** `control/FlightController.h` · **Lager:** KOORDINERING ·
-**Beror på:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
+**Beror på:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 Styrslingans enda koordinator: den tolkar inte UART:en, rör inte
 PWM:en och beräknar inte mixern själv – den anropar bara de andra i rätt
@@ -228,6 +229,9 @@ ordning. Ett detaljerat diagram finns i [ARCHITECTURE.md §6](../ARCHITECTURE.md
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | Den här cykelns brytare och rattar |
 | `bool isLostModelBeeping() const` | ”Jag är här”-summern är igång |
 | `const MotorReverse& getMotorReverse() const` | Motorns riktning och väntande reversering |
+| `void toggleGroundCalibration()` | Konsolen `c`: markkalibrering av flygplanet – starta (bara utan ARM), pågår den – avbryt |
+| `void playSignal(uint8_t count)` | Konsolen `e`: en signal (utan ARM – även med motorn) |
+| `const GroundCalibration& getCalibration() const`, `const SignalPlayer& getSignals() const` | För OLED, logg och svart låda |
 
 Ordningen i `update()`:
 
@@ -239,23 +243,19 @@ Ordningen i `update()`:
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → steglöst, vid förlorad förbindelse – 0;
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)` – **alltid**;
    i reversering skickas `PWM_MIN` i stället för `pilotThrottle` (för autopiloten är motorn av);
-6. summern: `Beeper::update(BEEPER, armed, failsafe, now)`;
+6. kalibreringen: en ARM-omslagning under den avbryter den; utan ARM och med förbindelse – gesten `CAL_SWITCH`; ett steg i `GroundCalibration::update()`; dess signaler och autostartens vägransignal går till `SignalPlayer`; summern: `Beeper::update(BEEPER, armed, failsafe, now)` eller signalljuset;
 7. förbindelsen förlorad → `applyLinkLoss()` och cykeln lämnas;
-8. `arming.update(rc, false, reverse.armBlockReason(now))`, därefter
-   `reverse.update(MOTOR_REVERSE, armed, now)` – vid DISARM byts riktningen i samma takt;
-9. `command = autopilot->getCommand()` (eller spakarna utan autopilot), klaffarna – sina egna;
+8. `arming.update(rc, false, orsak)` – ARM spärras medan en kalibrering pågår eller en signal spelas (och i den takt där en ARM-omslagning avbröt en kalibrering), annars `reverse.armBlockReason(now)`; därefter `reverse.update(MOTOR_REVERSE, armed, now)` – vid DISARM byts riktningen i samma takt;
+9. `command = autopilot->getCommand()` (eller spakarna utan autopilot), klaffarna – sina egna; signalens nickning går till höjd- och sidroder;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     framåt – `output.throttle = autopilot->applyThrottle(pilotThrottle)` med gränsen
     `THROTTLE_LIMIT_PCT` × ratten `Knob::THROTTLE_LIMIT`, bakåt – pilotens gas med gränsen
     `min(REVERSE_THROTTLE_LIMIT_PCT, framåtgränsen)`; det tillåtna sträcks ut över hela spakens slag;
-11. inte armerat eller `MOTOR_KILL` → `throttle = PWM_MIN` (sist);
+11. inte armerat eller `MOTOR_KILL` → `throttle = PWM_MIN` (sist); utan ARM sätter motorsignalen `escPulsesOff`;
 12. AUX1 – lasten (`PAYLOAD_DROP`), AUX2 – kameran (`Knob::CAMERA_TILT`, `CAMERA_STAB` drar ifrån tippningen); `AUX1_REVERSED`/`AUX2_REVERSED` speglar pulsen.
 13. `outputs.write(output)`.
 
-`applyLinkLoss()`: om autopiloten är i failsafe (armerat: RTH eller glidflykt) –
-roderytorna och gasen följer autopilotens kommando (klaffarna
-fälls in mjukt, `MOTOR_KILL` tystar fortfarande motorn, AUX som de var);
-annars `outputs.setFailsafe()`. I reversering står motorn alltid still.
+`applyLinkLoss()`: om autopiloten är i failsafe (armerat: RTH eller glidflykt) – roderytorna och gasen följer autopilotens kommando (klaffarna fälls in mjukt, `MOTOR_KILL` och reversering tystar motorn, AUX som de var); annars `outputs.setFailsafe()`, och medan en signal spelas – neutralläge med nickning och ESC-pulspaus (sändaren lades undan – kalibreringen pågår).
 
 ---
 
@@ -267,3 +267,41 @@ annars `outputs.setFailsafe()`. I reversering står motorn alltid still.
 |---|---|
 | `bool update(bool requested, bool armed, bool linkLost, uint32_t nowMs)` | summerns tillstånd: 2 Hz om `Feature::BEEPER` eller ”modellen borttappad” (inte armerat, ingen förbindelse på längre tid än `LOST_MODEL_BEEP_DELAY_MS`) |
 | `bool isLostModel() const` | läget ”leta efter mig i gräset” |
+
+---
+
+## `GroundCalibration`
+
+**Fil:** `control/GroundCalibration.h` · **Beror på:** `Config`, `RcChannelState`, `ImuSensor`, `ImuOrientation`
+
+Markkalibrering av flygplanet: steg 1 – stjärten upp, flygkroppen vågrätt (horisonten, `ImuOrientation::withLevel()`), steg 2 – på hjulen (markläget). Ett steg godkänns av sig självt efter `CAL_STILL_MS` stillhet; steg 2 väntar på att flygplanet flyttas, eller `CAL_PARK_WAIT_MS`. Sparas bara i sin helhet (`ImuSensor::setGroundCalibration()`), efter kontroll av markläget mot `LANDING_GEAR`. Blockerar inte cykeln.
+
+`Stage`: `IDLE`, `LEVEL`, `PARK`, `DONE`, `FAILED`.
+
+| Metod | Beskrivning |
+|---|---|
+| `bool watchSwitch(const RcChannelState&, uint32_t nowMs)` | gesten: `CAL_SWITCH` `CAL_SWITCH_FLIPS` gånger ned och upp inom `CAL_SWITCH_WINDOW_MS`, gasen nere; första avläsningen och gas som inte är nere nollställer räkningen |
+| `void forgetSwitch()` | ARM eller ingen förbindelse – räkningen börjar om |
+| `bool start(const ImuSensor*, uint32_t nowMs, const char* source)` | starta (signal 1); ingen IMU eller inget stöd – fel (signal 3) |
+| `void cancel(const char* why)` | avbrott utan signal |
+| `void update(ImuSensor*, bool armed, bool signalBusy, uint32_t nowMs)` | ett steg: ARM avbryter; medan en signal spelas godkänns ingenting; tidsgränsen `CAL_STEP_TIMEOUT_MS` – fel |
+| `isActive()`, `getStage()`, `getStageSinceMs()`, `getFailure()`, `getParkPitch()`, `getParkRoll()` | tillstånd och resultat |
+| `uint8_t takeSignal()` | hur många signaler som ska spelas: 1 – startad / steg 1, 2 – klar, 3 – fel (hämtas en gång) |
+| `static const char* stageShort(Stage)` | `CAL1`, `CAL2`, `CALOK`, `CALER` – för OLED |
+
+---
+
+## `SignalPlayer`
+
+**Fil:** `control/SignalPlayer.h` · **Beror på:** `Config`
+
+Signaler till piloten – en funktion av tiden sedan seriens början. En signal: höjd- och sidroder nickar (`SIGNAL_NOD_US` upp, sedan ned, `SIGNAL_NOD_MS` vardera), utan ARM pausas ESC-pulserna i `SIGNAL_ESC_PAUSE_MS` (sedan spelar ESC:n sin redo-melodi), summerljuset lyser under nickningen; nästa signal kommer efter `SIGNAL_PERIOD_MS`.
+
+| Metod | Beskrivning |
+|---|---|
+| `void play(uint8_t count, uint32_t nowMs, bool motor)` | en serie; `motor` – om ESC:n får röras (och `SIGNAL_MOTOR`) |
+| `void stop()` | tystnad |
+| `bool isBusy(uint32_t nowMs) const`, `uint8_t getCount(uint32_t nowMs) const` | en serie pågår (ARM är spärrad under tiden) |
+| `bool escPulsesOff(uint32_t nowMs) const` | ta bort ESC-pulserna nu |
+| `int16_t nodUs(uint32_t nowMs) const` | rodrens nickning, µs (`SIGNAL_SURFACES`) |
+| `bool light(uint32_t nowMs) const` | summer / LED på `PIN_BUZZER` |

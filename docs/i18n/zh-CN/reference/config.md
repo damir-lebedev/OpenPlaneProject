@@ -132,6 +132,22 @@ STM32duino 内核（以及其他 Arduino 内核）中，`PIN_SPI_SCK/MISO/MOSI` 
 | `IMU_ROTATION_CW_DEG` | 90 | IMU 芯片坐标轴绕垂直方向的旋转角度（0/90/180/270），即芯片 X 轴的朝向。仅在 NVS 中没有安装校准 `o` 时使用 |
 | `MAG_ROTATION_CW_DEG` | 0 | 电子罗盘的同类设置（电子罗盘没有安装校准） |
 
+### 起落架、地面校准、提示
+
+| 常量 | 值 | 含义 |
+|---|---|---|
+| `LANDING_GEAR` | `LandingGear::TAIL_WHEEL` | 哪个轮子转向：`TAIL_WHEEL`——尾轮（停放时机头朝上，滑跑时先抬尾），`NOSE_WHEEL`——前轮 |
+| `CAL_SWITCH` | `Channels::SWB` | 地面校准手势用的开关（不能用 SwD——它控制电机反转） |
+| `CAL_SWITCH_FLIPS` / `CAL_SWITCH_WINDOW_MS` | 3 / 4000 | 未解锁、油门在最低：在这段时间内上下拨这么多次即开始校准（再来一次——取消） |
+| `CAL_STILL_MS`, `CAL_STILL_DPS`, `CAL_STILL_G` | 2000, 3.0, 0.15 | 在这么多 ms 内角速度低于该值、过载在 1g ± 该值以内时，记录该步骤 |
+| `CAL_PARK_WAIT_MS` | 5000 | 第 2 步等待飞机被挪动，或等这么久（前轮式：同一姿态） |
+| `CAL_STEP_TIMEOUT_MS` | 60 000 | 这段时间内一直没有静止——校准取消（出错） |
+| `CAL_TAIL_PARK_MIN/MAX_DEG` | 3 / 25 | 尾轮式：停机俯仰在此范围内，否则出错（“机尾没有放下”） |
+| `CAL_NOSE_PARK_MAX_DEG`, `CAL_PARK_MAX_ROLL_DEG` | 6, 10 | 前轮式：停放时几乎水平；停放时横滚最多这么多 |
+| `SIGNAL_MOTOR` / `SIGNAL_SURFACES` | `true` / `true` | 用电机提示（暂停电调脉冲——电调播放就绪提示音）和用舵面点头提示 |
+| `SIGNAL_NOD_US`, `SIGNAL_NOD_MS` | 200, 150 | 升降舵和方向舵点头：向上这么多 µs，再向下，各持续这么多 ms |
+| `SIGNAL_ESC_PAUSE_MS`, `SIGNAL_PERIOD_MS` | 1000, 3000 | 不给电调脉冲的时长；提示之间的周期（提示音能播放完） |
+
 ### ARM
 
 | 常量 | 值 | 含义 |
@@ -166,6 +182,9 @@ STM32duino 内核（以及其他 Arduino 内核）中，`PIN_SPI_SCK/MISO/MOSI` 
 | 盘旋与返航点 | `LOITER_RADIUS_M` 50（25…150）, `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
 | 地理围栏 | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
 | 手抛起飞 | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| 自动起飞 | `TAKEOFF_TRIGGER_US` 1500；检查：`TAKEOFF_CHECK_MS` 1000, `_CHECK_TIMEOUT_MS` 5000, `TAKEOFF_PARK_PITCH/ROLL_TOL_DEG` 4/5, `TAKEOFF_UNCALIBRATED_TILT_DEG` 10；油门 `TAKEOFF_THROTTLE_PCT` 100，用 `TAKEOFF_THROTTLE_RAMP_MS` 2000 加上去；航向 `TAKEOFF_HEADING_KP` 10, `TAKEOFF_YAW_RATE_KD` 2；`TAKEOFF_ROTATE_SPEED_MS` 11；离地 `TAKEOFF_LIFTOFF_MS` 3000, `_LIFTOFF_ALT_M` 1, `_LIFTOFF_CONFIRM_MS` 500；爬升 `TAKEOFF_CLIMB_PITCH_DEG` 8，直到 `TAKEOFF_SAFE_ALTITUDE_M` 30（无气压计时 `TAKEOFF_CLIMB_MS` 15 000）；中止：`TAKEOFF_ABORT_ROLL_DEG` 15, `_ABORT_HEADING_DEG` 30, `TAKEOFF_NOSE_DOWN_MS` 300, `TAKEOFF_GROUND_TIMEOUT_MS` 15 000；“仅陀螺仪”：`TAKEOFF_GYRO_ONLY_CLIMB/MAX/ABORT_MS` 5000/30 000/3000 |
+| 尾轮 | `TD_TAIL_UP_ELEVATOR_US` 250（最多这么多下压舵量）, `TD_ROLL_PITCH_DEG` 1, `TD_PITCH_KP` 40（抬尾）, `TD_ROLL_PITCH_KP` 15（滑跑和抬头）, `TD_PITCH_KD` 3, `TD_TAIL_UP_DONE_DEG` 2, `TD_TAIL_UP_TIMEOUT_MS` 6000, `TD_ROLL_MS` 2500, `TD_ROTATE_RATE_DPS` 2, `TD_TAIL_CLEARANCE_DEG` 3, `TD_MIN_PITCH_DEG` −3 |
+| 前轮 | `TRI_ROLL_ELEVATOR_US` 0, `TRI_ROLL_MS` 3000, `TRI_ROTATE_RATE_DPS` 5, `TRI_MAX_GROUND_PITCH_DEG` 10 |
 | 降落 | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
 | 翱翔 | `SOAR_*`：滑翔 −3°，热气流 > 0.5 m/s 持续 1.5 s，盘旋 25°，退出条件 < −0.2 m/s 持续 8 s，30 m 以下开电机直到 100 m，距离超过 400 m 时返航 |
 | RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |

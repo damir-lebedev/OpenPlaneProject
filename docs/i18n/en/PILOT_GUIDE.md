@@ -36,7 +36,7 @@ The kit of the current build (the firmware has been verified on it):
 - **An FS-i6 transmitter + FS-iA6B receiver** (iBUS protocol, 10 channels). You need one data wire — the iBUS SERVO port. The transmitter must be able to set failsafe — this setting is mandatory, see the failsafe section.
 - **2 MG90S servos** for the ailerons — one for each wing panel (two independent servos, not one for both wings).
 - **1 MG90S servo** for the elevator.
-- **1 MG90S servo** for the rudder — the landing gear's steering wheel is mounted on the same shaft (steering on the ground).
+- **1 MG90S servo** for the rudder — the landing gear's steering wheel is mounted on the same shaft (steering on the ground). The landing gear is two wheels in front and a steerable tail wheel (`LANDING_GEAR = TAIL_WHEEL` in `Config.h`; a tricycle with a nose wheel is `NOSE_WHEEL`).
 - **An electronic speed controller (ESC) BLHeli 80A, bidirectional** (Bidirectional/3D mode) with a 5 V BEC (the BEC powers the servos and the receiver). An ordinary unidirectional ESC also works — `ESC_BIDIRECTIONAL = false` in `Config.h`, see [Motor reverse](#motor-reverse-swd).
 - **A D3548 1100KV motor** + **a 10x5 propeller**.
 - **A 3S LiPo battery**.
@@ -217,7 +217,7 @@ In short — the default layout (`include/config/Controls.h`):
 | **VrA / VrB** (CH9/10) | stabilization strength / cruise speed |
 
 - **STABILIZE — "the stick sets the angle".** Full stick is a 45° roll and 25° pitch; let go and the airplane levels itself. The throttle is yours.
-- **AUTO_TAKEOFF.** After ARM nothing happens until you raise the throttle above half yourself. Then: 0–1 s — throttle smoothly up to 100%, wings level; 1–3 s — pitch +15°; after that +10° until you flip SwC. Throttle = the maximum of the stick and the program.
+- **AUTO_TAKEOFF.** Takeoff from a runway in stages. After ARM the motor stays stopped until you raise the throttle above half; the airplane checks for ~1 s that it stands as it did during calibration and then does everything itself: tail up with down elevator, takeoff roll, liftoff by the wing, climb to 30 m, then it holds heading and altitude. The throttle belongs to the program; throttle stick down before liftoff means an aborted takeoff. Needs the [ground calibration of the airplane](#ground-calibration-of-the-airplane-horizon-and-parking-attitude).
 - **RTH.** Heading to the ARM point, altitude 40 m, circles above home. Needs a GPS with a 3D fix **before ARM**.
 
 All 12 modes (ALT_HOLD, ACRO, CRUISE, LOITER, hand LAUNCH, AUTO_LAND, SOARING, RESCUE…), what each one needs in terms of sensors and how to put it on a switch are in [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md). A mode selected from the dashboard or the ground station stays in effect until you flick the mode switch.
@@ -340,6 +340,8 @@ A keypress takes effect immediately; Enter is not needed (in a monitor that send
 | `s` | detailed status of all sensors (including the I2C error counters) |
 | `i` | re-calibrate the gyroscope and run the IMU pre-flight check — 2 s, do not move the airplane |
 | `o` | **IMU mounting calibration** — once, after installing the board in the airplane (see below) |
+| `c` | **ground calibration of the airplane** — horizon and parking attitude (see below); while it runs — cancel |
+| `e` | signal: control-surface nod and the ESC tune — check that the ESC plays it (remove the propeller!) |
 | `m` | compass calibration — rotate the board/airplane around all axes for 15 s. The result is saved to flash and survives a reboot |
 | `p` | output check: the actual pulse on each pin |
 
@@ -365,13 +367,26 @@ While the menu is open, the log stays silent so that the menu does not scroll aw
 The board with the IMU can be installed in the airplane **however is convenient** — at any angle, on its side, upside down: the firmware works out by itself where its nose and top are. This is done **once** after installation (and again if the board has been moved):
 
 1. The airplane on the table, no transmitter needed, the motor not armed. In the serial monitor press `o`.
-2. **Step 1:** the airplane stands level, as in level flight (for an airplane with a tail wheel, put something under the tail). Do not touch it for ~3 s.
+2. **Step 1:** the airplane stands level, as in level flight (a tail-wheel airplane may stay on its wheels — the ground calibration of the airplane sets the horizon later). Do not touch it for ~3 s.
 3. **Step 2:** raise the **nose** by 30–60°, wings level, and hold still for ~1 s.
 4. **Step 3:** nose back down, lower the **right wing** by 30–60°, and hold for ~1 s.
 
 Each step is counted by itself (the log says "засчитано", that is, "counted"). At the end it shows what came out ("нос = +Y чипа, верх = −Z чипа", that is, "nose = +Y of the chip, up = −Z of the chip") and "установка сохранена" ("mounting saved"). If you mixed something up (lowered the nose instead of raising it, the left wing instead of the right), the calibration is rejected with an explanation; just repeat `o`. The result is stored in flash and survives a reboot. Check: nose up → P on the OLED goes positive; right wing down → R goes positive.
 
-Until there is a mounting calibration, the old method applies: the board must lie chip-up, and the rotation is `IMU_ROTATION_CW_DEG` in `Config.h`.
+Until there is a mounting calibration, the old method applies: the board must lie chip-up, and the rotation is `IMU_ROTATION_CW_DEG` in `Config.h`. After `o`, redo the ground calibration of the airplane: the parking attitude was measured from the old horizon.
+
+### Ground calibration of the airplane: horizon and parking attitude
+
+On the ground a tail-wheel airplane stands nose-up — by how much, nobody knows in advance. The calibration measures it itself and keeps it in flash: the **horizon** (0° of pitch and roll for all modes — no longer “however it stood at power-up”) and the **parking attitude**, from which the auto takeoff works out how far to lift the tail and where the tail wheel would touch the runway. It is done once after assembly (and again if the board was moved or after `o`). No laptop needed:
+
+1. The airplane on a level spot, the transmitter on, **no ARM**, throttle down.
+2. **SwB (flaps) down and up 3 times in a row** (within 4 s) — or `c` in the console. One signal — it has started.
+3. **Step 1 — horizon.** Lift the tail until the fuselage is horizontal, as in flight (main wheels on the ground; a level app on a phone placed on top of the fuselage helps), and hold it still for ~2 s. Also look at how much room is left between the propeller and the ground: the airplane will roll roughly like this. One signal — accepted.
+4. **Step 2 — parking.** Put the airplane down on its three wheels and take your hands away. After ~2 s — two signals: done, and the log shows “Стоянка: нос вверх на 9.4°, крен 0.3°” (parking: nose up 9.4°, roll 0.3°).
+
+Three signals — an error, nothing is saved (the reason is in the console): the airplane did not keep still for a minute, at parking the nose is barely raised (the tail was not lowered) or raised by more than 25°, or the roll is over 10°. To cancel, repeat the SwB gesture or flick ARM (that flick does not arm). With a nose wheel (`NOSE_WHEEL`) step 1 can be done right on the wheels if the airplane stands level: step 2 is then accepted by itself after 5 s. The gesture switch is `CAL_SWITCH` in `Config.h` (SwD will not do: it toggles the motor reverse).
+
+**Signals.** One signal: the elevator and the rudder nod (in step 1 the tail is in your hand, so you feel it) and, without ARM, the motor sings: the pulses to the ESC disappear for a second, the ESC decides the signal is lost, and when the pulses come back it plays its ready tune, as at power-up. The motor does not turn. Over PWM an ESC has no other “beep” command, so check it on the bench (**propeller removed**): press `e` in the console — the tune must sound. If it does not, set `SIGNAL_MOTOR = false` in `Config.h` and only the nods remain. A buzzer or an LED with a resistor on PE15 (S3: GPIO38) lights up during the nod; LED D2 on the DevEBox itself sits on PA1, the right aileron output, so it cannot be used for signals. While a signal is playing, ARM is refused: the ESC may not have re-armed yet. On the OLED the attitude line shows `CAL1`, `CAL2`, and the result `CALOK` or `CALER`.
 
 ### Pre-flight check at power-up
 
@@ -381,7 +396,7 @@ On every power-up the IMU spends ~2 s calibrating the gyroscope and checks itsel
 - the accelerometer at rest reads 1g;
 - **"up" matches the mounting calibration** — if the board has been moved or turned over, this is visible immediately (an airplane on its tail wheel or on a slope is not a problem; the tolerance is 45°).
 
-**Power the airplane on while it stands still.** It does not have to be level if the mounting has been calibrated (otherwise the position at power-up becomes the horizon). The result is in the log: `предполётная проверка пройдена` ("pre-flight check passed") or `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` ("PRE-FLIGHT CHECK FAILED" followed by the reason). If it failed, **ARM in STABILIZE and AUTO_TAKEOFF is forbidden** (the reason is printed when you try), and the autopilot gives no corrections in any mode, including gliding on link loss: with wrong angles it would steer the wrong way. ARM in MANUAL is still possible. To fix it: put the airplane down motionless and reconnect the battery (or press `i`); if the board has been moved, press `o`.
+**Power the airplane on while it stands still.** It does not have to be level if the mounting has been calibrated (`o` or the ground calibration of the airplane; otherwise the position at power-up becomes the horizon). The result is in the log: `предполётная проверка пройдена` ("pre-flight check passed") or `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` ("PRE-FLIGHT CHECK FAILED" followed by the reason). If it failed, **ARM in STABILIZE and AUTO_TAKEOFF is forbidden** (the reason is printed when you try), and the autopilot gives no corrections in any mode, including gliding on link loss: with wrong angles it would steer the wrong way. ARM in MANUAL is still possible. To fix it: put the airplane down motionless and reconnect the battery (or press `i`); if the board has been moved, press `o`.
 
 ### OLED screen
 
@@ -389,7 +404,7 @@ If the OLED is connected (GPIO1/GPIO2), it shows the following 5 times a second:
 
 ```
 RX ok disarm STAB        <- link / ARM / mode / REV — motor backwards (when the link is lost the line is inverted)
-R  +1.2 P  -0.4          <- roll / pitch, °
+R  +1.2 P  -0.4 ROLL     <- roll / pitch, °; calibration step or takeoff stage
 Alt +0.3 Vz +0.1         <- altitude from the power-up point, m / vertical speed, m/s
 Hdg 123  Thr 1000        <- compass heading / throttle 1000..2000 = 0..100% (backwards too), µs
 L1500 R1500 E1500        <- PWM of the ailerons and elevator, µs
@@ -470,6 +485,7 @@ Read this section in full **before** the first power-up, not after an incident.
   - in STABILIZE tilt the airplane right wing down → **right aileron down, left aileron up** (the surfaces return it to level); nose down → **elevator up**.
   If something is wrong, change one line in the “Reverse” block of `include/config/Config.h`: each aileron, the elevator, the rudder, AUX, the motor (`MOTOR_REVERSED`) and the flaps (`FLAPS_REVERSED`) are flipped separately, nothing else is touched. Do not reverse servos on the transmitter — the stick and the autopilot will disagree; a channel the other way round (stick, switch, knob) — `CHANNEL_REVERSED` in the same place.
 - [ ] At power-up the airplane stood still, and the log or dashboard does not show `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА`; as you tilt the airplane in your hands, P and R on the OLED change in the right direction.
+- [ ] For AUTO_TAKEOFF: the ground calibration of the airplane has been done (at power-up the log shows “стоянка на колёсах — тангаж …”), the tail wheel is intact, and the airplane stands on the runway into the wind. The first runs are made with a throttle limit (the `THROTTLE_LIMIT` knob) and your hand on the throttle: down means an aborted takeoff.
 - [ ] Failsafe is set up in the transmitter and tested: switch the transmitter off → `RX LOST` on the OLED/in Serial (see the failsafe section).
 - [ ] The transmitter's range has been checked, and the transmitter battery is charged.
 - [ ] At power-up the log shows `BlackBox: ... стёрто впереди N МБ (≈M мин)` — there is enough room for the flight. The previous flight has been downloaded (`python tools/blackbox.py download`), if you need it.
@@ -497,6 +513,12 @@ Do the IMU mounting calibration (`o`, see "IMU mounting") — it does not depend
 
 **ARM refused: "IMU: ..."**
 The IMU pre-flight check did not pass (see "Pre-flight check at power-up"): the airplane was moved at power-up — put it down motionless and reconnect the battery; "up" does not match the calibration — the board was moved, do `o`; "the board is not lying chip-up" — the mounting is not calibrated, do `o`.
+
+**ARM refused: “нет калибровки шасси” (no landing-gear calibration)**
+AUTO_TAKEOFF with a tail wheel does not know where the tail would touch the runway. Do the ground calibration of the airplane: SwB down and up 3 times without ARM (or `c`).
+
+**“Автовзлёт: старт отменён — тангаж не стояночный” (takeoff start cancelled — pitch is not the parking one; the control surfaces nodded three times)**
+The airplane does not stand as it did during calibration: not on three wheels, a slope, a broken tail wheel, or the board has moved. Put it level; if the board was moved, redo `o` and the ground calibration.
 
 **A servo or the ESC responds to the wrong stick / does not respond**
 The `p` command in the console measures the real pulse on each output (GPIO4–7) and compares it with the expected one. If everything is "OK" but the servo does not move, the problem is beyond the board: (1) the servo is not powered (BEC/5V, common ground); (2) the signal wire is on the wrong pin; (3) the mechanism is jammed. "НЕ СОВПАДАЕТ" ("MISMATCH") means the problem is in the firmware or peripherals — report it to the developer.

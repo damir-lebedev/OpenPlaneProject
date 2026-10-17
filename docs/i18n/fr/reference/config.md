@@ -147,6 +147,22 @@ sortie ; seulement au manche — un indicateur de voie.
 | `IMU_ROTATION_CW_DEG` | 90 | La rotation des axes de la puce de l’IMU autour de la verticale (0/90/180/270), vers où pointe l’axe X de la puce. N’est utilisée que tant qu’il n’y a pas de calibration du montage `o` dans la NVS |
 | `MAG_ROTATION_CW_DEG` | 0 | Pareil pour la boussole (la boussole n’a pas de calibration du montage) |
 
+### Train d’atterrissage, calibration au sol, signaux
+
+| Constante | Valeur | Signification |
+|---|---|---|
+| `LANDING_GEAR` | `LandingGear::TAIL_WHEEL` | Quelle roue est directrice : `TAIL_WHEEL` — roulette de queue (au sol nez levé, au décollage la queue se lève d’abord), `NOSE_WHEEL` — roulette de nez |
+| `CAL_SWITCH` | `Channels::SWB` | L’interrupteur du geste de calibration au sol (pas SwD — il commande l’inversion du moteur) |
+| `CAL_SWITCH_FLIPS` / `CAL_SWITCH_WINDOW_MS` | 3 / 4000 | Sans ARM, gaz en bas : autant d’allers en bas et retours en haut dans ce délai lancent la calibration (encore une fois — annulation) |
+| `CAL_STILL_MS`, `CAL_STILL_DPS`, `CAL_STILL_G` | 2000, 3.0, 0.15 | Une étape est validée quand, pendant ce nombre de ms, la vitesse angulaire est en dessous et le facteur de charge vaut 1g ± cette valeur |
+| `CAL_PARK_WAIT_MS` | 5000 | L’étape 2 attend que l’avion soit déplacé, ou pendant ce délai (roulette de nez : la même pose) |
+| `CAL_STEP_TIMEOUT_MS` | 60 000 | Pas d’immobilité pendant ce délai — la calibration est annulée (erreur) |
+| `CAL_TAIL_PARK_MIN/MAX_DEG` | 3 / 25 | Roulette de queue : tangage au sol dans ces limites, sinon erreur (« queue pas reposée ») |
+| `CAL_NOSE_PARK_MAX_DEG`, `CAL_PARK_MAX_ROLL_DEG` | 6, 10 | Roulette de nez : au sol presque à plat ; roulis au sol au plus de cette valeur |
+| `SIGNAL_MOTOR` / `SIGNAL_SURFACES` | `true` / `true` | Signal par le moteur (pause des impulsions de l’ESC — il joue sa mélodie de disponibilité) et par le hochement des gouvernes |
+| `SIGNAL_NOD_US`, `SIGNAL_NOD_MS` | 200, 150 | Hochement de la profondeur et de la direction : autant de µs en haut, puis en bas, autant de ms chacun |
+| `SIGNAL_ESC_PAUSE_MS`, `SIGNAL_PERIOD_MS` | 1000, 3000 | Durée sans impulsions vers l’ESC ; les signaux se suivent avec cette période (la mélodie a le temps de finir) |
+
 ### ARM
 
 | Constante | Valeur | Signification |
@@ -183,6 +199,9 @@ commentaires détaillés ; ce qu’ils signifient pour le pilote se trouve dans
 | Cercles et point de départ | `LOITER_RADIUS_M` 50 (25…150), `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
 | Géobarrière | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
 | Lancer à la main | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| Décollage automatique | `TAKEOFF_TRIGGER_US` 1500 ; contrôle : `TAKEOFF_CHECK_MS` 1000, `_CHECK_TIMEOUT_MS` 5000, `TAKEOFF_PARK_PITCH/ROLL_TOL_DEG` 4/5, `TAKEOFF_UNCALIBRATED_TILT_DEG` 10 ; gaz `TAKEOFF_THROTTLE_PCT` 100 sur `TAKEOFF_THROTTLE_RAMP_MS` 2000 ; cap `TAKEOFF_HEADING_KP` 10, `TAKEOFF_YAW_RATE_KD` 2 ; `TAKEOFF_ROTATE_SPEED_MS` 11 ; décollage `TAKEOFF_LIFTOFF_MS` 3000, `_LIFTOFF_ALT_M` 1, `_LIFTOFF_CONFIRM_MS` 500 ; montée `TAKEOFF_CLIMB_PITCH_DEG` 8 jusqu’à `TAKEOFF_SAFE_ALTITUDE_M` 30 (sans baromètre `TAKEOFF_CLIMB_MS` 15 000) ; interruption : `TAKEOFF_ABORT_ROLL_DEG` 15, `_ABORT_HEADING_DEG` 30, `TAKEOFF_NOSE_DOWN_MS` 300, `TAKEOFF_GROUND_TIMEOUT_MS` 15 000 ; « gyroscope seul » : `TAKEOFF_GYRO_ONLY_CLIMB/MAX/ABORT_MS` 5000/30 000/3000 |
+| Roulette de queue | `TD_TAIL_UP_ELEVATOR_US` 250 (au plus autant à piquer), `TD_ROLL_PITCH_DEG` 1, `TD_PITCH_KP` 40 (queue en l’air), `TD_ROLL_PITCH_KP` 15 (course et rotation), `TD_PITCH_KD` 3, `TD_TAIL_UP_DONE_DEG` 2, `TD_TAIL_UP_TIMEOUT_MS` 6000, `TD_ROLL_MS` 2500, `TD_ROTATE_RATE_DPS` 2, `TD_TAIL_CLEARANCE_DEG` 3, `TD_MIN_PITCH_DEG` −3 |
+| Roulette de nez | `TRI_ROLL_ELEVATOR_US` 0, `TRI_ROLL_MS` 3000, `TRI_ROTATE_RATE_DPS` 5, `TRI_MAX_GROUND_PITCH_DEG` 10 |
 | Atterrissage | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
 | Vol à voile | `SOAR_*` : plané −3°, une ascendance > 0.5 m/s pendant 1.5 s, un cercle de 25°, sortie < −0.2 m/s pendant 8 s, moteur sous 30 m jusqu’à 100 m, retour au point de départ au-delà de 400 m |
 | RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |

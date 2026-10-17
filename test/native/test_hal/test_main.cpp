@@ -273,6 +273,22 @@ void test_servo_measures_real_pulse_through_input_buffer()
     TEST_ASSERT_INT32_WITHIN(2, 1234, measured);   // шаг LEDC ~1.2 мкс
 }
 
+void test_servo_stop_pulses_for_motor_signal()
+{
+    Esp32ServoOutput servo(5, 1);
+    servo.stopPulses();   // не подключён — ничего
+    TEST_ASSERT_TRUE(servo.attach(1000, 2000));
+    servo.writeMicroseconds(1500);
+    TEST_ASSERT_INT32_WITHIN(2, 1500, servo.measurePulseUs());
+
+    servo.stopPulses();
+    TEST_ASSERT_EQUAL_UINT32(0, ledcRead(1));
+    TEST_ASSERT_EQUAL(-1, servo.measurePulseUs());   // импульса нет — ESC видит потерю сигнала
+
+    servo.writeMicroseconds(1500);                    // вернулись — нейтраль
+    TEST_ASSERT_INT32_WITHIN(2, 1500, servo.measurePulseUs());
+}
+
 void test_servo_interface_default_measurement_is_unsupported()
 {
     struct MinimalServo : IServoOutput
@@ -282,6 +298,7 @@ void test_servo_interface_default_measurement_is_unsupported()
         bool isAttached() const override { return true; }
     } servo;
     TEST_ASSERT_EQUAL(-1, servo.measurePulseUs());
+    servo.stopPulses();   // по умолчанию не умеет — и не падает
 }
 
 // ------------------------------------------------------------
@@ -360,6 +377,7 @@ int main()
     RUN_TEST(test_servo_output_configures_50hz_14bit_and_clamps_pulse);
     RUN_TEST(test_servo_output_attach_fails_when_ledc_refuses);
     RUN_TEST(test_servo_measures_real_pulse_through_input_buffer);
+    RUN_TEST(test_servo_stop_pulses_for_motor_signal);
     RUN_TEST(test_servo_interface_default_measurement_is_unsupported);
     RUN_TEST(test_board_begin_brings_up_buses_on_configured_pins);
     RUN_TEST(test_board_uarts_map_to_hardware_serial_ports);

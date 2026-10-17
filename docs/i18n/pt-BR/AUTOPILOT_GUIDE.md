@@ -175,8 +175,23 @@ Rumo ao ponto de origem (o ponto do ARM), altitude `RTH_ALTITUDE_M` = 40 m (se e
 **Precisa de:** IMU + barômetro + GPS com ponto de origem.
 
 ### AUTO_TAKEOFF (TKOFF) — "decolagem no acelerador"
-Depois do ARM, nada acontece até o piloto levantar o acelerador acima do meio. Daí o programa: 1 s de aceleração até 100 % de acelerador com as asas niveladas, 2 s de rotação com arfagem de 15° e depois subida com arfagem de 10° até o piloto trocar de modo. Os sticks se somam ao programa: dá para corrigir o rumo durante a corrida de decolagem.
-**Precisa de:** IMU.
+
+Decolagem da pista em etapas: pelo que o avião realmente faz, não por um temporizador. Qual roda é a direcional, uma linha decide: `LANDING_GEAR` em `Config.h` (por padrão `TAIL_WHEEL`: duas rodas na frente, a direcional atrás). Antes da primeira decolagem, faça a calibração em solo do avião (horizonte e atitude em solo, veja [PILOT_GUIDE.md](PILOT_GUIDE.md)); sem ela, um avião com bequilha não arma neste modo.
+
+1. **Espera.** Depois do ARM, o motor fica parado até o piloto levantar o acelerador acima do meio.
+2. **Verificação.** O avião fica parado ~1 s e seus ângulos coincidem com a atitude em solo (±4° de arfagem, ±5° de rolagem). Se não, o motor não liga, o motivo vai para o console e as superfícies dão três acenos: fora das rodas, rampa, roda quebrada, placa deslocada.
+3. **Cauda para cima** (bequilha). O acelerador sobe suavemente até 100 % em 2 s, o profundor vai **para picar** (stick para a frente): o fluxo da hélice levanta a cauda; quanto mais o avião se nivela, menor a deflexão, e abaixo do alvo o profundor puxa para o avião não apoiar na hélice.
+4. **Corrida nivelada.** Sobre as rodas principais a +1° de arfagem: a bequilha está no ar e não carrega nada. O leme e a roda mantêm o rumo pelo giroscópio.
+5. **Rotação.** O alvo de arfagem sobe a 2°/s, mas enquanto a decolagem não é detectada fica 3° abaixo da atitude em solo: a cauda não pode tocar a pista, quem tira o avião do chão é a asa. A velocidade de rotação vem do tubo de Pitot ou do GPS; sem eles, é considerada atingida após 2,5 s de corrida.
+6. **Subida.** Arfagem +8°, asas niveladas, rumo pelo leme, até 30 m acima do ponto de partida (sem barômetro, por 15 s).
+7. **Pronto.** Mantém o rumo e a altitude, o acelerador é automático: como o CRUISE (sem barômetro, voo nivelado). Para assumir: troque de modo.
+
+Roda de nariz (`NOSE_WHEEL`), sem "cauda para cima": corrida com o profundor em neutro; na velocidade de rotação o nariz sobe a 5°/s, perto do solo no máximo até 10°.
+
+**O acelerador é conduzido pelo programa**; o stick do acelerador serve só para "partida" e "abortar". **Decolagem abortada**: motor desligado, profundor em neutro, asas e rumo mantidos enquanto o avião rola: acelerador para baixo, perda de link na pista, falha do IMU, rolagem acima de 15°, desvio de rumo acima de 30°, nariz 3° abaixo do horizonte, cauda sem subir em 6 s, sem decolar em 15 s. Nova tentativa: acelerador para baixo por um segundo e de novo para cima. Depois da decolagem, o stick do acelerador não aborta mais: a 2 m de altura o motor não pode parar. Perder o link na subida é o failsafe de sempre; se o link volta, a subida continua.
+
+Na corrida, só o giroscópio conduz os ângulos: o acelerômetro toma a aceleração para a frente por um nariz levantado (0,5 g equivalem a +27°). O zero do giroscópio é refinado na verificação antes da partida. Os sticks se somam ao programa, e a intensidade das leis de decolagem segue o potenciômetro `STAB_GAIN`. Na simulação com modelo do trem de pouso, a carga na bequilha depois que o motor liga nunca passa da carga parada, nem a hélice nem a cauda tocam a pista, o rumo desvia menos de 10° e os 30 m são atingidos.
+**Precisa de:** IMU; barômetro, tubo de Pitot ou GPS melhoram (decolagem e altitude pelos sensores em vez do tempo).
 
 ### LAUNCH (LNCH) — "lançamento manual"
 1. Armado e com o acelerador acima do meio, o lançamento fica **preparado**, com o motor parado.
@@ -245,6 +260,7 @@ O centro do potenciômetro = valor padrão de `Config.h`; os extremos são o mí
 | Situação | O que a aeronave faz |
 |---|---|
 | no solo (desarmada) | motor 0, superfícies em neutro; após 10 s, o buzzer |
+| na pista em AUTO_TAKEOFF, antes de decolar | decolagem abortada: motor desligado, superfícies em neutro (sem RTH a partir da pista) |
 | no ar, com GPS e ponto de origem | **RTH** com motor; sobre o ponto de origem, círculos a 40 m |
 | no ar, sem GPS | **planeio**: motor desligado, asas niveladas, nariz −3° |
 | o link voltou | na hora, o modo da chave do piloto |
@@ -301,7 +317,7 @@ O ARM/DISARM a partir do solo é **recusado**: só pela chave do rádio. Para ve
 ## Ordem de configuração de um avião novo
 
 1. **MANUAL no solo:** sentidos das superfícies, do motor e dos flaps (o bloco “Reversão” do `Config.h`), flaps para baixo, AUX. Verificação das saídas com `p` no console (sem a hélice!).
-2. **Sensores no solo:** `b`: varredura dos barramentos; `s`: status; `o`: calibração da instalação do IMU (3 posições, uma única vez); `m`: bússola.
+2. **Sensores no solo:** `b`: varredura dos barramentos; `s`: status; `o`: calibração da instalação do IMU (3 posições, uma única vez) e depois a calibração em solo do avião (SwB três vezes para baixo e para cima sem ARM, ou `c`); `m`: bússola.
 3. **STABILIZE no solo:** incline o avião para a direita: o aileron direito deve ir **para baixo** (para nivelar). Nariz para cima: profundor para baixo. Se não for assim, as reversões ou a instalação do IMU estão erradas.
 4. **Primeiro voo em MANUAL**, subida a mais de 50 m → STABILIZE. Se oscilar, reduza o `STAB_GAIN`; se estiver mole, aumente.
 5. **AUTO_TRIM** em voo nivelado por 20–30 s, pouso, DISARM: o trim será salvo.
@@ -313,6 +329,7 @@ O ARM/DISARM a partir do solo é **recusado**: só pela chave do rádio. Para ve
 
 - [ ] A disposição impressa ao ligar é a que você espera.
 - [ ] Console/OLED: IMU ok, a verificação pré-voo do IMU passou (o avião estava parado ao ligar).
+- [ ] A calibração em solo do avião está feita: ao ligar, o log mostra "стоянка на колёсах — тангаж …" ("no solo sobre as rodas — arfagem …"); sem ela, o AUTO_TAKEOFF com bequilha não arma.
 - [ ] O barômetro está zerado no solo (altitude ~0 no OLED).
 - [ ] Com tubo de Pitot: velocidade ~0 no solo; se soprar no tubo, ela sobe.
 - [ ] GPS: fix 3D, ≥ 6 satélites **antes do ARM**; senão, não haverá ponto de origem nem RTH.
@@ -333,7 +350,7 @@ O ARM/DISARM a partir do solo é **recusado**: só pela chave do rádio. Para ve
 | CRUISE | ● | ● | ○ | ○ | ○ | auto | rumo pelo giroscópio (deriva), altitude com o piloto |
 | LOITER | ● | ● | ● | | ○ | auto | círculo com inclinação no mesmo lugar |
 | RTH | ● | ● | ● | | ○ | auto | círculos no mesmo lugar |
-| AUTO_TAKEOFF | ● | | | | | programa | superfícies = sticks + acelerador do piloto |
+| AUTO_TAKEOFF | ● | ○ | ○ | | ○ | programa | sem IMU não há ARM; sem barômetro, decolagem e subida por tempo |
 | LAUNCH | ● | ○ | | | | programa | superfícies em neutro |
 | AUTO_LAND | ● | ● | | ○ | | 0 | sem arredondamento |
 | SOARING | ● | ● | ○ | | ○ | 0 / motor | sem térmicas: planeio |

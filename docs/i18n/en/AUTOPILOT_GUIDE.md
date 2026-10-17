@@ -175,8 +175,23 @@ Course to home (the ARM point), altitude `RTH_ALTITUDE_M` = 40 m (below it — c
 **Needs:** IMU + barometer + GPS with a home point.
 
 ### AUTO_TAKEOFF (TKOFF) — "takeoff on throttle"
-After ARM nothing happens until the pilot raises the throttle above the middle. Then the program: 1 s of acceleration to 100 % throttle with the wings level, 2 s of rotation with a pitch of 15°, then a climb with a pitch of 10° until the pilot switches the mode. The sticks are added on top of the program — you can straighten the course on the takeoff run.
-**Needs:** IMU.
+
+Takeoff from a runway in stages — driven by what the airplane actually does, not by a timer. Which wheel steers is one line, `LANDING_GEAR` in `Config.h` (the default is `TAIL_WHEEL`: two wheels in front, the steering wheel at the back). Before the first takeoff, do the ground calibration of the airplane (horizon and parking attitude, see [PILOT_GUIDE.md](PILOT_GUIDE.md)); without it a tail-wheel airplane cannot be armed in this mode.
+
+1. **Waiting.** After ARM the motor stays stopped until the pilot raises the throttle above the middle.
+2. **Check.** The airplane stands still for ~1 s and its angles match the parking ones (±4° in pitch, ±5° in roll). If not, the motor does not start, the reason goes to the console and the control surfaces nod three times: not on its wheels, a slope, a broken wheel, the board has moved.
+3. **Tail up** (tail wheel). The throttle rises smoothly to 100% over 2 s and the elevator goes **down** (stick forward) — the propeller slipstream lifts the tail; as the airplane levels out the push eases off, and below the target the elevator pulls up so the airplane does not tip onto its propeller.
+4. **Level roll.** On the main wheels at +1° of pitch: the tail wheel is in the air and carries nothing. The rudder and the wheel hold the heading from the gyro.
+5. **Liftoff.** The pitch target rises by 2°/s, but until liftoff is seen it stays 3° below the parking angle: the tail cannot touch the runway and the wing lifts the airplane off. Liftoff speed comes from the pitot tube or GPS; without them it is taken after 2.5 s of rolling.
+6. **Climb.** Pitch +8°, wings level, heading by the rudder — up to 30 m above the start (without a barometer, for 15 s).
+7. **Done.** Holds heading and altitude with automatic throttle, like CRUISE (without a barometer, level attitude). To take over, change the mode.
+
+Nose wheel (`NOSE_WHEEL`) — no “tail up”: the roll is made with the elevator neutral, and at liftoff speed the nose comes up at 5°/s, to no more than 10° near the ground.
+
+**The program drives the throttle**; the throttle stick only means “start” and “abort”. **Aborted takeoff** — the motor stops, the elevator goes to neutral, and wings and heading are held while the airplane rolls: throttle stick down, link loss on the runway, IMU failure, roll over 15°, heading off by more than 30°, nose 3° below the horizon, tail not up within 6 s, no liftoff within 15 s. To try again, pull the throttle down for a second and raise it again. After liftoff the throttle stick no longer aborts: the motor must not stop at 2 m. Link loss during the climb is the normal failsafe; when the link comes back, the climb continues.
+
+During the takeoff roll only the gyro drives the angles: the accelerometer takes forward acceleration for a raised nose (0.5 g reads as +27°). The gyro zero is refined during the pre-start check. The sticks are added on top of the program, and the strength of the takeoff laws follows the `STAB_GAIN` knob. In the simulation with a landing-gear model the tail-wheel load after motor start never exceeds the parking load, neither the propeller nor the tail touches the runway, the heading drifts by less than 10°, and 30 m are reached.
+**Needs:** IMU; a barometer, pitot tube or GPS make it better (liftoff and altitude from sensors rather than timers).
 
 ### LAUNCH (LNCH) — "hand launch"
 1. Armed, throttle above the middle — the launch is **primed**, the motor is stopped.
@@ -245,6 +260,7 @@ The center of a knob = the default value from `Config.h`; the edges are the mini
 | Situation | What the aircraft does |
 |---|---|
 | on the ground (not armed) | motor 0, surfaces to neutral; after 10 s — the buzzer |
+| on the runway in AUTO_TAKEOFF, before liftoff | aborted takeoff: motor stops, surfaces to neutral (no RTH from the runway) |
 | in the air, GPS and home are available | **RTH** with the motor, over home — circles at 40 m |
 | in the air, no GPS | **gliding**: motor off, wings level, nose −3° |
 | the link is back | immediately the mode from the pilot's switch |
@@ -301,7 +317,7 @@ ARM/DISARM from the ground is **rejected** — only with the transmitter switch.
 ## Setting up a new airplane, step by step
 
 1. **MANUAL on the ground:** the directions of the surfaces, the motor and the flaps (the “Reverse” block in `Config.h`), flaps down, AUX. Check the outputs with `p` in the console (propeller off!).
-2. **Sensors on the ground:** `b` — bus scan, `s` — status; `o` — IMU mounting calibration (3 poses, once), `m` — compass.
+2. **Sensors on the ground:** `b` — bus scan, `s` — status; `o` — IMU mounting calibration (3 poses, once), then the ground calibration of the airplane (SwB down and up 3 times without ARM, or `c`), `m` — compass.
 3. **STABILIZE on the ground:** tilt the airplane to the right — the right aileron should go **down** (to level it). Nose up — elevator down. If not — the reverses or the IMU mounting are mixed up.
 4. **The first flight in MANUAL**, climb 50+ m → STABILIZE. If it oscillates — lower `STAB_GAIN`; if it is sluggish — raise it.
 5. **AUTO_TRIM** in level flight for 20–30 s, land, DISARM — the trim will be saved.
@@ -313,6 +329,7 @@ ARM/DISARM from the ground is **rejected** — only with the transmitter switch.
 
 - [ ] The layout printed at power-up is the one you expect.
 - [ ] Console/OLED: IMU ok, the IMU pre-flight check passed (the airplane stood still at power-up).
+- [ ] The ground calibration of the airplane has been done: at power-up the log shows “стоянка на колёсах — тангаж …” (parking on the wheels — pitch …); without it AUTO_TAKEOFF with a tail wheel cannot be armed.
 - [ ] The barometer is zeroed on the ground (altitude ~0 on the OLED).
 - [ ] With a pitot tube: speed ~0 on the ground, blow into the tube — it rises.
 - [ ] GPS: 3D fix, ≥ 6 satellites **before ARM** — otherwise there will be no home and no RTH.
@@ -333,7 +350,7 @@ ARM/DISARM from the ground is **rejected** — only with the transmitter switch.
 | CRUISE | ● | ● | ○ | ○ | ○ | auto | course by the gyroscope (drifts), altitude with the pilot |
 | LOITER | ● | ● | ● | | ○ | auto | a circle with a bank in place |
 | RTH | ● | ● | ● | | ○ | auto | circles in place |
-| AUTO_TAKEOFF | ● | | | | | program | surfaces = sticks + the pilot's throttle |
+| AUTO_TAKEOFF | ● | ○ | ○ | | ○ | program | no ARM without IMU; without a barometer, liftoff and climb go by time |
 | LAUNCH | ● | ○ | | | | program | surfaces to neutral |
 | AUTO_LAND | ● | ● | | ○ | | 0 | no flare |
 | SOARING | ● | ● | ○ | | ○ | 0 / motor | no thermals — gliding |

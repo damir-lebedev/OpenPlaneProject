@@ -101,7 +101,7 @@
 
 ## `Autopilot`
 
-**Файл:** `autopilot/Autopilot.h` · **Зависит от:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, датчики (все nullable)
+**Файл:** `autopilot/Autopilot.h` · **Зависит от:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, датчики (все nullable)
 
 ### Жизненный цикл
 
@@ -112,7 +112,7 @@
 | `void setInputs(const PilotInputs&)` | тумблеры и крутилки этого такта (до `update`) |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | раз за такт: датчики (всегда) → навигация и дом → сохранение триммера на земле → failsafe → геозабор → режим → координация разворота → автотриммер |
 | `ControlCommand getCommand() const` | итоговые рули (roll/pitch/yaw, мкс) |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | газ режима: `PILOT` — газ пилота; `AUTO` — свой; `AT_LEAST` — не меньше своего (автовзлёт). ARM и `MOTOR_KILL` учитывает `FlightController` |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | газ режима: `PILOT` — газ пилота; `AUTO` — свой (и у автовзлёта: стик газа ему — только старт и прерывание). ARM и `MOTOR_KILL` учитывает `FlightController` |
 
 ### Режимы
 
@@ -123,6 +123,10 @@
 | `isFailsafeActive()`, `isFailsafeGliding()`, `isFailsafeReturning()` | failsafe поверх режима |
 | `isAutoThrottle()`, `getThrottleCorrection()` | газ режима (%, для лога и дашборда) |
 | `getLaunchState()`, `getSoaringState()` | автоматы LAUNCH и SOARING |
+| `getTakeoffStage()`, `getTakeoffAbortReason()` | этап автовзлёта и почему прерван (`nullptr` — не прерван) |
+| `bool takeTakeoffRefusal()` | автовзлёт отказал на проверке перед стартом — `FlightController` играет сигнал (забирается один раз) |
+| `getLandingGear()`, `setLandingGear(LandingGear)` | шасси (по умолчанию `Config::LANDING_GEAR`; тесты меняют) |
+| `bool isGyroOnlyAttitude() const` | горизонт сейчас ведёт только гироскоп (окно разгона автовзлёта) |
 
 ### Выходы и диагностика
 
@@ -148,7 +152,13 @@
 - `looksLanded()` — у земли по барометру, почти без вертикальной скорости,
   медленнее порога по трубке/GPS: только тогда триммер пишется во флеш.
 - Failsafe: при GPS и доме — RTH с мотором, иначе планирование; начатый RTH
-  не бросается от короткой потери GPS.
+  не бросается от короткой потери GPS. В AUTO_TAKEOFF на полосе (этапы
+  `holdsGround()`) потеря связи — прерванный взлёт, а не failsafe; в наборе —
+  failsafe, после связи набор продолжается.
+- Окно «только гироскоп» (`manageAccelCorrection()`): запуск мотора автовзлётом
+  выключает акселерометр как опору горизонта (`ImuSensor::setAccelCorrection`);
+  включают обратно время после начала набора (`TAKEOFF_GYRO_ONLY_CLIMB_MS`),
+  общий предел, прерванный взлёт и DISARM — не смена режима.
 
 ---
 
@@ -188,6 +198,38 @@
 тангаж `LAUNCH_CLIMB_PITCH_DEG`) `→ DONE` (`LAUNCH_CLIMB_MS` или
 `LAUNCH_ALTITUDE_M`). Движение стиков до броска — отмена. Методы: `update(...)`,
 `reset()`, `getState()`, `motorOn()`, `pitchTargetDeg()`, `stateName()`.
+
+## `TakeoffController`
+
+**Файл:** `autopilot/TakeoffController.h` · **Зависит от:** `Config`
+
+Автовзлёт с полосы — этапы по датчикам, без датчиков и рулей: на входе
+`Inputs` (ARM, связь, газ пилота, углы и угловые скорости, перегрузка,
+стояночные углы, высота, скорость, крутилка `STAB_GAIN`, время), на выходе —
+что делать в этом такте.
+
+`Stage`: `IDLE` (мотор стоит; газ выше `TAKEOFF_TRIGGER_US` после газа внизу)
+`→ CHECK` (неподвижен `TAKEOFF_CHECK_MS`, углы = стояночные; нет — `ABORTED` и
+сигнал) `→ TAIL_UP` (хвостовое колесо: руль от себя, хвост вверх) `→ ROLL`
+(разбег; `TD_ROLL_MS` / `TRI_ROLL_MS` или скорость отрыва) `→ LIFTOFF` (цель
+тангажа растёт, у земли не выше стоянки минус `TD_TAIL_CLEARANCE_DEG`) `→ CLIMB`
+(отрыв по барометру или по времени; набор до `TAKEOFF_SAFE_ALTITUDE_M` /
+`TAKEOFF_CLIMB_MS`) `→ DONE`. `ABORTED` — прерванный взлёт; газ внизу
+1 с — снова `IDLE`.
+
+| Метод | Описание |
+|---|---|
+| `void update(const Inputs&)` | раз за такт: переход этапа, потом выходы этого этапа; без ARM — `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | прервать извне (потеря связи); в `IDLE`/`DONE` — ничего |
+| `void reset()`, `setGear()`, `getGear()` | |
+| `getStage()`, `stageName()`, `stageShort()`, `getAbortReason()` | этап (короткое имя — для OLED) |
+| `bool holdsGround() const` | на земле (`IDLE`…`LIFTOFF`, `ABORTED`): потеря связи — прерванный взлёт, интеграторы ПИД на нуле |
+| `isAirborneStage()`, `isDone()` | в воздухе (набор/готово); взлёт окончен |
+| `getThrottlePct()` | газ программы, % (разгон за `TAKEOFF_THROTTLE_RAMP_MS`) |
+| `getRollTargetDeg()`, `getPitchTargetDeg()` | цели крена (на колёсах — стояночный крен) и тангажа (набор — для ПИД) |
+| `hasElevatorCommand()`, `getElevatorUs()` | на колёсах руль высоты напрямую: к цели `TD_PITCH_KP` / `TD_ROLL_PITCH_KP` мкс на градус, демпфирование `TD_PITCH_KD`, от себя не больше `TD_TAIL_UP_ELEVATOR_US` |
+| `hasRudderCommand()`, `getRudderUs()` | курс рулём направления и колесом: `TAKEOFF_HEADING_KP` мкс на градус, `TAKEOFF_YAW_RATE_KD` на °/с |
+| `bool takeRefusal()`, `bool takeGyroTrim(float[3])` | разовые события: отказ на проверке; остаточный ноль гироскопа за неподвижность |
 
 ## `SoaringController`
 

@@ -139,6 +139,22 @@
 | `IMU_ROTATION_CW_DEG` | 90 | IMU 칩의 축을 수직축 둘레로 돌리는 각도(0/90/180/270), 즉 칩의 X축이 향하는 방향. NVS에 장착 보정 `o`가 없을 때만 사용 |
 | `MAG_ROTATION_CW_DEG` | 0 | 나침반에 대한 같은 설정(나침반에는 장착 보정이 없음) |
 
+### 랜딩기어, 지상 캘리브레이션, 알림
+
+| 상수 | 값 | 의미 |
+|---|---|---|
+| `LANDING_GEAR` | `LandingGear::TAIL_WHEEL` | 어느 바퀴로 조향하는지: `TAIL_WHEEL`은 꼬리 바퀴(지상에서 기수가 들림, 활주 때 꼬리가 먼저 들림), `NOSE_WHEEL`은 앞바퀴 |
+| `CAL_SWITCH` | `Channels::SWB` | 지상 캘리브레이션 동작에 쓰는 스위치(SwD는 불가: 모터 역회전에 쓰임) |
+| `CAL_SWITCH_FLIPS` / `CAL_SWITCH_WINDOW_MS` | 3 / 4000 | ARM 없이, 스로틀을 내린 채: 이 시간 안에 이 횟수만큼 내렸다 올리면 캘리브레이션 시작(한 번 더 하면 취소) |
+| `CAL_STILL_MS`, `CAL_STILL_DPS`, `CAL_STILL_G` | 2000, 3.0, 0.15 | 이만큼의 ms 동안 각속도가 이 값보다 작고 하중이 1g ± 이 값이면 단계를 기록 |
+| `CAL_PARK_WAIT_MS` | 5000 | 2단계는 비행기를 옮길 때까지, 또는 이 시간만큼 기다림(앞바퀴: 같은 자세) |
+| `CAL_STEP_TIMEOUT_MS` | 60 000 | 이 시간 안에 정지하지 않으면 캘리브레이션 취소(오류) |
+| `CAL_TAIL_PARK_MIN/MAX_DEG` | 3 / 25 | 꼬리 바퀴: 주기 피치가 이 범위 안이어야 하며, 아니면 오류(“꼬리를 내리지 않음”) |
+| `CAL_NOSE_PARK_MAX_DEG`, `CAL_PARK_MAX_ROLL_DEG` | 6, 10 | 앞바퀴: 주기 자세가 거의 수평. 주기 롤은 최대 이 값 |
+| `SIGNAL_MOTOR` / `SIGNAL_SURFACES` | `true` / `true` | 모터 알림(ESC 펄스를 멈춤: ESC가 준비 완료 멜로디를 냄)과 조종면 끄덕임 알림 |
+| `SIGNAL_NOD_US`, `SIGNAL_NOD_MS` | 200, 150 | 승강타와 방향타의 끄덕임: 이만큼의 µs 위로, 다음에 아래로, 각각 이만큼의 ms |
+| `SIGNAL_ESC_PAUSE_MS`, `SIGNAL_PERIOD_MS` | 1000, 3000 | ESC로 펄스가 가지 않는 시간. 알림은 이 주기로 이어짐(멜로디가 끝까지 나옴) |
+
 ### ARM
 
 | 상수 | 값 | 의미 |
@@ -174,6 +190,9 @@
 | 선회 원과 홈 | `LOITER_RADIUS_M` 50(25…150), `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
 | 지오펜스 | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
 | 손 발사 | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| 자동 이륙 | `TAKEOFF_TRIGGER_US` 1500. 점검: `TAKEOFF_CHECK_MS` 1000, `_CHECK_TIMEOUT_MS` 5000, `TAKEOFF_PARK_PITCH/ROLL_TOL_DEG` 4/5, `TAKEOFF_UNCALIBRATED_TILT_DEG` 10. 스로틀 `TAKEOFF_THROTTLE_PCT` 100을 `TAKEOFF_THROTTLE_RAMP_MS` 2000에 걸쳐. 침로 `TAKEOFF_HEADING_KP` 10, `TAKEOFF_YAW_RATE_KD` 2. `TAKEOFF_ROTATE_SPEED_MS` 11. 부양 `TAKEOFF_LIFTOFF_MS` 3000, `_LIFTOFF_ALT_M` 1, `_LIFTOFF_CONFIRM_MS` 500. 상승 `TAKEOFF_CLIMB_PITCH_DEG` 8로 `TAKEOFF_SAFE_ALTITUDE_M` 30까지(기압계 없으면 `TAKEOFF_CLIMB_MS` 15 000). 중단: `TAKEOFF_ABORT_ROLL_DEG` 15, `_ABORT_HEADING_DEG` 30, `TAKEOFF_NOSE_DOWN_MS` 300, `TAKEOFF_GROUND_TIMEOUT_MS` 15 000. “자이로만”: `TAKEOFF_GYRO_ONLY_CLIMB/MAX/ABORT_MS` 5000/30 000/3000 |
+| 꼬리 바퀴 | `TD_TAIL_UP_ELEVATOR_US` 250(아래 타각의 상한), `TD_ROLL_PITCH_DEG` 1, `TD_PITCH_KP` 40(꼬리 들기), `TD_ROLL_PITCH_KP` 15(활주와 기수 들기), `TD_PITCH_KD` 3, `TD_TAIL_UP_DONE_DEG` 2, `TD_TAIL_UP_TIMEOUT_MS` 6000, `TD_ROLL_MS` 2500, `TD_ROTATE_RATE_DPS` 2, `TD_TAIL_CLEARANCE_DEG` 3, `TD_MIN_PITCH_DEG` −3 |
+| 앞바퀴 | `TRI_ROLL_ELEVATOR_US` 0, `TRI_ROLL_MS` 3000, `TRI_ROTATE_RATE_DPS` 5, `TRI_MAX_GROUND_PITCH_DEG` 10 |
 | 착륙 | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
 | 소어링 | `SOAR_*`: 활공 −3°, 열상승 > 0.5 m/s가 1.5초, 선회 25°, 이탈 < −0.2 m/s가 8초, 30 m 아래에서는 100 m까지 모터 사용, 400 m를 넘으면 홈으로 |
 | RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |

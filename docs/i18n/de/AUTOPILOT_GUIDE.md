@@ -175,8 +175,23 @@ Kurs auf den Startpunkt (den Punkt des ARM), Höhe `RTH_ALTITUDE_M` = 40 m (daru
 **Benötigt:** IMU + Barometer + GPS mit Startpunkt.
 
 ### AUTO_TAKEOFF (TKOFF) — „Start per Gas“
-Nach dem ARM passiert nichts, bis der Pilot das Gas über die Mitte schiebt. Dann das Programm: 1 s Beschleunigung auf 100 % Gas bei waagerechten Flügeln, 2 s Abheben mit einem Nickwinkel von 15°, danach Steigflug mit einem Nickwinkel von 10°, bis der Pilot den Modus wechselt. Die Knüppel addieren sich zum Programm – den Kurs kann man auf dem Startlauf geraderichten.
-**Benötigt:** IMU.
+
+Start von der Piste in Etappen – danach, was das Flugzeug tatsächlich tut, nicht nach einem Timer. Welches Rad lenkt, legt eine Zeile fest: `LANDING_GEAR` in `Config.h` (Standard ist `TAIL_WHEEL`: zwei Räder vorn, das Lenkrad hinten). Vor dem ersten Start steht die Bodenkalibrierung des Flugzeugs an (Horizont und Standlage, siehe [PILOT_GUIDE.md](PILOT_GUIDE.md)); ohne sie lässt sich ein Spornradflugzeug in diesem Modus nicht scharfschalten.
+
+1. **Warten.** Nach ARM bleibt der Motor stehen, bis der Pilot das Gas über die Mitte schiebt.
+2. **Prüfung.** Das Flugzeug steht ~1 s still, und seine Winkel stimmen mit der Standlage überein (±4° Nick, ±5° Roll). Wenn nicht, startet der Motor nicht, der Grund geht an die Konsole, und die Ruder nicken dreimal: nicht auf den Rädern, Hang, gebrochenes Rad, verschobene Platine.
+3. **Heck hoch** (Spornrad). Das Gas steigt in 2 s sanft auf 100 %, das Höhenruder geht **nach unten** (Knüppel nach vorn) – der Propellerstrahl hebt das Heck; je mehr sich das Flugzeug waagerecht legt, desto schwächer wird der Ausschlag, unter dem Ziel zieht das Höhenruder, damit sich das Flugzeug nicht auf den Propeller stellt.
+4. **Startlauf waagerecht.** Auf den Haupträdern bei +1° Nick: Das Spornrad ist in der Luft und trägt nichts. Seitenruder und Rad halten den Kurs nach dem Gyroskop.
+5. **Abheben.** Das Nickziel steigt mit 2°/s, bleibt aber, solange das Abheben nicht erkannt ist, 3° unter dem Standwinkel: Das Heck kann die Piste nicht berühren, die Tragfläche hebt das Flugzeug ab. Die Abhebegeschwindigkeit kommt vom Pitotrohr oder GPS, ohne sie gilt sie nach 2,5 s Startlauf als erreicht.
+6. **Steigflug.** Nick +8°, Flächen waagerecht, Kurs per Seitenruder – bis 30 m über dem Startpunkt (ohne Barometer 15 s lang).
+7. **Fertig.** Hält Kurs und Höhe, das Gas regelt sich selbst – wie CRUISE (ohne Barometer waagerechte Lage). Übernehmen: Modus wechseln.
+
+Bugrad (`NOSE_WHEEL`) – ohne „Heck hoch“: Startlauf mit neutralem Höhenruder, bei Abhebegeschwindigkeit hebt sich die Nase mit 5°/s, in Bodennähe auf höchstens 10°.
+
+**Das Gas führt das Programm**, der Gasknüppel bedeutet nur „Start“ und „Abbruch“. **Startabbruch** – Motor aus, Höhenruder neutral, Flächen und Kurs werden gehalten, solange das Flugzeug rollt: Gasknüppel nach unten, Signalverlust auf der Piste, IMU-Ausfall, Roll über 15°, Kursabweichung über 30°, Nase 3° unter dem Horizont, Heck nach 6 s nicht oben, kein Abheben nach 15 s. Neuer Versuch: Gas eine Sekunde nach unten und wieder hoch. Nach dem Abheben bricht der Gasknüppel nicht mehr ab – in 2 m Höhe darf der Motor nicht ausgehen. Signalverlust im Steigflug ist der normale Failsafe; kommt das Signal zurück, geht der Steigflug weiter.
+
+Im Startlauf führt nur das Gyroskop die Winkel: Der Beschleunigungssensor hält die Beschleunigung nach vorn für eine erhobene Nase (0,5 g entsprechen +27°). Der Nullpunkt des Gyroskops wird bei der Prüfung vor dem Start nachgeführt. Die Knüppel wirken zusätzlich zum Programm, die Stärke der Startregler folgt dem Drehregler `STAB_GAIN`. In der Simulation mit Fahrwerksmodell übersteigt die Last auf dem Spornrad nach dem Motorstart nie die Standlast, weder Propeller noch Heck berühren die Piste, der Kurs weicht um weniger als 10° ab, und 30 m werden erreicht.
+**Benötigt:** IMU; Barometer, Pitotrohr oder GPS verbessern es (Abheben und Höhe nach Sensoren statt nach Zeit).
 
 ### LAUNCH (LNCH) — „Handstart“
 1. Scharfgeschaltet, Gas über der Mitte – der Start ist **vorbereitet**, der Motor steht.
@@ -245,6 +260,7 @@ Die Mitte des Drehreglers = Standardwert aus `Config.h`; die Enden sind Minimum 
 | Situation | Was das Fluggerät tut |
 |---|---|
 | am Boden (nicht scharfgeschaltet) | Motor 0, Ruder in Neutralstellung; nach 10 s – der Summer |
+| auf der Piste in AUTO_TAKEOFF, vor dem Abheben | Startabbruch: Motor aus, Ruder neutral (kein RTH von der Piste) |
 | in der Luft, GPS und Startpunkt vorhanden | **RTH** mit Motor, über dem Startpunkt – Kreise auf 40 m |
 | in der Luft, kein GPS | **Gleitflug**: Motor aus, Flügel waagerecht, Nase −3° |
 | die Verbindung ist wieder da | sofort der Modus vom Schalter des Piloten |
@@ -301,7 +317,7 @@ ARM/DISARM vom Boden aus wird **abgelehnt** – nur über den Schalter des Sende
 ## Reihenfolge bei der Einrichtung eines neuen Flugzeugs
 
 1. **MANUAL am Boden:** Richtungen von Rudern, Motor und Klappen (Block „Umkehr“ in `Config.h`), Klappen nach unten, AUX. Ausgänge prüfen mit `p` in der Konsole (Propeller abnehmen!).
-2. **Sensoren am Boden:** `b` – Busabfrage, `s` – Status; `o` – Kalibrierung der IMU-Einbaulage (3 Lagen, einmalig), `m` – Kompass.
+2. **Sensoren am Boden:** `b` – Busabfrage, `s` – Status; `o` – Einbaukalibrierung der IMU (3 Lagen, einmalig), danach die Bodenkalibrierung des Flugzeugs (SwB dreimal runter und hoch ohne ARM oder `c`), `m` – Kompass.
 3. **STABILIZE am Boden:** Neigen Sie das Flugzeug nach rechts – das rechte Querruder muss **nach unten** gehen (zum Ausgleichen). Nase hoch – Höhenruder nach unten. Ist es anders, sind die Umkehrungen oder der IMU-Einbau vertauscht.
 4. **Erster Flug in MANUAL**, Steigen auf über 50 m → STABILIZE. Schaukelt es – `STAB_GAIN` verringern; ist es träge – erhöhen.
 5. **AUTO_TRIM** im Geradeausflug 20–30 s lang, Landung, DISARM – die Trimmung wird gespeichert.
@@ -313,6 +329,7 @@ ARM/DISARM vom Boden aus wird **abgelehnt** – nur über den Schalter des Sende
 
 - [ ] Die beim Einschalten ausgegebene Belegung ist die erwartete.
 - [ ] Konsole/OLED: IMU ok, die IMU-Prüfung vor dem Flug bestanden (das Flugzeug stand beim Einschalten still).
+- [ ] Die Bodenkalibrierung des Flugzeugs ist gemacht: Beim Einschalten steht im Log „стоянка на колёсах — тангаж …“ (Stand auf den Rädern – Nick …); ohne sie lässt sich AUTO_TAKEOFF mit Spornrad nicht scharfschalten.
 - [ ] Das Barometer ist am Boden genullt (Höhe ~0 auf dem OLED).
 - [ ] Mit Pitotrohr: Geschwindigkeit ~0 am Boden; wenn man ins Rohr bläst, steigt sie.
 - [ ] GPS: 3D-Fix, ≥ 6 Satelliten **vor dem ARM** – sonst gibt es keinen Startpunkt und kein RTH.
@@ -333,7 +350,7 @@ ARM/DISARM vom Boden aus wird **abgelehnt** – nur über den Schalter des Sende
 | CRUISE | ● | ● | ○ | ○ | ○ | automatisch | Kurs per Gyroskop (driftet), Höhe beim Piloten |
 | LOITER | ● | ● | ● | | ○ | automatisch | Kreis mit Schräglage auf der Stelle |
 | RTH | ● | ● | ● | | ○ | automatisch | Kreise auf der Stelle |
-| AUTO_TAKEOFF | ● | | | | | Programm | Ruder = Knüppel + Gas des Piloten |
+| AUTO_TAKEOFF | ● | ○ | ○ | | ○ | Programm | ohne IMU kein ARM; ohne Barometer Abheben und Steigflug nach Zeit |
 | LAUNCH | ● | ○ | | | | Programm | Ruder in Neutralstellung |
 | AUTO_LAND | ● | ● | | ○ | | 0 | ohne Abfangen |
 | SOARING | ● | ● | ○ | | ○ | 0 / Motor | ohne Thermik – Gleitflug |

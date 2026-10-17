@@ -48,6 +48,12 @@
 | `void setYaw(float)` | 设定航向（例如启动时根据指南针设定） |
 | `virtual void calibrateOrientation()` | 电路板安装方向校准（默认不支持） |
 | `virtual const char* getPreflightProblem() const` | 飞行前检查发现的问题，或 `nullptr`（默认为 `nullptr`） |
+| `virtual bool readChipUp(float[3]) const` | 地面校准：加速度计在芯片坐标系中的最新读数，g，未经修正（默认 `false`） |
+| `virtual bool getOrientation(ImuOrientation&) const` | 板子当前的安装方向（默认 `false`——不支持地面校准） |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | 采用水平基准和停机姿态，并写入闪存 |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | 停在轮子上的姿态，相对水平基准的 °；`false`——没有起落架校准 |
+| `virtual void setAccelCorrection(bool)` | 自动起飞：`false`——只用陀螺仪推算水平基准 |
+| `virtual void trimGyroBias(const float residualDps[3])` | 按飞机静止时的平均角速度修正陀螺仪零点（轴和符号与 `ImuData` 相同） |
 
 ### `BarometerSensor : Sensor`
 
@@ -163,6 +169,9 @@ Y 向左）。`rotationCwDeg` 是芯片 X 轴的指向，从上方看顺时针�
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | 绕垂直方向以 90° 为步长旋转，电路板芯片朝上 |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | 根据三个姿态校准（加速度计在芯片坐标轴下的“向上”读数）。`nullptr` 表示成功，否则为拒绝的原因 |
 | `void apply(const float chip[3], float body[3]) const` | 应用旋转 |
+| `void applyInverse(const float body[3], float chip[3]) const` | 反向旋转（`R` 的转置） |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | 由“水平”姿态得到水平基准：Z = 测得的“上方”，机头保留，并校正为 ⟂ Z。与旧水平基准相差超过 45°——拒绝 |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | 某个姿态的俯仰和横滚（和 `AttitudeEstimator` 用加速度计算出的一样）——即停机姿态 |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | 测得的“向上”与机体 Z 轴之间的夹角（向量为零时为 180°） |
 | `bool load(const char* ns)` | 从 NVS 加载；拒绝非正交归一或左手系的三元组 |
 | `void save(const char* ns) const` | 保存到 NVS |
@@ -192,10 +201,11 @@ rightWingDown 中 ⟂ Z 的部分，X₂ = Y × Z；X = norm(X₁ + X₂)，Y = 
 | `void setYaw(float deg)` | 设定航向（归一化到 ±180） |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | 加速度为机体坐标轴下的 g，角速度为 °/s |
 | `getRoll()`、`getPitch()`、`getYaw()` | ° |
+| `setAccelCorrection(bool)`、`isAccelCorrectionEnabled()` | `false`——只用陀螺仪（自动起飞时的加速度：向前 0.5 g 看起来像 +27° 俯仰） |
 
 `roll_acc = atan2(ay, az)`，`pitch_acc = atan2(ax, √(ay² + az²))`；
 `angle = 0.98·(angle + rate·dt) + 0.02·angle_acc`（2 ms 步长下 τ ≈ 0.1 s）。
-`reset()` 之后的第一次调用直接给出加速度计的角度；`dt ≤ 0` 或大于 0.1 s 时跳过该步（暂停、总线卡死）。
+`reset()` 之后的第一次调用直接给出加速度计的角度；`dt ≤ 0` 或大于 0.1 s 时跳过该步（暂停、总线卡死）。没有加速度计时——`angle + rate·dt`。
 
 ---
 
@@ -220,7 +230,11 @@ rightWingDown 中 ⟂ Z 的部分，X₂ = Y × Z；X = norm(X₁ + X₂)，Y = 
 | `void calibrate()` | 200 个采样 × 10 ms：陀螺仪偏移、噪声、“向上”方向；没有安装校准时，地平线 = 当前位置。然后做飞行前检查 |
 | `void calibrateOrientation()` | 三个姿态（`capturePose`：静止约 1 s，姿态与之前的相差 ≥ 20°，超时 30 s）、`ImuOrientation::fromPoses`，并保存到 NVS。清除飞行前检查中与安装相关的问题 |
 | `const char* getPreflightProblem() const` | 问题的文字，或 `nullptr` |
-| `void setYaw(float)`、`getSensorType()`、`printStatus()` | |
+| `readChipUp()`、`getOrientation()` | 地面校准：芯片坐标系中最新的“上方”，安装方向 |
+| `bool setGroundCalibration(level, parkChipUp)` | 安装方向 = `level`（水平基准），停机姿态以键 `park` 存在同一个 NVS 命名空间中；清除飞行前检查中的安装问题。重新做 `o` 会清除停机姿态（它是相对旧水平基准测得的） |
+| `bool getParkingAttitude(pitch, roll) const` | 通过当前安装方向换算出的停机姿态 |
+| `setAccelCorrection(bool)`、`trimGyroBias(residual)` | 自动起飞：不用加速度计的滤波器；残余零点经反向旋转计入陀螺仪偏置 |
+| `void setYaw(float)`、`getSensorType()`、`printStatus()` | `printStatus()` 以 `park(pitch,roll)=…` 或 `park=NONE` 结尾 |
 
 供驱动使用的受保护 API：
 

@@ -58,8 +58,8 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (no conectado)<br/>FeedbackSupervisor y módulos"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -374,22 +374,23 @@ sequenceDiagram
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(objetivo según las funciones)
     FC->>AP: update(armed, linkLost, acelerador del piloto (0 en inversión), sticks)
     Note over AP: los sensores se leen SIEMPRE,<br/>navegación, failsafe, geovalla,<br/>modo, coordinación, autotrim
-    FC->>OUT: setBuzzer(Beeper)
+    Note over FC: Calibración en tierra: gesto del interruptor (sin ARM),<br/>paso de GroundCalibration, señales → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper o luz de la señal)
     alt enlace perdido
         alt armed y failsafe del piloto automático (RTH / GLIDE)
             FC->>MX: mix(orden del piloto automático)
             FC->>OUT: write(superficies, acelerador del piloto automático (0 en inversión), AUX sin cambios)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() (mientras suena una señal, neutro con cabezada y pausa del variador)
         end
         Note over FC: return — no se leen ni el ARM ni los interruptores
     else hay enlace
-        FC->>AM: update(rc, MR.armBlockReason) — el interruptor ARM
+        FC->>AM: update(rc, motivo) — interruptor ARM (rechazado durante una calibración o una señal)
         FC->>MR: update(MOTOR_REVERSE, armed) — sentido solo sin ARM
         FC->>AP: getCommand() — la orden final de las superficies
         FC->>MX: mix(command) → PWM con inversión
         FC->>AP: applyThrottle(acelerador del piloto) — solo hacia delante
-        Note over FC: hacia atrás: gas del piloto ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed o MOTOR_KILL → throttle = PWM_MIN (lo último)
+        Note over FC: hacia atrás: gas del piloto ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed o MOTOR_KILL → throttle = PWM_MIN (lo último)<br/>la cabezada de la señal va a los timones, sin ARM, pausa de pulsos del variador
         FC->>OUT: write(output + AUX1 carga, AUX2 cámara)
         Note over OUT: ESC: gas + sentido → pulso (EscSignal),<br/>variador bidireccional: 1500 = parado
     end
@@ -461,15 +462,29 @@ stateDiagram-v2
     GLIDE --> FRTH : aparece el GPS
 ```
 
-El failsafe no es un `AutopilotMode` aparte, sino un indicador superpuesto al modo actual; un regreso ya iniciado no se abandona para planear por una breve pérdida del GPS; al recuperarse el enlace continúa el modo de los interruptores (el despegue automático y el lanzamiento a mano, solo de nuevo). Máquinas de estados internas: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE) y `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
+El failsafe no es un `AutopilotMode` aparte, sino un indicador superpuesto al modo actual; un regreso ya iniciado no se abandona para planear por una breve pérdida del GPS; al recuperarse el enlace continúa el modo de los interruptores (el lanzamiento a mano, solo de nuevo; el despegue automático en la pista, solo de nuevo, y en el ascenso continúa). En AUTO_TAKEOFF en la pista, la pérdida de señal no es una superposición sino un despegue abortado: motor apagado, timones en neutro. Máquinas de estados internas: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE), `TakeoffController` (abajo) y `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
 
-**AUTO_TAKEOFF** (por tiempo desde el inicio, cuando está armed y el acelerador ≥ 1500 µs):
+**AUTO_TAKEOFF** (`TakeoffController`; el gas lo lleva el programa, el stick de gas arranca y aborta):
 
-| Tiempo | Acelerador (programa) | Cabeceo |
-|---|---|---|
-| 0–1 s | gradual de 0 → 100 % | 0° |
-| 1–3 s | 100 % | +15° |
-| > 3 s | 100 % | +10° |
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : gas ≥ 1500 µs (después de estar abajo)
+    CHECK --> TAIL_UP : 1 s quieto, ángulos = actitud en tierra (rueda de cola)
+    CHECK --> ROLL : igual (rueda de morro)
+    CHECK --> ABORTED : no está como en la calibración, señal ×3
+    TAIL_UP --> ROLL : cabeceo cerca del horizonte
+    ROLL --> LIFTOFF : velocidad de rotación / 2.5 s
+    LIFTOFF --> CLIMB : despegue por barómetro / límite + 3 s
+    CLIMB --> DONE : 30 m / 15 s sin barómetro
+    TAIL_UP --> ABORTED : gas abajo, enlace, IMU, alabeo, rumbo, morro, 6 s
+    ROLL --> ABORTED : gas abajo, enlace, IMU, alabeo, rumbo, morro, 15 s
+    LIFTOFF --> ABORTED : igual
+    ABORTED --> IDLE : gas abajo 1 s
+```
+
+El timón de profundidad sobre las ruedas se manda directamente (cola arriba: a picar ≤ 250 µs hacia +1° de cabeceo; rotación: el objetivo sube a 2°/s, cerca del suelo como mucho la actitud en tierra menos 3°); en el ascenso, PID hacia +8°; el rumbo lo mantienen el timón de dirección y la rueda. Desde el arranque del motor, el horizonte viene solo del giroscopio (`ImuSensor::setAccelCorrection(false)`): el acelerómetro tomaría la aceleración por un morro levantado.
 
 ### Despegue y aterrizaje (lazo de realimentación, no conectado)
 
@@ -516,7 +531,7 @@ stateDiagram-v2
 
 Además, la IMU tiene una **comprobación previa al vuelo** (`getPreflightProblem()`): inmovilidad durante la calibración del giroscopio, |a| ≈ 1g, la dirección «arriba» coincide con el montaje guardado. Si no la supera, `Autopilot::imuReady() == false` (correcciones nulas en todos los modos, incluido el planeo) y `ArmingManager` no hace ARM en los modos con estabilización.
 
-Los consumidores reaccionan igual: **sin sensor (`nullptr`) o con el sensor no disponible, no hay ningún efecto**, y el avión se maneja como en MANUAL.
+Los consumidores reaccionan igual: **sin sensor (`nullptr`) o con el sensor no disponible, no hay ningún efecto**, y el avión se maneja como en MANUAL. La excepción es el despegue automático en la pista: un fallo del IMU es un despegue abortado, motor parado.
 
 ### Enlace (`IBusReceiver::isSignalLost()`)
 
@@ -529,7 +544,7 @@ Las tramas con un CRC erróneo se descartan y se cuentan (`getBadFrameCount()`).
 
 ### Salidas
 
-Justo después de `FlightOutputs::begin()` se llama a `setFailsafe()`: superficies al neutro y motor apagado incluso antes de leer los sensores. Una salida con el pin `-1` (el timón de dirección en la C3) simplemente no se conecta; `attached` en el JSON indica si se ha asignado un canal LEDC. El pulso real en cada pin lo comprueba `printPulseSelfTest()` (comando de consola `p`).
+Justo después de `FlightOutputs::begin()` se llama a `setFailsafe()`: superficies al neutro y motor apagado incluso antes de leer los sensores. Una salida con el pin `-1` (el timón de dirección en la C3) simplemente no se conecta; `attached` en el JSON indica si se ha asignado un canal LEDC. El pulso real en cada pin lo comprueba `printPulseSelfTest()` (comando de consola `p`). La señal del motor es `IServoOutput::stopPulses()` en la salida del variador (solo sin ARM): sin pulsos, el variador cree que ha perdido la señal y, al volver el neutro, toca su melodía de listo.
 
 ---
 

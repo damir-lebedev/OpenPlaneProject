@@ -142,6 +142,22 @@ STM32duino वेरिएंट की `PeripheralPins` तालिकाओ�
 | `IMU_ROTATION_CW_DEG` | 90 | IMU चिप की अक्षों का ऊर्ध्वाधर के चारों ओर घुमाव (0/90/180/270), यानी चिप की X अक्ष किधर देखती है। केवल तब इस्तेमाल होता है जब NVS में माउंटिंग का कैलिब्रेशन `o` नहीं है |
 | `MAG_ROTATION_CW_DEG` | 0 | कम्पास के लिए वही (कम्पास में माउंटिंग का कैलिब्रेशन नहीं है) |
 
+### लैंडिंग गियर, ग्राउंड कैलिब्रेशन, संकेत
+
+| स्थिरांक | मान | अर्थ |
+|---|---|---|
+| `LANDING_GEAR` | `LandingGear::TAIL_WHEEL` | कौन-सा पहिया मुड़ता है: `TAIL_WHEEL` — टेल व्हील (खड़े होने पर नाक ऊपर, दौड़ में पहले पूँछ उठती है), `NOSE_WHEEL` — नोज़ व्हील |
+| `CAL_SWITCH` | `Channels::SWB` | ग्राउंड कैलिब्रेशन के इशारे का स्विच (SwD नहीं — वह मोटर का रिवर्स चलाता है) |
+| `CAL_SWITCH_FLIPS` / `CAL_SWITCH_WINDOW_MS` | 3 / 4000 | ARM के बिना, थ्रॉटल नीचे: इतने समय में इतनी बार नीचे-ऊपर करने से कैलिब्रेशन शुरू (फिर से — रद्द) |
+| `CAL_STILL_MS`, `CAL_STILL_DPS`, `CAL_STILL_G` | 2000, 3.0, 0.15 | चरण तब दर्ज होता है जब इतने ms तक कोणीय गति इससे कम और भार 1g ± इतना हो |
+| `CAL_PARK_WAIT_MS` | 5000 | चरण 2 विमान के हिलाए जाने का इंतज़ार करता है, या इतनी देर (नोज़ व्हील: वही मुद्रा) |
+| `CAL_STEP_TIMEOUT_MS` | 60 000 | इतने समय में स्थिर नहीं हुआ — कैलिब्रेशन रद्द (त्रुटि) |
+| `CAL_TAIL_PARK_MIN/MAX_DEG` | 3 / 25 | टेल व्हील: पार्किंग पिच इन सीमाओं में, वरना त्रुटि (“पूँछ नीचे नहीं रखी”) |
+| `CAL_NOSE_PARK_MAX_DEG`, `CAL_PARK_MAX_ROLL_DEG` | 6, 10 | नोज़ व्हील: पार्किंग लगभग सीधी; पार्किंग में रोल अधिकतम इतना |
+| `SIGNAL_MOTOR` / `SIGNAL_SURFACES` | `true` / `true` | मोटर से संकेत (ESC की पल्स रोकना — वह तैयार होने की धुन बजाता है) और सरफ़ेस के हिलने से |
+| `SIGNAL_NOD_US`, `SIGNAL_NOD_MS` | 200, 150 | एलिवेटर और रडर का हिलना: इतने µs ऊपर, फिर नीचे, हर बार इतने ms |
+| `SIGNAL_ESC_PAUSE_MS`, `SIGNAL_PERIOD_MS` | 1000, 3000 | इतनी देर ESC को पल्स नहीं; संकेत इस अवधि से आते हैं (धुन पूरी बज जाती है) |
+
 ### ARM
 
 | स्थिरांक | मान | अर्थ |
@@ -177,6 +193,9 @@ STM32duino वेरिएंट की `PeripheralPins` तालिकाओ�
 | घेरे और होम | `LOITER_RADIUS_M` 50 (25…150), `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
 | जियोफ़ेंस | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
 | हाथ से लॉन्च | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| ऑटो-टेकऑफ़ | `TAKEOFF_TRIGGER_US` 1500; जाँच: `TAKEOFF_CHECK_MS` 1000, `_CHECK_TIMEOUT_MS` 5000, `TAKEOFF_PARK_PITCH/ROLL_TOL_DEG` 4/5, `TAKEOFF_UNCALIBRATED_TILT_DEG` 10; थ्रॉटल `TAKEOFF_THROTTLE_PCT` 100, `TAKEOFF_THROTTLE_RAMP_MS` 2000 में; दिशा `TAKEOFF_HEADING_KP` 10, `TAKEOFF_YAW_RATE_KD` 2; `TAKEOFF_ROTATE_SPEED_MS` 11; ज़मीन छोड़ना `TAKEOFF_LIFTOFF_MS` 3000, `_LIFTOFF_ALT_M` 1, `_LIFTOFF_CONFIRM_MS` 500; चढ़ाई `TAKEOFF_CLIMB_PITCH_DEG` 8, `TAKEOFF_SAFE_ALTITUDE_M` 30 तक (बैरोमीटर के बिना `TAKEOFF_CLIMB_MS` 15 000); रद्द: `TAKEOFF_ABORT_ROLL_DEG` 15, `_ABORT_HEADING_DEG` 30, `TAKEOFF_NOSE_DOWN_MS` 300, `TAKEOFF_GROUND_TIMEOUT_MS` 15 000; “केवल जाइरोस्कोप”: `TAKEOFF_GYRO_ONLY_CLIMB/MAX/ABORT_MS` 5000/30 000/3000 |
+| टेल व्हील | `TD_TAIL_UP_ELEVATOR_US` 250 (एलिवेटर नीचे अधिकतम इतना), `TD_ROLL_PITCH_DEG` 1, `TD_PITCH_KP` 40 (पूँछ ऊपर), `TD_ROLL_PITCH_KP` 15 (दौड़ और नाक उठाना), `TD_PITCH_KD` 3, `TD_TAIL_UP_DONE_DEG` 2, `TD_TAIL_UP_TIMEOUT_MS` 6000, `TD_ROLL_MS` 2500, `TD_ROTATE_RATE_DPS` 2, `TD_TAIL_CLEARANCE_DEG` 3, `TD_MIN_PITCH_DEG` −3 |
+| नोज़ व्हील | `TRI_ROLL_ELEVATOR_US` 0, `TRI_ROLL_MS` 3000, `TRI_ROTATE_RATE_DPS` 5, `TRI_MAX_GROUND_PITCH_DEG` 10 |
 | लैंडिंग | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
 | सोअरिंग | `SOAR_*`: ग्लाइड −3°, थर्मल > 0.5 m/s 1.5 s तक, 25° का घेरा, निकास < −0.2 m/s 8 s तक, 30 m से नीचे मोटर 100 m तक, 400 m से आगे घर वापसी |
 | RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |

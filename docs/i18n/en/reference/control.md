@@ -42,6 +42,7 @@ throttle `PWM_MIN`.
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
 | `bool motorReverse` | `false` — the motor runs forwards |
+| `bool escPulsesOff` | `false`; `true` — no pulses to the ESC at all (motor signal, only without ARM) |
 | `aux1` | `PAYLOAD_CLOSED_US` — the payload drop is closed |
 | `aux2` | `PWM_CENTER` — the camera |
 
@@ -191,10 +192,10 @@ walk through it in a loop.
 | `explicit FlightOutputs(IBoard& board)` | |
 | `bool begin()` | `attach(PWM_MIN, PWM_MAX)` of each output, prints the status and the ESC type; `true` if all the **required** ones got a channel |
 | `bool isAttached(uint8_t ch) const` | The output is connected (an index out of range → `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | The pulse on the output pin: the field from the table, for the ESC — via `EscSignal::pulseUs(throttle, motorReverse)` |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | The pulse on the output pin: the field from the table, for the ESC via `EscSignal::pulseUs(throttle, motorReverse)`, 0 with `escPulsesOff` |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | The measured pulse against the expected one on each wired pin; "OK" when the discrepancy is ≤ 15 µs |
-| `void write(const FlightOutputState&)` | Write all the outputs and remember the state |
+| `void write(const FlightOutputState&)` | Write all the outputs and remember the state; the ESC with `escPulsesOff` — `IServoOutput::stopPulses()` |
 | `void setFailsafe()` | Control surfaces neutral (`FAILSAFE_*`), throttle `FAILSAFE_THROTTLE` (1500 on the pin of a bidirectional ESC); AUX as they were (the payload is not dropped on link loss) |
 | `void setBuzzer(bool on)` | the board's beeper (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | The last written state |
@@ -207,7 +208,7 @@ To add an output: a table row + a field in `FlightOutputState` + an index in
 ## `FlightController`
 
 **File:** `control/FlightController.h` · **Layer:** COORDINATION ·
-**Depends on:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
+**Depends on:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 The sole coordinator of the control loop: it does not parse the UART, touch
 the PWM or compute the mixer itself — it only calls the others in the right
@@ -228,6 +229,9 @@ order. A detailed diagram is in [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-the-c
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | This cycle's switches and knobs |
 | `bool isLostModelBeeping() const` | The "I am here" beeper is running |
 | `const MotorReverse& getMotorReverse() const` | The motor direction and a pending reverse |
+| `void toggleGroundCalibration()` | Console `c`: ground calibration of the airplane — start (only without ARM), or cancel while it runs |
+| `void playSignal(uint8_t count)` | Console `e`: a signal (without ARM — by the motor too) |
+| `const GroundCalibration& getCalibration() const`, `const SignalPlayer& getSignals() const` | For the OLED, the log and the black box |
 
 The order of `update()`:
 
@@ -239,24 +243,19 @@ The order of `update()`:
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → smoothly, on link loss — 0;
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)` — **always**;
    in reverse `PWM_MIN` is passed instead of `pilotThrottle` (for the autopilot the motor is off);
-6. the beeper: `Beeper::update(BEEPER, armed, failsafe, now)`;
+6. calibration: an ARM flick during it cancels it; without ARM and with a link — the `CAL_SWITCH` gesture; a `GroundCalibration::update()` step; its signals and the auto-takeoff refusal signal go to `SignalPlayer`; the beeper: `Beeper::update(BEEPER, armed, failsafe, now)` or the signal light;
 7. link lost → `applyLinkLoss()` and leaving the cycle;
-8. `arming.update(rc, false, reverse.armBlockReason(now))`, then
-   `reverse.update(MOTOR_REVERSE, armed, now)` — on DISARM the direction changes
-   in the same tick;
-9. `command = autopilot->getCommand()` (or the sticks without an autopilot), the flaps — its own;
+8. `arming.update(rc, false, reason)` — ARM is refused while a calibration runs or a signal plays (and in the tick when an ARM flick cancelled a calibration), otherwise `reverse.armBlockReason(now)`; then `reverse.update(MOTOR_REVERSE, armed, now)` — on DISARM the direction changes in the same tick;
+9. `command = autopilot->getCommand()` (or the sticks without an autopilot), the flaps — its own; the signal nod goes to the elevator and the rudder;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     forwards — `output.throttle = autopilot->applyThrottle(pilotThrottle)` limited by
     `THROTTLE_LIMIT_PCT` × the `Knob::THROTTLE_LIMIT` knob, backwards — the pilot's throttle limited by
     `min(REVERSE_THROTTLE_LIMIT_PCT, the forward limit)`; the allowed range is stretched over the whole stick travel;
-11. not armed or `MOTOR_KILL` → `throttle = PWM_MIN` (last);
+11. not armed or `MOTOR_KILL` → `throttle = PWM_MIN` (last); without ARM the motor signal sets `escPulsesOff`;
 12. AUX1 — the payload (`PAYLOAD_DROP`), AUX2 — the camera (`Knob::CAMERA_TILT`, `CAMERA_STAB` subtracts the pitch); `AUX1_REVERSED`/`AUX2_REVERSED` mirror the pulse.
 13. `outputs.write(output)`.
 
-`applyLinkLoss()`: if the autopilot is in failsafe (armed: RTH or gliding) —
-the control surfaces and throttle follow the autopilot's command (the flaps
-retract smoothly, `MOTOR_KILL` still silences the motor, AUX as they were);
-otherwise `outputs.setFailsafe()`. In reverse the motor is always stopped.
+`applyLinkLoss()`: if the autopilot is in failsafe (armed: RTH or gliding) — surfaces and throttle per the autopilot command (the flaps retract smoothly, `MOTOR_KILL` and reverse stop the motor, AUX as they were); otherwise `outputs.setFailsafe()`, and while a signal plays — neutral with the nod and the ESC pulse pause (the transmitter was put down while the calibration runs).
 
 ---
 
@@ -268,3 +267,41 @@ otherwise `outputs.setFailsafe()`. In reverse the motor is always stopped.
 |---|---|
 | `bool update(bool requested, bool armed, bool linkLost, uint32_t nowMs)` | the beeper state: 2 Hz if `Feature::BEEPER` or "model lost" (not armed, no link for longer than `LOST_MODEL_BEEP_DELAY_MS`) |
 | `bool isLostModel() const` | the "look for me in the grass" mode |
+
+---
+
+## `GroundCalibration`
+
+**File:** `control/GroundCalibration.h` · **Depends on:** `Config`, `RcChannelState`, `ImuSensor`, `ImuOrientation`
+
+Ground calibration of the airplane: step 1 — tail up, fuselage horizontal (the horizon, `ImuOrientation::withLevel()`), step 2 — on the wheels (the parking attitude). A step is accepted by itself after `CAL_STILL_MS` of stillness; step 2 waits until the airplane is moved, or `CAL_PARK_WAIT_MS`. It is saved only as a whole (`ImuSensor::setGroundCalibration()`), after the parking attitude is checked against `LANDING_GEAR`. It does not block the loop.
+
+`Stage`: `IDLE`, `LEVEL`, `PARK`, `DONE`, `FAILED`.
+
+| Method | Description |
+|---|---|
+| `bool watchSwitch(const RcChannelState&, uint32_t nowMs)` | the gesture: `CAL_SWITCH` down and up `CAL_SWITCH_FLIPS` times within `CAL_SWITCH_WINDOW_MS`, throttle down; the first look and a raised throttle restart the count |
+| `void forgetSwitch()` | ARM or no link — the count starts over |
+| `bool start(const ImuSensor*, uint32_t nowMs, const char* source)` | start (signal 1); no IMU or unsupported — error (signal 3) |
+| `void cancel(const char* why)` | cancel without a signal |
+| `void update(ImuSensor*, bool armed, bool signalBusy, uint32_t nowMs)` | a step: ARM cancels; nothing is accepted while a signal plays; `CAL_STEP_TIMEOUT_MS` timeout — error |
+| `isActive()`, `getStage()`, `getStageSinceMs()`, `getFailure()`, `getParkPitch()`, `getParkRoll()` | state and result |
+| `uint8_t takeSignal()` | how many signals to play: 1 — started / step 1, 2 — done, 3 — error (taken once) |
+| `static const char* stageShort(Stage)` | `CAL1`, `CAL2`, `CALOK`, `CALER` — for the OLED |
+
+---
+
+## `SignalPlayer`
+
+**File:** `control/SignalPlayer.h` · **Depends on:** `Config`
+
+Signals to the pilot — a function of the time since the series started. One signal: the elevator and the rudder nod (`SIGNAL_NOD_US` up, then down, `SIGNAL_NOD_MS` each); without ARM the ESC pulses pause for `SIGNAL_ESC_PAUSE_MS` (afterwards the ESC plays its ready tune); the buzzer light is on during the nod; the next signal follows after `SIGNAL_PERIOD_MS`.
+
+| Method | Description |
+|---|---|
+| `void play(uint8_t count, uint32_t nowMs, bool motor)` | a series; `motor` — whether the ESC may be touched (and `SIGNAL_MOTOR`) |
+| `void stop()` | silence |
+| `bool isBusy(uint32_t nowMs) const`, `uint8_t getCount(uint32_t nowMs) const` | a series is playing (ARM is refused meanwhile) |
+| `bool escPulsesOff(uint32_t nowMs) const` | drop the ESC pulses now |
+| `int16_t nodUs(uint32_t nowMs) const` | the control-surface nod, µs (`SIGNAL_SURFACES`) |
+| `bool light(uint32_t nowMs) const` | buzzer / LED on `PIN_BUZZER` |

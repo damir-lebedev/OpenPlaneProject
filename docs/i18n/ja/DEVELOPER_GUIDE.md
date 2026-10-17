@@ -182,10 +182,12 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
 | `EscSignal.h` | スロットル＋方向 → ESC パルス。双方向 BLHeli では 1500 = 停止、前進 1500..2000、後退 1500..1000 |
 | `MotorReverse.h` | `Feature::MOTOR_REVERSE` によるモーター逆転。DISARM 中のみ。方向を変えたあと `REVERSE_SETTLE_MS` の間は ARM を拒否 |
 | `ArmingManager.h` | SwA スイッチによる ARM（スロットルが最低位置のときの OFF→ON 切り替え＋そのモードに必要なセンサーの検査）、DISARM は即時 |
-| `FlightOutputState.h` | 目標の PWM：`aileronLeft`、`aileronRight`、`elevator`、`rudder`、`throttle`（どちらの方向でも 0..100%）、`motorReverse`、`aux1`（ペイロード）、`aux2`（カメラ） |
+| `FlightOutputState.h` | 目標の PWM：`aileronLeft`、`aileronRight`、`elevator`、`rudder`、`throttle`（どちらの方向でも 0..100%）、`motorReverse`、`escPulsesOff`（モーターの合図）、`aux1`（ペイロード）、`aux2`（カメラ） |
 | `Beeper.h` | ブザー：`BEEPER` 機能による鳴動、または地上での「機体ロスト」 |
+| `GroundCalibration.h` | 機体の地上校正：スイッチ操作、ステップ 1 は水平基準（尾部を上げる）、ステップ 2 は駐機姿勢。`ImuSensor::setGroundCalibration()` で保存 |
+| `SignalPlayer.h` | パイロットへの合図：舵面のうなずき、ESC のパルス停止（ESC が準備完了のメロディを鳴らす、ARM なしのときだけ）、ブザー / LED。回数 1/2/3 |
 | `FlightOutputs.h` | 出力のテーブル（`outputInfo()`：キー、名前、ピン、必須かどうか、状態フィールド）と、その上でループ処理されるすべて：`begin()`、`write()`、`setFailsafe()`、状態、`printPulseSelfTest()` |
-| `FlightController.h` | 各周期での処理の順序、信号喪失（`applyLinkLoss()`）、テレメトリ用のゲッター |
+| `FlightController.h` | 各周期での処理の順序、信号喪失（`applyLinkLoss()`）、出力に重ねる校正と合図、テレメトリ用のゲッター |
 
 ### `autopilot/`
 
@@ -198,6 +200,7 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
 | `Navigation.h` | `Geo`（距離、方位、オフセット）、`Guidance`（針路に向けたロール、円周のベクトル場） |
 | `AltitudeSpeedController.h` | 高度はピッチで、対気速度はスロットルで制御（TECS-lite） |
 | `LaunchController.h`、`SoaringController.h` | 手投げ発進とソアリングのステートマシン |
+| `TakeoffController.h` | 滑走路からの自動離陸：尾輪と前輪の段階（`Config::LANDING_GEAR`）、車輪の上でのエレベーターと針路の制御則、離陸中止 |
 | `AutoTrim.h` | オートトリム。NVS／フラッシュに保存 |
 | `PidController.h` | PID：D 項はセンサーの変化率（ジャイロ、バリオメーター）から取り、アンチワインドアップ付き。ARM していない間は積分器を固定 |
 | `feedback/*` | **下準備のみで未接続**：適応フィードバック、離陸と着陸（[フィードバック](#フィードバック土台未接続)を参照） |
@@ -495,6 +498,8 @@ HTML ダッシュボード：10 チャンネルのバー、ARM／リンク、出
 | `s` | 全センサーの `printStatus()`：データ、バスのエラーカウンタ、校正、飛行前チェック |
 | `i` | ジャイロの校正＋飛行前チェック（2 秒間静止） |
 | `o` | 3 つの姿勢による IMU 取り付けの校正。NVS に保存 |
+| `c` | 機体の地上校正（水平基準と駐機姿勢）。ループを止めず、実行中なら中止。送信機からは ARM なしでスイッチ `CAL_SWITCH` を 3 回上げ下げ |
+| `e` | 合図：舵面のうなずきと ESC のパルス停止。ESC が準備完了のメロディを鳴らすかを確認（プロペラを外すこと！） |
 | `m` | コンパスの校正（15 秒間回転）。NVS に保存 |
 | `p` | 出力のセルフテスト：各ピンの実際のパルスと期待値を比較 |
 
@@ -647,7 +652,7 @@ STM32H743VIT6（Cortex-M7 480 MHz、フラッシュ 2 MB、RAM 1 MB）は**完�
 1. `enum AutopilotMode`（`autopilot/AutopilotTypes.h`、`MODE_COUNT` の前）に値を追加し、`AutopilotNames::mode()` / `modeShort()` に名前と短い名前（OLED 用、最大 5 文字）を追加します。
 2. ハンドラー `run<Mode>()` を作り、`Autopilot::runMode()` に分岐を追加します。初期目標（針路、高度、旋回円の中心）は `initializeMode()` に書きます。モードは
    `desiredRoll`/`desiredPitch` を設定し、`stabilizeOrManual()`（IMU がなければ舵面はパイロットが操作）または `stabilizeOrNeutral()`（IMU がなければニュートラル）を呼びます。必要なセンサーがない場合は、クラッシュではなく安全な動作にします。積分器は `armed` のときだけ蓄積します。
-3. スロットル：`throttleMode`（`PILOT` / `AUTO` / `AT_LEAST`）と
+3. スロットル：`throttleMode`（`PILOT` / `AUTO`）と
    `autoThrottlePct`、または `autoThrottle()`（ノブ／ピトー管から得る巡航スロットル）。このとき `FlightController` は変更しません。
 4. 送信機側は `config/Controls.h` に 1 行加えるだけです（`Bind::mode(Channels::SWD, MODE_NEW)`）。ダッシュボードと MAVLink はモードを番号で拾います。MAVLink の場合は、`MavlinkModes::toCustomMode()` /
    `fromCustomMode()` で最も近い ArduPlane のモードに対応付けます。

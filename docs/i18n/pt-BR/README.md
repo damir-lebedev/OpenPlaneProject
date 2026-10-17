@@ -35,8 +35,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-395%20passing-3fb950?style=for-the-badge" alt="395 testes">
-  <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="cobertura de 98%">
+  <img src="https://img.shields.io/badge/tests-431%20passing-3fb950?style=for-the-badge" alt="431 testes">
+  <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="cobertura de 94%">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 builds sem avisos">
   <br>
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
@@ -61,7 +61,7 @@
 | **O que é** | Um controlador de voo e piloto automático abertos para aviões radiocontrolados. A placa principal é a STM32H743 (placa da classe Pixhawk): em uma placa DevEBox o firmware **já está rodando e é pilotado pelo rádio** — [há vídeo](#-a-stm32h743-ganhou-vida-na-placa), e os sensores estão sendo ligados agora. A base anterior é um ESP32-S3 de uns US$ 10, que passou pela bancada com todos os sensores. |
 | **O que faz** | 12 modos de voo — da estabilização ao retorno para casa, círculos por GPS, lançamento manual, pouso automático e **voo planado em térmicas**. Tubo de Pitot feito com dois barômetros baratos. Telemetria MAVLink para o QGroundControl e o Mission Planner. |
 | **O grande trunfo** | Qualquer chave ou potenciômetro do rádio = qualquer função. **Uma linha** no `Controls.h` — e a SwD deixa de ser a reversão do motor e vira lançamento de carga. |
-| **Por que confiar** | 395 testes automatizados (mais 9 na própria placa, com um cartão SD de verdade), 98% do código coberto por testes, 24 builds "placa × sensores" sem um único aviso, simulações em malha fechada de cada modo. |
+| **Por que confiar** | 431 testes automatizados (mais 9 na própria placa, com um cartão SD de verdade), 94% do código coberto por testes, 24 builds "placa × sensores" sem um único aviso, simulações em malha fechada de cada modo. |
 | **Com honestidade** | Até agora só o modo manual voou (o primeiro protótipo). A STM32H743 foi testada apenas na bancada, sem sensores. O piloto automático foi verificado na bancada, em testes e em simulações, e aguarda os testes de voo — [status abaixo](#-situação-real). |
 
 ---
@@ -96,19 +96,19 @@ Quer o voo planado em térmicas na SwD em vez da reversão do motor? `Bind::mode
 | 🛣️ | **CRUISE** | rumo, altitude e velocidade se mantêm sozinhos; os sticks só corrigem |
 | ⭕ | **LOITER** | círculos sobre um ponto de GPS (o raio é ajustado com um potenciômetro) |
 | 🏠 | **RTH** | para casa a 40 m e círculos sobre a sua cabeça; liga sozinho quando o sinal se perde |
-| 🛫 | **AUTO_TAKEOFF** | decolagem da pista com o acelerador do piloto |
+| 🛫 | **AUTO_TAKEOFF** | Decolagem da pista: bequilha ou roda de nariz, primeiro a cauda sobe, quem tira o avião do chão é a asa |
 | 🤾 | **LAUNCH** | lançamento manual: o motor liga depois do arremesso e começa a subida |
 | 🛬 | **AUTO_LAND** | planeio e arredondamento perto do chão |
 | 🦅 | **SOARING** | motor desligado, encontra térmicas e circula nelas |
 | 🆘 | **RESCUE** | "socorro": asas niveladas e nariz para cima — a partir de qualquer espiral |
 
-Além disso: geofence, auto-trim para um avião "torto", coordenação de curva, proteção contra estol pelo tubo de Pitot, flaps e freio aerodinâmico, lançamento de carga, câmera estabilizada e um buzzer "me procure na grama".
+Além disso: calibração em solo pelo rádio (horizonte e atitude em solo, passos sinalizados pelo motor e pelas superfícies), geofence, auto-trim para um avião "torto", coordenação de curva, proteção contra estol pelo tubo de Pitot, flaps e freio aerodinâmico, lançamento de carga, câmera estabilizada e um buzzer "me procure na grama".
 
 ---
 
 ## 📈 Cada modo voa — em malha fechada
 
-Não é "a função devolveu um número", e sim um **voo**: rádio → quadro iBUS → firmware → PWM → deflexão das superfícies de comando → modelo de avião com sustentação, estol, vento e térmicas → sensores → de novo o firmware. 14 voos assim fazem parte dos testes comuns (`pio test -e native`).
+Não é "a função devolveu um número", e sim um **voo**: rádio → quadro iBUS → firmware → PWM → deflexão das superfícies de comando → modelo de avião com sustentação, estol, vento e térmicas → sensores → de novo o firmware. 17 voos assim fazem parte dos testes comuns (`pio test -e native`).
 
 <p align="center"><img src="../../images/sim/missions.png" alt="RTH, LOITER, geofence e perda de sinal — vista de cima"></p>
 
@@ -205,8 +205,8 @@ O que isso prova: a cadeia "rádio → iBUS → firmware → PWM" funciona em ha
 
 | | |
 |---|---|
-| **395 testes automatizados** | módulos, drivers verificados no nível dos registradores do chip, voos em malha fechada, o firmware de ESP32 e STM32 **inteiro** no PC; além de 9 testes na própria placa STM32 com um cartão SD de verdade |
-| **98,3% das linhas, 87,7% dos ramos** | cobertura do `gcovr`, inclusive do código da STM32 |
+| **431 testes automatizados** | módulos, drivers verificados no nível dos registradores do chip, voos em malha fechada, o firmware de ESP32 e STM32 **inteiro** no PC; além de 9 testes na própria placa STM32 com um cartão SD de verdade |
+| **93,9% das linhas, 85,7% dos ramos** | cobertura do `gcovr`, inclusive do código da STM32 |
 | **24/24 builds** | 4 placas × 6 kits de sensores, `-Wall -Wextra`, zero avisos |
 | **0 apontamentos** | cppcheck e clang-tidy em todo o código |
 | **Referências, e não cópias de código** | as fórmulas dos sensores seguem os datasheets (Bosch, ST, TDK, Goertek), e o MAVLink segue o pymavlink |
@@ -263,6 +263,7 @@ No monitor serial: `h` — menu, `b` — quais chips aparecem nos barramentos, `
 | Controle manual, mixer | ✈️ em voo (primeiro protótipo, C3) |
 | ARM, failsafe, flaps, servos, motor | 🔧 na bancada (S3) |
 | ESC bidirecional BLHeli 80A, reversão só em DISARM | 🧪 testes; ainda não testado com o ESC real |
+| Decolagem automática com bequilha ou roda de nariz, calibração em solo pelo rádio, sinais pelo motor e pelas superfícies | 🧪 testes e simulações com modelo do trem de pouso; a melodia do ESC depois da pausa dos pulsos ainda precisa ser verificada na bancada |
 | STABILIZE | 🔧 na bancada: as superfícies de comando respondem às inclinações no sentido certo |
 | Sensores da bancada (MPU6500, BMP388, QMC5883P), OLED, dashboard | 🔧 na bancada |
 | Demais modos, navegação, tubo de Pitot, MAVLink | 🧪 testes e simulações em malha fechada |

@@ -58,8 +58,8 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (non branché)<br/>FeedbackSupervisor et modules"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -374,22 +374,23 @@ sequenceDiagram
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(cible selon les fonctions)
     FC->>AP: update(armed, linkLost, gaz du pilote (0 en inversion), sticks)
     Note over AP: les capteurs sont TOUJOURS lus,<br/>navigation, failsafe, géorepérage,<br/>mode, coordination, auto-trim
-    FC->>OUT: setBuzzer(Beeper)
+    Note over FC: Calibration au sol : geste à l’interrupteur (sans ARM),<br/>étape de GroundCalibration, signaux → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper ou lumière du signal)
     alt liaison perdue
         alt armed et failsafe du pilote automatique (RTH / GLIDE)
             FC->>MX: mix(commande du pilote automatique)
             FC->>OUT: write(gouvernes, gaz du pilote automatique (0 en inversion), AUX inchangés)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() (pendant un signal — neutre avec hochement et pause de l’ESC)
         end
         Note over FC: return — l’ARM et les interrupteurs ne sont pas lus
     else liaison présente
-        FC->>AM: update(rc, MR.armBlockReason) — l’interrupteur ARM
+        FC->>AM: update(rc, raison) — l’interrupteur ARM (refusé pendant une calibration ou un signal)
         FC->>MR: update(MOTOR_REVERSE, armed) — sens uniquement hors ARM
         FC->>AP: getCommand() — la commande finale des gouvernes
         FC->>MX: mix(command) → PWM avec inversion
         FC->>AP: applyThrottle(gaz du pilote) — en avant uniquement
-        Note over FC: en arrière — gaz du pilote ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed ou MOTOR_KILL → throttle = PWM_MIN (en dernier)
+        Note over FC: en arrière — gaz du pilote ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed ou MOTOR_KILL → throttle = PWM_MIN (en dernier)<br/>le hochement du signal va aux gouvernes, sans ARM — pause des impulsions de l’ESC
         FC->>OUT: write(output + AUX1 charge, AUX2 caméra)
         Note over OUT: ESC : gaz + sens → impulsion (EscSignal),<br/>ESC bidirectionnel : 1500 = arrêt
     end
@@ -462,15 +463,29 @@ stateDiagram-v2
     GLIDE --> FRTH : le GPS apparaît
 ```
 
-Le failsafe n’est pas un `AutopilotMode` distinct, mais un indicateur posé sur le mode courant ; un retour déjà entamé n’est pas abandonné pour un plané à cause d’une brève perte du GPS ; une fois la liaison rétablie, le mode issu des interrupteurs reprend (le décollage automatique et le lancement à la main — seulement à nouveau). Machines à états internes : `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE) et `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
+Le failsafe n’est pas un `AutopilotMode` distinct, mais un indicateur posé sur le mode courant ; un retour déjà entamé n’est pas abandonné pour un plané à cause d’une brève perte du GPS ; une fois la liaison rétablie, le mode issu des interrupteurs reprend (lancement à la main — seulement à nouveau ; décollage automatique sur la piste — seulement à nouveau, pendant la montée il continue). En AUTO_TAKEOFF sur la piste, la perte de liaison n’est pas une surcouche mais un décollage interrompu : moteur coupé, gouvernes au neutre. Machines à états internes : `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE), `TakeoffController` (ci-dessous) et `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
 
-**AUTO_TAKEOFF** (selon le temps écoulé depuis le début, quand armed et gaz ≥ 1500 µs) :
+**AUTO_TAKEOFF** (`TakeoffController` ; les gaz sont menés par le programme, le manche des gaz lance et interrompt) :
 
-| Temps | Gaz (programme) | Tangage |
-|---|---|---|
-| 0–1 s | progressivement de 0 → 100 % | 0° |
-| 1–3 s | 100 % | +15° |
-| > 3 s | 100 % | +10° |
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : gaz ≥ 1500 µs (après avoir été en bas)
+    CHECK --> TAIL_UP : 1 s immobile, angles = assiette au sol (roulette de queue)
+    CHECK --> ROLL : de même (roulette de nez)
+    CHECK --> ABORTED : pas posé comme à la calibration — signal ×3
+    TAIL_UP --> ROLL : tangage proche de l’horizon
+    ROLL --> LIFTOFF : vitesse de rotation / 2,5 s
+    LIFTOFF --> CLIMB : décollage selon le baromètre / limite + 3 s
+    CLIMB --> DONE : 30 m / 15 s sans baromètre
+    TAIL_UP --> ABORTED : gaz en bas, liaison, IMU, roulis, cap, nez, 6 s
+    ROLL --> ABORTED : gaz en bas, liaison, IMU, roulis, cap, nez, 15 s
+    LIFTOFF --> ABORTED : de même
+    ABORTED --> IDLE : gaz en bas 1 s
+```
+
+La profondeur sur les roues est commandée directement (queue en l’air : à piquer ≤ 250 µs vers +1° de tangage ; rotation : la cible monte à 2°/s, près du sol au plus l’assiette au sol moins 3°), en montée — PID vers +8° ; le cap est tenu par la direction et la roue. Dès le démarrage du moteur, l’horizon vient du seul gyroscope (`ImuSensor::setAccelCorrection(false)`) : l’accéléromètre prendrait l’accélération pour un nez levé.
 
 ### Décollage et atterrissage (boucle de rétroaction, non branchée)
 
@@ -517,7 +532,7 @@ stateDiagram-v2
 
 De plus, l’IMU dispose d’une **vérification avant vol** (`getPreflightProblem()`) : immobilité pendant l’étalonnage du gyroscope, |a| ≈ 1g, la direction « haut » correspond au montage enregistré. En cas d’échec — `Autopilot::imuReady() == false` (corrections nulles dans tous les modes, y compris le plané), et `ArmingManager` n’arme pas les modes à stabilisation.
 
-Les consommateurs réagissent tous de la même façon : **pas de capteur (`nullptr`) ou capteur indisponible — aucun effet**, et l’avion se pilote comme en MANUAL.
+Les consommateurs réagissent tous de la même façon : **pas de capteur (`nullptr`) ou capteur indisponible — aucun effet**, et l’avion se pilote comme en MANUAL. Exception : le décollage automatique sur la piste — une panne de l’IMU y donne un décollage interrompu, moteur coupé.
 
 ### Liaison (`IBusReceiver::isSignalLost()`)
 
@@ -530,7 +545,7 @@ Les trames dont le CRC est faux sont rejetées et comptées (`getBadFrameCount()
 
 ### Sorties
 
-`FlightOutputs::begin()` est immédiatement suivi de `setFailsafe()` — gouvernes au neutre, moteur coupé, avant même la lecture des capteurs. Une sortie dont la broche vaut `-1` (la gouverne de direction sur la C3) n’est simplement pas branchée ; `attached` dans le JSON indique si un canal LEDC a été alloué. L’impulsion réelle sur chaque broche est vérifiée par `printPulseSelfTest()` (commande de console `p`).
+`FlightOutputs::begin()` est immédiatement suivi de `setFailsafe()` — gouvernes au neutre, moteur coupé, avant même la lecture des capteurs. Une sortie dont la broche vaut `-1` (la gouverne de direction sur la C3) n’est simplement pas branchée ; `attached` dans le JSON indique si un canal LEDC a été alloué. L’impulsion réelle sur chaque broche est vérifiée par `printPulseSelfTest()` (commande de console `p`). Le signal moteur, c’est `IServoOutput::stopPulses()` sur la sortie ESC (seulement sans ARM) : sans impulsions, l’ESC croit avoir perdu le signal et, au retour du neutre, joue sa mélodie de disponibilité.
 
 ---
 

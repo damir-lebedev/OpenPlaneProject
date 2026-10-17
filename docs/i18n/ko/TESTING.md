@@ -81,8 +81,8 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | 파일 | 내용 |
 |---|---|
 | `ChipEmulators.h` | LSM6DSV, ICM-45686(IPREG 간접 레지스터 포함), QMC6309, SPL06-001, BMP581, u-blox NAV-PVT 프레임. I2C 또는 SPI 위의 레지스터 맵이며, 데이터는 `World` "세계"(각도와 속도, 고도, 대기속도, 침로, 좌표)에서 가져와 `IMU_ROTATION_CW_DEG`를 반영한 칩의 축으로 돌려줍니다 |
-| `PlaneSim.h` | 약 1.2 kg 비행기 모델: 질점 + 롤/피치 회전, 실속을 포함한 CL(α), 항력, 추력, 바람, 서멀, 지면 |
-| `SimHarness.h` | 폐루프: 조종기 → iBUS 프레임 → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 조종면 꺾임 → `PlaneSim` → 센서(노이즈가 있는 기압계 두 개로 만든 피토관 포함). `OPENPLANE_SIM_DIR`를 지정하면 CSV 궤적을 만듭니다 |
+| `PlaneSim.h` | 약 1.2 kg 비행기 모델: 질점 + 롤/피치 회전, 실속을 포함한 CL(α), 항력, 추력, 바람, 서멀, 지면; 꼬리 바퀴 또는 앞바퀴 랜딩기어: 비행기는 주바퀴 위에서 앞뒤로 흔들리고, 꼬리 바퀴 하중, 꼬리 충돌, 프로펠러 접촉을 세며, 프로펠러 토크와 조향 바퀴에 의한 지상 요잉도 다룸 |
+| `SimHarness.h` | 폐루프: 조종기 → iBUS 프레임 → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 조종면 꺾임 → `PlaneSim` → 센서(노이즈가 있는 기압계 두 개로 만든 피토관 포함). `OPENPLANE_SIM_DIR`를 지정하면 CSV 궤적을 만듭니다; `realisticImu`에서는 실제 `AttitudeEstimator`가 비력으로 각도를 계산: 활주로의 가속을 기체에서와 같이 받음 |
 
 `test/native/helpers/TestSupport.h`는 여러 세트가 함께 쓰는 부분입니다. `resetWorld()`(`setUp()`에서 호출), `FakeUart`/`FakeServo`/`FakeBoard`와 센서(`FakeImu`, `FakeBaro`, `FakeMag`, `FakeGps`)의 대역, 프레임 조립기 `ibusFrame()`, 진짜 `Esp32I2CBus`/`Esp32SpiBus`와 시뮬레이션된 칩이 붙은 `*RegisterDevice` 위에 드라이버를 얹는 시험대 `I2cRig`/`SpiRig`입니다.
 
@@ -94,21 +94,22 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 
 | 세트 | 테스트 수 | 검증 내용 |
 |---|---|---|
-| `native/test_hal` | 17 | `II2CBus` 도우미(NACK, 짧은 읽기: 버퍼는 건드리지 않음), `I2cRegisterDevice`, `SpiRegisterDevice`(읽기 비트, BMP388의 더미 바이트), `Esp32I2CBus`(5 ms 타임아웃), `Esp32SpiBus`(모드 0–3), `Esp32UartPort`(8N1, 핀), `Esp32ServoOutput`(50 Hz/14비트, 펄스 제한, LEDC 고장, 입력 버퍼를 통한 측정), `Esp32Board`(버스, UART, 채널 순서, AUX, 부저) |
+| `native/test_hal` | 18 | `II2CBus` 도우미(NACK, 짧은 읽기: 버퍼는 건드리지 않음), `I2cRegisterDevice`, `SpiRegisterDevice`(읽기 비트, BMP388의 더미 바이트), `Esp32I2CBus`(5 ms 타임아웃), `Esp32SpiBus`(모드 0–3), `Esp32UartPort`(8N1, 핀), `Esp32ServoOutput`(50 Hz/14비트, 펄스 제한, LEDC 고장, 입력 버퍼를 통한 측정), `Esp32Board`(버스, UART, 채널 순서, AUX, 부저); 모터 알림용 “펄스 없음”(`stopPulses()`) |
 | `native/test_rc` | 16 | `RcChannelState`, `RcInput`, iBUS 파싱: 조각으로 도착하는 프레임, CRC, 12비트 값, 조종기의 페일세이프, 500 ms 타임아웃(`micros()` 오버플로를 넘어가는 경우 포함), 쓰레기 데이터, 재동기화 |
-| `native/test_control` | 26 | 플랩(속도, 첫 호출, 일시 정지), 믹서(부호, 리버스, 플래퍼론), 스로틀, ARM 상태 머신과 모드 센서 확인, 출력 표와 펄스 자가 점검, 양방향 ESC 펄스, 모터 역회전은 DISARM 상태에서만, 방향을 바꾼 뒤 ARM 금지, 리버스 도우미(펄스 반전, 채널 반전, 모터 반전) |
-| `native/test_autopilot` | 22 | PID(센서 각속도 기반 D항, 적분, 안티 와인드업, `dt`), 각도 모드로서의 STABILIZE, 시간 기반 자동 이륙, 승강타를 쓰는 ALT_HOLD, 신호 상실 시 활공 |
+| `native/test_control` | 26 | 플랩(속도, 첫 호출, 일시 정지), 믹서(부호, 리버스, 플래퍼론), 스로틀, ARM 상태 머신과 모드 센서 확인, 출력 표와 펄스 자가 점검, 양방향 ESC 펄스, 모터 역회전은 DISARM 상태에서만, 방향을 바꾼 뒤 ARM 금지, 리버스 도우미(펄스 반전, 채널 반전, 모터 반전); 꼬리 바퀴 AUTO_TAKEOFF는 랜딩기어 캘리브레이션이 있을 때만 |
+| `native/test_autopilot` | 22 | PID(센서 각속도 기반 D항, 적분, 안티 와인드업, `dt`), 각도 모드로서의 STABILIZE, 자동 이륙(시작 전까지 모터 정지, 프로그램 스로틀, DISARM), 승강타를 쓰는 ALT_HOLD, 신호 상실 시 활공, 상승 중 신호 상실 — 상승 계속 |
 | `native/test_autopilot_modes` | 31 | 12개 모드 전체와 센서가 없을 때 각 모드의 반응, 바인딩 표와 `static_assert`, 기능과 노브, 항법(침로, 원, 홈 지점, 지오펜스), failsafe RTH/활공, 손으로 던져 이륙, 소어링, 오토 트림(기록은 지상에서만) |
-| `native/test_flight_controller` | 15 | 실제 클래스로 돌리는 `FlightController`의 한 주기: 우선순위는 신호 상실 > ARM > 스틱/오토파일럿 > 스로틀, AUX, `MOTOR_KILL`, 부저; SwD 역회전: DISARM 상태에서만, 3 s 동안 ARM 불가, 후진 스로틀 50%, 오토파일럿 스로틀 없음, 통신이 끊기면 모터 정지; 스로틀 상한 노브가 허용 범위를 스틱 전체 행정으로 늘림 |
+| `native/test_flight_controller` | 20 | 실제 클래스로 돌리는 `FlightController`의 한 주기: 우선순위는 신호 상실 > ARM > 스틱/오토파일럿 > 스로틀, AUX, `MOTOR_KILL`, 부저; SwD 역회전: DISARM 상태에서만, 3 s 동안 ARM 불가, 후진 스로틀 50%, 오토파일럿 스로틀 없음, 통신이 끊기면 모터 정지; 스로틀 상한 노브가 허용 범위를 스틱 전체 행정으로 늘림; SwB 동작과 콘솔로 하는 지상 캘리브레이션, 출력 위의 알림(조종면 끄덕임, ESC 펄스는 ARM하지 않았을 때만 멈춤), 캘리브레이션과 알림 중 ARM 금지, ARM 스위치를 젖히면 캘리브레이션 취소, 이륙 거부 알림은 ESC를 건드리지 않고 끄덕이기만 함, 통신이 없어도 알림은 계속 |
 | `native/test_imu` | 21 | MPU6050/6500/9250과 ICM-42688: 식별, 레지스터, 스케일, 축 회전과 항공 부호, 버스 오류, 자이로 보정과 비행 전 점검, 세 가지 자세로 하는 장착 보정, NVS, 자세 필터 |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`, I2C와 SPI의 BMP388, Bosch 기준 구현과 비교한 BME280/BMP280, 나침반(침로, NVS에 저장하는 하드 아이언 보정), u-blox M10(CFG-VALSET, NAV-PVT, 손상된 프레임, 타임아웃), `SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV(16X/32X, 예비 주소, SPI), ICM-45686(간접 레지스터), QMC6309, SPL06-001(데이터시트 공식), BMP581(DRDY와 대체 경로), 피토관(영점, 필터, 밀도, 바뀐 호스, 오래된 데이터, 기압계 두 개의 노이즈를 반영한 “비행”) |
 | `native/test_storage` | 16 | `KeyValueStore`(재로드, 마모: 같은 값은 쓰지 않음, 데이터 손실 없는 오버플로, CRC, 삭제 중 전원 차단, 쓰레기 데이터, 포맷 버전), `KvPreferences`(ESP32 NVS와 같은 동작) |
 | `native/test_mavlink` | 20 | pymavlink 기준 프레임과 대조하는 코덱(v1, v2, 서명된 것), CRC, 재동기화, 텔레메트리: 스트림 주파수, HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS, PID 파라미터(목록, 읽기, 쓰기, 잘못된 값 거부), 지상에서의 모드 변경, 지상에서의 ARM은 거부, 미션은 0개, 가득 찬 UART 버퍼가 루프를 막지 않음 |
-| `native/test_blackbox` | 19 | 블랙박스: 포맷과 CRC, NOR 페이크 위의 섹터 링(지우지 않은 새 파티션, 쓰레기는 항상 삭제, 오래된 비행은 통째로 그리고 공간 확보를 위해서만 삭제, 마지막 비행은 건드리지 않음, 링 끝을 넘어가는 경우, 재부팅 뒤의 머리 위치, 전원 차단, 쓰다 만 레코드를 CRC로 감지), 실제 `FlightController`/`Autopilot`으로 하는 비행 기록: ARM과 스로틀로 시작(사전 기록 포함), DISARM과 “지상에 정지” 뒤 중지, 신호 상실로는 멈추지 않음, 비정상 재부팅 뒤의 기록, 수동 시작, 이벤트, 배터리, 공중에서 플래시가 다 참, 파티션보다 긴 비행, CRC 프레임과 속도 전환을 쓰는 내려받기, 콘솔 메뉴 `k`, 파티션이 없으면 비활성 |
+| `native/test_blackbox` | 20 | 블랙박스: 포맷과 CRC, NOR 페이크 위의 섹터 링(지우지 않은 새 파티션, 쓰레기는 항상 삭제, 오래된 비행은 통째로 그리고 공간 확보를 위해서만 삭제, 마지막 비행은 건드리지 않음, 링 끝을 넘어가는 경우, 재부팅 뒤의 머리 위치, 전원 차단, 쓰다 만 레코드를 CRC로 감지), 실제 `FlightController`/`Autopilot`으로 하는 비행 기록: ARM과 스로틀로 시작(사전 기록 포함), DISARM과 “지상에 정지” 뒤 중지, 신호 상실로는 멈추지 않음, 비정상 재부팅 뒤의 기록, 수동 시작, 이벤트, 배터리, 공중에서 플래시가 다 참, 파티션보다 긴 비행, CRC 프레임과 속도 전환을 쓰는 내려받기, 콘솔 메뉴 `k`, 파티션이 없으면 비활성; 지상 캘리브레이션과 자동 이륙 단계의 이벤트 |
 | `native/test_blackbox_scan` | 3 | 전원을 켤 때 하는 링의 표본 검증과 전체 검증의 비교: 링의 무작위 이력 300개 × 탐색 5단계(머리 위치, 번호, 비행 목록이 일치하며, 맞지 않을 때는 전체 검증에 양보), 그리고 64 MB SD 영역에서의 비용(32,000번 대신 약 530번 읽기) |
-| `native/test_telemetry` | 28 | `LoopStats`, `LogSettings`(NVS, 버전), `DebugLogger`(모든 채널, NAV), `DebugConsole`(메뉴, 단축키, 버스 탐색 `b`, ARM 중 금지, ARM이 아닐 때만 저장), `WebDebugServer`(경로, JSON, 우편함), `OledDisplay`(I2C 바이트, 프레임, 신호 상실 시 반전) |
-| `native/test_sim` | 15 | 비행기 모델로 하는 펌웨어 전체의 폐루프 비행: 뱅크에서의 회복, 옆바람 속 CRUISE, LOITER, RTH, failsafe RTH/활공, 지오펜스, 활주로에서의 자동 이륙, 손으로 던져 이륙, 자동 착륙, 서멀, 나선에서의 RESCUE, 속도 유지와 실속 방지, 루프 안의 실제 피토관, “삐뚤어진” 비행기의 오토 트림, 비행 중 센서 고장(IMU, 기압계, 피토관, GPS) |
+| `native/test_telemetry` | 30 | `LoopStats`, `LogSettings`(NVS, 버전), `DebugLogger`(모든 채널, NAV), `DebugConsole`(메뉴, 단축키, 버스 탐색 `b`, ARM 중 금지, ARM이 아닐 때만 저장), `WebDebugServer`(경로, JSON, 우편함), `OledDisplay`(I2C 바이트, 프레임, 신호 상실 시 반전); 콘솔의 캘리브레이션 `c`와 알림 `e`, 로그 줄 `AP`의 이륙 단계, OLED의 캘리브레이션 단계와 이륙 단계 |
+| `native/test_sim` | 18 | 비행기 모델로 하는 펌웨어 전체의 폐루프 비행: 뱅크에서의 회복, 옆바람 속 CRUISE, LOITER, RTH, failsafe RTH/활공, 지오펜스, 꼬리 바퀴 자동 이륙(꼬리 바퀴 하중은 주기 하중을 넘지 않고, 프로펠러도 꼬리도 활주로에 닿지 않으며, 실제 자세 필터 사용. 기압계 있음/없음), 앞바퀴 자동 이륙, 스로틀로 중단한 이륙, 손으로 던져 이륙, 자동 착륙, 서멀, 나선에서의 RESCUE, 속도 유지와 실속 방지, 루프 안의 실제 피토관, “삐뚤어진” 비행기의 오토 트림, 비행 중 센서 고장(IMU, 기압계, 피토관, GPS) |
+| `native/test_takeoff` | 23 | 자동 이륙과 비행기 지상 캘리브레이션: “꼬리를 든” 자세로 얻는 수평 기준과 주기 자세(`ImuOrientation`), 활주 중 가속도계 없는 자세 필터, 실제 `ImuSensorBase` 플래시의 랜딩기어 캘리브레이션(바퀴로 선 채 전원을 켠 뒤의 수평 기준, `o`가 주기 자세를 지움, 자이로 영점 보정), `GroundCalibration`(두 단계, 각도 점검, 취소, 스위치 동작), `SignalPlayer`, 꼬리 바퀴와 앞바퀴의 `TakeoffController` 단계, 조종면 제어 법칙, 이륙 중단(스로틀, 통신, IMU 고장, 롤, 침로, 기수, 꼬리, 부양 없음), 기압계가 없으면 시간으로, “자이로만” 구간 |
 | `native/test_feedback_units` | 14 | 피드백 모듈을 하나씩: 속도 소스, 공중/지상 판정, RLS 추정, 제어기, 실속 징후, 이륙/착륙 중단 |
 | `native/test_app` | 10 | ESP32-S3의 `src/main.cpp`, 벤치용 구성 MPU6500/BMP581/QMC5883P/OLED: `loop()` 주기, 조종기 → 서보, ARM, 모드, 신호 상실, 콘솔, 대시보드, 화면, 블랙박스(코어 0의 태스크, 스로틀 시 기록, DISARM 뒤의 비행, `bb list`) |
 | `native/test_app_lsm6dsv_pitot` | 9 | ESP32-S3의 `src/main.cpp`, 비행용 구성: LSM6DSV + QMC6309 + SPL06 + 피토관 속 BMP581 + GPS: 모든 칩 식별, 피토관 영점과 속도, 고도, GPS 기준 홈 지점, 칩의 각도로 하는 STABILIZE, 홈 지점으로 가는 RTH, 버스 탐색, 대시보드; 비행 중 SwD(역회전)는 DISARM 전까지 효과 없음 |
@@ -117,10 +118,10 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743과 **SPI로 연결한** ICM-45686, BMP581 + QMC6309: 전원을 켤 때 손상된 플래시, GCS의 ALT_HOLD가 고도를 유지, 신호 상실 → RTH, MAVLink에서 확인 가능, 손상된 이미지 다시 쓰기 |
 | `native_stm32/test_blackbox_sd` | 29 | SD 카드의 블랙박스: FAT32(MBR 있음/없음, 클러스터 두 개에 걸친 디렉터리, 노이즈 항목, 남의/흩어진/빈 볼륨), `SdFileRegion`(불완전한 블록, 캐시, 삭제, 경계, 고장), 가짜 `HAL_SD` 위에서 도는 실제 `Stm32SdCard` 드라이버(4비트, 예비 속도, 재시도, 사용 중인 카드, 정렬되지 않은 버퍼), 카드 위의 링(재부팅, 전원 차단, 검증 비용), “링이 비어 있음” 표시, `FlightController`에서의 비행 기록, `RCC->RSR`로 판별하는 비정상 재부팅, 배터리 ADC, 비행 중 카드 오류, 느린 카드, 콘솔을 통한 내려받기, `D` 키 |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | 카드가 있는 `src/stm32/main.cpp`: 부팅 시 카드와 파일을 찾음, `bbox` 태스크가 비행을 기록, 루프 주기가 늘어나지 않음, `bb list` |
-| `native_stm32/test_app_stm32_no_sd` | 2 | 카드가 없는 `src/stm32/main.cpp`: 블랙박스는 비활성화되고 이유를 설명함, 비행기는 비행함, 메뉴 `k`는 망가지지 않음 |
+| `native_stm32/test_app_stm32_no_sd` | 3 | 카드가 없는 `src/stm32/main.cpp`: 블랙박스는 비활성화되고 이유를 설명함, 비행기는 비행함, 메뉴 `k`는 망가지지 않음; PD14에서의 출력 자체 점검(코어 `pulseIn()` 결함 우회), 모터 알림 `e` |
 | `test_feedback` | 10 | 피드백 루프가 있는 비행기의 폐루프 시뮬레이션(PC와 보드 모두) |
 | `test_imu_orientation` | 5 | 무작위 장착 300가지에서 하는 IMU 장착 보정(PC와 보드 모두) |
-| **합계** | **395** | `native`에 348개 + `native-stm32`에 47개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
+| **합계** | **431** | `native`에 383개 + `native-stm32`에 48개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
 
 ### STM32 보드에서의 테스트
 
@@ -167,18 +168,19 @@ DevEBox H743 + 16 GB 카드에서의 결과(2026-10-02): `test_blackbox_sd`는 9
 
 | 계층 | 줄 | 분기 |
 |---|---|---|
-| `autopilot` | 920/943 (97.6%) | 645/731 (88.2%) |
-| `autopilot/feedback` | 683/702 (97.3%) | 501/570 (87.9%) |
-| `control` | 252/256 (98.4%) | 171/189 (90.5%) |
-| `hal` | 98/102 (96.1%) | 26/26 (100%) |
-| `hal/esp32` | 101/102 (99.0%) | 21/22 (95.5%) |
-| `hal/stm32` | 149/158 (94.3%) | 35/52 (67.3%) |
-| `rc` | 92/92 (100%) | 41/42 (97.6%) |
-| `sensors`(전체) | 1444/1446 (99.9%) | 716/835 (85.7%) |
-| `storage` | 220/220 (100%) | 158/178 (88.8%) |
-| `telemetry` | 1413/1440 (98.1%) | 1123/1269 (88.5%) |
-| `src`(`main.cpp`, `stm32/main.cpp`) | 118/123 (95.9%) | 20/29 (69.0%) |
-| **합계** | **5490/5584 (98.3%)** | **3457/3943 (87.7%)**, 함수 877/902 (97.2%) |
+| `autopilot` | 1328/1395 (95.2%) | 921/1039 (88.6%) |
+| `autopilot/feedback` | 682/713 (95.7%) | 502/571 (87.9%) |
+| `config` | 2/2 (100%) | 2/2 (100%) |
+| `control` | 561/584 (96.1%) | 438/469 (93.4%) |
+| `hal` | 238/301 (79.1%) | 130/168 (77.4%) |
+| `hal/esp32` | 117/148 (79.1%) | 32/38 (84.2%) |
+| `hal/stm32` | 241/288 (83.7%) | 115/144 (79.9%) |
+| `rc` | 93/100 (93.0%) | 44/46 (95.7%) |
+| `sensors`(전체) | 1533/1625 (94.3%) | 835/994 (84.0%) |
+| `storage` | 350/364 (96.2%) | 275/334 (82.3%) |
+| `telemetry` | 2775/2920 (95.0%) | 2082/2464 (84.5%) |
+| `src`(`main.cpp`, `stm32/main.cpp`) | 145/150 (96.7%) | 26/32 (81.2%) |
+| **합계** | **8065/8590 (93.9%)** | **5402/6301 (85.7%)**, 함수 1204/1245 (96.7%) |
 
 아직 커버되지 않은 부분과 그 이유:
 
@@ -186,7 +188,8 @@ DevEBox H743 + 16 GB 카드에서의 결과(2026-10-02): `test_blackbox_sd`는 9
 - **보드에 의존하는 부분**: 핀이 없는 출력(`PIN_RUDDER = -1`은 C3에서만 나옵니다), TX 핀이 없는 GPS(C3). 네이티브 테스트는 S3, 38핀, STM32의 핀 배치를 돌려 보지만 C3는 돌리지 않습니다(C3는 빌드 매트릭스로 확인합니다).
 - **STM32**: 코어의 오류 분기(핀에 타이머가 없음, 타이머 풀이 바닥남), 메시지 `FreeRTOS не запустился`(“FreeRTOS가 시작되지 않았다”): PC에서는 `vTaskStartScheduler()`가 항상 반환됩니다.
 - **방어용 분기**로, 공개 API를 통해서는 도달할 수 없는 것: 열거형에 대한 `switch`의 `default`/`Count`, `return "?"`.
-- 실행 가능한 줄이 없는 파일(`Config.h`, `Channels.h`, `FeedbackConfig.h`, 구조체 `ControlCommand`/`FlightOutputState`/`FlightSnapshot`/`FeedbackOutput`/`PhaseTargets`, `SensorSelection.h`의 매크로, 대시보드 HTML)은 보고서에 나타나지 않습니다. 테스트에는 컴파일되지만 gcov가 셀 것이 없기 때문입니다.
+- **인터페이스의 소멸자와 기본 구현**(`IBoard`, `IUartPort`, `ImuSensor` 등): 모든 구현이 이를 재정의하지만, `-fkeep-inline-functions`를 쓰면 gcov가 이 줄들도 셉니다.
+- 실행 가능한 줄이 없는 파일(`Channels.h`, `FeedbackConfig.h`, 구조체 `ControlCommand`/`FlightOutputState`/`FlightSnapshot`/`FeedbackOutput`/`PhaseTargets`, `SensorSelection.h`의 매크로, 대시보드 HTML)은 보고서에 나타나지 않습니다. 테스트에는 컴파일되지만 gcov가 셀 것이 없기 때문입니다.
 
 ---
 

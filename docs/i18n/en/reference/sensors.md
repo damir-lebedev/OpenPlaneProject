@@ -50,6 +50,12 @@ Which chip is compiled in is decided by `SensorSelection.h`.
 | `void setYaw(float)` | Set the heading (for example from the compass at start-up) |
 | `virtual void calibrateOrientation()` | Board mounting calibration (not supported by default) |
 | `virtual const char* getPreflightProblem() const` | The preflight-check problem or `nullptr` (`nullptr` by default) |
+| `virtual bool readChipUp(float[3]) const` | Ground calibration: the last accelerometer reading in chip axes, g, uncorrected (default `false`) |
+| `virtual bool getOrientation(ImuOrientation&) const` | The current board mounting (default `false` — ground calibration unsupported) |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | Store the horizon and the parking attitude, save to flash |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | Parking angles on the wheels, ° from the horizon; `false` — no landing-gear calibration |
+| `virtual void setAccelCorrection(bool)` | Auto takeoff: `false` — the horizon from the gyro only |
+| `virtual void trimGyroBias(const float residualDps[3])` | Refine the gyro zero from the mean rate of the airplane standing still (axes and signs of `ImuData`) |
 
 ### `BarometerSensor : Sensor`
 
@@ -169,6 +175,9 @@ The rotation matrix `R` from the chip axes to the airframe axes: `body = R · ch
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | A rotation about the vertical in steps of 90°, the board chip-up |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | Calibration from three poses (the accelerometer's "up" reading in the chip axes). `nullptr` — success, otherwise the reason for the refusal |
 | `void apply(const float chip[3], float body[3]) const` | Apply the rotation |
+| `void applyInverse(const float body[3], float chip[3]) const` | The inverse rotation (transposed `R`) |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | Horizon from the “level” pose: Z = the measured “up”, the nose stays, straightened ⟂ Z. More than 45° from the old horizon — refused |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | Pitch and roll of a pose (as `AttitudeEstimator` computes from the accelerometer) — the parking attitude |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | The angle between the measured "up" and the airframe Z axis (180° if the vector is zero) |
 | `bool load(const char* ns)` | Load from NVS; rejects a non-orthonormal or left-handed triple |
 | `void save(const char* ns) const` | Save to NVS |
@@ -198,11 +207,12 @@ A complementary filter for roll/pitch and a yaw integral, independent of the chi
 | `void setYaw(float deg)` | Set the heading (wrapped to ±180) |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | The acceleration in g in the airframe axes, the rates in °/s |
 | `getRoll()`, `getPitch()`, `getYaw()` | ° |
+| `setAccelCorrection(bool)`, `isAccelCorrectionEnabled()` | `false` — gyro only (auto-takeoff acceleration: 0.5 g forward reads as +27° of pitch) |
 
 `roll_acc = atan2(ay, az)`, `pitch_acc = atan2(ax, √(ay² + az²))`;
 `angle = 0.98·(angle + rate·dt) + 0.02·angle_acc` (τ ≈ 0.1 s at 2 ms).
 The first call after `reset()` gives the accelerometer angles at once; `dt ≤ 0` or > 0.1 s —
-the step is skipped (a pause, a hung bus).
+the step is skipped (a pause, a hung bus). Without the accelerometer — `angle + rate·dt`.
 
 ---
 
@@ -227,7 +237,11 @@ raw samples − offsets (ADC) → scale (g, °/s) → ImuOrientation (airframe a
 | `void calibrate()` | 200 samples × 10 ms: the gyroscope offset, the noise, "up"; without mounting calibration — the horizon = the current position. Then the preflight check |
 | `void calibrateOrientation()` | Three poses (`capturePose`: still for ~1 s, the pose differs from the previous ones by ≥ 20°, a 30 s timeout), `ImuOrientation::fromPoses`, saving to NVS. Clears the mounting problems of the preflight check |
 | `const char* getPreflightProblem() const` | The text of the problem or `nullptr` |
-| `void setYaw(float)`, `getSensorType()`, `printStatus()` | |
+| `readChipUp()`, `getOrientation()` | Ground calibration: the last “up” in chip axes, the mounting |
+| `bool setGroundCalibration(level, parkChipUp)` | Mounting = `level` (the horizon); the parking attitude goes to the `park` key in the same NVS namespace; clears the mounting problems of the pre-flight check. A new `o` erases the parking attitude (it was measured from the old horizon) |
+| `bool getParkingAttitude(pitch, roll) const` | The parking attitude through the current mounting |
+| `setAccelCorrection(bool)`, `trimGyroBias(residual)` | Auto takeoff: the filter without the accelerometer; the residual zero goes into the gyro offset through the inverse rotation |
+| `void setYaw(float)`, `getSensorType()`, `printStatus()` | `printStatus()` ends with `park(pitch,roll)=…` or `park=NONE` |
 
 The protected API for drivers:
 

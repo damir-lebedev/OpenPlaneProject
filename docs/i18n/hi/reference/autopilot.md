@@ -101,7 +101,7 @@ JSON और `MavlinkModes` में जाते हैं):
 
 ## `Autopilot`
 
-**फ़ाइल:** `autopilot/Autopilot.h` · **निर्भर है:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, सेंसर (सभी nullable)
+**फ़ाइल:** `autopilot/Autopilot.h` · **निर्भर है:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, सेंसर (सभी nullable)
 
 ### जीवन-चक्र
 
@@ -112,7 +112,7 @@ JSON और `MavlinkModes` में जाते हैं):
 | `void setInputs(const PilotInputs&)` | इस चक्र के स्विच और नॉब (`update` से पहले) |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | हर चक्र में एक बार: सेंसर (हमेशा) → नेविगेशन और होम → ज़मीन पर ट्रिमर सहेजना → failsafe → जियोफ़ेंस → मोड → मोड़ का समन्वय → ऑटो-ट्रिम |
 | `ControlCommand getCommand() const` | अंतिम कंट्रोल सरफ़ेस कमांड (roll/pitch/yaw, µs) |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | मोड का थ्रॉटल: `PILOT` — पायलट का; `AUTO` — अपना; `AT_LEAST` — अपने से कम नहीं (ऑटो टेकऑफ़)। ARM और `MOTOR_KILL` को `FlightController` सँभालता है |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | मोड का थ्रॉटल: `PILOT` — पायलट का; `AUTO` — अपना (ऑटो-टेकऑफ़ में भी: थ्रॉटल स्टिक केवल शुरू और रद्द करती है)। ARM और `MOTOR_KILL` को `FlightController` संभालता है |
 
 ### मोड
 
@@ -123,6 +123,10 @@ JSON और `MavlinkModes` में जाते हैं):
 | `isFailsafeActive()`, `isFailsafeGliding()`, `isFailsafeReturning()` | मोड के ऊपर failsafe |
 | `isAutoThrottle()`, `getThrottleCorrection()` | मोड का थ्रॉटल (%, लॉग और डैशबोर्ड के लिए) |
 | `getLaunchState()`, `getSoaringState()` | LAUNCH और SOARING की स्टेट मशीनें |
+| `getTakeoffStage()`, `getTakeoffAbortReason()` | ऑटो-टेकऑफ़ का चरण और वह क्यों रद्द हुआ (`nullptr` — रद्द नहीं हुआ) |
+| `bool takeTakeoffRefusal()` | ऑटो-टेकऑफ़ ने शुरुआत से पहले की जाँच में इनकार किया — `FlightController` संकेत बजाता है (एक बार लिया जाता है) |
+| `getLandingGear()`, `setLandingGear(LandingGear)` | लैंडिंग गियर (डिफ़ॉल्ट `Config::LANDING_GEAR`; टेस्ट इसे बदलते हैं) |
+| `bool isGyroOnlyAttitude() const` | इस समय क्षितिज केवल जाइरोस्कोप से चल रहा है (टेकऑफ़ के त्वरण की खिड़की) |
 
 ### आउटपुट और निदान
 
@@ -148,7 +152,8 @@ JSON और `MavlinkModes` में जाते हैं):
 - `looksLanded()` — बैरोमीटर के अनुसार ज़मीन के पास, लगभग शून्य ऊर्ध्वाधर गति,
   पिटो ट्यूब/GPS की सीमा से धीमी: तभी ट्रिमर फ़्लैश में लिखा जाता है।
 - Failsafe: GPS और होम होने पर — मोटर के साथ RTH, वरना ग्लाइड; शुरू हो चुका RTH GPS के
-  थोड़े समय के लिए खोने पर नहीं छोड़ा जाता।
+  थोड़े समय के लिए खोने पर नहीं छोड़ा जाता। रनवे पर AUTO_TAKEOFF में (`holdsGround()` वाले चरण) संपर्क टूटना failsafe नहीं, बल्कि रद्द टेकऑफ़ है; चढ़ाई में यह failsafe है, और संपर्क लौटने पर चढ़ाई जारी रहती है।
+- “केवल जाइरोस्कोप” वाली खिड़की (`manageAccelCorrection()`): ऑटो-टेकऑफ़ में मोटर चालू होते ही एक्सेलेरोमीटर को क्षितिज के सहारे से हटा दिया जाता है (`ImuSensor::setAccelCorrection`); उसे वापस लाते हैं चढ़ाई शुरू होने के बाद का समय (`TAKEOFF_GYRO_ONLY_CLIMB_MS`), ऊपरी सीमा, रद्द टेकऑफ़ और DISARM — मोड बदलना नहीं।
 
 ---
 
@@ -188,6 +193,28 @@ JSON और `MavlinkModes` में जाते हैं):
 `LAUNCH_CLIMB_PITCH_DEG`) `→ DONE` (`LAUNCH_CLIMB_MS` या `LAUNCH_ALTITUDE_M`)। फेंकने से
 पहले स्टिक हिलाना — रद्द। मेथड: `update(...)`, `reset()`, `getState()`, `motorOn()`,
 `pitchTargetDeg()`, `stateName()`।
+
+## `TakeoffController`
+
+**फ़ाइल:** `autopilot/TakeoffController.h` · **निर्भर है:** `Config`
+
+रनवे से ऑटो-टेकऑफ़ — सेंसरों के अनुसार चरण, अपने सेंसर और सरफ़ेस के बिना: अंदर `Inputs` (ARM, संपर्क, पायलट का थ्रॉटल, कोण और कोणीय गतियाँ, भार, पार्किंग कोण, ऊँचाई, गति, `STAB_GAIN` नॉब, समय), बाहर — इस चक्र में क्या करना है।
+
+`Stage`: `IDLE` (मोटर बंद; थ्रॉटल पहले नीचे, फिर `TAKEOFF_TRIGGER_US` से ऊपर) `→ CHECK` (`TAKEOFF_CHECK_MS` तक स्थिर, कोण = पार्किंग कोण; वरना `ABORTED` और संकेत) `→ TAIL_UP` (टेल व्हील: एलिवेटर नीचे, पूँछ ऊपर) `→ ROLL` (दौड़; `TD_ROLL_MS` / `TRI_ROLL_MS` या नाक उठाने की गति) `→ LIFTOFF` (पिच का लक्ष्य बढ़ता है, ज़मीन के पास अधिकतम पार्किंग कोण घटा `TD_TAIL_CLEARANCE_DEG`) `→ CLIMB` (बैरोमीटर या समय से ज़मीन छोड़ना; `TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS` तक चढ़ाई) `→ DONE`। `ABORTED` — रद्द टेकऑफ़; थ्रॉटल 1 s नीचे — फिर से `IDLE`।
+
+| मेथड | विवरण |
+|---|---|
+| `void update(const Inputs&)` | हर चक्र में एक बार: चरण बदलना, फिर उस चरण के आउटपुट; ARM के बिना — `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | बाहर से रद्द करना (संपर्क टूटना); `IDLE`/`DONE` में — कुछ नहीं |
+| `void reset()`, `setGear()`, `getGear()` | |
+| `getStage()`, `stageName()`, `stageShort()`, `getAbortReason()` | चरण (OLED के लिए छोटा नाम) |
+| `bool holdsGround() const` | ज़मीन पर (`IDLE`…`LIFTOFF`, `ABORTED`): संपर्क टूटना रद्द टेकऑफ़ है, PID के इंटीग्रेटर शून्य पर रहते हैं |
+| `isAirborneStage()`, `isDone()` | हवा में (चढ़ाई/पूरा); टेकऑफ़ ख़त्म |
+| `getThrottlePct()` | कार्यक्रम का थ्रॉटल, % (`TAKEOFF_THROTTLE_RAMP_MS` में धीरे-धीरे) |
+| `getRollTargetDeg()`, `getPitchTargetDeg()` | रोल का लक्ष्य (पहियों पर — खड़े विमान का रोल) और पिच का लक्ष्य (चढ़ाई में — PID के लिए) |
+| `hasElevatorCommand()`, `getElevatorUs()` | पहियों पर एलिवेटर सीधे: लक्ष्य की ओर `TD_PITCH_KP` / `TD_ROLL_PITCH_KP` µs प्रति डिग्री, डैम्पिंग `TD_PITCH_KD`, नीचे अधिकतम `TD_TAIL_UP_ELEVATOR_US` |
+| `hasRudderCommand()`, `getRudderUs()` | रडर और पहिये से दिशा: `TAKEOFF_HEADING_KP` µs प्रति डिग्री, `TAKEOFF_YAW_RATE_KD` प्रति °/s |
+| `bool takeRefusal()`, `bool takeGyroTrim(float[3])` | एक बार की घटनाएँ: जाँच में इनकार; खड़े विमान पर नापा गया जाइरोस्कोप का बचा हुआ शून्य |
 
 ## `SoaringController`
 

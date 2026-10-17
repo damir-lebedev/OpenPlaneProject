@@ -145,6 +145,22 @@ pulso em torno de 1500.
 | `IMU_ROTATION_CW_DEG` | 90 | A rotação dos eixos do chip da IMU em torno da vertical (0/90/180/270), para onde aponta o eixo X do chip. Usada apenas enquanto não há a calibração da instalação `o` no NVS |
 | `MAG_ROTATION_CW_DEG` | 0 | O mesmo para a bússola (a bússola não tem calibração da instalação) |
 
+### Trem de pouso, calibração em solo, sinais
+
+| Constante | Valor | Significado |
+|---|---|---|
+| `LANDING_GEAR` | `LandingGear::TAIL_WHEEL` | Qual roda é a direcional: `TAIL_WHEEL` — bequilha (no solo nariz para cima, na corrida a cauda sobe primeiro), `NOSE_WHEEL` — roda de nariz |
+| `CAL_SWITCH` | `Channels::SWB` | A chave do gesto da calibração em solo (não a SwD — ela comanda a reversão do motor) |
+| `CAL_SWITCH_FLIPS` / `CAL_SWITCH_WINDOW_MS` | 3 / 4000 | Sem ARM, acelerador para baixo: tantas vezes para baixo e para cima nesse tempo iniciam a calibração (de novo — cancelam) |
+| `CAL_STILL_MS`, `CAL_STILL_DPS`, `CAL_STILL_G` | 2000, 3.0, 0.15 | Um passo é aceito quando, por tantos ms, a taxa angular fica abaixo e a carga em 1g ± esse valor |
+| `CAL_PARK_WAIT_MS` | 5000 | O passo 2 espera o avião ser mudado de posição, ou esse tempo (roda de nariz: a mesma posição) |
+| `CAL_STEP_TIMEOUT_MS` | 60 000 | Sem ficar parado nesse tempo — a calibração é cancelada (erro) |
+| `CAL_TAIL_PARK_MIN/MAX_DEG` | 3 / 25 | Bequilha: arfagem no solo dentro desses limites, senão erro (“a cauda não foi baixada”) |
+| `CAL_NOSE_PARK_MAX_DEG`, `CAL_PARK_MAX_ROLL_DEG` | 6, 10 | Roda de nariz: no solo quase nivelado; rolagem no solo no máximo esse valor |
+| `SIGNAL_MOTOR` / `SIGNAL_SURFACES` | `true` / `true` | Sinal pelo motor (pausa dos pulsos do ESC — ele toca a melodia de pronto) e pelo aceno das superfícies |
+| `SIGNAL_NOD_US`, `SIGNAL_NOD_MS` | 200, 150 | Aceno do profundor e do leme: tantos µs para cima, depois para baixo, tantos ms cada |
+| `SIGNAL_ESC_PAUSE_MS`, `SIGNAL_PERIOD_MS` | 1000, 3000 | Tempo sem pulsos para o ESC; os sinais se seguem com esse período (a melodia chega a terminar) |
+
 ### ARM
 
 | Constante | Valor | Significado |
@@ -181,6 +197,9 @@ comentários detalhados; o que eles significam para o piloto está no
 | Círculos e ponto de origem | `LOITER_RADIUS_M` 50 (25…150), `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
 | Geofence | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
 | Lançamento manual | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| Decolagem automática | `TAKEOFF_TRIGGER_US` 1500; verificação: `TAKEOFF_CHECK_MS` 1000, `_CHECK_TIMEOUT_MS` 5000, `TAKEOFF_PARK_PITCH/ROLL_TOL_DEG` 4/5, `TAKEOFF_UNCALIBRATED_TILT_DEG` 10; acelerador `TAKEOFF_THROTTLE_PCT` 100 em `TAKEOFF_THROTTLE_RAMP_MS` 2000; rumo `TAKEOFF_HEADING_KP` 10, `TAKEOFF_YAW_RATE_KD` 2; `TAKEOFF_ROTATE_SPEED_MS` 11; decolagem `TAKEOFF_LIFTOFF_MS` 3000, `_LIFTOFF_ALT_M` 1, `_LIFTOFF_CONFIRM_MS` 500; subida `TAKEOFF_CLIMB_PITCH_DEG` 8 até `TAKEOFF_SAFE_ALTITUDE_M` 30 (sem barômetro `TAKEOFF_CLIMB_MS` 15 000); aborto: `TAKEOFF_ABORT_ROLL_DEG` 15, `_ABORT_HEADING_DEG` 30, `TAKEOFF_NOSE_DOWN_MS` 300, `TAKEOFF_GROUND_TIMEOUT_MS` 15 000; “só giroscópio”: `TAKEOFF_GYRO_ONLY_CLIMB/MAX/ABORT_MS` 5000/30 000/3000 |
+| Bequilha | `TD_TAIL_UP_ELEVATOR_US` 250 (no máximo isso para picar), `TD_ROLL_PITCH_DEG` 1, `TD_PITCH_KP` 40 (cauda para cima), `TD_ROLL_PITCH_KP` 15 (corrida e rotação), `TD_PITCH_KD` 3, `TD_TAIL_UP_DONE_DEG` 2, `TD_TAIL_UP_TIMEOUT_MS` 6000, `TD_ROLL_MS` 2500, `TD_ROTATE_RATE_DPS` 2, `TD_TAIL_CLEARANCE_DEG` 3, `TD_MIN_PITCH_DEG` −3 |
+| Roda de nariz | `TRI_ROLL_ELEVATOR_US` 0, `TRI_ROLL_MS` 3000, `TRI_ROTATE_RATE_DPS` 5, `TRI_MAX_GROUND_PITCH_DEG` 10 |
 | Pouso | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
 | Voo planado | `SOAR_*`: planeio −3°, uma térmica > 0.5 m/s por 1.5 s, um círculo de 25°, saída < −0.2 m/s por 8 s, motor abaixo de 30 m até 100 m, retorno ao ponto de origem além de 400 m |
 | RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |

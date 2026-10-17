@@ -5,8 +5,8 @@
 
 // ============================================================
 // Реализация IServoOutput для STM32 (STM32duino 3.x) — аппаратный
-// PWM таймера (HardwareTimer), 50 Гц. ЗАГОТОВКА: на железе не
-// проверялась.
+// PWM таймера (HardwareTimer), 50 Гц. Проверена на плате DevEBox H743:
+// сервы и ESC от пульта, импульсы по самопроверке ('p').
 //
 // Таймер и его канал определяются по пину из таблицы PinMap_TIM
 // варианта (как это делает analogWrite() ядра): PA0 -> TIM2_CH1,
@@ -78,16 +78,31 @@ public:
 
     bool isAttached() const override { return attached; }
 
+    // Сравнение = 0 — как сразу после attach(): импульса нет вовсе.
+    void stopPulses() override
+    {
+        if (!attached) return;
+        timer->setCaptureCompare(channel, 0, MICROSEC_COMPARE_FORMAT);
+    }
+
     // На STM32 входной регистр GPIO (IDR) отражает уровень пина и в
     // режиме альтернативной функции, так что pulseIn() видит
     // импульс таймера без перенастройки пина (на ESP32 для этого
     // пришлось включать входной буфер вручную).
+    //
+    // Но pulseIn() ядра STM32duino на пинах с номером бита 8 и выше
+    // (PD14, PD15, PE9 — руль направления, AUX1, AUX2) меряет НИЗКИЙ
+    // уровень: маска уровня у него uint8_t и обрезается в ноль. Импульс
+    // серво всегда короче половины периода, поэтому намеренное дольше
+    // половины — это пауза, а импульс — период минус она.
     int32_t measurePulseUs() override
     {
         if (!attached) return -1;
 
-        const unsigned long width = pulseIn(static_cast<pin_size_t>(pin), HIGH, 30000);
-        return width ? static_cast<int32_t>(width) : -1;
+        unsigned long width = pulseIn(static_cast<pin_size_t>(pin), HIGH, 30000);
+        if (!width) return -1;
+        if (width > PERIOD_US / 2) width = PERIOD_US - width;
+        return static_cast<int32_t>(width);
     }
 
 

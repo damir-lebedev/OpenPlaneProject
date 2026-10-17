@@ -62,8 +62,8 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (не подключён)<br/>FeedbackSupervisor и модули"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -420,23 +420,24 @@ sequenceDiagram
     FC->>TM: update(rc, failsafe) → газ пилота
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(цель по функциям)
     FC->>AP: update(armed, linkLost, газ пилота (в реверсе 0), стики)
-    Note over AP: датчики читаются ВСЕГДА;<br/>навигация, failsafe, геозабор,<br/>режим, координация, автотриммер
-    FC->>OUT: setBuzzer(Beeper)
+    Note over AP: датчики читаются ВСЕГДА,<br/>навигация, failsafe, геозабор,<br/>режим, координация, автотриммер
+    Note over FC: калибровка на земле: жест тумблером (без ARM),<br/>шаг GroundCalibration, сигналы → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper или свет сигнала)
     alt связь потеряна
         alt armed и failsafe автопилота (RTH / GLIDE)
             FC->>MX: mix(команда автопилота)
             FC->>OUT: write(рули, газ автопилота (в реверсе 0), AUX как были)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() (звучит сигнал — нейтраль с кивком и паузой ESC)
         end
         Note over FC: return — ARM и тумблеры не читаются
     else связь есть
-        FC->>AM: update(rc, MR.armBlockReason) — тумблер ARM
+        FC->>AM: update(rc, причина) — тумблер ARM (нельзя, пока калибровка или сигнал)
         FC->>MR: update(MOTOR_REVERSE, armed) — направление только без ARM
         FC->>AP: getCommand() — итоговая команда рулей
         FC->>MX: mix(command) → PWM с реверсом
         FC->>AP: applyThrottle(газ пилота) — только вперёд
-        Note over FC: назад — газ пилота ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed или MOTOR_KILL → throttle = PWM_MIN (последним)
+        Note over FC: назад — газ пилота ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed или MOTOR_KILL → throttle = PWM_MIN (последним)<br/>кивок сигнала — к рулям, без ARM — пауза импульсов ESC
         FC->>OUT: write(output + AUX1 груз, AUX2 камера)
         Note over OUT: ESC: газ + направление → импульс (EscSignal),<br/>двунаправленный ESC: 1500 = стоп
     end
@@ -521,18 +522,38 @@ stateDiagram-v2
 
 Failsafe — не отдельный `AutopilotMode`, а флаг поверх текущего режима;
 начатый возврат не бросается в планирование от короткой потери GPS; после
-восстановления связи продолжается режим с тумблеров (автовзлёт и запуск с
-руки — только заново). Внутренние автоматы: `LaunchController`
-(IDLE → READY → THROWN → CLIMB → DONE) и `SoaringController`
-(GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
+восстановления связи продолжается режим с тумблеров (запуск с руки — только
+заново; автовзлёт на полосе — только заново, в наборе — продолжается). В
+AUTO_TAKEOFF на полосе потеря связи — не оверлей, а прерванный взлёт: мотор
+стоп, рули в нейтраль. Внутренние автоматы: `LaunchController`
+(IDLE → READY → THROWN → CLIMB → DONE), `TakeoffController` (ниже) и
+`SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN).
 
-**AUTO_TAKEOFF** (по времени от старта, когда armed и газ ≥ 1500 мкс):
+**AUTO_TAKEOFF** (`TakeoffController`, газ — программы, стик газа — старт и прерывание):
 
-| Время | Газ (программа) | Тангаж |
-|---|---|---|
-| 0–1 с | плавно 0 → 100 % | 0° |
-| 1–3 с | 100 % | +15° |
-| > 3 с | 100 % | +10° |
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : газ ≥ 1500 мкс (после газа внизу)
+    CHECK --> TAIL_UP : неподвижен 1 с, углы = стоянка (хвостовое)
+    CHECK --> ROLL : то же (носовое)
+    CHECK --> ABORTED : не стоит как на калибровке — сигнал ×3
+    TAIL_UP --> ROLL : тангаж у горизонта
+    ROLL --> LIFTOFF : скорость отрыва / 2.5 с
+    LIFTOFF --> CLIMB : отрыв по барометру / предел + 3 с
+    CLIMB --> DONE : 30 м / 15 с без барометра
+    TAIL_UP --> ABORTED : газ вниз, связь, IMU, крен, курс, нос, 6 с
+    ROLL --> ABORTED : газ вниз, связь, IMU, крен, курс, нос, 15 с
+    LIFTOFF --> ABORTED : то же
+    ABORTED --> IDLE : газ внизу 1 с
+```
+
+Руль высоты на колёсах — напрямую (хвост вверх: от себя ≤ 250 мкс к тангажу
++1°; отрыв: цель растёт на 2°/с, у земли — не выше стоянки минус 3°), в
+наборе — ПИД к цели +8°; курс — руль направления и колесо. С запуска мотора
+горизонт ведёт только гироскоп (`ImuSensor::setAccelCorrection(false)`): разгон
+акселерометр принимает за задранный нос.
 
 ### Взлёт и посадка (контур обратной связи, не подключён)
 
@@ -584,7 +605,8 @@ stateDiagram-v2
 режимы со стабилизацией.
 
 Потребители реагируют одинаково: **нет датчика (`nullptr`) или он недоступен —
-никаких эффектов**, самолёт управляется как в MANUAL.
+никаких эффектов**, самолёт управляется как в MANUAL. Исключение — автовзлёт
+на полосе: IMU отказал — прерванный взлёт, мотор стоп.
 
 ### Связь (`IBusReceiver::isSignalLost()`)
 
@@ -604,6 +626,9 @@ stateDiagram-v2
 выключен ещё до чтения датчиков. Выход с пином `-1` (руль направления на C3)
 просто не подключается; `attached` в JSON показывает, выделен ли канал LEDC.
 Реальный импульс на каждом пине проверяет `printPulseSelfTest()` (консоль `p`).
+Сигнал мотором — `IServoOutput::stopPulses()` на выходе ESC (только без ARM):
+регулятор без импульсов решает, что сигнал потерян, а когда возвращается
+нейтраль, играет мелодию готовности.
 
 ---
 

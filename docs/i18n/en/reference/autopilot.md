@@ -104,7 +104,7 @@ the top row wins.
 
 ## `Autopilot`
 
-**File:** `autopilot/Autopilot.h` · **Depends on:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `SoaringController`, `AutoTrim`, the sensors (all nullable)
+**File:** `autopilot/Autopilot.h` · **Depends on:** `PidController`, `Navigation`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, the sensors (all nullable)
 
 ### Lifecycle
 
@@ -115,7 +115,7 @@ the top row wins.
 | `void setInputs(const PilotInputs&)` | this cycle's switches and knobs (before `update`) |
 | `void update(bool armed, bool linkLost, uint16_t pilotThrottleUs, const ControlCommand& sticks = {})` | once per cycle: sensors (always) → navigation and home → saving the trim on the ground → failsafe → geofence → mode → turn coordination → auto-trim |
 | `ControlCommand getCommand() const` | the final control surface commands (roll/pitch/yaw, µs) |
-| `uint16_t applyThrottle(uint16_t pilotUs) const` | the mode's throttle: `PILOT` — the pilot's throttle; `AUTO` — its own; `AT_LEAST` — not less than its own (automatic takeoff). ARM and `MOTOR_KILL` are handled by `FlightController` |
+| `uint16_t applyThrottle(uint16_t pilotUs) const` | the mode’s throttle: `PILOT` — the pilot’s throttle; `AUTO` — its own (auto takeoff included: the throttle stick only starts and aborts it). ARM and `MOTOR_KILL` are handled by `FlightController` |
 
 ### Modes
 
@@ -126,6 +126,10 @@ the top row wins.
 | `isFailsafeActive()`, `isFailsafeGliding()`, `isFailsafeReturning()` | failsafe on top of the mode |
 | `isAutoThrottle()`, `getThrottleCorrection()` | the mode's throttle (%, for the log and dashboard) |
 | `getLaunchState()`, `getSoaringState()` | the LAUNCH and SOARING state machines |
+| `getTakeoffStage()`, `getTakeoffAbortReason()` | the auto-takeoff stage and why it was aborted (`nullptr` — not aborted) |
+| `bool takeTakeoffRefusal()` | the auto takeoff refused at the pre-start check — `FlightController` plays a signal (taken once) |
+| `getLandingGear()`, `setLandingGear(LandingGear)` | landing gear (default `Config::LANDING_GEAR`; tests change it) |
+| `bool isGyroOnlyAttitude() const` | the horizon is currently driven by the gyro only (auto-takeoff acceleration window) |
 
 ### Outputs and diagnostics
 
@@ -153,7 +157,8 @@ the top row wins.
   speed, slower than the pitot/GPS threshold: only then is the trim written to
   flash.
 - Failsafe: with GPS and a home point — RTH with the motor, otherwise gliding;
-  an RTH that has begun is not abandoned because of a short GPS loss.
+  an RTH that has begun is not abandoned because of a short GPS loss. In AUTO_TAKEOFF on the runway (stages with `holdsGround()`) a link loss is an aborted takeoff, not a failsafe; during the climb it is the failsafe, and the climb continues once the link is back.
+- The “gyro only” window (`manageAccelCorrection()`): the auto-takeoff motor start switches the accelerometer off as the horizon reference (`ImuSensor::setAccelCorrection`); it comes back after a time from the start of the climb (`TAKEOFF_GYRO_ONLY_CLIMB_MS`), the overall limit, an aborted takeoff or DISARM — not on a mode change.
 
 ---
 
@@ -194,6 +199,28 @@ motor, pitch `LAUNCH_CLIMB_PITCH_DEG`) `→ DONE` (`LAUNCH_CLIMB_MS` or
 `LAUNCH_ALTITUDE_M`). Moving the sticks before the throw — cancel. Methods:
 `update(...)`, `reset()`, `getState()`, `motorOn()`, `pitchTargetDeg()`,
 `stateName()`.
+
+## `TakeoffController`
+
+**File:** `autopilot/TakeoffController.h` · **Depends on:** `Config`
+
+Auto takeoff from a runway — stages driven by the sensors, with no sensors or servos of its own: in come `Inputs` (ARM, link, the pilot’s throttle, angles and angular rates, load factor, parking angles, altitude, speed, the `STAB_GAIN` knob, time), out comes what to do in this tick.
+
+`Stage`: `IDLE` (motor stopped; throttle above `TAKEOFF_TRIGGER_US` after the throttle was down) `→ CHECK` (still for `TAKEOFF_CHECK_MS`, angles = parking; otherwise `ABORTED` and a signal) `→ TAIL_UP` (tail wheel: down elevator, tail up) `→ ROLL` (takeoff roll; `TD_ROLL_MS` / `TRI_ROLL_MS` or liftoff speed) `→ LIFTOFF` (the pitch target rises, near the ground no higher than the parking angle minus `TD_TAIL_CLEARANCE_DEG`) `→ CLIMB` (liftoff by barometer or by time; climb to `TAKEOFF_SAFE_ALTITUDE_M` / `TAKEOFF_CLIMB_MS`) `→ DONE`. `ABORTED` — an aborted takeoff; throttle down for 1 s — back to `IDLE`.
+
+| Method | Description |
+|---|---|
+| `void update(const Inputs&)` | once per tick: the stage transition, then the outputs of that stage; without ARM — `reset()` |
+| `void abort(const char* reason, uint32_t nowMs)` | abort from outside (link loss); in `IDLE`/`DONE` — nothing |
+| `void reset()`, `setGear()`, `getGear()` | |
+| `getStage()`, `stageName()`, `stageShort()`, `getAbortReason()` | the stage (the short name is for the OLED) |
+| `bool holdsGround() const` | on the ground (`IDLE`…`LIFTOFF`, `ABORTED`): a link loss is an aborted takeoff, the PID integrators stay at zero |
+| `isAirborneStage()`, `isDone()` | in the air (climb/done); takeoff finished |
+| `getThrottlePct()` | program throttle, % (ramped over `TAKEOFF_THROTTLE_RAMP_MS`) |
+| `getRollTargetDeg()`, `getPitchTargetDeg()` | roll target (on the wheels — the parking roll) and pitch target (climb — for the PID) |
+| `hasElevatorCommand()`, `getElevatorUs()` | on the wheels the elevator directly: toward the target at `TD_PITCH_KP` / `TD_ROLL_PITCH_KP` µs per degree, damping `TD_PITCH_KD`, at most `TD_TAIL_UP_ELEVATOR_US` down |
+| `hasRudderCommand()`, `getRudderUs()` | heading by the rudder and the wheel: `TAKEOFF_HEADING_KP` µs per degree, `TAKEOFF_YAW_RATE_KD` per °/s |
+| `bool takeRefusal()`, `bool takeGyroTrim(float[3])` | one-off events: refusal at the check; the residual gyro zero measured while still |
 
 ## `SoaringController`
 

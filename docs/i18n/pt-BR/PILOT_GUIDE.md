@@ -36,7 +36,7 @@ O kit da montagem atual (o firmware foi verificado nele):
 - **Um rádio FS-i6 + um receptor FS-iA6B** (protocolo iBUS, 10 canais). É preciso um único fio de dados: a porta iBUS SERVO. O rádio precisa permitir configurar o failsafe; essa configuração é obrigatória, veja a seção sobre failsafe.
 - **2 servos MG90S** para os ailerons, um para cada semiasa (dois servos independentes, e não um para as duas asas).
 - **1 servo MG90S** para o profundor.
-- **1 servo MG90S** para o leme; no mesmo eixo dele está montada a roda direcional do trem de pouso (para manobrar no solo).
+- **1 servo MG90S** para o leme; no mesmo eixo dele está montada a roda direcional do trem de pouso (para manobrar no solo). O trem de pouso: duas rodas na frente e uma bequilha (roda de cauda) direcional (`LANDING_GEAR = TAIL_WHEEL` em `Config.h`; um trem com roda de nariz é `NOSE_WHEEL`).
 - **Um controlador de velocidade (ESC) BLHeli 80A bidirecional** (modo Bidirectional/3D) com BEC de 5 V (o BEC alimenta os servos e o receptor). Um ESC unidirecional comum também serve — `ESC_BIDIRECTIONAL = false` no `Config.h`, veja [Reversão do motor](#reversão-do-motor-swd).
 - **Um motor D3548 1100KV** + **uma hélice 10x5**.
 - **Uma bateria LiPo 3S**.
@@ -217,7 +217,7 @@ Em resumo, a distribuição padrão (`include/config/Controls.h`):
 | **VrA / VrB** (CH9/10) | intensidade da estabilização / velocidade de cruzeiro |
 
 - **STABILIZE: "o stick define o ângulo".** Com o stick no fim do curso, 45° de rolagem e 25° de arfagem; ao soltar, o avião se nivela sozinho. O acelerador é seu.
-- **AUTO_TAKEOFF.** Depois do ARM nada acontece até você levantar o acelerador acima da metade. Em seguida: 0–1 s, acelerador subindo suavemente até 100%, asas niveladas; 1–3 s, arfagem de +15°; depois +10° até você mexer na SwC. Acelerador = o maior valor entre o stick e o programa.
+- **AUTO_TAKEOFF.** Decolagem da pista em etapas. Depois do ARM o motor fica parado até você levantar o acelerador acima da metade; o avião verifica por ~1 s se está como na calibração e depois faz tudo sozinho: cauda para cima com o profundor picando, corrida, decolagem pela asa, subida até 30 m, e então mantém o rumo e a altitude. O acelerador é do programa; acelerador para baixo antes de decolar = decolagem abortada. Precisa da [calibração em solo do avião](#calibração-em-solo-do-avião-horizonte-e-atitude-em-solo).
 - **RTH.** Rumo ao ponto do ARM, altitude de 40 m, círculos sobre o ponto de origem. Precisa de um GPS com fix 3D **antes do ARM**.
 
 Os 12 modos (ALT_HOLD, ACRO, CRUISE, LOITER, LAUNCH manual, AUTO_LAND, SOARING, RESCUE…), o que cada um exige em sensores e como colocá-lo em uma chave estão em [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md). Um modo escolhido pelo dashboard ou pela estação de solo permanece até você mexer na chave de modo.
@@ -340,6 +340,8 @@ A tecla age na hora; não é preciso Enter (em um monitor que envia por linha, d
 | `s` | status detalhado de todos os sensores (inclusive os contadores de erros do I2C) |
 | `i` | recalibrar o giroscópio e fazer a verificação pré-voo do IMU: 2 s, sem mexer no avião |
 | `o` | **calibração da instalação do IMU**: uma vez, depois de montar a placa no avião (veja abaixo) |
+| `c` | **calibração em solo do avião**: horizonte e atitude em solo (veja abaixo); se estiver em andamento, cancela |
+| `e` | sinal: aceno das superfícies e melodia do ESC; verifique se o ESC a toca (tire a hélice!) |
 | `m` | calibração da bússola: por 15 s, gire a placa ou o avião em todos os eixos. O resultado é salvo na flash e sobrevive a uma reinicialização |
 | `p` | verificação das saídas: o pulso real em cada pino |
 
@@ -365,13 +367,26 @@ Enquanto o menu está aberto, o log fica em silêncio para que o menu não suma 
 A placa com o IMU pode ser instalada no avião **do jeito que for conveniente**: em qualquer ângulo, de lado, de cabeça para baixo; o firmware descobre sozinho onde ficam o nariz e o topo dela. Isso se faz **uma única vez** depois da instalação (e de novo, se a placa for mudada de lugar):
 
 1. O avião sobre a mesa, sem precisar do rádio, com o motor desarmado. No monitor serial, pressione `o`.
-2. **Passo 1:** o avião fica nivelado, como em voo horizontal (se tiver roda de cauda, calce algo sob a cauda). Não encoste nele por cerca de 3 s.
+2. **Passo 1:** o avião fica nivelado, como em voo horizontal (um avião com bequilha pode ficar sobre as rodas: o horizonte será definido depois pela calibração em solo do avião). Não encoste nele por ~3 s.
 3. **Passo 2:** levante o **nariz** de 30 a 60°, com as asas niveladas, e segure parado por cerca de 1 s.
 4. **Passo 3:** abaixe o nariz de volta, baixe a **asa direita** de 30 a 60° e segure por cerca de 1 s.
 
 Cada passo é contabilizado automaticamente (no log aparece "засчитано", ou seja, "contado"). No fim, é mostrado o resultado ("нос = +Y чипа, верх = −Z чипа", ou seja, "nariz = +Y do chip, topo = −Z do chip") e "установка сохранена" ("instalação salva"). Se você confundiu algo (abaixou o nariz em vez de levantar, a asa esquerda em vez da direita), a calibração é recusada com uma explicação; basta repetir `o`. O resultado fica na flash e sobrevive a uma reinicialização. Verificação: nariz para cima → o P no OLED fica positivo; asa direita para baixo → o R fica positivo.
 
-Enquanto não houver calibração da instalação, vale o método antigo: a placa deve ficar com o chip para cima, e a rotação é `IMU_ROTATION_CW_DEG` em `Config.h`.
+Enquanto não houver calibração da instalação, vale o método antigo: a placa deve ficar com o chip para cima, e a rotação é `IMU_ROTATION_CW_DEG` em `Config.h`. Depois de `o`, refaça a calibração em solo do avião: a atitude em solo foi medida a partir do horizonte antigo.
+
+### Calibração em solo do avião: horizonte e atitude em solo
+
+Um avião com bequilha fica no solo com o nariz levantado; quanto, ninguém sabe de antemão. A calibração mede isso sozinha e grava na flash: o **horizonte** (0° de arfagem e rolagem para todos os modos, e não mais "como estava ao ligar") e a **atitude em solo**, da qual a decolagem automática tira quanto levantar a cauda e onde a bequilha tocaria a pista. Uma vez depois da montagem (e de novo se a placa mudou de lugar ou depois de `o`). Não precisa de notebook:
+
+1. O avião em chão plano, o rádio ligado, **sem ARM**, acelerador para baixo.
+2. **SwB (flaps) três vezes seguidas para baixo e para cima** (em até 4 s), ou `c` no console. Um sinal: começou.
+3. **Passo 1: horizonte.** Levante a cauda até a fuselagem ficar na horizontal, como em voo (rodas principais no chão; um app de nível de bolha no celular apoiado sobre a fuselagem ajuda), e segure parado por ~2 s. Repare de passagem no espaço entre a hélice e o chão: é mais ou menos assim que o avião vai rolar na decolagem. Um sinal: aceito.
+4. **Passo 2: atitude em solo.** Apoie o avião nas três rodas e tire as mãos. Depois de ~2 s, dois sinais: pronto, o log mostra "Стоянка: нос вверх на 9.4°, крен 0.3°" ("no solo: nariz para cima 9,4°, rolagem 0,3°").
+
+Três sinais: um erro, nada é gravado (o motivo está no console): o avião não ficou parado em um minuto, no passo 2 o nariz quase não está levantado (a cauda não foi baixada) ou passa de 25°, ou a rolagem passa de 10°. Para cancelar: o mesmo gesto na SwB, ou mexer rapidamente na chave de ARM (esse movimento não arma). Com roda de nariz (`NOSE_WHEEL`), o passo 1 pode ser feito direto sobre as rodas se o avião estiver nivelado: o passo 2 é aceito sozinho depois de 5 s. A chave do gesto é `CAL_SWITCH` em `Config.h` (a SwD não: ela comanda a reversão do motor).
+
+**Sinais.** Um sinal: o profundor e o leme dão um aceno (no passo 1 você está segurando a cauda e sente) e, sem ARM, o motor canta: os pulsos para o ESC somem por um segundo, o ESC acha que perdeu o sinal e, quando os pulsos voltam, toca a melodia de pronto, como ao ligar. O motor não gira. Por PWM um ESC não conhece outro comando de "bipe", então teste na bancada (**sem hélice**): tecla `e` no console; a melodia tem que tocar. Se não tocar, ponha `SIGNAL_MOTOR = false` em `Config.h`, e ficam os acenos. Um buzzer ou um LED com resistor no PE15 (S3: GPIO38) acende durante os acenos; o LED D2 da própria DevEBox está no PA1, a saída do aileron direito, e por isso não serve para sinais. Enquanto um sinal toca, o ARM é recusado: o ESC talvez ainda não tenha se rearmado. No OLED, a linha dos ângulos mostra `CAL1`, `CAL2` e, no fim, `CALOK` ou `CALER`.
 
 ### Verificação pré-voo ao ligar
 
@@ -381,7 +396,7 @@ A cada vez que é ligado, o IMU gasta cerca de 2 s calibrando o giroscópio e, a
 - o acelerômetro em repouso marca 1g;
 - **o "topo" coincide com a calibração da instalação**: se a placa foi mudada de lugar ou virada, isso aparece na hora (um avião sobre a roda de cauda ou numa ladeira não é problema; a tolerância é de 45°).
 
-**Ligue o avião com ele parado.** Não precisa estar nivelado, se a instalação estiver calibrada (senão, a posição ao ligar vira o horizonte). O resultado aparece no log: `предполётная проверка пройдена` ("verificação pré-voo aprovada") ou `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` ("VERIFICAÇÃO PRÉ-VOO REPROVADA", seguida do motivo). Se não passou, **o ARM em STABILIZE e AUTO_TAKEOFF é proibido** (o motivo é impresso quando você tenta), e o piloto automático não dá correções em nenhum modo, nem no planeio por perda de link: com ângulos errados ele comandaria no sentido contrário. O ARM em MANUAL continua possível. Para corrigir: deixe o avião parado e reconecte a bateria (ou pressione `i`); se a placa foi mudada de lugar, pressione `o`.
+**Ligue o avião com ele parado.** Não precisa estar nivelado, se a instalação estiver calibrada (`o` ou a calibração em solo do avião; senão, a posição ao ligar vira o horizonte). O resultado aparece no log: `предполётная проверка пройдена` ("verificação pré-voo aprovada") ou `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` ("VERIFICAÇÃO PRÉ-VOO REPROVADA", seguida do motivo). Se não passou, **o ARM em STABILIZE e AUTO_TAKEOFF é proibido** (o motivo é impresso quando você tenta), e o piloto automático não dá correções em nenhum modo, nem no planeio por perda de link: com ângulos errados ele comandaria no sentido contrário. O ARM em MANUAL continua possível. Para corrigir: deixe o avião parado e reconecte a bateria (ou pressione `i`); se a placa foi mudada de lugar, pressione `o`.
 
 ### Tela OLED
 
@@ -389,7 +404,7 @@ Se o OLED estiver conectado (GPIO1/GPIO2), ele mostra o seguinte 5 vezes por seg
 
 ```
 RX ok disarm STAB        <- link / ARM / modo / REV: motor para trás (se o link se perde, a linha fica invertida)
-R  +1.2 P  -0.4          <- rolagem / arfagem, °
+R  +1.2 P  -0.4 ROLL     <- rolagem / arfagem, °; passo da calibração ou etapa da decolagem
 Alt +0.3 Vz +0.1         <- altitude em relação ao ponto de ligação, m / velocidade vertical, m/s
 Hdg 123  Thr 1000        <- rumo pela bússola / acelerador 1000..2000 = 0..100% (para trás também), µs
 L1500 R1500 E1500        <- PWM dos ailerons e do profundor, µs
@@ -470,6 +485,7 @@ Leia esta seção inteira **antes** de ligar pela primeira vez, e não depois de
   - em STABILIZE, incline o avião com a asa direita para baixo → **aileron direito para baixo, esquerdo para cima** (as superfícies o devolvem ao horizonte); nariz para baixo → **profundor para cima**.
   Se algo estiver errado, mude uma linha no bloco “Reversão” de `include/config/Config.h`: cada aileron, o profundor, o leme, AUX, o motor (`MOTOR_REVERSED`) e os flaps (`FLAPS_REVERSED`) são invertidos separadamente, nada mais é afetado. Não inverta servos no rádio — o stick e o piloto automático vão divergir; um canal ao contrário (stick, chave, potenciômetro) — `CHANNEL_REVERSED`, no mesmo lugar.
 - [ ] Ao ligar, o avião estava parado e não há `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА` no log nem no painel; ao inclinar o avião nas mãos, o P e o R no OLED mudam no sentido certo.
+- [ ] Para o AUTO_TAKEOFF: a calibração em solo do avião está feita (ao ligar, o log mostra "стоянка на колёсах — тангаж …"), a bequilha está inteira, o avião está na pista contra o vento. As primeiras corridas com limite de acelerador (potenciômetro `THROTTLE_LIMIT`) e a mão no acelerador: para baixo = decolagem abortada.
 - [ ] O failsafe está configurado no rádio e foi testado: desligue o rádio → `RX LOST` no OLED ou no Serial (veja a seção sobre failsafe).
 - [ ] O alcance do rádio foi testado e a bateria do rádio está carregada.
 - [ ] Ao ligar, o log mostra `BlackBox: ... стёрто впереди N МБ (≈M мин)`: há espaço para o voo. O voo anterior foi baixado (`python tools/blackbox.py download`), se você precisar dele.
@@ -497,6 +513,12 @@ Faça a calibração da instalação do IMU (`o`, veja "Instalação do IMU"): e
 
 **ARM recusado: "IMU: ..."**
 A verificação pré-voo do IMU não passou (veja "Verificação pré-voo ao ligar"): o avião foi mexido ao ligar; deixe-o parado e reconecte a bateria; o "topo" não coincide com a calibração: a placa foi mudada de lugar, faça `o`; "a placa não está com o chip para cima": a instalação não está calibrada, faça `o`.
+
+**ARM recusado: "нет калибровки шасси" (não há calibração do trem)**
+O AUTO_TAKEOFF com bequilha não sabe onde a cauda tocaria a pista. Faça a calibração em solo do avião: SwB três vezes para baixo e para cima sem ARM (ou `c`).
+
+**"Автовзлёт: старт отменён — тангаж не стояночный" (partida cancelada: a arfagem não é a da atitude em solo; as superfícies deram três acenos)**
+O avião não está como na calibração: fora das três rodas, rampa, bequilha quebrada ou placa deslocada. Deixe-o nivelado; se a placa mudou de lugar, refaça `o` e a calibração em solo.
 
 **Um servo ou o ESC reage ao stick errado / não reage**
 O comando `p` no console mede o pulso real em cada saída (GPIO4–7) e o compara com o esperado. Se estiver tudo "OK" e o servo não se mexer, o problema está além da placa: (1) o servo não está alimentado (BEC/5V, terra comum); (2) o fio de sinal está no pino errado; (3) a mecânica travou. "НЕ СОВПАДАЕТ" ("NÃO CONFERE") indica que o problema está no firmware ou nos periféricos: avise o desenvolvedor.

@@ -81,8 +81,8 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 | ファイル | 内容 |
 |---|---|
 | `ChipEmulators.h` | LSM6DSV、ICM-45686（IPREG の間接レジスタ付き）、QMC6309、SPL06-001、BMP581、u-blox の NAV-PVT フレーム。I2C または SPI 上のレジスタマップで、データは `World`「世界」（角度と角速度、高度、対気速度、針路、座標）から得て、`IMU_ROTATION_CW_DEG` を考慮したチップの軸で返します |
-| `PlaneSim.h` | 約 1.2 kg の飛行機のモデル：質点 + ロール / ピッチの回転、失速を含む CL(α)、抗力、推力、風、サーマル、地面 |
-| `SimHarness.h` | 閉ループ：送信機 → iBUS フレーム → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面の振れ → `PlaneSim` → センサー（ノイズのある 2 つの気圧センサーによるピトー管を含む）。`OPENPLANE_SIM_DIR` を指定すると CSV の軌跡を出力します |
+| `PlaneSim.h` | 約 1.2 kg の飛行機のモデル：質点 + ロール / ピッチの回転、失速を含む CL(α)、抗力、推力、風、サーマル、地面、尾輪または前輪の降着装置：機体は主輪の上で前後に揺れ、尾輪荷重、尾部の接地、プロペラの接触を数え、プロペラのトルクと操向輪による地上でのヨーも扱う |
+| `SimHarness.h` | 閉ループ：送信機 → iBUS フレーム → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面の振れ → `PlaneSim` → センサー（ノイズのある 2 つの気圧センサーによるピトー管を含む）。`OPENPLANE_SIM_DIR` を指定すると CSV の軌跡を出力します、`realisticImu` では本物の `AttitudeEstimator` が比力から角度を計算する：滑走路での加速を機上と同じように受ける |
 
 `test/native/helpers/TestSupport.h` は、各セットが共有する部分です。`resetWorld()`（`setUp()` から呼ばれます）、`FakeUart`/`FakeServo`/`FakeBoard` とセンサー（`FakeImu`、`FakeBaro`、`FakeMag`、`FakeGps`）の代役、フレームの組み立て用 `ibusFrame()`、実物の `Esp32I2CBus`/`Esp32SpiBus` とシミュレートされたチップを持つ `*RegisterDevice` の上にドライバーを載せるテスト台 `I2cRig`/`SpiRig` です。
 
@@ -94,21 +94,22 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 
 | セット | テスト数 | 検証内容 |
 |---|---|---|
-| `native/test_hal` | 17 | `II2CBus` の補助機能（NACK、短い読み出し：バッファには触れない）、`I2cRegisterDevice`、`SpiRegisterDevice`（読み出しビット、BMP388 のダミーバイト）、`Esp32I2CBus`（5 ms のタイムアウト）、`Esp32SpiBus`（モード 0〜3）、`Esp32UartPort`（8N1、ピン）、`Esp32ServoOutput`（50 Hz/14 ビット、パルスの制限、LEDC の故障、入力バッファ経由の測定）、`Esp32Board`（バス、UART、チャンネル順、AUX、ブザー） |
+| `native/test_hal` | 18 | `II2CBus` の補助機能（NACK、短い読み出し：バッファには触れない）、`I2cRegisterDevice`、`SpiRegisterDevice`（読み出しビット、BMP388 のダミーバイト）、`Esp32I2CBus`（5 ms のタイムアウト）、`Esp32SpiBus`（モード 0〜3）、`Esp32UartPort`（8N1、ピン）、`Esp32ServoOutput`（50 Hz/14 ビット、パルスの制限、LEDC の故障、入力バッファ経由の測定）、`Esp32Board`（バス、UART、チャンネル順、AUX、ブザー）、モーターの合図用の「パルスなし」（`stopPulses()`） |
 | `native/test_rc` | 16 | `RcChannelState`、`RcInput`、iBUS の解析：分割されて届くフレーム、CRC、12 ビットの値、送信機のフェイルセーフ、500 ms のタイムアウト（`micros()` のオーバーフローをまたぐ場合も）、ゴミデータ、再同期 |
-| `native/test_control` | 26 | フラップ（速度、初回の呼び出し、一時停止）、ミキサー（符号、リバース、フラッペロン）、スロットル、ARM のステートマシンとモードのセンサー確認、出力テーブルとパルスの自己診断、双方向 ESC のパルス、モーター逆転は DISARM 中のみで方向変更後は ARM 禁止、リバースのヘルパー（パルスの反転、チャンネルの反転、モーターの反転） |
-| `native/test_autopilot` | 22 | PID（センサーの角速度に基づく D 項、積分、アンチウィンドアップ、`dt`）、角度モードとしての STABILIZE、時間による自動離陸、昇降舵による ALT_HOLD、信号喪失時の滑空 |
+| `native/test_control` | 26 | フラップ（速度、初回の呼び出し、一時停止）、ミキサー（符号、リバース、フラッペロン）、スロットル、ARM のステートマシンとモードのセンサー確認、出力テーブルとパルスの自己診断、双方向 ESC のパルス、モーター逆転は DISARM 中のみで方向変更後は ARM 禁止、リバースのヘルパー（パルスの反転、チャンネルの反転、モーターの反転）、尾輪の AUTO_TAKEOFF は降着装置の校正があるときだけ |
+| `native/test_autopilot` | 22 | PID（センサーの角速度に基づく D 項、積分、アンチウィンドアップ、`dt`）、角度モードとしての STABILIZE、自動離陸（開始までモーター停止、プログラムのスロットル、DISARM）、昇降舵による ALT_HOLD、信号喪失時の滑空、上昇中の信号喪失 — 上昇を続ける |
 | `native/test_autopilot_modes` | 31 | 全 12 モードと、センサーがないときの各モードの反応、割り当て表と `static_assert`、機能とダイヤル、ナビゲーション（針路、円、ホーム地点、ジオフェンス）、failsafe RTH/滑空、手投げ発進、ソアリング、オートトリム（書き込みは地上のみ） |
-| `native/test_flight_controller` | 15 | 実物のクラスでの `FlightController` の 1 周期：優先順位は 信号喪失 > ARM > スティック/オートパイロット > スロットル、AUX、`MOTOR_KILL`、ブザー。SwD の逆転：DISARM 中のみ、3 s は ARM 不可、後退はスロットル 50%、オートパイロットのスロットルなし、通信途絶でモーター停止。スロットル上限ダイヤルが許された範囲をスティックの全ストロークに引き伸ばす |
+| `native/test_flight_controller` | 20 | 実物のクラスでの `FlightController` の 1 周期：優先順位は 信号喪失 > ARM > スティック/オートパイロット > スロットル、AUX、`MOTOR_KILL`、ブザー。SwD の逆転：DISARM 中のみ、3 s は ARM 不可、後退はスロットル 50%、オートパイロットのスロットルなし、通信途絶でモーター停止。スロットル上限ダイヤルが許された範囲をスティックの全ストロークに引き伸ばす、SwB の操作とコンソールによる地上校正、出力への合図（舵面のうなずき、ESC のパルスを止めるのは ARM なしのときだけ）、校正中と合図中の ARM 禁止、ARM の切り替えで校正を中止、離陸拒否の合図は ESC に触れずにうなずくだけ、通信がなくても合図は続く |
 | `native/test_imu` | 21 | MPU6050/6500/9250 と ICM-42688：識別、レジスタ、スケール、軸の回転と航空機の符号、バスのエラー、ジャイロの校正と飛行前チェック、3 つの姿勢による取り付け校正、NVS、姿勢フィルター |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`、I2C と SPI の BMP388、Bosch の基準実装との照合による BME280/BMP280、コンパス（針路、NVS に保存するハードアイアン校正）、u-blox M10（CFG-VALSET、NAV-PVT、壊れたフレーム、タイムアウト）、`SensorSelection` |
 | `native/test_sensors_new` | 23 | LSM6DSV（16X/32X、代替アドレス、SPI）、ICM-45686（間接レジスタ）、QMC6309、SPL06-001（データシートの式）、BMP581（DRDY と予備経路）、ピトー管（ゼロ点、フィルター、密度、ホースの取り違え、古いデータ、2 つの気圧センサーのノイズを含む「飛行」） |
 | `native/test_storage` | 16 | `KeyValueStore`（再読み込み、摩耗：同じ値は書かない、データを失わないオーバーフロー、CRC、消去中の電源断、ゴミデータ、フォーマットのバージョン）、`KvPreferences`（ESP32 の NVS と同じ挙動） |
 | `native/test_mavlink` | 20 | pymavlink の基準フレームと突き合わせるコーデック（v1、v2、署名付き）、CRC、再同期、テレメトリー：ストリームの周波数、HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS、PID パラメーター（一覧、読み出し、書き込み、不正な値の拒否）、地上からのモード変更、地上からの ARM は拒否、ミッションは 0 件、あふれた UART バッファがループを止めないこと |
-| `native/test_blackbox` | 19 | ブラックボックス：フォーマットと CRC、NOR のフェイク上のセクターリング（消去なしの新しいパーティション、ゴミは必ず消去、古いフライトは丸ごと、かつ空き領域のためだけに消去、最新のフライトには触れない、リング末尾をまたぐ書き込み、再起動後の先頭位置、電源断、書きかけのレコードを CRC で検出）、本物の `FlightController`/`Autopilot` でのフライト記録：ARM とスロットルでの開始（プリ録画付き）、DISARM と「地上に静止」のあとの停止、信号喪失では止まらない、異常再起動のあとの記録、手動開始、イベント、バッテリー、飛行中にフラッシュが尽きる、パーティションより長いフライト、CRC 付きフレームでの吐き出しと速度の切り替え、コンソールのメニュー `k`、パーティションがない場合は無効 |
+| `native/test_blackbox` | 20 | ブラックボックス：フォーマットと CRC、NOR のフェイク上のセクターリング（消去なしの新しいパーティション、ゴミは必ず消去、古いフライトは丸ごと、かつ空き領域のためだけに消去、最新のフライトには触れない、リング末尾をまたぐ書き込み、再起動後の先頭位置、電源断、書きかけのレコードを CRC で検出）、本物の `FlightController`/`Autopilot` でのフライト記録：ARM とスロットルでの開始（プリ録画付き）、DISARM と「地上に静止」のあとの停止、信号喪失では止まらない、異常再起動のあとの記録、手動開始、イベント、バッテリー、飛行中にフラッシュが尽きる、パーティションより長いフライト、CRC 付きフレームでの吐き出しと速度の切り替え、コンソールのメニュー `k`、パーティションがない場合は無効、地上校正と自動離陸の段階のイベント |
 | `native/test_blackbox_scan` | 3 | 起動時のリングの抽出照合と全照合の比較：リングの 300 通りのランダムな履歴 × 5 段階のプローブ（先頭位置、番号、フライト一覧が一致し、状況が合わないときは全照合に譲る）と、64 MB の SD 領域でのコスト（32,000 回ではなく約 530 回の読み出し） |
-| `native/test_telemetry` | 28 | `LoopStats`、`LogSettings`（NVS、バージョン）、`DebugLogger`（すべてのチャンネル、NAV）、`DebugConsole`（メニュー、ホットキー、バスの探索 `b`、ARM 中は禁止、保存は ARM していないときのみ）、`WebDebugServer`（ルート、JSON、メールボックス）、`OledDisplay`（I2C 上のバイト列、フレーム、信号喪失時の反転） |
-| `native/test_sim` | 15 | 機体モデルを使った、ファームウェア全体の閉ループ飛行：バンクからの回復、横風の中の CRUISE、LOITER、RTH、failsafe RTH/滑空、ジオフェンス、滑走路からの自動離陸、手投げ発進、自動着陸、サーマル、スパイラルからの RESCUE、速度保持と失速防止、ループ内の本物のピトー管、「ゆがんだ」機体のオートトリム、飛行中のセンサー故障（IMU、気圧センサー、ピトー管、GPS） |
+| `native/test_telemetry` | 30 | `LoopStats`、`LogSettings`（NVS、バージョン）、`DebugLogger`（すべてのチャンネル、NAV）、`DebugConsole`（メニュー、ホットキー、バスの探索 `b`、ARM 中は禁止、保存は ARM していないときのみ）、`WebDebugServer`（ルート、JSON、メールボックス）、`OledDisplay`（I2C 上のバイト列、フレーム、信号喪失時の反転）、コンソールの校正 `c` と合図 `e`、ログ行 `AP` の離陸段階、OLED の校正ステップと離陸段階 |
+| `native/test_sim` | 18 | 機体モデルを使った、ファームウェア全体の閉ループ飛行：バンクからの回復、横風の中の CRUISE、LOITER、RTH、failsafe RTH/滑空、ジオフェンス、尾輪の自動離陸（尾輪荷重は駐機時の荷重を超えず、プロペラも尾部も滑走路に触れず、本物の姿勢フィルター。気圧センサーあり・なし）、前輪の自動離陸、スロットルで中止した離陸、手投げ発進、自動着陸、サーマル、スパイラルからの RESCUE、速度保持と失速防止、ループ内の本物のピトー管、「ゆがんだ」機体のオートトリム、飛行中のセンサー故障（IMU、気圧センサー、ピトー管、GPS） |
+| `native/test_takeoff` | 23 | 自動離陸と機体の地上校正：「尾部を上げた」姿勢からの水平基準と駐機姿勢（`ImuOrientation`）、滑走中の加速度センサーなしの姿勢フィルター、本物の `ImuSensorBase` のフラッシュでの降着装置の校正（車輪で立ったまま電源を入れたときの水平基準、`o` で駐機姿勢を消去、ジャイロのゼロ点補正）、`GroundCalibration`（2 ステップ、角度チェック、中止、スイッチ操作）、`SignalPlayer`、尾輪と前輪の `TakeoffController` の各段階、舵面の制御則、離陸中止（スロットル、通信、IMU の故障、ロール、針路、機首、尾部、浮揚なし）、気圧センサーなしでは時間で判断、「ジャイロのみ」の時間帯 |
 | `native/test_feedback_units` | 14 | フィードバックの各モジュール単体：速度の取得元、空中/地上の判定、RLS 推定、コントローラー、失速の兆候、離陸/着陸の中止 |
 | `native/test_app` | 10 | ESP32-S3 上の `src/main.cpp`、ベンチ用セット MPU6500/BMP581/QMC5883P/OLED：`loop()` の周期、送信機 → サーボ、ARM、モード、信号喪失、コンソール、ダッシュボード、画面、ブラックボックス（コア 0 のタスク、スロットルでの記録、DISARM 後のフライト、`bb list`） |
 | `native/test_app_lsm6dsv_pitot` | 9 | ESP32-S3 上の `src/main.cpp`、飛行用セット：LSM6DSV + QMC6309 + SPL06 + ピトー管内の BMP581 + GPS：すべてのチップの識別、ピトー管のゼロ点と速度、高度、GPS によるホーム地点、チップの角度による STABILIZE、ホーム地点への RTH、バスの探索、ダッシュボード。飛行中の SwD（逆転）は DISARM まで効かない |
@@ -117,10 +118,10 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743 と **SPI 接続**の ICM-45686 および BMP581 + QMC6309：起動時のフラッシュ破損、GCS からの ALT_HOLD が高度を保持、信号喪失 → RTH、MAVLink で確認できること、壊れたイメージの書き直し |
 | `native_stm32/test_blackbox_sd` | 29 | SD カード上のブラックボックス：FAT32（MBR あり・なし、2 クラスターにまたがるディレクトリ、ノイズのエントリ、他のデータ/断片化した/空のボリューム）、`SdFileRegion`（不完全なブロック、キャッシュ、消去、境界、故障）、偽の `HAL_SD` の上で動く本物の `Stm32SdCard` ドライバー（4 ビット、予備の速度、リトライ、ビジー状態のカード、アラインされていないバッファ）、カード上のリング（再起動、電源断、照合のコスト）、「リングは空」の目印、`FlightController` でのフライト記録、`RCC->RSR` で判別する異常再起動、バッテリーの ADC、飛行中のカードのエラー、遅いカード、コンソールからの吐き出し、`D` キー |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | カードありの `src/stm32/main.cpp`：起動時にカードとファイルが見つかる、`bbox` タスクがフライトを書き込む、ループの周期が伸びない、`bb list` |
-| `native_stm32/test_app_stm32_no_sd` | 2 | カードなしの `src/stm32/main.cpp`：ブラックボックスは無効になり理由を説明する、飛行機は飛ぶ、メニュー `k` は壊れない |
+| `native_stm32/test_app_stm32_no_sd` | 3 | カードなしの `src/stm32/main.cpp`：ブラックボックスは無効になり理由を説明する、飛行機は飛ぶ、メニュー `k` は壊れない、PD14 での出力の自己診断（コアの `pulseIn()` の不具合を回避）、モーターの合図 `e` |
 | `test_feedback` | 10 | フィードバックループを備えた飛行機の閉ループシミュレーション（PC とボードの両方） |
 | `test_imu_orientation` | 5 | 300 通りのランダムな取り付けでの IMU の取り付け校正（PC とボードの両方） |
-| **合計** | **395** | `native` に 348 + `native-stm32` に 47（さらにボード専用が 9：`test_blackbox_sd`） |
+| **合計** | **431** | `native` に 383 + `native-stm32` に 48（さらにボード専用が 9：`test_blackbox_sd`） |
 
 ### STM32 ボード上のテスト
 
@@ -167,18 +168,19 @@ DevEBox H743 + 16 GB カードでの結果（2026-10-02）：`test_blackbox_sd` 
 
 | レイヤー | 行 | 分岐 |
 |---|---|---|
-| `autopilot` | 920/943 (97.6%) | 645/731 (88.2%) |
-| `autopilot/feedback` | 683/702 (97.3%) | 501/570 (87.9%) |
-| `control` | 252/256 (98.4%) | 171/189 (90.5%) |
-| `hal` | 98/102 (96.1%) | 26/26 (100%) |
-| `hal/esp32` | 101/102 (99.0%) | 21/22 (95.5%) |
-| `hal/stm32` | 149/158 (94.3%) | 35/52 (67.3%) |
-| `rc` | 92/92 (100%) | 41/42 (97.6%) |
-| `sensors`（すべて） | 1444/1446 (99.9%) | 716/835 (85.7%) |
-| `storage` | 220/220 (100%) | 158/178 (88.8%) |
-| `telemetry` | 1413/1440 (98.1%) | 1123/1269 (88.5%) |
-| `src`（`main.cpp`、`stm32/main.cpp`） | 118/123 (95.9%) | 20/29 (69.0%) |
-| **合計** | **5490/5584 (98.3%)** | **3457/3943 (87.7%)**、関数 877/902 (97.2%) |
+| `autopilot` | 1328/1395 (95.2%) | 921/1039 (88.6%) |
+| `autopilot/feedback` | 682/713 (95.7%) | 502/571 (87.9%) |
+| `config` | 2/2 (100%) | 2/2 (100%) |
+| `control` | 561/584 (96.1%) | 438/469 (93.4%) |
+| `hal` | 238/301 (79.1%) | 130/168 (77.4%) |
+| `hal/esp32` | 117/148 (79.1%) | 32/38 (84.2%) |
+| `hal/stm32` | 241/288 (83.7%) | 115/144 (79.9%) |
+| `rc` | 93/100 (93.0%) | 44/46 (95.7%) |
+| `sensors`（すべて） | 1533/1625 (94.3%) | 835/994 (84.0%) |
+| `storage` | 350/364 (96.2%) | 275/334 (82.3%) |
+| `telemetry` | 2775/2920 (95.0%) | 2082/2464 (84.5%) |
+| `src`（`main.cpp`、`stm32/main.cpp`） | 145/150 (96.7%) | 26/32 (81.2%) |
+| **合計** | **8065/8590 (93.9%)** | **5402/6301 (85.7%)**、関数 1204/1245 (96.7%) |
 
 まだカバーされていない部分とその理由：
 
@@ -186,7 +188,8 @@ DevEBox H743 + 16 GB カードでの結果（2026-10-02）：`test_blackbox_sd` 
 - **ボードに依存する部分**：ピンのない出力（`PIN_RUDDER = -1` になるのは C3 だけ）、TX ピンのない GPS（C3）。ネイティブテストは S3、38 ピン、STM32 のピン配置を動かしますが、C3 は動かしません（C3 はビルドマトリクスで確認します）。
 - **STM32**：コアのエラー分岐（ピンにタイマーがない、タイマーのプールを使い切った）、メッセージ `FreeRTOS не запустился`（「FreeRTOS が起動しなかった」）：PC では `vTaskStartScheduler()` は必ず戻ってきます。
 - **防御用の分岐**で、公開 API からは到達できないもの：列挙型に対する `switch` の `default`/`Count`、`return "?"`。
-- 実行可能な行を持たないファイル（`Config.h`、`Channels.h`、`FeedbackConfig.h`、構造体 `ControlCommand`/`FlightOutputState`/`FlightSnapshot`/`FeedbackOutput`/`PhaseTargets`、`SensorSelection.h` のマクロ、ダッシュボードの HTML）はレポートに現れません。テストにはコンパイルされますが、gcov が数えるものがないためです。
+- **インターフェースのデストラクターと既定の実装**（`IBoard`、`IUartPort`、`ImuSensor` など）：すべての実装がこれらをオーバーライドしますが、`-fkeep-inline-functions` では gcov がこれらの行も数えます。
+- 実行可能な行を持たないファイル（`Channels.h`、`FeedbackConfig.h`、構造体 `ControlCommand`/`FlightOutputState`/`FlightSnapshot`/`FeedbackOutput`/`PhaseTargets`、`SensorSelection.h` のマクロ、ダッシュボードの HTML）はレポートに現れません。テストにはコンパイルされますが、gcov が数えるものがないためです。
 
 ---
 

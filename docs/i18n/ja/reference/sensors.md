@@ -49,6 +49,12 @@
 | `void setYaw(float)` | 方位を設定します（たとえば起動時にコンパスから） |
 | `virtual void calibrateOrientation()` | 基板の取り付けの較正（既定では未対応） |
 | `virtual const char* getPreflightProblem() const` | 飛行前チェックで見つかった問題、または `nullptr`（既定は `nullptr`） |
+| `virtual bool readChipUp(float[3]) const` | 地上校正：チップの軸での加速度センサーの最新値、g、補正なし（既定は `false`） |
+| `virtual bool getOrientation(ImuOrientation&) const` | 基板の現在の取り付け（既定は `false`：地上校正に非対応） |
+| `virtual bool setGroundCalibration(const ImuOrientation& level, const float parkChipUp[3])` | 水平基準と駐機姿勢を採用し、フラッシュに保存 |
+| `virtual bool getParkingAttitude(float& pitch, float& roll) const` | 車輪で立ったときの姿勢、水平基準からの °。`false` は降着装置の校正なし |
+| `virtual void setAccelCorrection(bool)` | 自動離陸：`false` なら水平基準をジャイロだけで求める |
+| `virtual void trimGyroBias(const float residualDps[3])` | 静止した機体の平均角速度でジャイロのゼロ点を補正（軸と符号は `ImuData` と同じ） |
 
 ### `BarometerSensor : Sensor`
 
@@ -163,6 +169,9 @@ Y は左）に変換します。`rotationCwDeg` は、チップの X 軸が向�
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | 鉛直軸まわりに 90° 刻みで回転します。基板はチップが上向き |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | 3つの姿勢からの較正（チップの軸での、加速度計の「上」の読み値）。`nullptr` なら成功、そうでなければ拒否の理由 |
 | `void apply(const float chip[3], float body[3]) const` | 回転を適用します |
+| `void applyInverse(const float body[3], float chip[3]) const` | 逆回転（`R` の転置） |
+| `const char* withLevel(const float chipUp[3], ImuOrientation& out) const` | 「水平」の姿勢からの水平基準：Z = 測った「上」、機首は保ち、Z に ⟂ になるよう直す。以前の水平基準から 45° を超えれば拒否 |
+| `void attitudeOf(const float chipUp[3], float& pitch, float& roll) const` | ある姿勢のピッチとロール（加速度センサーからの `AttitudeEstimator` と同じ）：駐機姿勢 |
 | `float tiltFromLevelDeg(const float chipUp[3]) const` | 測定した「上」と機体の Z 軸のなす角（ベクトルがゼロなら 180°） |
 | `bool load(const char* ns)` | NVS から読み込みます。正規直交でない組や左手系の組は拒否します |
 | `void save(const char* ns) const` | NVS に保存します |
@@ -192,10 +201,11 @@ rightWingDown の ⟂ Z の成分、X₂ = Y × Z、X = norm(X₁ + X₂)、Y = 
 | `void setYaw(float deg)` | 方位を設定します（±180 に正規化されます） |
 | `void update(ax, ay, az, rollRate, pitchRate, yawRate, nowUs)` | 機体の軸での加速度（g）、角速度（°/s） |
 | `getRoll()`、`getPitch()`、`getYaw()` | ° |
+| `setAccelCorrection(bool)`、`isAccelCorrectionEnabled()` | `false` ならジャイロのみ（自動離陸の加速：前向きの 0.5 g はピッチ +27° に見える） |
 
 `roll_acc = atan2(ay, az)`、`pitch_acc = atan2(ax, √(ay² + az²))`、
 `angle = 0.98·(angle + rate·dt) + 0.02·angle_acc`（2 ms のとき τ ≈ 0.1秒）。
-`reset()` の後の最初の呼び出しは、すぐに加速度計の角度を返します。`dt ≤ 0` または 0.1秒より大きいときは、そのステップを飛ばします（一時停止やバスのハング）。
+`reset()` の後の最初の呼び出しは、すぐに加速度計の角度を返します。`dt ≤ 0` または 0.1秒より大きいときは、そのステップを飛ばします（一時停止やバスのハング）。加速度センサーなしでは `angle + rate·dt`。
 
 ---
 
@@ -220,7 +230,11 @@ rightWingDown の ⟂ Z の成分、X₂ = Y × Z、X = norm(X₁ + X₂)、Y = 
 | `void calibrate()` | 200 サンプル × 10 ms: ジャイロのオフセット、ノイズ、「上」。取り付けの較正がない場合は、水平 = 現在の姿勢です。その後、飛行前チェックを行います |
 | `void calibrateOrientation()` | 3つの姿勢（`capturePose`: 約1秒の静止、前の姿勢と 20° 以上異なること、タイムアウト30秒）、`ImuOrientation::fromPoses`、NVS への保存。飛行前チェックの取り付けに関する問題を解消します |
 | `const char* getPreflightProblem() const` | 問題のテキスト、または `nullptr` |
-| `void setYaw(float)`、`getSensorType()`、`printStatus()` | |
+| `readChipUp()`、`getOrientation()` | 地上校正：チップの軸での最新の「上」、取り付け |
+| `bool setGroundCalibration(level, parkChipUp)` | 取り付け = `level`（水平基準）、駐機姿勢は同じ NVS 名前空間のキー `park` に保存。飛行前チェックの取り付けの問題を解除する。新しい `o` は駐機姿勢を消す（以前の水平基準から測ったものだから） |
+| `bool getParkingAttitude(pitch, roll) const` | 現在の取り付けを通した駐機姿勢 |
+| `setAccelCorrection(bool)`、`trimGyroBias(residual)` | 自動離陸：加速度センサーなしのフィルター。残留ゼロ点は逆回転でジャイロのオフセットに加える |
+| `void setYaw(float)`、`getSensorType()`、`printStatus()` | `printStatus()` の末尾は `park(pitch,roll)=…` または `park=NONE` |
 
 ドライバ向けの protected API:
 

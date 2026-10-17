@@ -40,10 +40,10 @@ Nas demais placas (ESP32-C3, ESP32 comum) não há mídia de armazenamento: a ca
 | `MAG` | até 50 Hz | o campo nos três eixos, rumo |
 | `GPS` | a cada solução | coordenadas, altitude, velocidade, rumo, satélites, fix, precisão |
 | `AIR` | até 50 Hz | tubo de Pitot: diferença de pressão, velocidade indicada e verdadeira, densidade |
-| `NAV` | 10 Hz | ponto de origem (distância, marcação), rumo e alvo de rumo, velocidade de navegação, fonte do rumo, estágios do lançamento manual e do voo planado, auto-trim |
+| `NAV` | 10 Hz | ponto de origem (distância, marcação), rumo e alvo de rumo, velocidade de navegação, fonte do rumo, estágios do lançamento manual e do voo planado, auto-trim, etapa da decolagem automática (`takeoff_stage`) |
 | `POWER` | 10 Hz | tensão da bateria e saída do sensor de corrente (os divisores da placa da controladora de voo, [FC_BOARD.md](FC_BOARD.md), bloco B) |
 | `SYS` | 1 Hz | frequência e pior ciclo do laço de controle, memória livre, contadores do iBUS, temperatura do IMU, fila da caixa-preta, registros perdidos, a gravação mais longa na flash, espaço livre |
-| `EVENT` | por evento | ARM/DISARM, recusa de ARM com o motivo, troca de modo, link perdido/recuperado, sensor com falha/recuperado, fix do GPS, ponto de origem registrado, funções das chaves, geofence, proteção contra estol, estágios do lançamento manual e do voo planado |
+| `EVENT` | por evento | ARM/DISARM, recusa de ARM com o motivo, troca de modo, link perdido/recuperado, sensor com falha/recuperado, fix do GPS, ponto de origem registrado, funções das chaves, geofence, proteção contra estol, estágios do lançamento manual e do voo planado, etapas da decolagem automática (aborto — com o motivo), passos e resultado da calibração em solo (atitude em solo ou erro) |
 
 No início de cada voo vêm os parâmetros: o firmware (data da compilação), o motivo da partida e da última reinicialização, quais sensores estão instalados e se passaram na verificação pré-voo, os coeficientes do PID (incluindo ajustes feitos pelo painel), os trims, valores importantes do `Config` e as atribuições das chaves.
 

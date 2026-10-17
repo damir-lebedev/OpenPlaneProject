@@ -143,6 +143,22 @@ från autopiloten – det är en utgångsflagga; bara från spaken – en kanalf
 | `IMU_ROTATION_CW_DEG` | 90 | Rotationen av IMU-kretsens axlar kring vertikalen (0/90/180/270), vart kretsens X-axel pekar. Används bara så länge det inte finns någon monteringskalibrering `o` i NVS |
 | `MAG_ROTATION_CW_DEG` | 0 | Samma sak för kompassen (kompassen har ingen monteringskalibrering) |
 
+### Landningsställ, markkalibrering, signaler
+
+| Konstant | Värde | Betydelse |
+|---|---|---|
+| `LANDING_GEAR` | `LandingGear::TAIL_WHEEL` | Vilket hjul som styr: `TAIL_WHEEL` – sporrhjul (på marken nosen uppåt, vid rullningen lyfts stjärten först), `NOSE_WHEEL` – noshjul |
+| `CAL_SWITCH` | `Channels::SWB` | Brytaren för markkalibreringens gest (inte SwD – den styr motorreverseringen) |
+| `CAL_SWITCH_FLIPS` / `CAL_SWITCH_WINDOW_MS` | 3 / 4000 | Utan ARM, gasen nere: så många gånger ned och upp inom den tiden startar kalibreringen (en gång till – avbryter) |
+| `CAL_STILL_MS`, `CAL_STILL_DPS`, `CAL_STILL_G` | 2000, 3.0, 0.15 | Ett steg godkänns när vinkelhastigheten under så många ms ligger under detta och lasten på 1g ± detta värde |
+| `CAL_PARK_WAIT_MS` | 5000 | Steg 2 väntar på att flygplanet flyttas, eller så länge (noshjul: samma läge) |
+| `CAL_STEP_TIMEOUT_MS` | 60 000 | Inte stilla inom den tiden – kalibreringen avbryts (fel) |
+| `CAL_TAIL_PARK_MIN/MAX_DEG` | 3 / 25 | Sporrhjul: tippningen i markläget inom dessa gränser, annars fel (”stjärten inte nedsatt”) |
+| `CAL_NOSE_PARK_MAX_DEG`, `CAL_PARK_MAX_ROLL_DEG` | 6, 10 | Noshjul: i markläget nästan plant; roll i markläget högst detta |
+| `SIGNAL_MOTOR` / `SIGNAL_SURFACES` | `true` / `true` | Signal med motorn (pulspaus till ESC:n – den spelar sin redo-melodi) och med rodrens nickning |
+| `SIGNAL_NOD_US`, `SIGNAL_NOD_MS` | 200, 150 | Nickning med höjd- och sidroder: så många µs upp, sedan ned, så många ms vardera |
+| `SIGNAL_ESC_PAUSE_MS`, `SIGNAL_PERIOD_MS` | 1000, 3000 | Så länge saknas pulserna till ESC:n; signalerna följer varandra med denna period (melodin hinner spelas klart) |
+
 ### ARM
 
 | Konstant | Värde | Betydelse |
@@ -178,6 +194,9 @@ kommentarer; vad de betyder för piloten finns i [AUTOPILOT_GUIDE.md](../AUTOPIL
 | Cirklar och hem | `LOITER_RADIUS_M` 50 (25…150), `LOITER_CONVERGENCE`, `RTH_ALTITUDE_M` 40, `HOME_MIN_SATELLITES` 6, `HOME_MAX_HACC_M` 5 |
 | Geofence | `GEOFENCE_ALWAYS_ON` false, `FENCE_RADIUS_M` 500, `FENCE_ALTITUDE_M` 120 |
 | Handstart | `LAUNCH_ACCEL_G` 1.5, `LAUNCH_ACCEL_TIME_MS` 40, `LAUNCH_MOTOR_DELAY_MS` 300, `LAUNCH_THROTTLE_PCT`, `LAUNCH_CLIMB_PITCH_DEG` 15, `LAUNCH_CLIMB_MS` 6000, `LAUNCH_ALTITUDE_M` 30 |
+| Autostart | `TAKEOFF_TRIGGER_US` 1500; kontroll: `TAKEOFF_CHECK_MS` 1000, `_CHECK_TIMEOUT_MS` 5000, `TAKEOFF_PARK_PITCH/ROLL_TOL_DEG` 4/5, `TAKEOFF_UNCALIBRATED_TILT_DEG` 10; gas `TAKEOFF_THROTTLE_PCT` 100 under `TAKEOFF_THROTTLE_RAMP_MS` 2000; kurs `TAKEOFF_HEADING_KP` 10, `TAKEOFF_YAW_RATE_KD` 2; `TAKEOFF_ROTATE_SPEED_MS` 11; lättning `TAKEOFF_LIFTOFF_MS` 3000, `_LIFTOFF_ALT_M` 1, `_LIFTOFF_CONFIRM_MS` 500; stigning `TAKEOFF_CLIMB_PITCH_DEG` 8 till `TAKEOFF_SAFE_ALTITUDE_M` 30 (utan barometer `TAKEOFF_CLIMB_MS` 15 000); avbrott: `TAKEOFF_ABORT_ROLL_DEG` 15, `_ABORT_HEADING_DEG` 30, `TAKEOFF_NOSE_DOWN_MS` 300, `TAKEOFF_GROUND_TIMEOUT_MS` 15 000; ”bara gyroskop”: `TAKEOFF_GYRO_ONLY_CLIMB/MAX/ABORT_MS` 5000/30 000/3000 |
+| Sporrhjul | `TD_TAIL_UP_ELEVATOR_US` 250 (högst så mycket höjdroder nedåt), `TD_ROLL_PITCH_DEG` 1, `TD_PITCH_KP` 40 (stjärten upp), `TD_ROLL_PITCH_KP` 15 (rullning och rotation), `TD_PITCH_KD` 3, `TD_TAIL_UP_DONE_DEG` 2, `TD_TAIL_UP_TIMEOUT_MS` 6000, `TD_ROLL_MS` 2500, `TD_ROTATE_RATE_DPS` 2, `TD_TAIL_CLEARANCE_DEG` 3, `TD_MIN_PITCH_DEG` −3 |
+| Noshjul | `TRI_ROLL_ELEVATOR_US` 0, `TRI_ROLL_MS` 3000, `TRI_ROTATE_RATE_DPS` 5, `TRI_MAX_GROUND_PITCH_DEG` 10 |
 | Landning | `LAND_GLIDE_PITCH_DEG` −4, `LAND_FLARE_ALTITUDE_M` 3, `LAND_FLARE_PITCH_DEG` 4 |
 | Termikflygning | `SOAR_*`: glidflykt −3°, termik > 0,5 m/s i 1,5 s, en cirkel med 25°, utgång < −0,2 m/s i 8 s, motor under 30 m upp till 100 m, hem längre bort än 400 m |
 | RESCUE | `RESCUE_PITCH_DEG` 8, `RESCUE_THROTTLE_PCT` 70 |

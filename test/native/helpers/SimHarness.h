@@ -14,6 +14,11 @@
 // (FakeAirspeed), либо настоящая трубка Пито на двух шумных барометрах
 // (PitotDualBaroAirspeed) — useRealPitot.
 //
+// IMU — "идеальный" (углы модели как есть) или, с realisticImu, честный:
+// акселерометр видит удельную силу (тяжесть плюс разгон/торможение и
+// перегрузку), углы считает настоящий AttitudeEstimator — как на борту.
+// Так видно, что разгон по полосе акселерометр принимает за задранный нос.
+//
 // Если задана переменная окружения OPENPLANE_SIM_DIR, траектория
 // пишется в <dir>/<name>.csv — из этих файлов рисуются графики
 // (tools/plot_sim.py, картинки в docs/images/sim).
@@ -34,6 +39,7 @@
 #include "control/ThrottleManager.h"
 #include "rc/IBusReceiver.h"
 #include "sensors/airspeed/PitotDualBaroAirspeed.h"
+#include "sensors/imu/AttitudeEstimator.h"
 #include "helpers/PlaneSim.h"
 #include "helpers/TestSupport.h"
 
@@ -70,6 +76,7 @@ public:
     double throwUntil = 0;
     bool frozen = false;      // самолёт в руке: физика стоит
     bool pitotReversed = false;   // шланги трубки перепутаны: трубка видит меньше статики
+    bool realisticImu = false;    // углы — настоящий фильтр по удельной силе (см. выше)
 
     SimHarness(const Binding (&table)[N], bool withAirspeed, bool useRealPitot = false, const char* traceName = nullptr)
         : autopilot(&imu, &baro, &mag, &gps,
@@ -141,6 +148,7 @@ public:
         {
             for (int i = 0; i < 4; ++i) plane.step(c, 0.0005);
         }
+        updateKinematics();
         time += 0.002;
         lastControls = c;
 
@@ -204,6 +212,52 @@ private:
     std::normal_distribution<float> staticNoise{ 0.0f, 1.0f };
     double nextTube = 0, nextStatic = 0;
 
+    // Честный IMU: ускорение в осях земли (север, восток, вверх).
+    AttitudeEstimator estimator;
+    double previousVelocity[3] = {};
+    bool havePreviousVelocity = false;
+    double accelWorld[3] = {};
+
+    void updateKinematics()
+    {
+        const PlaneState& st = plane.s;
+        const double horizontal = st.speed * cos(st.gamma);
+        const double velocity[3] = { horizontal * cos(st.heading), horizontal * sin(st.heading), st.climbRate };
+        for (int i = 0; i < 3; ++i)
+        {
+            accelWorld[i] = havePreviousVelocity ? (velocity[i] - previousVelocity[i]) / 0.002 : 0.0;
+            previousVelocity[i] = velocity[i];
+        }
+        havePreviousVelocity = true;
+    }
+
+    // Удельная сила в осях самолёта (X к носу, Y влево, Z вверх), g.
+    void specificForceBody(float out[3]) const
+    {
+        const PlaneState& st = plane.s;
+        const double f[3] = { accelWorld[0], accelWorld[1], accelWorld[2] + PlaneSim::G };
+        const double ch = cos(st.heading), sh = sin(st.heading);
+        const double cp = cos(st.pitch), sp = sin(st.pitch);
+        const double cr = cos(st.roll), sr = sin(st.roll);
+        // Оси самолёта в осях земли: курс, затем тангаж, затем крен.
+        const double x0[3] = { ch, sh, 0 }, y0[3] = { sh, -ch, 0 }, z0[3] = { 0, 0, 1 };
+        double x[3], z1[3], y[3], z[3];
+        for (int i = 0; i < 3; ++i)
+        {
+            x[i] = x0[i] * cp + z0[i] * sp;
+            z1[i] = -x0[i] * sp + z0[i] * cp;
+        }
+        for (int i = 0; i < 3; ++i)
+        {
+            y[i] = y0[i] * cr + z1[i] * sr;
+            z[i] = -y0[i] * sr + z1[i] * cr;
+        }
+        auto dot = [&](const double a[3]) { return (a[0] * f[0] + a[1] * f[1] + a[2] * f[2]) / PlaneSim::G; };
+        out[0] = static_cast<float>(dot(x));
+        out[1] = static_cast<float>(dot(y));
+        out[2] = static_cast<float>(dot(z));
+    }
+
     void feedSensors()
     {
         const PlaneState& s = plane.s;
@@ -218,6 +272,19 @@ private:
         imu.data.accelX = static_cast<float>(time < throwUntil ? throwAccelG : s.forwardAccelG);
         imu.data.accelZ = 1.0f;
         imu.data.timestamp = now;
+        if (realisticImu)
+        {
+            float f[3];
+            specificForceBody(f);
+            estimator.setAccelCorrection(imu.accelCorrection);
+            estimator.update(f[0], f[1], f[2], imu.data.gyroX, imu.data.gyroY, imu.data.gyroZ, now);
+            imu.data.roll = estimator.getRoll();
+            imu.data.pitch = estimator.getPitch();
+            imu.data.accelX = f[0];
+            imu.data.accelY = f[1];
+            imu.data.accelZ = f[2];
+            for (int i = 0; i < 3; ++i) imu.chipUp[i] = f[i];
+        }
 
         baro.data.altitude = static_cast<float>(s.height) + baroNoise(rng);
         baro.data.verticalSpeed = static_cast<float>(s.climbRate);

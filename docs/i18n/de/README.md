@@ -35,8 +35,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-395%20passing-3fb950?style=for-the-badge" alt="395 Tests">
-  <img src="https://img.shields.io/badge/coverage-98%25-3fb950?style=for-the-badge" alt="98 % Testabdeckung">
+  <img src="https://img.shields.io/badge/tests-431%20passing-3fb950?style=for-the-badge" alt="431 Tests">
+  <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94 % Testabdeckung">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 Builds ohne Warnungen">
   <br>
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
@@ -61,7 +61,7 @@
 | **Was es ist** | Eine offene Flugsteuerung und ein Autopilot für ferngesteuerte Flugzeuge. Das Hauptboard ist der STM32H743 (ein Board der Pixhawk-Klasse): Auf einem DevEBox-Board **läuft die Firmware bereits und lässt sich per Sender steuern** – [es gibt ein Video](#-der-stm32h743-erwacht-auf-dem-board-zum-leben), gerade werden die Sensoren angeschlossen. Die frühere Basis ist ein ESP32-S3 für rund 10 $, der den Prüfstand mit allen Sensoren durchlaufen hat. |
 | **Was er kann** | 12 Flugmodi – von der Stabilisierung bis zur Rückkehr nach Hause, Kreisen per GPS, Handstart, Autolandung und **Thermikfliegen**. Ein Pitotrohr aus zwei billigen Barometern. MAVLink-Telemetrie für QGroundControl und Mission Planner. |
 | **Der Clou** | Jeder Schalter oder Drehregler am Sender = jede beliebige Funktion. **Eine Zeile** in `Controls.h` – und SwD ist nicht mehr die Motorumkehr, sondern ein Lastabwurf. |
-| **Warum man dem trauen kann** | 395 automatische Tests (dazu 9 auf dem Board selbst mit einer echten SD-Karte), 98 % des Codes durch Tests abgedeckt, 24 Builds „Board × Sensoren“ ohne eine einzige Warnung, Simulationen jedes Modus im geschlossenen Regelkreis. |
+| **Warum man dem trauen kann** | 431 automatische Tests (dazu 9 auf dem Board selbst mit einer echten SD-Karte), 94 % des Codes durch Tests abgedeckt, 24 Builds „Board × Sensoren“ ohne eine einzige Warnung, Simulationen jedes Modus im geschlossenen Regelkreis. |
 | **Ehrlich gesagt** | Bisher ist nur der manuelle Modus geflogen (der erste Prototyp). Der STM32H743 wurde bisher nur auf dem Prüfstand und ohne Sensoren getestet. Der Autopilot wurde auf dem Prüfstand, durch Tests und in Simulationen überprüft und wartet auf die Flugerprobung – [Stand weiter unten](#-ehrlicher-stand). |
 
 ---
@@ -96,19 +96,19 @@ Sie möchten auf SwD statt der Motorumkehr das Thermikfliegen haben? `Bind::mode
 | 🛣️ | **CRUISE** | Kurs, Höhe und Geschwindigkeit halten sich selbst; die Knüppel korrigieren nur |
 | ⭕ | **LOITER** | Kreise über einem GPS-Punkt (der Radius wird mit einem Drehregler eingestellt) |
 | 🏠 | **RTH** | nach Hause auf 40 m und Kreise über Ihrem Kopf; schaltet sich bei Verbindungsverlust selbst ein |
-| 🛫 | **AUTO_TAKEOFF** | Start von der Piste mit dem Gas des Piloten |
+| 🛫 | **AUTO_TAKEOFF** | Start von der Piste: Spornrad oder Bugrad, zuerst Heck hoch, abheben lässt die Tragfläche |
 | 🤾 | **LAUNCH** | Handstart: Der Motor läuft nach dem Wurf an, dann folgt der Steigflug |
 | 🛬 | **AUTO_LAND** | Gleitflug und Abfangen dicht über dem Boden |
 | 🦅 | **SOARING** | Motor aus, findet Thermik und kreist darin |
 | 🆘 | **RESCUE** | „Hilfe“: Flügel waagerecht, Nase hoch – aus jeder Spirale heraus |
 
-Dazu: Geofence, Auto-Trimmung für ein „schiefes“ Flugzeug, Kurvenkoordination, Überziehschutz per Pitotrohr, Klappen und Luftbremse, Lastabwurf, stabilisierte Kamera und ein Summer „Such mich im Gras“.
+Dazu: Bodenkalibrierung vom Sender aus (Horizont und Standlage, Schritte per Motor- und Rudersignal), Geofence, Auto-Trimmung für ein „schiefes“ Flugzeug, Kurvenkoordination, Überziehschutz per Pitotrohr, Klappen und Luftbremse, Lastabwurf, stabilisierte Kamera und ein Summer „Such mich im Gras“.
 
 ---
 
 ## 📈 Jeder Modus fliegt – im geschlossenen Regelkreis
 
-Nicht „eine Funktion hat eine Zahl zurückgegeben“, sondern ein **Flug**: Sender → iBUS-Frame → Firmware → PWM → Ruderausschläge → Flugzeugmodell mit Auftrieb, Strömungsabriss, Wind und Thermik → Sensoren → wieder die Firmware. 14 solcher Flüge gehören zu den gewöhnlichen Tests (`pio test -e native`).
+Nicht „eine Funktion hat eine Zahl zurückgegeben“, sondern ein **Flug**: Sender → iBUS-Frame → Firmware → PWM → Ruderausschläge → Flugzeugmodell mit Auftrieb, Strömungsabriss, Wind und Thermik → Sensoren → wieder die Firmware. 17 solcher Flüge gehören zu den gewöhnlichen Tests (`pio test -e native`).
 
 <p align="center"><img src="../../images/sim/missions.png" alt="RTH, LOITER, Geofence und Verbindungsverlust – Ansicht von oben"></p>
 
@@ -205,8 +205,8 @@ Was das beweist: Die Kette „Sender → iBUS → Firmware → PWM“ funktionie
 
 | | |
 |---|---|
-| **395 automatische Tests** | Module, Treiber auf Ebene der Chipregister, Flüge im geschlossenen Regelkreis, die Firmware für ESP32 und STM32 **vollständig** auf dem PC; dazu 9 Tests auf dem STM32-Board selbst mit einer echten SD-Karte |
-| **98,3 % der Zeilen, 87,7 % der Verzweigungen** | `gcovr`-Abdeckung, einschließlich des STM32-Codes |
+| **431 automatische Tests** | Module, Treiber auf Ebene der Chipregister, Flüge im geschlossenen Regelkreis, die Firmware für ESP32 und STM32 **vollständig** auf dem PC; dazu 9 Tests auf dem STM32-Board selbst mit einer echten SD-Karte |
+| **93,9 % der Zeilen, 85,7 % der Verzweigungen** | `gcovr`-Abdeckung, einschließlich des STM32-Codes |
 | **24/24 Builds** | 4 Boards × 6 Sensorsets, `-Wall -Wextra`, null Warnungen |
 | **0 Beanstandungen** | cppcheck und clang-tidy über den gesamten Code |
 | **Referenzen statt Code-Kopien** | die Sensorformeln folgen den Datenblättern (Bosch, ST, TDK, Goertek), MAVLink folgt pymavlink |
@@ -263,6 +263,7 @@ Im seriellen Monitor: `h` – Menü, `b` – welche Chips auf den Bussen sichtba
 | Manuelle Steuerung, Mixer | ✈️ im Flug (erster Prototyp, C3) |
 | ARM, Failsafe, Klappen, Servos, Motor | 🔧 auf dem Prüfstand (S3) |
 | Bidirektionaler Fahrtregler (ESC) BLHeli 80A, Umkehr nur im DISARM | 🧪 Tests; mit dem echten Regler noch nicht ausprobiert |
+| Autostart mit Spornrad oder Bugrad, Bodenkalibrierung vom Sender, Signale per Motor und Ruder | 🧪 Tests und Simulationen mit Fahrwerksmodell; die ESC-Melodie nach der Impulspause noch auf dem Prüfstand prüfen |
 | STABILIZE | 🔧 auf dem Prüfstand: Die Ruder reagieren auf Neigungen in die richtige Richtung |
 | Prüfstandssensoren (MPU6500, BMP388, QMC5883P), OLED, Dashboard | 🔧 auf dem Prüfstand |
 | Übrige Modi, Navigation, Pitotrohr, MAVLink | 🧪 Tests und Simulationen im geschlossenen Regelkreis |

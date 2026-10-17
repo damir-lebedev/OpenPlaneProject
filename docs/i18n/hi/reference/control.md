@@ -41,6 +41,7 @@ CONTROL परत डेटा के ऊपर का तर्क है, UART
 | `aileronLeft`, `aileronRight`, `elevator`, `rudder` | `PWM_CENTER` |
 | `throttle` | `PWM_MIN` |
 | `bool motorReverse` | `false` — मोटर आगे घूमती है |
+| `bool escPulsesOff` | `false`; `true` — ESC को कोई पल्स नहीं (मोटर का संकेत, केवल ARM के बिना) |
 | `aux1` | `PAYLOAD_CLOSED_US` — पेलोड गिराने वाला बंद है |
 | `aux2` | `PWM_CENTER` — कैमरा |
 
@@ -187,10 +188,10 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 | `explicit FlightOutputs(IBoard& board)` | |
 | `bool begin()` | हर आउटपुट का `attach(PWM_MIN, PWM_MAX)`, स्थिति और ESC का प्रकार छापना; `true`, अगर सभी **अनिवार्य** आउटपुट को चैनल मिला |
 | `bool isAttached(uint8_t ch) const` | आउटपुट जुड़ा है (सीमा से बाहर का इंडेक्स → `false`) |
-| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | आउटपुट पिन पर पल्स: तालिका से फ़ील्ड, ESC के लिए — `EscSignal::pulseUs(throttle, motorReverse)` से |
+| `static uint16_t valueOf(const FlightOutputState&, uint8_t ch)` | आउटपुट पिन पर पल्स: तालिका से फ़ील्ड, ESC के लिए — `EscSignal::pulseUs(throttle, motorReverse)` से, `escPulsesOff` के साथ — 0 |
 | `void printStatus() const` | `Outputs: aileronLeft(GPIO4)=OK …` |
 | `void printPulseSelfTest()` | हर जुड़े पिन पर नापा हुआ पल्स बनाम अपेक्षित; अंतर ≤ 15 µs हो तो “OK” |
-| `void write(const FlightOutputState&)` | सभी आउटपुट लिखना और स्थिति याद रखना |
+| `void write(const FlightOutputState&)` | सभी आउटपुट लिखना और स्थिति याद रखना; `escPulsesOff` वाला ESC — `IServoOutput::stopPulses()` |
 | `void setFailsafe()` | कंट्रोल सतहें न्यूट्रल (`FAILSAFE_*`), थ्रॉटल `FAILSAFE_THROTTLE` (द्विदिश ESC के पिन पर 1500); AUX जैसे थे (संपर्क टूटने से पेलोड नहीं गिरता) |
 | `void setBuzzer(bool on)` | बोर्ड का बजर (`IBoard::setBuzzer`) |
 | `const FlightOutputState& getLastState() const` | आख़िरी लिखी गई स्थिति |
@@ -203,7 +204,7 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 ## `FlightController`
 
 **फ़ाइल:** `control/FlightController.h` · **परत:** COORDINATION ·
-**निर्भर है:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`
+**निर्भर है:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 नियंत्रण-चक्र का इकलौता संयोजक: ख़ुद UART नहीं पार्स करता, PWM को नहीं छूता, मिक्सर
 नहीं गिनता — बस बाक़ियों को सही क्रम में बुलाता है। विस्तृत आरेख
@@ -224,6 +225,9 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 | `const PilotSwitches* getSwitches() const`, `const PilotInputs& getInputs() const` | इस चक्र के स्विच और नॉब |
 | `bool isLostModelBeeping() const` | “मैं यहाँ हूँ” बजर चल रहा है |
 | `const MotorReverse& getMotorReverse() const` | मोटर की दिशा और प्रतीक्षारत रिवर्स |
+| `void toggleGroundCalibration()` | कंसोल `c`: विमान का ग्राउंड कैलिब्रेशन — शुरू करना (केवल ARM के बिना), चल रहा हो तो रद्द |
+| `void playSignal(uint8_t count)` | कंसोल `e`: एक संकेत (ARM के बिना — मोटर से भी) |
+| `const GroundCalibration& getCalibration() const`, `const SignalPlayer& getSignals() const` | OLED, लॉग और ब्लैक बॉक्स के लिए |
 
 `update()` का क्रम:
 
@@ -235,22 +239,19 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
    `FLAPS_DEPLOYED_US`, `Knob::FLAPS` → सहजता से, संपर्क टूटने पर — 0;
 5. `autopilot->update(armed, failsafe, pilotThrottle, sticks)` — **हमेशा**;
    रिवर्स में `pilotThrottle` की जगह `PWM_MIN` (ऑटोपायलट के लिए मोटर बंद);
-6. बजर: `Beeper::update(BEEPER, armed, failsafe, now)`;
+6. कैलिब्रेशन: उसके दौरान ARM पलटना उसे रद्द करता है; ARM के बिना और संपर्क के साथ — `CAL_SWITCH` इशारा; `GroundCalibration::update()` का एक कदम; उसके संकेत और ऑटो-टेकऑफ़ के इनकार का संकेत `SignalPlayer` को; बजर: `Beeper::update(BEEPER, armed, failsafe, now)` या संकेत की रोशनी;
 7. संपर्क खोया → `applyLinkLoss()` और चक्र से बाहर;
-8. `arming.update(rc, false, reverse.armBlockReason(now))`, फिर
-   `reverse.update(MOTOR_REVERSE, armed, now)` — DISARM पर दिशा उसी टिक में बदलती है;
-9. `command = autopilot->getCommand()` (या ऑटोपायलट के बिना स्टिक), फ़्लैप — अपने;
+8. `arming.update(rc, false, कारण)` — कैलिब्रेशन चलते या संकेत बजते ARM मना (और उस चक्र में भी जिसमें ARM पलटने ने कैलिब्रेशन रद्द किया), वरना `reverse.armBlockReason(now)`; फिर `reverse.update(MOTOR_REVERSE, armed, now)` — DISARM पर दिशा उसी चक्र में बदलती है;
+9. `command = autopilot->getCommand()` (या ऑटोपायलट के बिना स्टिक), फ़्लैप — अपने; संकेत का हिलना एलिवेटर और रडर पर जुड़ता है;
 10. `output = mixer.mix(command)`; `output.motorReverse = reverse.isReversed()`;
     आगे — `output.throttle = autopilot->applyThrottle(pilotThrottle)`, सीमा
     `THROTTLE_LIMIT_PCT` × नॉब `Knob::THROTTLE_LIMIT`; पीछे — पायलट का थ्रॉटल, सीमा
     `min(REVERSE_THROTTLE_LIMIT_PCT, आगे की सीमा)`; अनुमत हिस्सा स्टिक की पूरी चाल पर फैलता है;
-11. ARM नहीं या `MOTOR_KILL` → `throttle = PWM_MIN` (सबसे अंत में);
+11. ARM नहीं या `MOTOR_KILL` → `throttle = PWM_MIN` (सबसे अंत में); ARM के बिना मोटर का संकेत `escPulsesOff` लगाता है;
 12. AUX1 — पेलोड (`PAYLOAD_DROP`), AUX2 — कैमरा (`Knob::CAMERA_TILT`, `CAMERA_STAB` पिच घटाता है); `AUX1_REVERSED`/`AUX2_REVERSED` पल्स को उलटते हैं।
 13. `outputs.write(output)`।
 
-`applyLinkLoss()`: अगर ऑटोपायलट failsafe में है (ARM: RTH या ग्लाइड) — कंट्रोल सरफ़ेस और
-थ्रॉटल ऑटोपायलट की कमांड के अनुसार (फ़्लैप सहजता से समेटे जाते हैं, `MOTOR_KILL` अब भी
-मोटर को चुप कराता है, AUX जैसे थे वैसे); वरना `outputs.setFailsafe()`। रिवर्स में मोटर हमेशा रुकी रहती है।
+`applyLinkLoss()`: अगर ऑटोपायलट failsafe में है (ARM: RTH या ग्लाइड) — कंट्रोल सरफ़ेस और थ्रॉटल ऑटोपायलट की कमांड के अनुसार (फ़्लैप सहजता से समेटे जाते हैं, `MOTOR_KILL` और रिवर्स मोटर को चुप कराते हैं, AUX जैसे थे वैसे); वरना `outputs.setFailsafe()`, और जब तक संकेत बज रहा है — हिलने और ESC की पल्स रुकने के साथ न्यूट्रल (रिमोट नीचे रख दिया गया — कैलिब्रेशन चल रहा है)।
 
 ---
 
@@ -262,3 +263,41 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 |---|---|
 | `bool update(bool requested, bool armed, bool linkLost, uint32_t nowMs)` | बजर की स्थिति: 2 Hz, अगर `Feature::BEEPER` या “मॉडल खो गया” (ARM नहीं, `LOST_MODEL_BEEP_DELAY_MS` से ज़्यादा देर से संपर्क नहीं) |
 | `bool isLostModel() const` | “मुझे घास में ढूँढो” मोड |
+
+---
+
+## `GroundCalibration`
+
+**फ़ाइल:** `control/GroundCalibration.h` · **निर्भर है:** `Config`, `RcChannelState`, `ImuSensor`, `ImuOrientation`
+
+विमान का ग्राउंड कैलिब्रेशन: चरण 1 — पूँछ ऊपर, धड़ क्षैतिज (क्षितिज, `ImuOrientation::withLevel()`), चरण 2 — पहियों पर (पार्किंग कोण)। `CAL_STILL_MS` की स्थिरता के बाद चरण अपने-आप दर्ज होता है; चरण 2 विमान के हिलाए जाने का इंतज़ार करता है, या `CAL_PARK_WAIT_MS`। सहेजना केवल पूरा एक साथ (`ImuSensor::setGroundCalibration()`), `LANDING_GEAR` के अनुसार पार्किंग कोण की जाँच के बाद। लूप को नहीं रोकता।
+
+`Stage`: `IDLE`, `LEVEL`, `PARK`, `DONE`, `FAILED`।
+
+| मेथड | विवरण |
+|---|---|
+| `bool watchSwitch(const RcChannelState&, uint32_t nowMs)` | इशारा: `CAL_SWITCH` को `CAL_SWITCH_WINDOW_MS` के भीतर `CAL_SWITCH_FLIPS` बार नीचे-ऊपर, थ्रॉटल नीचे; पहली बार देखना और थ्रॉटल नीचे न होना गिनती फिर से शुरू करते हैं |
+| `void forgetSwitch()` | ARM या संपर्क नहीं — गिनती फिर से |
+| `bool start(const ImuSensor*, uint32_t nowMs, const char* source)` | शुरू करना (संकेत 1); IMU नहीं या समर्थन नहीं — त्रुटि (संकेत 3) |
+| `void cancel(const char* why)` | बिना संकेत के रद्द करना |
+| `void update(ImuSensor*, bool armed, bool signalBusy, uint32_t nowMs)` | एक कदम: ARM रद्द करता है; संकेत बजते समय कुछ दर्ज नहीं होता; `CAL_STEP_TIMEOUT_MS` पार — त्रुटि |
+| `isActive()`, `getStage()`, `getStageSinceMs()`, `getFailure()`, `getParkPitch()`, `getParkRoll()` | स्थिति और नतीजा |
+| `uint8_t takeSignal()` | कितने संकेत बजाने हैं: 1 — शुरू / चरण 1, 2 — पूरा, 3 — त्रुटि (एक बार लिया जाता है) |
+| `static const char* stageShort(Stage)` | `CAL1`, `CAL2`, `CALOK`, `CALER` — OLED के लिए |
+
+---
+
+## `SignalPlayer`
+
+**फ़ाइल:** `control/SignalPlayer.h` · **निर्भर है:** `Config`
+
+पायलट के लिए संकेत — शृंखला शुरू होने के बाद के समय का फ़ंक्शन। एक संकेत: एलिवेटर और रडर हिलते हैं (`SIGNAL_NOD_US` ऊपर, फिर नीचे, हर बार `SIGNAL_NOD_MS`), ARM के बिना ESC की पल्स `SIGNAL_ESC_PAUSE_MS` के लिए रुकती हैं (फिर ESC तैयार होने की धुन बजाता है), हिलने के दौरान बजर की रोशनी जलती है; अगला संकेत `SIGNAL_PERIOD_MS` बाद।
+
+| मेथड | विवरण |
+|---|---|
+| `void play(uint8_t count, uint32_t nowMs, bool motor)` | एक शृंखला; `motor` — क्या ESC को छुआ जा सकता है (और `SIGNAL_MOTOR`) |
+| `void stop()` | शांति |
+| `bool isBusy(uint32_t nowMs) const`, `uint8_t getCount(uint32_t nowMs) const` | शृंखला चल रही है (इस दौरान ARM मना) |
+| `bool escPulsesOff(uint32_t nowMs) const` | अभी ESC की पल्स हटानी हैं |
+| `int16_t nodUs(uint32_t nowMs) const` | सरफ़ेस का हिलना, µs (`SIGNAL_SURFACES`) |
+| `bool light(uint32_t nowMs) const` | `PIN_BUZZER` पर बजर / LED |

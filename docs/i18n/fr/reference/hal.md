@@ -129,6 +129,7 @@ Une seule sortie PWM. La broche est fixée par l’implémentation.
 | `writeMicroseconds(us)` | Largeur de l’impulsion, µs (bornée à la plage de `attach`) |
 | `bool isAttached() const` | Le résultat de `attach()` |
 | `virtual int32_t measurePulseUs()` | Diagnostic : la largeur réelle de l’impulsion sur la broche ou `-1`. L’implémentation par défaut renvoie `-1` |
+| `virtual void stopPulses()` | Couper les impulsions (la broche reste au niveau bas) jusqu’à la prochaine écriture — le signal moteur : sans impulsions, l’ESC croit avoir perdu le signal et, quand elles reviennent, joue sa mélodie de disponibilité. Par défaut, rien (le moteur reste alors muet) |
 
 ---
 
@@ -322,6 +323,7 @@ MCPWM (GPIO6/7 répétaient GPIO4/5).
 | `attach(minUs, maxUs)` | Mémorise la plage ; broche < 0 → `false` ; sinon `ledcSetup() != 0` → `ledcAttachPin()` |
 | `writeMicroseconds(us)` | Pas attached — rien ; sinon `constrain(us, min, max) * MAX_DUTY / PERIOD_US` → `ledcWrite` |
 | `measurePulseUs()` | Active le tampon d’entrée du même GPIO (`PIN_INPUT_ENABLE`, la sortie n’est pas touchée) et mesure `pulseIn(pin, HIGH, 30 ms)` ; pas d’impulsion → `-1` |
+| `stopPulses()` | Rapport cyclique 0 (`ledcWrite(channel, 0)`) — pas d’impulsion |
 
 Les canaux 2n et 2n+1 partagent une minuterie LEDC — toutes les sorties sont à 50 Hz, il n’y a donc pas de conflit.
 
@@ -428,7 +430,8 @@ et provoque de la gigue.
 | `Stm32ServoOutput(int16_t pin)` | Broche `< 0` — la sortie n’est pas câblée |
 | `attach(minUs, maxUs)` | La minuterie et le canal viennent de `PinMap_TIM` d’après la broche (`pinmap_peripheral`, `STM_PIN_CHANNEL`), comme pour `analogWrite()`. Pas de minuterie sur la broche ou réserve épuisée → `false`. Sinon `setMode(PWM1)`, comparaison 0 (pas d’impulsion avant la première écriture), `resume()` |
 | `writeMicroseconds(us)` | `constrain(us, min, max)` → `setCaptureCompare(..., MICROSEC_COMPARE_FORMAT)`. Le registre de comparaison est à préchargement — la valeur prend effet à la période suivante |
-| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` sans reconfigurer la broche : sur le STM32, le registre IDR voit le niveau même en mode de fonction alternative |
+| `stopPulses()` | Valeur de comparaison 0 — pas d’impulsion, comme juste après `attach()` |
+| `measurePulseUs()` | `pulseIn(pin, HIGH, 30 ms)` sans reconfigurer la broche : sur le STM32, le registre IDR voit le niveau même en mode de fonction alternative. Le `pulseIn()` du cœur mesure, sur les broches de numéro de bit 8+ (PD14, PD15, PE9), le niveau **bas** — son masque de niveau est un `uint8_t` ; une impulsion de servo est toujours plus courte que la demi-période, une mesure plus longue est donc la pause, et l’impulsion vaut `PERIOD_US` moins celle-ci |
 | `static acquireTimer(TIM_TypeDef*)` | Une réserve partagée : **un seul `HardwareTimer` par TIMx**. Un second objet sur la même minuterie écraserait le gestionnaire du cœur (`HardwareTimer_Handle[index]`). La période est fixée à la première sortie sur la minuterie ; `setOverflow(MICROSEC_FORMAT)` choisit le diviseur — un pas de ~0,3 µs avec une horloge de minuterie de 240 MHz |
 
 ## `Stm32FlashStorage`

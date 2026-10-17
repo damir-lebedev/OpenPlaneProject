@@ -58,8 +58,8 @@ flowchart TD
     APP["APPLICATION<br/>src/main.cpp (ESP32) · src/stm32/main.cpp (STM32)"]
     COORD["COORDINATION<br/>control/FlightController"]
     TELE["TELEMETRY<br/>DebugLogger · DebugConsole · WebDebugServer (ESP32)<br/>MavlinkTelemetry (STM32) · OledDisplay · LoopStats"]
-    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper"]
-    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · SoaringController · AutoTrim · PidController"]
+    CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
+    AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (जुड़ा नहीं है)<br/>FeedbackSupervisor और मॉड्यूल"]
     RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
@@ -374,22 +374,23 @@ sequenceDiagram
     FC->>MX: fromSticks(rc) (+ Knob::RATES), updateFlaps(फ़ंक्शनों के अनुसार लक्ष्य)
     FC->>AP: update(armed, linkLost, पायलट का थ्रॉटल (रिवर्स में 0), स्टिक)
     Note over AP: सेंसर हमेशा पढ़े जाते हैं,<br/>नेविगेशन, failsafe, जियोफ़ेंस,<br/>मोड, समन्वय, ऑटो-ट्रिम
-    FC->>OUT: setBuzzer(Beeper)
+    Note over FC: ग्राउंड कैलिब्रेशन: स्विच का इशारा (ARM के बिना),<br/>GroundCalibration का कदम, संकेत → SignalPlayer
+    FC->>OUT: setBuzzer(Beeper या संकेत की रोशनी)
     alt संपर्क खो गया
         alt armed और ऑटोपायलट का failsafe (RTH / GLIDE)
             FC->>MX: mix(ऑटोपायलट की कमांड)
             FC->>OUT: write(कंट्रोल सरफ़ेस, ऑटोपायलट का थ्रॉटल (रिवर्स में 0), AUX जैसे थे)
         else
-            FC->>OUT: setFailsafe()
+            FC->>OUT: setFailsafe() (संकेत बजते समय — हिलने और ESC के ठहराव के साथ न्यूट्रल)
         end
         Note over FC: return — ARM और स्विच नहीं पढ़े जाते
     else संपर्क है
-        FC->>AM: update(rc, MR.armBlockReason) — ARM स्विच
+        FC->>AM: update(rc, कारण) — ARM स्विच (कैलिब्रेशन या संकेत चलते समय मना)
         FC->>MR: update(MOTOR_REVERSE, armed) — दिशा केवल ARM के बिना
         FC->>AP: getCommand() — कंट्रोल सरफ़ेस की अंतिम कमांड
         FC->>MX: mix(command) → रिवर्स के साथ PWM
         FC->>AP: applyThrottle(पायलट का थ्रॉटल) — केवल आगे
-        Note over FC: पीछे — पायलट का थ्रॉटल ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed या MOTOR_KILL → throttle = PWM_MIN (सबसे आख़िर में)
+        Note over FC: पीछे — पायलट का थ्रॉटल ≤ REVERSE_THROTTLE_LIMIT_PCT<br/>!armed या MOTOR_KILL → throttle = PWM_MIN (सबसे आख़िर में)<br/>संकेत का हिलना सरफ़ेस पर जुड़ता है, ARM के बिना — ESC की पल्स का ठहराव
         FC->>OUT: write(output + AUX1 पेलोड, AUX2 कैमरा)
         Note over OUT: ESC: थ्रॉटल + दिशा → पल्स (EscSignal),<br/>द्विदिश ESC: 1500 = रुका
     end
@@ -461,15 +462,29 @@ stateDiagram-v2
     GLIDE --> FRTH : GPS मिल गया
 ```
 
-failsafe कोई अलग `AutopilotMode` नहीं, बल्कि मौजूदा मोड के ऊपर लगा फ़्लैग है; शुरू हो चुकी वापसी GPS के थोड़ी देर खोने पर ग्लाइड में नहीं छोड़ी जाती; संपर्क लौटने पर स्विचों वाला मोड जारी रहता है (ऑटो-टेकऑफ़ और हाथ से लॉन्च — केवल नए सिरे से)। भीतरी स्टेट मशीनें: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE) और `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN)।
+failsafe कोई अलग `AutopilotMode` नहीं, बल्कि मौजूदा मोड के ऊपर लगा फ़्लैग है; शुरू हो चुकी वापसी GPS के थोड़ी देर खोने पर ग्लाइड में नहीं छोड़ी जाती; संपर्क लौटने पर स्विचों वाला मोड जारी रहता है (हाथ से लॉन्च — केवल नए सिरे से; रनवे पर ऑटो-टेकऑफ़ — केवल नए सिरे से, चढ़ाई में वह जारी रहता है)। रनवे पर AUTO_TAKEOFF में संपर्क टूटना ऊपरी परत नहीं, बल्कि रद्द टेकऑफ़ है: मोटर बंद, सरफ़ेस न्यूट्रल में। अंदरूनी स्टेट मशीनें: `LaunchController` (IDLE → READY → THROWN → CLIMB → DONE), `TakeoffController` (नीचे) और `SoaringController` (GLIDE → THERMAL → MOTOR_CLIMB → RETURN)।
 
-**AUTO_TAKEOFF** (शुरू से समय के अनुसार, जब armed हो और थ्रॉटल ≥ 1500 µs):
+**AUTO_TAKEOFF** (`TakeoffController`; थ्रॉटल कार्यक्रम चलाता है, थ्रॉटल स्टिक शुरू और रद्द करती है):
 
-| समय | थ्रॉटल (प्रोग्राम) | पिच |
-|---|---|---|
-| 0–1 s | धीरे-धीरे 0 → 100 % | 0° |
-| 1–3 s | 100 % | +15° |
-| > 3 s | 100 % | +10° |
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> IDLE
+    IDLE --> CHECK : थ्रॉटल ≥ 1500 µs (नीचे रहने के बाद)
+    CHECK --> TAIL_UP : 1 s स्थिर, कोण = पार्किंग कोण (टेल व्हील)
+    CHECK --> ROLL : वैसे ही (नोज़ व्हील)
+    CHECK --> ABORTED : कैलिब्रेशन जैसा खड़ा नहीं — संकेत ×3
+    TAIL_UP --> ROLL : पिच क्षितिज के पास
+    ROLL --> LIFTOFF : नाक उठाने की गति / 2.5 s
+    LIFTOFF --> CLIMB : बैरोमीटर से ज़मीन छोड़ना / सीमा + 3 s
+    CLIMB --> DONE : 30 m / बैरोमीटर के बिना 15 s
+    TAIL_UP --> ABORTED : थ्रॉटल नीचे, संपर्क, IMU, रोल, दिशा, नाक, 6 s
+    ROLL --> ABORTED : थ्रॉटल नीचे, संपर्क, IMU, रोल, दिशा, नाक, 15 s
+    LIFTOFF --> ABORTED : वैसे ही
+    ABORTED --> IDLE : थ्रॉटल 1 s नीचे
+```
+
+पहियों पर एलिवेटर सीधे चलाया जाता है (पूँछ ऊपर: +1° पिच की ओर एलिवेटर नीचे ≤ 250 µs; नाक उठाना: लक्ष्य 2°/s से बढ़ता है, ज़मीन के पास अधिकतम पार्किंग कोण घटा 3°), चढ़ाई में — +8° की ओर PID; दिशा रडर और पहिया थामते हैं। मोटर चालू होने से क्षितिज केवल जाइरोस्कोप से आता है (`ImuSensor::setAccelCorrection(false)`): एक्सेलेरोमीटर त्वरण को उठी हुई नाक समझ लेता।
 
 ### टेकऑफ़ और लैंडिंग (फ़ीडबैक लूप, जुड़ा नहीं है)
 
@@ -516,7 +531,7 @@ stateDiagram-v2
 
 इसके अलावा IMU की एक **उड़ान-पूर्व जाँच** (`getPreflightProblem()`) है: जाइरोस्कोप के कैलिब्रेशन के समय स्थिरता, |a| ≈ 1g, “ऊपर” की दिशा सहेजी गई माउंटिंग से मेल खाती है। जाँच पास न हो तो — `Autopilot::imuReady() == false` (सभी मोड में, ग्लाइड समेत, सुधार शून्य), और `ArmingManager` स्टेबलाइज़ेशन वाले मोड को आर्म नहीं करता।
 
-उपभोक्ता एक जैसी प्रतिक्रिया देते हैं: **सेंसर नहीं है (`nullptr`) या उपलब्ध नहीं है — तो कोई असर नहीं**, विमान MANUAL की तरह चलता है।
+उपभोक्ता एक जैसी प्रतिक्रिया देते हैं: **सेंसर नहीं है (`nullptr`) या उपलब्ध नहीं है — तो कोई असर नहीं**, विमान MANUAL की तरह चलता है। अपवाद है रनवे पर ऑटो-टेकऑफ़: IMU ख़राब हो तो वहाँ टेकऑफ़ रद्द, मोटर बंद।
 
 ### संपर्क (`IBusReceiver::isSignalLost()`)
 
@@ -529,7 +544,7 @@ stateDiagram-v2
 
 ### आउटपुट
 
-`FlightOutputs::begin()` के तुरंत बाद `setFailsafe()` आता है — कंट्रोल सरफ़ेस न्यूट्रल पर, मोटर बंद, सेंसर पढ़े जाने से भी पहले। पिन `-1` वाला आउटपुट (C3 पर रडर) बस जुड़ता ही नहीं; JSON में `attached` बताता है कि LEDC का चैनल आवंटित हुआ या नहीं। हर पिन पर असली पल्स की जाँच `printPulseSelfTest()` करता है (कंसोल `p`)।
+`FlightOutputs::begin()` के तुरंत बाद `setFailsafe()` आता है — कंट्रोल सरफ़ेस न्यूट्रल पर, मोटर बंद, सेंसर पढ़े जाने से भी पहले। पिन `-1` वाला आउटपुट (C3 पर रडर) बस जुड़ता ही नहीं; JSON में `attached` बताता है कि LEDC का चैनल आवंटित हुआ या नहीं। हर पिन पर असली पल्स की जाँच `printPulseSelfTest()` करता है (कंसोल `p`)। मोटर का संकेत ESC आउटपुट पर `IServoOutput::stopPulses()` है (केवल ARM के बिना): पल्स न हों तो ESC मान लेता है कि सिग्नल खो गया, और न्यूट्रल लौटने पर तैयार होने की धुन बजाता है।
 
 ---
 

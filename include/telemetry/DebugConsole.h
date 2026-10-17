@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 #include "autopilot/Autopilot.h"
+#include "config/Config.h"
 #include "control/FlightController.h"
 #include "control/FlightOutputs.h"
 #include "hal/IBoard.h"
@@ -20,6 +21,10 @@
 //   s      — статус датчиков
 //   i      — калибровка гироскопа + предполётная проверка (2 с, не двигать)
 //   o      — калибровка установки IMU (3 позы)
+//   c      — калибровка самолёта на земле: горизонт + стоянка (идёт —
+//            отменить); с пульта — тумблер Config::CAL_SWITCH 3 раза
+//   e      — сигнал: кивок рулями и мелодия ESC (проверить, поёт ли
+//            регулятор после паузы импульсов; винт снять!)
 //   m      — калибровка компаса (15 с, вращать)
 //   p      — проверка выходов (реальный импульс на каждом пине)
 //   b      — опрос шин I2C: кто отвечает и что это за чип (если
@@ -179,7 +184,7 @@ private:
             case 'l':           openLogMenu(); break;
             case 'k':           openBlackBoxMenu(); break;
             case ' ':           togglePause(); break;
-            case 's': case 'i': case 'o': case 'm': case 'p': case 'b':
+            case 's': case 'i': case 'o': case 'm': case 'p': case 'b': case 'c': case 'e':
                 runAction(key);
                 break;
             default:
@@ -221,6 +226,8 @@ private:
         printItem('6', "Проверка выходов (импульсы на пинах)", 'p');
         if (board) printItem('7', "Опрос шин I2C (кто отвечает)", 'b');
         if (blackBox) printItem('8', "Чёрный ящик: полёты, запись", 'k');
+        printItem('9', "Калибровка самолёта на земле (2 шага)", 'c');
+        printItem('e', "Сигнал: рули и мелодия ESC (винт снять!)", 'e');
         Serial.println("  0  закрыть меню");
         printRule(logger.isPaused() ? "лог на паузе — пробел, чтобы продолжить"
                                     : "пробел — пауза лога");
@@ -248,6 +255,8 @@ private:
             case '8': case 'k':
                 openBlackBoxMenu();
                 return;
+            case '9': case 'c': closeMenu(); runAction('c'); return;
+            case 'e': closeMenu(); runAction('e'); return;
             case '0': case 'q': case 'h':
                 closeMenu();
                 return;
@@ -439,9 +448,11 @@ private:
         Serial.println(logger.isPaused() ? "Лог: пауза (пробел — продолжить)." : "Лог: продолжен.");
     }
 
+    // Только без ARM: калибровки и проверка выходов блокируют цикл,
+    // калибровка самолёта и сигнал двигают рули и трогают ESC.
     static bool isBlocking(char action)
     {
-        return action == 'i' || action == 'o' || action == 'm' || action == 'p';
+        return action == 'i' || action == 'o' || action == 'm' || action == 'p' || action == 'c' || action == 'e';
     }
 
     void runAction(char action)
@@ -460,6 +471,13 @@ private:
             case 'm': calibrate(autopilot.getMagnetometerSensor(), "компас"); break;
             case 'p': outputs.printPulseSelfTest(); break;
             case 'b': scanBuses(); break;
+            case 'c': controller.toggleGroundCalibration(); break;
+            case 'e':
+                Serial.println(Config::SIGNAL_MOTOR
+                                   ? "Сигнал: рули кивнут, импульсы ESC пропадут на секунду — регулятор должен сыграть мелодию готовности."
+                                   : "Сигнал: рули кивнут (мотор в сигналах выключен: SIGNAL_MOTOR = false).");
+                controller.playSignal(1);
+                break;
             default: break;
         }
     }

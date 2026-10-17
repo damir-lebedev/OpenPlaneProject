@@ -5,6 +5,8 @@
 #include <Arduino.h>   // PA0...PE15 — номера пинов варианта STM32duino
 #endif
 
+#include "config/Channels.h"
+
 // ============================================================
 // 1. CONFIGURATION
 // Все постоянные параметры проекта находятся здесь.
@@ -521,6 +523,83 @@ namespace Config
 
 
     // --------------------------------------------------------
+    // ШАССИ — какое колесо рулевое, одна строка
+    //
+    //   TAIL_WHEEL — два колеса спереди, рулевое сзади (хвостовое): на
+    //                стоянке нос задран; на разбеге сначала поднимается
+    //                хвост, отрывает крыло (как у Astro-Cargo);
+    //   NOSE_WHEEL — рулевое колесо спереди (трёхколёсное шасси): стоит
+    //                почти ровно, на скорости отрыва поднимает нос.
+    //
+    // От этого зависят автовзлёт (autopilot/TakeoffController.h) и
+    // проверки наземной калибровки (control/GroundCalibration.h).
+    // --------------------------------------------------------
+
+    enum class LandingGear : uint8_t { NOSE_WHEEL, TAIL_WHEEL };
+    constexpr LandingGear LANDING_GEAR = LandingGear::TAIL_WHEEL;
+
+
+    // --------------------------------------------------------
+    // НАЗЕМНАЯ КАЛИБРОВКА САМОЛЁТА (control/GroundCalibration.h)
+    //
+    // Два шага: 1 — хвост поднят, фюзеляж горизонтально, как в полёте
+    // (горизонт для всех режимов); 2 — самолёт на колёсах (стояночный
+    // угол: на сколько задран нос). Шаг засчитывается сам, когда самолёт
+    // неподвижен CAL_STILL_MS подряд: вращение меньше CAL_STILL_DPS,
+    // перегрузка 1g ± CAL_STILL_G.
+    //
+    // Запуск с пульта: без ARM, газ внизу — тумблер CAL_SWITCH вниз и
+    // обратно вверх CAL_SWITCH_FLIPS раза за CAL_SWITCH_WINDOW_MS. Или
+    // 'c' в консоли. SwD сюда не ставить: он переключает реверс мотора.
+    // --------------------------------------------------------
+
+    constexpr uint8_t CAL_SWITCH = Channels::SWB;   // SwB — закрылки
+    constexpr uint8_t CAL_SWITCH_FLIPS = 3;
+    constexpr uint32_t CAL_SWITCH_WINDOW_MS = 4000;
+
+    constexpr uint32_t CAL_STILL_MS = 2000;
+    constexpr float CAL_STILL_DPS = 3.0f;
+    constexpr float CAL_STILL_G = 0.15f;
+
+    // Шаг 2 ждёт, пока самолёт переставят (движение после сигнала), или
+    // CAL_PARK_WAIT_MS — если стоянка та же поза, что шаг 1 (носовое колесо).
+    constexpr uint32_t CAL_PARK_WAIT_MS = 5000;
+    // Не замер за это время — калибровка отменяется.
+    constexpr uint32_t CAL_STEP_TIMEOUT_MS = 60000;
+
+    // Стояночный угол, при котором калибровка засчитывается: хвостовое
+    // колесо — нос задран на CAL_TAIL_PARK_MIN..MAX_DEG, носовое — почти
+    // ровно; крен — не больше CAL_PARK_MAX_ROLL_DEG.
+    constexpr float CAL_TAIL_PARK_MIN_DEG = 3.0f;
+    constexpr float CAL_TAIL_PARK_MAX_DEG = 25.0f;
+    constexpr float CAL_NOSE_PARK_MAX_DEG = 6.0f;
+    constexpr float CAL_PARK_MAX_ROLL_DEG = 10.0f;
+
+
+    // --------------------------------------------------------
+    // СИГНАЛЫ (control/SignalPlayer.h): этапы калибровки, отказ автовзлёта
+    //
+    // Один сигнал — рули высоты и направления кивают на SIGNAL_NOD_US
+    // (вверх-вниз по SIGNAL_NOD_MS) и, только без ARM, поёт мотор: импульсы
+    // на ESC пропадают на SIGNAL_ESC_PAUSE_MS, регулятор решает, что сигнал
+    // потерян, а когда импульсы (нейтраль) возвращаются, играет мелодию
+    // готовности — как при включении. Мотор при этом не крутится. Сигналы
+    // идут через SIGNAL_PERIOD_MS, чтобы мелодия успела доиграть.
+    //
+    // Счёт: 1 — калибровка началась / шаг засчитан; 2 — готово, сохранено;
+    // 3 — ошибка, ничего не сохранено (и отказ автовзлёта на проверке).
+    // Пищалка или светодиод на PIN_BUZZER горит на время кивка.
+    // --------------------------------------------------------
+
+    constexpr bool SIGNAL_MOTOR = true;      // false — мотор молчит (ESC не поёт после паузы)
+    constexpr bool SIGNAL_SURFACES = true;   // false — рули не кивают
+    constexpr int16_t SIGNAL_NOD_US = 200;
+    constexpr uint32_t SIGNAL_NOD_MS = 150;
+    constexpr uint32_t SIGNAL_ESC_PAUSE_MS = 1000;
+    constexpr uint32_t SIGNAL_PERIOD_MS = 3000;
+
+
+    // --------------------------------------------------------
     // ARM (SwA, CH5 — см. Channels::ARM и ArmingManager.h)
     // --------------------------------------------------------
 
@@ -653,6 +732,107 @@ namespace Config
     constexpr bool GEOFENCE_ALWAYS_ON = false;
     constexpr float FENCE_RADIUS_M = 500.0f;
     constexpr float FENCE_ALTITUDE_M = 120.0f;
+
+    // Автовзлёт с полосы (AUTO_TAKEOFF, autopilot/TakeoffController.h) —
+    // этапы по датчикам, подробно — docs/AUTOPILOT_GUIDE.md. Тангаж — от
+    // горизонта наземной калибровки (шаг 1), стояночный угол — шаг 2.
+    //
+    // Старт: пилот поднял газ выше TAKEOFF_TRIGGER_US. Сначала проверка:
+    // самолёт неподвижен TAKEOFF_CHECK_MS, его углы совпадают со
+    // стояночными с точностью TAKEOFF_PARK_*_TOL_DEG (без калибровки —
+    // только носовое колесо: наклон не больше TAKEOFF_UNCALIBRATED_TILT_DEG).
+    // Не совпало (не на колёсах, склон, сломано колесо, сдвинута плата)
+    // — мотор не стартует, причина в консоль, три сигнала.
+    constexpr uint16_t TAKEOFF_TRIGGER_US = 1500;
+    constexpr uint32_t TAKEOFF_CHECK_MS = 1000;
+    constexpr uint32_t TAKEOFF_CHECK_TIMEOUT_MS = 5000;
+    constexpr float TAKEOFF_PARK_PITCH_TOL_DEG = 4.0f;
+    constexpr float TAKEOFF_PARK_ROLL_TOL_DEG = 5.0f;
+    constexpr float TAKEOFF_UNCALIBRATED_TILT_DEG = 10.0f;
+
+    // Газ — плавно до TAKEOFF_THROTTLE_PCT за TAKEOFF_THROTTLE_RAMP_MS:
+    // рывок газа разворачивает самолёт моментом винта.
+    constexpr float TAKEOFF_THROTTLE_PCT = 100.0f;
+    constexpr uint32_t TAKEOFF_THROTTLE_RAMP_MS = 2000;
+
+    // Курс держат руль направления и колесо (одна серва): мкс на градус
+    // ухода курса и на °/с рысканья. Сила — и от крутилки STAB_GAIN.
+    constexpr float TAKEOFF_HEADING_KP = 10.0f;
+    constexpr float TAKEOFF_YAW_RATE_KD = 2.0f;
+
+    // Хвостовое колесо (TAIL_WHEEL):
+    //   хвост вверх — руль высоты от себя (не больше TD_TAIL_UP_ELEVATOR_US),
+    //     поток от винта поднимает хвост к тангажу TD_ROLL_PITCH_DEG (чуть
+    //     выше горизонта): TD_PITCH_KP мкс на градус до цели, по мере
+    //     выравнивания отдача уменьшается, ниже цели — руль на себя;
+    //     TD_PITCH_KD мкс на °/с гасит рывок. Хвост поднят — тангаж ближе
+    //     TD_TAIL_UP_DONE_DEG к цели; не поднялся за TD_TAIL_UP_TIMEOUT_MS —
+    //     прерванный взлёт;
+    //   разбег ровно — хвостовое колесо в воздухе (TD_ROLL_PITCH_KP мкс на
+    //     градус) TD_ROLL_MS, с трубкой Пито или GPS — до TAKEOFF_ROTATE_SPEED_MS;
+    //   отрыв — цель тангажа растёт на TD_ROTATE_RATE_DPS, но пока отрыв не
+    //     виден — не выше стояночного угла минус TD_TAIL_CLEARANCE_DEG:
+    //     хвостовое колесо не коснётся полосы, отрывает крыло;
+    //   нос ниже TD_MIN_PITCH_DEG дольше TAKEOFF_NOSE_DOWN_MS — винт у земли.
+    constexpr int16_t TD_TAIL_UP_ELEVATOR_US = 250;
+    constexpr float TD_ROLL_PITCH_DEG = 1.0f;
+    constexpr float TD_PITCH_KP = 40.0f;
+    constexpr float TD_ROLL_PITCH_KP = 15.0f;
+    constexpr float TD_PITCH_KD = 3.0f;
+    constexpr float TD_TAIL_UP_DONE_DEG = 2.0f;
+    constexpr uint32_t TD_TAIL_UP_TIMEOUT_MS = 6000;
+    constexpr uint32_t TD_ROLL_MS = 2500;
+    constexpr float TD_ROTATE_RATE_DPS = 2.0f;
+    constexpr float TD_TAIL_CLEARANCE_DEG = 3.0f;
+    constexpr float TD_MIN_PITCH_DEG = -3.0f;
+
+    // Носовое колесо (NOSE_WHEEL): разбег с рулём высоты TRI_ROLL_ELEVATOR_US
+    // (< 0 — чуть от себя: колесо прижато и рулит) TRI_ROLL_MS или до
+    // скорости отрыва; нос вверх на TRI_ROTATE_RATE_DPS, пока отрыв не
+    // виден — не выше TRI_MAX_GROUND_PITCH_DEG (хвост не чиркнет).
+    constexpr int16_t TRI_ROLL_ELEVATOR_US = 0;
+    constexpr uint32_t TRI_ROLL_MS = 3000;
+    constexpr float TRI_ROTATE_RATE_DPS = 5.0f;
+    constexpr float TRI_MAX_GROUND_PITCH_DEG = 10.0f;
+
+    // Скорость отрыва — по трубке Пито или GPS; без них этапы идут по времени.
+    constexpr float TAKEOFF_ROTATE_SPEED_MS = 11.0f;
+
+    // Отрыв: цель тангажа дошла до предела и прошло TAKEOFF_LIFTOFF_MS, или
+    // (с барометром) самолёт выше старта на TAKEOFF_LIFTOFF_ALT_M дольше
+    // TAKEOFF_LIFTOFF_CONFIRM_MS — тогда предел у земли снимается.
+    constexpr uint32_t TAKEOFF_LIFTOFF_MS = 3000;
+    constexpr float TAKEOFF_LIFTOFF_ALT_M = 1.0f;
+    constexpr uint32_t TAKEOFF_LIFTOFF_CONFIRM_MS = 500;
+
+    // Набор: тангаж TAKEOFF_CLIMB_PITCH_DEG (пока отрыв не виден по
+    // барометру — с пределом у земли), крылья ровно, курс рулём
+    // направления; до TAKEOFF_SAFE_ALTITUDE_M над стартом, без барометра —
+    // TAKEOFF_CLIMB_MS. Дальше — как CRUISE: держит курс и высоту (без
+    // барометра — горизонт), газ — сам.
+    constexpr float TAKEOFF_CLIMB_PITCH_DEG = 8.0f;
+    constexpr float TAKEOFF_SAFE_ALTITUDE_M = 30.0f;
+    constexpr uint32_t TAKEOFF_CLIMB_MS = 15000;
+
+    // Прерванный взлёт на земле — мотор стоп, руль высоты в нейтраль, курс
+    // и крылья держатся, пока катится: газ стиком ниже THROTTLE_LOW_US,
+    // потеря связи, IMU отказал, крен больше TAKEOFF_ABORT_ROLL_DEG, уход
+    // курса больше TAKEOFF_ABORT_HEADING_DEG, нос ниже TD_MIN_PITCH_DEG,
+    // нет отрыва за TAKEOFF_GROUND_TIMEOUT_MS. Снова — газ вниз и вверх.
+    constexpr float TAKEOFF_ABORT_ROLL_DEG = 15.0f;
+    constexpr float TAKEOFF_ABORT_HEADING_DEG = 30.0f;
+    constexpr uint32_t TAKEOFF_NOSE_DOWN_MS = 300;
+    constexpr uint32_t TAKEOFF_GROUND_TIMEOUT_MS = 15000;
+
+    // Углы на разбеге: ускорение вперёд акселерометр принимает за
+    // задранный нос (0.5 g — это +27°). С запуска мотора горизонт ведёт
+    // только гироскоп (ноль уточнён на проверке перед стартом) —
+    // TAKEOFF_GYRO_ONLY_CLIMB_MS после начала набора (разгон кончился), но
+    // не дольше TAKEOFF_GYRO_ONLY_MAX_MS; после прерванного взлёта —
+    // TAKEOFF_GYRO_ONLY_ABORT_MS (самолёт тормозит).
+    constexpr uint32_t TAKEOFF_GYRO_ONLY_CLIMB_MS = 5000;
+    constexpr uint32_t TAKEOFF_GYRO_ONLY_MAX_MS = 30000;
+    constexpr uint32_t TAKEOFF_GYRO_ONLY_ABORT_MS = 3000;
 
     // Запуск с руки (LAUNCH): пилот поднял газ — запуск взведён, мотор
     // стоит; бросок — ускорение вперёд больше LAUNCH_ACCEL_G дольше

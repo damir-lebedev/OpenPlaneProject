@@ -675,12 +675,16 @@ private:
             {
                 if (!addressedToUs(m.u8(2))) break;
                 int16_t index = m.i16(0);   // −1 — искать по имени
+                // cppcheck env stm32h743 (--platform=unspecified) не знает
+                // размеров типов и считает int16_t из u16 неотрицательным.
+                // cppcheck-suppress knownConditionTrueFalse
                 if (index < 0)
                 {
                     char name[17];
                     m.chars(4, 16, name);
                     index = paramIndex(name);
                 }
+                // cppcheck-suppress knownConditionTrueFalse
                 if (index >= 0 && index < PARAM_COUNT) singleParam = index;
                 break;
             }
@@ -760,8 +764,9 @@ private:
         // cppcheck-suppress useStlAlgorithm
         for (Stream& s : streams)
         {
+            // env stm32h743 указывает на скобку тела — подавление на ней же
             if (s.id == id)
-            {
+            {   // cppcheck-suppress useStlAlgorithm
                 s.nextMs = millis();
                 return true;
             }

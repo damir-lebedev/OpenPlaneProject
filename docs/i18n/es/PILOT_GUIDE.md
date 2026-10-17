@@ -36,7 +36,7 @@ El equipo de la versión actual (el firmware está comprobado con él):
 - **Una emisora FS-i6 + un receptor FS-iA6B** (protocolo iBUS, 10 canales). Hace falta un solo cable de datos: el puerto iBUS SERVO. La emisora tiene que permitir configurar el failsafe; este ajuste es obligatorio, véase la sección sobre failsafe.
 - **2 servos MG90S** para los alerones: uno por cada semiala (dos servos independientes, no uno para las dos alas).
 - **1 servo MG90S** para el timón de profundidad.
-- **1 servo MG90S** para el timón de dirección; en su mismo eje va montada la rueda direccional del tren de aterrizaje (para maniobrar en tierra).
+- **1 servo MG90S** para el timón de dirección; en su mismo eje va montada la rueda direccional del tren de aterrizaje (para maniobrar en tierra). El tren de aterrizaje: dos ruedas delante y una rueda de cola direccional (`LANDING_GEAR = TAIL_WHEEL` en `Config.h`; un tren con rueda de morro es `NOSE_WHEEL`).
 - **Un variador (ESC) BLHeli 80A bidireccional** (modo Bidirectional/3D) con BEC de 5 V (el BEC alimenta los servos y el receptor). También sirve un variador unidireccional normal: `ESC_BIDIRECTIONAL = false` en `Config.h`, consulta [Inversión del motor](#inversión-del-motor-swd).
 - **Un motor D3548 1100KV** + **una hélice 10x5**.
 - **Una batería LiPo 3S**.
@@ -217,7 +217,7 @@ En resumen, la asignación por defecto (`include/config/Controls.h`):
 | **VrA / VrB** (CH9/10) | intensidad de la estabilización / velocidad de crucero |
 
 - **STABILIZE: «el stick fija el ángulo».** Con el stick a fondo, 45° de alabeo y 25° de cabeceo; al soltarlo, el avión se nivela solo. El acelerador es tuyo.
-- **AUTO_TAKEOFF.** Tras el ARM no ocurre nada hasta que subas el acelerador por encima de la mitad. Después: 0–1 s, el acelerador sube suavemente hasta el 100 % con las alas niveladas; 1–3 s, cabeceo +15°; luego +10° hasta que cambies SwC. Acelerador = el máximo entre el stick y el programa.
+- **AUTO_TAKEOFF.** Despegue desde pista por etapas. Tras el ARM, el motor sigue parado hasta que subas el acelerador por encima de la mitad; el avión comprueba durante ~1 s que está como en la calibración y luego lo hace todo solo: cola arriba con el timón a picar, carrera, despegue con el ala, ascenso hasta 30 m, y después mantiene el rumbo y la altitud. El acelerador es del programa; acelerador abajo antes del despegue = despegue abortado. Necesita la [calibración en tierra del avión](#calibración-en-tierra-del-avión-horizonte-y-actitud-en-tierra).
 - **RTH.** Rumbo al punto del ARM, altitud de 40 m, círculos sobre el punto de origen. Necesita un GPS con fijación 3D **antes del ARM**.
 
 Los 12 modos (ALT_HOLD, ACRO, CRUISE, LOITER, LAUNCH a mano, AUTO_LAND, SOARING, RESCUE…), lo que necesita cada uno en cuanto a sensores y cómo asignarlo a un interruptor se explican en [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md). Un modo elegido desde el panel o desde la estación de tierra se mantiene hasta que muevas el interruptor de modo.
@@ -340,6 +340,8 @@ Al pulsar una tecla, esta actúa al instante; no hace falta Enter (en un monitor
 | `s` | estado detallado de todos los sensores (incluidos los contadores de errores de I2C) |
 | `i` | recalibrar el giroscopio y hacer la comprobación previa al vuelo del IMU: 2 s, sin mover el avión |
 | `o` | **calibración de la instalación del IMU**: una sola vez, después de montar la placa en el avión (véase más abajo) |
+| `c` | **calibración en tierra del avión**: horizonte y actitud en tierra (véase más abajo); si está en marcha, la cancela |
+| `e` | señal: cabezada de los timones y melodía del variador; comprueba que el variador la toca (¡quita la hélice!) |
 | `m` | calibración de la brújula: durante 15 s, gira la placa o el avión sobre todos los ejes. El resultado se guarda en la flash y sobrevive a un reinicio |
 | `p` | comprobación de las salidas: el pulso real en cada pin |
 
@@ -365,13 +367,26 @@ Mientras el menú está abierto, el registro calla para que el menú no se despl
 La placa con el IMU se puede montar en el avión **como resulte cómodo**: en cualquier ángulo, de lado, boca abajo; el firmware averigua por sí mismo dónde están su morro y su parte superior. Se hace **una sola vez** después de la instalación (y de nuevo si se ha cambiado la placa de sitio):
 
 1. El avión sobre la mesa, sin necesidad de emisora y con el motor sin armar. En el monitor serie, pulsa `o`.
-2. **Paso 1:** el avión está nivelado, como en vuelo horizontal (si tiene rueda de cola, pon algo debajo de la cola). No lo toques durante unos 3 s.
+2. **Paso 1:** el avión está nivelado, como en vuelo horizontal (un avión con rueda de cola puede quedarse sobre sus ruedas: el horizonte lo fijará después la calibración en tierra del avión). No lo toques durante ~3 s.
 3. **Paso 2:** levanta el **morro** de 30 a 60°, con las alas niveladas, y mantenlo quieto durante 1 s aproximadamente.
 4. **Paso 3:** vuelve a bajar el morro, baja el **ala derecha** de 30 a 60° y mantenla así durante 1 s aproximadamente.
 
 Cada paso se da por válido automáticamente (en el registro aparece «засчитано», es decir, «contado»). Al final se muestra el resultado («нос = +Y чипа, верх = −Z чипа», es decir, «morro = +Y del chip, arriba = −Z del chip») y «установка сохранена» («instalación guardada»). Si te has equivocado (has bajado el morro en vez de subirlo, o el ala izquierda en vez de la derecha), la calibración se rechaza con una explicación; repite `o`. El resultado se guarda en la flash y sobrevive a un reinicio. Comprobación: morro arriba → la P del OLED pasa a positivo; ala derecha abajo → la R pasa a positivo.
 
-Mientras no exista una calibración de la instalación, rige el método antiguo: la placa debe ir con el chip hacia arriba, y el giro es `IMU_ROTATION_CW_DEG` en `Config.h`.
+Mientras no exista una calibración de la instalación, rige el método antiguo: la placa debe ir con el chip hacia arriba, y el giro es `IMU_ROTATION_CW_DEG` en `Config.h`. Tras `o`, repite la calibración en tierra del avión: la actitud en tierra se midió desde el horizonte anterior.
+
+### Calibración en tierra del avión: horizonte y actitud en tierra
+
+Un avión con rueda de cola descansa en el suelo con el morro levantado; cuánto, nadie lo sabe de antemano. La calibración lo mide ella misma y lo guarda en la flash: el **horizonte** (0° de cabeceo y alabeo para todos los modos, ya no «como estaba al encender») y la **actitud en tierra**, de la que el despegue automático deduce cuánto hay que levantar la cola y dónde tocaría la pista la rueda de cola. Una vez tras el montaje (y de nuevo si se ha movido la placa o tras `o`). No hace falta portátil:
+
+1. El avión sobre suelo llano, la emisora encendida, **sin ARM**, gas abajo.
+2. **SwB (flaps) tres veces seguidas abajo y arriba** (en menos de 4 s), o `c` en la consola. Una señal: empieza.
+3. **Paso 1: horizonte.** Levanta la cola hasta que el fuselaje quede horizontal, como en vuelo (las ruedas principales en el suelo; ayuda una app de nivel de burbuja en el móvil apoyado sobre el fuselaje), y mantenlo quieto ~2 s. Fíjate de paso en el hueco entre la hélice y el suelo: más o menos así rodará el avión en el despegue. Una señal: aceptado.
+4. **Paso 2: actitud en tierra.** Apoya el avión en sus tres ruedas y suéltalo. A los ~2 s, dos señales: terminado; el registro muestra «Стоянка: нос вверх на 9.4°, крен 0.3°» («en tierra: morro arriba 9.4°, alabeo 0.3°»).
+
+Tres señales: un error, no se guarda nada (el motivo está en la consola): el avión no se quedó quieto en un minuto, en el paso 2 el morro apenas está levantado (no se bajó la cola) o más de 25°, o el alabeo pasa de 10°. Para cancelar: el mismo gesto con SwB o mover un momento el interruptor de ARM (ese movimiento no arma). Con rueda de morro (`NOSE_WHEEL`), el paso 1 se puede hacer directamente sobre las ruedas si el avión está nivelado: el paso 2 se acepta entonces solo a los 5 s. El interruptor del gesto es `CAL_SWITCH` en `Config.h` (SwD no: controla la inversión del motor).
+
+**Señales.** Una señal: los timones de profundidad y de dirección dan una cabezada (en el paso 1 tienes la cola en la mano y lo notas) y, sin ARM, canta el motor: los pulsos al variador desaparecen durante un segundo, el variador cree que ha perdido la señal y, cuando vuelven los pulsos, toca su melodía de listo, como al encenderlo. El motor no gira. Por PWM un variador no conoce otra orden de «pitido», así que compruébalo en el banco (**sin hélice**): tecla `e` en la consola; la melodía tiene que sonar. Si no suena, pon `SIGNAL_MOTOR = false` en `Config.h` y quedarán las cabezadas. Un zumbador o un LED con resistencia en PE15 (S3: GPIO38) se enciende durante las cabezadas; el LED D2 de la propia DevEBox está en PA1, la salida del alerón derecho, así que no sirve para las señales. Mientras suena una señal, el ARM se rechaza: puede que el variador aún no se haya rearmado. En el OLED, la línea de ángulos muestra `CAL1`, `CAL2` y, como resultado, `CALOK` o `CALER`.
 
 ### Comprobación previa al vuelo al encender
 
@@ -381,7 +396,7 @@ Cada vez que se enciende, el IMU dedica unos 2 s a calibrar el giroscopio y, de 
 - el acelerómetro en reposo marca 1g;
 - **«arriba» coincide con la calibración de la instalación**: si la placa se ha cambiado de sitio o se ha dado la vuelta, se nota enseguida (un avión sobre su rueda de cola o en una pendiente no es problema; la tolerancia es de 45°).
 
-**Enciende el avión mientras está quieto.** No es imprescindible que esté nivelado si la instalación está calibrada (si no, la posición al encender se convierte en el horizonte). El resultado figura en el registro: `предполётная проверка пройдена` («comprobación previa al vuelo superada») o `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` («COMPROBACIÓN PREVIA AL VUELO NO SUPERADA», seguida del motivo). Si no se supera, **el ARM en STABILIZE y AUTO_TAKEOFF queda prohibido** (el motivo se imprime al intentarlo), y el piloto automático no da correcciones en ningún modo, incluido el planeo por pérdida de enlace: con ángulos erróneos gobernaría en sentido contrario. El ARM en MANUAL sigue siendo posible. Para arreglarlo: deja el avión inmóvil y vuelve a conectar la batería (o pulsa `i`); si la placa se ha cambiado de sitio, pulsa `o`.
+**Enciende el avión mientras está quieto.** No es imprescindible que esté nivelado si la instalación está calibrada (`o` o la calibración en tierra del avión; si no, la posición al encender se convierte en el horizonte). El resultado figura en el registro: `предполётная проверка пройдена` («comprobación previa al vuelo superada») o `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА — <причина>` («COMPROBACIÓN PREVIA AL VUELO NO SUPERADA», seguida del motivo). Si no se supera, **el ARM en STABILIZE y AUTO_TAKEOFF queda prohibido** (el motivo se imprime al intentarlo), y el piloto automático no da correcciones en ningún modo, incluido el planeo por pérdida de enlace: con ángulos erróneos gobernaría en sentido contrario. El ARM en MANUAL sigue siendo posible. Para arreglarlo: deja el avión inmóvil y vuelve a conectar la batería (o pulsa `i`); si la placa se ha cambiado de sitio, pulsa `o`.
 
 ### Pantalla OLED
 
@@ -389,7 +404,7 @@ Si hay un OLED conectado (GPIO1/GPIO2), muestra lo siguiente 5 veces por segundo
 
 ```
 RX ok disarm STAB        <- enlace / ARM / modo / REV: motor hacia atrás (si se pierde el enlace, la línea sale invertida)
-R  +1.2 P  -0.4          <- alabeo / cabeceo, °
+R  +1.2 P  -0.4 ROLL     <- alabeo / cabeceo, °; paso de calibración o etapa del despegue
 Alt +0.3 Vz +0.1         <- altitud desde el punto de encendido, m / velocidad vertical, m/s
 Hdg 123  Thr 1000        <- rumbo de la brújula / acelerador 1000..2000 = 0..100% (también hacia atrás), µs
 L1500 R1500 E1500        <- PWM de los alerones y del timón de profundidad, µs
@@ -470,6 +485,7 @@ Lee esta sección entera **antes** de la primera puesta en marcha, no después d
   - en STABILIZE, inclina el avión con el ala derecha abajo → **alerón derecho abajo, izquierdo arriba** (las superficies lo devuelven a la horizontal); morro abajo → **timón de profundidad arriba**.
   Si algo no va bien, cambia una línea del bloque «Inversión» de `include/config/Config.h`: cada alerón, el timón de profundidad, el de dirección, AUX, el motor (`MOTOR_REVERSED`) y los flaps (`FLAPS_REVERSED`) se invierten por separado y no se toca nada más. No inviertas servos en la emisora: el stick y el piloto automático discreparán; un canal al revés (stick, interruptor, potenciómetro) se cambia con `CHANNEL_REVERSED`, en el mismo sitio.
 - [ ] Al encender, el avión estaba inmóvil, y en el registro o en el panel no aparece `ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА`; al inclinar el avión con las manos, la P y la R del OLED cambian en el sentido correcto.
+- [ ] Para AUTO_TAKEOFF: la calibración en tierra del avión está hecha (al encender, el registro muestra «стоянка на колёсах — тангаж …»), la rueda de cola está entera y el avión está en la pista con viento de cara. Las primeras carreras, con límite de gas (potenciómetro `THROTTLE_LIMIT`) y la mano en el gas: abajo = despegue abortado.
 - [ ] El failsafe está configurado en la emisora y comprobado: apaga la emisora → `RX LOST` en el OLED o en Serial (véase la sección sobre failsafe).
 - [ ] Se ha comprobado el alcance de la emisora y la batería de la emisora está cargada.
 - [ ] Al encender, el registro muestra `BlackBox: ... стёрто впереди N МБ (≈M мин)`: hay espacio suficiente para el vuelo. El vuelo anterior se ha descargado (`python tools/blackbox.py download`), si lo necesitas.
@@ -497,6 +513,12 @@ Haz la calibración de la instalación del IMU (`o`, véase «Instalación del I
 
 **ARM rechazado: «IMU: ...»**
 No se ha superado la comprobación previa al vuelo del IMU (véase «Comprobación previa al vuelo al encender»): el avión se movió al encender; ponlo inmóvil y vuelve a conectar la batería; «arriba» no coincide con la calibración, se cambió la placa de sitio; haz `o`; «la placa no está con el chip hacia arriba», la instalación no está calibrada; haz `o`.
+
+**ARM rechazado: «нет калибровки шасси» (no hay calibración del tren)**
+AUTO_TAKEOFF con rueda de cola no sabe dónde tocaría la cola la pista. Haz la calibración en tierra del avión: SwB tres veces abajo y arriba sin ARM (o `c`).
+
+**«Автовзлёт: старт отменён — тангаж не стояночный» (arranque cancelado: el cabeceo no es el de la actitud en tierra; los timones dieron tres cabezadas)**
+El avión no está como en la calibración: no está sobre sus tres ruedas, hay pendiente, la rueda de cola está rota o la placa se ha movido. Ponlo nivelado; si se movió la placa, repite `o` y la calibración en tierra.
 
 **Un servo o el ESC responde a un stick que no es / no responde**
 El comando `p` de la consola mide el pulso real en cada salida (GPIO4–7) y lo compara con el esperado. Si todo está «OK» y el servo no se mueve, el problema está más allá de la placa: (1) el servo no está alimentado (BEC/5V, masa común); (2) el cable de señal está en otro pin; (3) la mecánica se ha atascado. Si aparece «НЕ СОВПАДАЕТ» («NO COINCIDE»), el problema está en el firmware o en los periféricos: informa al desarrollador.

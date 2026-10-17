@@ -111,6 +111,7 @@ RC   1:1500 2:1500 3:1000 …
 OUT  AIL-L 1500 AIL-R 1500 ELE 1500 RUD 1500 ESC 1000
 ATT  R +1.2 P -0.4 Y 123.0
 AP   STABILIZE want R +0.0 P +0.0 corr R -6 P +2 THR +0
+AP   AUTO_TAKEOFF/ROLL GYRO want R +0.0 P +1.0 corr R +0 P -22 THR +100
 ALT  0.3 m  Vz +0.10 m/s  target 0.0 m
 MAG  heading 123°
 GPS  fix=3 sats=12 lat … lon … v 0.0 m/s hacc 1.2 m
@@ -119,7 +120,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (worst in 10 s) | iBUS ok=… crc_err=
 ```
 
 `RX=` skiljer på `LOST(no frames)` och `LOST(transmitter failsafe)`; `IMU=` är
-`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`.
+`NONE` / `NO_RESPONSE` / `CHECK_FAILED` / `OK`. I AUTO_TAKEOFF följs lägesnamnet av startetappen (`/CHECK`, `/TAIL_UP`, `/ROLL`…), `GYRO` betyder att horisonten just nu bara kommer från gyroskopet (acceleration).
 
 ---
 
@@ -140,7 +141,7 @@ Snabbtangenter (utanför menyn): `h`/`?` – huvudmenyn; `l` – loggmenyn; mell
 pausa loggen; `s` – sensorstatus; `i` – gyroskopkalibrering; `o` –
 kalibrering av IMU-monteringen; `m` – kompasskalibrering; `p` – självtest av utgångar;
 `b` – avsökning av I2C-bussarna (0x08..0x7F – upp till 0x7F, eftersom QMC6309 sitter på 0x7C) med
-kretsnamn; allt annat – en ledtråd. `\r`/`\n` ignoreras.
+kretsnamn; allt annat – en ledtråd. `\r`/`\n` ignoreras. Dessutom `c` – markkalibrering av flygplanet (pågår den, avbryts den; huvudmenyns punkt 9) och `e` – en signal med roder och ESC-melodi (kontrollerar att ESC:n spelar den efter pulspausen).
 
 Loggmenyn: `1`..`9` – växla läge för kanalerna 0..8, `n` – NAV, `s` – SYS, `p` – period, `a` –
 allt ”vid ändring”, `x` – allt av, `d` – standardvärden, `0`/`q` – tillbaka, `l`/`h` –
@@ -148,7 +149,7 @@ stäng.
 
 De blockerande åtgärderna (`i`, `o`, `m`, `p`) är **förbjudna under ARM**. Medan menyn
 är öppen är loggen pausad (`DebugLogger::suspend`). Menypunkternas bredd
-räknas i UTF-8-tecken snarare än byte (kyrilliska tecken tar 2 byte).
+räknas i UTF-8-tecken snarare än byte (kyrilliska tecken tar 2 byte). Även flygplanskalibreringen och signalen (`c`, `e` – de rör rodren och ESC:n) är spärrade under ARM.
 
 ---
 
@@ -215,7 +216,7 @@ Skärmen:
 
 ```
 RX ok ARM STAB FL       förbindelse (förlust – inverterad rad) / ARM / läge / REV – motorn bakåt / klaffar
-R  +1.2 P  -0.4         roll / tippning, °           (IMU --)
+R  +1.2 P  -0.4 ROLL    roll / tippning, °; kalibreringssteg (CAL1, CAL2, resultatet CALOK/CALER i 10 s) eller startetapp (WAIT, CHECK, TAIL, ROLL, LIFT, CLIMB, DONE, ABORT)   (IMU --)
 Alt +0.3 Vz +0.1 A14    höjd / vertikal hastighet / lufthastighet, om pitotrör finns (BARO --)
 H123 T1000 Y1500        kurs / gas 1000..2000 = 0..100 % åt vilket håll som helst / sidroder (H---)
 L1500 R1500 E1500       skevroder / höjdroder
@@ -243,6 +244,8 @@ Inspelning av flygningen till flash (ESP32-S3) eller ett SD-kort (STM32H743). Va
 | `State getState()` / `bool isRecording()` | `Off`, `Idle`, `Recording`, `Stopping` (skriver ut kön innan END registreras) |
 | `printStatus(Print&)` / `printFlights(Print&)` / `eraseAll()` | För konsolen |
 | `void handleHostCommand(const char*)` | `bb list`, `bb get <n> [baud]` – för `tools/blackbox.py` (över USB CDC påverkar hastigheten ingenting) |
+
+Händelser för markkalibreringen (steg, resultat med markläget, fel med orsak, avbrott) och autostartens etapper (`ABORTED` – med orsak); etappen finns dessutom i fältet `takeoff_stage` i NAV-posten; flygparametrarna innehåller `LANDING_GEAR` och de viktigaste startvärdena.
 
 De plattformsspecifika delarna: återställningsorsaken – `readResetCause()`; batterispänningen och strömmen –
 ADC:n (`analogReadMilliVolts` på S3, en 12-bitars `analogRead` på STM32); mediefelen
