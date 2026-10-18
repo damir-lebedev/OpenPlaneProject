@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-432%20passing-3fb950?style=for-the-badge" alt="432 tests">
+  <img src="https://img.shields.io/badge/tests-436%20passing-3fb950?style=for-the-badge" alt="436 tests">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="couverture de 94 %">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 compilations sans avertissement">
   <br>
@@ -61,7 +61,7 @@
 | **Ce que c’est** | Un contrôleur de vol et pilote automatique ouverts pour avions radiocommandés. La carte principale est la STM32H743 (une carte de la classe Pixhawk) : sur une carte DevEBox, le firmware **tourne déjà et se pilote avec la radio** — [il y a une vidéo](#-le-stm32h743sanime-sur-la-carte), et les capteurs sont en cours de branchement. L’ancienne base est un ESP32-S3 à environ 10 $, qui a passé le banc avec tous les capteurs. |
 | **Ce qu’il sait faire** | 12 modes de vol, de la stabilisation au retour à la maison, en passant par les cercles au GPS, le lancer à la main, l’atterrissage automatique et le **vol à voile en thermiques**. Un tube de Pitot fait de deux baromètres bon marché. Télémétrie MAVLink vers QGroundControl et Mission Planner. |
 | **L’atout principal** | N’importe quel interrupteur ou potentiomètre de la radio = n’importe quelle fonction. **Une seule ligne** dans `Controls.h`, et SwD n’est plus l’inversion du moteur mais un largage de charge. |
-| **Pourquoi lui faire confiance** | 432 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 94 % du code couvert par les tests, 24 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
+| **Pourquoi lui faire confiance** | 436 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 94 % du code couvert par les tests, 24 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
 | **En toute franchise** | Pour l’instant, seul le mode manuel a volé (le premier prototype). Le STM32H743 n’a été vérifié que sur le banc, sans capteurs. Le pilote automatique a été vérifié sur le banc, par des tests et des simulations, et attend les essais en vol — [état des lieux plus bas](#-état-réel). |
 
 ---
@@ -205,7 +205,7 @@ Ce que cela prouve : la chaîne « radio → iBUS → firmware → PWM » fon
 
 | | |
 |---|---|
-| **432 tests automatiques** | modules, pilotes vérifiés au niveau des registres des puces, vols en boucle fermée, firmware ESP32 et STM32 **complet** sur PC ; plus 9 tests sur la carte STM32 elle-même avec une vraie carte SD |
+| **436 tests automatiques** | modules, pilotes vérifiés au niveau des registres des puces, vols en boucle fermée, firmware ESP32 et STM32 **complet** sur PC ; plus 9 tests sur la carte STM32 elle-même avec une vraie carte SD |
 | **93,9 % des lignes, 85,7 % des branches** | couverture `gcovr`, code STM32 compris |
 | **24/24 compilations** | 4 cartes × 6 kits de capteurs, `-Wall -Wextra`, zéro avertissement |
 | **0 remarque** | cppcheck et clang-tidy sur tout le code |

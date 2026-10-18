@@ -143,7 +143,7 @@ IMU mounting calibration; `m` — compass calibration; `p` — output self-test;
 `b` — scan of the I2C buses (0x08..0x7F — up to 0x7F, because the QMC6309 sits at 0x7C) with
 chip names; anything else — a hint. `\r`/`\n` are ignored. Also `c` — ground calibration of the airplane (cancels while it runs; main-menu item 9) and `e` — a signal by the control surfaces and the ESC tune (checks that the ESC plays it after the pulse pause).
 
-PC commands are an STX byte (`0x02`), a string and `\n`: on `id`, `FirmwareIdentity::print()` prints the firmware identity as one `@id {...}` line (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; it answers while armed too); anything else goes to `IFlightRecorder::handleHostCommand()` (the black box). OpenPlane Studio bakes in the board, commit, configuration hash and plane name through `config/Project.h` in its copy of the sources; without that file the board macro and `"dev"` are used.
+PC commands are an STX byte (`0x02`), a string and `\n`: on `id`, `FirmwareIdentity::print()` prints the firmware identity as one `@id {...}` line (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; it answers while armed too); `scan` probes the buses and prints `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` (while armed: `{"error":"armed"}`); `act X` runs the action of menu key `X`, with the same restrictions while armed; `live` and `live 0` go to `AppLink` (below); anything else goes to `IFlightRecorder::handleHostCommand()` (the black box). OpenPlane Studio bakes in the board, commit, configuration hash and plane name through `config/Project.h` in its copy of the sources; without that file the board macro and `"dev"` are used.
 
 The log menu: `1`..`9` — cycle the mode of channels 0..8, `n` — NAV, `s` — SYS, `p` — period, `a` —
 everything "on change", `x` — everything off, `d` — defaults, `0`/`q` — back, `l`/`h` —
@@ -152,6 +152,16 @@ close.
 The blocking actions (`i`, `o`, `m`, `p`) are **forbidden while ARMed**. While the menu
 is open, the log is suspended (`DebugLogger::suspend`). The width of the menu items
 is counted in UTF-8 characters rather than bytes (Cyrillic takes 2 bytes). The airplane calibration and the signal (`c`, `e` — they move the control surfaces and touch the ESC) are refused while armed as well.
+
+---
+
+## `AppLink`
+
+`telemetry/AppLink.h` is the live link to OpenPlane Studio. After the PC command `live` (through `DebugConsole`) the board keeps sending `@live {...}` lines for `LIVE_HOLD_MS` (3 s), one every `FRAME_PERIOD_MS`: 50 ms on STM32 (USB), 100 ms on ESP32 (UART at 115200). The app repeats `live` once a second while it listens: close the app or pull the cable and the board goes quiet by itself; `live 0` stops it at once.
+
+A frame is one JSON line: `t`, `arm`, `mode`, `rx` (`ok`, `lost` — no frames, `fs` — receiver failsafe), `ch` (10 channels, µs, after `CHANNEL_REVERSED`), `out` (left aileron, right aileron, elevator, rudder, throttle, AUX1, AUX2 — µs), `rev`, the state of every sensor (`ok`, `none`, `noresp`; the IMU also has `check` — the preflight check failed) with its values (`att`, `alt`/`vz`, `hdg`, `fix`/`sats`, `ias`), calibrations (`mount` — IMU mounting, `park` — parking attitude, `magcal` — compass), `block` — why ARM would be refused right now (`FlightController::armBlockNow()`, `null` — it would arm), `cal` — the ground calibration stage, `feat` — active features, `hz` — loop rate.
+
+A frame is written only if it fits whole into the port buffer (`Serial.availableForWrite()`), otherwise it is skipped (`getFramesSkipped()`): the flight loop never waits for the PC. So the transmit buffer must hold a frame (up to `LIVE_LINE_MAX` = 768 bytes): on ESP32 it is `Serial.setTxBufferSize(4096)`; on the DevEBox the USB queue is enlarged with `CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER=16` in `platformio.ini` (the default 128 bytes never fit a frame), and a build with a smaller queue stops with an explanation.
 
 ---
 

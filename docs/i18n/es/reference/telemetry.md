@@ -143,7 +143,7 @@ calibración del montaje de la IMU; `m` — calibración de la brújula; `p` —
 `b` — sondeo de los buses I2C (0x08..0x7F — hasta 0x7F, porque el QMC6309 está en 0x7C) con
 los nombres de los chips; cualquier otra — una pista. `\r`/`\n` se ignoran. Además, `c`: calibración en tierra del avión (si está en marcha, se cancela; punto 9 del menú principal), y `e`: una señal con los timones y la melodía del variador (comprueba que la toca tras la pausa de pulsos).
 
-Los comandos del PC son un byte STX (`0x02`), una cadena y `\n`: ante `id`, `FirmwareIdentity::print()` imprime la identidad del firmware en una sola línea `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; responde también con ARM); todo lo demás va a `IFlightRecorder::handleHostCommand()` (la caja negra). OpenPlane Studio graba la placa, el commit, el hash de la configuración y el nombre del avión mediante `config/Project.h` en su copia de las fuentes; sin ese archivo se usan la macro de la placa y `"dev"`.
+Los comandos del PC son un byte STX (`0x02`), una cadena y `\n`: ante `id`, `FirmwareIdentity::print()` imprime la identidad del firmware en una sola línea `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; responde también con ARM); `scan` sondea los buses e imprime `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` (con ARM, `{"error":"armed"}`); `act X` ejecuta la acción de la tecla `X` del menú, con las mismas restricciones con ARM; `live` y `live 0` van a `AppLink` (abajo); todo lo demás va a `IFlightRecorder::handleHostCommand()` (la caja negra). OpenPlane Studio graba la placa, el commit, el hash de la configuración y el nombre del avión mediante `config/Project.h` en su copia de las fuentes; sin ese archivo se usan la macro de la placa y `"dev"`.
 
 El menú del registro: `1`..`9` — cambian cíclicamente el modo de los canales 0..8, `n` — NAV, `s` — SYS, `p` — periodo, `a` —
 todo «al cambiar», `x` — todo apagado, `d` — valores por defecto, `0`/`q` — volver, `l`/`h` —
@@ -152,6 +152,16 @@ cerrar.
 Las acciones bloqueantes (`i`, `o`, `m`, `p`) están **prohibidas con ARM**. Mientras el menú
 está abierto, el registro queda suspendido (`DebugLogger::suspend`). El ancho de los puntos del menú
 se cuenta en caracteres UTF-8 y no en bytes (el cirílico ocupa 2 bytes). También la calibración del avión y la señal (`c`, `e`: mueven los timones y tocan el variador) están prohibidas con ARM.
+
+---
+
+## `AppLink`
+
+`telemetry/AppLink.h` es el enlace en vivo con OpenPlane Studio. Tras el comando del PC `live` (a través de `DebugConsole`), la placa sigue enviando líneas `@live {...}` durante `LIVE_HOLD_MS` (3 s), una cada `FRAME_PERIOD_MS`: 50 ms en STM32 (USB) y 100 ms en ESP32 (UART a 115200). La aplicación repite `live` cada segundo mientras escucha: si se cierra la aplicación o se desconecta el cable, la placa se calla sola; `live 0` la detiene al instante.
+
+Una trama es una línea JSON: `t`, `arm`, `mode`, `rx` (`ok`; `lost`: no llegan tramas; `fs`: failsafe del receptor), `ch` (10 canales, µs, después de `CHANNEL_REVERSED`), `out` (alerón izquierdo, alerón derecho, timón de profundidad, timón de dirección, gas, AUX1, AUX2, en µs), `rev`, el estado de cada sensor (`ok`, `none`, `noresp`; la IMU además `check`: no pasó la comprobación prevuelo) con sus valores (`att`, `alt`/`vz`, `hdg`, `fix`/`sats`, `ias`), las calibraciones (`mount`: montaje de la IMU; `park`: actitud de estacionamiento; `magcal`: brújula), `block`: por qué se rechazaría ARM ahora (`FlightController::armBlockNow()`; `null`: se armaría), `cal`: paso de la calibración en tierra, `feat`: funciones activas, `hz`: frecuencia del ciclo.
+
+Una trama solo se escribe si cabe entera en el búfer del puerto (`Serial.availableForWrite()`); si no, se salta (`getFramesSkipped()`): el ciclo de vuelo nunca espera al PC. Por eso el búfer de transmisión debe dar cabida a una trama (hasta `LIVE_LINE_MAX` = 768 bytes): en ESP32, `Serial.setTxBufferSize(4096)`; en la DevEBox la cola USB se amplía con `CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER=16` en `platformio.ini` (los 128 bytes por defecto nunca daban para una trama), y una compilación con una cola menor se detiene con una explicación.
 
 ---
 

@@ -238,6 +238,7 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
 |---|---|
 | `DebugLogger.h` | 按通道记录日志（`LogSettings.h`）：每个通道有自己的行、自己的抖动容限和模式；菜单打开时保持静默 |
 | `DebugConsole.h` | 串口监视器中的文本菜单（`h`）和快捷键（`l`/空格/`s`/`i`/`o`/`m`/`p`/`b`）；日志设置在退出菜单时写入 NVS，且仅在未 ARM 时才写 |
+| `AppLink.h` | 与 OpenPlane Studio 的实时连接：收到电脑命令 `live` 后发送 `@live {...}` 行（状态、通道、输出、传感器、校准、拒绝 ARM 的原因），STM32 上每秒 20 次，ESP32 上 10 次；端口缓冲区满时跳过该帧而不是等待 |
 | `LogSettings.h` | 日志通道（STAT、RC、OUT、ATT、AP、ALT、MAG、GPS、IMU、NAV、SYS）及其模式：关闭 / 变化时 / 持续；存于 NVS |
 | `WebDebugServer.h` | 接入点、路由、JSON `/api/status`、命令邮箱；在核心 0 上有自己的任务 |
 | `WebDashboardPage.h` | 仪表盘的 HTML/JS 写成单个字面量；通道/输出/传感器的行由浏览器根据 JSON 构建 |
@@ -511,7 +512,7 @@ PID 表单。每 200 ms 轮询一次 `/api/status`。
 | `m` | 电子罗盘校准（旋转 15 s），保存到 NVS |
 | `p` | 输出自检：把每个引脚上的实际脉冲与预期值对比 |
 
-电脑发来的命令由 STX 字节（`0x02`）、字符串和 `\n` 组成：`id` 以一行 JSON 返回固件身份信息（`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`，`telemetry/FirmwareIdentity.h`），OpenPlane Studio 据此识别开发板，并核对刷入的正是项目中的配置；`bb …` 交给黑匣子（`tools/blackbox.py`）。
+电脑发来的命令由 STX 字节（`0x02`）、字符串和 `\n` 组成：`id` 以一行 JSON 返回固件身份信息（`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`，`telemetry/FirmwareIdentity.h`），OpenPlane Studio 据此识别开发板，并核对刷入的正是项目中的配置；`bb …` 交给黑匣子（`tools/blackbox.py`）。为设置向导还有：`live` 在接下来 3 秒内以 `@live {...}` 行发送实时数据（应用每秒重复一次该命令，`live 0` 立即停止；`telemetry/AppLink.h`），`scan` 扫描 I2C 总线并以一行 `@scan {...}` 应答，`act X` 与菜单按键 `X` 的作用相同（校准、输出测试、信号）。
 
 日志分为多个通道（`STAT`、`RC`、`OUT`、`ATT`、`AP`、`ALT`、`MAG`、`GPS`、
 `IMU`、`SYS`），每个通道都有“关闭 / 变化时 / 持续”三种模式；设置保存在 NVS 中，并在关闭菜单时写入，且仅在未 ARM 时才写。默认启用 `STAT`（变化时）和 `SYS`

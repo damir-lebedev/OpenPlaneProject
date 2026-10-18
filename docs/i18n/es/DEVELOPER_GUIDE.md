@@ -238,6 +238,7 @@ Las reglas que mantienen limpia la arquitectura:
 |---|---|
 | `DebugLogger.h` | Registro por canales (`LogSettings.h`): cada uno tiene su propia línea, su propia tolerancia al rebote y su modo; calla mientras el menú está abierto |
 | `DebugConsole.h` | Un menú de texto en el monitor del puerto (`h`) y atajos de teclado (`l`/espacio/`s`/`i`/`o`/`m`/`p`/`b`); guarda los ajustes del registro en NVS al salir del menú y solo sin ARM |
+| `AppLink.h` | Enlace en vivo con OpenPlane Studio: con el comando del PC `live`, líneas `@live {...}` (estado, canales, salidas, sensores, calibraciones, motivo del rechazo de ARM) 20 veces por segundo en STM32 y 10 en ESP32; si el búfer del puerto está lleno, la trama se salta en vez de esperar |
 | `LogSettings.h` | Los canales del registro (STAT, RC, OUT, ATT, AP, ALT, MAG, GPS, IMU, NAV, SYS) y sus modos: desactivado / al cambiar / continuo; se guarda en NVS |
 | `WebDebugServer.h` | El punto de acceso, las rutas, el JSON `/api/status`, el buzón de comandos; tiene su propia tarea en el núcleo 0 |
 | `WebDashboardPage.h` | El HTML/JS del panel en un solo literal; las filas de canales, salidas y sensores las construye el navegador a partir del JSON |
@@ -592,7 +593,7 @@ bloquean el ciclo y por eso solo están disponibles sin ARM.
 | `m` | Calibración de la brújula (15 s girando), se guarda en NVS |
 | `p` | Autocomprobación de las salidas: el pulso real en cada pin frente al esperado |
 
-Los comandos del PC son un byte STX (`0x02`), una cadena y `\n`: `id` devuelve la identidad del firmware en una sola línea JSON (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`); con ella OpenPlane Studio reconoce la placa y comprueba que se grabó exactamente la configuración del proyecto; `bb …` va a la caja negra (`tools/blackbox.py`).
+Los comandos del PC son un byte STX (`0x02`), una cadena y `\n`: `id` devuelve la identidad del firmware en una sola línea JSON (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`); con ella OpenPlane Studio reconoce la placa y comprueba que se grabó exactamente la configuración del proyecto; `bb …` va a la caja negra (`tools/blackbox.py`). Para el asistente de ajuste: `live` envía datos en vivo como líneas `@live {...}` durante 3 s más (la aplicación repite el comando cada segundo; `live 0` lo detiene al instante; `telemetry/AppLink.h`), `scan` sondea los buses I2C y responde con una línea `@scan {...}`, y `act X` hace lo mismo que la tecla `X` del menú (calibraciones, prueba de salidas, señal).
 
 El registro se divide en canales (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`,
 `MAG`, `GPS`, `IMU`, `SYS`), cada uno con el modo «desactivado / al cambiar /

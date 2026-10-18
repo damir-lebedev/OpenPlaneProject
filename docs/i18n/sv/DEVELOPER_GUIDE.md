@@ -249,6 +249,7 @@ Reglerna som håller arkitekturen ren:
 |---|---|
 | `DebugLogger.h` | Logg per kanal (`LogSettings.h`): varje kanal har sin egen rad, sin egen debounce-tolerans och sitt eget läge; tyst medan menyn är öppen |
 | `DebugConsole.h` | En textmeny i portmonitorn (`h`) och snabbtangenter (`l`/mellanslag/`s`/`i`/`o`/`m`/`p`/`b`); sparar logginställningarna i NVS när du lämnar menyn och bara utan ARM |
+| `AppLink.h` | Livelänk till OpenPlane Studio: på datorkommandot `live` rader `@live {...}` (tillstånd, kanaler, utgångar, sensorer, kalibreringar, skälet till att ARM vägras) 20 gånger per sekund på STM32 och 10 på ESP32; är portens buffert full hoppas ramen över i stället för att vänta |
 | `LogSettings.h` | Loggkanalerna (STAT, RC, OUT, ATT, AP, ALT, MAG, GPS, IMU, NAV, SYS) och deras lägen: av / vid ändring / kontinuerligt; lagras i NVS |
 | `WebDebugServer.h` | Åtkomstpunkten, rutterna, JSON för `/api/status`, kommandobrevlådan; körs i en egen uppgift på kärna 0 |
 | `WebDashboardPage.h` | Panelens HTML/JS som en enda literal; webbläsaren bygger raderna för kanaler/utgångar/sensorer från JSON |
@@ -590,7 +591,7 @@ slingan och är därför bara tillgängliga utan ARM.
 | `m` | Kompasskalibrering (15 s rotation), sparas i NVS |
 | `p` | Självtest av utgångar: den verkliga pulsen på varje stift mot den förväntade |
 
-Kommandon från datorn är en STX-byte (`0x02`), en sträng och `\n`: `id` ger firmwarens identitet som en enda JSON-rad (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) – med den känner OpenPlane Studio igen kortet och kontrollerar att exakt projektets konfiguration flashades; `bb …` går till den svarta lådan (`tools/blackbox.py`).
+Kommandon från datorn är en STX-byte (`0x02`), en sträng och `\n`: `id` ger firmwarens identitet som en enda JSON-rad (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) – med den känner OpenPlane Studio igen kortet och kontrollerar att exakt projektets konfiguration flashades; `bb …` går till den svarta lådan (`tools/blackbox.py`). För inställningsguiden: `live` skickar livedata som rader `@live {...}` i ytterligare 3 s (appen upprepar kommandot en gång per sekund, `live 0` stoppar direkt; `telemetry/AppLink.h`), `scan` söker igenom I2C-bussarna och svarar med en rad `@scan {...}`, `act X` gör samma sak som menytangenten `X` (kalibreringar, test av utgångar, signal).
 
 Loggen är uppdelad i kanaler (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`, `MAG`,
 `GPS`, `IMU`, `SYS`), var och en med ett läge ”av / vid ändring / kontinuerligt”;

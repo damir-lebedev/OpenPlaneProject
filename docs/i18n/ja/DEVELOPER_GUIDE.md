@@ -238,6 +238,7 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
 |---|---|
 | `DebugLogger.h` | チャンネルごとのログ（`LogSettings.h`）：チャンネルごとに専用の行、チャタリング許容値、モードを持つ。メニューを開いている間は出力しない |
 | `DebugConsole.h` | ポートモニターのテキストメニュー（`h`）とホットキー（`l`/スペース/`s`/`i`/`o`/`m`/`p`/`b`）。ログ設定はメニューを抜けるときに NVS へ書き込み、ARM していないときだけ書く |
+| `AppLink.h` | OpenPlane Studio とのライブ接続：PC コマンド `live` で `@live {...}` の行（状態、チャンネル、出力、センサー、キャリブレーション、ARM できない理由）を STM32 では毎秒 20 回、ESP32 では 10 回送る。ポートのバッファーが一杯なら待たずにフレームを飛ばす |
 | `LogSettings.h` | ログのチャンネル（STAT、RC、OUT、ATT、AP、ALT、MAG、GPS、IMU、NAV、SYS）とそのモード：オフ／変化時／常時。NVS に保存 |
 | `WebDebugServer.h` | アクセスポイント、ルート、JSON `/api/status`、コマンド用のメールボックス。コア 0 上の専用タスク |
 | `WebDashboardPage.h` | ダッシュボードの HTML/JS を 1 つのリテラルにしたもの。チャンネル／出力／センサーの行はブラウザーが JSON から組み立てる |
@@ -503,7 +504,7 @@ HTML ダッシュボード：10 チャンネルのバー、ARM／リンク、出
 | `m` | コンパスの校正（15 秒間回転）。NVS に保存 |
 | `p` | 出力のセルフテスト：各ピンの実際のパルスと期待値を比較 |
 
-PC からのコマンドは STX バイト（`0x02`）、文字列、`\n` です。`id` はファームウェアの ID 情報を 1 行の JSON で返します（`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`、`telemetry/FirmwareIdentity.h`）。OpenPlane Studio はこれでボードを認識し、プロジェクトの設定がそのまま書き込まれたかを確認します。`bb …` はブラックボックスへ渡ります（`tools/blackbox.py`）。
+PC からのコマンドは STX バイト（`0x02`）、文字列、`\n` です。`id` はファームウェアの ID 情報を 1 行の JSON で返します（`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`、`telemetry/FirmwareIdentity.h`）。OpenPlane Studio はこれでボードを認識し、プロジェクトの設定がそのまま書き込まれたかを確認します。`bb …` はブラックボックスへ渡ります（`tools/blackbox.py`）。セットアップウィザード用に、`live` はさらに 3 秒間ライブデータを `@live {...}` の行で送ります（アプリは毎秒コマンドを繰り返し、`live 0` ですぐに止まります。`telemetry/AppLink.h`）。`scan` は I2C バスを調べて 1 行の `@scan {...}` で答え、`act X` はメニューのキー `X` と同じこと（キャリブレーション、出力のテスト、合図）をします。
 
 ログはチャンネルに分かれており（`STAT`、`RC`、`OUT`、`ATT`、`AP`、`ALT`、`MAG`、
 `GPS`、`IMU`、`SYS`）、それぞれに「オフ／変化時／常時」のモードがあります。設定は

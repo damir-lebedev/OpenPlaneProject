@@ -249,6 +249,7 @@ The rules that keep the architecture clean:
 |---|---|
 | `DebugLogger.h` | Per-channel log (`LogSettings.h`): each channel has its own line, its own debounce tolerance and mode; stays silent while the menu is open |
 | `DebugConsole.h` | A text menu in the port monitor (`h`) and hotkeys (`l`/space/`s`/`i`/`o`/`m`/`p`/`b`); saves the log settings to NVS when you leave the menu and only without ARM |
+| `AppLink.h` | Live link to OpenPlane Studio: on the PC command `live`, `@live {...}` lines (state, channels, outputs, sensors, calibrations, why ARM is refused) 20 times a second on STM32 and 10 on ESP32; when the port buffer is full a frame is skipped rather than waited for |
 | `LogSettings.h` | The log channels (STAT, RC, OUT, ATT, AP, ALT, MAG, GPS, IMU, NAV, SYS) and their modes: off / on change / continuous; stored in NVS |
 | `WebDebugServer.h` | The access point, the routes, the `/api/status` JSON, the command mailbox; runs in its own task on core 0 |
 | `WebDashboardPage.h` | The dashboard HTML/JS as a single literal; the browser builds the channel/output/sensor rows from the JSON |
@@ -591,7 +592,7 @@ loop and are therefore available only without ARM.
 | `m` | Compass calibration (15 s of rotation), saved to NVS |
 | `p` | Output self-test: the real pulse on each pin against the expected one |
 
-PC commands are an STX byte (`0x02`), a string and `\n`: `id` returns the firmware identity as one JSON line (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) — OpenPlane Studio uses it to recognize the board and to check that exactly the project's configuration was flashed; `bb …` goes to the black box (`tools/blackbox.py`).
+PC commands are an STX byte (`0x02`), a string and `\n`: `id` returns the firmware identity as one JSON line (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) — OpenPlane Studio uses it to recognize the board and to check that exactly the project's configuration was flashed; `bb …` goes to the black box (`tools/blackbox.py`). For the setup wizard: `live` streams live data as `@live {...}` lines for 3 more seconds (the app repeats the command once a second, `live 0` stops at once; `telemetry/AppLink.h`), `scan` probes the I2C buses and answers with one `@scan {...}` line, `act X` does what menu key `X` does (calibrations, output test, signal).
 
 The log is split into channels (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`, `MAG`,
 `GPS`, `IMU`, `SYS`), each with a mode "off / on change / continuous"; the

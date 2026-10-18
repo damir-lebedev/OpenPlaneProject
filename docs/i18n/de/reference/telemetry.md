@@ -143,7 +143,7 @@ Kalibrierung des IMU-Einbaus; `m` — Kalibrierung des Kompasses; `p` — Selbst
 `b` — Scan der I2C-Busse (0x08..0x7F — bis 0x7F, weil der QMC6309 auf 0x7C sitzt) mit
 den Namen der Chips; alles andere — ein Hinweis. `\r`/`\n` werden ignoriert. Außerdem `c` – Bodenkalibrierung des Flugzeugs (läuft sie, Abbruch; Hauptmenüpunkt 9) und `e` – ein Signal per Rudern und ESC-Melodie (prüft, ob der Regler sie nach der Impulspause spielt).
 
-PC-Befehle sind ein STX-Byte (`0x02`), eine Zeichenkette und `\n`: Auf `id` gibt `FirmwareIdentity::print()` die Firmware-Kennung als eine Zeile `@id {...}` aus (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; antwortet auch im ARM-Zustand), alles andere geht an `IFlightRecorder::handleHostCommand()` (Blackbox). Board, Commit, Konfigurations-Hash und Flugzeugname schreibt OpenPlane Studio über `config/Project.h` in seine Kopie der Quellen; ohne diese Datei gelten das Board-Makro und `"dev"`.
+PC-Befehle sind ein STX-Byte (`0x02`), eine Zeichenkette und `\n`: Auf `id` gibt `FirmwareIdentity::print()` die Firmware-Kennung als eine Zeile `@id {...}` aus (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; antwortet auch im ARM-Zustand); `scan` fragt die Busse ab und gibt `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` aus (im ARM-Zustand `{"error":"armed"}`); `act X` führt die Aktion der Menütaste `X` aus, mit denselben Sperren im ARM-Zustand; `live` und `live 0` gehen an `AppLink` (unten), alles andere an `IFlightRecorder::handleHostCommand()` (Blackbox). Board, Commit, Konfigurations-Hash und Flugzeugname schreibt OpenPlane Studio über `config/Project.h` in seine Kopie der Quellen; ohne diese Datei gelten das Board-Makro und `"dev"`.
 
 Das Protokollmenü: `1`..`9` — schalten den Modus der Kanäle 0..8 reihum um, `n` — NAV, `s` — SYS, `p` — Periode, `a` —
 alles „bei Änderung“, `x` — alles aus, `d` — Standard, `0`/`q` — zurück, `l`/`h` —
@@ -152,6 +152,16 @@ schließen.
 Die blockierenden Aktionen (`i`, `o`, `m`, `p`) sind **bei ARM verboten**. Solange das Menü
 offen ist, ist das Protokoll angehalten (`DebugLogger::suspend`). Die Breite der Menüpunkte
 wird in UTF-8-Zeichen gezählt, nicht in Bytes (Kyrillisch belegt 2 Bytes). Auch Flugzeugkalibrierung und Signal (`c`, `e` – sie bewegen die Ruder und fassen den ESC an) sind bei ARM gesperrt.
+
+---
+
+## `AppLink`
+
+`telemetry/AppLink.h` ist die Live-Verbindung zu OpenPlane Studio. Nach dem PC-Befehl `live` (über `DebugConsole`) sendet das Board noch `LIVE_HOLD_MS` (3 s) lang Zeilen `@live {...}`, eine alle `FRAME_PERIOD_MS`: 50 ms auf STM32 (USB), 100 ms auf ESP32 (UART mit 115200). Die App wiederholt `live` einmal pro Sekunde, solange sie zuhört: App geschlossen oder Kabel gezogen – das Board verstummt von selbst; `live 0` beendet sofort.
+
+Ein Frame ist eine JSON-Zeile: `t`, `arm`, `mode`, `rx` (`ok`, `lost` – keine Frames, `fs` – Failsafe des Empfängers), `ch` (10 Kanäle, µs, nach `CHANNEL_REVERSED`), `out` (Querruder links, Querruder rechts, Höhenruder, Seitenruder, Gas, AUX1, AUX2 – µs), `rev`, der Zustand jedes Sensors (`ok`, `none`, `noresp`; die IMU zusätzlich `check` – Vorflugprüfung nicht bestanden) mit seinen Werten (`att`, `alt`/`vz`, `hdg`, `fix`/`sats`, `ias`), Kalibrierungen (`mount` – Einbaulage der IMU, `park` – Parklage, `magcal` – Kompass), `block` – warum ARM gerade verweigert würde (`FlightController::armBlockNow()`, `null` – ARM ginge), `cal` – Schritt der Bodenkalibrierung, `feat` – aktive Funktionen, `hz` – Schleifenrate.
+
+Ein Frame wird nur geschrieben, wenn er vollständig in den Port-Puffer passt (`Serial.availableForWrite()`), sonst wird er übersprungen (`getFramesSkipped()`): Die Flugschleife wartet nie auf den PC. Deshalb muss der Sendepuffer einen Frame fassen (bis `LIVE_LINE_MAX` = 768 Byte): auf ESP32 `Serial.setTxBufferSize(4096)`; beim DevEBox ist die USB-Warteschlange mit `CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER=16` in `platformio.ini` vergrößert (die standardmäßigen 128 Byte fassten nie einen Frame), und ein Build mit kleinerer Warteschlange bricht mit einer Erklärung ab.
 
 ---
 

@@ -137,13 +137,23 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10秒間の最悪値) | iBUS ok=… c
 IMU の取り付けの較正、`m` — コンパスの較正、`p` — 出力のセルフテスト、
 `b` — I2C バスのスキャン（0x08..0x7F — 0x7F まで。QMC6309 が 0x7C にあるため）でチップ名を表示します。それ以外はヒントを表示します。`\r`/`\n` は無視します。さらに `c` は機体の地上校正（実行中なら中止。メインメニューの 9 番）、`e` は舵面と ESC のメロディによる合図です（パルス停止の後に ESC が鳴らすかを確認）。
 
-PC のコマンドは STX バイト（`0x02`）、文字列、`\n` です。`id` に対しては `FirmwareIdentity::print()` がファームウェアの ID 情報を 1 行の `@id {...}` で出力し（`fw`、`proto`、`board`、`commit`、`config`、`plane`、`armed`。ARM 中でも応答します）、それ以外は `IFlightRecorder::handleHostCommand()`（ブラックボックス）へ渡ります。ボード、コミット、設定のハッシュ、機体名は、OpenPlane Studio が自分のソースのコピーの `config/Project.h` で埋め込みます。このファイルがなければボードのマクロと `"dev"` になります。
+PC のコマンドは STX バイト（`0x02`）、文字列、`\n` です。`id` に対しては `FirmwareIdentity::print()` がファームウェアの ID 情報を 1 行の `@id {...}` で出力し（`fw`、`proto`、`board`、`commit`、`config`、`plane`、`armed`。ARM 中でも応答します）。`scan` はバスを調べて `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` を出力し（ARM 中は `{"error":"armed"}`）、`act X` はメニューのキー `X` の動作を ARM 中の同じ制限付きで実行し、`live` と `live 0` は `AppLink`（後述）へ、それ以外は `IFlightRecorder::handleHostCommand()`（ブラックボックス）へ渡ります。ボード、コミット、設定のハッシュ、機体名は、OpenPlane Studio が自分のソースのコピーの `config/Project.h` で埋め込みます。このファイルがなければボードのマクロと `"dev"` になります。
 
 ログのメニュー: `1`..`9` — チャンネル 0..8 のモードを巡回、`n` — NAV、`s` — SYS、`p` — 周期、`a` —
 すべて「変化時」、`x` — すべてオフ、`d` — 既定値、`0`/`q` — 戻る、`l`/`h` —
 閉じる。
 
 ブロックする操作（`i`、`o`、`m`、`p`）は **ARM 中は禁止**です。メニューが開いている間は、ログを停止します（`DebugLogger::suspend`）。メニュー項目の幅はバイト数ではなく UTF-8 の文字数で数えます（キリル文字は 2 バイト）。機体の校正と合図（`c`、`e`：舵面を動かし ESC に触れる）も ARM 中は禁止です。
+
+---
+
+## `AppLink`
+
+`telemetry/AppLink.h` は OpenPlane Studio とのライブ接続です。PC コマンド `live`（`DebugConsole` 経由）を受けると、ボードは `LIVE_HOLD_MS`（3 秒）のあいだ `@live {...}` の行を `FRAME_PERIOD_MS` ごとに送り続けます。STM32（USB）では 50 ms、ESP32（115200 の UART）では 100 ms です。アプリは聞いているあいだ毎秒 `live` を繰り返します。アプリを閉じたりケーブルを抜いたりすると、ボードはひとりでに黙ります。`live 0` ですぐに止まります。
+
+フレームは JSON 1 行です：`t`、`arm`、`mode`、`rx`（`ok`、`lost`＝フレームが来ない、`fs`＝受信機のフェイルセーフ）、`ch`（10 チャンネル、µs、`CHANNEL_REVERSED` 適用後）、`out`（左エルロン、右エルロン、エレベーター、ラダー、スロットル、AUX1、AUX2 — µs）、`rev`、各センサーの状態（`ok`、`none`、`noresp`。IMU には `check`＝飛行前チェック不合格 もあります）とその値（`att`、`alt`/`vz`、`hdg`、`fix`/`sats`、`ias`）、キャリブレーション（`mount`＝IMU の取り付け、`park`＝駐機姿勢、`magcal`＝コンパス）、`block`＝いま ARM が拒否される理由（`FlightController::armBlockNow()`、`null` なら ARM できる）、`cal`＝地上キャリブレーションの段階、`feat`＝有効な機能、`hz`＝ループ周波数。
+
+フレームはポートのバッファー（`Serial.availableForWrite()`）にまるごと収まるときだけ書き込まれ、収まらなければ飛ばされます（`getFramesSkipped()`）。飛行ループが PC を待つことはありません。そのため送信バッファーには 1 フレーム（最大 `LIVE_LINE_MAX` = 768 バイト）が入る必要があります。ESP32 では `Serial.setTxBufferSize(4096)`、DevEBox では `platformio.ini` の `CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER=16` で USB キューを広げています（既定の 128 バイトにはフレームが決して収まりませんでした）。キューがそれより小さいビルドは説明付きで止まります。
 
 ---
 

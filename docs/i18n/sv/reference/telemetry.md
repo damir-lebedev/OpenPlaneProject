@@ -143,7 +143,7 @@ kalibrering av IMU-monteringen; `m` – kompasskalibrering; `p` – självtest a
 `b` – avsökning av I2C-bussarna (0x08..0x7F – upp till 0x7F, eftersom QMC6309 sitter på 0x7C) med
 kretsnamn; allt annat – en ledtråd. `\r`/`\n` ignoreras. Dessutom `c` – markkalibrering av flygplanet (pågår den, avbryts den; huvudmenyns punkt 9) och `e` – en signal med roder och ESC-melodi (kontrollerar att ESC:n spelar den efter pulspausen).
 
-Kommandon från datorn är en STX-byte (`0x02`), en sträng och `\n`: på `id` skriver `FirmwareIdentity::print()` ut firmwarens identitet som en enda rad `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; svarar även under ARM), allt annat går till `IFlightRecorder::handleHostCommand()` (svarta lådan). Kort, commit, konfigurationens hash och flygplanets namn bakar OpenPlane Studio in via `config/Project.h` i sin kopia av källkoden; utan den filen gäller kortets makro och `"dev"`.
+Kommandon från datorn är en STX-byte (`0x02`), en sträng och `\n`: på `id` skriver `FirmwareIdentity::print()` ut firmwarens identitet som en enda rad `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; svarar även under ARM); `scan` söker igenom bussarna och skriver ut `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` (under ARM: `{"error":"armed"}`); `act X` utför åtgärden för menytangenten `X` med samma spärrar under ARM; `live` och `live 0` går till `AppLink` (nedan), allt annat går till `IFlightRecorder::handleHostCommand()` (svarta lådan). Kort, commit, konfigurationens hash och flygplanets namn bakar OpenPlane Studio in via `config/Project.h` i sin kopia av källkoden; utan den filen gäller kortets makro och `"dev"`.
 
 Loggmenyn: `1`..`9` – växla läge för kanalerna 0..8, `n` – NAV, `s` – SYS, `p` – period, `a` –
 allt ”vid ändring”, `x` – allt av, `d` – standardvärden, `0`/`q` – tillbaka, `l`/`h` –
@@ -152,6 +152,16 @@ stäng.
 De blockerande åtgärderna (`i`, `o`, `m`, `p`) är **förbjudna under ARM**. Medan menyn
 är öppen är loggen pausad (`DebugLogger::suspend`). Menypunkternas bredd
 räknas i UTF-8-tecken snarare än byte (kyrilliska tecken tar 2 byte). Även flygplanskalibreringen och signalen (`c`, `e` – de rör rodren och ESC:n) är spärrade under ARM.
+
+---
+
+## `AppLink`
+
+`telemetry/AppLink.h` är livelänken till OpenPlane Studio. Efter datorkommandot `live` (via `DebugConsole`) fortsätter kortet att skicka rader `@live {...}` i `LIVE_HOLD_MS` (3 s), en per `FRAME_PERIOD_MS`: 50 ms på STM32 (USB), 100 ms på ESP32 (UART i 115200). Appen upprepar `live` en gång per sekund medan den lyssnar: stängs appen eller dras kabeln ur tystnar kortet av sig självt; `live 0` stoppar direkt.
+
+En ram är en JSON-rad: `t`, `arm`, `mode`, `rx` (`ok`, `lost` – inga ramar, `fs` – mottagarens failsafe), `ch` (10 kanaler, µs, efter `CHANNEL_REVERSED`), `out` (vänster skevroder, höger skevroder, höjdroder, sidoroder, gas, AUX1, AUX2 – µs), `rev`, varje sensors tillstånd (`ok`, `none`, `noresp`; IMU:n även `check` – förflygningskontrollen underkänd) med dess värden (`att`, `alt`/`vz`, `hdg`, `fix`/`sats`, `ias`), kalibreringar (`mount` – IMU:ns montering, `park` – parkeringsläge, `magcal` – kompass), `block` – varför ARM skulle vägras just nu (`FlightController::armBlockNow()`, `null` – det skulle gå), `cal` – steget i markkalibreringen, `feat` – aktiva funktioner, `hz` – loopfrekvens.
+
+En ram skrivs bara om den ryms helt i portens buffert (`Serial.availableForWrite()`), annars hoppas den över (`getFramesSkipped()`): flygloopen väntar aldrig på datorn. Därför måste sändbufferten rymma en ram (upp till `LIVE_LINE_MAX` = 768 byte): på ESP32 `Serial.setTxBufferSize(4096)`; på DevEBox är USB-kön förstorad med `CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER=16` i `platformio.ini` (standardens 128 byte rymde aldrig en ram), och ett bygge med mindre kö stoppar med en förklaring.
 
 ---
 

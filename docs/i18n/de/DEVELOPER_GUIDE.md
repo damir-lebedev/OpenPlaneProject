@@ -238,6 +238,7 @@ Die Regeln, die die Architektur sauber halten:
 |---|---|
 | `DebugLogger.h` | Log nach Kanälen (`LogSettings.h`): jeder hat seine eigene Zeile, seine eigene Entprelltoleranz und seinen Modus; schweigt, solange das Menü geöffnet ist |
 | `DebugConsole.h` | Ein Textmenü im Port-Monitor (`h`) und Hotkeys (`l`/Leertaste/`s`/`i`/`o`/`m`/`p`/`b`); schreibt die Log-Einstellungen beim Verlassen des Menüs ins NVS und nur ohne ARM |
+| `AppLink.h` | Live-Verbindung zu OpenPlane Studio: auf den PC-Befehl `live` Zeilen `@live {...}` (Zustand, Kanäle, Ausgänge, Sensoren, Kalibrierungen, Grund für verweigertes ARM) 20-mal pro Sekunde auf STM32 und 10-mal auf ESP32; ist der Port-Puffer voll, wird der Frame übersprungen statt gewartet |
 | `LogSettings.h` | Die Log-Kanäle (STAT, RC, OUT, ATT, AP, ALT, MAG, GPS, IMU, NAV, SYS) und ihre Modi: aus / bei Änderung / dauerhaft; im NVS gespeichert |
 | `WebDebugServer.h` | Der Access Point, die Routen, das JSON `/api/status`, der Befehlsbriefkasten; eine eigene Task auf Kern 0 |
 | `WebDashboardPage.h` | HTML/JS des Dashboards als ein einziges Literal; die Zeilen für Kanäle, Ausgänge und Sensoren baut der Browser aus dem JSON |
@@ -593,7 +594,7 @@ blockieren die Schleife und sind deshalb nur ohne ARM verfügbar.
 | `m` | Kompasskalibrierung (15 s Drehen), wird im NVS gespeichert |
 | `p` | Selbsttest der Ausgänge: der echte Impuls an jedem Pin gegenüber dem erwarteten |
 
-Befehle vom PC sind ein STX-Byte (`0x02`), eine Zeichenkette und `\n`: `id` liefert die Firmware-Kennung als eine JSON-Zeile (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) – daran erkennt OpenPlane Studio das Board und prüft, dass genau die Konfiguration des Projekts geflasht wurde; `bb …` geht an die Blackbox (`tools/blackbox.py`).
+Befehle vom PC sind ein STX-Byte (`0x02`), eine Zeichenkette und `\n`: `id` liefert die Firmware-Kennung als eine JSON-Zeile (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) – daran erkennt OpenPlane Studio das Board und prüft, dass genau die Konfiguration des Projekts geflasht wurde; `bb …` geht an die Blackbox (`tools/blackbox.py`). Für den Einrichtungsassistenten: `live` sendet noch 3 s lang Live-Daten als Zeilen `@live {...}` (die App wiederholt den Befehl einmal pro Sekunde, `live 0` beendet sofort; `telemetry/AppLink.h`), `scan` fragt die I2C-Busse ab und antwortet mit einer Zeile `@scan {...}`, `act X` tut dasselbe wie die Menütaste `X` (Kalibrierungen, Ausgangstest, Signal).
 
 Das Log ist in Kanäle gegliedert (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`,
 `MAG`, `GPS`, `IMU`, `SYS`), jeder mit dem Modus „aus / bei Änderung /

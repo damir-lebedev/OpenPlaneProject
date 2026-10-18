@@ -238,6 +238,7 @@ Les règles qui gardent l’architecture propre :
 |---|---|
 | `DebugLogger.h` | Journal par canaux (`LogSettings.h`) : chacun a sa propre ligne, sa propre tolérance aux rebonds et son mode ; reste muet tant que le menu est ouvert |
 | `DebugConsole.h` | Un menu texte dans le moniteur du port (`h`) et des raccourcis clavier (`l`/espace/`s`/`i`/`o`/`m`/`p`/`b`) ; écrit les réglages du journal dans la NVS à la sortie du menu et seulement sans ARM |
+| `AppLink.h` | Liaison en direct avec OpenPlane Studio : sur la commande PC `live`, lignes `@live {...}` (état, voies, sorties, capteurs, calibrations, raison du refus d’ARM) 20 fois par seconde sur STM32 et 10 sur ESP32 ; si le tampon du port est plein, la trame est sautée au lieu d’attendre |
 | `LogSettings.h` | Les canaux du journal (STAT, RC, OUT, ATT, AP, ALT, MAG, GPS, IMU, NAV, SYS) et leurs modes : désactivé / en cas de changement / en continu ; sauvegardés dans la NVS |
 | `WebDebugServer.h` | Le point d’accès, les routes, le JSON `/api/status`, la boîte aux lettres des commandes ; sa propre tâche sur le cœur 0 |
 | `WebDashboardPage.h` | Le HTML/JS du tableau de bord dans un seul littéral ; les lignes des canaux, des sorties et des capteurs sont construites par le navigateur à partir du JSON |
@@ -599,7 +600,7 @@ ARM.
 | `m` | Calibration de la boussole (15 s de rotation), sauvegardée dans la NVS |
 | `p` | Autotest des sorties : l’impulsion réelle sur chaque broche face à l’impulsion attendue |
 
-Les commandes du PC sont un octet STX (`0x02`), une chaîne et `\n` : `id` renvoie l’identité du firmware sur une seule ligne JSON (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) — OpenPlane Studio s’en sert pour reconnaître la carte et vérifier que c’est exactement la configuration du projet qui a été flashée ; `bb …` va à la boîte noire (`tools/blackbox.py`).
+Les commandes du PC sont un octet STX (`0x02`), une chaîne et `\n` : `id` renvoie l’identité du firmware sur une seule ligne JSON (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) — OpenPlane Studio s’en sert pour reconnaître la carte et vérifier que c’est exactement la configuration du projet qui a été flashée ; `bb …` va à la boîte noire (`tools/blackbox.py`). Pour l’assistant de réglage : `live` envoie les données en direct en lignes `@live {...}` pendant encore 3 s (l’application répète la commande chaque seconde, `live 0` arrête aussitôt ; `telemetry/AppLink.h`), `scan` interroge les bus I2C et répond par une ligne `@scan {...}`, `act X` fait la même chose que la touche `X` du menu (calibrations, test des sorties, signal).
 
 Le journal est divisé en canaux (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`,
 `MAG`, `GPS`, `IMU`, `SYS`), chacun avec le mode « désactivé / en cas de

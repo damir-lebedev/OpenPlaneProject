@@ -238,6 +238,7 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
 |---|---|
 | `DebugLogger.h` | 채널별 로그(`LogSettings.h`): 채널마다 자기 줄, 자기 채터링 허용치와 모드를 가짐. 메뉴가 열려 있는 동안에는 출력하지 않음 |
 | `DebugConsole.h` | 포트 모니터의 텍스트 메뉴(`h`)와 단축키(`l`/스페이스/`s`/`i`/`o`/`m`/`p`/`b`). 로그 설정은 메뉴를 나갈 때 NVS에 기록하며, ARM하지 않았을 때만 기록 |
+| `AppLink.h` | OpenPlane Studio와의 실시간 연결: PC 명령 `live`를 받으면 `@live {...}` 줄(상태, 채널, 출력, 센서, 캘리브레이션, ARM이 거부되는 이유)을 STM32에서는 초당 20번, ESP32에서는 10번 보냄. 포트 버퍼가 가득 차면 기다리지 않고 프레임을 건너뜀 |
 | `LogSettings.h` | 로그 채널(STAT, RC, OUT, ATT, AP, ALT, MAG, GPS, IMU, NAV, SYS)과 모드: 끔 / 변경 시 / 상시. NVS에 저장 |
 | `WebDebugServer.h` | 액세스 포인트, 라우트, JSON `/api/status`, 명령 우편함. 코어 0에서 도는 전용 태스크 |
 | `WebDashboardPage.h` | 대시보드의 HTML/JS를 하나의 리터럴로 담은 것. 채널/출력/센서 행은 브라우저가 JSON으로 만든다 |
@@ -564,7 +565,7 @@ Enter는 필요 없습니다. 보정과 `p`는 루프를 멈추게 하므로 ARM
 | `m` | 나침반 보정(15초간 회전), NVS에 저장 |
 | `p` | 출력 자가 점검: 각 핀의 실제 펄스를 기대값과 비교 |
 
-PC에서 보내는 명령은 STX 바이트(`0x02`), 문자열, `\n`입니다. `id`는 펌웨어 식별 정보를 JSON 한 줄로 돌려줍니다(`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`). OpenPlane Studio는 이것으로 보드를 알아보고 프로젝트의 설정이 그대로 플래시되었는지 확인합니다. `bb …`는 블랙박스로 갑니다(`tools/blackbox.py`).
+PC에서 보내는 명령은 STX 바이트(`0x02`), 문자열, `\n`입니다. `id`는 펌웨어 식별 정보를 JSON 한 줄로 돌려줍니다(`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`). OpenPlane Studio는 이것으로 보드를 알아보고 프로젝트의 설정이 그대로 플래시되었는지 확인합니다. `bb …`는 블랙박스로 갑니다(`tools/blackbox.py`). 설정 마법사를 위해 `live`는 3초 동안 더 실시간 데이터를 `@live {...}` 줄로 보냅니다(앱은 1초마다 명령을 반복하고, `live 0`은 즉시 멈춥니다. `telemetry/AppLink.h`). `scan`은 I2C 버스를 조사해 `@scan {...}` 한 줄로 답하고, `act X`는 메뉴 키 `X`와 같은 일(캘리브레이션, 출력 테스트, 신호)을 합니다.
 
 로그는 채널(`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`, `MAG`, `GPS`, `IMU`,
 `SYS`)로 나뉘며, 각 채널에는 “끔 / 변경 시 / 상시” 모드가 있습니다. 설정은
