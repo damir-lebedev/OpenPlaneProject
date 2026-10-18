@@ -356,4 +356,4 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 | SOARING | ● | ● | ○ | | ○ | 0 / 电机 | 没有热气流——滑翔 |
 | RESCUE | ● | | | | | 70 % | 舵面回中 |
 
-● 表示必需，○ 表示能改善效果。代码中的检查：`Autopilot.h`（`imuReady`、`baroReady`、`nav.gpsGood`）；测试——`test/native/test_autopilot_modes`（各模式对每个传感器的反应）和 `test/native/test_sim`（闭环飞行）。
+● 表示必需，○ 表示能改善效果。代码中的检查：`Autopilot.h`（`imuReady`、`baroReady`、`nav.gpsGood`）；测试——`test/native/test_autopilot_modes`（各模式对每个传感器的反应）和 `test/native/test_sim`（闭环飞行）。同一张表以标记 `@needs(...)` 和 `@better(...)` 的形式写在 `autopilot/AutopilotTypes.h` 中，OpenPlane Studio 据此把不可用的模式显示为灰色。

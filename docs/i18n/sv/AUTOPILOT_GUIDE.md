@@ -356,4 +356,4 @@ ARM/DISARM från marken **avvisas** – bara med sändarens brytare. För att ko
 | SOARING | ● | ● | ○ | | ○ | 0 / motor | ingen termik – glidflykt |
 | RESCUE | ● | | | | | 70 % | ytor till neutralläge |
 
-● – krävs, ○ – förbättrar. Kontroller i koden: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); tester – `test/native/test_autopilot_modes` (hur lägena reagerar på varje sensor) och `test/native/test_sim` (flygningar i sluten slinga).
+● – krävs, ○ – förbättrar. Kontroller i koden: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); tester – `test/native/test_autopilot_modes` (hur lägena reagerar på varje sensor) och `test/native/test_sim` (flygningar i sluten slinga). Samma tabell finns i `autopilot/AutopilotTypes.h` som taggarna `@needs(...)` och `@better(...)`: med dem grånar OpenPlane Studio ut lägen som inte är tillgängliga.

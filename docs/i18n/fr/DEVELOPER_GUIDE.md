@@ -599,6 +599,8 @@ ARM.
 | `m` | Calibration de la boussole (15 s de rotation), sauvegardée dans la NVS |
 | `p` | Autotest des sorties : l’impulsion réelle sur chaque broche face à l’impulsion attendue |
 
+Les commandes du PC sont un octet STX (`0x02`), une chaîne et `\n` : `id` renvoie l’identité du firmware sur une seule ligne JSON (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) — OpenPlane Studio s’en sert pour reconnaître la carte et vérifier que c’est exactement la configuration du projet qui a été flashée ; `bb …` va à la boîte noire (`tools/blackbox.py`).
+
 Le journal est divisé en canaux (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`,
 `MAG`, `GPS`, `IMU`, `SYS`), chacun avec le mode « désactivé / en cas de
 changement / en continu » ; les réglages sont conservés dans la NVS et écrits
@@ -795,6 +797,7 @@ Une nouvelle interface dans `include/hal/`, une implémentation dans
 1. Une valeur dans `enum AutopilotMode` (`autopilot/AutopilotTypes.h`, avant
    `MODE_COUNT`), le nom et un nom court (jusqu’à 5 caractères, pour l’OLED)
    dans `AutopilotNames::mode()` / `modeShort()`.
+   En fin de ligne, une étiquette `@needs(...)` et, si quelque chose améliore le mode, `@better(...)` : ce dont le mode a besoin (`imu`, `baro`, `gps`… — la liste est dans l’en-tête de `AutopilotTypes.h`). Sans étiquette, `python tools/opconfig.py check` échoue et OpenPlane Studio ne sait pas quand griser le mode. Même chose pour les nouveaux `Feature` et `Knob`.
 2. Un gestionnaire `run<Mode>()` et une branche dans `Autopilot::runMode()` ;
    les objectifs initiaux (cap, altitude, centre des cercles) vont dans
    `initializeMode()`. Le mode fixe `desiredRoll`/`desiredPitch` et appelle
@@ -1000,6 +1003,7 @@ pio run -t upload                        # remettre le micrologiciel normal
 2. Un bloc `#elif defined(BOARD_ESP32_<NAME>)` dans `Config.h` avec toutes les
    broches, y compris `PIN_I2C2_SDA/SCL` (−1 s’il n’y a pas d’OLED). Calculez le
    budget de GPIO à l’avance : flash/PSRAM/USB/strapping.
+   La première ligne du bloc est une étiquette `// @board(blackbox=flash|sd|none, telemetry=wifi|mavlink|none)` pour OpenPlane Studio.
 3. Les sorties des servos ont besoin de 5 canaux LEDC — toutes les ESP32 en
    ont. S’il n’y a pas de broche pour la direction — `PIN_RUDDER = -1`, et la
    sortie est simplement désactivée.
@@ -1109,6 +1113,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # vérifier que tout
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   tout au vert ([`TESTING.md`](TESTING.md)).
 - **Compilez toutes les cartes** après des modifications du code commun — la STM32H743 est la principale, mais l’ESP32-S3, la C3 et la 38 broches ne doivent pas casser non plus ; avant une version — `tools/build_matrix.sh` (toutes les cartes × tous les capteurs).
+- **Étiquettes pour l’application :** après une modification de `Config.h`, `Controls.h`, `SensorSelection.h` ou `AutopilotTypes.h`, lancez `python tools/test_opconfig.py`. OpenPlane Studio lit le firmware via `tools/opconfig.py` grâce aux étiquettes `@needs`, `@better`, `@board`, `@fixed` et `@channel`.
 - **Vérifiez sur le matériel ce qui peut l’être :** les signes — par
   l’inclinaison, les sorties — avec la commande `p`, la liaison — en éteignant
   la radiocommande.

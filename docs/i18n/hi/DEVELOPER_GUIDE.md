@@ -566,6 +566,8 @@ Enter ज़रूरी नहीं; कैलिब्रेशन और `p`
 | `m` | कम्पास का कैलिब्रेशन (15 s घुमाना), NVS में सहेजा जाता है |
 | `p` | आउटपुट की स्व-जाँच: हर पिन पर असली पल्स बनाम अपेक्षित |
 
+PC से कमांड — STX बाइट (`0x02`), एक स्ट्रिंग और `\n`: `id` फ़र्मवेयर की पहचान एक JSON पंक्ति में लौटाता है (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) — इसी से OpenPlane Studio बोर्ड पहचानता है और जाँचता है कि ठीक वही कॉन्फ़िगरेशन फ़्लैश हुआ जो प्रोजेक्ट में है; `bb …` ब्लैक बॉक्स को जाता है (`tools/blackbox.py`)।
+
 लॉग चैनलों में बँटा है (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`, `MAG`, `GPS`,
 `IMU`, `SYS`), हर एक का मोड “बंद / बदलाव पर / लगातार” है; सेटिंग NVS में रहती
 हैं और मेन्यू बंद करते समय लिखी जाती हैं, केवल ARM के बिना। डिफ़ॉल्ट रूप से
@@ -740,6 +742,7 @@ STM32H743VIT6 (Cortex-M7 480 MHz, 2 MB फ़्लैश, 1 MB RAM) — **प�
 1. `enum AutopilotMode` में एक मान (`autopilot/AutopilotTypes.h`, `MODE_COUNT` से
    पहले), `AutopilotNames::mode()` / `modeShort()` में नाम और छोटा नाम (5 अक्षर
    तक, OLED के लिए)।
+   पंक्ति के अंत में टैग `@needs(...)` और, अगर कुछ मोड को बेहतर बनाता है, `@better(...)`: मोड को क्या चाहिए (`imu`, `baro`, `gps`… — सूची `AutopilotTypes.h` के शीर्ष में है)। टैग के बिना `python tools/opconfig.py check` विफल होता है, और OpenPlane Studio नहीं जान पाता कि मोड को कब धूसर करना है। यही नए `Feature` और `Knob` पर भी लागू होता है।
 2. हैंडलर `run<Mode>()` और `Autopilot::runMode()` में एक शाखा; शुरुआती लक्ष्य
    (कोर्स, ऊँचाई, घेरे का केंद्र) `initializeMode()` में। मोड `desiredRoll`/
    `desiredPitch` तय करता है और `stabilizeOrManual()` (IMU के बिना कंट्रोल सरफ़ेस
@@ -923,6 +926,7 @@ pio run -t upload                        # सामान्य फ़र्म
 2. `Config.h` में `#elif defined(BOARD_ESP32_<NAME>)` का ब्लॉक सभी पिनों के साथ,
    `PIN_I2C2_SDA/SCL` समेत (OLED न हो तो −1)। GPIO का बजट पहले से गिन लें:
    flash/PSRAM/USB/strapping।
+   ब्लॉक की पहली पंक्ति OpenPlane Studio के लिए टैग `// @board(blackbox=flash|sd|none, telemetry=wifi|mavlink|none)` है।
 3. सर्वो आउटपुट को 5 LEDC चैनल चाहिए — सभी ESP32 में हैं। अगर रडर के लिए पिन
    नहीं है — `PIN_RUDDER = -1`, आउटपुट बस बंद हो जाएगा।
 4. जब तक बोर्ड हार्डवेयर पर जाँचा न जाए, `default_envs` न बदलें; पिन-व्यवस्था
@@ -1017,6 +1021,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # जाँचें
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   सब हरे ([`TESTING.md`](TESTING.md))।
 - **सारे बोर्ड बनाएँ** साझा कोड में बदलाव के बाद — STM32H743 मुख्य है, पर ESP32-S3, C3 और 38-पिन भी टूटने नहीं चाहिए; रिलीज़ से पहले — `tools/build_matrix.sh` (सारे बोर्ड × सारे सेंसर)।
+- **ऐप के लिए टैग:** `Config.h`, `Controls.h`, `SensorSelection.h` या `AutopilotTypes.h` बदलने के बाद `python tools/test_opconfig.py` चलाएँ। OpenPlane Studio फ़र्मवेयर को `tools/opconfig.py` के ज़रिए टैग `@needs`, `@better`, `@board`, `@fixed` और `@channel` से पढ़ता है।
 - **जो हार्डवेयर पर जाँचा जा सकता है, उसे जाँचें:** चिह्न — झुकाकर, आउटपुट —
   कमांड `p` से, संपर्क — ट्रांसमीटर बंद करके।
 - **API गढ़ें नहीं।** फ़्रेमवर्क के स्रोत

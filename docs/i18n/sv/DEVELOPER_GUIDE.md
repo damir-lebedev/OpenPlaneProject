@@ -590,6 +590,8 @@ slingan och är därför bara tillgängliga utan ARM.
 | `m` | Kompasskalibrering (15 s rotation), sparas i NVS |
 | `p` | Självtest av utgångar: den verkliga pulsen på varje stift mot den förväntade |
 
+Kommandon från datorn är en STX-byte (`0x02`), en sträng och `\n`: `id` ger firmwarens identitet som en enda JSON-rad (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) – med den känner OpenPlane Studio igen kortet och kontrollerar att exakt projektets konfiguration flashades; `bb …` går till den svarta lådan (`tools/blackbox.py`).
+
 Loggen är uppdelad i kanaler (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`, `MAG`,
 `GPS`, `IMU`, `SYS`), var och en med ett läge ”av / vid ändring / kontinuerligt”;
 inställningarna lagras i NVS och skrivs när menyn stängs, bara utan
@@ -780,6 +782,7 @@ och i `include/hal/stm32/`, åtkomst via `IBoard`.
 1. Ett värde i `enum AutopilotMode` (`autopilot/AutopilotTypes.h`, före
    `MODE_COUNT`), ett namn och ett kort namn (upp till 5 tecken, för OLED-skärmen)
    i `AutopilotNames::mode()` / `modeShort()`.
+   I slutet av raden står en tagg `@needs(...)` och, om något förbättrar läget, `@better(...)`: vad läget behöver (`imu`, `baro`, `gps`… – listan finns i huvudet på `AutopilotTypes.h`). Utan taggen misslyckas `python tools/opconfig.py check`, och OpenPlane Studio vet inte när läget ska grånas ut. Detsamma gäller nya `Feature` och `Knob`.
 2. En hanterare `run<Mode>()` och en gren i `Autopilot::runMode()`; de initiala
    målen (kurs, höjd, cirkelns mittpunkt) läggs i `initializeMode()`. Läget
    sätter `desiredRoll`/`desiredPitch` och anropar `stabilizeOrManual()`
@@ -980,6 +983,7 @@ pio run -t upload                        # återställ den vanliga firmwaren
 2. Ett block `#elif defined(BOARD_ESP32_<NAMN>)` i `Config.h` med alla
    stift, inklusive `PIN_I2C2_SDA/SCL` (−1 om det inte finns någon OLED). Räkna ut
    GPIO-budgeten i förväg: flash/PSRAM/USB/strapping.
+   Blockets första rad är en tagg `// @board(blackbox=flash|sd|none, telemetry=wifi|mavlink|none)` för OpenPlane Studio.
 3. Servoutgångarna behöver 5 LEDC-kanaler – varje ESP32 har dem. Om det inte finns
    något stift för sidrodret – `PIN_RUDDER = -1`, och utgången stängs helt
    enkelt av.
@@ -1082,6 +1086,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # kontrollera att al
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` –
   allt grönt ([`TESTING.md`](TESTING.md)).
 - **Bygg alla kort** efter ändringar i gemensam kod – STM32H743 är huvudkortet, men ESP32-S3, C3 och 38-pin får inte heller gå sönder; före en release – `tools/build_matrix.sh` (alla kort × alla sensorer).
+- **Taggar för appen:** efter ändringar i `Config.h`, `Controls.h`, `SensorSelection.h` eller `AutopilotTypes.h` – kör `python tools/test_opconfig.py`. OpenPlane Studio läser firmwaren via `tools/opconfig.py` med hjälp av taggarna `@needs`, `@better`, `@board`, `@fixed` och `@channel`.
 - **Kontrollera på hårdvara det som kan kontrolleras:** tecken – genom lutning, utgångar – med
   kommandot `p`, förbindelsen – genom att stänga av sändaren.
 - **Hitta inte på API:er.** Konsultera ramverkets källkod i

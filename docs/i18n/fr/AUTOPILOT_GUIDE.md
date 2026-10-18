@@ -356,4 +356,4 @@ L’ARM/DISARM depuis le sol est **refusé** : uniquement par l’interrupteur 
 | SOARING | ● | ● | ○ | | ○ | 0 / moteur | sans thermiques — plané |
 | RESCUE | ● | | | | | 70 % | gouvernes au neutre |
 
-● signifie obligatoire et ○, que ça améliore. Les vérifications dans le code : `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`) ; les tests : `test/native/test_autopilot_modes` (réaction des modes à chaque capteur) et `test/native/test_sim` (vols en boucle fermée).
+● signifie obligatoire et ○, que ça améliore. Les vérifications dans le code : `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`) ; les tests : `test/native/test_autopilot_modes` (réaction des modes à chaque capteur) et `test/native/test_sim` (vols en boucle fermée). La même table figure dans `autopilot/AutopilotTypes.h` sous forme d’étiquettes `@needs(...)` et `@better(...)` : OpenPlane Studio s’en sert pour griser les modes indisponibles.

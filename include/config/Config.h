@@ -31,6 +31,7 @@ namespace Config
     // --------------------------------------------------------
 
 #if defined(BOARD_ESP32_S3)
+    // @board(blackbox=flash, telemetry=wifi) — для приложения OpenPlane Studio (tools/opconfig.py)
     // ESP32-S3 N16R8 (DevKitC-1-клон с двумя USB-C "USB"/"COM") —
     // прежний основной лётный контроллер. Проверено вживую: сервы/ESC, iBUS,
     // обе I2C-шины (шина датчиков — ещё на GPIO8/9, см. ниже).
@@ -96,6 +97,7 @@ namespace Config
     constexpr int8_t PIN_TELEM_RX    = 10;
 
 #elif defined(BOARD_ESP32_CLASSIC)
+    // @board(blackbox=none, telemetry=wifi) — для приложения OpenPlane Studio (tools/opconfig.py)
     // Обычная ESP32 38-pin (esp32dev/DOIT/NodeMCU-32S).
     // GPIO0/2/5/12/15 (strapping) и GPIO6-11 (SPI flash) не используются;
     // 34-39 пропущены — они input-only и не годятся для Servo/ESC.
@@ -137,6 +139,7 @@ namespace Config
     constexpr int8_t PIN_BUZZER = 2;
 
 #elif defined(BOARD_ESP32_C3)
+    // @board(blackbox=none, telemetry=wifi) — для приложения OpenPlane Studio (tools/opconfig.py)
     // ESP32-C3 SuperMini — старый прототип, на нём борт уже летал
     // (на ручном управлении, без датчиков).
     constexpr uint8_t PIN_AILERON_LEFT  = 5;
@@ -199,6 +202,7 @@ namespace Config
     constexpr int8_t PIN_BUZZER = -1;
 
 #elif defined(BOARD_STM32H743)
+    // @board(blackbox=sd, telemetry=mavlink) — для приложения OpenPlane Studio (tools/opconfig.py)
     // STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) —
     // основная плата. На плате DevEBox H743 проверены загрузка, консоль по
     // USB, SD-карта и чёрный ящик, iBUS, ШИМ на серво и мотор; датчики на
@@ -272,13 +276,13 @@ namespace Config
     // iBUS configuration
     // --------------------------------------------------------
 
-    constexpr uint8_t IBUS_CHANNELS = 10;
-    constexpr uint8_t IBUS_FRAME_LENGTH = 32;
+    constexpr uint8_t IBUS_CHANNELS = 10;  // @fixed
+    constexpr uint8_t IBUS_FRAME_LENGTH = 32;  // @fixed
 
-    constexpr uint8_t IBUS_HEADER_0 = 0x20;
-    constexpr uint8_t IBUS_HEADER_1 = 0x40;
+    constexpr uint8_t IBUS_HEADER_0 = 0x20;  // @fixed
+    constexpr uint8_t IBUS_HEADER_1 = 0x40;  // @fixed
 
-    constexpr uint32_t IBUS_BAUDRATE = 115200;
+    constexpr uint32_t IBUS_BAUDRATE = 115200;  // @fixed
 
     // При отсутствии корректного iBUS кадра дольше этого
     // времени приёмник считается потерянным.
@@ -337,9 +341,9 @@ namespace Config
     // Standard RC pulse range
     // --------------------------------------------------------
 
-    constexpr uint16_t PWM_MIN    = 1000;
-    constexpr uint16_t PWM_CENTER = 1500;
-    constexpr uint16_t PWM_MAX    = 2000;
+    constexpr uint16_t PWM_MIN    = 1000;  // @fixed
+    constexpr uint16_t PWM_CENTER = 1500;  // @fixed
+    constexpr uint16_t PWM_MAX    = 2000;  // @fixed
 
 
     // --------------------------------------------------------
@@ -553,7 +557,7 @@ namespace Config
     // 'c' в консоли. SwD сюда не ставить: он переключает реверс мотора.
     // --------------------------------------------------------
 
-    constexpr uint8_t CAL_SWITCH = Channels::SWB;   // SwB — закрылки
+    constexpr uint8_t CAL_SWITCH = Channels::SWB;   // SwB — закрылки  @channel
     constexpr uint8_t CAL_SWITCH_FLIPS = 3;
     constexpr uint32_t CAL_SWITCH_WINDOW_MS = 4000;
 
@@ -633,7 +637,7 @@ namespace Config
     // планирование, а возврат домой с мотором (как у ArduPilot/INAV):
     // над домом самолёт кружит на высоте RTH, пока связь не вернётся.
     // Без GPS/дома — всегда планирование выше. false — только планирование.
-    constexpr bool FAILSAFE_RTH = true;
+    constexpr bool FAILSAFE_RTH = true;  // @needs(gps)
 
 
     // --------------------------------------------------------
@@ -729,7 +733,7 @@ namespace Config
 
     // Геозабор (Feature::GEOFENCE или GEOFENCE_ALWAYS_ON): дальше
     // радиуса или выше потолка — RTH.
-    constexpr bool GEOFENCE_ALWAYS_ON = false;
+    constexpr bool GEOFENCE_ALWAYS_ON = false;  // @needs(gps)
     constexpr float FENCE_RADIUS_M = 500.0f;
     constexpr float FENCE_ALTITUDE_M = 120.0f;
 

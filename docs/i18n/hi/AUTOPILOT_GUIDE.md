@@ -356,4 +356,4 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 | SOARING | ● | ● | ○ | | ○ | 0 / मोटर | बिना थर्मल — ग्लाइड |
 | RESCUE | ● | | | | | 70 % | सरफ़ेस न्यूट्रल में |
 
-● — अनिवार्य, ○ — बेहतर करता है। कोड में जाँचें: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); टेस्ट — `test/native/test_autopilot_modes` (हर सेंसर पर मोड की प्रतिक्रिया) और `test/native/test_sim` (क्लोज़्ड-लूप उड़ानें)।
+● — अनिवार्य, ○ — बेहतर करता है। कोड में जाँचें: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); टेस्ट — `test/native/test_autopilot_modes` (हर सेंसर पर मोड की प्रतिक्रिया) और `test/native/test_sim` (क्लोज़्ड-लूप उड़ानें)। यही तालिका `autopilot/AutopilotTypes.h` में टैग `@needs(...)` और `@better(...)` के रूप में है: उन्हीं से OpenPlane Studio अनुपलब्ध मोड धूसर करता है।

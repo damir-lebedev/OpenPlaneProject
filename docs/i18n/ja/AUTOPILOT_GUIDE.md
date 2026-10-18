@@ -356,4 +356,4 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 | SOARING | ● | ● | ○ | | ○ | 0 / モーター | サーマルなし — 滑空 |
 | RESCUE | ● | | | | | 70 % | 舵面はニュートラル |
 
-● は必須、○ は動作を改善するものです。コード内のチェックは `Autopilot.h`（`imuReady`、`baroReady`、`nav.gpsGood`）にあります。テストは `test/native/test_autopilot_modes`（各モードのセンサーごとの反応）と `test/native/test_sim`（閉ループの飛行）です。
+● は必須、○ は動作を改善するものです。コード内のチェックは `Autopilot.h`（`imuReady`、`baroReady`、`nav.gpsGood`）にあります。テストは `test/native/test_autopilot_modes`（各モードのセンサーごとの反応）と `test/native/test_sim`（閉ループの飛行）です。同じ表は `autopilot/AutopilotTypes.h` にタグ `@needs(...)` と `@better(...)` として書かれており、OpenPlane Studio はこれを使って利用できないモードをグレー表示にします。

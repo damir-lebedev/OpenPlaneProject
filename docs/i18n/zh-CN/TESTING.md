@@ -9,6 +9,7 @@
 | **电脑（native）** | `pio test -e native` | 固件头文件原封不动地在电脑上编译，硬件被可控的模拟替身（fake）取代：模块、驱动、闭环飞行仿真，以及搭配每一种传感器套件的整套 ESP32 固件（S3 和 38 针版）。统计覆盖率 |
 | **电脑（native-stm32）** | `pio test -e native-stm32` | 整套 STM32H743 固件（`src/stm32/main.cpp`）运行在 STM32duino 模拟替身层之上：FreeRTOS 任务、闪存、MAVLink、I2C 和 SPI 上的传感器 |
 | **构建矩阵** | `tools/build_matrix.sh` | 4 种开发板 × 6 种传感器套件，使用 `-Wall -Wextra (-Wshadow)`；项目代码中的任何警告都算错误 |
+| **供应用读取的描述** | `python tools/test_opconfig.py` | `tools/opconfig.py`：在源码副本上测试 OpenPlane Studio 所用的固件描述与配置写入（14 个测试）；`tools/opconfig_build_check.py`：写入的配置能在所有开发板上编译 |
 | **开发板** | `pio test -e esp32-s3` | 在真实的 ESP32-S3 上运行 `test_feedback` 和 `test_imu_orientation`（会烧录测试固件；之后请换回正常固件：`pio run -t upload`） |
 | **STM32 开发板** | `pio test -e stm32h743-devebox -f test_blackbox_sd` | 在 DevEBox H743 上用**真实的 SD 卡**测试黑匣子，另外在 Cortex-M7 上运行 `test_feedback` 和 `test_imu_orientation`——见[下文](#stm32-开发板上的测试) |
 
@@ -25,6 +26,8 @@ pip install platformio gcovr        # 只需一次
 pio test -e native -e native-stm32  # 全部原生测试（约 1.5 分钟）
 gcovr                               # 按文件统计覆盖率（设置见 gcovr.cfg）
 tools/build_matrix.sh               # 全部开发板 × 全部传感器（约 25 分钟）
+python tools/test_opconfig.py       # 供 OpenPlane Studio 使用的固件描述与配置（约 3 s）
+python tools/opconfig_build_check.py # 应用写入的配置能否在所有开发板上编译（约 10 min）
 gcovr --html-details -o coverage/index.html   # HTML 报告（coverage/ 已在 .gitignore 中）
 
 pio test -e native -f native/test_rc          # 单个测试集
@@ -107,7 +110,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native/test_mavlink` | 20 | 编解码器对照 pymavlink 的参考帧（v1、v2、带签名）、CRC、重新同步；遥测：各数据流的频率、HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS、PID 参数（列表、读取、写入、拒绝非法值）、从地面切换模式、从地面 ARM——被拒绝、任务——0、UART 缓冲区写满也不会阻塞循环 |
 | `native/test_blackbox` | 20 | 黑匣子：格式与 CRC，NOR 模拟件上的扇区环（全新分区无需擦除、垃圾数据总会被擦除、旧飞行记录整段擦除且仅为腾出空间、最新一次飞行从不触碰、环尾回绕、重启后的头指针、断电、写了一半的记录由 CRC 识别），在真实的 `FlightController`/`Autopilot` 上记录飞行：按 ARM 和油门启动并带预录、DISARM 且“停在地面”后停止、信号丢失不会停止记录、异常重启后的记录、手动启动、事件、电池、空中闪存写满、飞行时长超过分区、按带 CRC 的帧导出并切换速率、控制台菜单 `k`、没有分区——黑匣子关闭；地面校准和自动起飞各阶段的事件 |
 | `native/test_blackbox_scan` | 3 | 开机时环的抽样核对与完整核对的对比：300 段随机的环历史 × 5 个探测步（头指针、编号和飞行列表一致；当情况对不上时则退回完整核对），以及在 64 MB SD 区域上的开销（约 530 次读取，而不是 32,000 次） |
-| `native/test_telemetry` | 30 | `LoopStats`、`LogSettings`（NVS、版本）、`DebugLogger`（所有通道、NAV）、`DebugConsole`（菜单、热键、总线探测 `b`、ARM 时禁用、仅在未 ARM 时保存）、`WebDebugServer`（路由、JSON、邮箱）、`OledDisplay`（通过 I2C 发送的字节、帧、信号丢失时反色）；控制台中的校准 `c` 和提示 `e`，日志行 `AP` 中的起飞阶段，OLED 上的校准步骤和起飞阶段 |
+| `native/test_telemetry` | 31 | `LoopStats`、`LogSettings`（NVS、版本）、`DebugLogger`（所有通道、NAV）、`DebugConsole`（菜单、热键、总线探测 `b`、ARM 时禁用、仅在未 ARM 时保存）、`WebDebugServer`（路由、JSON、邮箱）、`OledDisplay`（通过 I2C 发送的字节、帧、信号丢失时反色）；控制台中的校准 `c` 和提示 `e`，日志行 `AP` 中的起飞阶段，OLED 上的校准步骤和起飞阶段，PC 命令 `id` 返回的固件身份信息（供 OpenPlane Studio 使用） |
 | `native/test_sim` | 18 | 整套固件与飞机模型的闭环飞行：从倾斜姿态改平、侧风中的 CRUISE、LOITER、RTH、failsafe RTH/滑翔、地理围栏、尾轮式自动起飞（尾轮载荷从不超过停机载荷，螺旋桨和机尾都不触及跑道，真实的姿态滤波器；有气压计和无气压计）、前轮式起飞、用油门中止的起飞、手抛起飞、自动降落、热气流、从螺旋中 RESCUE、速度保持与失速保护、回路中的真实皮托管、“歪”飞机的自动配平、飞行中的传感器故障（IMU、气压计、皮托管、GPS） |
 | `native/test_takeoff` | 23 | 自动起飞和飞机地面校准：由“抬尾”姿态得到水平基准和停机姿态（`ImuOrientation`），滑跑时不用加速度计的姿态滤波器，真实 `ImuSensorBase` 闪存中的起落架校准（停在轮子上上电后的水平基准、`o` 清除停机姿态、陀螺仪零点修正），`GroundCalibration`（两个步骤、角度检查、取消、开关手势），`SignalPlayer`，`TakeoffController` 尾轮式和前轮式的各阶段，舵面控制律，中止起飞（油门、信号、IMU 故障、横滚、航向、机头、机尾、未离地），无气压计时按时间，“仅陀螺仪”窗口 |
 | `native/test_feedback_units` | 14 | 各反馈模块的单独测试：速度来源、空中/地面判断、RLS 估计、控制器、失速征兆、起飞/降落中止 |
@@ -121,7 +124,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native_stm32/test_app_stm32_no_sd` | 3 | 不带卡的 `src/stm32/main.cpp`：黑匣子关闭并说明原因、飞机照常飞行、菜单 `k` 不出错；PD14 上的输出自检（绕过核心库 `pulseIn()` 的缺陷），电机提示 `e` |
 | `test_feedback` | 10 | 带反馈回路的飞机闭环仿真（在电脑和开发板上） |
 | `test_imu_orientation` | 5 | 在 300 种随机安装方式下校准 IMU 的安装姿态（在电脑和开发板上） |
-| **合计** | **431** | `native` 中 383 个 + `native-stm32` 中 48 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
+| **合计** | **432** | `native` 中 384 个 + `native-stm32` 中 48 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
 
 ### STM32 开发板上的测试
 

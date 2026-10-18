@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-431%20passing-3fb950?style=for-the-badge" alt="431 testes">
+  <img src="https://img.shields.io/badge/tests-432%20passing-3fb950?style=for-the-badge" alt="432 testes">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="cobertura de 94%">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 builds sem avisos">
   <br>
@@ -61,7 +61,7 @@
 | **O que é** | Um controlador de voo e piloto automático abertos para aviões radiocontrolados. A placa principal é a STM32H743 (placa da classe Pixhawk): em uma placa DevEBox o firmware **já está rodando e é pilotado pelo rádio** — [há vídeo](#-a-stm32h743-ganhou-vida-na-placa), e os sensores estão sendo ligados agora. A base anterior é um ESP32-S3 de uns US$ 10, que passou pela bancada com todos os sensores. |
 | **O que faz** | 12 modos de voo — da estabilização ao retorno para casa, círculos por GPS, lançamento manual, pouso automático e **voo planado em térmicas**. Tubo de Pitot feito com dois barômetros baratos. Telemetria MAVLink para o QGroundControl e o Mission Planner. |
 | **O grande trunfo** | Qualquer chave ou potenciômetro do rádio = qualquer função. **Uma linha** no `Controls.h` — e a SwD deixa de ser a reversão do motor e vira lançamento de carga. |
-| **Por que confiar** | 431 testes automatizados (mais 9 na própria placa, com um cartão SD de verdade), 94% do código coberto por testes, 24 builds "placa × sensores" sem um único aviso, simulações em malha fechada de cada modo. |
+| **Por que confiar** | 432 testes automatizados (mais 9 na própria placa, com um cartão SD de verdade), 94% do código coberto por testes, 24 builds "placa × sensores" sem um único aviso, simulações em malha fechada de cada modo. |
 | **Com honestidade** | Até agora só o modo manual voou (o primeiro protótipo). A STM32H743 foi testada apenas na bancada, sem sensores. O piloto automático foi verificado na bancada, em testes e em simulações, e aguarda os testes de voo — [status abaixo](#-situação-real). |
 
 ---
@@ -205,7 +205,7 @@ O que isso prova: a cadeia "rádio → iBUS → firmware → PWM" funciona em ha
 
 | | |
 |---|---|
-| **431 testes automatizados** | módulos, drivers verificados no nível dos registradores do chip, voos em malha fechada, o firmware de ESP32 e STM32 **inteiro** no PC; além de 9 testes na própria placa STM32 com um cartão SD de verdade |
+| **432 testes automatizados** | módulos, drivers verificados no nível dos registradores do chip, voos em malha fechada, o firmware de ESP32 e STM32 **inteiro** no PC; além de 9 testes na própria placa STM32 com um cartão SD de verdade |
 | **93,9% das linhas, 85,7% dos ramos** | cobertura do `gcovr`, inclusive do código da STM32 |
 | **24/24 builds** | 4 placas × 6 kits de sensores, `-Wall -Wextra`, zero avisos |
 | **0 apontamentos** | cppcheck e clang-tidy em todo o código |

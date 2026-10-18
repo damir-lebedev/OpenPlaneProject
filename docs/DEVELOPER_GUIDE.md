@@ -611,6 +611,8 @@ Enter не обязателен; калибровки и `p` блокируют 
 | `m` | Калибровка компаса (15 с вращения), сохраняется в NVS |
 | `p` | Самопроверка выходов: реальный импульс на каждом пине против ожидаемого |
 
+Команды от ПК — байт STX (`0x02`), строка и `\n`: `id` — паспорт прошивки одной строкой JSON (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) — по нему приложение OpenPlane Studio узнаёт плату и проверяет, что прошито ровно то, что в проекте; `bb …` — чёрному ящику (`tools/blackbox.py`).
+
 Лог разбит на каналы (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`, `MAG`, `GPS`,
 `IMU`, `SYS`), у каждого режим «выкл / при изменении / постоянно»; настройки
 хранятся в NVS и записываются при закрытии меню, только без ARM. По умолчанию
@@ -784,6 +786,7 @@ STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) — **п�
 1. Значение в `enum AutopilotMode` (`autopilot/AutopilotTypes.h`, перед
    `MODE_COUNT`), имя и короткое имя (до 5 символов, для OLED) в
    `AutopilotNames::mode()` / `modeShort()`.
+   В конце строки — метка `@needs(...)` и, если есть что улучшить, `@better(...)`: что режиму нужно (`imu`, `baro`, `gps`… — список в шапке `AutopilotTypes.h`). Без метки не пройдёт `python tools/opconfig.py check`, а приложение OpenPlane Studio не узнает, когда делать режим серым. То же — у новых `Feature` и `Knob`.
 2. Обработчик `run<Режим>()` и ветка в `Autopilot::runMode()`; начальные цели
    (курс, высота, центр кругов) — в `initializeMode()`. Режим задаёт
    `desiredRoll`/`desiredPitch` и зовёт `stabilizeOrManual()` (без IMU рули у
@@ -969,6 +972,7 @@ pio run -t upload                        # вернуть обычную про�
 2. Блок `#elif defined(BOARD_ESP32_<ИМЯ>)` в `Config.h` со всеми пинами,
    включая `PIN_I2C2_SDA/SCL` (−1, если OLED нет). Посчитайте бюджет GPIO
    заранее: flash/PSRAM/USB/strapping.
+   Первая строка блока — метка `// @board(blackbox=flash|sd|none, telemetry=wifi|mavlink|none)` для приложения OpenPlane Studio.
 3. Выходам серво нужны 5 каналов LEDC — есть на всех ESP32. Если под
    руль направления нет пина — `PIN_RUDDER = -1`, выход просто отключится.
 4. `default_envs` не меняйте, пока плата не проверена на железе; в коммите
@@ -1061,6 +1065,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # проверить
 - **Собирайте все платы** после правок в общем коде — основная STM32H743,
   но ESP32-S3, C3 и 38-pin тоже не должны ломаться; перед релизом —
   `tools/build_matrix.sh` (все платы × все датчики).
+- **Метки для приложения:** после правок `Config.h`, `Controls.h`, `SensorSelection.h` или `AutopilotTypes.h` — `python tools/test_opconfig.py`. Приложение OpenPlane Studio читает прошивку через `tools/opconfig.py` по меткам `@needs`, `@better`, `@board`, `@fixed` и `@channel`.
 - **Проверяйте на железе то, что можно проверить:** знаки — наклоном,
   выходы — командой `p`, связь — выключением пульта.
 - **Не выдумывайте API.** Сверяйтесь с исходниками фреймворка в

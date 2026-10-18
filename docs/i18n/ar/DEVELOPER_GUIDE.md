@@ -584,6 +584,8 @@ LAUNCH، و`9` AUTO_LAND، و`10` SOARING، و`11` RESCUE. ويبقى الوضع
 | `m` | معايرة البوصلة (15 s من التدوير)، وتُحفظ في NVS |
 | `p` | الفحص الذاتي للمخارج: النبضة الفعلية على كل طرف مقابل المتوقعة |
 
+أوامر الحاسوب هي بايت STX (`0x02`) ثم سلسلة ثم `\n`: يعيد `id` هوية البرنامج الثابت في سطر JSON واحد (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`، `telemetry/FirmwareIdentity.h`)، وبها يتعرّف OpenPlane Studio على اللوحة ويتحقق من أن ما نُسخ إليها هو إعداد المشروع بالضبط؛ ويذهب `bb …` إلى الصندوق الأسود (`tools/blackbox.py`).
+
 يُقسَّم السجل إلى قنوات (`STAT` و`RC` و`OUT` و`ATT` و`AP` و`ALT` و`MAG` و`GPS` و
 `IMU` و`SYS`)، ولكل قناة وضع «مُعطَّل / عند التغيّر / دائم»؛ وتُخزَّن الإعدادات في
 NVS وتُكتب عند إغلاق القائمة، ودون ARM فقط. ويُفعَّل افتراضيًّا `STAT` (عند
@@ -764,6 +766,7 @@ MAVLink وصندوق أسود على بطاقة SD. وهو يُبنى، ويجت
 1. قيمة في `enum AutopilotMode` (‏`autopilot/AutopilotTypes.h`، قبل
    `MODE_COUNT`)، واسم واسم قصير (حتى 5 أحرف، لشاشة OLED) في
    `AutopilotNames::mode()` / `modeShort()`.
+   في نهاية السطر وسم `@needs(...)`، وإن كان شيء يحسّن الوضع فوسم `@better(...)` أيضًا: ما يحتاجه الوضع (`imu` و`baro` و`gps`… — القائمة في ترويسة `AutopilotTypes.h`). بلا وسم يفشل `python tools/opconfig.py check`، ولا يعرف OpenPlane Studio متى يجعل الوضع رماديًا. والأمر نفسه للعناصر الجديدة في `Feature` و`Knob`.
 2. معالج `run<Mode>()` وفرع في `Autopilot::runMode()`؛ والأهداف الابتدائية
    (المسار، والارتفاع، ومركز الدوائر) في `initializeMode()`. يضبط الوضع
    `desiredRoll`/`desiredPitch` ويستدعي `stabilizeOrManual()` (دون IMU تكون
@@ -950,6 +953,7 @@ pio run -t upload                        # إعادة البرنامج الثا�
 2. كتلة `#elif defined(BOARD_ESP32_<NAME>)` في `Config.h` بجميع الأطراف،
    بما فيها `PIN_I2C2_SDA/SCL` (القيمة −1 إن لم توجد شاشة OLED). احسب ميزانية
    GPIO مسبقًا: flash/PSRAM/USB/strapping.
+   السطر الأول في الكتلة هو الوسم `// @board(blackbox=flash|sd|none, telemetry=wifi|mavlink|none)` لـ OpenPlane Studio.
 3. تحتاج مخارج السيرفو إلى 5 قنوات LEDC — وهي موجودة في كل ESP32. وإن لم يكن
    للدفة طرف — `PIN_RUDDER = -1`، ويُعطَّل المخرج ببساطة.
 4. لا تغيّر `default_envs` قبل اختبار اللوحة على العتاد؛ ونصّ صراحةً في
@@ -1045,6 +1049,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # التحقق من 
   و`pio check -e esp32-s3`، و`pio check -e stm32h743`، و`tools/clang-tidy.sh` —
   جميعها خضراء ([`TESTING.md`](TESTING.md)).
 - **ابنِ جميع اللوحات** بعد التعديلات في الشيفرة المشتركة — فـSTM32H743 هي الرئيسية، لكن ESP32-S3 وC3 واللوحة ذات 38 طرفًا يجب ألا تنكسر أيضًا؛ وقبل الإصدار — `tools/build_matrix.sh` (جميع اللوحات × جميع الحساسات).
+- **وسوم للتطبيق:** بعد تعديل `Config.h` أو `Controls.h` أو `SensorSelection.h` أو `AutopilotTypes.h` شغّل `python tools/test_opconfig.py`. يقرأ OpenPlane Studio البرنامج الثابت عبر `tools/opconfig.py` من خلال الوسوم `@needs` و`@better` و`@board` و`@fixed` و`@channel`.
 - **تحقق على العتاد مما يمكن التحقق منه:** الإشارات — بالميلان، والمخارج —
   بالأمر `p`، والاتصال — بإطفاء جهاز التحكم.
 - **لا تختلق واجهات API.** راجع مصادر الإطار في

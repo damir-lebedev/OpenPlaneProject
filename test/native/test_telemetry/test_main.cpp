@@ -633,6 +633,25 @@ void test_console_defers_saving_until_disarm()
     TEST_ASSERT_TRUE(contains(c.type(""), "Настройки лога сохранены."));
 }
 
+void test_console_prints_identity_for_host()
+{
+    ConsoleRig c;
+    const std::string out = c.type("\x02" "id\n");
+    TEST_ASSERT_TRUE_MESSAGE(contains(out, "@id {\"fw\":\"openplane\",\"proto\":1,"), out.c_str());
+    TEST_ASSERT_TRUE(contains(out, "\"board\":\"esp32-s3\""));   // env:native — BOARD_ESP32_S3, Project.h нет
+    TEST_ASSERT_TRUE(contains(out, "\"commit\":\"dev\""));
+    TEST_ASSERT_TRUE(contains(out, "\"config\":\"\",\"plane\":\"\""));
+    TEST_ASSERT_TRUE(contains(out, "\"armed\":false}"));
+
+    c.plane.arm();
+    takeSerial();
+    TEST_ASSERT_TRUE(contains(c.type("\x02" "id\r\n"), "\"armed\":true}"));   // в ARM тоже отвечает
+
+    // Имя самолёта с кавычками и обратной косой — всё равно валидный JSON.
+    FirmwareIdentity::print(false, "b", "c", "h", "Борт \"№1\" \\ x\x01");
+    TEST_ASSERT_TRUE(contains(takeSerial(), "\"plane\":\"Борт \\\"№1\\\" \\\\ x\""));
+}
+
 void test_console_reports_sensors_missing_from_build()
 {
     Plane plane;
@@ -1025,6 +1044,7 @@ int main()
     RUN_TEST(test_console_main_menu_navigation);
     RUN_TEST(test_console_log_menu_edits_and_saves_when_disarmed);
     RUN_TEST(test_console_defers_saving_until_disarm);
+    RUN_TEST(test_console_prints_identity_for_host);
     RUN_TEST(test_console_reports_sensors_missing_from_build);
     RUN_TEST(test_console_scans_i2c_buses);
     RUN_TEST(test_web_server_starts_access_point_and_task);

@@ -353,4 +353,4 @@ ARM/DISARM с земли **отклоняется** — только тумбл�
 | SOARING | ● | ● | ○ | | ○ | 0 / мотор | без термиков — планирование |
 | RESCUE | ● | | | | | 70 % | рули в нейтраль |
 
-● — обязателен, ○ — улучшает. Проверки в коде: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); тесты — `test/native/test_autopilot_modes` (реакции режимов на каждый датчик) и `test/native/test_sim` (замкнутые полёты).
+● — обязателен, ○ — улучшает. Проверки в коде: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); тесты — `test/native/test_autopilot_modes` (реакции режимов на каждый датчик) и `test/native/test_sim` (замкнутые полёты). Та же таблица — метками `@needs(...)` и `@better(...)` в `autopilot/AutopilotTypes.h`: по ним приложение OpenPlane Studio делает недоступные режимы серыми.

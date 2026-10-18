@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-431%20passing-3fb950?style=for-the-badge" alt="431 pruebas">
+  <img src="https://img.shields.io/badge/tests-432%20passing-3fb950?style=for-the-badge" alt="432 pruebas">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="cobertura del 94 %">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 compilaciones sin avisos">
   <br>
@@ -61,7 +61,7 @@
 | **Qué es** | Un controlador de vuelo y piloto automático abiertos para aviones de radiocontrol. La placa principal es la STM32H743 (una placa de la clase Pixhawk): en una placa DevEBox el firmware **ya está en marcha y se pilota con la emisora** ([hay vídeo](#-la-stm32h743-cobra-vida-en-la-placa)), y ahora se están conectando los sensores. La base anterior es un ESP32-S3 de unos 10 $, que pasó el banco con todos los sensores. |
 | **Qué hace** | 12 modos de vuelo: desde la estabilización hasta el regreso a casa, círculos por GPS, lanzamiento a mano, aterrizaje automático y **vuelo a vela en térmicas**. Un tubo de Pitot hecho con dos barómetros baratos. Telemetría MAVLink para QGroundControl y Mission Planner. |
 | **Lo principal** | Cualquier interruptor o potenciómetro de la emisora = cualquier función. **Una línea** en `Controls.h` y SwD deja de ser la inversión del motor para convertirse en lanzamiento de carga. |
-| **Por qué fiarse** | 431 pruebas automáticas (y 9 más en la propia placa, con una tarjeta SD real), el 94 % del código cubierto por pruebas, 24 compilaciones «placa × sensores» sin un solo aviso y simulaciones en lazo cerrado de cada modo. |
+| **Por qué fiarse** | 432 pruebas automáticas (y 9 más en la propia placa, con una tarjeta SD real), el 94 % del código cubierto por pruebas, 24 compilaciones «placa × sensores» sin un solo aviso y simulaciones en lazo cerrado de cada modo. |
 | **Con honestidad** | De momento solo ha volado el modo manual (el primer prototipo). La STM32H743 solo se ha probado en el banco, sin sensores. El piloto automático se ha verificado en el banco, con pruebas y con simulaciones, y está a la espera de los ensayos en vuelo: [estado más abajo](#-estado-real). |
 
 ---
@@ -205,7 +205,7 @@ Lo que esto demuestra: la cadena «emisora → iBUS → firmware → PWM» funci
 
 | | |
 |---|---|
-| **431 pruebas automáticas** | módulos, controladores comprobados a nivel de registros del chip, vuelos en lazo cerrado, el firmware de ESP32 y STM32 **completo** en el PC; además, 9 pruebas en la propia placa STM32 con una tarjeta SD real |
+| **432 pruebas automáticas** | módulos, controladores comprobados a nivel de registros del chip, vuelos en lazo cerrado, el firmware de ESP32 y STM32 **completo** en el PC; además, 9 pruebas en la propia placa STM32 con una tarjeta SD real |
 | **93.9 % de líneas, 85.7 % de ramas** | cobertura de `gcovr`, incluido el código de STM32 |
 | **24/24 compilaciones** | 4 placas × 6 kits de sensores, `-Wall -Wextra`, cero avisos |
 | **0 observaciones** | cppcheck y clang-tidy sobre todo el código |

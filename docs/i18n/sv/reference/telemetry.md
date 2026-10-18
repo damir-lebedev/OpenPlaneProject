@@ -143,6 +143,8 @@ kalibrering av IMU-monteringen; `m` – kompasskalibrering; `p` – självtest a
 `b` – avsökning av I2C-bussarna (0x08..0x7F – upp till 0x7F, eftersom QMC6309 sitter på 0x7C) med
 kretsnamn; allt annat – en ledtråd. `\r`/`\n` ignoreras. Dessutom `c` – markkalibrering av flygplanet (pågår den, avbryts den; huvudmenyns punkt 9) och `e` – en signal med roder och ESC-melodi (kontrollerar att ESC:n spelar den efter pulspausen).
 
+Kommandon från datorn är en STX-byte (`0x02`), en sträng och `\n`: på `id` skriver `FirmwareIdentity::print()` ut firmwarens identitet som en enda rad `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; svarar även under ARM), allt annat går till `IFlightRecorder::handleHostCommand()` (svarta lådan). Kort, commit, konfigurationens hash och flygplanets namn bakar OpenPlane Studio in via `config/Project.h` i sin kopia av källkoden; utan den filen gäller kortets makro och `"dev"`.
+
 Loggmenyn: `1`..`9` – växla läge för kanalerna 0..8, `n` – NAV, `s` – SYS, `p` – period, `a` –
 allt ”vid ändring”, `x` – allt av, `d` – standardvärden, `0`/`q` – tillbaka, `l`/`h` –
 stäng.

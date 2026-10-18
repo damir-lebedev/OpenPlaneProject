@@ -9,6 +9,7 @@ Firmwaren verifieras på två nivåer:
 | **Dator (native)** | `pio test -e native` | Firmwarens headerfiler byggs på datorn oförändrade, med hårdvaran ersatt av styrbara attrapper: moduler, drivrutiner, flygsimuleringar i sluten slinga, hela ESP32-firmwaren (S3 och 38-pin) med varje sensorsats. Täckningen räknas |
 | **Dator (native-stm32)** | `pio test -e native-stm32` | Hela STM32H743-firmwaren (`src/stm32/main.cpp`) ovanpå ett lager av STM32duino-attrapper: FreeRTOS-uppgifter, flash, MAVLink, sensorer på I2C och SPI |
 | **Byggmatris** | `tools/build_matrix.sh` | 4 kort × 6 sensorsatser med `-Wall -Wextra (-Wshadow)`; varje varning i projektets kod är ett fel |
+| **Beskrivning för appen** | `python tools/test_opconfig.py` | `tools/opconfig.py`: beskrivning av firmwaren och skrivning av konfigurationen för OpenPlane Studio, på en kopia av källkoden (14 tester); `tools/opconfig_build_check.py` – den skrivna konfigurationen bygger på alla kort |
 | **Kort** | `pio test -e esp32-s3` | `test_feedback` och `test_imu_orientation` på en riktig ESP32-S3 (den flashar en testfirmware; lägg tillbaka den vanliga efteråt: `pio run -t upload`) |
 | **STM32-kort** | `pio test -e stm32h743-devebox -f test_blackbox_sd` | Den svarta lådan på ett **riktigt SD-kort** i DevEBox H743, plus `test_feedback` och `test_imu_orientation` på en Cortex-M7 – [nedan](#tester-på-stm32-kortet) |
 
@@ -25,6 +26,8 @@ pip install platformio gcovr        # en gång
 pio test -e native -e native-stm32  # alla native-tester (~1,5 min)
 gcovr                               # täckning per fil (inställningar – gcovr.cfg)
 tools/build_matrix.sh               # alla kort × alla sensorer (~25 min)
+python tools/test_opconfig.py       # beskriv och ställ in firmwaren för OpenPlane Studio (~3 s)
+python tools/opconfig_build_check.py # det appen skriver bygger på alla kort (~10 min)
 gcovr --html-details -o coverage/index.html   # HTML-rapport (coverage/ finns i .gitignore)
 
 pio test -e native -f native/test_rc          # en svit
@@ -107,7 +110,7 @@ Korttesterna (`test_feedback`, `test_imu_orientation`) är portabla: med `ARDUIN
 | `native/test_mavlink` | 20 | Kodeken mot referensramar från pymavlink (v1, v2, signerade), CRC, omsynkronisering; telemetri: strömfrekvenser, HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS, PID-parametrar (lista, läsning, skrivning, avvisning av dåliga värden), lägesbyte från marken, ARM från marken – nekas, uppdrag – 0, en överfull UART-buffert blockerar inte slingan |
 | `native/test_blackbox` | 20 | Den svarta lådan: format och CRC, sektorringen på en NOR-attrapp (en ny partition utan radering, skräp raderas alltid, gamla flygningar raderas i sin helhet och bara för att frigöra utrymme, den senaste rörs aldrig, omslag vid ringens slut, huvudet efter en omstart, strömavbrott, en halvskriven post fångas av CRC), inspelning av en flygning på riktiga `FlightController`/`Autopilot`: start vid ARM och gas med förinspelning, stopp efter DISARM och ”står på marken”, förlorad förbindelse stoppar den inte, inspelning efter en felomstart, manuell start, händelser, batteri, flash tog slut i luften, en flygning längre än partitionen, hämtning i CRC-ramar med hastighetsbyte, konsolmenyn `k`, ingen partition – avstängd; händelser för markkalibreringen och autostartens etapper |
 | `native/test_blackbox_scan` | 3 | En stickprovskontroll av ringen vid start mot den fullständiga: 300 slumpmässiga ringhistoriker × 5 provsteg (huvudet, numren och flyglistan stämmer, och när bilden inte går ihop – faller den tillbaka på den fullständiga avsökningen) och kostnaden på ett SD-område på 64 MB (≈530 läsningar i stället för 32 000) |
-| `native/test_telemetry` | 30 | `LoopStats`, `LogSettings` (NVS, version), `DebugLogger` (alla kanaler, NAV), `DebugConsole` (meny, snabbtangenter, bussavsökning `b`, förbjudet under ARM, sparar bara utan ARM), `WebDebugServer` (rutter, JSON, brevlåda), `OledDisplay` (byte över I2C, ram, invertering vid förlorad förbindelse); kalibrering `c` och signal `e` i konsolen, startetappen i loggraden `AP`, kalibreringssteg och startetapp på OLED-skärmen |
+| `native/test_telemetry` | 31 | `LoopStats`, `LogSettings` (NVS, version), `DebugLogger` (alla kanaler, NAV), `DebugConsole` (meny, snabbtangenter, bussavsökning `b`, förbjudet under ARM, sparar bara utan ARM), `WebDebugServer` (rutter, JSON, brevlåda), `OledDisplay` (byte över I2C, ram, invertering vid förlorad förbindelse); kalibrering `c` och signal `e` i konsolen, startetappen i loggraden `AP`, kalibreringssteg och startetapp på OLED-skärmen, firmwarens identitet på datorkommandot `id` (för OpenPlane Studio) |
 | `native/test_sim` | 18 | Flygningar i sluten slinga av hela firmwaren med flygplansmodellen: återhämtning från krängning, CRUISE i sidvind, LOITER, RTH, failsafe RTH/glidflykt, geofence, autostart med sporrhjul (lasten på sporrhjulet aldrig över vilolasten, varken propellern eller stjärten nuddar banan, ett ärligt vinkelfilter; med och utan barometer), med noshjul, en start avbruten med gasen, handstart, autolandning, termik, RESCUE ur en spiral, farthållning och överstegringsskydd, ett riktigt pitotrör i slingan, autotrimning av ett ”snett” flygplan, sensorfel under flygning (IMU, barometer, pitotrör, GPS) |
 | `native/test_takeoff` | 23 | Autostart och markkalibrering av flygplanet: horisont ur läget ”stjärten uppe” och markläge (`ImuOrientation`), vinkelfilter utan accelerometer under rullningen, kalibrering av landningsstället i flash hos en riktig `ImuSensorBase` (horisont efter start på hjulen, `o` raderar markläget, finjustering av gyroskopets nollpunkt), `GroundCalibration` (två steg, vinkelkontroll, avbrott, brytargest), `SignalPlayer`, etapperna i `TakeoffController` för sporrhjul och noshjul, roderlagar, avbruten start (gas, förbindelse, IMU-fel, roll, kurs, nos, stjärt, ingen lättning), utan barometer efter tid, fönstret ”bara gyroskop” |
 | `native/test_feedback_units` | 14 | Återkopplingsmodulerna en och en: hastighetskällor, i luften/på marken, RLS-skattningen, regulatorn, överstegringsindikatorer, avbrott av start/landning |
@@ -121,7 +124,7 @@ Korttesterna (`test_feedback`, `test_imu_orientation`) är portabla: med `ARDUIN
 | `native_stm32/test_app_stm32_no_sd` | 3 | `src/stm32/main.cpp` utan SD-kort: den svarta lådan är avstängd och förklarar varför, flygplanet flyger, menyn `k` går inte sönder; självtest av utgångar på PD14 (kringgår `pulseIn()`-felet i kärnan), motorsignal `e` |
 | `test_feedback` | 10 | En flygplanssimulering i sluten slinga med en återkopplingsslinga (på datorn och på kortet) |
 | `test_imu_orientation` | 5 | Kalibrering av IMU-monteringen på 300 slumpmässiga monteringar (på datorn och på kortet) |
-| **Totalt** | **431** | 383 i `native` + 48 i `native-stm32` (plus 9 bara på kortet – `test_blackbox_sd`) |
+| **Totalt** | **432** | 384 i `native` + 48 i `native-stm32` (plus 9 bara på kortet – `test_blackbox_sd`) |
 
 ### Tester på STM32-kortet
 

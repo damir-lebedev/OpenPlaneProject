@@ -18,3 +18,6 @@ blackbox/
 # Образ SD-карты чёрного ящика (BLACKBOX.BIN, 64 МБ), копия с карты
 BLACKBOX.BIN
 *.bbl
+
+# Python: кэш байткода tools/*.py
+__pycache__/

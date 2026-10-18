@@ -9,6 +9,7 @@
 | **PC（native）** | `pio test -e native` | ファームウェアのヘッダーを PC でそのままビルドし、ハードウェアは制御可能なフェイクに置き換えます。モジュール、ドライバー、閉ループのフライトシミュレーション、各センサーセットを載せた ESP32 のファームウェア全体（S3 と 38 ピン）です。カバレッジを計測します |
 | **PC（native-stm32）** | `pio test -e native-stm32` | STM32duino のフェイク層の上で、STM32H743 のファームウェア全体（`src/stm32/main.cpp`）を動かします。FreeRTOS のタスク、フラッシュ、MAVLink、I2C と SPI のセンサーです |
 | **ビルドマトリクス** | `tools/build_matrix.sh` | 4 種類のボード × 6 種類のセンサーセットを `-Wall -Wextra (-Wshadow)` でビルドします。プロジェクトのコードに警告が 1 つでもあればエラーです |
+| **アプリ向けの記述** | `python tools/test_opconfig.py` | `tools/opconfig.py`：OpenPlane Studio 向けのファームウェアの記述と設定の書き込みを、ソースのコピー上でテスト（14 件）。`tools/opconfig_build_check.py`：書き込んだ設定がすべてのボードでビルドできること |
 | **ボード** | `pio test -e esp32-s3` | 実機の ESP32-S3 での `test_feedback` と `test_imu_orientation`（テスト用ファームウェアを書き込みます。終わったら通常のものに戻してください：`pio run -t upload`） |
 | **STM32 ボード** | `pio test -e stm32h743-devebox -f test_blackbox_sd` | DevEBox H743 の**本物の SD カード**でのブラックボックスのテストと、Cortex-M7 での `test_feedback` と `test_imu_orientation` です。[後述](#stm32-ボード上のテスト) |
 
@@ -25,6 +26,8 @@ pip install platformio gcovr        # 1 回だけ
 pio test -e native -e native-stm32  # すべてのネイティブテスト（約 1.5 分）
 gcovr                               # ファイルごとのカバレッジ（設定は gcovr.cfg）
 tools/build_matrix.sh               # すべてのボード × すべてのセンサー（約 25 分）
+python tools/test_opconfig.py       # OpenPlane Studio 向けのファームウェアの記述と設定（約 3 s）
+python tools/opconfig_build_check.py # アプリが書き込む設定がすべてのボードでビルドできるか（約 10 min）
 gcovr --html-details -o coverage/index.html   # HTML レポート（coverage/ は .gitignore に入っています）
 
 pio test -e native -f native/test_rc          # 1 つのセット
@@ -107,7 +110,7 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 | `native/test_mavlink` | 20 | pymavlink の基準フレームと突き合わせるコーデック（v1、v2、署名付き）、CRC、再同期、テレメトリー：ストリームの周波数、HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS、PID パラメーター（一覧、読み出し、書き込み、不正な値の拒否）、地上からのモード変更、地上からの ARM は拒否、ミッションは 0 件、あふれた UART バッファがループを止めないこと |
 | `native/test_blackbox` | 20 | ブラックボックス：フォーマットと CRC、NOR のフェイク上のセクターリング（消去なしの新しいパーティション、ゴミは必ず消去、古いフライトは丸ごと、かつ空き領域のためだけに消去、最新のフライトには触れない、リング末尾をまたぐ書き込み、再起動後の先頭位置、電源断、書きかけのレコードを CRC で検出）、本物の `FlightController`/`Autopilot` でのフライト記録：ARM とスロットルでの開始（プリ録画付き）、DISARM と「地上に静止」のあとの停止、信号喪失では止まらない、異常再起動のあとの記録、手動開始、イベント、バッテリー、飛行中にフラッシュが尽きる、パーティションより長いフライト、CRC 付きフレームでの吐き出しと速度の切り替え、コンソールのメニュー `k`、パーティションがない場合は無効、地上校正と自動離陸の段階のイベント |
 | `native/test_blackbox_scan` | 3 | 起動時のリングの抽出照合と全照合の比較：リングの 300 通りのランダムな履歴 × 5 段階のプローブ（先頭位置、番号、フライト一覧が一致し、状況が合わないときは全照合に譲る）と、64 MB の SD 領域でのコスト（32,000 回ではなく約 530 回の読み出し） |
-| `native/test_telemetry` | 30 | `LoopStats`、`LogSettings`（NVS、バージョン）、`DebugLogger`（すべてのチャンネル、NAV）、`DebugConsole`（メニュー、ホットキー、バスの探索 `b`、ARM 中は禁止、保存は ARM していないときのみ）、`WebDebugServer`（ルート、JSON、メールボックス）、`OledDisplay`（I2C 上のバイト列、フレーム、信号喪失時の反転）、コンソールの校正 `c` と合図 `e`、ログ行 `AP` の離陸段階、OLED の校正ステップと離陸段階 |
+| `native/test_telemetry` | 31 | `LoopStats`、`LogSettings`（NVS、バージョン）、`DebugLogger`（すべてのチャンネル、NAV）、`DebugConsole`（メニュー、ホットキー、バスの探索 `b`、ARM 中は禁止、保存は ARM していないときのみ）、`WebDebugServer`（ルート、JSON、メールボックス）、`OledDisplay`（I2C 上のバイト列、フレーム、信号喪失時の反転）、コンソールの校正 `c` と合図 `e`、ログ行 `AP` の離陸段階、OLED の校正ステップと離陸段階、PC コマンド `id` によるファームウェアの ID 情報（OpenPlane Studio 用） |
 | `native/test_sim` | 18 | 機体モデルを使った、ファームウェア全体の閉ループ飛行：バンクからの回復、横風の中の CRUISE、LOITER、RTH、failsafe RTH/滑空、ジオフェンス、尾輪の自動離陸（尾輪荷重は駐機時の荷重を超えず、プロペラも尾部も滑走路に触れず、本物の姿勢フィルター。気圧センサーあり・なし）、前輪の自動離陸、スロットルで中止した離陸、手投げ発進、自動着陸、サーマル、スパイラルからの RESCUE、速度保持と失速防止、ループ内の本物のピトー管、「ゆがんだ」機体のオートトリム、飛行中のセンサー故障（IMU、気圧センサー、ピトー管、GPS） |
 | `native/test_takeoff` | 23 | 自動離陸と機体の地上校正：「尾部を上げた」姿勢からの水平基準と駐機姿勢（`ImuOrientation`）、滑走中の加速度センサーなしの姿勢フィルター、本物の `ImuSensorBase` のフラッシュでの降着装置の校正（車輪で立ったまま電源を入れたときの水平基準、`o` で駐機姿勢を消去、ジャイロのゼロ点補正）、`GroundCalibration`（2 ステップ、角度チェック、中止、スイッチ操作）、`SignalPlayer`、尾輪と前輪の `TakeoffController` の各段階、舵面の制御則、離陸中止（スロットル、通信、IMU の故障、ロール、針路、機首、尾部、浮揚なし）、気圧センサーなしでは時間で判断、「ジャイロのみ」の時間帯 |
 | `native/test_feedback_units` | 14 | フィードバックの各モジュール単体：速度の取得元、空中/地上の判定、RLS 推定、コントローラー、失速の兆候、離陸/着陸の中止 |
@@ -121,7 +124,7 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 | `native_stm32/test_app_stm32_no_sd` | 3 | カードなしの `src/stm32/main.cpp`：ブラックボックスは無効になり理由を説明する、飛行機は飛ぶ、メニュー `k` は壊れない、PD14 での出力の自己診断（コアの `pulseIn()` の不具合を回避）、モーターの合図 `e` |
 | `test_feedback` | 10 | フィードバックループを備えた飛行機の閉ループシミュレーション（PC とボードの両方） |
 | `test_imu_orientation` | 5 | 300 通りのランダムな取り付けでの IMU の取り付け校正（PC とボードの両方） |
-| **合計** | **431** | `native` に 383 + `native-stm32` に 48（さらにボード専用が 9：`test_blackbox_sd`） |
+| **合計** | **432** | `native` に 384 + `native-stm32` に 48（さらにボード専用が 9：`test_blackbox_sd`） |
 
 ### STM32 ボード上のテスト
 

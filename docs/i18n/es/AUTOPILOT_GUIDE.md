@@ -356,4 +356,4 @@ El ARM/DISARM desde tierra **se rechaza**: solo con el interruptor de la emisora
 | SOARING | ● | ● | ○ | | ○ | 0 / motor | sin térmicas: planeo |
 | RESCUE | ● | | | | | 70 % | superficies en neutro |
 
-● significa obligatorio y ○, que mejora. Las comprobaciones en el código: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); las pruebas: `test/native/test_autopilot_modes` (reacción de los modos a cada sensor) y `test/native/test_sim` (vuelos en lazo cerrado).
+● significa obligatorio y ○, que mejora. Las comprobaciones en el código: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); las pruebas: `test/native/test_autopilot_modes` (reacción de los modos a cada sensor) y `test/native/test_sim` (vuelos en lazo cerrado). La misma tabla está en `autopilot/AutopilotTypes.h` como etiquetas `@needs(...)` y `@better(...)`: con ellas OpenPlane Studio muestra en gris los modos no disponibles.

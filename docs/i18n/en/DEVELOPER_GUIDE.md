@@ -591,6 +591,8 @@ loop and are therefore available only without ARM.
 | `m` | Compass calibration (15 s of rotation), saved to NVS |
 | `p` | Output self-test: the real pulse on each pin against the expected one |
 
+PC commands are an STX byte (`0x02`), a string and `\n`: `id` returns the firmware identity as one JSON line (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) — OpenPlane Studio uses it to recognize the board and to check that exactly the project's configuration was flashed; `bb …` goes to the black box (`tools/blackbox.py`).
+
 The log is split into channels (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`, `MAG`,
 `GPS`, `IMU`, `SYS`), each with a mode "off / on change / continuous"; the
 settings are stored in NVS and written when the menu is closed, only without
@@ -781,6 +783,7 @@ and in `include/hal/stm32/`, access through `IBoard`.
 1. A value in `enum AutopilotMode` (`autopilot/AutopilotTypes.h`, before
    `MODE_COUNT`), a name and a short name (up to 5 characters, for the OLED)
    in `AutopilotNames::mode()` / `modeShort()`.
+   At the end of the line add an `@needs(...)` tag and, if something improves the mode, `@better(...)`: what the mode needs (`imu`, `baro`, `gps`… — the list is in the header of `AutopilotTypes.h`). Without the tag `python tools/opconfig.py check` fails, and OpenPlane Studio cannot tell when to grey the mode out. The same goes for new `Feature` and `Knob` entries.
 2. A handler `run<Mode>()` and a branch in `Autopilot::runMode()`; the initial
    targets (course, altitude, circle center) go in `initializeMode()`. The
    mode sets `desiredRoll`/`desiredPitch` and calls `stabilizeOrManual()`
@@ -981,6 +984,7 @@ pio run -t upload                        # restore the normal firmware
 2. A `#elif defined(BOARD_ESP32_<NAME>)` block in `Config.h` with all the
    pins, including `PIN_I2C2_SDA/SCL` (−1 if there is no OLED). Work out the
    GPIO budget in advance: flash/PSRAM/USB/strapping.
+   The first line of the block is a `// @board(blackbox=flash|sd|none, telemetry=wifi|mavlink|none)` tag for OpenPlane Studio.
 3. The servo outputs need 5 LEDC channels — every ESP32 has them. If there is
    no pin for the rudder — `PIN_RUDDER = -1`, and the output simply turns
    off.
@@ -1083,6 +1087,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # check that all the
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   all green ([`TESTING.md`](TESTING.md)).
 - **Build all the boards** after changes in shared code — the STM32H743 is the main one, but the ESP32-S3, the C3 and the 38-pin must not break either; before a release — `tools/build_matrix.sh` (all boards × all sensors).
+- **Tags for the app:** after editing `Config.h`, `Controls.h`, `SensorSelection.h` or `AutopilotTypes.h`, run `python tools/test_opconfig.py`. OpenPlane Studio reads the firmware through `tools/opconfig.py` using the `@needs`, `@better`, `@board`, `@fixed` and `@channel` tags.
 - **Check on hardware what can be checked:** signs — by tilting, outputs — with
   the `p` command, the link — by switching the transmitter off.
 - **Do not invent APIs.** Consult the framework sources in

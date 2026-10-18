@@ -143,6 +143,8 @@ IMU mounting calibration; `m` — compass calibration; `p` — output self-test;
 `b` — scan of the I2C buses (0x08..0x7F — up to 0x7F, because the QMC6309 sits at 0x7C) with
 chip names; anything else — a hint. `\r`/`\n` are ignored. Also `c` — ground calibration of the airplane (cancels while it runs; main-menu item 9) and `e` — a signal by the control surfaces and the ESC tune (checks that the ESC plays it after the pulse pause).
 
+PC commands are an STX byte (`0x02`), a string and `\n`: on `id`, `FirmwareIdentity::print()` prints the firmware identity as one `@id {...}` line (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; it answers while armed too); anything else goes to `IFlightRecorder::handleHostCommand()` (the black box). OpenPlane Studio bakes in the board, commit, configuration hash and plane name through `config/Project.h` in its copy of the sources; without that file the board macro and `"dev"` are used.
+
 The log menu: `1`..`9` — cycle the mode of channels 0..8, `n` — NAV, `s` — SYS, `p` — period, `a` —
 everything "on change", `x` — everything off, `d` — defaults, `0`/`q` — back, `l`/`h` —
 close.

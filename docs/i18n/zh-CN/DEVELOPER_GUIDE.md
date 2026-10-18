@@ -511,6 +511,8 @@ PID 表单。每 200 ms 轮询一次 `/api/status`。
 | `m` | 电子罗盘校准（旋转 15 s），保存到 NVS |
 | `p` | 输出自检：把每个引脚上的实际脉冲与预期值对比 |
 
+电脑发来的命令由 STX 字节（`0x02`）、字符串和 `\n` 组成：`id` 以一行 JSON 返回固件身份信息（`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`，`telemetry/FirmwareIdentity.h`），OpenPlane Studio 据此识别开发板，并核对刷入的正是项目中的配置；`bb …` 交给黑匣子（`tools/blackbox.py`）。
+
 日志分为多个通道（`STAT`、`RC`、`OUT`、`ATT`、`AP`、`ALT`、`MAG`、`GPS`、
 `IMU`、`SYS`），每个通道都有“关闭 / 变化时 / 持续”三种模式；设置保存在 NVS 中，并在关闭菜单时写入，且仅在未 ARM 时才写。默认启用 `STAT`（变化时）和 `SYS`
 （每 10 s 一次）：
@@ -651,6 +653,7 @@ STM32H743VIT6（Cortex-M7 480 MHz，2 MB 闪存，1 MB RAM）运行**完整固�
 
 1. 在 `enum AutopilotMode` 中增加一个值（`autopilot/AutopilotTypes.h`，位于
    `MODE_COUNT` 之前），并在 `AutopilotNames::mode()` / `modeShort()` 中给出名称和简称（最多 5 个字符，用于 OLED）。
+   在该行末尾加上标记 `@needs(...)`，如有能改善该模式的东西，再加 `@better(...)`：写明模式需要什么（`imu`、`baro`、`gps`……，列表见 `AutopilotTypes.h` 开头）。没有标记，`python tools/opconfig.py check` 就会失败，OpenPlane Studio 也无从知道何时把该模式显示为灰色。新的 `Feature` 和 `Knob` 同理。
 2. 增加处理函数 `run<Mode>()`，并在 `Autopilot::runMode()` 中加一个分支；初始目标（航向、高度、盘旋圆心）写在 `initializeMode()` 中。该模式设定
    `desiredRoll`/`desiredPitch`，并调用 `stabilizeOrManual()`（没有 IMU 时舵面交给飞手）或 `stabilizeOrNeutral()`（没有 IMU 时——中立位）。缺少所需传感器时应表现为安全行为，而不是崩溃。积分器只在 `armed` 时累积。
 3. 油门：`throttleMode`（`PILOT` / `AUTO`）和 `autoThrottlePct`，或者 `autoThrottle()`——来自旋钮或皮托管的巡航油门。这时
@@ -772,6 +775,7 @@ pio run -t upload                        # 恢复正常固件
 1. 在 `platformio.ini` 中添加 `[env:<name>]`，并带上唯一的 `-D BOARD_ESP32_<NAME>`。
 2. 在 `Config.h` 中添加 `#elif defined(BOARD_ESP32_<NAME>)` 块，写明所有引脚，包括 `PIN_I2C2_SDA/SCL`（没有 OLED 就写 −1）。要提前核算
    GPIO 预算：flash/PSRAM/USB/strapping。
+   该引脚块的第一行是供 OpenPlane Studio 使用的标记 `// @board(blackbox=flash|sd|none, telemetry=wifi|mavlink|none)`。
 3. 舵机输出需要 5 个 LEDC 通道——所有 ESP32 都有。如果方向舵没有可用引脚——`PIN_RUDDER = -1`，该输出会被直接关闭。
 4. 在板子没有经过硬件验证之前，不要修改 `default_envs`；如果引脚分配尚未验证，要在提交说明中明确写出来。
 
@@ -833,6 +837,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 检查所有开发
   `pio check -e esp32-s3`、`pio check -e stm32h743`、`tools/clang-tidy.sh`——
   全部通过（[`TESTING.md`](TESTING.md)）。
 - **修改通用代码后要构建所有开发板**——STM32H743 是主力，但 ESP32-S3、C3 和 38 针板也不能被破坏；发布前运行 `tools/build_matrix.sh`（所有开发板 × 所有传感器）。
+- **供应用使用的标记**：修改 `Config.h`、`Controls.h`、`SensorSelection.h` 或 `AutopilotTypes.h` 之后，运行 `python tools/test_opconfig.py`。OpenPlane Studio 通过 `tools/opconfig.py`，依据标记 `@needs`、`@better`、`@board`、`@fixed` 和 `@channel` 读取固件。
 - **能在硬件上验证的就在硬件上验证**：符号——靠倾斜，输出——用 `p` 命令，链路——靠关闭遥控器。
 - **不要凭空编造 API**。请对照 `~/.platformio/packages/framework-arduinoespressif32/`
   中的框架源码（Arduino core 2.0.x）——网上的资料常常描述的是 API 不同的

@@ -356,4 +356,4 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 | SOARING | ● | ● | ○ | | ○ | 0 / 모터 | 서멀 없음 — 활공 |
 | RESCUE | ● | | | | | 70 % | 조종면 중립 |
 
-● 는 필수, ○ 는 성능을 높여 주는 항목입니다. 코드 안의 검사는 `Autopilot.h`(`imuReady`, `baroReady`, `nav.gpsGood`)에 있고, 테스트는 `test/native/test_autopilot_modes`(각 센서에 대한 모드별 반응)와 `test/native/test_sim`(폐루프 비행)입니다.
+● 는 필수, ○ 는 성능을 높여 주는 항목입니다. 코드 안의 검사는 `Autopilot.h`(`imuReady`, `baroReady`, `nav.gpsGood`)에 있고, 테스트는 `test/native/test_autopilot_modes`(각 센서에 대한 모드별 반응)와 `test/native/test_sim`(폐루프 비행)입니다. 같은 표가 `autopilot/AutopilotTypes.h`에 태그 `@needs(...)`와 `@better(...)`로 들어 있으며, OpenPlane Studio는 이를 보고 쓸 수 없는 모드를 회색으로 표시합니다.

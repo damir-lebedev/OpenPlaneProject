@@ -378,6 +378,6 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 | SOARING | ● | ● | ○ | | ○ | 0 / المحرك | بلا تيارات حرارية — انسياب |
 | RESCUE | ● | | | | | 70 % | الأسطح في الوضع المحايد |
 
-● — إلزامي، ○ — يحسّن الأداء. والفحوص في الشيفرة: `Autopilot.h` (`imuReady` و`baroReady` و`nav.gpsGood`)؛ والاختبارات — `test/native/test_autopilot_modes` (ردود فعل الأوضاع تجاه كل حساس) و`test/native/test_sim` (طيران بحلقة مغلقة).
+● — إلزامي، ○ — يحسّن الأداء. والفحوص في الشيفرة: `Autopilot.h` (`imuReady` و`baroReady` و`nav.gpsGood`)؛ والاختبارات — `test/native/test_autopilot_modes` (ردود فعل الأوضاع تجاه كل حساس) و`test/native/test_sim` (طيران بحلقة مغلقة). الجدول نفسه موجود في `autopilot/AutopilotTypes.h` على شكل الوسمين `@needs(...)` و`@better(...)`: وبهما يجعل OpenPlane Studio الأوضاع غير المتاحة رمادية.
 
 </div>

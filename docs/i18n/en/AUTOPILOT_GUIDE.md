@@ -356,4 +356,4 @@ ARM/DISARM from the ground is **rejected** — only with the transmitter switch.
 | SOARING | ● | ● | ○ | | ○ | 0 / motor | no thermals — gliding |
 | RESCUE | ● | | | | | 70 % | surfaces to neutral |
 
-● — required, ○ — improves. Checks in the code: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); tests — `test/native/test_autopilot_modes` (how the modes react to each sensor) and `test/native/test_sim` (closed-loop flights).
+● — required, ○ — improves. Checks in the code: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); tests — `test/native/test_autopilot_modes` (how the modes react to each sensor) and `test/native/test_sim` (closed-loop flights). The same table lives in `autopilot/AutopilotTypes.h` as `@needs(...)` and `@better(...)` tags: OpenPlane Studio uses them to grey out unavailable modes.

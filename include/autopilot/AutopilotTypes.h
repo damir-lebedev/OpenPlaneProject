@@ -20,51 +20,65 @@
 //
 // Числовые значения AutopilotMode — часть API дашборда
 // (POST /api/setmode), существующие номера не меняются.
+//
+// Что нужно каждому режиму, функции и крутилке — метки в конце строки:
+// @needs(...) — без этого не работает, @better(...) — работает и без
+// этого, но хуже. По ним приложение OpenPlane Studio делает недоступное
+// серым ("Для работы режима RTH нужны датчики: GPS"); tools/opconfig.py
+// check следит, чтобы метка была у каждой строки.
+//   imu, baro, mag, gps, pitot — датчики (sensors/SensorSelection.h);
+//   wheels     — шасси с колёсами (Config::LANDING_GEAR), не запуск с руки;
+//   rudder     — выход руля направления (Config::PIN_RUDDER);
+//   flaperons  — элероны на двух отдельных сервах;
+//   aux1, aux2 — серво груза и камеры (Config::PIN_AUX1, PIN_AUX2);
+//   buzzer     — пищалка (Config::PIN_BUZZER);
+//   esc3d      — двунаправленный ESC (Config::ESC_BIDIRECTIONAL).
+// Та же таблица для людей — docs/AUTOPILOT_GUIDE.md, «Что нужно каждому режиму».
 // ============================================================
 
 enum AutopilotMode : uint8_t
 {
-    MODE_MANUAL = 0,        // рули = стики
-    MODE_STABILIZE = 1,     // стик задаёт крен/тангаж, отпустил — горизонт
-    MODE_AUTO_TAKEOFF = 2,  // автовзлёт с полосы/с руки по газу пилота
-    MODE_ALT_HOLD = 3,      // как STABILIZE, высоту держит руль высоты
-    MODE_ACRO = 4,          // стик задаёт скорость вращения, отпустил — держит угол
-    MODE_CRUISE = 5,        // держит курс и высоту, газ — сам; стики меняют курс/высоту
-    MODE_LOITER = 6,        // круги над точкой включения (GPS)
-    MODE_RTH = 7,           // домой на высоте RTH, затем круги над домом (GPS)
-    MODE_LAUNCH = 8,        // запуск с руки: мотор после броска, набор высоты
-    MODE_AUTO_LAND = 9,     // посадка: планирование, выравнивание у земли
-    MODE_SOARING = 10,      // парение: мотор выключен, круги в термиках
-    MODE_RESCUE = 11,       // "спасите": крылья ровно, набор высоты с мотором
+    MODE_MANUAL = 0,        // рули = стики  @needs()
+    MODE_STABILIZE = 1,     // стик задаёт крен/тангаж, отпустил — горизонт  @needs(imu)
+    MODE_AUTO_TAKEOFF = 2,  // автовзлёт с полосы по газу пилота  @needs(imu, wheels, rudder) @better(baro, gps, pitot)
+    MODE_ALT_HOLD = 3,      // как STABILIZE, высоту держит руль высоты  @needs(imu, baro)
+    MODE_ACRO = 4,          // стик задаёт скорость вращения, отпустил — держит угол  @needs(imu)
+    MODE_CRUISE = 5,        // держит курс и высоту, газ — сам; стики меняют курс/высоту  @needs(imu, baro) @better(gps, mag, pitot)
+    MODE_LOITER = 6,        // круги над точкой включения (GPS)  @needs(imu, baro, gps) @better(pitot)
+    MODE_RTH = 7,           // домой на высоте RTH, затем круги над домом (GPS)  @needs(imu, baro, gps) @better(pitot)
+    MODE_LAUNCH = 8,        // запуск с руки: мотор после броска, набор высоты  @needs(imu) @better(baro)
+    MODE_AUTO_LAND = 9,     // посадка: планирование, выравнивание у земли  @needs(imu, baro) @better(mag)
+    MODE_SOARING = 10,      // парение: мотор выключен, круги в термиках  @needs(imu, baro) @better(gps, pitot)
+    MODE_RESCUE = 11,       // "спасите": крылья ровно, набор высоты с мотором  @needs(imu)
     MODE_COUNT
 };
 
 enum class Feature : uint8_t
 {
-    FLAPS,              // закрылки (флапероны) выпущены полностью
-    AIRBRAKE,           // воздушный тормоз: оба элерона вверх
-    AUTO_TRIM,          // автотриммер: учится держать прямо без стиков
-    TURN_COORDINATION,  // координация разворота: руль направления и тангаж в крене
-    MOTOR_KILL,         // мотор выключен в любом режиме
-    BEEPER,             // пищалка "где самолёт"
-    PAYLOAD_DROP,       // сброс груза (серво AUX1)
-    GEOFENCE,           // геозабор: вылет за радиус/высоту -> домой
-    HOME_RESET,         // дом = текущая точка (по включению тумблера)
-    CAMERA_STAB,        // камера (серво AUX2) держит угол к горизонту
-    MOTOR_REVERSE,      // мотор назад (двунаправленный ESC); переключается только в DISARM
+    FLAPS,              // закрылки (флапероны) выпущены полностью  @needs(flaperons)
+    AIRBRAKE,           // воздушный тормоз: оба элерона вверх  @needs(flaperons)
+    AUTO_TRIM,          // автотриммер: учится держать прямо без стиков  @needs(imu) @better(baro)
+    TURN_COORDINATION,  // координация разворота: руль направления и тангаж в крене  @needs(rudder) @better(imu)
+    MOTOR_KILL,         // мотор выключен в любом режиме  @needs()
+    BEEPER,             // пищалка "где самолёт"  @needs(buzzer)
+    PAYLOAD_DROP,       // сброс груза (серво AUX1)  @needs(aux1)
+    GEOFENCE,           // геозабор: вылет за радиус/высоту -> домой  @needs(gps)
+    HOME_RESET,         // дом = текущая точка (по включению тумблера)  @needs(gps)
+    CAMERA_STAB,        // камера (серво AUX2) держит угол к горизонту  @needs(aux2, imu)
+    MOTOR_REVERSE,      // мотор назад (двунаправленный ESC); переключается только в DISARM  @needs(esc3d)
     COUNT
 };
 
 enum class Knob : uint8_t
 {
-    STAB_GAIN,       // сила стабилизации: ×0.25 ... ×1 (центр) ... ×2
-    MAX_BANK,        // предельный крен в режимах со стабилизацией, °
-    CRUISE_SPEED,    // газ круиза, % (или воздушная скорость, если есть трубка Пито)
-    FLAPS,           // закрылки плавно, 0 ... 100%
-    CAMERA_TILT,     // угол камеры, °
-    RATES,           // чувствительность стиков, %
-    LOITER_RADIUS,   // радиус кругов, м
-    THROTTLE_LIMIT,  // предел газа, %: разрешённое растягивается на весь ход стика
+    STAB_GAIN,       // сила стабилизации: ×0.25 ... ×1 (центр) ... ×2  @needs(imu)
+    MAX_BANK,        // предельный крен в режимах со стабилизацией, °  @needs(imu)
+    CRUISE_SPEED,    // газ круиза, % (или воздушная скорость, если есть трубка Пито)  @needs() @better(pitot)
+    FLAPS,           // закрылки плавно, 0 ... 100%  @needs(flaperons)
+    CAMERA_TILT,     // угол камеры, °  @needs(aux2)
+    RATES,           // чувствительность стиков, %  @needs()
+    LOITER_RADIUS,   // радиус кругов, м  @needs(gps)
+    THROTTLE_LIMIT,  // предел газа, %: разрешённое растягивается на весь ход стика  @needs()
     COUNT
 };
 

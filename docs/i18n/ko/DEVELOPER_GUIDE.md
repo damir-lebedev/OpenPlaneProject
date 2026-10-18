@@ -564,6 +564,8 @@ Enter는 필요 없습니다. 보정과 `p`는 루프를 멈추게 하므로 ARM
 | `m` | 나침반 보정(15초간 회전), NVS에 저장 |
 | `p` | 출력 자가 점검: 각 핀의 실제 펄스를 기대값과 비교 |
 
+PC에서 보내는 명령은 STX 바이트(`0x02`), 문자열, `\n`입니다. `id`는 펌웨어 식별 정보를 JSON 한 줄로 돌려줍니다(`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`). OpenPlane Studio는 이것으로 보드를 알아보고 프로젝트의 설정이 그대로 플래시되었는지 확인합니다. `bb …`는 블랙박스로 갑니다(`tools/blackbox.py`).
+
 로그는 채널(`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`, `MAG`, `GPS`, `IMU`,
 `SYS`)로 나뉘며, 각 채널에는 “끔 / 변경 시 / 상시” 모드가 있습니다. 설정은
 NVS에 저장되고 메뉴를 닫을 때 기록되며, ARM하지 않았을 때만 기록됩니다.
@@ -740,6 +742,7 @@ DevEBox H743 보드**입니다: 부팅, USB 콘솔, SD 카드, 블랙박스
 1. `enum AutopilotMode`(`autopilot/AutopilotTypes.h`, `MODE_COUNT` 앞)에 값을
    추가하고, `AutopilotNames::mode()` / `modeShort()`에 이름과 짧은 이름(OLED용,
    최대 5자)을 추가합니다.
+   줄 끝에 태그 `@needs(...)`를 달고, 모드를 더 좋게 하는 것이 있으면 `@better(...)`도 답니다. 모드에 필요한 것(`imu`, `baro`, `gps` 등, 목록은 `AutopilotTypes.h` 머리말에 있습니다)을 적습니다. 태그가 없으면 `python tools/opconfig.py check`가 실패하고, OpenPlane Studio는 모드를 언제 회색으로 표시할지 알 수 없습니다. 새 `Feature`와 `Knob`도 마찬가지입니다.
 2. 핸들러 `run<Mode>()`를 만들고 `Autopilot::runMode()`에 분기를 추가합니다.
    초기 목표(침로, 고도, 선회 원의 중심)는 `initializeMode()`에 둡니다. 모드는
    `desiredRoll`/`desiredPitch`를 정하고 `stabilizeOrManual()`(IMU가 없으면 조종면은
@@ -914,6 +917,7 @@ pio run -t upload                        # 일반 펌웨어로 되돌림
 2. `Config.h`에 `#elif defined(BOARD_ESP32_<NAME>)` 블록을 추가해 모든
    핀을 적습니다. `PIN_I2C2_SDA/SCL`도 포함합니다(OLED가 없으면 −1). GPIO 예산을
    미리 계산하세요: flash/PSRAM/USB/strapping.
+   블록의 첫 줄은 OpenPlane Studio용 태그 `// @board(blackbox=flash|sd|none, telemetry=wifi|mavlink|none)`입니다.
 3. 서보 출력에는 LEDC 채널 5개가 필요하며, 모든 ESP32에 있습니다. 방향타용 핀이
    없으면 `PIN_RUDDER = -1`로 두고, 그 출력은 그냥 꺼집니다.
 4. 보드를 실제 하드웨어에서 확인하기 전에는 `default_envs`를 바꾸지 마세요. 핀
@@ -1003,6 +1007,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 모든 보드가 �
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh`를
   모두 통과시킵니다([`TESTING.md`](TESTING.md)).
 - **공통 코드를 고친 뒤에는 모든 보드를 빌드하세요.** STM32H743이 주력이지만 ESP32-S3, C3, 38핀 보드도 깨지면 안 됩니다. 릴리스 전에는 `tools/build_matrix.sh`(모든 보드 × 모든 센서)를 실행합니다.
+- **앱용 태그:** `Config.h`, `Controls.h`, `SensorSelection.h`, `AutopilotTypes.h`를 고친 뒤에는 `python tools/test_opconfig.py`를 실행합니다. OpenPlane Studio는 `tools/opconfig.py`를 통해 태그 `@needs`, `@better`, `@board`, `@fixed`, `@channel`로 펌웨어를 읽습니다.
 - **하드웨어에서 확인할 수 있는 것은 하드웨어에서 확인하세요:** 부호는 기울여서,
   출력은 `p` 명령으로, 링크는 송신기를 꺼서 확인합니다.
 - **API를 지어내지 마세요.** `~/.platformio/packages/framework-arduinoespressif32/`의

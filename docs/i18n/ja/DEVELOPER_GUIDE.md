@@ -503,6 +503,8 @@ HTML ダッシュボード：10 チャンネルのバー、ARM／リンク、出
 | `m` | コンパスの校正（15 秒間回転）。NVS に保存 |
 | `p` | 出力のセルフテスト：各ピンの実際のパルスと期待値を比較 |
 
+PC からのコマンドは STX バイト（`0x02`）、文字列、`\n` です。`id` はファームウェアの ID 情報を 1 行の JSON で返します（`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`、`telemetry/FirmwareIdentity.h`）。OpenPlane Studio はこれでボードを認識し、プロジェクトの設定がそのまま書き込まれたかを確認します。`bb …` はブラックボックスへ渡ります（`tools/blackbox.py`）。
+
 ログはチャンネルに分かれており（`STAT`、`RC`、`OUT`、`ATT`、`AP`、`ALT`、`MAG`、
 `GPS`、`IMU`、`SYS`）、それぞれに「オフ／変化時／常時」のモードがあります。設定は
 NVS に保存され、メニューを閉じるときに書き込まれます（ARM していないときのみ）。既定では `STAT`（変化時）と `SYS`（10 秒に 1 回）が有効です。
@@ -650,6 +652,7 @@ STM32H743VIT6（Cortex-M7 480 MHz、フラッシュ 2 MB、RAM 1 MB）は**完�
 ## オートパイロットの新しいモードの追加方法
 
 1. `enum AutopilotMode`（`autopilot/AutopilotTypes.h`、`MODE_COUNT` の前）に値を追加し、`AutopilotNames::mode()` / `modeShort()` に名前と短い名前（OLED 用、最大 5 文字）を追加します。
+   行末にタグ `@needs(...)` を付け、モードを良くするものがあれば `@better(...)` も付けます。モードに必要なもの（`imu`、`baro`、`gps` など。一覧は `AutopilotTypes.h` の冒頭）を書きます。タグがないと `python tools/opconfig.py check` が失敗し、OpenPlane Studio はモードをいつグレー表示にすべきか分かりません。新しい `Feature` と `Knob` も同様です。
 2. ハンドラー `run<Mode>()` を作り、`Autopilot::runMode()` に分岐を追加します。初期目標（針路、高度、旋回円の中心）は `initializeMode()` に書きます。モードは
    `desiredRoll`/`desiredPitch` を設定し、`stabilizeOrManual()`（IMU がなければ舵面はパイロットが操作）または `stabilizeOrNeutral()`（IMU がなければニュートラル）を呼びます。必要なセンサーがない場合は、クラッシュではなく安全な動作にします。積分器は `armed` のときだけ蓄積します。
 3. スロットル：`throttleMode`（`PILOT` / `AUTO`）と
@@ -770,6 +773,7 @@ pio run -t upload                        # 通常のファームウェアに戻�
 1. `platformio.ini` に `[env:<name>]` を追加し、他と重複しない
    `-D BOARD_ESP32_<NAME>` を付けます。
 2. `Config.h` に `#elif defined(BOARD_ESP32_<NAME>)` ブロックを追加し、すべてのピンを書きます。`PIN_I2C2_SDA/SCL` も含めます（OLED がなければ −1）。GPIO の割り当て可能数をあらかじめ見積もってください：flash/PSRAM/USB/strapping。
+   ブロックの 1 行目は OpenPlane Studio 用のタグ `// @board(blackbox=flash|sd|none, telemetry=wifi|mavlink|none)` です。
 3. サーボ出力には LEDC チャンネルが 5 つ必要です。どの ESP32 にもあります。ラダー用のピンがない場合は `PIN_RUDDER = -1` とし、その出力は単に無効になります。
 4. ボードを実機で確認するまでは `default_envs` を変更しないでください。ピン配置を確認していない場合は、コミットに明記してください。
 
@@ -826,6 +830,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # すべてのボー
 - **コミット前にテストと解析：** `pio test -e native -e native-stm32`、
   `pio check -e esp32-s3`、`pio check -e stm32h743`、`tools/clang-tidy.sh` をすべて通します（[`TESTING.md`](TESTING.md)）。
 - **共通コードを変更したら、すべてのボードをビルドする。** STM32H743 が主力ですが、ESP32-S3、C3、38 ピン版も壊してはいけません。リリース前には `tools/build_matrix.sh`（全ボード × 全センサー）を実行します。
+- **アプリ向けのタグ：** `Config.h`、`Controls.h`、`SensorSelection.h`、`AutopilotTypes.h` を変更したら `python tools/test_opconfig.py` を実行します。OpenPlane Studio は `tools/opconfig.py` を通じて、タグ `@needs`、`@better`、`@board`、`@fixed`、`@channel` でファームウェアを読み取ります。
 - **実機で確認できることは実機で確認する：** 符号は傾けて、出力は `p` コマンドで、リンクは送信機の電源を切って確認します。
 - **API を作り話で書かない。** `~/.platformio/packages/framework-arduinoespressif32/`
   にあるフレームワークのソース（Arduino core 2.0.x）と照らし合わせてください。ネット上の情報は API の異なる 3.x 系を説明していることが多くあります（たとえば

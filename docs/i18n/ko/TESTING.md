@@ -9,6 +9,7 @@
 | **PC(native)** | `pio test -e native` | 펌웨어 헤더를 PC에서 그대로 빌드하고, 하드웨어는 제어할 수 있는 페이크로 대체합니다. 모듈, 드라이버, 폐루프 비행 시뮬레이션, 각 센서 세트를 갖춘 ESP32 펌웨어 전체(S3와 38핀)입니다. 커버리지를 계산합니다 |
 | **PC(native-stm32)** | `pio test -e native-stm32` | STM32duino 페이크 계층 위에서 STM32H743 펌웨어 전체(`src/stm32/main.cpp`)를 돌립니다. FreeRTOS 태스크, 플래시, MAVLink, I2C와 SPI의 센서입니다 |
 | **빌드 매트릭스** | `tools/build_matrix.sh` | 보드 4종 × 센서 세트 6종을 `-Wall -Wextra (-Wshadow)`로 빌드합니다. 프로젝트 코드에 경고가 하나라도 있으면 오류입니다 |
+| **앱용 기술 정보** | `python tools/test_opconfig.py` | `tools/opconfig.py`: OpenPlane Studio용 펌웨어 기술과 설정 기록을 소스 사본에서 시험합니다(테스트 14개). `tools/opconfig_build_check.py`: 기록한 설정이 모든 보드에서 빌드되는지 확인합니다 |
 | **보드** | `pio test -e esp32-s3` | 실제 ESP32-S3에서 `test_feedback`과 `test_imu_orientation`을 실행합니다(테스트용 펌웨어를 올립니다. 끝나면 평소 펌웨어로 되돌리세요: `pio run -t upload`) |
 | **STM32 보드** | `pio test -e stm32h743-devebox -f test_blackbox_sd` | DevEBox H743의 **실제 SD 카드**에서 블랙박스를 시험하고, Cortex-M7에서 `test_feedback`과 `test_imu_orientation`도 실행합니다. [아래](#stm32-보드에서의-테스트) 참고 |
 
@@ -25,6 +26,8 @@ pip install platformio gcovr        # 한 번만
 pio test -e native -e native-stm32  # 모든 네이티브 테스트(약 1.5분)
 gcovr                               # 파일별 커버리지(설정은 gcovr.cfg)
 tools/build_matrix.sh               # 모든 보드 × 모든 센서(약 25분)
+python tools/test_opconfig.py       # OpenPlane Studio용 펌웨어 기술과 설정(~3 s)
+python tools/opconfig_build_check.py # 앱이 기록하는 설정이 모든 보드에서 빌드되는지(~10 min)
 gcovr --html-details -o coverage/index.html   # HTML 보고서(coverage/는 .gitignore에 있음)
 
 pio test -e native -f native/test_rc          # 세트 하나
@@ -107,7 +110,7 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native/test_mavlink` | 20 | pymavlink 기준 프레임과 대조하는 코덱(v1, v2, 서명된 것), CRC, 재동기화, 텔레메트리: 스트림 주파수, HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS, PID 파라미터(목록, 읽기, 쓰기, 잘못된 값 거부), 지상에서의 모드 변경, 지상에서의 ARM은 거부, 미션은 0개, 가득 찬 UART 버퍼가 루프를 막지 않음 |
 | `native/test_blackbox` | 20 | 블랙박스: 포맷과 CRC, NOR 페이크 위의 섹터 링(지우지 않은 새 파티션, 쓰레기는 항상 삭제, 오래된 비행은 통째로 그리고 공간 확보를 위해서만 삭제, 마지막 비행은 건드리지 않음, 링 끝을 넘어가는 경우, 재부팅 뒤의 머리 위치, 전원 차단, 쓰다 만 레코드를 CRC로 감지), 실제 `FlightController`/`Autopilot`으로 하는 비행 기록: ARM과 스로틀로 시작(사전 기록 포함), DISARM과 “지상에 정지” 뒤 중지, 신호 상실로는 멈추지 않음, 비정상 재부팅 뒤의 기록, 수동 시작, 이벤트, 배터리, 공중에서 플래시가 다 참, 파티션보다 긴 비행, CRC 프레임과 속도 전환을 쓰는 내려받기, 콘솔 메뉴 `k`, 파티션이 없으면 비활성; 지상 캘리브레이션과 자동 이륙 단계의 이벤트 |
 | `native/test_blackbox_scan` | 3 | 전원을 켤 때 하는 링의 표본 검증과 전체 검증의 비교: 링의 무작위 이력 300개 × 탐색 5단계(머리 위치, 번호, 비행 목록이 일치하며, 맞지 않을 때는 전체 검증에 양보), 그리고 64 MB SD 영역에서의 비용(32,000번 대신 약 530번 읽기) |
-| `native/test_telemetry` | 30 | `LoopStats`, `LogSettings`(NVS, 버전), `DebugLogger`(모든 채널, NAV), `DebugConsole`(메뉴, 단축키, 버스 탐색 `b`, ARM 중 금지, ARM이 아닐 때만 저장), `WebDebugServer`(경로, JSON, 우편함), `OledDisplay`(I2C 바이트, 프레임, 신호 상실 시 반전); 콘솔의 캘리브레이션 `c`와 알림 `e`, 로그 줄 `AP`의 이륙 단계, OLED의 캘리브레이션 단계와 이륙 단계 |
+| `native/test_telemetry` | 31 | `LoopStats`, `LogSettings`(NVS, 버전), `DebugLogger`(모든 채널, NAV), `DebugConsole`(메뉴, 단축키, 버스 탐색 `b`, ARM 중 금지, ARM이 아닐 때만 저장), `WebDebugServer`(경로, JSON, 우편함), `OledDisplay`(I2C 바이트, 프레임, 신호 상실 시 반전); 콘솔의 캘리브레이션 `c`와 알림 `e`, 로그 줄 `AP`의 이륙 단계, OLED의 캘리브레이션 단계와 이륙 단계, PC 명령 `id`에 대한 펌웨어 식별 정보(OpenPlane Studio용) |
 | `native/test_sim` | 18 | 비행기 모델로 하는 펌웨어 전체의 폐루프 비행: 뱅크에서의 회복, 옆바람 속 CRUISE, LOITER, RTH, failsafe RTH/활공, 지오펜스, 꼬리 바퀴 자동 이륙(꼬리 바퀴 하중은 주기 하중을 넘지 않고, 프로펠러도 꼬리도 활주로에 닿지 않으며, 실제 자세 필터 사용. 기압계 있음/없음), 앞바퀴 자동 이륙, 스로틀로 중단한 이륙, 손으로 던져 이륙, 자동 착륙, 서멀, 나선에서의 RESCUE, 속도 유지와 실속 방지, 루프 안의 실제 피토관, “삐뚤어진” 비행기의 오토 트림, 비행 중 센서 고장(IMU, 기압계, 피토관, GPS) |
 | `native/test_takeoff` | 23 | 자동 이륙과 비행기 지상 캘리브레이션: “꼬리를 든” 자세로 얻는 수평 기준과 주기 자세(`ImuOrientation`), 활주 중 가속도계 없는 자세 필터, 실제 `ImuSensorBase` 플래시의 랜딩기어 캘리브레이션(바퀴로 선 채 전원을 켠 뒤의 수평 기준, `o`가 주기 자세를 지움, 자이로 영점 보정), `GroundCalibration`(두 단계, 각도 점검, 취소, 스위치 동작), `SignalPlayer`, 꼬리 바퀴와 앞바퀴의 `TakeoffController` 단계, 조종면 제어 법칙, 이륙 중단(스로틀, 통신, IMU 고장, 롤, 침로, 기수, 꼬리, 부양 없음), 기압계가 없으면 시간으로, “자이로만” 구간 |
 | `native/test_feedback_units` | 14 | 피드백 모듈을 하나씩: 속도 소스, 공중/지상 판정, RLS 추정, 제어기, 실속 징후, 이륙/착륙 중단 |
@@ -121,7 +124,7 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native_stm32/test_app_stm32_no_sd` | 3 | 카드가 없는 `src/stm32/main.cpp`: 블랙박스는 비활성화되고 이유를 설명함, 비행기는 비행함, 메뉴 `k`는 망가지지 않음; PD14에서의 출력 자체 점검(코어 `pulseIn()` 결함 우회), 모터 알림 `e` |
 | `test_feedback` | 10 | 피드백 루프가 있는 비행기의 폐루프 시뮬레이션(PC와 보드 모두) |
 | `test_imu_orientation` | 5 | 무작위 장착 300가지에서 하는 IMU 장착 보정(PC와 보드 모두) |
-| **합계** | **431** | `native`에 383개 + `native-stm32`에 48개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
+| **합계** | **432** | `native`에 384개 + `native-stm32`에 48개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
 
 ### STM32 보드에서의 테스트
 

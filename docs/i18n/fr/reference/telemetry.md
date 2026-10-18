@@ -143,6 +143,8 @@ pause du journal ; `s` — état des capteurs ; `i` — étalonnage du gyrosco
 `b` — balayage des bus I2C (0x08..0x7F — jusqu’à 0x7F, parce que le QMC6309 se trouve en 0x7C) avec
 les noms des puces ; toute autre touche — une aide. `\r`/`\n` sont ignorés. Et aussi `c` — la calibration au sol de l’avion (en cours — annulation ; point 9 du menu principal) et `e` — un signal par les gouvernes et la mélodie de l’ESC (vérifie qu’il la joue après la pause des impulsions).
 
+Les commandes du PC sont un octet STX (`0x02`), une chaîne et `\n` : sur `id`, `FirmwareIdentity::print()` affiche l’identité du firmware sur une seule ligne `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed` ; elle répond aussi en ARM), le reste part vers `IFlightRecorder::handleHostCommand()` (la boîte noire). OpenPlane Studio inscrit la carte, le commit, le hachage de la configuration et le nom de l’avion via `config/Project.h` dans sa copie des sources ; sans ce fichier, ce sont la macro de la carte et `"dev"`.
+
 Le menu du journal : `1`..`9` — fait tourner le mode des canaux 0..8, `n` — NAV, `s` — SYS, `p` — période, `a` —
 tout « au changement », `x` — tout désactivé, `d` — valeurs par défaut, `0`/`q` — retour, `l`/`h` —
 fermer.

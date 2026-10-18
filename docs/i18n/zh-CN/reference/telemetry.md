@@ -135,6 +135,8 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s 内最差) | iBUS ok=… crc_err
 IMU 安装方向校准；`m`——指南针校准；`p`——输出自检；
 `b`——扫描 I2C 总线（0x08..0x7F——一直扫到 0x7F，因为 QMC6309 位于 0x7C），并给出芯片名称；其他——提示。`\r`/`\n` 会被忽略。另外还有 `c`——飞机地面校准（正在进行时则取消；主菜单第 9 项）和 `e`——用舵面和电调提示音发出一次提示（检查电调在脉冲暂停后是否会播放）。
 
+电脑命令由 STX 字节（`0x02`）、字符串和 `\n` 组成：收到 `id` 时，`FirmwareIdentity::print()` 以一行 `@id {...}` 输出固件身份信息（`fw`、`proto`、`board`、`commit`、`config`、`plane`、`armed`；ARM 状态下同样应答），其余命令交给 `IFlightRecorder::handleHostCommand()`（黑匣子）。开发板、提交、配置哈希和飞机名称由 OpenPlane Studio 通过其源码副本中的 `config/Project.h` 写入；没有这个文件时，使用开发板宏和 `"dev"`。
+
 日志菜单：`1`..`9`——循环切换通道 0..8 的模式，`n`——NAV，`s`——SYS，`p`——周期，`a`——
 全部“变化时”，`x`——全部关，`d`——恢复默认，`0`/`q`——返回，`l`/`h`——
 关闭。

@@ -356,4 +356,4 @@ ARM/DISARM vom Boden aus wird **abgelehnt** – nur über den Schalter des Sende
 | SOARING | ● | ● | ○ | | ○ | 0 / Motor | ohne Thermik – Gleitflug |
 | RESCUE | ● | | | | | 70 % | Ruder in Neutralstellung |
 
-● – erforderlich, ○ – verbessert. Die Prüfungen im Code: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); die Tests – `test/native/test_autopilot_modes` (Reaktion der Modi auf jeden Sensor) und `test/native/test_sim` (geschlossene Flüge).
+● – erforderlich, ○ – verbessert. Die Prüfungen im Code: `Autopilot.h` (`imuReady`, `baroReady`, `nav.gpsGood`); die Tests – `test/native/test_autopilot_modes` (Reaktion der Modi auf jeden Sensor) und `test/native/test_sim` (geschlossene Flüge). Dieselbe Tabelle steht als Tags `@needs(...)` und `@better(...)` in `autopilot/AutopilotTypes.h`: Danach graut OpenPlane Studio nicht verfügbare Modi aus.

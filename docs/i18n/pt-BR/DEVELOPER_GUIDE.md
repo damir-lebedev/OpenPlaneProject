@@ -582,6 +582,8 @@ bloqueiam o ciclo e por isso só ficam disponíveis sem ARM.
 | `m` | Calibração da bússola (15 s girando), salva no NVS |
 | `p` | Autoteste das saídas: o pulso real em cada pino contra o esperado |
 
+Os comandos do PC são um byte STX (`0x02`), uma string e `\n`: `id` devolve a identidade do firmware em uma única linha JSON (`@id {"fw":"openplane","proto":1,"board":…,"commit":…,"config":…,"plane":…,"armed":…}`, `telemetry/FirmwareIdentity.h`) — com ela o OpenPlane Studio reconhece a placa e confere se foi gravada exatamente a configuração do projeto; `bb …` vai para a caixa-preta (`tools/blackbox.py`).
+
 O log é dividido em canais (`STAT`, `RC`, `OUT`, `ATT`, `AP`, `ALT`, `MAG`,
 `GPS`, `IMU`, `SYS`), cada um com o modo “desligado / ao mudar / contínuo”; as
 configurações ficam no NVS e são gravadas ao fechar o menu, somente sem ARM.
@@ -767,6 +769,7 @@ Uma nova interface em `include/hal/`, a implementação em
 1. Um valor em `enum AutopilotMode` (`autopilot/AutopilotTypes.h`, antes de
    `MODE_COUNT`), o nome e um nome curto (até 5 caracteres, para o OLED) em
    `AutopilotNames::mode()` / `modeShort()`.
+   No fim da linha vai uma marcação `@needs(...)` e, se algo melhora o modo, `@better(...)`: do que o modo precisa (`imu`, `baro`, `gps`… — a lista está no cabeçalho de `AutopilotTypes.h`). Sem a marcação, `python tools/opconfig.py check` falha, e o OpenPlane Studio não sabe quando deixar o modo cinza. O mesmo vale para novos `Feature` e `Knob`.
 2. Um tratador `run<Mode>()` e um ramo em `Autopilot::runMode()`; os alvos
    iniciais (rumo, altitude, centro dos círculos) ficam em
    `initializeMode()`. O modo define `desiredRoll`/`desiredPitch` e chama
@@ -968,6 +971,7 @@ pio run -t upload                        # restaurar o firmware normal
 2. Um bloco `#elif defined(BOARD_ESP32_<NAME>)` no `Config.h` com todos os
    pinos, incluindo `PIN_I2C2_SDA/SCL` (−1 se não houver OLED). Calcule o
    orçamento de GPIO com antecedência: flash/PSRAM/USB/strapping.
+   A primeira linha do bloco é uma marcação `// @board(blackbox=flash|sd|none, telemetry=wifi|mavlink|none)` para o OpenPlane Studio.
 3. As saídas dos servos precisam de 5 canais LEDC — todas as ESP32 os têm. Se
    não há pino para o leme — `PIN_RUDDER = -1`, e a saída simplesmente é
    desativada.
@@ -1071,6 +1075,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # verificar se todas
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   tudo verde ([`TESTING.md`](TESTING.md)).
 - **Compile todas as placas** depois de mudanças no código comum — a STM32H743 é a principal, mas a ESP32-S3, a C3 e a de 38 pinos também não podem quebrar; antes de um lançamento — `tools/build_matrix.sh` (todas as placas × todos os sensores).
+- **Marcações para o aplicativo:** depois de editar `Config.h`, `Controls.h`, `SensorSelection.h` ou `AutopilotTypes.h`, execute `python tools/test_opconfig.py`. O OpenPlane Studio lê o firmware por meio de `tools/opconfig.py` pelas marcações `@needs`, `@better`, `@board`, `@fixed` e `@channel`.
 - **Verifique no hardware o que puder ser verificado:** os sinais — pela
   inclinação, as saídas — com o comando `p`, o link — desligando o rádio.
 - **Não invente APIs.** Consulte os fontes do framework em

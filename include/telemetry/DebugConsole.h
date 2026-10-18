@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <string.h>
 
 #include "autopilot/Autopilot.h"
 #include "config/Config.h"
@@ -8,6 +9,7 @@
 #include "hal/IBoard.h"
 #include "sensors/SensorInterface.h"
 #include "telemetry/DebugLogger.h"
+#include "telemetry/FirmwareIdentity.h"
 #include "telemetry/IFlightRecorder.h"
 #include "telemetry/LogSettings.h"
 
@@ -31,8 +33,10 @@
 //            консоли передана плата) — первое, что делать с новой платой
 //   k      — чёрный ящик: полёты, запись вручную, стереть всё
 //
-// Команды от ПК (tools/blackbox.py): байт STX (0x02), затем строка
-// "bb ..." до '\n' — передаётся чёрному ящику (выгрузка полётов).
+// Команды от ПК: байт STX (0x02), затем строка до '\n':
+//   "id"     — паспорт прошивки одной строкой JSON (FirmwareIdentity.h,
+//              для приложения OpenPlane Studio);
+//   "bb ..." — чёрному ящику (выгрузка полётов, tools/blackbox.py).
 //
 // Пока открыто меню, лог молчит (DebugLogger::suspend), чтобы меню
 // не уезжало вверх; после закрытия все включённые каналы лога
@@ -170,6 +174,11 @@ private:
 
         hostLine = false;
         hostBuffer[hostLength] = '\0';
+        if (strcmp(hostBuffer, "id") == 0)
+        {
+            FirmwareIdentity::print(controller.isArmed());
+            return;
+        }
         if (blackBox) blackBox->handleHostCommand(hostBuffer);
         else Serial.println("BB:ERR чёрного ящика нет в этой сборке");
     }
