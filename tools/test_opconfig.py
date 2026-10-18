@@ -111,6 +111,13 @@ class OpconfigTest(unittest.TestCase):
         self.assertEqual("мс", self.param("FLAPS_TRANSITION_MS", self.manifest)["unit"])
         self.assertEqual("м/с", self.param("STALL_SPEED_MS", self.manifest)["unit"])
 
+    def test_docs_keep_line_end_dashes_and_wrapped_notes(self):
+        doc = self.param("RX_FAILSAFE_THROTTLE_US", self.manifest)["doc"]
+        self.assertIn("слать iBUS —\nон продолжает", doc)      # тире переноса — часть фразы
+        note = self.param("MOTOR_REVERSED", self.manifest)["note"]
+        self.assertTrue(note.endswith("только двунаправленный ESC — у обычного провода)"), note)
+        self.assertEqual("руль высоты", self.param("ELEVATOR_REVERSED", self.manifest)["note"])
+
     def test_range_tags_reach_the_app_and_check_holds_values_to_them(self):
         self.assertEqual([15.0, 120.0], self.param("RTH_ALTITUDE_M", self.manifest)["range"])
         self.assertEqual([0.1, 1.0], self.param("STAB_GAIN_MIN", self.manifest)["range"])

@@ -128,7 +128,8 @@ def split_annotations(text):
         tags[key] = True if args is None else [a.strip() for a in args.split(",") if a.strip()]
     clean = ANNOTATION.sub("", text)
     clean = re.sub(r"[ \t]{2,}", " ", clean).strip()
-    clean = re.sub(r"\s+—\s*$", "", clean)
+    if tags:    # «текст — @fixed»: без метки тире повисло; тире переноса строки в описании — часть текста
+        clean = re.sub(r"\s+—\s*$", "", clean)
     return clean, tags
 
 
@@ -396,6 +397,13 @@ def parse_declarations(tf):
                 "line": i, "start": m.start("expr"), "end": m.end("expr"),
             })
             paragraph_has_decl = True
+            # Примечание перенесено на следующие строки — «//» под тем же столбцом: продолжение.
+            col = line.find("//", m.start("trail"))
+            while col >= 0 and i + 1 < len(lines) and lines[i + 1].find("//") == col and not lines[i + 1][:col].strip():
+                more, more_tags = split_annotations(comment_text(lines[i + 1]))
+                params[-1]["note"] = (params[-1]["note"] + " " + more).strip()
+                params[-1]["tags"].update(more_tags)
+                i += 1
         i += 1
     return params, enums, board_tags
 
