@@ -40,7 +40,7 @@ enum AutopilotMode : uint8_t
 {
     MODE_MANUAL = 0,        // рули = стики  @needs()
     MODE_STABILIZE = 1,     // стик задаёт крен/тангаж, отпустил — горизонт  @needs(imu)
-    MODE_AUTO_TAKEOFF = 2,  // автовзлёт с полосы по газу пилота  @needs(imu, wheels, rudder) @better(baro, gps, pitot)
+    MODE_AUTO_TAKEOFF = 2,  // автовзлёт с полосы по газу пилота (с руки — MODE_LAUNCH)  @needs(imu, wheels, rudder) @better(baro, gps, pitot)
     MODE_ALT_HOLD = 3,      // как STABILIZE, высоту держит руль высоты  @needs(imu, baro)
     MODE_ACRO = 4,          // стик задаёт скорость вращения, отпустил — держит угол  @needs(imu)
     MODE_CRUISE = 5,        // держит курс и высоту, газ — сам; стики меняют курс/высоту  @needs(imu, baro) @better(gps, mag, pitot)

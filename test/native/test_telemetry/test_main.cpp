@@ -652,6 +652,129 @@ void test_console_prints_identity_for_host()
     TEST_ASSERT_TRUE(contains(takeSerial(), "\"plane\":\"Борт \\\"№1\\\" \\\\ x\""));
 }
 
+void test_applink_streams_live_while_the_app_listens()
+{
+    ConsoleRig c;
+    AppLink link(c.plane.controller, &c.plane.autopilot, &c.plane.stats);
+    c.console.setAppLink(&link);
+    RcChannels rc;   // газ внизу, ARM выключен, SwC вверх — MANUAL
+    c.plane.tick(rc);
+    takeSerial();
+
+    link.update(millis());
+    TEST_ASSERT_EQUAL(0u, takeSerial().size());   // не просили — молчит
+
+    c.type("\x02" "live\n");
+    link.update(millis());
+    const std::string out = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(out, "@live {\"t\":"), out.c_str());
+    TEST_ASSERT_TRUE(contains(out, "\"arm\":false,\"mode\":\"MANUAL\",\"rx\":\"ok\""));
+    TEST_ASSERT_TRUE(contains(out, "\"ch\":[1500,1500,1000,1500,1000,1000,1000,1500,1500,1500]"));
+    TEST_ASSERT_TRUE(contains(out, "\"imu\":\"ok\",\"att\":["));
+    TEST_ASSERT_TRUE(contains(out, "\"baro\":\"ok\",\"alt\":"));
+    TEST_ASSERT_TRUE(contains(out, "\"block\":null,\"cal\":null,\"feat\":[]"));
+    TEST_ASSERT_EQUAL('\n', out.back());
+
+    // Не чаще FRAME_PERIOD_MS.
+    link.update(millis());
+    TEST_ASSERT_EQUAL(0u, takeSerial().size());
+    fake::advanceMs(AppLink::FRAME_PERIOD_MS);
+    link.update(millis());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "@live"));
+
+    // Газ поднят — причина запрета ARM видна до щелчка тумблером; закрылки — в функциях.
+    rc.set(Channels::THROTTLE, 1600).set(Channels::SWB, 2000);
+    c.plane.tick(rc);
+    takeSerial();
+    fake::advanceMs(AppLink::FRAME_PERIOD_MS);
+    link.update(millis());
+    const std::string busy = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(busy, "\"block\":\"газ не на минимуме\""), busy.c_str());
+    TEST_ASSERT_TRUE(contains(busy, "\"feat\":[\"FLAPS\"]"));
+
+    // Без продления — замолкает сама.
+    fake::advanceMs(AppLink::LIVE_HOLD_MS);
+    link.update(millis());
+    TEST_ASSERT_FALSE(link.isLive());
+    TEST_ASSERT_EQUAL(0u, takeSerial().size());
+
+    // "live 0" — сразу.
+    c.type("\x02" "live\n");
+    TEST_ASSERT_TRUE(link.isLive());
+    c.type("\x02" "live 0\n");
+    TEST_ASSERT_FALSE(link.isLive());
+}
+
+void test_applink_never_waits_for_the_pc()
+{
+    ConsoleRig c;
+    AppLink link(c.plane.controller, &c.plane.autopilot);
+    RcChannels rc;
+    c.plane.tick(rc);
+    takeSerial();
+    link.handleHostCommand("live", millis());
+
+    Serial.txRoom = 40;   // ПК не читает — в буфере мало места
+    link.update(millis());
+    TEST_ASSERT_EQUAL(0u, takeSerial().size());
+    TEST_ASSERT_EQUAL(1u, link.getFramesSkipped());
+    TEST_ASSERT_EQUAL(0u, link.getFramesSent());
+
+    Serial.txRoom = 4096;
+    fake::advanceMs(AppLink::FRAME_PERIOD_MS);
+    link.update(millis());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "@live"));
+    TEST_ASSERT_EQUAL(1u, link.getFramesSent());
+
+    // Строка, которая не помещается в буфер форматирования, — 0, а не обрезок.
+    char tiny[32];
+    TEST_ASSERT_EQUAL(0u, link.formatLive(tiny, sizeof(tiny), millis()));
+}
+
+void test_console_scan_and_actions_for_the_app()
+{
+    ConsoleRig c;
+    c.plane.board.sensorBus.devices = { 0x68, 0x76 };
+    c.plane.board.screenBus.devices = { 0x3C };
+    DebugConsole withBoard(c.plane.controller, c.plane.outputs, c.plane.autopilot, c.logger, &c.plane.board);
+
+    Serial.pushRx("\x02" "scan\n");
+    withBoard.update();
+    const std::string scan = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(scan, "@scan {\"sensor\":[{\"a\":104,\"g\":\"MPU6050/6500, ICM-42688/45686\"},{\"a\":118,"), scan.c_str());
+    TEST_ASSERT_TRUE(contains(scan, "\"screen\":[{\"a\":60,\"g\":\"OLED SSD1306\"}]}"));
+    TEST_ASSERT_TRUE(contains(c.type("\x02" "scan\n"), "@scan {\"error\":\"unsupported\"}"));   // без платы
+
+    // act X — горячая клавиша от приложения; при ARM блокирующие запрещены.
+    c.type("\x02" "act o\n");
+    TEST_ASSERT_EQUAL(1u, c.plane.imu.orientationCalibrations);
+    c.type("\x02" "act m\n");
+    TEST_ASSERT_EQUAL(1u, c.plane.mag.calibrations);
+    c.plane.arm();
+    takeSerial();
+    TEST_ASSERT_TRUE(contains(c.type("\x02" "act i\n"), "недоступна, пока заармлено"));
+    Serial.pushRx("\x02" "scan\n");
+    withBoard.update();
+    TEST_ASSERT_TRUE(contains(takeSerial(), "@scan {\"error\":\"armed\"}"));
+}
+
+void test_arm_block_reason_is_known_before_the_switch()
+{
+    Plane plane;
+    RcChannels rc;
+    TEST_ASSERT_EQUAL_STRING("нет связи с пультом", plane.controller.armBlockNow());   // кадров ещё не было
+    plane.tick(rc);
+    TEST_ASSERT_NULL(plane.controller.armBlockNow());
+    rc.set(Channels::THROTTLE, 1600);
+    plane.tick(rc);
+    TEST_ASSERT_EQUAL_STRING("газ не на минимуме", plane.controller.armBlockNow());
+    rc.set(Channels::THROTTLE, 1000);
+    plane.tick(rc);
+    plane.arm();
+    TEST_ASSERT_TRUE(plane.controller.isArmed());
+    TEST_ASSERT_NULL(plane.controller.armBlockNow());   // уже заармлено
+}
+
 void test_console_reports_sensors_missing_from_build()
 {
     Plane plane;
@@ -1045,6 +1168,10 @@ int main()
     RUN_TEST(test_console_log_menu_edits_and_saves_when_disarmed);
     RUN_TEST(test_console_defers_saving_until_disarm);
     RUN_TEST(test_console_prints_identity_for_host);
+    RUN_TEST(test_applink_streams_live_while_the_app_listens);
+    RUN_TEST(test_applink_never_waits_for_the_pc);
+    RUN_TEST(test_console_scan_and_actions_for_the_app);
+    RUN_TEST(test_arm_block_reason_is_known_before_the_switch);
     RUN_TEST(test_console_reports_sensors_missing_from_build);
     RUN_TEST(test_console_scans_i2c_buses);
     RUN_TEST(test_web_server_starts_access_point_and_task);

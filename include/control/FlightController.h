@@ -194,6 +194,15 @@ public:
     const IBusReceiver& getReceiver() const { return receiver; }
     bool isArmed() const { return arming.isArmed(); }
     const ArmingManager& getArming() const { return arming; }
+
+    // Почему ARM сейчас не получится (nullptr — получится или уже заармлено):
+    // для приложения OpenPlane Studio, чтобы показать причину до щелчка.
+    const char* armBlockNow() const
+    {
+        if (arming.isArmed()) return nullptr;
+        if (receiver.isFrameTimeout() || receiver.isFailsafeReported()) return "нет связи с пультом";
+        return arming.wouldRefuse(receiver.getState(), armBlockReason(millis()));
+    }
     const FlightOutputState& getOutputState() const { return outputs.getLastState(); }
     const RcChannelState& getRcState() const { return receiver.getState(); }
     const FlightOutputs& getOutputs() const { return outputs; }

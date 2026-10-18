@@ -41,6 +41,7 @@
 #include "sensors/airspeed/AirspeedSensor.h"
 #include "telemetry/BlackBox.h"
 #include "telemetry/BlackBoxStorage.h"
+#include "telemetry/AppLink.h"
 #include "telemetry/DebugConsole.h"
 #include "telemetry/DebugLogger.h"
 #include "telemetry/LoopStats.h"
@@ -131,6 +132,7 @@ BlackBox blackBox(flightController, autopilot, loopStats, blackBoxStorage, &pilo
 
 DebugLogger debugLogger(flightController, &autopilot, &loopStats);
 DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogger, &board, &blackBox);
+AppLink appLink(flightController, &autopilot, &loopStats);   // живая связь с OpenPlane Studio
 WebDebugServer webDebugServer(flightController, &autopilot);
 OledDisplay oledDisplay(flightController, &autopilot, loopStats);
 
@@ -221,6 +223,7 @@ void setup()
     Serial.println("ARM: SwA вниз, к себе (CH5=2000) при газе внизу. DISARM: SwA вверх.");
     pilotSwitches.printBindings();   // что на каком тумблере — config/Controls.h
     debugLogger.begin();         // что выводить в лог — из NVS
+    debugConsole.setAppLink(&appLink);
     debugConsole.printHint();
     Serial.println();
 }
@@ -237,6 +240,7 @@ void loop()
     flightController.update();
     debugLogger.update();
     debugConsole.update();
+    appLink.update(millis());
 
     const uint32_t workUs = micros() - start;
     loopStats.record(workUs);

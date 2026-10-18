@@ -131,6 +131,15 @@ public:
         return lastPrintedReason;
     }
 
+    // Что помешает ARM прямо сейчас (nullptr — ничего): те же проверки, что
+    // на щелчке тумблера, но без попытки армиться — приложение показывает
+    // причину заранее, до щелчка.
+    const char* wouldRefuse(const RcChannelState& rc, const char* blockReason = nullptr) const
+    {
+        const char* reason = checkFailureReason(rc);
+        return reason ? reason : blockReason;
+    }
+
 
 private:
 

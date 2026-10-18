@@ -49,6 +49,7 @@
 #include "sensors/airspeed/AirspeedSensor.h"
 #include "telemetry/BlackBox.h"
 #include "telemetry/BlackBoxStorage.h"
+#include "telemetry/AppLink.h"
 #include "telemetry/DebugConsole.h"
 #include "telemetry/DebugLogger.h"
 #include "telemetry/LoopStats.h"
@@ -141,6 +142,7 @@ BlackBox blackBox(flightController, autopilot, loopStats, blackBoxStorage, &pilo
 
 DebugLogger debugLogger(flightController, &autopilot, &loopStats);
 DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogger, &board, &blackBox);
+AppLink appLink(flightController, &autopilot, &loopStats);   // живая связь с OpenPlane Studio
 MavlinkTelemetry mavlink(*board.telemetryUart(), flightController, &autopilot, &loopStats);
 OledDisplay oledDisplay(flightController, &autopilot, loopStats);
 
@@ -236,6 +238,7 @@ static void flightTask(void*)
         mavlink.update();
         debugLogger.update();
         debugConsole.update();
+        appLink.update(millis());
 
         const uint32_t workUs = micros() - start;
         loopStats.record(workUs);
@@ -307,6 +310,7 @@ void setup()
 #if defined(ARDUINO_ARCH_STM32)
     debugConsole.setBootloaderHook(stm32RebootToBootloader);   // 'D' — перепрошивка без BOOT0
 #endif
+    debugConsole.setAppLink(&appLink);
     debugConsole.printHint();
     Serial.println();
 

@@ -8,6 +8,7 @@
 #include "control/FlightOutputs.h"
 #include "hal/IBoard.h"
 #include "sensors/SensorInterface.h"
+#include "telemetry/AppLink.h"
 #include "telemetry/DebugLogger.h"
 #include "telemetry/FirmwareIdentity.h"
 #include "telemetry/IFlightRecorder.h"
@@ -34,9 +35,13 @@
 //   k      — чёрный ящик: полёты, запись вручную, стереть всё
 //
 // Команды от ПК: байт STX (0x02), затем строка до '\n':
-//   "id"     — паспорт прошивки одной строкой JSON (FirmwareIdentity.h,
-//              для приложения OpenPlane Studio);
-//   "bb ..." — чёрному ящику (выгрузка полётов, tools/blackbox.py).
+//   "id"      — паспорт прошивки одной строкой JSON (FirmwareIdentity.h,
+//               для приложения OpenPlane Studio);
+//   "scan"    — опрос шин I2C одной строкой "@scan {...}" (не при ARM);
+//   "act X"   — то же, что горячая клавиша X (калибровки, проверка
+//               выходов, сигнал) — мастер наладки приложения;
+//   "live ..." — живая связь с приложением (AppLink.h);
+//   "bb ..."  — чёрному ящику (выгрузка полётов, tools/blackbox.py).
 //
 // Пока открыто меню, лог молчит (DebugLogger::suspend), чтобы меню
 // не уезжало вверх; после закрытия все включённые каналы лога
@@ -93,6 +98,9 @@ public:
     // Не работает при ARM.
     void setBootloaderHook(void (*hook)()) { bootloaderHook = hook; }
 
+    // Живая связь с приложением: команды "live" передаются ей.
+    void setAppLink(AppLink* link) { appLink = link; }
+
     // Вызывать каждый цикл: не блокирует, если ввода нет.
     void update()
     {
@@ -124,6 +132,7 @@ private:
     IBoard* board;
     IFlightRecorder* blackBox;
     void (*bootloaderHook)() = nullptr;
+    AppLink* appLink = nullptr;
 
     Screen screen = Screen::None;
     bool settingsDirty = false;   // настройки лога изменены, в NVS ещё не записаны
@@ -179,6 +188,17 @@ private:
             FirmwareIdentity::print(controller.isArmed());
             return;
         }
+        if (strcmp(hostBuffer, "scan") == 0)
+        {
+            printScanJson();
+            return;
+        }
+        if (strncmp(hostBuffer, "act ", 4) == 0 && hostBuffer[4] && !hostBuffer[5])
+        {
+            runAction(hostBuffer[4]);
+            return;
+        }
+        if (appLink && appLink->handleHostCommand(hostBuffer, millis())) return;
         if (blackBox) blackBox->handleHostCommand(hostBuffer);
         else Serial.println("BB:ERR чёрного ящика нет в этой сборке");
     }
@@ -500,6 +520,41 @@ private:
         }
         scanBus("I2C датчиков", board->i2c());
         if (II2CBus* display = board->displayI2c()) scanBus("I2C экрана", *display);
+    }
+
+    // "@scan {"sensor":[{"a":104,"g":"..."}],"screen":[...]}" — для приложения.
+    // Опрос блокирует цикл на доли секунды — при ARM не делается.
+    void printScanJson() const
+    {
+        if (!board || controller.isArmed())
+        {
+            Serial.println(board ? "@scan {\"error\":\"armed\"}" : "@scan {\"error\":\"unsupported\"}");
+            return;
+        }
+        Serial.print("@scan {\"sensor\":");
+        printBusJson(board->i2c());
+        Serial.print(",\"screen\":");
+        if (II2CBus* display = board->displayI2c()) printBusJson(*display);
+        else Serial.print("null");
+        Serial.println("}");
+    }
+
+    static void printBusJson(II2CBus& bus)
+    {
+        Serial.print('[');
+        bool first = true;
+        for (uint8_t address = 0x08; address <= 0x7F; ++address)
+        {
+            if (!bus.probe(address)) continue;
+            if (!first) Serial.print(',');
+            first = false;
+            Serial.print("{\"a\":");
+            Serial.print(static_cast<int>(address));
+            Serial.print(",\"g\":");
+            FirmwareIdentity::printJsonString(guessI2cDevice(address));
+            Serial.print('}');
+        }
+        Serial.print(']');
     }
 
     static void scanBus(const char* name, II2CBus& bus)
