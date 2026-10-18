@@ -1110,7 +1110,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # prüfen, dass alle
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   alles grün ([`TESTING.md`](TESTING.md)).
 - **Bauen Sie alle Boards** nach Änderungen am gemeinsamen Code — der STM32H743 ist das Hauptboard, aber ESP32-S3, C3 und das 38-Pin-Board dürfen ebenfalls nicht kaputtgehen; vor einem Release — `tools/build_matrix.sh` (alle Boards × alle Sensoren).
-- **Tags für die App:** Führen Sie nach Änderungen an `Config.h`, `Controls.h`, `SensorSelection.h` oder `AutopilotTypes.h` `python tools/test_opconfig.py` aus. OpenPlane Studio liest die Firmware über `tools/opconfig.py` anhand der Tags `@needs`, `@better`, `@board`, `@fixed` und `@channel`.
+- **Tags für die App:** Führen Sie nach Änderungen an `Config.h`, `Controls.h`, `SensorSelection.h` oder `AutopilotTypes.h` `python tools/test_opconfig.py` aus. OpenPlane Studio liest die Firmware über `tools/opconfig.py` anhand der Tags `@needs`, `@better`, `@board`, `@fixed` und `@channel`. Eine neue Zahl, die von Hand eingestellt wird, bekommt ein Tag `@range(a, b)`: Die App zeigt „normalerweise a…b“ und warnt außerhalb, und `check` lässt keinen Wert außerhalb seines Tags durch.
 - **Prüfen Sie an der Hardware, was sich prüfen lässt:** Vorzeichen — durch
   Neigen, Ausgänge — mit dem Befehl `p`, die Verbindung — durch Ausschalten des
   Senders.

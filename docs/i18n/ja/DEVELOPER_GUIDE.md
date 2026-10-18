@@ -831,7 +831,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # すべてのボー
 - **コミット前にテストと解析：** `pio test -e native -e native-stm32`、
   `pio check -e esp32-s3`、`pio check -e stm32h743`、`tools/clang-tidy.sh` をすべて通します（[`TESTING.md`](TESTING.md)）。
 - **共通コードを変更したら、すべてのボードをビルドする。** STM32H743 が主力ですが、ESP32-S3、C3、38 ピン版も壊してはいけません。リリース前には `tools/build_matrix.sh`（全ボード × 全センサー）を実行します。
-- **アプリ向けのタグ：** `Config.h`、`Controls.h`、`SensorSelection.h`、`AutopilotTypes.h` を変更したら `python tools/test_opconfig.py` を実行します。OpenPlane Studio は `tools/opconfig.py` を通じて、タグ `@needs`、`@better`、`@board`、`@fixed`、`@channel` でファームウェアを読み取ります。
+- **アプリ向けのタグ：** `Config.h`、`Controls.h`、`SensorSelection.h`、`AutopilotTypes.h` を変更したら `python tools/test_opconfig.py` を実行します。OpenPlane Studio は `tools/opconfig.py` を通じて、タグ `@needs`、`@better`、`@board`、`@fixed`、`@channel` でファームウェアを読み取ります。手で調整する新しい数値には `@range(a, b)` タグを付けます。アプリは「通常 a…b」と表示して範囲外で警告し、`check` はタグの範囲外の値を通しません。
 - **実機で確認できることは実機で確認する：** 符号は傾けて、出力は `p` コマンドで、リンクは送信機の電源を切って確認します。
 - **API を作り話で書かない。** `~/.platformio/packages/framework-arduinoespressif32/`
   にあるフレームワークのソース（Arduino core 2.0.x）と照らし合わせてください。ネット上の情報は API の異なる 3.x 系を説明していることが多くあります（たとえば

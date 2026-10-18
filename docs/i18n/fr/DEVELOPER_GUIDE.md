@@ -1114,7 +1114,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # vérifier que tout
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   tout au vert ([`TESTING.md`](TESTING.md)).
 - **Compilez toutes les cartes** après des modifications du code commun — la STM32H743 est la principale, mais l’ESP32-S3, la C3 et la 38 broches ne doivent pas casser non plus ; avant une version — `tools/build_matrix.sh` (toutes les cartes × tous les capteurs).
-- **Étiquettes pour l’application :** après une modification de `Config.h`, `Controls.h`, `SensorSelection.h` ou `AutopilotTypes.h`, lancez `python tools/test_opconfig.py`. OpenPlane Studio lit le firmware via `tools/opconfig.py` grâce aux étiquettes `@needs`, `@better`, `@board`, `@fixed` et `@channel`.
+- **Étiquettes pour l’application :** après une modification de `Config.h`, `Controls.h`, `SensorSelection.h` ou `AutopilotTypes.h`, lancez `python tools/test_opconfig.py`. OpenPlane Studio lit le firmware via `tools/opconfig.py` grâce aux étiquettes `@needs`, `@better`, `@board`, `@fixed` et `@channel`. Un nouveau nombre réglé à la main reçoit une étiquette `@range(a, b)` : l’application affiche « habituellement a…b » et avertit en dehors, et `check` refuse une valeur hors de son étiquette.
 - **Vérifiez sur le matériel ce qui peut l’être :** les signes — par
   l’inclinaison, les sorties — avec la commande `p`, la liaison — en éteignant
   la radiocommande.

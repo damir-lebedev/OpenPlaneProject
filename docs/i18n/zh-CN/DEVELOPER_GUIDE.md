@@ -838,7 +838,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 检查所有开发
   `pio check -e esp32-s3`、`pio check -e stm32h743`、`tools/clang-tidy.sh`——
   全部通过（[`TESTING.md`](TESTING.md)）。
 - **修改通用代码后要构建所有开发板**——STM32H743 是主力，但 ESP32-S3、C3 和 38 针板也不能被破坏；发布前运行 `tools/build_matrix.sh`（所有开发板 × 所有传感器）。
-- **供应用使用的标记**：修改 `Config.h`、`Controls.h`、`SensorSelection.h` 或 `AutopilotTypes.h` 之后，运行 `python tools/test_opconfig.py`。OpenPlane Studio 通过 `tools/opconfig.py`，依据标记 `@needs`、`@better`、`@board`、`@fixed` 和 `@channel` 读取固件。
+- **供应用使用的标记**：修改 `Config.h`、`Controls.h`、`SensorSelection.h` 或 `AutopilotTypes.h` 之后，运行 `python tools/test_opconfig.py`。OpenPlane Studio 通过 `tools/opconfig.py`，依据标记 `@needs`、`@better`、`@board`、`@fixed` 和 `@channel` 读取固件。需要手动调整的新数值要加 `@range(a, b)` 标签：应用会显示“通常 a…b”并在超出时提醒，`check` 不会放过超出标签范围的值。
 - **能在硬件上验证的就在硬件上验证**：符号——靠倾斜，输出——用 `p` 命令，链路——靠关闭遥控器。
 - **不要凭空编造 API**。请对照 `~/.platformio/packages/framework-arduinoespressif32/`
   中的框架源码（Arduino core 2.0.x）——网上的资料常常描述的是 API 不同的

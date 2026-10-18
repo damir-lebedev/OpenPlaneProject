@@ -1022,7 +1022,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # जाँचें
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   सब हरे ([`TESTING.md`](TESTING.md))।
 - **सारे बोर्ड बनाएँ** साझा कोड में बदलाव के बाद — STM32H743 मुख्य है, पर ESP32-S3, C3 और 38-पिन भी टूटने नहीं चाहिए; रिलीज़ से पहले — `tools/build_matrix.sh` (सारे बोर्ड × सारे सेंसर)।
-- **ऐप के लिए टैग:** `Config.h`, `Controls.h`, `SensorSelection.h` या `AutopilotTypes.h` बदलने के बाद `python tools/test_opconfig.py` चलाएँ। OpenPlane Studio फ़र्मवेयर को `tools/opconfig.py` के ज़रिए टैग `@needs`, `@better`, `@board`, `@fixed` और `@channel` से पढ़ता है।
+- **ऐप के लिए टैग:** `Config.h`, `Controls.h`, `SensorSelection.h` या `AutopilotTypes.h` बदलने के बाद `python tools/test_opconfig.py` चलाएँ। OpenPlane Studio फ़र्मवेयर को `tools/opconfig.py` के ज़रिए टैग `@needs`, `@better`, `@board`, `@fixed` और `@channel` से पढ़ता है। हाथ से बदली जाने वाली नई संख्या पर टैग `@range(a, b)` लगाएँ: ऐप «आमतौर पर a…b» दिखाता है और इसके बाहर चेतावनी देता है, और `check` टैग से बाहर का मान पास नहीं होने देता।
 - **जो हार्डवेयर पर जाँचा जा सकता है, उसे जाँचें:** चिह्न — झुकाकर, आउटपुट —
   कमांड `p` से, संपर्क — ट्रांसमीटर बंद करके।
 - **API गढ़ें नहीं।** फ़्रेमवर्क के स्रोत

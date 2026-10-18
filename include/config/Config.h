@@ -297,7 +297,7 @@ namespace Config
     // docs/PILOT_GUIDE.md "Настройка failsafe в пульте"). Газ ниже
     // этого порога = потеря связи. В обычной работе газ не бывает
     // ниже 1000 (конечные точки пульта 100%).
-    constexpr uint16_t RX_FAILSAFE_THROTTLE_US = 950;
+    constexpr uint16_t RX_FAILSAFE_THROTTLE_US = 950;  // @range(850, 990)
 
 
     // --------------------------------------------------------
@@ -356,19 +356,19 @@ namespace Config
     // превращается в "мёртвую" зону на краях стика (было 1500/1000 —
     // серво упиралась в край уже на 1/3 и 1/2 хода стика). Уменьшить
     // ход рулей — уменьшите эти числа (или расходы на пульте).
-    constexpr int16_t AILERON_MAX_US = 500;
-    constexpr int16_t ELEVATOR_MAX_US = 500;
+    constexpr int16_t AILERON_MAX_US = 500;  // @range(100, 500)
+    constexpr int16_t ELEVATOR_MAX_US = 500;  // @range(100, 500)
 
     // Руль направления (CH4) — полный ход стика. На той же серве —
     // рулевое колесо шасси, поэтому ход общий.
-    constexpr int16_t RUDDER_MAX_US = 300;
+    constexpr int16_t RUDDER_MAX_US = 300;  // @range(100, 500)
 
     // Максимальный газ на слабой сборке 3S1P: на полном ходу стика
     // ток с этим винтом уже предельный для аккумулятора. Ход стика
     // остаётся пропорциональным, но верх смаппирован в THROTTLE_LIMIT_PCT
     // (1000 мкс = 0%, 2000 мкс на стике = THROTTLE_LIMIT_PCT% газа).
     // На батарее помощнее — поднять до 100.
-    constexpr uint16_t THROTTLE_LIMIT_PCT = 100;
+    constexpr uint16_t THROTTLE_LIMIT_PCT = 100;  // @range(10, 100)
 
 
     // --------------------------------------------------------
@@ -394,12 +394,12 @@ namespace Config
     // Предел газа назад: полный стик в реверсе = столько % мощности
     // (и не больше THROTTLE_LIMIT_PCT). Винт назад тянет плохо, а ток
     // берёт полный — реверс нужен, чтобы отрулить на земле.
-    constexpr uint16_t REVERSE_THROTTLE_LIMIT_PCT = 50;
+    constexpr uint16_t REVERSE_THROTTLE_LIMIT_PCT = 50;  // @range(10, 100)
 
     // После смены направления ARM запрещён столько времени: если
     // снять ARM на полном газу и сразу щёлкнуть реверс, мотор ещё
     // крутится по инерции — пусть сначала остановится.
-    constexpr uint32_t REVERSE_SETTLE_MS = 3000;
+    constexpr uint32_t REVERSE_SETTLE_MS = 3000;  // @range(1000, 10000)
 
 
     // --------------------------------------------------------
@@ -410,7 +410,7 @@ namespace Config
     // вниз, к себе = 2000). Не 1500: до первого кадра iBUS все каналы
     // по умолчанию стоят в 1500, и функции (закрылки, сброс груза, RTH)
     // не должны включаться при включении платы.
-    constexpr uint16_t SWITCH_ON_US = 1750;
+    constexpr uint16_t SWITCH_ON_US = 1750;  // @range(1600, 1900)
 
 
     // --------------------------------------------------------
@@ -426,11 +426,11 @@ namespace Config
     // Отклонение каждого элерона вниз при выпущенных закрылках, мкс
     // хода серво. 220 мкс ≈ 20° поворота качалки MG90S; угол самой
     // поверхности зависит от плеч качалок — подбирается здесь.
-    constexpr int16_t FLAPS_DEPLOYED_US = 220;
+    constexpr int16_t FLAPS_DEPLOYED_US = 220;  // @range(0, 400)
 
     // Время полного выпуска/уборки. Плавно, а не рывком: резкий
     // выпуск закрылков даёт клевок по тангажу.
-    constexpr uint32_t FLAPS_TRANSITION_MS = 1000;
+    constexpr uint32_t FLAPS_TRANSITION_MS = 1000;  // @range(0, 5000)
 
 
     // --------------------------------------------------------
@@ -574,10 +574,10 @@ namespace Config
     // Стояночный угол, при котором калибровка засчитывается: хвостовое
     // колесо — нос задран на CAL_TAIL_PARK_MIN..MAX_DEG, носовое — почти
     // ровно; крен — не больше CAL_PARK_MAX_ROLL_DEG.
-    constexpr float CAL_TAIL_PARK_MIN_DEG = 3.0f;
-    constexpr float CAL_TAIL_PARK_MAX_DEG = 25.0f;
-    constexpr float CAL_NOSE_PARK_MAX_DEG = 6.0f;
-    constexpr float CAL_PARK_MAX_ROLL_DEG = 10.0f;
+    constexpr float CAL_TAIL_PARK_MIN_DEG = 3.0f;  // @range(0, 15)
+    constexpr float CAL_TAIL_PARK_MAX_DEG = 25.0f;  // @range(10, 35)
+    constexpr float CAL_NOSE_PARK_MAX_DEG = 6.0f;  // @range(2, 15)
+    constexpr float CAL_PARK_MAX_ROLL_DEG = 10.0f;  // @range(3, 20)
 
 
     // --------------------------------------------------------
@@ -597,7 +597,7 @@ namespace Config
 
     constexpr bool SIGNAL_MOTOR = true;      // false — мотор молчит (ESC не поёт после паузы)
     constexpr bool SIGNAL_SURFACES = true;   // false — рули не кивают
-    constexpr int16_t SIGNAL_NOD_US = 200;
+    constexpr int16_t SIGNAL_NOD_US = 200;  // @range(50, 400)
     constexpr uint32_t SIGNAL_NOD_MS = 150;
     constexpr uint32_t SIGNAL_ESC_PAUSE_MS = 1000;
     constexpr uint32_t SIGNAL_PERIOD_MS = 3000;
@@ -608,11 +608,11 @@ namespace Config
     // --------------------------------------------------------
 
     // Тумблер ARM считается включённым выше этого значения.
-    constexpr uint16_t ARM_SWITCH_ON_US = 1750;
+    constexpr uint16_t ARM_SWITCH_ON_US = 1750;  // @range(1600, 1900)
 
     // Ниже этого значения газ считается LOW — армиться можно только
     // с газом внизу.
-    constexpr uint16_t THROTTLE_LOW_US = 1050;
+    constexpr uint16_t THROTTLE_LOW_US = 1050;  // @range(1000, 1150)
 
 
     // --------------------------------------------------------
@@ -622,7 +622,7 @@ namespace Config
     constexpr uint16_t FAILSAFE_AILERON  = 1500;
     constexpr uint16_t FAILSAFE_ELEVATOR = 1500;
     constexpr uint16_t FAILSAFE_RUDDER   = 1500;
-    constexpr uint16_t FAILSAFE_THROTTLE = 1000;
+    constexpr uint16_t FAILSAFE_THROTTLE = 1000;  // @range(1000, 1200)
 
     // Планирование при потере связи в воздухе (борт заармлен): мотор
     // выключен, автопилот держит эти углы (градусы, авиационные знаки).
@@ -630,8 +630,8 @@ namespace Config
     // и не сваливается. Крен 0 — прямо; 10-20 — пологий круг, самолёт
     // остаётся рядом с пилотом, а не улетает по прямой. Если борт не
     // заармлен (на земле) или IMU не отвечает — рули просто в нейтраль.
-    constexpr float FAILSAFE_GLIDE_ROLL_DEG  = 0.0f;
-    constexpr float FAILSAFE_GLIDE_PITCH_DEG = -3.0f;
+    constexpr float FAILSAFE_GLIDE_ROLL_DEG  = 0.0f;  // @range(-10, 10)
+    constexpr float FAILSAFE_GLIDE_PITCH_DEG = -3.0f;  // @range(-10, 5)
 
     // Потеря связи в воздухе при живом GPS и известном доме — не
     // планирование, а возврат домой с мотором (как у ArduPilot/INAV):
@@ -652,10 +652,10 @@ namespace Config
     // Стабилизация (STABILIZE, ALT_HOLD, навигация). Полный стик —
     // MAX_BANK (крутилка Knob::MAX_BANK: 15 ... 45 ... 60) по крену и
     // STAB_MAX_PITCH по тангажу.
-    constexpr float MAX_BANK_DEG = 45.0f;
-    constexpr float MAX_BANK_MIN_DEG = 15.0f;
-    constexpr float MAX_BANK_MAX_DEG = 60.0f;
-    constexpr float STAB_MAX_PITCH_DEG = 25.0f;
+    constexpr float MAX_BANK_DEG = 45.0f;  // @range(15, 60)
+    constexpr float MAX_BANK_MIN_DEG = 15.0f;  // @range(5, 45)
+    constexpr float MAX_BANK_MAX_DEG = 60.0f;  // @range(20, 75)
+    constexpr float STAB_MAX_PITCH_DEG = 25.0f;  // @range(10, 45)
 
     // Интегратор ПИД крена/тангажа копится, только пока ошибка угла
     // меньше этого: I-составляющая — для постоянной поправки (перекос,
@@ -663,12 +663,12 @@ namespace Config
     constexpr float STAB_INTEGRATOR_ZONE_DEG = 10.0f;
 
     // Крутилка Knob::STAB_GAIN — множитель выхода ПИД крена/тангажа.
-    constexpr float STAB_GAIN_MIN = 0.25f;
-    constexpr float STAB_GAIN_MAX = 2.0f;
+    constexpr float STAB_GAIN_MIN = 0.25f;  // @range(0.1, 1)
+    constexpr float STAB_GAIN_MAX = 2.0f;  // @range(1, 4)
 
     // ACRO: полный стик — скорость вращения; гироскоп гасит то, чего
     // пилот не просил (порыв ветра), с коэффициентом мкс на °/с.
-    constexpr float ACRO_MAX_RATE_DPS = 180.0f;
+    constexpr float ACRO_MAX_RATE_DPS = 180.0f;  // @range(60, 360)
     constexpr float ACRO_RATE_GAIN_US_PER_DPS = 1.5f;
 
     // Навигация: крен на ошибку курса (° крена на ° ошибки), не больше
@@ -676,66 +676,66 @@ namespace Config
     // путевая скорость выше NAV_GPS_COURSE_MIN_SPEED_MS, иначе по
     // компасу/гироскопу.
     constexpr float NAV_COURSE_GAIN = 1.0f;
-    constexpr float NAV_BANK_LIMIT_DEG = 40.0f;
+    constexpr float NAV_BANK_LIMIT_DEG = 40.0f;  // @range(15, 50)
     constexpr float NAV_GPS_COURSE_MIN_SPEED_MS = 3.0f;
     // Скорость, если её не меряет ни трубка Пито, ни GPS.
-    constexpr float NAV_ASSUMED_SPEED_MS = 15.0f;
+    constexpr float NAV_ASSUMED_SPEED_MS = 15.0f;  // @range(5, 40)
 
     // Высота рулём высоты: желаемая вертикальная скорость =
     // NAV_ALT_GAIN · ошибка высоты (в пределах NAV_MAX_CLIMB/SINK),
     // тангаж — ПИ по ошибке вертикальной скорости (°/(м/с)).
     constexpr float NAV_ALT_GAIN = 0.4f;
-    constexpr float NAV_MAX_CLIMB_MS = 3.0f;
-    constexpr float NAV_MAX_SINK_MS = 3.0f;
+    constexpr float NAV_MAX_CLIMB_MS = 3.0f;  // @range(0.5, 8)
+    constexpr float NAV_MAX_SINK_MS = 3.0f;  // @range(0.5, 8)
     constexpr float NAV_CLIMB_KP_DEG = 3.0f;
     constexpr float NAV_CLIMB_KI_DEG = 1.0f;
-    constexpr float NAV_MAX_CLIMB_PITCH_DEG = 15.0f;
-    constexpr float NAV_MAX_DIVE_PITCH_DEG = -12.0f;
+    constexpr float NAV_MAX_CLIMB_PITCH_DEG = 15.0f;  // @range(5, 30)
+    constexpr float NAV_MAX_DIVE_PITCH_DEG = -12.0f;  // @range(-30, -3)
 
     // Газ в автоматических режимах (CRUISE, LOITER, RTH): крутилка
     // Knob::CRUISE_SPEED задаёт газ 30 ... 55 ... 85 %, а с трубкой
     // Пито — воздушную скорость 10 ... 14 ... 22 м/с (газ её держит).
     // На каждый 1 м/с требуемого набора — ещё THROTTLE_PER_CLIMB % газа.
-    constexpr float CRUISE_THROTTLE_PCT = 55.0f;
-    constexpr float CRUISE_THROTTLE_MIN_PCT = 30.0f;
-    constexpr float CRUISE_THROTTLE_MAX_PCT = 85.0f;
-    constexpr float CRUISE_AIRSPEED_MS = 14.0f;
-    constexpr float CRUISE_AIRSPEED_MIN_MS = 10.0f;
-    constexpr float CRUISE_AIRSPEED_MAX_MS = 22.0f;
+    constexpr float CRUISE_THROTTLE_PCT = 55.0f;  // @range(20, 90)
+    constexpr float CRUISE_THROTTLE_MIN_PCT = 30.0f;  // @range(10, 60)
+    constexpr float CRUISE_THROTTLE_MAX_PCT = 85.0f;  // @range(50, 100)
+    constexpr float CRUISE_AIRSPEED_MS = 14.0f;  // @range(6, 40)
+    constexpr float CRUISE_AIRSPEED_MIN_MS = 10.0f;  // @range(5, 30)
+    constexpr float CRUISE_AIRSPEED_MAX_MS = 22.0f;  // @range(8, 50)
     constexpr float AIRSPEED_THROTTLE_KP = 6.0f;   // % на 1 м/с
     constexpr float AIRSPEED_THROTTLE_KI = 2.0f;   // %/с на 1 м/с
     constexpr float THROTTLE_PER_CLIMB_PCT = 8.0f;
-    constexpr float AUTO_THROTTLE_MIN_PCT = 15.0f;
-    constexpr float AUTO_THROTTLE_MAX_PCT = 100.0f;
+    constexpr float AUTO_THROTTLE_MIN_PCT = 15.0f;  // @range(0, 50)
+    constexpr float AUTO_THROTTLE_MAX_PCT = 100.0f;  // @range(50, 100)
 
     // Защита от сваливания (с трубкой Пито): приборная скорость ниже
     // STALL_SPEED_MS + STALL_MARGIN_MS — нос не выше горизонта, крен не
     // больше STALL_BANK_LIMIT_DEG, газ на максимум.
-    constexpr float STALL_SPEED_MS = 8.0f;
-    constexpr float STALL_MARGIN_MS = 2.0f;
-    constexpr float STALL_BANK_LIMIT_DEG = 20.0f;
+    constexpr float STALL_SPEED_MS = 8.0f;  // @range(3, 25)
+    constexpr float STALL_MARGIN_MS = 2.0f;  // @range(0.5, 8)
+    constexpr float STALL_BANK_LIMIT_DEG = 20.0f;  // @range(10, 40)
 
     // Круги (LOITER, над домом в RTH): радиус 25 ... 50 ... 150 м
     // (Knob::LOITER_RADIUS), по часовой стрелке. LOITER_CONVERGENCE —
     // насколько круто самолёт заходит на окружность издалека.
-    constexpr float LOITER_RADIUS_M = 50.0f;
-    constexpr float LOITER_RADIUS_MIN_M = 25.0f;
-    constexpr float LOITER_RADIUS_MAX_M = 150.0f;
+    constexpr float LOITER_RADIUS_M = 50.0f;  // @range(15, 500)
+    constexpr float LOITER_RADIUS_MIN_M = 25.0f;  // @range(10, 200)
+    constexpr float LOITER_RADIUS_MAX_M = 150.0f;  // @range(30, 1000)
     constexpr float LOITER_CONVERGENCE = 2.0f;
 
     // RTH: высота возврата (ниже — набирает по пути, выше — остаётся).
-    constexpr float RTH_ALTITUDE_M = 40.0f;
+    constexpr float RTH_ALTITUDE_M = 40.0f;  // @range(15, 120)
 
     // Дом записывается при ARM, если GPS хороший: 3D-фикс, не меньше
     // HOME_MIN_SATELLITES спутников, точность не хуже HOME_MAX_HACC_M.
-    constexpr uint8_t HOME_MIN_SATELLITES = 6;
+    constexpr uint8_t HOME_MIN_SATELLITES = 6;  // @range(4, 15)
     constexpr float HOME_MAX_HACC_M = 5.0f;
 
     // Геозабор (Feature::GEOFENCE или GEOFENCE_ALWAYS_ON): дальше
     // радиуса или выше потолка — RTH.
     constexpr bool GEOFENCE_ALWAYS_ON = false;  // @needs(gps)
-    constexpr float FENCE_RADIUS_M = 500.0f;
-    constexpr float FENCE_ALTITUDE_M = 120.0f;
+    constexpr float FENCE_RADIUS_M = 500.0f;  // @range(50, 5000)
+    constexpr float FENCE_ALTITUDE_M = 120.0f;  // @range(20, 500)
 
     // Автовзлёт с полосы (AUTO_TAKEOFF, autopilot/TakeoffController.h) —
     // этапы по датчикам, подробно — docs/AUTOPILOT_GUIDE.md. Тангаж — от
@@ -756,7 +756,7 @@ namespace Config
 
     // Газ — плавно до TAKEOFF_THROTTLE_PCT за TAKEOFF_THROTTLE_RAMP_MS:
     // рывок газа разворачивает самолёт моментом винта.
-    constexpr float TAKEOFF_THROTTLE_PCT = 100.0f;
+    constexpr float TAKEOFF_THROTTLE_PCT = 100.0f;  // @range(50, 100)
     constexpr uint32_t TAKEOFF_THROTTLE_RAMP_MS = 2000;
 
     // Курс держат руль направления и колесо (одна серва): мкс на градус
@@ -800,7 +800,7 @@ namespace Config
     constexpr float TRI_MAX_GROUND_PITCH_DEG = 10.0f;
 
     // Скорость отрыва — по трубке Пито или GPS; без них этапы идут по времени.
-    constexpr float TAKEOFF_ROTATE_SPEED_MS = 11.0f;
+    constexpr float TAKEOFF_ROTATE_SPEED_MS = 11.0f;  // @range(4, 30)
 
     // Отрыв: цель тангажа дошла до предела и прошло TAKEOFF_LIFTOFF_MS, или
     // (с барометром) самолёт выше старта на TAKEOFF_LIFTOFF_ALT_M дольше
@@ -814,8 +814,8 @@ namespace Config
     // направления; до TAKEOFF_SAFE_ALTITUDE_M над стартом, без барометра —
     // TAKEOFF_CLIMB_MS. Дальше — как CRUISE: держит курс и высоту (без
     // барометра — горизонт), газ — сам.
-    constexpr float TAKEOFF_CLIMB_PITCH_DEG = 8.0f;
-    constexpr float TAKEOFF_SAFE_ALTITUDE_M = 30.0f;
+    constexpr float TAKEOFF_CLIMB_PITCH_DEG = 8.0f;  // @range(3, 20)
+    constexpr float TAKEOFF_SAFE_ALTITUDE_M = 30.0f;  // @range(10, 100)
     constexpr uint32_t TAKEOFF_CLIMB_MS = 15000;
 
     // Прерванный взлёт на земле — мотор стоп, руль высоты в нейтраль, курс
@@ -823,8 +823,8 @@ namespace Config
     // потеря связи, IMU отказал, крен больше TAKEOFF_ABORT_ROLL_DEG, уход
     // курса больше TAKEOFF_ABORT_HEADING_DEG, нос ниже TD_MIN_PITCH_DEG,
     // нет отрыва за TAKEOFF_GROUND_TIMEOUT_MS. Снова — газ вниз и вверх.
-    constexpr float TAKEOFF_ABORT_ROLL_DEG = 15.0f;
-    constexpr float TAKEOFF_ABORT_HEADING_DEG = 30.0f;
+    constexpr float TAKEOFF_ABORT_ROLL_DEG = 15.0f;  // @range(5, 30)
+    constexpr float TAKEOFF_ABORT_HEADING_DEG = 30.0f;  // @range(10, 60)
     constexpr uint32_t TAKEOFF_NOSE_DOWN_MS = 300;
     constexpr uint32_t TAKEOFF_GROUND_TIMEOUT_MS = 15000;
 
@@ -844,20 +844,20 @@ namespace Config
     // винта) — газ LAUNCH_THROTTLE_PCT и набор с тангажом
     // LAUNCH_CLIMB_PITCH_DEG, пока не пройдёт LAUNCH_CLIMB_MS или не
     // наберётся LAUNCH_ALTITUDE_M. Дальше — как CRUISE.
-    constexpr float LAUNCH_ACCEL_G = 1.5f;
+    constexpr float LAUNCH_ACCEL_G = 1.5f;  // @range(1, 4)
     constexpr uint32_t LAUNCH_ACCEL_TIME_MS = 40;
-    constexpr uint32_t LAUNCH_MOTOR_DELAY_MS = 300;
-    constexpr float LAUNCH_THROTTLE_PCT = 100.0f;
-    constexpr float LAUNCH_CLIMB_PITCH_DEG = 15.0f;
-    constexpr uint32_t LAUNCH_CLIMB_MS = 6000;
-    constexpr float LAUNCH_ALTITUDE_M = 30.0f;
+    constexpr uint32_t LAUNCH_MOTOR_DELAY_MS = 300;  // @range(0, 1500)
+    constexpr float LAUNCH_THROTTLE_PCT = 100.0f;  // @range(50, 100)
+    constexpr float LAUNCH_CLIMB_PITCH_DEG = 15.0f;  // @range(5, 30)
+    constexpr uint32_t LAUNCH_CLIMB_MS = 6000;  // @range(1000, 20000)
+    constexpr float LAUNCH_ALTITUDE_M = 30.0f;  // @range(10, 100)
 
     // Посадка (AUTO_LAND): мотор выключен, планирование с тангажом
     // LAND_GLIDE_PITCH_DEG по курсу, ниже LAND_FLARE_ALTITUDE_M —
     // выравнивание LAND_FLARE_PITCH_DEG.
-    constexpr float LAND_GLIDE_PITCH_DEG = -4.0f;
-    constexpr float LAND_FLARE_ALTITUDE_M = 3.0f;
-    constexpr float LAND_FLARE_PITCH_DEG = 4.0f;
+    constexpr float LAND_GLIDE_PITCH_DEG = -4.0f;  // @range(-10, 0)
+    constexpr float LAND_FLARE_ALTITUDE_M = 3.0f;  // @range(1, 10)
+    constexpr float LAND_FLARE_PITCH_DEG = 4.0f;  // @range(0, 10)
 
     // Парение (SOARING): мотор выключен, планирование с тангажом
     // SOAR_GLIDE_PITCH_DEG. Вариометр (с поправкой на полную энергию,
@@ -867,19 +867,19 @@ namespace Config
     // Ниже SOAR_MIN_ALTITUDE_M — набор с мотором до SOAR_MAX_ALTITUDE_M;
     // дальше SOAR_MAX_DISTANCE_M от дома — планирование к дому.
     constexpr float SOAR_GLIDE_PITCH_DEG = -3.0f;
-    constexpr float SOAR_THERMAL_CLIMB_MS = 0.5f;
+    constexpr float SOAR_THERMAL_CLIMB_MS = 0.5f;  // @range(0.1, 3)
     constexpr uint32_t SOAR_THERMAL_CONFIRM_MS = 1500;
-    constexpr float SOAR_CIRCLE_BANK_DEG = 25.0f;
+    constexpr float SOAR_CIRCLE_BANK_DEG = 25.0f;  // @range(15, 45)
     constexpr float SOAR_CIRCLE_PITCH_DEG = -1.0f;
     constexpr float SOAR_EXIT_CLIMB_MS = -0.2f;
     constexpr uint32_t SOAR_EXIT_WINDOW_MS = 8000;
-    constexpr float SOAR_MIN_ALTITUDE_M = 30.0f;
-    constexpr float SOAR_MAX_ALTITUDE_M = 100.0f;
-    constexpr float SOAR_MAX_DISTANCE_M = 400.0f;
+    constexpr float SOAR_MIN_ALTITUDE_M = 30.0f;  // @range(10, 200)
+    constexpr float SOAR_MAX_ALTITUDE_M = 100.0f;  // @range(30, 400)
+    constexpr float SOAR_MAX_DISTANCE_M = 400.0f;  // @range(100, 2000)
 
     // RESCUE ("спасите"): крылья ровно, нос RESCUE_PITCH_DEG, газ RESCUE_THROTTLE_PCT.
-    constexpr float RESCUE_PITCH_DEG = 8.0f;
-    constexpr float RESCUE_THROTTLE_PCT = 70.0f;
+    constexpr float RESCUE_PITCH_DEG = 8.0f;  // @range(0, 20)
+    constexpr float RESCUE_THROTTLE_PCT = 70.0f;  // @range(30, 100)
 
     // Автотриммер (Feature::AUTO_TRIM): пока самолёт летит ровно
     // (крен < AUTOTRIM_MAX_ROLL_DEG, вращение < AUTOTRIM_MAX_RATE_DPS),
@@ -887,7 +887,7 @@ namespace Config
     // AUTOTRIM_RATE (доля в секунду); триммер не больше AUTOTRIM_MAX_US.
     // Сохраняется в NVS (STM32 — во флеш) после DISARM на земле.
     constexpr float AUTOTRIM_RATE = 0.2f;
-    constexpr float AUTOTRIM_MAX_US = 120.0f;
+    constexpr float AUTOTRIM_MAX_US = 120.0f;  // @range(0, 250)
     constexpr float AUTOTRIM_MAX_ROLL_DEG = 15.0f;
     constexpr float AUTOTRIM_MAX_RATE_DPS = 30.0f;
 
@@ -906,37 +906,37 @@ namespace Config
     // TURN_COORD_RUDDER_MIX · команда элеронов (гасит обратное
     // рыскание), руль высоты += TURN_COORD_PITCH_US · (1/cos крена − 1)
     // (в крене подъёмная сила уходит вбок — без этого нос опускается).
-    constexpr float TURN_COORD_RUDDER_MIX = 0.3f;
+    constexpr float TURN_COORD_RUDDER_MIX = 0.3f;  // @range(0, 1)
     constexpr float TURN_COORD_PITCH_US = 150.0f;
     constexpr bool TURN_COORD_IN_NAV_MODES = true;
 
     // Воздушный тормоз (Feature::AIRBRAKE): оба элерона вверх на столько мкс.
-    constexpr int16_t AIRBRAKE_US = 250;
+    constexpr int16_t AIRBRAKE_US = 250;  // @range(0, 400)
 
     // Сброс груза (Feature::PAYLOAD_DROP) — серво AUX1.
-    constexpr uint16_t PAYLOAD_CLOSED_US = 1000;
-    constexpr uint16_t PAYLOAD_OPEN_US = 2000;
+    constexpr uint16_t PAYLOAD_CLOSED_US = 1000;  // @range(900, 2100)
+    constexpr uint16_t PAYLOAD_OPEN_US = 2000;  // @range(900, 2100)
 
     // Камера (серво AUX2): угол Knob::CAMERA_TILT −90 ... 0 ... +30°,
     // Feature::CAMERA_STAB — вычитается тангаж самолёта. Ход серво —
     // CAMERA_US_PER_DEG мкс на градус от 1500.
-    constexpr float CAMERA_TILT_MIN_DEG = -90.0f;
-    constexpr float CAMERA_TILT_MAX_DEG = 30.0f;
+    constexpr float CAMERA_TILT_MIN_DEG = -90.0f;  // @range(-90, 0)
+    constexpr float CAMERA_TILT_MAX_DEG = 30.0f;  // @range(0, 90)
     constexpr float CAMERA_US_PER_DEG = 500.0f / 90.0f;
 
     // Предел газа крутилкой (Knob::THROTTLE_LIMIT): 10 ... 55 ... 100 %.
     // Полный ход стика газа = столько % (поверх THROTTLE_LIMIT_PCT),
     // разрешённое растягивается по всему ходу стика. Крутилка не
     // привязана — предела нет.
-    constexpr float THROTTLE_KNOB_MIN_PCT = 10.0f;
+    constexpr float THROTTLE_KNOB_MIN_PCT = 10.0f;  // @range(0, 50)
 
     // Чувствительность стиков (Knob::RATES): 30 ... 65 ... 100 %.
-    constexpr float RATES_MIN_PCT = 30.0f;
-    constexpr float RATES_MAX_PCT = 100.0f;
+    constexpr float RATES_MIN_PCT = 30.0f;  // @range(10, 100)
+    constexpr float RATES_MAX_PCT = 100.0f;  // @range(50, 100)
 
     // Пищалка: связь потеряна на земле (DISARM) дольше этого — пищит
     // "где я" (самолёт упал в траву). Feature::BEEPER — пищит сразу.
-    constexpr uint32_t LOST_MODEL_BEEP_DELAY_MS = 10000;
+    constexpr uint32_t LOST_MODEL_BEEP_DELAY_MS = 10000;  // @range(0, 60000)
 
 
     // --------------------------------------------------------

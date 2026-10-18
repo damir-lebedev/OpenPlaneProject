@@ -1014,6 +1014,12 @@ def check(root):
             errors.append("Config.h: {} помечен @channel, но значение не Channels::...".format(p["name"]))
         if p["valueKind"] == "raw":
             errors.append("Config.h: {} — не разобрать значение «{}»".format(p["name"], p["expr"]))
+        if "range" in p:
+            lo, hi = p["range"]
+            if lo > hi:
+                errors.append("Config.h: {} — @range({}, {}): нижний предел больше верхнего".format(p["name"], lo, hi))
+            elif isinstance(p["value"], (int, float)) and not isinstance(p["value"], bool) and not lo <= p["value"] <= hi:
+                errors.append("Config.h: {} = {} — за пределами своей метки @range({}, {})".format(p["name"], p["value"], lo, hi))
     macros = {p["board"] for p in manifest["params"] if p["board"]}
     for b in manifest["boards"]:
         if b["macro"] not in macros:

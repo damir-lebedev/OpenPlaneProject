@@ -111,6 +111,16 @@ class OpconfigTest(unittest.TestCase):
         self.assertEqual("мс", self.param("FLAPS_TRANSITION_MS", self.manifest)["unit"])
         self.assertEqual("м/с", self.param("STALL_SPEED_MS", self.manifest)["unit"])
 
+    def test_range_tags_reach_the_app_and_check_holds_values_to_them(self):
+        self.assertEqual([15.0, 120.0], self.param("RTH_ALTITUDE_M", self.manifest)["range"])
+        self.assertEqual([0.1, 1.0], self.param("STAB_GAIN_MIN", self.manifest)["range"])
+        path = os.path.join(self.tmp, "include", "config", "Config.h")
+        text = read(self.tmp, "include/config/Config.h")
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(text.replace("RTH_ALTITUDE_M = 40.0f;", "RTH_ALTITUDE_M = 400.0f;"))
+        errors, _ = opconfig.check(self.tmp)
+        self.assertTrue(any("RTH_ALTITUDE_M" in e and "@range(15.0, 120.0)" in e for e in errors), errors)
+
     # --- запись ---
 
     def test_apply_current_values_changes_nothing(self):
@@ -254,7 +264,7 @@ class OpconfigTest(unittest.TestCase):
         self.apply(self.config(params={"RTH_ALTITUDE_M": 77.0}))
         after = read(self.tmp, opconfig.FILES["config"])
         self.assertNotIn("\n", after.replace("\r\n", ""))
-        self.assertIn("RTH_ALTITUDE_M = 77.0f;\r\n", after)
+        self.assertIn("RTH_ALTITUDE_M = 77.0f;  // @range(15, 120)\r\n", after)   # метка в комментарии осталась
 
     def test_command_line_apply_reports_errors_as_json(self):
         cfg_path = os.path.join(self.tmp, "cfg.json")

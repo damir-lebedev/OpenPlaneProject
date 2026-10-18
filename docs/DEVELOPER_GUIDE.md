@@ -1066,7 +1066,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # проверить
 - **Собирайте все платы** после правок в общем коде — основная STM32H743,
   но ESP32-S3, C3 и 38-pin тоже не должны ломаться; перед релизом —
   `tools/build_matrix.sh` (все платы × все датчики).
-- **Метки для приложения:** после правок `Config.h`, `Controls.h`, `SensorSelection.h` или `AutopilotTypes.h` — `python tools/test_opconfig.py`. Приложение OpenPlane Studio читает прошивку через `tools/opconfig.py` по меткам `@needs`, `@better`, `@board`, `@fixed` и `@channel`.
+- **Метки для приложения:** после правок `Config.h`, `Controls.h`, `SensorSelection.h` или `AutopilotTypes.h` — `python tools/test_opconfig.py`. Приложение OpenPlane Studio читает прошивку через `tools/opconfig.py` по меткам `@needs`, `@better`, `@board`, `@fixed` и `@channel`. Новое число, которое меняют руками, — с меткой `@range(a, b)`: приложение покажет «обычно a…b» и предупредит за пределами, а `check` не пропустит значение вне его метки.
 - **Проверяйте на железе то, что можно проверить:** знаки — наклоном,
   выходы — командой `p`, связь — выключением пульта.
 - **Не выдумывайте API.** Сверяйтесь с исходниками фреймворка в

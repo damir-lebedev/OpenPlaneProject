@@ -1050,7 +1050,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # التحقق من 
   و`pio check -e esp32-s3`، و`pio check -e stm32h743`، و`tools/clang-tidy.sh` —
   جميعها خضراء ([`TESTING.md`](TESTING.md)).
 - **ابنِ جميع اللوحات** بعد التعديلات في الشيفرة المشتركة — فـSTM32H743 هي الرئيسية، لكن ESP32-S3 وC3 واللوحة ذات 38 طرفًا يجب ألا تنكسر أيضًا؛ وقبل الإصدار — `tools/build_matrix.sh` (جميع اللوحات × جميع الحساسات).
-- **وسوم للتطبيق:** بعد تعديل `Config.h` أو `Controls.h` أو `SensorSelection.h` أو `AutopilotTypes.h` شغّل `python tools/test_opconfig.py`. يقرأ OpenPlane Studio البرنامج الثابت عبر `tools/opconfig.py` من خلال الوسوم `@needs` و`@better` و`@board` و`@fixed` و`@channel`.
+- **وسوم للتطبيق:** بعد تعديل `Config.h` أو `Controls.h` أو `SensorSelection.h` أو `AutopilotTypes.h` شغّل `python tools/test_opconfig.py`. يقرأ OpenPlane Studio البرنامج الثابت عبر `tools/opconfig.py` من خلال الوسوم `@needs` و`@better` و`@board` و`@fixed` و`@channel`. ويُعطى كل رقم جديد يُضبط يدويًا وسم `@range(a, b)`: يعرض التطبيق «عادةً a…b» وينبّه خارج ذلك، ولا يمرّر `check` قيمة خارج وسمها.
 - **تحقق على العتاد مما يمكن التحقق منه:** الإشارات — بالميلان، والمخارج —
   بالأمر `p`، والاتصال — بإطفاء جهاز التحكم.
 - **لا تختلق واجهات API.** راجع مصادر الإطار في

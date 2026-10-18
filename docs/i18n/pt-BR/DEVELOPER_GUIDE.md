@@ -1076,7 +1076,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # verificar se todas
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh` —
   tudo verde ([`TESTING.md`](TESTING.md)).
 - **Compile todas as placas** depois de mudanças no código comum — a STM32H743 é a principal, mas a ESP32-S3, a C3 e a de 38 pinos também não podem quebrar; antes de um lançamento — `tools/build_matrix.sh` (todas as placas × todos os sensores).
-- **Marcações para o aplicativo:** depois de editar `Config.h`, `Controls.h`, `SensorSelection.h` ou `AutopilotTypes.h`, execute `python tools/test_opconfig.py`. O OpenPlane Studio lê o firmware por meio de `tools/opconfig.py` pelas marcações `@needs`, `@better`, `@board`, `@fixed` e `@channel`.
+- **Marcações para o aplicativo:** depois de editar `Config.h`, `Controls.h`, `SensorSelection.h` ou `AutopilotTypes.h`, execute `python tools/test_opconfig.py`. O OpenPlane Studio lê o firmware por meio de `tools/opconfig.py` pelas marcações `@needs`, `@better`, `@board`, `@fixed` e `@channel`. Um número novo ajustado à mão ganha a etiqueta `@range(a, b)`: o app mostra “normalmente a…b” e avisa fora disso, e o `check` não deixa passar um valor fora da etiqueta.
 - **Verifique no hardware o que puder ser verificado:** os sinais — pela
   inclinação, as saídas — com o comando `p`, o link — desligando o rádio.
 - **Não invente APIs.** Consulte os fontes do framework em

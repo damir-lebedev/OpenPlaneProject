@@ -1008,7 +1008,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # 모든 보드가 �
   `pio check -e esp32-s3`, `pio check -e stm32h743`, `tools/clang-tidy.sh`를
   모두 통과시킵니다([`TESTING.md`](TESTING.md)).
 - **공통 코드를 고친 뒤에는 모든 보드를 빌드하세요.** STM32H743이 주력이지만 ESP32-S3, C3, 38핀 보드도 깨지면 안 됩니다. 릴리스 전에는 `tools/build_matrix.sh`(모든 보드 × 모든 센서)를 실행합니다.
-- **앱용 태그:** `Config.h`, `Controls.h`, `SensorSelection.h`, `AutopilotTypes.h`를 고친 뒤에는 `python tools/test_opconfig.py`를 실행합니다. OpenPlane Studio는 `tools/opconfig.py`를 통해 태그 `@needs`, `@better`, `@board`, `@fixed`, `@channel`로 펌웨어를 읽습니다.
+- **앱용 태그:** `Config.h`, `Controls.h`, `SensorSelection.h`, `AutopilotTypes.h`를 고친 뒤에는 `python tools/test_opconfig.py`를 실행합니다. OpenPlane Studio는 `tools/opconfig.py`를 통해 태그 `@needs`, `@better`, `@board`, `@fixed`, `@channel`로 펌웨어를 읽습니다. 손으로 조정하는 새 숫자에는 `@range(a, b)` 태그를 붙입니다. 앱은 “보통 a…b”를 보여 주고 범위를 벗어나면 경고하며, `check`는 태그 범위 밖의 값을 통과시키지 않습니다.
 - **하드웨어에서 확인할 수 있는 것은 하드웨어에서 확인하세요:** 부호는 기울여서,
   출력은 `p` 명령으로, 링크는 송신기를 꺼서 확인합니다.
 - **API를 지어내지 마세요.** `~/.platformio/packages/framework-arduinoespressif32/`의
