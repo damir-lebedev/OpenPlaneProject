@@ -27,9 +27,9 @@
 //   live 0  — замолчать сразу.
 //
 // "@live {...}" — одна строка JSON: ARM, режим, связь с пультом, каналы,
-// выходы, углы, датчики, причина запрета ARM (FlightController::
-// armBlockNow()), шаг наземной калибровки, включённые функции, частота
-// цикла. Печатается, только если в буфере порта есть место под строку
+// выходы, углы, датчики и их калибровки (установка IMU, стоянка, компас),
+// причина запрета ARM (FlightController::armBlockNow()), шаг наземной
+// калибровки, включённые функции, частота цикла. Печатается, только если в буфере порта есть место под строку
 // целиком: полётный цикл никогда не ждёт ПК — места нет, кадр пропущен.
 // ============================================================
 
@@ -126,7 +126,10 @@ public:
         if (imu && imu->isAvailable())
         {
             const ImuData& d = imu->getImuData();
-            w.add(",\"att\":[%.1f,%.1f,%.1f]", d.roll, d.pitch, d.yaw);
+            float parkPitch = 0, parkRoll = 0;
+            w.add(",\"att\":[%.1f,%.1f,%.1f],\"mount\":%s,\"park\":%s", d.roll, d.pitch, d.yaw,
+                  imu->isMountCalibrated() ? "true" : "false",
+                  imu->getParkingAttitude(parkPitch, parkRoll) ? "true" : "false");
         }
 
         const BarometerSensor* baro = autopilot ? autopilot->getBarometerSensor() : nullptr;
@@ -139,7 +142,11 @@ public:
 
         const MagnetometerSensor* mag = autopilot ? autopilot->getMagnetometerSensor() : nullptr;
         w.add(",\"mag\":\"%s\"", sensorState(mag));
-        if (mag && mag->isAvailable()) w.add(",\"hdg\":%.0f", mag->getMagData().headingDegrees);
+        if (mag && mag->isAvailable())
+        {
+            w.add(",\"hdg\":%.0f,\"magcal\":%s", mag->getMagData().headingDegrees,
+                  mag->isCalibrated() ? "true" : "false");
+        }
 
         const GpsSensor* gps = autopilot ? autopilot->getGpsSensor() : nullptr;
         w.add(",\"gps\":\"%s\"", sensorState(gps));

@@ -353,6 +353,8 @@ public:
     void calibrate() override { calibrations++; }
     void setYaw(float y) override { yaw = y; }
     void calibrateOrientation() override { orientationCalibrations++; }
+    bool mountCalibrated = false;
+    bool isMountCalibrated() const override { return mountCalibrated; }
     const char* getPreflightProblem() const override { return preflightProblem; }
 
     // Наземная калибровка: "верх" в осях чипа (тест задаёт), установка,
@@ -459,6 +461,8 @@ public:
     void printStatus() const override { Serial.println("FakeMag status"); }
     const MagData& getMagData() const override { return data; }
     void calibrate() override { calibrations++; }
+    bool calibrated = false;
+    bool isCalibrated() const override { return calibrated; }
 };
 
 class FakeAirspeed : public AirspeedSensor

@@ -671,6 +671,8 @@ void test_applink_streams_live_while_the_app_listens()
     TEST_ASSERT_TRUE(contains(out, "\"arm\":false,\"mode\":\"MANUAL\",\"rx\":\"ok\""));
     TEST_ASSERT_TRUE(contains(out, "\"ch\":[1500,1500,1000,1500,1000,1000,1000,1500,1500,1500]"));
     TEST_ASSERT_TRUE(contains(out, "\"imu\":\"ok\",\"att\":["));
+    TEST_ASSERT_TRUE(contains(out, "\"mount\":false,\"park\":false"));
+    TEST_ASSERT_TRUE(contains(out, "\"magcal\":false"));
     TEST_ASSERT_TRUE(contains(out, "\"baro\":\"ok\",\"alt\":"));
     TEST_ASSERT_TRUE(contains(out, "\"block\":null,\"cal\":null,\"feat\":[]"));
     TEST_ASSERT_EQUAL('\n', out.back());
@@ -691,6 +693,16 @@ void test_applink_streams_live_while_the_app_listens()
     const std::string busy = takeSerial();
     TEST_ASSERT_TRUE_MESSAGE(contains(busy, "\"block\":\"газ не на минимуме\""), busy.c_str());
     TEST_ASSERT_TRUE(contains(busy, "\"feat\":[\"FLAPS\"]"));
+
+    // Калибровки — с самой платы: мастер наладки не верит памяти приложения.
+    c.plane.imu.mountCalibrated = true;
+    c.plane.imu.parkingValid = true;
+    c.plane.mag.calibrated = true;
+    fake::advanceMs(AppLink::FRAME_PERIOD_MS);
+    link.update(millis());
+    const std::string calibrated = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(calibrated, "\"mount\":true,\"park\":true"), calibrated.c_str());
+    TEST_ASSERT_TRUE(contains(calibrated, "\"magcal\":true"));
 
     // Без продления — замолкает сама.
     fake::advanceMs(AppLink::LIVE_HOLD_MS);

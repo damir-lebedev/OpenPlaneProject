@@ -232,6 +232,8 @@ public:
         Serial.println("  Проверка: нос вверх -> P растёт, правое крыло вниз -> R растёт.");
     }
 
+    bool isMountCalibrated() const override { return orientationCalibrated; }
+
     const char* getPreflightProblem() const override
     {
         switch (preflightProblem)

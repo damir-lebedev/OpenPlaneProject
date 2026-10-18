@@ -68,6 +68,8 @@ public:
     // магнитные помехи рядом с датчиком (магниты моторов, провода),
     // но не soft-iron искажения (эллипс вместо окружности).
     // Результат сохраняется в NVS.
+    bool isCalibrated() const override { return calibrated; }
+
     void calibrate() override
     {
         if (!available) return;
