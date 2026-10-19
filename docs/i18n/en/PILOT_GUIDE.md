@@ -34,6 +34,7 @@ The kit of the current build (the firmware has been verified on it):
 - **An STM32H743 DevEBox H743 board** (MCUDEV) — the main one. The former main board, the ESP32-S3 below, is supported too.
 - **An ESP32-S3 N16R8 board** (a DevKitC-1 clone with two USB-C ports: "USB" and "COM").
 - **An FS-i6 transmitter + FS-iA6B receiver** (iBUS protocol, 10 channels). You need one data wire — the iBUS SERVO port. The transmitter must be able to set failsafe — this setting is mandatory, see the failsafe section.
+- **Or another transmitter with an SBUS receiver** (FrSky, Futaba, RadioMaster, Jumper…) **or a CRSF one** (ExpressLRS, TBS Crossfire) — the protocol is chosen in `Config.h` (`RX_PROTOCOL`), the wiring is below.
 - **2 MG90S servos** for the ailerons — one for each wing panel (two independent servos, not one for both wings).
 - **1 MG90S servo** for the elevator.
 - **1 MG90S servo** for the rudder — the landing gear's steering wheel is mounted on the same shaft (steering on the ground). The landing gear is two wheels in front and a steerable tail wheel (`LANDING_GEAR = TAIL_WHEEL` in `Config.h`; a tricycle with a nose wheel is `NOSE_WHEEL`).
@@ -69,7 +70,7 @@ The firmware supports four boards; switching takes one build parameter (`pio run
 | Elevator | PA2 |
 | ESC (throttle) | PA3 |
 | Rudder + steering wheel | PD14 |
-| iBUS from the receiver (RX) | PE7 |
+| Receiver (RX): iBUS, SBUS, CRSF | PE7 |
 | Sensor I2C SDA / SCL (MPU, BMP581, compass) | PB11 / PB10 |
 | OLED I2C SDA / SCL (separate bus) | PB9 / PB8 |
 | GPS: RX (← GPS TX) / TX (→ GPS RX) | PD9 / PD8 |
@@ -102,7 +103,7 @@ The servos are powered **not from the board** but from the ESC's BEC (or from a 
 | Elevator | GPIO6 |
 | ESC (throttle) | GPIO7 |
 | Rudder + steering wheel | GPIO18 |
-| iBUS from the receiver (RX) | GPIO17 |
+| Receiver (RX): iBUS, SBUS, CRSF | GPIO17 |
 | Sensor I2C SDA / SCL (MPU, BMP581, compass) | GPIO41 / GPIO42 |
 | OLED I2C SDA / SCL (separate bus) | GPIO1 / GPIO2 |
 | Reserved: GPS RX / TX | GPIO39 / GPIO40 |
@@ -137,7 +138,7 @@ The servos are powered **not from the board** but from the ESC's BEC (or from a 
 | Elevator | GPIO6 |
 | ESC (throttle) | GPIO7 |
 | Rudder | — (no free pins) |
-| iBUS from the receiver (RX) | GPIO8 |
+| Receiver (RX): iBUS, SBUS, CRSF | GPIO8 |
 | I2C SDA (sensors) | GPIO1 |
 | I2C SCL (sensors) | GPIO3 |
 
@@ -152,7 +153,7 @@ The servos are powered **not from the board** but from the ESC's BEC (or from a 
 | Elevator | GPIO27 |
 | ESC (throttle) | GPIO26 |
 | Rudder | GPIO25 |
-| iBUS from the receiver (RX) | GPIO16 |
+| Receiver (RX): iBUS, SBUS, CRSF | GPIO16 |
 | I2C SDA (sensors) | GPIO21 |
 | I2C SCL (sensors) | GPIO22 |
 
@@ -162,15 +163,24 @@ Its advantage is that it is the most common and cheapest board in the family —
 
 ## Connecting the receiver
 
-All you need from the receiver is **one iBUS data wire**, which on most FlySky-compatible receivers is brought out to a separate port (often labeled "iBUS", or it is the only non-PPM output). Connection:
+The receiver connects with one data wire to the **receiver RX pin** from your
+board's table (`PIN_RC_RX`: PE7 on the DevEBox, GPIO17 on the esp32-s3, GPIO8 on
+the esp32-c3, GPIO16 on the esp32-dev). The protocol must match your receiver; it
+is set by `RX_PROTOCOL` in `Config.h` (in OpenPlane Studio — the "Transmitter" step):
 
-- **Receiver TX (iBUS output)** → the board's **RX pin** from the table above (GPIO8 on the esp32-c3, GPIO17 on the esp32-s3, GPIO16 on the esp32-dev).
+| `RX_PROTOCOL` | Receiver | What goes where |
+|---|---|---|
+| `IBUS` (default) | FlySky FS-iA6B, FS-iA10B | iBUS SERVO port (iBUS output) → RX pin |
+| `SBUS` | FrSky, Futaba, RadioMaster, Jumper and most others | SBUS output → RX pin; no inverter needed — the board's UART inverts the signal itself |
+| `CRSF` | ExpressLRS, TBS Crossfire and Tracer | receiver TX → RX pin; the receiver RX may go to the TX pin (`PIN_RC_TX`) — not used yet |
+
 - **Receiver ground (GND)** → the board's **GND**. This is mandatory; without a common ground the protocol will not work.
-- **Receiver power** — from a separate BEC/regulator or from the board's 5 V, depending on how you usually power the receiver in your builds; it is not tied to any particular firmware pin.
+- **Receiver power** — 5 V from a separate BEC/regulator or from the board's 5 V.
 
-The firmware sends nothing back to the receiver — it only listens, so the board's TX line does not need to be connected anywhere.
-
-The iBUS port speed in the firmware is 115200 baud, which is standard for the protocol; there is no need to change it, because the receiver holds that speed itself.
+The firmware sets the port speed: iBUS — 115200 baud, SBUS — 100000 (8E2), CRSF
+— 420000 (the ExpressLRS default). Set up an EdgeTX transmitter the same way as
+the FS-i6 (see the channel map below): CH5 — ARM, CH6–CH8 — switches, CH9–CH10 —
+knobs.
 
 ---
 
@@ -261,10 +271,11 @@ Loss of link has **absolute priority** over everything else:
 - **motor in reverse** — the motor is off in any case; the autopilot steers with the control surfaces only (home — by gliding);
 - **not armed** (on the ground) or the IMU does not respond — the motor is off, the ailerons, elevator and rudder go to neutral (1500 µs); after 10 s without a link the "I'm here" buzzer beeps (if it is soldered on).
 
-The firmware recognizes loss of link in two ways:
+The firmware recognizes loss of link in three ways:
 
-1. **No iBUS frames for longer than 500 ms** — a broken wire or an unpowered receiver.
-2. **Throttle below 950 µs** — this is how the receiver reports that it has lost the transmitter. **This requires setting up failsafe in the transmitter** (see below): when the link is lost, the FS-iA6B does NOT stop sending frames but repeats the last stick values — without the setup the firmware will not see the loss of link, and the airplane will keep flying with the last throttle.
+1. **No frames from the receiver for longer than 500 ms** — a broken wire, an unpowered receiver, or a receiver that goes silent on link loss (ExpressLRS does this by default).
+2. **The receiver reports link loss itself** — the failsafe flag in an SBUS frame, 0 % link quality on CRSF. Nothing to set up.
+3. **Throttle below 950 µs** — this is how the receiver reports that it has lost the transmitter. **This requires setting up failsafe in the transmitter** (see below): when the link is lost, the FS-iA6B does NOT stop sending frames but repeats the last stick values — without the setup the firmware will not see the loss of link, and the airplane will keep flying with the last throttle.
 
 ARM is **not** reset on failsafe: when the link returns, the airplane obeys the sticks and the selected mode again without re-arming (flipping the switch in the air with the throttle at zero is more dangerous).
 
@@ -503,7 +514,7 @@ Read this section in full **before** the first power-up, not after an incident.
 ## Troubleshooting
 
 **"No receiver signal" / RX looks fine, but the channels on the dashboard do not move**
-Check that the receiver's data wire is connected exactly to the iBUS RX pin from your board's table (GPIO8/GPIO17/GPIO16), not mixed up with ground or power, and that the receiver and board grounds are joined. If the pinout matches and the wires are intact but there is still no signal, check that the receiver is bound to the transmitter at all and that the receiver's output is configured for iBUS, not PPM/SBUS.
+Check that the receiver's data wire is connected exactly to the receiver RX pin from your board's table (PE7/GPIO17/GPIO8/GPIO16), not mixed up with ground or power, and that the receiver and board grounds are joined. If the pinout matches and the wires are intact but there is still no signal, check that the receiver is bound to the transmitter (for ExpressLRS — the same binding phrase and version as the transmitter module) and that its output matches `RX_PROTOCOL`: iBUS, SBUS or CRSF, not PPM.
 
 **A sensor (IMU, barometer, compass) shows "not responding" / NO_RESPONSE**
 The firmware honestly reports that the sensor does not respond instead of outputting zeros. Check: (1) the module's power — 3.3V and the board's ground; (2) SDA/SCL — on the I2C pins of your particular board; (3) the address on the line: MPU 0x68 (AD0 to GND), BMP581 0x46 (SDO to GND, CSB to 3.3V; 0x47 if SDO is on 3.3V), BMP388 0x76 (SDO to GND, **CSB to 3.3V** — otherwise the chip is in SPI mode), QMC5883P 0x2C, QMC5883L 0x0D. If a sensor responds sometimes and sometimes not (or answers at someone else's address), it is a bad contact on the breadboard: press down on VCC/GND/SDA/SCL, and it is best to power each module straight from the board's 3.3V/GND. The `s` command in the console shows the I2C error counters for each sensor.

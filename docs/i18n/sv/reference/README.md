@@ -14,7 +14,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | [config.md](config.md) | KONFIGURATION | `Config`, `Channels`, `Controls` |
 | [hal.md](hal.md) | HAL | `IBoard`, `ServoChannel`, `II2CBus`, `ISpiBus`, `IUartPort`, `IServoOutput`, `IRegisterDevice`, `I2cRegisterDevice`, `SpiRegisterDevice`, `Rtos`, `Esp32Board`, `Esp32I2CBus`, `Esp32SpiBus`, `Esp32UartPort`, `Esp32ServoOutput`; STM32H743: `Stm32Board`, `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`, `Stm32ServoOutput`, `Stm32FlashStorage`, `compat/Preferences` |
 | [storage.md](storage.md) | LAGRING | `IFlashStorage`, `KeyValueStore`, `KvPreferences` |
-| [rc.md](rc.md) | RC | `RcChannelState`, `RcInput`, `IBusReceiver` |
+| [rc.md](rc.md) | RC | `RcChannelState`, `RcInput`, `RcReceiver`, `IBusParser`, `SbusParser`, `CrsfParser`, `Packed11` |
 | [control.md](control.md) | STYRNING / KOORDINERING | `ControlCommand`, `FlightOutputState`, `FlapsController`, `ControlMixer`, `ThrottleManager`, `EscSignal`, `MotorReverse`, `ArmingManager`, `FlightOutputs`, `Beeper`, `FlightController`, `GroundCalibration`, `SignalPlayer` |
 | [autopilot.md](autopilot.md) | AUTOPILOT | `AutopilotMode`, `Feature`, `Knob`, `PilotInputs`, `Binding`/`Bind`/`BindingCheck`, `PilotSwitches`, `Autopilot`, `NavStatus`, `Geo`/`Guidance`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, `PidController` |
 | [feedback.md](feedback.md) | AUTOPILOT / återkoppling | `FeedbackConfig`, `FeedbackMath`, `FlightSnapshot`, `FeedbackOutput`, `PhaseTargets`, `SpeedEstimator`, `AirborneDetector`, `ControlEffectivenessEstimator`, `AxisModel`, `AdaptiveRateController`, `StallGuard`, `TakeoffSequencer`, `LandingSequencer`, `FeedbackSupervisor` |
@@ -49,6 +49,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | `ControlEffectivenessEstimator` | klass | `autopilot/feedback/ControlEffectivenessEstimator.h` | [feedback](feedback.md#controleffectivenessestimator) |
 | `ControlMixer` | klass | `control/ControlMixer.h` | [control](control.md#controlmixer) |
 | `Controls` | namnrymd | `config/Controls.h` | [config](config.md#namnrymd-controls) |
+| `CrsfParser` | klass | `rc/CrsfParser.h` | [rc](rc.md#crsfparser) |
 | `DebugConsole` | klass | `telemetry/DebugConsole.h` | [telemetry](telemetry.md#debugconsole) |
 | `DebugLogger` | klass | `telemetry/DebugLogger.h` | [telemetry](telemetry.md#debuglogger) |
 | `EscSignal` | namespace | `control/EscSignal.h` | [control](control.md#escsignal) |
@@ -72,7 +73,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | `GroundCalibration` | klass | `control/GroundCalibration.h` | [control](control.md#groundcalibration) |
 | `I2cRegisterDevice` | klass | `hal/RegisterDevice.h` | [hal](hal.md#i2cregisterdevice) |
 | `IBoard` | gränssnitt | `hal/IBoard.h` | [hal](hal.md#iboard) |
-| `IBusReceiver` | klass | `rc/IBusReceiver.h` | [rc](rc.md#ibusreceiver) |
+| `IBusParser` | klass | `rc/IBusParser.h` | [rc](rc.md#ibusparser) |
 | `ICM42688_Sensor` | klass | `sensors/imu/ICM42688_Sensor.h` | [sensors](sensors.md#icm42688_sensor) |
 | `ICM45686_Sensor` | klass | `sensors/imu/ICM45686_Sensor.h` | [sensors](sensors.md#icm45686_sensor) |
 | `IFlashStorage` | gränssnitt | `storage/KeyValueStore.h` | [storage](storage.md#iflashstorage) |
@@ -99,6 +100,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | `MotorReverse` | class | `control/MotorReverse.h` | [control](control.md#motorreverse) |
 | `MPU6050_Sensor` | klass | `sensors/imu/MPU6050_Sensor.h` | [sensors](sensors.md#mpu6050_sensor) |
 | `OledDisplay` | klass | `telemetry/OledDisplay.h` | [telemetry](telemetry.md#oleddisplay) |
+| `Packed11` | namnrymd | `rc/Packed11.h` | [rc](rc.md#packed11) |
 | `PhaseTargets` | struktur | `autopilot/feedback/PhaseTargets.h` | [feedback](feedback.md#phasetargets) |
 | `PidController` | klass | `autopilot/PidController.h` | [autopilot](autopilot.md#pidcontroller) |
 | `PilotSwitches` | klass | `autopilot/PilotSwitches.h` | [autopilot](autopilot.md#pilotswitches) |
@@ -109,7 +111,9 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | `RawImuSample` | struktur | `sensors/imu/ImuSensorBase.h` | [sensors](sensors.md#imusensorbase) |
 | `RcChannelState` | klass | `rc/RcChannelState.h` | [rc](rc.md#rcchannelstate) |
 | `RcInput` | klass (statisk) | `rc/RcInput.h` | [rc](rc.md#rcinput) |
+| `RcReceiver` | klass | `rc/RcReceiver.h` | [rc](rc.md#rcreceiver) |
 | `Rtos` | namnrymd | `hal/Rtos.h` | [hal](hal.md#rtos) |
+| `SbusParser` | klass | `rc/SbusParser.h` | [rc](rc.md#sbusparser) |
 | `Sensor` | gränssnitt | `sensors/SensorInterface.h` | [sensors](sensors.md#gränssnitt-och-datastrukturer) |
 | `SensorMounting` | namnrymd | `sensors/SensorMounting.h` | [sensors](sensors.md#namnrymd-sensormounting) |
 | `SensorSelection.h` | makron | `sensors/SensorSelection.h` | [sensors](sensors.md#sensorselectionh) |

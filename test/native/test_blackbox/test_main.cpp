@@ -1,7 +1,7 @@
 // ============================================================
 // Чёрный ящик: формат, кольцо секторов во флеше (NOR-фейк раздела —
 // стирание секторами, запись только опускает биты), запись полёта
-// на настоящих FlightController/Autopilot/IBusReceiver, старт и
+// на настоящих FlightController/Autopilot/RcReceiver, старт и
 // остановка, события, переполнение флеша в воздухе, выгрузка по UART.
 //
 // Запуск: pio test -e native -f native/test_blackbox
@@ -26,7 +26,7 @@
 #include "control/FlightOutputs.h"
 #include "control/ThrottleManager.h"
 #include "hal/esp32/Esp32FlashPartition.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "telemetry/BlackBox.h"
 #include "telemetry/BlackBoxFormat.h"
 #include "telemetry/BlackBoxStorage.h"
@@ -172,7 +172,7 @@ namespace
         FakeImu imu;
         FakeBaro baro;
         FakeGps gps;
-        IBusReceiver receiver{ board.rcUart() };
+        RcReceiver receiver{ board.rcUart() };
         ControlMixer mixer;
         ThrottleManager throttle;
         FlightOutputs outputs{ board };
@@ -963,7 +963,7 @@ void test_no_partition_leaves_the_box_off()
 {
     FakeImu imu;
     FakeBoard board;
-    IBusReceiver receiver(board.rcUart());
+    RcReceiver receiver(board.rcUart());
     ControlMixer mixer;
     ThrottleManager throttle;
     FlightOutputs outputs(board);

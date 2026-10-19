@@ -88,7 +88,7 @@ JSON 中的 `attached`/`available` 字段始终存在——仪表盘会如实地
 
 ### 阶段 1 — 手动控制与安全的基础 [已完成]
 
-**目标**：可靠、可预测、调试透明的遥控滑翔机。**技术上已有的内容**：`IBusReceiver.h` 中带信号丢失识别的 iBUS 解析，混控器 `ControlMixer.h`（摇杆 → 横滚/俯仰/襟翼指令 → 带舵机反向的 PWM，对 UART/PWM 一无所知），`ThrottleManager.h`，`ArmingManager.h`（用单独的开关、油门在底时 ARM，DISARM 立即生效），双向电调 BLHeli 80A 及只在未解锁时才能切换的电机反转（`MotorReverse.h`），`FlightController.h` 中拥有绝对优先级的 failsafe，输出到 Serial（`DebugLogger.h`），网页仪表盘（`WebDebugServer.h`）和 OLED 屏（`OledDisplay.h`）。**为什么这是其余一切的基础**：这是唯一一层必须始终工作的层，哪怕其余各阶段都还没实现，或它们的传感器已被断开——正因如此，failsafe 和 ARM 最先写成，并在硬件上验证过（包括 FS-iA6B 接收机在遥控器关闭时的实际行为）。
+**目标**：可靠、可预测、调试透明的遥控滑翔机。**技术上已有的内容**：`RcReceiver.h` 中带信号丢失识别的 iBUS/SBUS/CRSF 解析，混控器 `ControlMixer.h`（摇杆 → 横滚/俯仰/襟翼指令 → 带舵机反向的 PWM，对 UART/PWM 一无所知），`ThrottleManager.h`，`ArmingManager.h`（用单独的开关、油门在底时 ARM，DISARM 立即生效），双向电调 BLHeli 80A 及只在未解锁时才能切换的电机反转（`MotorReverse.h`），`FlightController.h` 中拥有绝对优先级的 failsafe，输出到 Serial（`DebugLogger.h`），网页仪表盘（`WebDebugServer.h`）和 OLED 屏（`OledDisplay.h`）。**为什么这是其余一切的基础**：这是唯一一层必须始终工作的层，哪怕其余各阶段都还没实现，或它们的传感器已被断开——正因如此，failsafe 和 ARM 最先写成，并在硬件上验证过（包括 FS-iA6B 接收机在遥控器关闭时的实际行为）。
 
 ### 阶段 2 — IMU + 气压计 → 自动驾驶仪 [已编写，并经测试和仿真验证，等待飞行测试]
 

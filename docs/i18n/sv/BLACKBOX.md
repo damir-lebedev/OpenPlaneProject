@@ -35,14 +35,14 @@ På de andra korten (ESP32-C3, den vanliga ESP32) finns inget lagringsutrymme: d
 |---|---|---|
 | `IMU` | varje cykel, 500 Hz | gyroskop (°/s), accelerometer (g), hur lång tid styrcykelns arbete tog (µs) |
 | `CTRL` | 100 Hz | roll/tippning/kurs, autopilotens mål, pilotens spakar, de slutliga kommandona, **alla 7 utgångar** (µs), komponenterna i roll- och tipp-PID (P, I, D), pilotens och autopilotens gas, klaffar, läge, flaggor (ARM, förbindelse, failsafe, sensorer vid liv...), påslagna funktioner |
-| `RC` | 50 Hz | alla 10 sändarkanaler, räknare för iBUS-ramar (bra och dåliga) |
+| `RC` | 50 Hz | alla 10 sändarkanaler, räknare för iBUS/SBUS/CRSF-ramar (bra och dåliga) |
 | `BARO` | varje mätning (~50 Hz) | tryck, temperatur, höjd, vertikal hastighet, höjdmål |
 | `MAG` | upp till 50 Hz | fältet på tre axlar, kurs |
 | `GPS` | varje lösning | koordinater, höjd, hastighet, kurs, satelliter, fix, noggrannhet |
 | `AIR` | upp till 50 Hz | pitotrör: tryckskillnad, indikerad och sann lufthastighet, densitet |
 | `NAV` | 10 Hz | hempunkt (avstånd, bäring), kurs och kursmål, navigeringshastighet, kurskälla, steg för handstart och termikflygning, autotrimning, autostartens etapp (`takeoff_stage`) |
 | `POWER` | 10 Hz | batterispänning och strömsensorns utsignal (spänningsdelarna på flygkontrollerkortet, [FC_BOARD.md](FC_BOARD.md), block B) |
-| `SYS` | 1 Hz | styrslingans frekvens och sämsta cykel, ledigt minne, iBUS-räknare, IMU-temperatur, den svarta lådans kö, förlorade poster, den längsta flashskrivningen, ledigt utrymme |
+| `SYS` | 1 Hz | styrslingans frekvens och sämsta cykel, ledigt minne, iBUS/SBUS/CRSF-räknare, IMU-temperatur, den svarta lådans kö, förlorade poster, den längsta flashskrivningen, ledigt utrymme |
 | `EVENT` | vid en händelse | ARM/DISARM, en ARM-vägran med orsak, lägesbyte, förbindelse förlorad/återställd, sensor felade/återhämtade sig, GPS-fix, hempunkt registrerad, brytarfunktioner, geofence, överstegringsskydd, steg för handstart och termikflygning, autostartens etapper (avbrott – med orsak), markkalibreringens steg och resultat (markläge eller fel) |
 
 I början av varje flygning kommer parametrarna: firmwaren (byggdatum), orsaken till starten och till den senaste omstarten, vilka sensorer som finns och om de klarade kontrollen före flygning, PID-koefficienterna (inklusive ändringar från panelen), trimmen, viktiga `Config`-värden och brytarbindningarna.

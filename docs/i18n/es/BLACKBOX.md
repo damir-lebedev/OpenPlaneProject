@@ -35,14 +35,14 @@ En las demás placas (ESP32-C3, ESP32 normal) no hay soporte de almacenamiento: 
 |---|---|---|
 | `IMU` | en cada ciclo, 500 Hz | giroscopio (°/s), acelerómetro (g), cuánto duró el trabajo del ciclo de control (µs) |
 | `CTRL` | 100 Hz | alabeo/cabeceo/rumbo, objetivos del piloto automático, sticks del piloto, órdenes finales, **las 7 salidas** (µs), componentes del PID de alabeo y de cabeceo (P, I, D), gas del piloto y del piloto automático, flaps, modo, indicadores (ARM, enlace, failsafe, sensores vivos...), funciones activadas |
-| `RC` | 50 Hz | los 10 canales de la emisora, contadores de tramas iBUS (completas y dañadas) |
+| `RC` | 50 Hz | los 10 canales de la emisora, contadores de tramas iBUS/SBUS/CRSF (completas y dañadas) |
 | `BARO` | en cada muestra (~50 Hz) | presión, temperatura, altitud, velocidad vertical, altitud objetivo |
 | `MAG` | hasta 50 Hz | el campo en tres ejes, rumbo |
 | `GPS` | en cada solución | coordenadas, altitud, velocidad, rumbo, satélites, fijación, precisión |
 | `AIR` | hasta 50 Hz | tubo de Pitot: diferencia de presión, velocidad indicada y verdadera, densidad |
 | `NAV` | 10 Hz | punto de origen (distancia, marcación), rumbo y rumbo objetivo, velocidad de navegación, fuente del rumbo, fases del lanzamiento a mano y del vuelo a vela, autotrim, etapa del despegue automático (`takeoff_stage`) |
 | `POWER` | 10 Hz | tensión de la batería y salida del sensor de corriente (los divisores de la placa del controlador de vuelo, [FC_BOARD.md](FC_BOARD.md), bloque B) |
-| `SYS` | 1 Hz | frecuencia y peor ciclo del lazo de control, memoria libre, contadores de iBUS, temperatura del IMU, cola de la caja negra, registros perdidos, la escritura en flash más larga, espacio libre |
+| `SYS` | 1 Hz | frecuencia y peor ciclo del lazo de control, memoria libre, contadores de iBUS/SBUS/CRSF, temperatura del IMU, cola de la caja negra, registros perdidos, la escritura en flash más larga, espacio libre |
 | `EVENT` | por evento | ARM/DISARM, rechazo de ARM con el motivo, cambio de modo, enlace perdido/recuperado, sensor averiado/recuperado, fijación del GPS, punto de origen registrado, funciones de los interruptores, geovalla, protección contra la pérdida de sustentación, fases del lanzamiento a mano y del vuelo a vela, etapas del despegue automático (aborto, con el motivo), pasos y resultado de la calibración en tierra (actitud en tierra o error) |
 
 Al comienzo de cada vuelo van los parámetros: el firmware (fecha de compilación), el motivo del arranque y del último reinicio, qué sensores hay y si superaron la comprobación previa al vuelo, los coeficientes del PID (con los cambios hechos desde el panel), los trims, valores importantes de `Config` y las asignaciones de los interruptores.

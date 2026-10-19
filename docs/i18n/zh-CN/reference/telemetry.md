@@ -135,7 +135,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s 内最差) | iBUS ok=… crc_err
 IMU 安装方向校准；`m`——指南针校准；`p`——输出自检；
 `b`——扫描 I2C 总线（0x08..0x7F——一直扫到 0x7F，因为 QMC6309 位于 0x7C），并给出芯片名称；其他——提示。`\r`/`\n` 会被忽略。另外还有 `c`——飞机地面校准（正在进行时则取消；主菜单第 9 项）和 `e`——用舵面和电调提示音发出一次提示（检查电调在脉冲暂停后是否会播放）。
 
-电脑命令由 STX 字节（`0x02`）、字符串和 `\n` 组成：收到 `id` 时，`FirmwareIdentity::print()` 以一行 `@id {...}` 输出固件身份信息（`fw`、`proto`、`board`、`commit`、`config`、`plane`、`armed`；ARM 状态下同样应答）；`scan` 扫描总线并输出 `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}`（ARM 时为 `{"error":"armed"}`）；`act X` 执行菜单按键 `X` 的动作，ARM 时同样受限；`live` 和 `live 0` 交给 `AppLink`（见下文），其余命令交给 `IFlightRecorder::handleHostCommand()`（黑匣子）。开发板、提交、配置哈希和飞机名称由 OpenPlane Studio 通过其源码副本中的 `config/Project.h` 写入；没有这个文件时，使用开发板宏和 `"dev"`。
+电脑命令由 STX 字节（`0x02`）、字符串和 `\n` 组成：收到 `id` 时，`FirmwareIdentity::print()` 以一行 `@id {...}` 输出固件身份信息（`fw`、`proto`、`board`、`commit`、`config`、`plane`、`rx`、`armed`；ARM 状态下同样应答）；`scan` 扫描总线并输出 `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}`（ARM 时为 `{"error":"armed"}`）；`act X` 执行菜单按键 `X` 的动作，ARM 时同样受限；`live` 和 `live 0` 交给 `AppLink`（见下文），其余命令交给 `IFlightRecorder::handleHostCommand()`（黑匣子）。开发板、提交、配置哈希和飞机名称由 OpenPlane Studio 通过其源码副本中的 `config/Project.h` 写入；没有这个文件时，使用开发板宏和 `"dev"`。
 
 日志菜单：`1`..`9`——循环切换通道 0..8 的模式，`n`——NAV，`s`——SYS，`p`——周期，`a`——
 全部“变化时”，`x`——全部关，`d`——恢复默认，`0`/`q`——返回，`l`/`h`——
@@ -149,7 +149,7 @@ IMU 安装方向校准；`m`——指南针校准；`p`——输出自检；
 
 `telemetry/AppLink.h` 是与 OpenPlane Studio 的实时连接。收到电脑命令 `live`（经由 `DebugConsole`）后，开发板在 `LIVE_HOLD_MS`（3 秒）内每隔 `FRAME_PERIOD_MS` 发送一行 `@live {...}`：STM32（USB）上为 50 ms，ESP32（115200 的 UART）上为 100 ms。应用在监听期间每秒重复一次 `live`：关闭应用或拔掉线缆后，开发板会自行停止发送；`live 0` 立即停止。
 
-一帧就是一行 JSON：`t`、`arm`、`mode`、`rx`（`ok`；`lost`——没有帧；`fs`——接收机失控保护）、`ch`（10 个通道，µs，已应用 `CHANNEL_REVERSED`）、`out`（左副翼、右副翼、升降舵、方向舵、油门、AUX1、AUX2——µs）、`rev`，每个传感器的状态（`ok`、`none`、`noresp`；IMU 还有 `check`——飞行前检查未通过）及其数值（`att`、`alt`/`vz`、`hdg`、`fix`/`sats`、`ias`），校准状态（`mount`——IMU 安装方向，`park`——停放姿态，`magcal`——罗盘），`block`——此刻 ARM 会被拒绝的原因（`FlightController::armBlockNow()`，`null` 表示可以解锁），`cal`——地面校准步骤，`feat`——已启用的功能，`hz`——循环频率。
+一帧就是一行 JSON：`t`、`arm`、`mode`、`rx`（`ok`；`lost`——没有帧；`fs`——接收机失控保护）、`lq`（链路质量，%；仅 CRSF）、`ch`（10 个通道，µs，已应用 `CHANNEL_REVERSED`）、`out`（左副翼、右副翼、升降舵、方向舵、油门、AUX1、AUX2——µs）、`rev`，每个传感器的状态（`ok`、`none`、`noresp`；IMU 还有 `check`——飞行前检查未通过）及其数值（`att`、`alt`/`vz`、`hdg`、`fix`/`sats`、`ias`），校准状态（`mount`——IMU 安装方向，`park`——停放姿态，`magcal`——罗盘），`block`——此刻 ARM 会被拒绝的原因（`FlightController::armBlockNow()`，`null` 表示可以解锁），`cal`——地面校准步骤，`feat`——已启用的功能，`hz`——循环频率。
 
 只有当一帧能完整放进端口缓冲区（`Serial.availableForWrite()`）时才写出，否则跳过（`getFramesSkipped()`）：飞行循环从不等待电脑。因此发送缓冲区必须容得下一帧（最多 `LIVE_LINE_MAX` = 768 字节）：ESP32 上用 `Serial.setTxBufferSize(4096)`；DevEBox 上通过 `platformio.ini` 中的 `CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER=16` 扩大了 USB 队列（默认的 128 字节从来放不下一帧），队列更小的构建会停止并给出说明。
 

@@ -90,7 +90,7 @@ public:
     // или он перестанет слать данные, isAvailable() должен перестать
     // врать, что GPS на связи. Поэтому дополнительно проверяем, что
     // последний кадр пришёл не более Config::GPS_TIMEOUT_US назад (тот
-    // же принцип, что IBusReceiver::isSignalLost() для RC).
+    // же принцип, что RcReceiver::isSignalLost() для RC).
     bool isAvailable() const override
     {
         return hasValidFrame && (micros() - gpsData.timestamp) <= Config::GPS_TIMEOUT_US;
@@ -203,7 +203,7 @@ private:
     bool isNavPvt = false;
     uint8_t payload[NAV_PVT_LEN] = {};
 
-    // Побайтовый разбор — как в IBusReceiver::processByte(), кадры
+    // Побайтовый разбор — как в IBusParser::feed(), кадры
     // приходят из UART порциями произвольного размера.
     void feedParser(uint8_t b)
     {

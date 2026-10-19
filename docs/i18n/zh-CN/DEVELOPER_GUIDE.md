@@ -46,7 +46,7 @@ include/
 │   └── stm32/   Stm32Board + Wire/SPI/Uart/HardwareTimer, Stm32FlashStorage,
 │                compat/Preferences.h (设置存放在闪存而非 NVS)
 ├── storage/     KeyValueStore, KvPreferences — 不依赖 NVS 的设置存储
-├── rc/          RcChannelState, RcInput, IBusReceiver
+├── rc/          RcChannelState, RcInput, RcReceiver, IBusParser, SbusParser, CrsfParser
 ├── control/     ControlCommand, ControlMixer, FlapsController,
 │                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
 │                FlightOutputState, FlightOutputs, Beeper, FlightController
@@ -78,7 +78,7 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │ CONTROL             │  │ AUTOPILOT             │  │ RC                    │
-│ ControlMixer        │  │ Autopilot: 12 种模式  │  │ IBusReceiver          │
+│ ControlMixer        │  │ Autopilot: 12 种模式  │  │ RcReceiver            │
 │  └ FlapsController  │  │  └ 导航、PID          │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
@@ -137,7 +137,7 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
 
 | 文件 | 负责内容 |
 |---|---|
-| `Config.h` | 所有引脚（每块开发板一个块：`BOARD_ESP32_S3/C3/CLASSIC`、`BOARD_STM32H743`）和设置：iBUS 与信号丢失；舵面行程；襟翼；舵机反向；IMU 与电子罗盘的安装；ARM；failsafe（RTH 或滑翔）；皮托管（`PITOT_*`）；自动驾驶仪各模式和功能的所有数值；循环；Wi-Fi；MAVLink；调试 |
+| `Config.h` | 所有引脚（每块开发板一个块：`BOARD_ESP32_S3/C3/CLASSIC`、`BOARD_STM32H743`）和设置：iBUS/SBUS/CRSF 与信号丢失；舵面行程；襟翼；舵机反向；IMU 与电子罗盘的安装；ARM；failsafe（RTH 或滑翔）；皮托管（`PITOT_*`）；自动驾驶仪各模式和功能的所有数值；循环；Wi-Fi；MAVLink；调试 |
 | `Channels.h` | 通道名称：`AILERON`、`ELEVATOR`、`THROTTLE`、`RUDDER`、`ARM`、`SWB`、`SWC`、`SWD`、`VRA`、`VRB` |
 | `Controls.h` | `BINDINGS` 表：每个拨杆和旋钮的作用，每个通道一行，带 `static_assert` 检查 |
 
@@ -169,7 +169,11 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
 |---|---|
 | `RcChannelState.h` | 10 个通道的快照 |
 | `RcInput.h` | `clamp()`、`centered(us, max, reverse)` |
-| `IBusReceiver.h` | iBUS → 通道：32 字节的帧、CRC，通道值取低 12 位（`& 0x0FFF`）；`isSignalLost()` = 没有帧（或者还一帧都没收到）∥ 油门的 failsafe 值；帧计数器 |
+| `RcReceiver.h` | 接收机：按协议格式（`RX_PROTOCOL`：iBUS、SBUS、CRSF）打开 UART → `RC_CHANNELS` 个通道；`isSignalLost()` = 没有帧（或尚未收到任何帧）∥ 接收机报告 failsafe（SBUS 标志、CRSF 链路质量为 0、油门低于正常）；通道反向、帧计数器 |
+| `IBusParser.h` | iBUS：32 字节帧、CRC，通道值为低 12 位（`& 0x0FFF`） |
+| `SbusParser.h` | SBUS：25 字节帧、16 个 11 位通道、failsafe 与丢帧标志、SBUS2 |
+| `CrsfParser.h` | CRSF：CRC8（多项式 0xD5）、通道（类型 0x16）与链路统计（类型 0x14，链路质量） |
+| `Packed11.h` | 16 个 11 位通道 → µs——SBUS 与 CRSF 共用 |
 
 ### `control/`
 
@@ -305,7 +309,7 @@ PID 计算 `误差 = 目标 − 实际`：向右横滚（roll > 0）→ 横滚�
 ## RC 通道图、ARM 与 failsafe
 
 来源是 `include/config/Channels.h`。遥控器 FS-i6（10 个通道，模式 2）+
-接收机 FS-iA6B，iBUS 115200。
+接收机 FS-iA6B，iBUS 115200。其他接收机——SBUS 或 CRSF（`RX_PROTOCOL`），通道相同。
 
 | 通道 | 遥控器上的部件 | 名称 | 用途 |
 |---|---|---|---|
@@ -327,10 +331,11 @@ DISARM。未 ARM 时，送往电调的油门被强制为 `PWM_MIN`（在双向�
 
 **反转**（`MotorReverse`，`Feature::MOTOR_REVERSE`，默认 SwD）：电机方向只在未解锁时跟随开关；解锁状态下拨动开关在 DISARM 之前不起作用。改变方向后 `REVERSE_SETTLE_MS`（3 s）内拒绝 ARM。反转时只用飞手油门，不超过 `REVERSE_THROTTLE_LIMIT_PCT`（50%）；自动驾驶仪拿不到油门，失去信号时电机停转。
 
-**信号丢失**（`IBusReceiver::isSignalLost()`）：
+**信号丢失**（`RcReceiver::isSignalLost()`）：
 
 1. 超过 `RX_TIMEOUT_US`（500 ms）没有帧——接收机导线断开或断电。开机后收到第一帧之前也视为信号丢失：通道的默认值（全部为 1500）不会被当作遥控器的指令。
-2. 油门 < `RX_FAILSAFE_THROTTLE_US`（950）——在遥控器中设定的 failsafe。
+2. 接收机自己报告失去链路：SBUS 帧中的 failsafe 标志、CRSF 统计中的链路质量为 0 %。
+3. 油门 < `RX_FAILSAFE_THROTTLE_US`（950）——在遥控器中设定的 failsafe。
    **FS-iA6B 在遥控器丢失时不会停止发送帧**，而是重复最后的数值（已在试验台上验证），因此如果没有在遥控器中设置 failsafe，就无法识别信号丢失。设置方法见 `PILOT_GUIDE.md`。
 
 信号丢失时会发生什么（`FlightController::applyLinkLoss()`）：
@@ -404,7 +409,7 @@ IMU 校准（每次启动时以及通过 `i` 命令）：静止 2 s，陀螺仪 
 
 由 `loop()` 每 2 ms 调用一次。顺序就是优先级：
 
-1. **`receiver.update()`**——解析累积的 iBUS 字节。
+1. **`receiver.update()`**——解析积累的接收机字节（iBUS、SBUS 或 CRSF）。
 2. **拨杆**——`switches->update(rc)`，仅在链路正常时执行（failsafe 帧中的通道并不反映拨杆状态）：模式（仅在变化时）、功能、旋钮。
 3. **飞手油门**——`throttle.update(rc, receiverFailsafe)`。
 4. **摇杆**——`mixer.fromSticks(rc)` × `Knob::RATES`；襟翼——
@@ -542,7 +547,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s 内最差) | iBUS ok=... crc_err
 | 左 / 右副翼 | GPIO4 / GPIO5 | GPIO5 / GPIO4 | GPIO13 / GPIO14 |
 | 升降舵 / ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
 | 方向舵 | GPIO18 | —（无引脚） | GPIO25 |
-| iBUS RX | GPIO17 | GPIO8 | GPIO16 |
+| RC RX | GPIO17 | GPIO8 | GPIO16 |
 | 传感器 I2C SDA / SCL | GPIO41 / GPIO42 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | OLED I2C SDA / SCL | GPIO1 / GPIO2 | — | — |
 | SPI SCK / MISO / MOSI | GPIO12 / 13 / 11 | GPIO0 / 10 / 20 | GPIO18 / 19 / 23 |
@@ -584,7 +589,7 @@ STM32H743VIT6（Cortex-M7 480 MHz，2 MB 闪存，1 MB RAM）运行**完整固�
 | 升降舵 / ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
 | 方向舵 | PD14 | TIM4_CH3 |
 | AUX1（载荷）/ AUX2（相机） | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
-| iBUS RX（TX 备用） | PE7（PE8） | UART7 |
+| RC RX（TX 备用） | PE7（PE8） | UART7 |
 | 传感器 I2C SDA / SCL | PB11 / PB10 | I2C2 |
 | OLED I2C SDA / SCL | PB9 / PB8 | I2C1 |
 | SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |

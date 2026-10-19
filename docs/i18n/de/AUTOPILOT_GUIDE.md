@@ -49,7 +49,7 @@ Sensoren (IMU, Barometer, Kompass, GPS, Pitotrohr) ─► Autopilot ─► Befeh
 
 ## Standardbelegung des Senders
 
-FS-i6 + FS-iA6B, iBUS, 10 Kanäle (`config/Channels.h`).
+FS-i6 + FS-iA6B, iBUS, 10 Kanäle (`config/Channels.h`). Ein anderer Empfänger — SBUS oder CRSF (`RX_PROTOCOL`), dieselben Kanäle.
 
 | Kanal | Bedienelement am Sender | Standard |
 |---|---|---|
@@ -255,7 +255,7 @@ Die Mitte des Drehreglers = Standardwert aus `Config.h`; die Enden sind Minimum 
 
 **Der Startpunkt** wird beim ARM gespeichert, wenn das GPS gut ist (3D-Fix, ≥ 6 Satelliten, Genauigkeit ≤ 5 m). Hat das GPS beim ARM noch keinen Fix, wird der Startpunkt gespeichert, sobald es einen hat. Zum Ändern im Feld – die Funktion `HOME_RESET`.
 
-**Verbindungsverlust** (keine iBUS-Frames für > 0,5 s oder der Empfänger hat Gas unter 950 µs gesendet – das ist das im Sender eingestellte Failsafe; siehe `docs/PILOT_GUIDE.md`):
+**Verbindungsverlust** (keine Frames vom Empfänger für > 0,5 s, der Empfänger meldet den Verlust selbst – SBUS, CRSF – oder er hat Gas unter 950 µs gesendet, das im Sender eingestellte Failsafe; siehe `docs/PILOT_GUIDE.md`):
 
 | Situation | Was das Fluggerät tut |
 |---|---|

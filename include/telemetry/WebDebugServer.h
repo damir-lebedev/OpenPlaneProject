@@ -145,7 +145,7 @@ private:
 
         json += "{\"rc\":[";
         const RcChannelState& rc = controller.getRcState();
-        for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i)
+        for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i)
         {
             if (i) json += ',';
             json += rc.get(i);

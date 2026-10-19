@@ -4,7 +4,7 @@
 // Composition root: создаёт все объекты, связывает их и крутит
 // полётный цикл. Логики полёта здесь нет — только сборка.
 //
-// RC-пульт -> приёмник -> iBUS (UART) -> IBusReceiver
+// RC-пульт -> приёмник -> iBUS / SBUS / CRSF (UART) -> RcReceiver
 //   -> FlightController: ArmingManager / ControlMixer (+ закрылки)
 //      / Autopilot (коррекции и газ режима) / ThrottleManager
 //   -> FlightOutputs -> сервы и ESC
@@ -35,7 +35,7 @@
 #include "control/ThrottleManager.h"
 #include "hal/esp32/Esp32Board.h"
 #include "hal/esp32/Esp32FlashPartition.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/SensorSelection.h"
 #include "sensors/airspeed/AirspeedSensor.h"
@@ -98,7 +98,7 @@ AirspeedSensor* const airspeedSensor = nullptr;
 // Управление полётом.
 // ------------------------------------------------------------
 
-IBusReceiver ibusReceiver(board.rcUart());
+RcReceiver rcReceiver(board.rcUart());
 ControlMixer controlMixer;
 ThrottleManager throttleManager;
 FlightOutputs flightOutputs(board);
@@ -108,7 +108,7 @@ PilotSwitches pilotSwitches(&autopilot);   // тумблеры и крутилк
 ArmingManager armingManager(&autopilot);
 
 FlightController flightController(
-    ibusReceiver,
+    rcReceiver,
     controlMixer,
     throttleManager,
     armingManager,
@@ -208,7 +208,7 @@ void setup()
 
     setupSensors();
 
-    flightController.begin();    // приёмник iBUS
+    flightController.begin();    // приёмник пульта
 
     oledDisplay.begin(board.displayI2c());
     webDebugServer.begin();
@@ -219,7 +219,8 @@ void setup()
     blackBox.begin();
 
     Serial.println();
-    Serial.println("Готово. iBUS 115200 бод, 10 каналов.");
+    Serial.printf("Готово. Приёмник %s, %u каналов%s.\n", rcReceiver.getProtocolName(), (unsigned)Config::RC_CHANNELS,
+                  rcReceiver.isPortReady() ? "" : " — UART не умеет формат этого протокола, связи не будет");
     Serial.println("ARM: SwA вниз, к себе (CH5=2000) при газе внизу. DISARM: SwA вверх.");
     pilotSwitches.printBindings();   // что на каком тумблере — config/Controls.h
     debugLogger.begin();         // что выводить в лог — из NVS

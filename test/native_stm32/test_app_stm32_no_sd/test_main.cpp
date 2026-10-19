@@ -36,6 +36,7 @@ void test_boot_without_a_card_explains_and_leaves_the_box_off()
     setup();
     const std::string log = takeSerial();
     TEST_ASSERT_TRUE(contains(log, "SD-карта: нет ответа"));
+    TEST_ASSERT_TRUE(contains(log, "Приёмник iBUS, 10 каналов"));
     TEST_ASSERT_TRUE(contains(log, "BlackBox: нет места для записи"));
     TEST_ASSERT_EQUAL(BlackBox::State::Off, blackBox.getState());
     TEST_ASSERT_NOT_NULL(fake::findTask("flight"));
@@ -94,11 +95,30 @@ void test_pulse_self_test_and_motor_signal_on_stm32()
     TEST_ASSERT_EQUAL(escUs(Config::PWM_MIN), fake::timerPulseUs(Config::PIN_ESC));
 }
 
+// SBUS на STM32: 8E2 и инверсия RX самим USART (RXINV) — до begin().
+void test_stm32_uart_opens_sbus_with_rx_inversion()
+{
+    Uart serial(200, 201);
+    Stm32UartPort sbus(serial);
+    TEST_ASSERT_TRUE(sbus.begin(Config::SBUS_BAUDRATE, UartFormat::SBUS_8E2_INVERTED));
+    TEST_ASSERT_EQUAL_UINT32(100000, serial.baud());
+    TEST_ASSERT_EQUAL_HEX32(SERIAL_8E2, serial.config());
+    TEST_ASSERT_TRUE(serial.isRxInverted());
+
+    Uart plain(202, 203);
+    Stm32UartPort crsf(plain);
+    TEST_ASSERT_TRUE(crsf.begin(Config::CRSF_BAUDRATE, UartFormat::STANDARD_8N1));
+    TEST_ASSERT_EQUAL_UINT32(420000, plain.baud());
+    TEST_ASSERT_EQUAL_HEX32(SERIAL_8N1, plain.config());
+    TEST_ASSERT_FALSE(plain.isRxInverted());
+}
+
 int main()
 {
     UNITY_BEGIN();
     RUN_TEST(test_boot_without_a_card_explains_and_leaves_the_box_off);
     RUN_TEST(test_the_plane_still_flies_and_the_console_menu_does_not_break);
     RUN_TEST(test_pulse_self_test_and_motor_signal_on_stm32);
+    RUN_TEST(test_stm32_uart_opens_sbus_with_rx_inversion);
     return UNITY_END();
 }

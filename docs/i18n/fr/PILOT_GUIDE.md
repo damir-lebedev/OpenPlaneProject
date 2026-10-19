@@ -34,6 +34,7 @@ Le kit de la version actuelle (le firmware a été vérifié dessus) :
 - **Une carte STM32H743 DevEBox H743** (MCUDEV) — la carte principale. L’ancienne carte principale, l’ESP32-S3 ci-dessous, reste prise en charge.
 - **Une carte ESP32-S3 N16R8** (un clone de DevKitC-1 avec deux USB-C : « USB » et « COM »).
 - **Une radio FS-i6 + un récepteur FS-iA6B** (protocole iBUS, 10 canaux). Il faut un seul fil de données : le port iBUS SERVO. La radio doit permettre de régler le failsafe ; ce réglage est obligatoire, voir la section sur le failsafe.
+- **Ou une autre radio avec un récepteur SBUS** (FrSky, Futaba, RadioMaster, Jumper…) **ou CRSF** (ExpressLRS, TBS Crossfire) — le protocole se choisit dans `Config.h` (`RX_PROTOCOL`), le branchement est plus bas.
 - **2 servos MG90S** pour les ailerons — un par demi-aile (deux servos indépendants, et non un seul pour les deux ailes).
 - **1 servo MG90S** pour la gouverne de profondeur.
 - **1 servo MG90S** pour la gouverne de direction — la roue directrice du train d’atterrissage est montée sur son axe (pour rouler au sol). Le train d’atterrissage : deux roues à l’avant et une roulette de queue orientable (`LANDING_GEAR = TAIL_WHEEL` dans `Config.h` ; un train à roulette de nez, c’est `NOSE_WHEEL`).
@@ -69,7 +70,7 @@ Le firmware prend en charge quatre cartes ; pour passer de l’une à l’autre
 | Gouverne de profondeur | PA2 |
 | ESC (gaz) | PA3 |
 | Gouverne de direction + roue directrice | PD14 |
-| iBUS du récepteur (RX) | PE7 |
+| Récepteur (RX) : iBUS, SBUS, CRSF | PE7 |
 | I2C des capteurs SDA / SCL (MPU, BMP581, boussole) | PB11 / PB10 |
 | I2C de l’OLED SDA / SCL (bus séparé) | PB9 / PB8 |
 | GPS : RX (← TX du GPS) / TX (→ RX du GPS) | PD9 / PD8 |
@@ -102,7 +103,7 @@ Les servos sont alimentés **non pas par la carte**, mais par le BEC du variateu
 | Gouverne de profondeur | GPIO6 |
 | ESC (gaz) | GPIO7 |
 | Gouverne de direction + roue directrice | GPIO18 |
-| iBUS du récepteur (RX) | GPIO17 |
+| Récepteur (RX) : iBUS, SBUS, CRSF | GPIO17 |
 | I2C des capteurs SDA / SCL (MPU, BMP581, boussole) | GPIO41 / GPIO42 |
 | I2C de l’OLED SDA / SCL (bus séparé) | GPIO1 / GPIO2 |
 | Réserve : GPS RX / TX | GPIO39 / GPIO40 |
@@ -137,7 +138,7 @@ Les servos sont alimentés **non pas par la carte**, mais par le BEC du variateu
 | Gouverne de profondeur | GPIO6 |
 | ESC (gaz) | GPIO7 |
 | Gouverne de direction | — (aucune broche libre) |
-| iBUS du récepteur (RX) | GPIO8 |
+| Récepteur (RX) : iBUS, SBUS, CRSF | GPIO8 |
 | I2C SDA (capteurs) | GPIO1 |
 | I2C SCL (capteurs) | GPIO3 |
 
@@ -152,7 +153,7 @@ Les servos sont alimentés **non pas par la carte**, mais par le BEC du variateu
 | Gouverne de profondeur | GPIO27 |
 | ESC (gaz) | GPIO26 |
 | Gouverne de direction | GPIO25 |
-| iBUS du récepteur (RX) | GPIO16 |
+| Récepteur (RX) : iBUS, SBUS, CRSF | GPIO16 |
 | I2C SDA (capteurs) | GPIO21 |
 | I2C SCL (capteurs) | GPIO22 |
 
@@ -162,15 +163,25 @@ Son avantage : c’est la carte la plus répandue et la moins chère de la gamm
 
 ## Branchement du récepteur
 
-Tout ce qu’il faut du récepteur, c’est **un fil de données iBUS**, qui, sur la plupart des récepteurs compatibles FlySky, est sorti sur un port à part (souvent marqué « iBUS », ou c’est la seule sortie qui n’est pas en PPM). Branchement :
+Le récepteur se branche avec un seul fil de données sur la **broche RX du
+récepteur** du tableau de votre carte (`PIN_RC_RX` : PE7 sur la DevEBox, GPIO17 sur
+l’esp32-s3, GPIO8 sur l’esp32-c3, GPIO16 sur l’esp32-dev). Le protocole doit être
+celui de votre récepteur ; il est fixé par `RX_PROTOCOL` dans `Config.h` (dans
+OpenPlane Studio — l’étape « Radio ») :
 
-- **TX du récepteur (sortie iBUS)** → **broche RX de la carte** du tableau ci-dessus (GPIO8 sur l’esp32-c3, GPIO17 sur l’esp32-s3, GPIO16 sur l’esp32-dev).
-- **Masse (GND) du récepteur** → **GND de la carte**. C’est obligatoire ; sans masse commune, le protocole ne fonctionne pas.
-- **Alimentation du récepteur** — par un BEC ou un régulateur séparé, ou par le 5 V de la carte, selon la façon dont vous alimentez habituellement le récepteur dans vos montages ; elle n’est liée à aucune broche précise du firmware.
+| `RX_PROTOCOL` | Récepteur | Branchement |
+|---|---|---|
+| `IBUS` (par défaut) | FlySky FS-iA6B, FS-iA10B | port iBUS SERVO (sortie iBUS) → broche RX |
+| `SBUS` | FrSky, Futaba, RadioMaster, Jumper et la plupart des autres | sortie SBUS → broche RX ; pas besoin d’inverseur — l’UART de la carte inverse lui-même le signal |
+| `CRSF` | ExpressLRS, TBS Crossfire et Tracer | TX du récepteur → broche RX ; le RX du récepteur peut aller sur la broche TX (`PIN_RC_TX`) — pas encore utilisée |
 
-Le firmware n’envoie rien en retour au récepteur : il se contente d’écouter, il n’est donc pas nécessaire de brancher la ligne TX de la carte.
+- **Masse (GND) du récepteur** → **GND de la carte**. C’est obligatoire : sans masse commune, le protocole ne fonctionne pas.
+- **Alimentation du récepteur** — 5 V depuis un BEC/régulateur séparé ou depuis le 5V de la carte.
 
-La vitesse du port iBUS dans le firmware est de 115200 bauds, valeur standard du protocole ; inutile de la changer, car le récepteur maintient lui-même cette vitesse.
+Le firmware règle la vitesse du port : iBUS — 115200 bauds, SBUS — 100000 (8E2),
+CRSF — 420000 (le défaut d’ExpressLRS). Configurez une radio EdgeTX comme la FS-i6
+(voir la carte des canaux plus bas) : CH5 — ARM, CH6–CH8 — interrupteurs, CH9–CH10
+— potentiomètres.
 
 ---
 
@@ -261,10 +272,11 @@ La perte de liaison a une **priorité absolue** sur tout le reste :
 - **moteur en inversion** — le moteur est coupé dans tous les cas, le pilote automatique ne pilote qu’avec les gouvernes (retour au départ en plané) ;
 - **non armé** (au sol) ou IMU qui ne répond pas — moteur coupé, ailerons, profondeur et direction au neutre (1500 µs) ; au bout de 10 s sans liaison, le buzzer « je suis là » retentit (s’il est soudé).
 
-Le firmware reconnaît la perte de liaison de deux façons :
+Le firmware reconnaît la perte de liaison de trois façons :
 
-1. **Aucune trame iBUS pendant plus de 500 ms** — fil coupé ou récepteur sans alimentation.
-2. **Gaz sous 950 µs** — c’est ainsi que le récepteur signale qu’il a perdu la radio. **Cela exige de régler le failsafe dans la radio** (voir plus bas) : en cas de perte de liaison, le FS-iA6B NE cesse PAS d’envoyer des trames, il répète les dernières valeurs des sticks — sans ce réglage, le firmware ne verra pas la perte de liaison et l’avion continuera de voler avec les derniers gaz.
+1. **Aucune trame du récepteur pendant plus de 500 ms** — un fil coupé, un récepteur non alimenté, ou un récepteur qui se tait à la perte de liaison (ExpressLRS le fait par défaut).
+2. **Le récepteur signale lui-même la perte de liaison** — l’indicateur failsafe dans la trame SBUS, une qualité de liaison de 0 % en CRSF. Rien à régler.
+3. **Gaz sous 950 µs** — c’est ainsi que le récepteur signale qu’il a perdu la radio. **Cela exige de régler le failsafe dans la radio** (voir plus bas) : en cas de perte de liaison, le FS-iA6B NE cesse PAS d’envoyer des trames, il répète les dernières valeurs des sticks — sans ce réglage, le firmware ne verra pas la perte de liaison et l’avion continuera de voler avec les derniers gaz.
 
 L’ARM n’est **pas** annulé par le failsafe : quand la liaison revient, l’avion obéit de nouveau aux sticks et au mode choisi sans réarmement (actionner l’interrupteur en vol avec les gaz à zéro est plus dangereux).
 
@@ -503,7 +515,7 @@ Lisez cette section en entier **avant** la première mise sous tension, et non a
 ## Dépannage
 
 **« Pas de signal du récepteur » / le RX semble normal, mais les canaux du tableau de bord ne bougent pas**
-Vérifiez que le fil de données du récepteur est branché exactement sur la broche RX iBUS du tableau de votre carte (GPIO8/GPIO17/GPIO16), qu’il n’est pas confondu avec la masse ou l’alimentation, et que les masses du récepteur et de la carte sont reliées. Si le brochage correspond et que les fils sont intacts, mais qu’il n’y a toujours pas de signal, vérifiez que le récepteur est bien associé (bind) à la radio et que sa sortie est réglée sur iBUS, et non sur PPM/SBUS.
+Vérifiez que le fil de données du récepteur est branché exactement sur la broche RX du récepteur du tableau de votre carte (PE7/GPIO17/GPIO8/GPIO16), sans confusion avec la masse ou l’alimentation, et que les masses du récepteur et de la carte sont reliées. Si le brochage correspond et que les fils sont intacts mais qu’il n’y a toujours pas de signal, vérifiez que le récepteur est appairé (bind) avec la radio (pour ExpressLRS — la même binding phrase et la même version que l’émetteur) et que sa sortie correspond à `RX_PROTOCOL` : iBUS, SBUS ou CRSF, pas PPM.
 
 **Un capteur (IMU, baromètre, boussole) affiche « ne répond pas » / NO_RESPONSE**
 Le firmware indique honnêtement que le capteur ne répond pas, au lieu de sortir des zéros. Vérifiez : (1) l’alimentation du module — 3.3V et la masse de la carte ; (2) SDA/SCL — sur les broches I2C de votre carte précisément ; (3) l’adresse sur la ligne : MPU 0x68 (AD0 à GND), BMP581 0x46 (SDO à GND, CSB à 3.3V ; 0x47 si SDO est à 3.3V), BMP388 0x76 (SDO à GND, **CSB à 3.3V** — sinon la puce est en mode SPI), QMC5883P 0x2C, QMC5883L 0x0D. Si le capteur répond tantôt oui, tantôt non (ou répond à une adresse étrangère), c’est un mauvais contact sur la plaque d’essai : appuyez sur VCC/GND/SDA/SCL et, de préférence, alimentez chaque module directement depuis le 3.3V/GND de la carte. La commande `s` de la console affiche les compteurs d’erreurs I2C de chaque capteur.

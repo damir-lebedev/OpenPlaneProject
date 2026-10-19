@@ -67,7 +67,7 @@ flowchart TD
     CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (not connected)<br/>FeedbackSupervisor and modules"]
-    RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
+    RC["RC<br/>RcReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
     HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice · Rtos"]
     STORE["STORAGE<br/>KeyValueStore · KvPreferences"]
@@ -151,7 +151,7 @@ flowchart LR
     gps["SelectedGps gpsSensor"]
     pitotBaro["SelectedPitotBaro pitotBaro"]
     pitot["PitotDualBaroAirspeed pitotSensor"]
-    rx["IBusReceiver"]
+    rx["RcReceiver"]
     mixer["ControlMixer"]
     thr["ThrottleManager"]
     outs["FlightOutputs"]
@@ -201,7 +201,7 @@ setupSensors()              — begin() of each sensor; calibration of the ones 
                               baro (zero altitude), compass (initial heading → IMU yaw),
                               pitot tube (zero is collected during the first second of the loop)
 autopilot.begin()           — trim from NVS/flash
-flightController.begin()    — setFailsafe() + UART iBUS
+flightController.begin()    — setFailsafe() + UART RC (iBUS/SBUS/CRSF)
 oledDisplay.begin(...)      — its own task (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — access point + its own task on core 0
 [ESP32] blackBox.begin()   — the blackbox partition, a queue in PSRAM, the bbox task on core 0
@@ -402,7 +402,7 @@ classDiagram
 sequenceDiagram
     participant L as flight loop
     participant FC as FlightController
-    participant RX as IBusReceiver
+    participant RX as RcReceiver
     participant SW as PilotSwitches
     participant TM as ThrottleManager
     participant MX as ControlMixer
@@ -584,13 +584,14 @@ modes with stabilization.
 The consumers react identically: **no sensor (`nullptr`) or it is unavailable —
 no effects**, and the airplane is controlled as in MANUAL. The exception is the auto takeoff on the runway: an IMU failure means an aborted takeoff, motor stopped.
 
-### Link (`IBusReceiver::isSignalLost()`)
+### Link (`RcReceiver::isSignalLost()`)
 
-Two independent indicators:
+Three independent indicators:
 
 1. no correct frames for longer than `RX_TIMEOUT_US` (500 ms) — or none at all
    since power-on;
-2. the throttle in the frame is below `RX_FAILSAFE_THROTTLE_US` (950 µs) — the failsafe
+2. the receiver itself reported link loss — the failsafe flag in an SBUS frame, 0 % link quality on CRSF;
+3. the throttle in the frame is below `RX_FAILSAFE_THROTTLE_US` (950 µs) — the failsafe
    programmed in the transmitter (the FS-iA6B does not stop sending frames when the
    transmitter is lost).
 
@@ -667,7 +668,7 @@ The connection plan is in [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md#connection-p
 | A new output (servo) | a row in `FlightOutputs::outputInfo()`, a field in `FlightOutputState`, an index in `ServoChannel`, a pin and a LEDC channel in `Esp32Board` | the write/status loop |
 | A new ESP32 board | an `#elif` in `Config.h`, `[env:*]` in `platformio.ini` | all the rest of the code |
 | Another MCU | `hal/<mcu>/<Mcu>Board.h` implementing `IBoard` (an example — `hal/stm32/`), a pin block in `Config.h`, `[env:*]` | the sensors, the flight logic |
-| Another receiver protocol | replace `IBusReceiver` with one that has the same API (`getState()`, `isSignalLost()`) | `FlightController` |
+| Another receiver protocol | a frame parser next to `IBusParser`/`SbusParser`/`CrsfParser` (`feed()`, `values()`, `failsafe()`), a value in `RxProtocol`, branches in `RcReceiver::begin()`/`update()` | `FlightController`, the other protocols |
 | A new log channel | `LogChannel`, a row in `LogSettings::info()`, `DebugLogger::format*()`, `VERSION++` | — |
 
 ---

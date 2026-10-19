@@ -8,7 +8,7 @@
 #include "control/FlightController.h"
 #include "control/FlightOutputState.h"
 #include "hal/Rtos.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "rc/RcChannelState.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/airspeed/AirspeedSensor.h"
@@ -162,7 +162,7 @@ private:
     uint32_t lastPrintMs[LogSettings::COUNT] = {};
     bool refreshPending[LogSettings::COUNT] = {};
 
-    Shown rc[Config::IBUS_CHANNELS];
+    Shown rc[Config::RC_CHANNELS];
     Shown outputs[5];
     Shown roll, pitch, yaw;
     Shown wantRoll, wantPitch, corrRoll, corrPitch, corrThrottle;
@@ -226,7 +226,7 @@ private:
 
     void formatStatus()
     {
-        const IBusReceiver& receiver = controller.getReceiver();
+        const RcReceiver& receiver = controller.getReceiver();
         line.print("RX=");
         if (receiver.isFrameTimeout()) line.print("LOST(нет кадров)");
         else if (receiver.isFailsafeReported()) line.print("LOST(failsafe пульта)");
@@ -260,7 +260,7 @@ private:
     void formatRc(float k)
     {
         const RcChannelState& state = controller.getRcState();
-        for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i)
+        for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i)
         {
             line.printf("%u:%.0f ", i + 1, rc[i].update(state.get(i), k * Config::DEBUG_CHANGE_DEADBAND_US));
         }
@@ -400,7 +400,7 @@ private:
 
     void formatSystem()
     {
-        const IBusReceiver& receiver = controller.getReceiver();
+        const RcReceiver& receiver = controller.getReceiver();
         if (!loopStats)
         {
             line.print("loop n/a");
@@ -415,7 +415,7 @@ private:
                         (unsigned)loopStats->hz, (unsigned)loopStats->avgUs,
                         (unsigned)loopStats->takePeakUs());
         }
-        line.printf(" | iBUS ok=%u crc_err=%u | heap %u KB | uptime %u s",
+        line.printf(" | %s ok=%u crc_err=%u | heap %u KB | uptime %u s", receiver.getProtocolName(),
                     (unsigned)receiver.getGoodFrameCount(), (unsigned)receiver.getBadFrameCount(),
                     (unsigned)(Rtos::freeHeapBytes() / 1024), (unsigned)(millis() / 1000));
     }

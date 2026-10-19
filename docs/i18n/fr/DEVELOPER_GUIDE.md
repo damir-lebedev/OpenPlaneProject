@@ -46,7 +46,7 @@ include/
 │   └── stm32/   Stm32Board + Wire/SPI/Uart/HardwareTimer, Stm32FlashStorage,
 │                compat/Preferences.h (réglages en flash au lieu de la NVS)
 ├── storage/     KeyValueStore, KvPreferences — stockage des réglages sans NVS
-├── rc/          RcChannelState, RcInput, IBusReceiver
+├── rc/          RcChannelState, RcInput, RcReceiver, IBusParser, SbusParser, CrsfParser
 ├── control/     ControlCommand, ControlMixer, FlapsController,
 │                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
 │                FlightOutputState, FlightOutputs, Beeper, FlightController
@@ -78,7 +78,7 @@ src/stm32/main.cpp  — firmware de la STM32H743 (tâches FreeRTOS, MAVLink)
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │ CONTROL             │  │ AUTOPILOT             │  │ RC                    │
-│ ControlMixer        │  │ Autopilot: 12 modes   │  │ IBusReceiver          │
+│ ControlMixer        │  │ Autopilot: 12 modes   │  │ RcReceiver            │
 │  └ FlapsController  │  │  └ navigation, PID    │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
@@ -137,7 +137,7 @@ Les règles qui gardent l’architecture propre :
 
 | Fichier | Rôle |
 |---|---|
-| `Config.h` | Toutes les broches (un bloc par carte : `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) et les réglages : iBUS et perte de signal ; débattements des gouvernes ; volets ; inversion des servos ; montage de l’IMU et de la boussole ; ARM ; failsafe (RTH ou plané) ; le tube de Pitot (`PITOT_*`) ; tous les nombres des modes et des fonctions du pilote automatique ; la boucle ; Wi-Fi ; MAVLink ; débogage |
+| `Config.h` | Toutes les broches (un bloc par carte : `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) et les réglages : iBUS/SBUS/CRSF et perte de signal ; débattements des gouvernes ; volets ; inversion des servos ; montage de l’IMU et de la boussole ; ARM ; failsafe (RTH ou plané) ; le tube de Pitot (`PITOT_*`) ; tous les nombres des modes et des fonctions du pilote automatique ; la boucle ; Wi-Fi ; MAVLink ; débogage |
 | `Channels.h` | Noms des canaux : `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `SWB`, `SWC`, `SWD`, `VRA`, `VRB` |
 | `Controls.h` | Le tableau `BINDINGS` : ce que fait chaque interrupteur et chaque potentiomètre, une ligne par canal, vérifications par `static_assert` |
 
@@ -169,7 +169,11 @@ Les règles qui gardent l’architecture propre :
 |---|---|
 | `RcChannelState.h` | Un instantané des 10 canaux |
 | `RcInput.h` | `clamp()`, `centered(us, max, reverse)` |
-| `IBusReceiver.h` | iBUS → canaux : trame de 32 octets, CRC, la valeur du canal correspond aux 12 bits de poids faible (`& 0x0FFF`) ; `isSignalLost()` = pas de trames (ou aucune encore) ∥ la valeur de failsafe des gaz ; compteurs de trames |
+| `RcReceiver.h` | Le récepteur : UART au format du protocole (`RX_PROTOCOL` : iBUS, SBUS, CRSF) → `RC_CHANNELS` canaux ; `isSignalLost()` = pas de trames (ou aucune encore) ∥ le récepteur a signalé un failsafe (indicateur SBUS, qualité de liaison 0 en CRSF, gaz sous la normale) ; inversion des canaux, compteurs de trames |
+| `IBusParser.h` | iBUS : trame de 32 octets, CRC, la valeur du canal tient dans les 12 bits de poids faible (`& 0x0FFF`) |
+| `SbusParser.h` | SBUS : trame de 25 octets, 16 canaux de 11 bits, indicateurs failsafe et trame perdue, SBUS2 |
+| `CrsfParser.h` | CRSF : CRC8 (polynôme 0xD5), canaux (type 0x16) et statistiques de liaison (type 0x14, qualité de liaison) |
+| `Packed11.h` | 16 canaux de 11 bits → µs — commun à SBUS et CRSF |
 
 ### `control/`
 
@@ -327,7 +331,7 @@ automatique divergeront.
 ## Carte des canaux RC, ARM et failsafe
 
 La source est `include/config/Channels.h`. Radiocommande FS-i6 (10 canaux,
-mode 2) + récepteur FS-iA6B, iBUS 115200.
+mode 2) + récepteur FS-iA6B, iBUS 115200. Autres récepteurs — SBUS ou CRSF (`RX_PROTOCOL`), mêmes canaux.
 
 | Canal | Élément de la radiocommande | Nom | Rôle |
 |---|---|---|---|
@@ -359,14 +363,15 @@ pendant `REVERSE_SETTLE_MS` (3 s). En arrière — uniquement les gaz du pilote,
 plus de `REVERSE_THROTTLE_LIMIT_PCT` (50 %) ; le pilote automatique ne reçoit
 pas de gaz, et en cas de perte de liaison le moteur s’arrête.
 
-**Perte de liaison** (`IBusReceiver::isSignalLost()`) :
+**Perte de liaison** (`RcReceiver::isSignalLost()`) :
 
 1. Pas de trames pendant plus de `RX_TIMEOUT_US` (500 ms) — fil coupé ou
    alimentation du récepteur perdue. Avant la première trame après la mise
    sous tension, la liaison est aussi considérée comme perdue : les valeurs
    par défaut des canaux (toutes à 1500) ne sont pas prises pour des ordres de
    la radiocommande.
-2. Gaz < `RX_FAILSAFE_THROTTLE_US` (950) — le failsafe réglé dans la
+2. Le récepteur a lui-même signalé la perte de liaison : indicateur failsafe dans la trame SBUS, qualité de liaison 0 % dans les statistiques CRSF.
+3. Gaz < `RX_FAILSAFE_THROTTLE_US` (950) — le failsafe réglé dans la
    radiocommande. **Quand la radiocommande est perdue, le FS-iA6B ne cesse pas
    d’émettre des trames** : il répète les dernières valeurs (vérifié sur le
    banc), donc sans failsafe réglé dans la radiocommande, la perte de liaison
@@ -459,7 +464,7 @@ pas plus ancien que `GPS_TIMEOUT_US`.
 
 Appelée depuis `loop()` toutes les 2 ms. L’ordre est la priorité :
 
-1. **`receiver.update()`** — analyse des octets iBUS accumulés.
+1. **`receiver.update()`** — analyse des octets accumulés du récepteur (iBUS, SBUS ou CRSF).
 2. **Interrupteurs** — `switches->update(rc)`, uniquement quand la liaison est
    vivante (dans une trame de failsafe, les canaux ne reflètent pas les
    interrupteurs) : le mode (seulement lors d’un changement), les fonctions,
@@ -632,7 +637,7 @@ Les formats de tous les canaux figurent dans la [référence](reference/telemetr
 | Aileron gauche / droit | GPIO4 / GPIO5 | GPIO5 / GPIO4 | GPIO13 / GPIO14 |
 | Profondeur / ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
 | Direction | GPIO18 | — (pas de broche) | GPIO25 |
-| iBUS RX | GPIO17 | GPIO8 | GPIO16 |
+| RC RX | GPIO17 | GPIO8 | GPIO16 |
 | I2C des capteurs SDA / SCL | GPIO41 / GPIO42 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | I2C de l’OLED SDA / SCL | GPIO1 / GPIO2 | — | — |
 | SPI SCK / MISO / MOSI | GPIO12 / 13 / 11 | GPIO0 / 10 / 20 | GPIO18 / 19 / 23 |
@@ -699,7 +704,7 @@ mode manuel (en vidéo). Les capteurs sont en cours de branchement sur la STM32.
 | Profondeur / ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
 | Direction | PD14 | TIM4_CH3 |
 | AUX1 (charge utile) / AUX2 (caméra) | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
-| iBUS RX (TX — réserve) | PE7 (PE8) | UART7 |
+| RC RX (TX — réserve) | PE7 (PE8) | UART7 |
 | I2C des capteurs SDA / SCL | PB11 / PB10 | I2C2 |
 | I2C de l’OLED SDA / SCL | PB9 / PB8 | I2C1 |
 | SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |

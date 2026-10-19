@@ -29,7 +29,7 @@ O bloco de pinos é escolhido pela macro que o `[env:*]` define no
 | `PIN_ELEVATOR` | `uint8_t` | Profundor | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | Controlador do motor | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | Leme + roda; `-1` — saída desativada | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | RX do receptor iBUS (UART1) | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | RX do receptor: iBUS, SBUS ou CRSF (UART1) | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | O barramento dos sensores (`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | O barramento do OLED (`Wire1`); `-1` — não há | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | O barramento SPI comum | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -61,7 +61,7 @@ de UART — o núcleo escolhe o periférico pelos pinos.
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7 (TX — reservado para o iBUS-SENS) |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7 (TX reservado para telemetria ao rádio) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 — sensores |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — a tela (na WeAct — o conector da câmera) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -74,14 +74,17 @@ de UART — o núcleo escolhe o periférico pelos pinos.
 
 O console `Serial` é a LPUART1 (PA9 TX / PA10 RX), o padrão da variante.
 
-### iBUS e perda de link
+### Receptor e perda de link
 
 | Constante | Valor | Significado |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | Quantos canais do quadro são usados |
+| `RX_PROTOCOL` | `IBUS` | Protocolo do receptor: `IBUS` (FlySky), `SBUS` (FrSky, Futaba, RadioMaster…), `CRSF` (ExpressLRS, TBS Crossfire) |
+| `RC_CHANNELS` | 10 | Quantos canais do quadro são usados |
 | `IBUS_FRAME_LENGTH` | 32 | Comprimento do quadro, bytes |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | O cabeçalho do quadro |
 | `IBUS_BAUDRATE` | 115200 | Velocidade da UART |
+| `SBUS_BAUDRATE` | 100000 | Velocidade do SBUS (8E2, sinal invertido) |
+| `CRSF_BAUDRATE` | 420000 | Velocidade do CRSF (o padrão do ExpressLRS) |
 | `RX_TIMEOUT_US` | 500 000 | Sem um quadro correto por mais tempo que isso — o link foi perdido |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | Acelerador abaixo disso — o receptor informa o failsafe do rádio |
 

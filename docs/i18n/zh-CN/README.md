@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-436%20passing-3fb950?style=for-the-badge" alt="436 项测试">
+  <img src="https://img.shields.io/badge/tests-455%20passing-3fb950?style=for-the-badge" alt="455 项测试">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94% 代码覆盖率">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 次构建零警告">
   <br>
@@ -61,7 +61,7 @@
 | **这是什么** | 面向遥控飞机的开放式飞控与自动驾驶仪。主力板是 STM32H743（Pixhawk 级别的开发板）：固件在 DevEBox 板上**已经运行起来，可以用遥控器操控**——[有视频](#-stm32h743-在开发板上跑起来了)，现在正在接传感器。之前的基础是约 10 美元的 ESP32-S3，它已在装有全部传感器的台架上验证过。 |
 | **能做什么** | 12 种飞行模式——从自稳到返航、GPS 盘旋、手抛起飞、自动降落，还有**热气流翱翔**。用两个廉价气压计做成的空速管。通过 MAVLink 把遥测数据送到 QGroundControl 和 Mission Planner。 |
 | **最大亮点** | 遥控器上的任何开关或旋钮 = 任何功能。在 `Controls.h` 里**改一行**，SwD 就不再是电机反转，而变成投放载荷。 |
-| **为什么可以信任** | 436 项自动化测试（另有 9 项在带真实 SD 卡的开发板上运行），94% 的代码有测试覆盖，24 种“开发板 × 传感器”组合构建零警告，每种模式都有闭环仿真。 |
+| **为什么可以信任** | 455 项自动化测试（另有 9 项在带真实 SD 卡的开发板上运行），94% 的代码有测试覆盖，24 种“开发板 × 传感器”组合构建零警告，每种模式都有闭环仿真。 |
 | **实话实说** | 目前飞过的只有手动模式（第一架原型机）。STM32H743 目前只在台架上、没有接传感器的情况下验证过。自动驾驶仪已通过台架测试、自动化测试和仿真验证，正等待试飞——[现状见下文](#-真实现状)。 |
 
 ---
@@ -177,6 +177,7 @@ constexpr Binding BINDINGS[] = {
 | **BMP581** | 主气压计和空速管里的气压计 | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | 台架用和旧款 | I2C / SPI |
 | **u-blox M10** | GPS，10 Hz，UBX | UART |
+| **iBUS · SBUS · CRSF** | 遥控接收机：FlySky、FrSky、Futaba、RadioMaster、ExpressLRS、TBS Crossfire | UART |
 
 换传感器只需改一行（`SENSOR_KIT_LSM6DSV_PITOT`），换开发板只需一个构建标志。4 种开发板 × 6 套传感器组合全部零警告构建通过：[`tools/build_matrix.sh`](../../../tools/build_matrix.sh)。
 
@@ -205,7 +206,7 @@ STM32H743 的固件已在**没有任何传感器**的 DevEBox 板上运行，并
 
 | | |
 |---|---|
-| **436 项自动化测试** | 模块、按芯片寄存器层面验证的驱动、闭环飞行、在电脑上**完整运行**的 ESP32 和 STM32 固件；另外在 STM32 板上用真实 SD 卡跑 9 项测试 |
+| **455 项自动化测试** | 模块、按芯片寄存器层面验证的驱动、闭环飞行、在电脑上**完整运行**的 ESP32 和 STM32 固件；另外在 STM32 板上用真实 SD 卡跑 9 项测试 |
 | **93.9% 的代码行，85.7% 的分支** | `gcovr` 覆盖率，包括 STM32 代码 |
 | **24/24 次构建** | 4 种开发板 × 6 套传感器组合，`-Wall -Wextra`，零警告 |
 | **0 条问题** | 对全部代码运行 cppcheck 和 clang-tidy |
@@ -272,6 +273,7 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 | 新传感器（LSM6DSV、ICM-45686、QMC6309、SPL06、BMP581） | 🧪 依据数据手册编写的寄存器仿真器 |
 | STM32H743：SD 卡、黑匣子、USB 控制台 | 🔧 DevEBox 板上验证（板载测试） |
 | STM32H743：iBUS、ARM、舵机和电机的 PWM、手动控制 | 🔧 无传感器的板子上验证，已录制视频 |
+| SBUS 和 CRSF 接收机（ExpressLRS） | 🧪 测试：帧解析、failsafe、反相 UART；尚未用真实接收机验证 |
 | STM32H743：传感器（IMU、气压计、罗盘、GPS）和自动驾驶仪模式 | 🧪 整套固件在电脑上运行；传感器尚未接到板子上 |
 
 仿真中的飞机模型是简化的，各项系数都是起始值。每个新模式都要先在高空试飞，手指放在 MANUAL 开关上。
@@ -291,6 +293,7 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 - [x] 黑匣子：飞行记录写入闪存（ESP32-S3）和 SD 卡（STM32H743），下载并解析为 CSV
 - [x] STM32H743 已在板子上运行：遥控器 → iBUS → 舵机和电机（无传感器，有视频）
 - [x] [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) 应用：分步配置、一键刷写、地面调试
+- [x] 在 iBUS 之外支持 SBUS 和 CRSF 接收机（ExpressLRS、TBS Crossfire）——在 `Config.h` 或 OpenPlane Studio 中选择
 - [ ] STM32H743：接上传感器，并像 ESP32-S3 一样走完台架测试
 - [ ] 在新机体上对自动驾驶仪进行试飞
 - [ ] 基于 STM32H743 的自研飞控板（[FC_BOARD.md](FC_BOARD.md)）

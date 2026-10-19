@@ -34,6 +34,7 @@ O kit da montagem atual (o firmware foi verificado nele):
 - **Uma placa STM32H743 DevEBox H743** (MCUDEV): a principal. A antiga placa principal, a ESP32-S3 abaixo, também é suportada.
 - **Uma placa ESP32-S3 N16R8** (clone da DevKitC-1 com duas USB-C: "USB" e "COM").
 - **Um rádio FS-i6 + um receptor FS-iA6B** (protocolo iBUS, 10 canais). É preciso um único fio de dados: a porta iBUS SERVO. O rádio precisa permitir configurar o failsafe; essa configuração é obrigatória, veja a seção sobre failsafe.
+- **Ou outro rádio com receptor SBUS** (FrSky, Futaba, RadioMaster, Jumper…) **ou CRSF** (ExpressLRS, TBS Crossfire) — o protocolo é escolhido no `Config.h` (`RX_PROTOCOL`), a ligação está mais abaixo.
 - **2 servos MG90S** para os ailerons, um para cada semiasa (dois servos independentes, e não um para as duas asas).
 - **1 servo MG90S** para o profundor.
 - **1 servo MG90S** para o leme; no mesmo eixo dele está montada a roda direcional do trem de pouso (para manobrar no solo). O trem de pouso: duas rodas na frente e uma bequilha (roda de cauda) direcional (`LANDING_GEAR = TAIL_WHEEL` em `Config.h`; um trem com roda de nariz é `NOSE_WHEEL`).
@@ -69,7 +70,7 @@ O firmware suporta quatro placas; para trocar de uma para outra basta um parâme
 | Profundor | PA2 |
 | ESC (acelerador) | PA3 |
 | Leme + roda direcional | PD14 |
-| iBUS do receptor (RX) | PE7 |
+| Receptor (RX): iBUS, SBUS, CRSF | PE7 |
 | I2C dos sensores SDA / SCL (MPU, BMP581, bússola) | PB11 / PB10 |
 | I2C do OLED SDA / SCL (barramento separado) | PB9 / PB8 |
 | GPS: RX (← TX do GPS) / TX (→ RX do GPS) | PD9 / PD8 |
@@ -102,7 +103,7 @@ Os servos são alimentados **não pela placa**, e sim pelo BEC do controlador de
 | Profundor | GPIO6 |
 | ESC (acelerador) | GPIO7 |
 | Leme + roda direcional | GPIO18 |
-| iBUS do receptor (RX) | GPIO17 |
+| Receptor (RX): iBUS, SBUS, CRSF | GPIO17 |
 | I2C dos sensores SDA / SCL (MPU, BMP581, bússola) | GPIO41 / GPIO42 |
 | I2C do OLED SDA / SCL (barramento separado) | GPIO1 / GPIO2 |
 | Reserva: GPS RX / TX | GPIO39 / GPIO40 |
@@ -137,7 +138,7 @@ Os servos são alimentados **não pela placa**, e sim pelo BEC do controlador de
 | Profundor | GPIO6 |
 | ESC (acelerador) | GPIO7 |
 | Leme | — (não há pinos livres) |
-| iBUS do receptor (RX) | GPIO8 |
+| Receptor (RX): iBUS, SBUS, CRSF | GPIO8 |
 | I2C SDA (sensores) | GPIO1 |
 | I2C SCL (sensores) | GPIO3 |
 
@@ -152,7 +153,7 @@ Os servos são alimentados **não pela placa**, e sim pelo BEC do controlador de
 | Profundor | GPIO27 |
 | ESC (acelerador) | GPIO26 |
 | Leme | GPIO25 |
-| iBUS do receptor (RX) | GPIO16 |
+| Receptor (RX): iBUS, SBUS, CRSF | GPIO16 |
 | I2C SDA (sensores) | GPIO21 |
 | I2C SCL (sensores) | GPIO22 |
 
@@ -162,15 +163,24 @@ A vantagem dela é ser a placa mais comum e mais barata da linha: serve para dep
 
 ## Ligação do receptor
 
-Tudo o que se precisa do receptor é **um fio de dados iBUS**, que na maioria dos receptores compatíveis com FlySky sai por uma porta própria (muitas vezes marcada como "iBUS", ou é a única saída que não é PPM). A ligação:
+O receptor se liga com um único fio de dados ao **pino RX do receptor** da tabela
+da sua placa (`PIN_RC_RX`: PE7 na DevEBox, GPIO17 na esp32-s3, GPIO8 na esp32-c3,
+GPIO16 na esp32-dev). O protocolo deve ser o do seu receptor; quem o define é
+`RX_PROTOCOL` no `Config.h` (no OpenPlane Studio — o passo “Rádio”):
 
-- **TX do receptor (saída iBUS)** → **pino RX da placa** da tabela acima (GPIO8 na esp32-c3, GPIO17 na esp32-s3, GPIO16 na esp32-dev).
+| `RX_PROTOCOL` | Receptor | O que vai onde |
+|---|---|---|
+| `IBUS` (padrão) | FlySky FS-iA6B, FS-iA10B | porta iBUS SERVO (saída iBUS) → pino RX |
+| `SBUS` | FrSky, Futaba, RadioMaster, Jumper e a maioria dos outros | saída SBUS → pino RX; não precisa de inversor — a própria UART da placa inverte o sinal |
+| `CRSF` | ExpressLRS, TBS Crossfire e Tracer | TX do receptor → pino RX; o RX do receptor pode ir ao pino TX (`PIN_RC_TX`) — ainda sem uso |
+
 - **Terra (GND) do receptor** → **GND da placa**. É obrigatório; sem terra comum o protocolo não funciona.
-- **Alimentação do receptor**: por um BEC/regulador separado ou pelos 5 V da placa, conforme você costuma alimentar o receptor nas suas montagens; isso não depende de nenhum pino específico do firmware.
+- **Alimentação do receptor** — 5 V de um BEC/regulador separado ou dos 5V da placa.
 
-O firmware não envia nada de volta ao receptor, apenas escuta; por isso a linha TX da placa não precisa ser ligada em lugar nenhum.
-
-A velocidade da porta iBUS no firmware é 115200 baud, que é o padrão do protocolo; não é preciso mudá-la, porque o próprio receptor mantém essa velocidade.
+A velocidade da porta é definida pelo firmware: iBUS — 115200 baud, SBUS — 100000
+(8E2), CRSF — 420000 (o padrão do ExpressLRS). Configure um rádio EdgeTX do mesmo
+jeito que o FS-i6 (veja o mapa de canais abaixo): CH5 — ARM, CH6–CH8 — chaves,
+CH9–CH10 — potenciômetros.
 
 ---
 
@@ -261,10 +271,11 @@ A perda de link tem **prioridade absoluta** sobre todo o resto:
 - **motor em reversão**: o motor é desligado em qualquer caso; o piloto automático comanda só as superfícies de controle (para casa, planando);
 - **desarmada** (no solo) ou com o IMU sem responder: motor desligado; ailerons, profundor e leme em neutro (1500 µs); depois de 10 s sem link toca o buzzer "estou aqui" (se estiver soldado).
 
-O firmware reconhece a perda de link de duas maneiras:
+O firmware reconhece a perda de link de três maneiras:
 
-1. **Sem quadros iBUS por mais de 500 ms**: fio rompido ou receptor sem alimentação.
-2. **Acelerador abaixo de 950 µs**: é assim que o receptor avisa que perdeu o rádio. **Isso exige configurar o failsafe no rádio** (veja abaixo): quando o link se perde, o FS-iA6B NÃO deixa de enviar quadros, e sim repete os últimos valores dos sticks; sem a configuração, o firmware não perceberá a perda de link, e o avião continuará voando com o último acelerador.
+1. **Nenhum quadro do receptor por mais de 500 ms** — fio partido, receptor sem alimentação ou um receptor que se cala ao perder o link (o ExpressLRS faz isso por padrão).
+2. **O próprio receptor informa a perda de link** — a flag de failsafe no quadro SBUS, qualidade de link 0 % no CRSF. Não há nada a configurar.
+3. **Acelerador abaixo de 950 µs**: é assim que o receptor avisa que perdeu o rádio. **Isso exige configurar o failsafe no rádio** (veja abaixo): quando o link se perde, o FS-iA6B NÃO deixa de enviar quadros, e sim repete os últimos valores dos sticks; sem a configuração, o firmware não perceberá a perda de link, e o avião continuará voando com o último acelerador.
 
 O ARM **não** é desfeito pelo failsafe: quando o link volta, o avião volta a obedecer aos sticks e ao modo escolhido sem precisar armar de novo (mexer na chave no ar com o acelerador no zero é mais perigoso).
 
@@ -503,7 +514,7 @@ Leia esta seção inteira **antes** de ligar pela primeira vez, e não depois de
 ## Solução de problemas
 
 **"Sem sinal do receptor" / o RX parece normal, mas os canais no painel não se mexem**
-Verifique se o fio de dados do receptor está ligado exatamente no pino RX do iBUS da tabela da sua placa (GPIO8/GPIO17/GPIO16), sem ter sido trocado com o terra ou a alimentação, e se o terra do receptor e o da placa estão unidos. Se a pinagem confere e os fios estão íntegros, mas ainda assim não há sinal, verifique se o receptor está de fato pareado (bind) com o rádio e se a saída do receptor está configurada para iBUS, e não para PPM/SBUS.
+Verifique se o fio de dados do receptor está ligado exatamente ao pino RX do receptor da tabela da sua placa (PE7/GPIO17/GPIO8/GPIO16), sem confusão com terra ou alimentação, e se os terras do receptor e da placa estão unidos. Se a pinagem confere e os fios estão inteiros, mas continua sem sinal, verifique se o receptor está pareado (bind) com o rádio (no ExpressLRS — a mesma binding phrase e versão do transmissor) e se a saída dele confere com `RX_PROTOCOL`: iBUS, SBUS ou CRSF, não PPM.
 
 **Um sensor (IMU, barômetro, bússola) mostra "não responde" / NO_RESPONSE**
 O firmware informa com honestidade que o sensor não responde, em vez de entregar zeros. Verifique: (1) a alimentação do módulo (3.3V e o terra da placa); (2) SDA/SCL, nos pinos I2C da sua placa em particular; (3) o endereço na linha: MPU 0x68 (AD0 no GND), BMP581 0x46 (SDO no GND, CSB no 3.3V; 0x47 se o SDO estiver no 3.3V), BMP388 0x76 (SDO no GND, **CSB no 3.3V**; senão o chip fica em modo SPI), QMC5883P 0x2C, QMC5883L 0x0D. Se o sensor às vezes responde e às vezes não (ou atende em um endereço alheio), é mau contato na protoboard: aperte VCC/GND/SDA/SCL e, de preferência, alimente cada módulo direto do 3.3V/GND da placa. O comando `s` no console mostra os contadores de erros de I2C de cada sensor.

@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-436%20passing-3fb950?style=for-the-badge" alt="436 Tests">
+  <img src="https://img.shields.io/badge/tests-455%20passing-3fb950?style=for-the-badge" alt="455 Tests">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94 % Testabdeckung">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 Builds ohne Warnungen">
   <br>
@@ -61,7 +61,7 @@
 | **Was es ist** | Eine offene Flugsteuerung und ein Autopilot für ferngesteuerte Flugzeuge. Das Hauptboard ist der STM32H743 (ein Board der Pixhawk-Klasse): Auf einem DevEBox-Board **läuft die Firmware bereits und lässt sich per Sender steuern** – [es gibt ein Video](#-der-stm32h743-erwacht-auf-dem-board-zum-leben), gerade werden die Sensoren angeschlossen. Die frühere Basis ist ein ESP32-S3 für rund 10 $, der den Prüfstand mit allen Sensoren durchlaufen hat. |
 | **Was er kann** | 12 Flugmodi – von der Stabilisierung bis zur Rückkehr nach Hause, Kreisen per GPS, Handstart, Autolandung und **Thermikfliegen**. Ein Pitotrohr aus zwei billigen Barometern. MAVLink-Telemetrie für QGroundControl und Mission Planner. |
 | **Der Clou** | Jeder Schalter oder Drehregler am Sender = jede beliebige Funktion. **Eine Zeile** in `Controls.h` – und SwD ist nicht mehr die Motorumkehr, sondern ein Lastabwurf. |
-| **Warum man dem trauen kann** | 436 automatische Tests (dazu 9 auf dem Board selbst mit einer echten SD-Karte), 94 % des Codes durch Tests abgedeckt, 24 Builds „Board × Sensoren“ ohne eine einzige Warnung, Simulationen jedes Modus im geschlossenen Regelkreis. |
+| **Warum man dem trauen kann** | 455 automatische Tests (dazu 9 auf dem Board selbst mit einer echten SD-Karte), 94 % des Codes durch Tests abgedeckt, 24 Builds „Board × Sensoren“ ohne eine einzige Warnung, Simulationen jedes Modus im geschlossenen Regelkreis. |
 | **Ehrlich gesagt** | Bisher ist nur der manuelle Modus geflogen (der erste Prototyp). Der STM32H743 wurde bisher nur auf dem Prüfstand und ohne Sensoren getestet. Der Autopilot wurde auf dem Prüfstand, durch Tests und in Simulationen überprüft und wartet auf die Flugerprobung – [Stand weiter unten](#-ehrlicher-stand). |
 
 ---
@@ -177,6 +177,7 @@ Das Board zeichnet jeden Flug auf: IMU mit 500 Hz, Winkel und Entscheidungen des
 | **BMP581** | Hauptbarometer und Barometer im Pitotrohr | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | Prüfstands- und ältere Sensoren | I2C / SPI |
 | **u-blox M10** | GPS, 10 Hz, UBX | UART |
+| **iBUS · SBUS · CRSF** | Fernsteuerempfänger: FlySky, FrSky, Futaba, RadioMaster, ExpressLRS, TBS Crossfire | UART |
 
 Ein Sensor wird mit einer Zeile gewechselt (`SENSOR_KIT_LSM6DSV_PITOT`), ein Board mit einem Build-Flag. Alle 4 Boards × 6 Sensorsets bauen ohne Warnungen: [`tools/build_matrix.sh`](../../../tools/build_matrix.sh).
 
@@ -205,7 +206,7 @@ Was das beweist: Die Kette „Sender → iBUS → Firmware → PWM“ funktionie
 
 | | |
 |---|---|
-| **436 automatische Tests** | Module, Treiber auf Ebene der Chipregister, Flüge im geschlossenen Regelkreis, die Firmware für ESP32 und STM32 **vollständig** auf dem PC; dazu 9 Tests auf dem STM32-Board selbst mit einer echten SD-Karte |
+| **455 automatische Tests** | Module, Treiber auf Ebene der Chipregister, Flüge im geschlossenen Regelkreis, die Firmware für ESP32 und STM32 **vollständig** auf dem PC; dazu 9 Tests auf dem STM32-Board selbst mit einer echten SD-Karte |
 | **93,9 % der Zeilen, 85,7 % der Verzweigungen** | `gcovr`-Abdeckung, einschließlich des STM32-Codes |
 | **24/24 Builds** | 4 Boards × 6 Sensorsets, `-Wall -Wextra`, null Warnungen |
 | **0 Beanstandungen** | cppcheck und clang-tidy über den gesamten Code |
@@ -272,6 +273,7 @@ Im seriellen Monitor: `h` – Menü, `b` – welche Chips auf den Bussen sichtba
 | Neue Sensoren (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) | 🧪 Registeremulatoren nach den Datenblättern |
 | STM32H743: SD-Karte, Blackbox, Konsole über USB | 🔧 auf dem DevEBox-Board (Tests auf dem Board) |
 | STM32H743: iBUS, ARM, PWM für Servos und Motor, manuelle Steuerung | 🔧 auf dem Board ohne Sensoren, auf Video festgehalten |
+| SBUS- und CRSF-Empfänger (ExpressLRS) | 🧪 Tests: Frame-Parsing, Failsafe, invertierter UART; mit einem echten Empfänger noch nicht erprobt |
 | STM32H743: Sensoren (IMU, Barometer, Kompass, GPS) und Autopilot-Modi | 🧪 die ganze Firmware auf dem PC; Sensoren wurden noch nicht an das Board angeschlossen |
 
 Das Flugzeugmodell in den Simulationen ist vereinfacht, die Koeffizienten sind Startwerte. Jeder neue Modus wird zuerst in der Höhe erprobt, den Finger auf dem MANUAL-Schalter.
@@ -291,6 +293,7 @@ Das Flugzeugmodell in den Simulationen ist vereinfacht, die Koeffizienten sind S
 - [x] Blackbox: Flug im Flash (ESP32-S3) und auf einer SD-Karte (STM32H743), Download und Auswertung als CSV
 - [x] STM32H743 läuft auf dem Board: Sender → iBUS → Servos und Motor (ohne Sensoren, auf Video)
 - [x] App [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): Einrichtung Schritt für Schritt, Flashen mit einem Klick, Checks am Boden
+- [x] SBUS- und CRSF-Empfänger (ExpressLRS, TBS Crossfire) neben iBUS — Auswahl in `Config.h` oder in OpenPlane Studio
 - [ ] STM32H743: Sensoren anschließen und den Prüfstand so durchlaufen wie beim ESP32-S3
 - [ ] Flugerprobung des Autopiloten an der neuen Flugzeugzelle
 - [ ] Eine eigene Flugsteuerungsplatine ([FC_BOARD.md](FC_BOARD.md)) auf dem STM32H743

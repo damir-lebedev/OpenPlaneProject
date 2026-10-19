@@ -49,7 +49,7 @@ sensores (IMU, barómetro, brújula, GPS, tubo de Pitot) ─► Autopilot ─►
 
 ## Distribución predeterminada de la emisora
 
-FS-i6 + FS-iA6B, iBUS, 10 canales (`config/Channels.h`).
+FS-i6 + FS-iA6B, iBUS, 10 canales (`config/Channels.h`). Otro receptor: SBUS o CRSF (`RX_PROTOCOL`), con los mismos canales.
 
 | Canal | Control de la emisora | Por defecto |
 |---|---|---|
@@ -255,7 +255,7 @@ El centro del potenciómetro = valor por defecto de `Config.h`; los extremos son
 
 **El punto de origen** se registra en el ARM si el GPS es bueno (fijación 3D, ≥ 6 satélites, precisión ≤ 5 m). Si en el momento del ARM el GPS aún no ha fijado, el punto se registra en cuanto fije. Para cambiarlo en el campo, la función `HOME_RESET`.
 
-**Pérdida de señal** (no hay fotogramas iBUS durante > 0.5 s o el receptor envió un gas inferior a 950 µs: es el failsafe configurado en la emisora; véase `docs/PILOT_GUIDE.md`):
+**Pérdida de señal** (no hay tramas del receptor durante > 0.5 s, el propio receptor informó de la pérdida de enlace —SBUS, CRSF— o envió un gas inferior a 950 µs, el failsafe configurado en la emisora; véase `docs/PILOT_GUIDE.md`):
 
 | Situación | Qué hace la aeronave |
 |---|---|

@@ -50,7 +50,7 @@ namespace Config
     constexpr uint8_t PIN_ELEVATOR      = 6;
     constexpr uint8_t PIN_ESC           = 7;
     constexpr int8_t  PIN_RUDDER        = 18;  // руль направления + колесо
-    constexpr uint8_t PIN_IBUS          = 17;
+    constexpr uint8_t PIN_RC_RX         = 17;  // приёмник: iBUS, SBUS или CRSF (RX_PROTOCOL)
     // Шина датчиков — правый ряд DevKit, рядом с OLED: там же 3V3-зона
     // платы. На стенде проверена на GPIO8/9 — переезд на 41/42 это
     // только другие пины той же шины Wire.
@@ -106,7 +106,7 @@ namespace Config
     constexpr uint8_t PIN_ELEVATOR      = 27;
     constexpr uint8_t PIN_ESC           = 26;
     constexpr int8_t  PIN_RUDDER        = 25;
-    constexpr uint8_t PIN_IBUS          = 16;
+    constexpr uint8_t PIN_RC_RX         = 16;  // приёмник: iBUS, SBUS или CRSF (RX_PROTOCOL)
     constexpr uint8_t PIN_I2C_SDA       = 21;  // = дефолт Wire для esp32 classic
     constexpr uint8_t PIN_I2C_SCL       = 22;  // = дефолт Wire для esp32 classic
 
@@ -147,9 +147,9 @@ namespace Config
     constexpr uint8_t PIN_ELEVATOR      = 6;
     constexpr uint8_t PIN_ESC           = 7;
     constexpr int8_t  PIN_RUDDER        = -1;  // свободных пинов нет (см. бюджет ниже) — выход отключён
-    constexpr uint8_t PIN_IBUS          = 8;
+    constexpr uint8_t PIN_RC_RX         = 8;   // приёмник: iBUS, SBUS или CRSF (RX_PROTOCOL)
     // ВАЖНО: дефолт Wire для esp32c3 — это как раз SDA=8/SCL=9, то
-    // есть SDA совпал бы с PIN_IBUS. Поэтому I2C явно уведён на
+    // есть SDA совпал бы с PIN_RC_RX. Поэтому I2C явно уведён на
     // GPIO1/3 — обычные GPIO, не участвующие во flash/USB.
     constexpr uint8_t PIN_I2C_SDA       = 1;
     constexpr uint8_t PIN_I2C_SCL       = 3;
@@ -161,7 +161,7 @@ namespace Config
     // ailerons/elevator/esc/ibus/i2c (7 пинов) свободно ровно 6:
     // 0, 2, 9, 10, 20, 21 — а нужно 5 под SPI + 2 под GPS UART = 7.
     // Поэтому здесь: GPIO2 и GPIO9 — strapping-пины (та же категория
-    // риска, что уже принята для PIN_IBUS=8 выше: их состояние важно
+    // риска, что уже принята для PIN_RC_RX=8 выше: их состояние важно
     // только в момент включения/сброса, после старта прошивки это
     // обычные GPIO); GPIO9 особенно чувствителен — низкий уровень на
     // нём при сбросе переводит чип в режим прошивки, так что модуль
@@ -231,10 +231,11 @@ namespace Config
     constexpr int16_t PIN_ESC           = PA3;   // TIM2_CH4
     constexpr int16_t PIN_RUDDER        = PD14;  // TIM4_CH3
 
-    // iBUS — UART7. TX на приём не нужен, но UART STM32duino создаётся
-    // парой пинов; PE8 оставлен под iBUS-SENS (телеметрия в пульт).
-    constexpr int16_t PIN_IBUS    = PE7;   // UART7_RX
-    constexpr int16_t PIN_IBUS_TX = PE8;   // UART7_TX
+    // Приёмник — UART7 (iBUS, SBUS или CRSF: RX_PROTOCOL). TX на приём
+    // не нужен, но UART STM32duino создаётся парой пинов; PE8 оставлен
+    // под телеметрию в пульт (iBUS-SENS, CRSF).
+    constexpr int16_t PIN_RC_RX = PE7;   // UART7_RX
+    constexpr int16_t PIN_RC_TX = PE8;   // UART7_TX
 
     // I2C2 — датчики (= дефолт Wire варианта).
     constexpr int16_t PIN_I2C_SDA = PB11;
@@ -273,19 +274,29 @@ namespace Config
 
 
     // --------------------------------------------------------
-    // iBUS configuration
+    // Приёмник пульта
     // --------------------------------------------------------
 
-    constexpr uint8_t IBUS_CHANNELS = 10;  // @fixed
-    constexpr uint8_t IBUS_FRAME_LENGTH = 32;  // @fixed
+    // Протокол приёмника; провод от его выхода — на PIN_RC_RX:
+    //   IBUS — FlySky (FS-iA6B, FS-iA10B);
+    //   SBUS — FrSky, Futaba, RadioMaster, Jumper и большинство других;
+    //          сигнал инвертированный, инверсию делает сам UART;
+    //   CRSF — ExpressLRS, TBS Crossfire и Tracer.
+    // У SBUS и CRSF каналов 16, прошивка берёт первые RC_CHANNELS.
+    enum class RxProtocol : uint8_t { IBUS, SBUS, CRSF };
+    constexpr RxProtocol RX_PROTOCOL = RxProtocol::IBUS;
 
+    constexpr uint8_t RC_CHANNELS = 10;  // @fixed
+
+    constexpr uint8_t IBUS_FRAME_LENGTH = 32;  // @fixed
     constexpr uint8_t IBUS_HEADER_0 = 0x20;  // @fixed
     constexpr uint8_t IBUS_HEADER_1 = 0x40;  // @fixed
-
     constexpr uint32_t IBUS_BAUDRATE = 115200;  // @fixed
+    constexpr uint32_t SBUS_BAUDRATE = 100000;  // @fixed
+    constexpr uint32_t CRSF_BAUDRATE = 420000;  // @fixed
 
-    // При отсутствии корректного iBUS кадра дольше этого
-    // времени приёмник считается потерянным.
+    // При отсутствии корректного кадра дольше этого времени приёмник
+    // считается потерянным.
     constexpr uint32_t RX_TIMEOUT_US = 500000;
 
     // FS-iA6B при потере связи с пультом НЕ перестаёт слать iBUS —
@@ -296,7 +307,9 @@ namespace Config
     // выставляется ниже нормального диапазона (~900 мкс, см.
     // docs/PILOT_GUIDE.md "Настройка failsafe в пульте"). Газ ниже
     // этого порога = потеря связи. В обычной работе газ не бывает
-    // ниже 1000 (конечные точки пульта 100%).
+    // ниже 1000 (конечные точки пульта 100%). SBUS и CRSF сообщают
+    // о потере связи сами (флаг кадра, LQ = 0) — порог по газу у них
+    // тоже работает, если failsafe приёмника настроен «газ ниже нормы».
     constexpr uint16_t RX_FAILSAFE_THROTTLE_US = 950;  // @range(850, 990)
 
 
@@ -469,8 +482,8 @@ namespace Config
     // туда и от стика, и от автопилота — это флаг выхода выше; не туда
     // только от стика — флаг канала здесь. CH3 (газ) здесь
     // реверсировать нельзя: потерю связи прошивка узнаёт по газу ниже
-    // 950 мкс (сборка не пройдёт, см. IBusReceiver.h).
-    constexpr bool CHANNEL_REVERSED[IBUS_CHANNELS] = {
+    // 950 мкс (сборка не пройдёт, см. RcReceiver.h).
+    constexpr bool CHANNEL_REVERSED[RC_CHANNELS] = {
         false,  // CH1  — крен (правый стик <->)
         false,  // CH2  — тангаж (правый стик вверх/вниз)
         false,  // CH3  — газ: НЕЛЬЗЯ

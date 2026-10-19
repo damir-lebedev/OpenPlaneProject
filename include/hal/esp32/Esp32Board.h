@@ -16,7 +16,7 @@
 //
 // Единственное место, которое создаёт конкретные ESP32-шины
 // (Wire/Wire1/SPI/HardwareSerial/LEDC) и знает пины из Config.h.
-// Всё остальное (FlightOutputs, IBusReceiver, драйверы датчиков,
+// Всё остальное (FlightOutputs, RcReceiver, драйверы датчиков,
 // экран, main.cpp) видит только интерфейс IBoard.
 //
 // Под другой MCU — своя плата с таким же публичным API (заготовка
@@ -36,7 +36,7 @@ public:
           spiBus(Config::PIN_SENSOR_SPI_SCK, Config::PIN_SENSOR_SPI_MISO, Config::PIN_SENSOR_SPI_MOSI),
           rcSerial(1),
           gpsSerial(Config::UART_NUM_GPS),
-          rcPort(rcSerial, Config::PIN_IBUS, -1),
+          rcPort(rcSerial, Config::PIN_RC_RX, -1),
           gpsPort(gpsSerial, Config::PIN_GPS_RX, Config::PIN_GPS_TX),
           servos{
               // Второй аргумент — канал LEDC, у каждого выхода свой.

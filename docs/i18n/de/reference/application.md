@@ -23,7 +23,7 @@ Die Reihenfolge der Deklaration = die Reihenfolge der Konstruktion.
 | `magDevice`, `magSensor`, `magnetometer` | … `SelectedMag`, `MagnetometerSensor* const` | nur wenn `SENSOR_MAG != NONE`, sonst `nullptr` |
 | `gpsSensor`, `gpsReceiver` | `SelectedGps`, `GpsSensor* const` | nur wenn `SENSOR_GPS != NONE` |
 | `pitotDevice`, `pitotBaro`, `pitotSensor`, `airspeedSensor` | `SELECTED_PITOT_DEVICE(board)`, `SelectedPitotBaro` (`"PITOT-BMP581"`), `PitotDualBaroAirspeed(pitotBaro, baroSensor)` | nur wenn `SENSOR_AIRSPEED != NONE` |
-| `ibusReceiver` | `IBusReceiver` | `board.rcUart()` |
+| `rcReceiver` | `RcReceiver` | `board.rcUart()` |
 | `controlMixer`, `throttleManager` | `ControlMixer`, `ThrottleManager` | |
 | `flightOutputs` | `FlightOutputs` | `board` |
 | `autopilot` | `Autopilot` | alle Sensoren (nullbar) |

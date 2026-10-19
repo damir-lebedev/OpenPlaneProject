@@ -143,7 +143,7 @@ IMU 장착 방향 보정, `m` — 나침반 보정, `p` — 출력 자가 점검
 `b` — I2C 버스 스캔 (0x08..0x7F — QMC6309가 0x7C에 있으므로 0x7F까지)과
 칩 이름 표시, 그 밖의 키 — 도움말. `\r`/`\n`은 무시합니다. 그 밖에 `c`는 비행기 지상 캘리브레이션(진행 중이면 취소. 주 메뉴 9번), `e`는 조종면과 ESC 멜로디로 내는 알림입니다(펄스를 멈춘 뒤 ESC가 멜로디를 내는지 확인).
 
-PC 명령은 STX 바이트(`0x02`), 문자열, `\n`입니다. `id`에는 `FirmwareIdentity::print()`가 펌웨어 식별 정보를 `@id {...}` 한 줄로 출력하고(`fw`, `proto`, `board`, `commit`, `config`, `plane`, `armed`; ARM 중에도 응답합니다). `scan`은 버스를 조사해 `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}`을 출력하고(ARM 중에는 `{"error":"armed"}`), `act X`는 메뉴 키 `X`의 동작을 ARM 중의 같은 제한 아래 실행하며, `live`와 `live 0`은 `AppLink`(아래)로, 나머지는 `IFlightRecorder::handleHostCommand()`(블랙박스)로 넘어갑니다. 보드, 커밋, 설정 해시, 기체 이름은 OpenPlane Studio가 자신의 소스 사본에 있는 `config/Project.h`로 넣습니다. 이 파일이 없으면 보드 매크로와 `"dev"`가 쓰입니다.
+PC 명령은 STX 바이트(`0x02`), 문자열, `\n`입니다. `id`에는 `FirmwareIdentity::print()`가 펌웨어 식별 정보를 `@id {...}` 한 줄로 출력하고(`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; ARM 중에도 응답합니다). `scan`은 버스를 조사해 `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}`을 출력하고(ARM 중에는 `{"error":"armed"}`), `act X`는 메뉴 키 `X`의 동작을 ARM 중의 같은 제한 아래 실행하며, `live`와 `live 0`은 `AppLink`(아래)로, 나머지는 `IFlightRecorder::handleHostCommand()`(블랙박스)로 넘어갑니다. 보드, 커밋, 설정 해시, 기체 이름은 OpenPlane Studio가 자신의 소스 사본에 있는 `config/Project.h`로 넣습니다. 이 파일이 없으면 보드 매크로와 `"dev"`가 쓰입니다.
 
 로그 메뉴: `1`..`9` — 채널 0..8의 모드를 순환, `n` — NAV, `s` — SYS, `p` — 주기, `a` —
 모두 “변경 시”, `x` — 모두 끄기, `d` — 기본값, `0`/`q` — 뒤로, `l`/`h` —
@@ -159,7 +159,7 @@ PC 명령은 STX 바이트(`0x02`), 문자열, `\n`입니다. `id`에는 `Firmwa
 
 `telemetry/AppLink.h`는 OpenPlane Studio와의 실시간 연결입니다. PC 명령 `live`(`DebugConsole`을 거쳐)를 받으면 보드는 `LIVE_HOLD_MS`(3초) 동안 `FRAME_PERIOD_MS`마다 `@live {...}` 줄을 계속 보냅니다. STM32(USB)에서는 50 ms, ESP32(115200 UART)에서는 100 ms입니다. 앱은 듣는 동안 1초마다 `live`를 반복합니다. 앱을 닫거나 케이블을 뽑으면 보드는 저절로 조용해지고, `live 0`은 즉시 멈춥니다.
 
-프레임은 JSON 한 줄입니다: `t`, `arm`, `mode`, `rx`(`ok`, `lost` — 프레임이 오지 않음, `fs` — 수신기 페일세이프), `ch`(10채널, µs, `CHANNEL_REVERSED` 적용 후), `out`(왼쪽 에일러론, 오른쪽 에일러론, 엘리베이터, 러더, 스로틀, AUX1, AUX2 — µs), `rev`, 각 센서의 상태(`ok`, `none`, `noresp`; IMU에는 `check` — 비행 전 점검 불합격 — 도 있음)와 그 값(`att`, `alt`/`vz`, `hdg`, `fix`/`sats`, `ias`), 캘리브레이션(`mount` — IMU 장착, `park` — 주기 자세, `magcal` — 나침반), `block` — 지금 ARM이 거부될 이유(`FlightController::armBlockNow()`, `null`이면 ARM 가능), `cal` — 지상 캘리브레이션 단계, `feat` — 켜진 기능, `hz` — 루프 주파수.
+프레임은 JSON 한 줄입니다: `t`, `arm`, `mode`, `rx`(`ok`, `lost` — 프레임이 오지 않음, `fs` — 수신기 페일세이프), `lq`(링크 품질, %; CRSF만), `ch`(10채널, µs, `CHANNEL_REVERSED` 적용 후), `out`(왼쪽 에일러론, 오른쪽 에일러론, 엘리베이터, 러더, 스로틀, AUX1, AUX2 — µs), `rev`, 각 센서의 상태(`ok`, `none`, `noresp`; IMU에는 `check` — 비행 전 점검 불합격 — 도 있음)와 그 값(`att`, `alt`/`vz`, `hdg`, `fix`/`sats`, `ias`), 캘리브레이션(`mount` — IMU 장착, `park` — 주기 자세, `magcal` — 나침반), `block` — 지금 ARM이 거부될 이유(`FlightController::armBlockNow()`, `null`이면 ARM 가능), `cal` — 지상 캘리브레이션 단계, `feat` — 켜진 기능, `hz` — 루프 주파수.
 
 프레임은 포트 버퍼(`Serial.availableForWrite()`)에 통째로 들어갈 때만 쓰이고, 아니면 건너뜁니다(`getFramesSkipped()`). 비행 루프는 절대 PC를 기다리지 않습니다. 그래서 송신 버퍼는 프레임 하나(최대 `LIVE_LINE_MAX` = 768바이트)를 담을 수 있어야 합니다. ESP32는 `Serial.setTxBufferSize(4096)`, DevEBox는 `platformio.ini`의 `CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER=16`으로 USB 큐를 늘렸습니다(기본 128바이트에는 프레임이 결코 들어가지 않았습니다). 큐가 더 작은 빌드는 설명과 함께 멈춥니다.
 

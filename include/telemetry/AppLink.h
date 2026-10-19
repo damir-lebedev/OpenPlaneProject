@@ -10,7 +10,7 @@
 #include "control/FlightController.h"
 #include "control/FlightOutputState.h"
 #include "control/GroundCalibration.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "rc/RcChannelState.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/airspeed/AirspeedSensor.h"
@@ -110,7 +110,7 @@ public:
     size_t formatLive(char* buffer, size_t capacity, uint32_t nowMs) const
     {
         Writer w(buffer, capacity);
-        const IBusReceiver& receiver = controller.getReceiver();
+        const RcReceiver& receiver = controller.getReceiver();
         const RcChannelState& rc = controller.getRcState();
         const FlightOutputState& out = controller.getOutputState();
 
@@ -118,9 +118,10 @@ public:
               controller.isArmed() ? "true" : "false");
         w.str(autopilot ? autopilot->getModeName() : "MANUAL");
         w.add(",\"rx\":\"%s\"", receiver.isFrameTimeout() ? "lost" : receiver.isFailsafeReported() ? "fs" : "ok");
+        if (receiver.getLinkQuality() >= 0) w.add(",\"lq\":%d", static_cast<int>(receiver.getLinkQuality()));
 
         w.add(",\"ch\":[");
-        for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i)
+        for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i)
         {
             w.add(i ? ",%u" : "%u", static_cast<unsigned>(rc.get(i)));
         }

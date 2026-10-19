@@ -28,7 +28,7 @@
 | `PIN_ELEVATOR` | `uint8_t` | एलिवेटर | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | मोटर का रेगुलेटर | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | रडर + पहिया; `-1` — आउटपुट बंद | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | iBUS रिसीवर का RX (UART1) | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | रिसीवर RX: iBUS, SBUS या CRSF (UART1) | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | सेंसरों की बस (`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | OLED की बस (`Wire1`); `-1` — नहीं | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | साझा SPI बस | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -59,7 +59,7 @@ STM32duino वेरिएंट की `PeripheralPins` तालिकाओ�
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7 (TX — iBUS-SENS के लिए आरक्षित) |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7 (TX रिमोट को टेलीमेट्री के लिए आरक्षित) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 — सेंसर |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — स्क्रीन (WeAct पर — कैमरे का कनेक्टर) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -72,14 +72,17 @@ STM32duino वेरिएंट की `PeripheralPins` तालिकाओ�
 
 कंसोल `Serial` — LPUART1 (PA9 TX / PA10 RX), वेरिएंट का डिफ़ॉल्ट।
 
-### iBUS और संपर्क टूटना
+### रिसीवर और संपर्क टूटना
 
 | स्थिरांक | मान | अर्थ |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | फ़्रेम के कितने चैनल इस्तेमाल होते हैं |
+| `RX_PROTOCOL` | `IBUS` | रिसीवर का प्रोटोकॉल: `IBUS` (FlySky), `SBUS` (FrSky, Futaba, RadioMaster…), `CRSF` (ExpressLRS, TBS Crossfire) |
+| `RC_CHANNELS` | 10 | फ़्रेम के कितने चैनल इस्तेमाल होते हैं |
 | `IBUS_FRAME_LENGTH` | 32 | फ़्रेम की लंबाई, बाइट |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | फ़्रेम का हेडर |
 | `IBUS_BAUDRATE` | 115200 | UART की गति |
+| `SBUS_BAUDRATE` | 100000 | SBUS की गति (8E2, उलटा सिग्नल) |
+| `CRSF_BAUDRATE` | 420000 | CRSF की गति (ExpressLRS का डिफ़ॉल्ट) |
 | `RX_TIMEOUT_US` | 500 000 | इससे ज़्यादा देर तक कोई सही फ़्रेम नहीं — संपर्क खो गया |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | थ्रॉटल इससे नीचे — रिसीवर ट्रांसमीटर का failsafe बता रहा है |
 

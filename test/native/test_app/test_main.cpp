@@ -98,7 +98,7 @@ void test_setup_brings_up_the_whole_bench()
     TEST_ASSERT_TRUE(contains(log, "OLED: подключён (SSD1306)"));
     TEST_ASSERT_TRUE(contains(log, "WebDebugServer: запуск точки доступа... OK"));
     TEST_ASSERT_TRUE(contains(log, "BlackBox: ждёт ARM и газ | стёрто впереди 1.0 МБ из 1.0 МБ | полётов 0"));
-    TEST_ASSERT_TRUE(contains(log, "Готово. iBUS 115200 бод"));
+    TEST_ASSERT_TRUE(contains(log, "Готово. Приёмник iBUS, 10 каналов."));
 
     // Выходы — в безопасном положении до всякого пульта.
     TEST_ASSERT_UINT32_WITHIN(2, escUs(1000), pulseUs(ServoChannel::ESC));

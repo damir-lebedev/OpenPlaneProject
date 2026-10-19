@@ -29,7 +29,7 @@ setzt (`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
 | `PIN_ELEVATOR` | `uint8_t` | Höhenruder | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | Motorsteller | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | Seitenruder + Rad; `-1` — der Ausgang ist abgeschaltet | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | RX des iBUS-Empfängers (UART1) | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | Empfänger-RX: iBUS, SBUS oder CRSF (UART1) | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | Der Sensorbus (`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | Der OLED-Bus (`Wire1`); `-1` — keiner | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | Der gemeinsame SPI-Bus | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -62,7 +62,7 @@ der Pins.
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7 (TX — reserviert für iBUS-SENS) |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7 (TX reserviert für Telemetrie zum Sender) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 — Sensoren |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — das Display (auf dem WeAct — der Kameraanschluss) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -76,14 +76,17 @@ der Pins.
 Die Konsole `Serial` ist LPUART1 (PA9 TX / PA10 RX), der Standardwert der
 Variante.
 
-### iBUS und Verbindungsverlust
+### Empfänger und Verbindungsverlust
 
 | Konstante | Wert | Bedeutung |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | Wie viele Kanäle des Frames verwendet werden |
+| `RX_PROTOCOL` | `IBUS` | Empfängerprotokoll: `IBUS` (FlySky), `SBUS` (FrSky, Futaba, RadioMaster …), `CRSF` (ExpressLRS, TBS Crossfire) |
+| `RC_CHANNELS` | 10 | Wie viele Kanäle des Frames verwendet werden |
 | `IBUS_FRAME_LENGTH` | 32 | Länge des Frames, Bytes |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | Der Kopf des Frames |
 | `IBUS_BAUDRATE` | 115200 | UART-Geschwindigkeit |
+| `SBUS_BAUDRATE` | 100000 | SBUS-Geschwindigkeit (8E2, invertiertes Signal) |
+| `CRSF_BAUDRATE` | 420000 | CRSF-Geschwindigkeit (ExpressLRS-Standard) |
 | `RX_TIMEOUT_US` | 500 000 | Länger als das kein korrekter Frame — die Verbindung ist verloren |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | Gas darunter — der Empfänger meldet das Failsafe des Senders |
 

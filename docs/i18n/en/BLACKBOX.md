@@ -35,14 +35,14 @@ On the other boards (ESP32-C3, the ordinary ESP32) there is no storage: the blac
 |---|---|---|
 | `IMU` | every cycle, 500 Hz | gyroscope (°/s), accelerometer (g), how long the control cycle's work took (µs) |
 | `CTRL` | 100 Hz | roll/pitch/heading, the autopilot's targets, the pilot's sticks, the final commands, **all 7 outputs** (µs), the components of the roll and pitch PID (P, I, D), pilot and autopilot throttle, flaps, mode, flags (ARM, link, failsafe, sensors alive...), the features switched on |
-| `RC` | 50 Hz | all 10 transmitter channels, iBUS frame counters (good and bad) |
+| `RC` | 50 Hz | all 10 transmitter channels, iBUS/SBUS/CRSF frame counters (good and bad) |
 | `BARO` | every sample (~50 Hz) | pressure, temperature, altitude, vertical speed, altitude target |
 | `MAG` | up to 50 Hz | the field on three axes, heading |
 | `GPS` | every solution | coordinates, altitude, speed, course, satellites, fix, accuracy |
 | `AIR` | up to 50 Hz | pitot tube: pressure difference, indicated and true airspeed, density |
 | `NAV` | 10 Hz | home (distance, bearing), course and course target, navigation speed, course source, hand-launch and soaring stages, auto-trim, the auto-takeoff stage (`takeoff_stage`) |
 | `POWER` | 10 Hz | battery voltage and the current sensor output (the flight-controller board's dividers, [FC_BOARD.md](FC_BOARD.md), block B) |
-| `SYS` | 1 Hz | frequency and worst cycle of the control loop, free memory, iBUS counters, IMU temperature, the black box queue, lost records, the longest flash write, free space |
+| `SYS` | 1 Hz | frequency and worst cycle of the control loop, free memory, iBUS/SBUS/CRSF counters, IMU temperature, the black box queue, lost records, the longest flash write, free space |
 | `EVENT` | on an event | ARM/DISARM, an ARM refusal with the reason, mode change, link lost/restored, sensor failed/recovered, GPS fix, home recorded, switch features, geofence, stall protection, hand-launch and soaring stages, auto-takeoff stages (aborted — with the reason), steps and the result of the ground calibration of the airplane (parking attitude or an error) |
 
 At the start of each flight come the parameters: the firmware (build date), the reason for the start and for the last reboot, which sensors are fitted and whether they passed the pre-flight check, the PID coefficients (including edits from the dashboard), the trims, important `Config` values and the switch bindings.

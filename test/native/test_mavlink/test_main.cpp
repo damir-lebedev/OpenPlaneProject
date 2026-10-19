@@ -22,7 +22,7 @@
 #include "control/FlightController.h"
 #include "control/FlightOutputs.h"
 #include "control/ThrottleManager.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "telemetry/LoopStats.h"
 #include "telemetry/MavlinkCodec.h"
 #include "telemetry/MavlinkTelemetry.h"
@@ -118,7 +118,7 @@ namespace
         FakeGps gps;
         FakeAirspeed airspeed;
         FakeUart radio;
-        IBusReceiver receiver{ board.rcUart() };
+        RcReceiver receiver{ board.rcUart() };
         ControlMixer mixer;
         ThrottleManager throttle;
         FlightOutputs outputs{ board };

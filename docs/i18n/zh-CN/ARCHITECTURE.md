@@ -61,7 +61,7 @@ flowchart TD
     CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK（未接入）<br/>FeedbackSupervisor 及各模块"]
-    RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
+    RC["RC<br/>RcReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
     HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice · Rtos"]
     STORE["STORAGE<br/>KeyValueStore · KvPreferences"]
@@ -126,7 +126,7 @@ flowchart LR
     gps["SelectedGps gpsSensor"]
     pitotBaro["SelectedPitotBaro pitotBaro"]
     pitot["PitotDualBaroAirspeed pitotSensor"]
-    rx["IBusReceiver"]
+    rx["RcReceiver"]
     mixer["ControlMixer"]
     thr["ThrottleManager"]
     outs["FlightOutputs"]
@@ -176,7 +176,7 @@ setupSensors()              — 逐个传感器 begin(); 对有响应的做校�
                               气压计 (零高度), 电子罗盘 (初始航向 → IMU yaw),
                               皮托管 (零点在循环的第一秒内采集)
 autopilot.begin()           — 从 NVS/闪存读取配平
-flightController.begin()    — setFailsafe() + UART iBUS
+flightController.begin()    — setFailsafe() + UART RC (iBUS/SBUS/CRSF)
 oledDisplay.begin(...)      — 独立任务 (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — 接入点 + 运行在核心 0 上的独立任务
 [ESP32] blackBox.begin()   — blackbox 分区, PSRAM 中的队列, 运行在核心 0 上的 bbox 任务
@@ -356,7 +356,7 @@ classDiagram
 sequenceDiagram
     participant L as flight loop
     participant FC as FlightController
-    participant RX as IBusReceiver
+    participant RX as RcReceiver
     participant SW as PilotSwitches
     participant TM as ThrottleManager
     participant MX as ControlMixer
@@ -530,12 +530,13 @@ stateDiagram-v2
 
 各使用方的反应一致：**没有传感器（`nullptr`）或传感器不可用——不产生任何影响**，飞机按 MANUAL 方式操纵。例外是跑道上的自动起飞：IMU 故障即中止起飞，电机停转。
 
-### 通信（`IBusReceiver::isSignalLost()`）
+### 通信（`RcReceiver::isSignalLost()`）
 
-两个相互独立的判据：
+三个相互独立的判据：
 
 1. 超过 `RX_TIMEOUT_US`（500 ms）没有正确的帧——或者自上电以来一帧都没有；
-2. 帧中的油门低于 `RX_FAILSAFE_THROTTLE_US`（950 µs）——这是在遥控器中设定的 failsafe（FS-iA6B 在遥控器丢失时不会停止发送帧）。
+2. 接收机自己报告失去链路——SBUS 帧中的 failsafe 标志、CRSF 链路质量为 0 %；
+3. 帧中的油门低于 `RX_FAILSAFE_THROTTLE_US`（950 µs）——这是在遥控器中设定的 failsafe（FS-iA6B 在遥控器丢失时不会停止发送帧）。
 
 CRC 错误的帧会被丢弃并计数（`getBadFrameCount()`）。
 
@@ -601,7 +602,7 @@ PlatformIO 环境：
 | 新的输出（舵机） | `FlightOutputs::outputInfo()` 中的一行、`FlightOutputState` 中的字段、`ServoChannel` 中的索引、`Esp32Board` 中的引脚和 LEDC 通道 | 写入/状态循环 |
 | 新的 ESP32 开发板 | `Config.h` 中的 `#elif`、`platformio.ini` 中的 `[env:*]` | 其余全部代码 |
 | 其他 MCU | 实现 `IBoard` 的 `hal/<mcu>/<Mcu>Board.h`（示例——`hal/stm32/`）、`Config.h` 中的引脚块、`[env:*]` | 传感器、飞行逻辑 |
-| 其他接收机协议 | 用具有相同 API（`getState()`、`isSignalLost()`）的实现替换 `IBusReceiver` | `FlightController` |
+| 其他接收机协议 | 在 `IBusParser`/`SbusParser`/`CrsfParser` 旁加一个帧解析器（`feed()`、`values()`、`failsafe()`），`RxProtocol` 中加一个值，`RcReceiver::begin()`/`update()` 中加分支 | `FlightController`、其他协议 |
 | 新的日志通道 | `LogChannel`、`LogSettings::info()` 中的一行、`DebugLogger::format*()`、`VERSION++` | — |
 
 ---

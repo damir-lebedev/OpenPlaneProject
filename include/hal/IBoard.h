@@ -11,7 +11,7 @@
 // 🧠 АБСТРАКЦИЯ "МОЗГА" (MCU)
 //
 // Единственная точка входа в железо для всего остального кода
-// (main.cpp, FlightOutputs, IBusReceiver, драйверы датчиков).
+// (main.cpp, FlightOutputs, RcReceiver, драйверы датчиков).
 // Ничего выше этого интерфейса не должно включать <Wire.h>,
 // <SPI.h>, HardwareSerial или LEDC напрямую — только
 // IBoard и его under-интерфейсы (II2CBus/ISpiBus/IUartPort/
@@ -47,7 +47,7 @@ public:
     virtual ~IBoard() = default;
 
     // Разовая инициализация платы: шины I2C/SPI. UART-порты
-    // открывают их владельцы (IBusReceiver, GPS-драйвер) со своей
+    // открывают их владельцы (RcReceiver, GPS-драйвер) со своей
     // скоростью, PWM-выходы настраивает FlightOutputs::begin().
     virtual void begin() = 0;
 
@@ -58,7 +58,7 @@ public:
     // задерживала опрос датчиков. nullptr, если на плате её нет.
     virtual II2CBus* displayI2c() = 0;
 
-    virtual IUartPort& rcUart() = 0;   // существующий iBUS UART
+    virtual IUartPort& rcUart() = 0;   // приёмник пульта: iBUS, SBUS или CRSF
     virtual IUartPort& gpsUart() = 0;  // новый UART для GPS
 
     // UART радиомодема (MAVLink, Config::PIN_TELEM_RX/TX). nullptr —

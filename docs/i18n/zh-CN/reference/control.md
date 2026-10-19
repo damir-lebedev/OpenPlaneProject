@@ -193,18 +193,18 @@ ARM 由单独的拨杆 SwA（CH5）完成。状态机见
 ## `FlightController`
 
 **文件：** `control/FlightController.h` · **层：** COORDINATION ·
-**依赖：** `IBusReceiver`、`ControlMixer`、`ThrottleManager`、`ArmingManager`、`FlightOutputs`、`Autopilot*`、`PilotSwitches*`、`Beeper`、`MotorReverse`、`GroundCalibration`、`SignalPlayer`
+**依赖：** `RcReceiver`、`ControlMixer`、`ThrottleManager`、`ArmingManager`、`FlightOutputs`、`Autopilot*`、`PilotSwitches*`、`Beeper`、`MotorReverse`、`GroundCalibration`、`SignalPlayer`
 
 控制循环唯一的协调者：它自己不解析 UART，不碰 PWM，也不计算混控——
 只是按正确的顺序调用其他部分。详细的图见 [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-控制周期flightcontrollerupdate)。
 
 | 方法 | 说明 |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | 没有自动驾驶仪——纯手动控制；没有拨杆——只有摇杆 |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | 没有自动驾驶仪——纯手动控制；没有拨杆——只有摇杆 |
 | `void begin()` | `outputs.setFailsafe()`、`receiver.begin()` |
 | `void update()` | 一个周期（见下文） |
 | `bool isReceiverFailsafe() const` | 信号已丢失 |
-| `const IBusReceiver& getReceiver() const` | 用于日志（帧计数器、信号丢失的原因） |
+| `const RcReceiver& getReceiver() const` | 用于日志（帧计数器、信号丢失的原因） |
 | `bool isArmed() const`、`const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | 最近一次写入输出的状态 |
 | `const RcChannelState& getRcState() const` | 各通道 |

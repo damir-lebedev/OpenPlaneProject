@@ -4,7 +4,7 @@
 // Стенд замкнутого полёта: вся прошивка управления в цикле с
 // моделью самолёта (PlaneSim.h).
 //
-//   пульт (RcChannels) -> кадр iBUS -> IBusReceiver -> PilotSwitches
+//   пульт (RcChannels) -> кадр iBUS -> RcReceiver -> PilotSwitches
 //   -> Autopilot -> FlightController -> ШИМ серво (FakeBoard)
 //   -> отклонения рулей -> PlaneSim -> датчики (IMU, барометр, компас,
 //   GPS 10 Гц, воздушная скорость) -> следующий такт
@@ -37,7 +37,7 @@
 #include "control/FlightController.h"
 #include "control/FlightOutputs.h"
 #include "control/ThrottleManager.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "sensors/airspeed/PitotDualBaroAirspeed.h"
 #include "sensors/imu/AttitudeEstimator.h"
 #include "helpers/PlaneSim.h"
@@ -57,7 +57,7 @@ public:
     FakeBaro pitotStatic;
     PitotDualBaroAirspeed pitot{ pitotTotal, pitotStatic };
 
-    IBusReceiver receiver{ board.rcUart() };
+    RcReceiver receiver{ board.rcUart() };
     ControlMixer mixer;
     ThrottleManager throttle;
     FlightOutputs outputs{ board };

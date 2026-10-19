@@ -204,7 +204,7 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
 ## `FlightController`
 
 **파일:** `control/FlightController.h` · **계층:** COORDINATION ·
-**의존:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
+**의존:** `RcReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 제어 루프의 유일한 조율자입니다. 직접 UART를 해석하지 않고, PWM을 건드리지 않고,
 믹서를 계산하지도 않으며, 다른 클래스를 올바른 순서로 호출할 뿐입니다. 자세한 도표는
@@ -212,11 +212,11 @@ PWM 출력의 구성과 순서를 아는 유일한 클래스입니다. 모든 �
 
 | 메서드 | 설명 |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | 오토파일럿이 없으면 순수 수동 조종, 스위치가 없으면 스틱만 |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | 오토파일럿이 없으면 순수 수동 조종, 스위치가 없으면 스틱만 |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | 한 주기(아래 참고) |
 | `bool isReceiverFailsafe() const` | 링크를 잃음 |
-| `const IBusReceiver& getReceiver() const` | 로그용(프레임 카운터, 상실 원인) |
+| `const RcReceiver& getReceiver() const` | 로그용(프레임 카운터, 상실 원인) |
 | `bool isArmed() const`, `const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | 출력에 마지막으로 기록한 상태 |
 | `const RcChannelState& getRcState() const` | 채널 |

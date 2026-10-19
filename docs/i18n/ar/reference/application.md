@@ -23,7 +23,7 @@
 | `magDevice` و`magSensor` و`magnetometer` | … `SelectedMag` و`MagnetometerSensor* const` | فقط إذا كان `SENSOR_MAG != NONE`، وإلا `nullptr` |
 | `gpsSensor` و`gpsReceiver` | `SelectedGps` و`GpsSensor* const` | فقط إذا كان `SENSOR_GPS != NONE` |
 | `pitotDevice` و`pitotBaro` و`pitotSensor` و`airspeedSensor` | `SELECTED_PITOT_DEVICE(board)` و`SelectedPitotBaro` (‏`"PITOT-BMP581"`) و`PitotDualBaroAirspeed(pitotBaro, baroSensor)` | فقط إذا كان `SENSOR_AIRSPEED != NONE` |
-| `ibusReceiver` | `IBusReceiver` | `board.rcUart()` |
+| `rcReceiver` | `RcReceiver` | `board.rcUart()` |
 | `controlMixer` و`throttleManager` | `ControlMixer` و`ThrottleManager` | |
 | `flightOutputs` | `FlightOutputs` | `board` |
 | `autopilot` | `Autopilot` | جميع الحساسات (يمكن أن تكون فارغة) |

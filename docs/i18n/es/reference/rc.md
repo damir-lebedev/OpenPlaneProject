@@ -6,8 +6,9 @@
 
 La capa RC convierte los bytes de la UART en valores de canal y en un
 indicador de «sin enlace». No sabe nada del avión, del ARM, del comportamiento
-de failsafe ni de los servos: cambiar el protocolo (S-Bus, PPM) afecta solo a
-esta capa.
+de failsafe ni de los servos. El protocolo del receptor —iBUS, SBUS o CRSF— lo
+fija `Config::RX_PROTOCOL`; un protocolo nuevo es un analizador de tramas más
+junto a los tres que ya hay.
 
 ---
 
@@ -43,40 +44,101 @@ Ejemplo: `centered(1750, 500) == 250`, `centered(1750, 500, true) == -250`.
 
 ---
 
-## `IBusReceiver`
+## `RcReceiver`
 
-**Archivo:** `rc/IBusReceiver.h` · **Depende de:** `IUartPort`, `RcChannelState`, `Config`, `Channels`
+**Archivo:** `rc/RcReceiver.h` · **Depende de:** `IUartPort`, `IBusParser`, `SbusParser`, `CrsfParser`, `RcChannelState`, `RcInput`, `Config`, `Channels`
 
-Un analizador byte a byte del protocolo iBUS de FlySky.
+El receptor de la emisora: abre la UART con el formato del protocolo, pasa los
+bytes al analizador y hace lo común a todos los protocolos: los primeros
+`RC_CHANNELS` = 10 canales, la inversión de canales, el tiempo límite de tramas,
+el failsafe y los contadores.
 
-**Formato de la trama** (32 bytes): `0x20 0x40 | CH1 lo hi … CH14 lo hi | CRC lo hi`,
-`CRC = 0xFFFF − Σ(first 30 bytes)`. Se toman los primeros `IBUS_CHANNELS` = 10
-canales; el valor del canal son los **12 bits bajos** (en los altos el FS-iA6B
-transmite datos de servicio, por ejemplo en failsafe `0x2384` → 900 µs).
+| Protocolo (`Config::RX_PROTOCOL`) | Receptores | UART |
+|---|---|---|
+| `IBUS` | FlySky FS-iA6B, FS-iA10B | 115200, 8N1 |
+| `SBUS` | FrSky, Futaba, RadioMaster, Jumper y la mayoría de los demás | 100000, 8E2, invertida: invierte la propia UART |
+| `CRSF` | ExpressLRS, TBS Crossfire y Tracer | 420000, 8N1 |
 
 | Método | Descripción |
 |---|---|
-| `explicit IBusReceiver(IUartPort& serial)` | El puerto no se abre en el constructor |
-| `void begin()` | `serial.begin(IBUS_BAUDRATE)`, el tiempo de espera cuenta desde «ahora» |
-| `void update()` | Leer todo lo acumulado en la UART; llamar en cada ciclo |
+| `explicit RcReceiver(IUartPort& serial, Config::RxProtocol protocol = Config::RX_PROTOCOL)` | El puerto no se abre en el constructor; en las pruebas el protocolo puede ser cualquiera |
+| `void begin()` | Abre la UART con el formato del protocolo (`IUartPort::begin(baud, format)`) y empieza a contar el tiempo límite desde «ahora» |
+| `void update()` | Lee todo lo acumulado en la UART; llamar en cada ciclo |
 | `const RcChannelState& getState() const` | Los últimos canales recibidos |
 | `bool isSignalLost() const` | `isFrameTimeout() \|\| isFailsafeReported()` |
-| `bool isFrameTimeout() const` | Todavía no ha habido ninguna trama **o** la última es más antigua que `RX_TIMEOUT_US` |
-| `bool isFailsafeReported() const` | En la última trama el acelerador < `RX_FAILSAFE_THROTTLE_US` |
+| `bool isFrameTimeout() const` | Aún no ha llegado ninguna trama **o** la última es más antigua que `RX_TIMEOUT_US` |
+| `bool isFailsafeReported() const` | El receptor informó de la pérdida de enlace: indicador de failsafe en la trama SBUS, calidad de enlace 0 % en CRSF o gas < `RX_FAILSAFE_THROTTLE_US` |
 | `uint32_t getLastFrameTime() const` | `micros()` de la última trama correcta |
-| `uint32_t getGoodFrameCount() const` / `getBadFrameCount() const` | Contadores de tramas correctas y de errores de CRC |
+| `uint32_t getGoodFrameCount() const` / `getBadFrameCount() const` | Contadores de tramas aceptadas y descartadas (CRC, final de trama) |
+| `Config::RxProtocol getProtocol() const` / `const char* getProtocolName() const` | El protocolo; su nombre es `"iBUS"`, `"SBUS"` o `"CRSF"` |
+| `int16_t getLinkQuality() const` | Calidad del enlace de radio, %: solo CRSF; si no, −1 |
+| `bool isPortReady() const` | La UART se abrió con el formato necesario; `false`: el puerto no sabe hacerlo (SBUS sin inversión) y no habrá enlace |
 
-La máquina de estados del análisis (`processByte`): espera `0x20`; el byte
-siguiente debe ser `0x40`, y si no, la búsqueda empieza de nuevo; después
-reúne 32 bytes y llama a `processFrame()`. Una trama con un CRC erróneo se
-descarta por completo (los canales no cambian, `badFrames++`).
+La función libre `rxProtocolName(Config::RxProtocol)` da el nombre del protocolo; es
+el mismo que imprime el pasaporte del firmware (`@id`, campo `rx`).
 
 Invariantes:
 
-- Hasta la primera trama correcta, `isSignalLost() == true`: los valores por
-  defecto (todos a 1500) no se toman por órdenes de la emisora.
-- El indicador de failsafe se recalcula en **cada** trama correcta: el enlace
-  se restablece con la primera trama que traiga un acelerador normal.
+- Hasta la primera trama correcta `isSignalLost() == true`: los valores por
+  defecto (todos 1500) no se toman como órdenes de la emisora.
+- El indicador de failsafe se recalcula en **cada** trama de canales: el
+  enlace vuelve con la primera trama con gas normal (en CRSF, además, con una
+  estadística de calidad de enlace mayor que 0).
 - Los canales con `Config::CHANNEL_REVERSED` se guardan invertidos
   (`RcInput::reversed`); el failsafe se detecta antes, con el gas **en bruto**, y
   la inversión de CH3 la prohíbe un `static_assert`.
+
+---
+
+## `IBusParser`
+
+**Archivo:** `rc/IBusParser.h` · **Depende de:** `Config`
+
+Analizador byte a byte de FlySky iBUS: `bool feed(uint8_t)` devuelve `true` cuando
+se completa una trama con CRC correcto; los canales están en `values()`. **Trama** (32 bytes): `0x20 0x40 | CH1 lo hi … CH14 lo hi | CRC lo hi`,
+`CRC = 0xFFFF − Σ(primeros 30 bytes)`; el valor del canal son los **12 bits bajos**
+(en los altos la FS-iA6B envía datos de servicio, p. ej. en failsafe `0x2384` →
+900 µs). Espera `0x20`; el byte siguiente debe ser `0x40`, si no, la búsqueda
+vuelve a empezar (un segundo `0x20` puede iniciar una trama). iBUS no tiene
+indicador de failsafe: la FS-iA6B informa de la pérdida de enlace con un gas por
+debajo de lo normal.
+
+---
+
+## `SbusParser`
+
+**Archivo:** `rc/SbusParser.h` · **Depende de:** `Packed11`
+
+**Trama** (25 bytes): `0x0F | 16 canales de 11 bits (22 bytes) | indicadores | final`;
+indicadores: bit 2 — se perdió una trama por radio (aún no es pérdida de
+enlace), bit 3 — failsafe; final — `0x00` en SBUS, `0x04`/`0x14`/`0x24`/`0x34`
+en SBUS2. El byte `0x0F` también aparece en los datos, así que la trama solo se
+acepta si el inicio y el final están en su sitio; si no, el análisis sigue desde
+el siguiente `0x0F` dentro de lo recibido: el flujo se sincroniza en una o dos
+tramas.
+
+---
+
+## `CrsfParser`
+
+**Archivo:** `rc/CrsfParser.h` · **Depende de:** `Packed11`
+
+**Trama:** `0xC8 | longitud | tipo | datos | CRC8`; longitud = tipo + datos + CRC,
+la trama no supera los 64 bytes; CRC8 con polinomio `0xD5` (DVB-S2) sobre tipo
+y datos (`static uint8_t crc8(...)`). Hacen falta dos tipos: `0x16` — canales
+(16 de 11 bits, como en SBUS) y `0x14` — estadística del enlace (el tercer byte
+es la calidad del enlace, %). Al perder el enlace, ExpressLRS por defecto
+simplemente deja de enviar canales: es el tiempo límite de tramas; en el modo
+«últimas posiciones» los canales siguen llegando, pero la calidad del enlace es
+0: eso es `failsafe()`.
+
+---
+
+## `Packed11`
+
+**Archivo:** `rc/Packed11.h` · **Clase:** espacio de nombres
+
+16 canales de 11 bits en 22 bytes, primero los bits menos significativos: así
+los empaquetan SBUS y CRSF. `toMicros(raw)`: 172…1811 → 988…2012 µs, 992 → 1500
+(`5/8 · valor + 880`, como en Betaflight e INAV); `unpack(data, out)` convierte
+22 bytes en 16 valores en µs.

@@ -65,7 +65,7 @@ flowchart TD
     CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (не подключён)<br/>FeedbackSupervisor и модули"]
-    RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
+    RC["RC<br/>RcReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
     HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice · Rtos"]
     STORE["STORAGE<br/>KeyValueStore · KvPreferences"]
@@ -149,7 +149,7 @@ flowchart LR
     gps["SelectedGps gpsSensor"]
     pitotBaro["SelectedPitotBaro pitotBaro"]
     pitot["PitotDualBaroAirspeed pitotSensor"]
-    rx["IBusReceiver"]
+    rx["RcReceiver"]
     mixer["ControlMixer"]
     thr["ThrottleManager"]
     outs["FlightOutputs"]
@@ -199,7 +199,7 @@ setupSensors()              — begin() каждого датчика; кали�
                               баро (нулевая высота), компас (начальный курс → IMU yaw),
                               трубка Пито (ноль набирается в первую секунду цикла)
 autopilot.begin()           — триммер из NVS/флеша
-flightController.begin()    — setFailsafe() + UART iBUS
+flightController.begin()    — setFailsafe() + UART RC (iBUS/SBUS/CRSF)
 oledDisplay.begin(...)      — своя задача (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — точка доступа + своя задача на ядре 0
 [ESP32] blackBox.begin()   — раздел blackbox, очередь в PSRAM, задача bbox на ядре 0
@@ -403,7 +403,7 @@ classDiagram
 sequenceDiagram
     participant L as flight loop
     participant FC as FlightController
-    participant RX as IBusReceiver
+    participant RX as RcReceiver
     participant SW as PilotSwitches
     participant TM as ThrottleManager
     participant MX as ControlMixer
@@ -608,13 +608,14 @@ stateDiagram-v2
 никаких эффектов**, самолёт управляется как в MANUAL. Исключение — автовзлёт
 на полосе: IMU отказал — прерванный взлёт, мотор стоп.
 
-### Связь (`IBusReceiver::isSignalLost()`)
+### Связь (`RcReceiver::isSignalLost()`)
 
-Два независимых признака:
+Три независимых признака:
 
 1. нет корректных кадров дольше `RX_TIMEOUT_US` (500 мс) — или не было ни
    одного с момента включения;
-2. газ в кадре ниже `RX_FAILSAFE_THROTTLE_US` (950 мкс) — failsafe,
+2. приёмник сам сообщил о потере связи — флаг failsafe в кадре SBUS, качество связи 0 % у CRSF;
+3. газ в кадре ниже `RX_FAILSAFE_THROTTLE_US` (950 мкс) — failsafe,
    запрограммированный в пульте (FS-iA6B при потере пульта кадры не
    прекращает).
 
@@ -694,7 +695,7 @@ stateDiagram-v2
 | Новый выход (серво) | строка в `FlightOutputs::outputInfo()`, поле `FlightOutputState`, индекс `ServoChannel`, пин и канал LEDC в `Esp32Board` | цикл записи/статуса |
 | Новая плата ESP32 | `#elif` в `Config.h`, `[env:*]` в `platformio.ini` | весь остальной код |
 | Другой MCU | `hal/<mcu>/<Mcu>Board.h`, реализующий `IBoard` (пример — `hal/stm32/`), блок пинов в `Config.h`, `[env:*]` | датчики, логика полёта |
-| Другой протокол приёмника | замена `IBusReceiver` с тем же API (`getState()`, `isSignalLost()`) | `FlightController` |
+| Другой протокол приёмника | разборщик кадров рядом с `IBusParser`/`SbusParser`/`CrsfParser` (`feed()`, `values()`, `failsafe()`), значение в `RxProtocol`, ветки в `RcReceiver::begin()`/`update()` | `FlightController`, остальные протоколы |
 | Новый канал лога | `LogChannel`, строка в `LogSettings::info()`, `DebugLogger::format*()`, `VERSION++` | — |
 
 ---

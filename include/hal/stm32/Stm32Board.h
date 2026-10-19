@@ -39,7 +39,7 @@ public:
           i2cBus(Wire, pinOf(Config::PIN_I2C_SDA), pinOf(Config::PIN_I2C_SCL)),
           displayBus(displayWire, pinOf(Config::PIN_I2C2_SDA), pinOf(Config::PIN_I2C2_SCL)),
           spiBus(SPI, pinOf(Config::PIN_SENSOR_SPI_SCK), pinOf(Config::PIN_SENSOR_SPI_MISO), pinOf(Config::PIN_SENSOR_SPI_MOSI)),
-          rcSerial(pinOf(Config::PIN_IBUS), pinOf(Config::PIN_IBUS_TX)),
+          rcSerial(pinOf(Config::PIN_RC_RX), pinOf(Config::PIN_RC_TX)),
           gpsSerial(pinOf(Config::PIN_GPS_RX), pinOf(Config::PIN_GPS_TX)),
           telemetrySerial(pinOf(Config::PIN_TELEM_RX), pinOf(Config::PIN_TELEM_TX)),
           rcPort(rcSerial),

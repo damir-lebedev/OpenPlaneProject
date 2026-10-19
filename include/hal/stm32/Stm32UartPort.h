@@ -11,7 +11,10 @@
 // а при создании объекта Uart(rx, tx) — по ним ядро само находит
 // периферию (USART3, UART7...) в таблицах PeripheralPins варианта.
 // Поэтому порт здесь получает уже созданный Uart (его держит
-// Stm32Board) и в begin(baud) задаёт только скорость и формат 8N1.
+// Stm32Board) и в begin() задаёт только скорость и формат кадра.
+// SBUS: 8E2 (8 бит данных + чётность — ядро само берёт 9-битное
+// слово) и инверсия RX средствами самого USART (RXINV) — внешний
+// инвертор не нужен.
 //
 // Размер приёмного буфера — SERIAL_RX_BUFFER_SIZE (задан в
 // platformio.ini, env stm32h743): кадр iBUS — 32 байта, NAV-PVT —
@@ -21,7 +24,7 @@
 class Stm32UartPort : public IUartPort
 {
 public:
-    explicit Stm32UartPort(HardwareSerial& port)
+    explicit Stm32UartPort(Uart& port)
         : serial(port)
     {
     }
@@ -29,6 +32,20 @@ public:
     void begin(uint32_t baud) override
     {
         serial.begin(baud, SERIAL_8N1);
+    }
+
+    bool begin(uint32_t baud, UartFormat format) override
+    {
+        if (format == UartFormat::SBUS_8E2_INVERTED)
+        {
+            serial.setRxInvert();   // только до begin()
+            serial.begin(baud, SERIAL_8E2);
+        }
+        else
+        {
+            serial.begin(baud, SERIAL_8N1);
+        }
+        return true;
     }
 
     int available() override { return serial.available(); }
@@ -39,5 +56,5 @@ public:
 
 
 private:
-    HardwareSerial& serial;
+    Uart& serial;
 };

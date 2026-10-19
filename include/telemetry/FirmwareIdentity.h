@@ -20,6 +20,7 @@
 
 #if __has_include("config/Project.h")
 #include "config/Project.h"
+#include "rc/RcReceiver.h"
 #endif
 
 #ifndef OP_BOARD_ENV
@@ -83,6 +84,8 @@ namespace FirmwareIdentity
         printJsonString(config);
         Serial.print(",\"plane\":");
         printJsonString(plane);
+        Serial.print(",\"rx\":");
+        printJsonString(rxProtocolName(Config::RX_PROTOCOL));
         Serial.print(",\"armed\":");
         Serial.print(armed ? "true" : "false");
         Serial.println("}");

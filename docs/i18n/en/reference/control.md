@@ -208,7 +208,7 @@ To add an output: a table row + a field in `FlightOutputState` + an index in
 ## `FlightController`
 
 **File:** `control/FlightController.h` · **Layer:** COORDINATION ·
-**Depends on:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
+**Depends on:** `RcReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 The sole coordinator of the control loop: it does not parse the UART, touch
 the PWM or compute the mixer itself — it only calls the others in the right
@@ -216,11 +216,11 @@ order. A detailed diagram is in [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-the-c
 
 | Method | Description |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Without an autopilot — pure manual control; without switches — only the sticks |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Without an autopilot — pure manual control; without switches — only the sticks |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | One cycle (see below) |
 | `bool isReceiverFailsafe() const` | The link is lost |
-| `const IBusReceiver& getReceiver() const` | For the log (frame counters, the cause of the loss) |
+| `const RcReceiver& getReceiver() const` | For the log (frame counters, the cause of the loss) |
 | `bool isArmed() const`, `const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | The last one written to the outputs |
 | `const RcChannelState& getRcState() const` | The channels |

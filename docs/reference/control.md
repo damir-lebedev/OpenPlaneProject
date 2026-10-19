@@ -205,7 +205,7 @@ ARM отдельным тумблером SwA (CH5). Автомат — в
 ## `FlightController`
 
 **Файл:** `control/FlightController.h` · **Слой:** COORDINATION ·
-**Зависит от:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
+**Зависит от:** `RcReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 Единственный координатор цикла управления: сам не парсит UART, не трогает
 PWM, не считает микшер — только вызывает остальных в правильном порядке.
@@ -213,11 +213,11 @@ PWM, не считает микшер — только вызывает оста
 
 | Метод | Описание |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Без автопилота — чистое ручное управление; без тумблеров — только стики |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Без автопилота — чистое ручное управление; без тумблеров — только стики |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | Один такт (см. ниже) |
 | `bool isReceiverFailsafe() const` | Связь потеряна |
-| `const IBusReceiver& getReceiver() const` | Для лога (счётчики кадров, причина потери) |
+| `const RcReceiver& getReceiver() const` | Для лога (счётчики кадров, причина потери) |
 | `bool isArmed() const`, `const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | Последнее записанное на выходы |
 | `const RcChannelState& getRcState() const` | Каналы |

@@ -46,7 +46,7 @@ include/
 │   └── stm32/   Stm32Board + Wire/SPI/Uart/HardwareTimer, Stm32FlashStorage,
 │                compat/Preferences.h (NVS 대신 플래시에 저장하는 설정)
 ├── storage/     KeyValueStore, KvPreferences — NVS 없는 설정 저장소
-├── rc/          RcChannelState, RcInput, IBusReceiver
+├── rc/          RcChannelState, RcInput, RcReceiver, IBusParser, SbusParser, CrsfParser
 ├── control/     ControlCommand, ControlMixer, FlapsController,
 │                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
 │                FlightOutputState, FlightOutputs, Beeper, FlightController
@@ -78,7 +78,7 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │ CONTROL             │  │ AUTOPILOT             │  │ RC                    │
-│ ControlMixer        │  │ Autopilot: 12개 모드  │  │ IBusReceiver          │
+│ ControlMixer        │  │ Autopilot: 12개 모드  │  │ RcReceiver            │
 │  └ FlapsController  │  │  └ 항법, PID          │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
@@ -137,7 +137,7 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
 
 | 파일 | 담당 |
 |---|---|
-| `Config.h` | 모든 핀(보드별로 한 블록: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`)과 설정: iBUS와 신호 상실, 조종면 작동 범위, 플랩, 서보 반전, IMU와 나침반 장착, ARM, failsafe(RTH 또는 활공), 피토관(`PITOT_*`), 오토파일럿 모드와 기능의 모든 수치, 제어 루프, Wi-Fi, MAVLink, 디버깅 |
+| `Config.h` | 모든 핀(보드별로 한 블록: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`)과 설정: iBUS/SBUS/CRSF와 신호 상실, 조종면 작동 범위, 플랩, 서보 반전, IMU와 나침반 장착, ARM, failsafe(RTH 또는 활공), 피토관(`PITOT_*`), 오토파일럿 모드와 기능의 모든 수치, 제어 루프, Wi-Fi, MAVLink, 디버깅 |
 | `Channels.h` | 채널 이름: `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `SWB`, `SWC`, `SWD`, `VRA`, `VRB` |
 | `Controls.h` | `BINDINGS` 표: 각 스위치와 노브가 하는 일을 채널당 한 줄로 적고 `static_assert`로 검사 |
 
@@ -169,7 +169,11 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
 |---|---|
 | `RcChannelState.h` | 10개 채널의 스냅샷 |
 | `RcInput.h` | `clamp()`, `centered(us, max, reverse)` |
-| `IBusReceiver.h` | iBUS → 채널: 32바이트 프레임, CRC, 채널 값은 하위 12비트(`& 0x0FFF`). `isSignalLost()` = 프레임이 없음(또는 아직 하나도 오지 않음) ∥ 스로틀의 failsafe 값. 프레임 카운터 |
+| `RcReceiver.h` | 수신기: 프로토콜 형식(`RX_PROTOCOL`: iBUS, SBUS, CRSF)으로 UART → `RC_CHANNELS`개 채널; `isSignalLost()` = 프레임 없음(또는 아직 하나도 없음) ∥ 수신기가 failsafe를 알림(SBUS 플래그, CRSF 링크 품질 0, 정상보다 낮은 스로틀); 채널 반전, 프레임 카운터 |
+| `IBusParser.h` | iBUS: 32바이트 프레임, CRC, 채널 값은 하위 12비트(`& 0x0FFF`) |
+| `SbusParser.h` | SBUS: 25바이트 프레임, 11비트 채널 16개, failsafe와 손실 프레임 플래그, SBUS2 |
+| `CrsfParser.h` | CRSF: CRC8(다항식 0xD5), 채널(종류 0x16)과 링크 통계(종류 0x14, 링크 품질) |
+| `Packed11.h` | 11비트 채널 16개 → µs — SBUS와 CRSF 공통 |
 
 ### `control/`
 
@@ -318,7 +322,7 @@ PID는 `오차 = 목표 − 실제`를 계산합니다. 오른쪽 롤(roll > 0) 
 ## RC 채널 배치, ARM, failsafe
 
 출처는 `include/config/Channels.h`입니다. 송신기 FS-i6(10채널, 모드 2) +
-수신기 FS-iA6B, iBUS 115200.
+수신기 FS-iA6B, iBUS 115200. 다른 수신기 — SBUS 또는 CRSF(`RX_PROTOCOL`), 채널은 같음.
 
 | 채널 | 송신기의 조작부 | 이름 | 용도 |
 |---|---|---|---|
@@ -344,13 +348,14 @@ ARM되지 않은 동안 ESC로 가는 스로틀은 강제로 `PWM_MIN`(양방향
 
 **역회전**(`MotorReverse`, `Feature::MOTOR_REVERSE`, 기본값 SwD): 모터 방향은 ARM이 아닐 때만 스위치를 따릅니다. ARM 중에 스위치를 바꿔도 DISARM할 때까지 아무것도 바뀌지 않습니다. 방향을 바꾼 뒤 `REVERSE_SETTLE_MS`(3 s) 동안 ARM은 거부됩니다. 후진은 파일럿 스로틀만, `REVERSE_THROTTLE_LIMIT_PCT`(50%)를 넘지 않습니다. 오토파일럿은 스로틀을 받지 못하고, 통신이 끊기면 모터가 멈춥니다.
 
-**링크 상실**(`IBusReceiver::isSignalLost()`):
+**링크 상실**(`RcReceiver::isSignalLost()`):
 
 1. `RX_TIMEOUT_US`(500 ms)보다 오래 프레임이 없음 — 배선이 끊겼거나 수신기
    전원이 나간 경우입니다. 전원을 켠 뒤 첫 프레임이 오기 전에도 링크가
    끊긴 것으로 간주합니다. 채널의 기본값(모두 1500)을 송신기의 명령으로
    착각하지 않게 하기 위해서입니다.
-2. 스로틀 < `RX_FAILSAFE_THROTTLE_US`(950) — 송신기에 설정한 failsafe입니다.
+2. 수신기가 직접 링크 끊김을 알림: SBUS 프레임의 failsafe 플래그, CRSF 통계의 링크 품질 0 %.
+3. 스로틀 < `RX_FAILSAFE_THROTTLE_US`(950) — 송신기에 설정한 failsafe입니다.
    **FS-iA6B는 송신기를 잃어도 프레임 송출을 멈추지 않고** 마지막 값을
    반복합니다(테스트 벤치에서 확인). 따라서 송신기에서 failsafe를 설정하지
    않으면 링크 상실을 알아채지 못합니다. 설정 방법은 `PILOT_GUIDE.md`에
@@ -437,7 +442,7 @@ IMU 보정(시작할 때마다, 그리고 `i` 명령): 2초간 정지, 자이로
 
 `loop()`에서 2 ms마다 호출됩니다. 순서가 곧 우선순위입니다.
 
-1. **`receiver.update()`** — 쌓인 iBUS 바이트를 해석합니다.
+1. **`receiver.update()`** — 쌓인 수신기 바이트(iBUS, SBUS 또는 CRSF)를 해석합니다.
 2. **스위치** — `switches->update(rc)`. 링크가 살아 있을 때만 실행합니다
    (failsafe 프레임에서는 채널이 스위치 상태를 반영하지 않습니다). 대상은
    모드(바뀔 때만), 기능, 노브입니다.
@@ -596,7 +601,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10초 중 최악) | iBUS ok=... crc_e
 | 에일러론 왼쪽 / 오른쪽 | GPIO4 / GPIO5 | GPIO5 / GPIO4 | GPIO13 / GPIO14 |
 | 승강타 / ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
 | 방향타 | GPIO18 | —(핀 없음) | GPIO25 |
-| iBUS RX | GPIO17 | GPIO8 | GPIO16 |
+| RC RX | GPIO17 | GPIO8 | GPIO16 |
 | 센서 I2C SDA / SCL | GPIO41 / GPIO42 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | OLED I2C SDA / SCL | GPIO1 / GPIO2 | — | — |
 | SPI SCK / MISO / MOSI | GPIO12 / 13 / 11 | GPIO0 / 10 / 20 | GPIO18 / 19 / 23 |
@@ -656,7 +661,7 @@ DevEBox H743 보드**입니다: 부팅, USB 콘솔, SD 카드, 블랙박스
 | 승강타 / ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
 | 방향타 | PD14 | TIM4_CH3 |
 | AUX1(페이로드) / AUX2(카메라) | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
-| iBUS RX(TX는 예비) | PE7(PE8) | UART7 |
+| RC RX(TX는 예비) | PE7(PE8) | UART7 |
 | 센서 I2C SDA / SCL | PB11 / PB10 | I2C2 |
 | OLED I2C SDA / SCL | PB9 / PB8 | I2C1 |
 | SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |

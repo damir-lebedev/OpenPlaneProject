@@ -28,7 +28,7 @@ The pin block is selected by the macro that `[env:*]` sets in `platformio.ini`
 | `PIN_ELEVATOR` | `uint8_t` | Elevator | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | Motor controller | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | Rudder + wheel; `-1` — the output is disabled | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | iBUS receiver RX (UART1) | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | Receiver RX: iBUS, SBUS or CRSF (UART1) | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | The sensor bus (`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | The OLED bus (`Wire1`); `-1` — none | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | The shared SPI bus | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -60,7 +60,7 @@ numbers — the core picks the peripheral by the pins.
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7 (TX — reserved for iBUS-SENS) |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7 (TX reserved for telemetry to the transmitter) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 — sensors |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — the display (on the WeAct — the camera connector) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -73,14 +73,17 @@ numbers — the core picks the peripheral by the pins.
 
 The `Serial` console is LPUART1 (PA9 TX / PA10 RX), the variant's default.
 
-### iBUS and link loss
+### Receiver and link loss
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | How many channels of the frame are used |
+| `RX_PROTOCOL` | `IBUS` | Receiver protocol: `IBUS` (FlySky), `SBUS` (FrSky, Futaba, RadioMaster…), `CRSF` (ExpressLRS, TBS Crossfire) |
+| `RC_CHANNELS` | 10 | How many channels of the frame are used |
 | `IBUS_FRAME_LENGTH` | 32 | Frame length, bytes |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | The frame header |
 | `IBUS_BAUDRATE` | 115200 | UART speed |
+| `SBUS_BAUDRATE` | 100000 | SBUS speed (8E2, inverted signal) |
+| `CRSF_BAUDRATE` | 420000 | CRSF speed (the ExpressLRS default) |
 | `RX_TIMEOUT_US` | 500 000 | No correct frame for longer than this — the link is lost |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | Throttle below this — the receiver reports the transmitter's failsafe |
 

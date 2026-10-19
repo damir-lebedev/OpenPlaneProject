@@ -49,7 +49,7 @@ sensores (IMU, barômetro, bússola, GPS, tubo de Pitot) ─► Autopilot ─►
 
 ## Disposição padrão do rádio
 
-FS-i6 + FS-iA6B, iBUS, 10 canais (`config/Channels.h`).
+FS-i6 + FS-iA6B, iBUS, 10 canais (`config/Channels.h`). Outro receptor — SBUS ou CRSF (`RX_PROTOCOL`), com os mesmos canais.
 
 | Canal | Controle do rádio | Padrão |
 |---|---|---|
@@ -255,7 +255,7 @@ O centro do potenciômetro = valor padrão de `Config.h`; os extremos são o mí
 
 **O ponto de origem** é registrado no ARM se o GPS estiver bom (fix 3D, ≥ 6 satélites, precisão ≤ 5 m). Se no ARM o GPS ainda não tiver fixado, o ponto é registrado assim que ele fixar. Para mudá-lo em campo, use a função `HOME_RESET`.
 
-**Perda de link** (sem quadros iBUS por > 0,5 s, ou o receptor enviou um acelerador abaixo de 950 µs: é o failsafe configurado no rádio; veja `docs/PILOT_GUIDE.md`):
+**Perda de link** (sem quadros do receptor por > 0,5 s, o próprio receptor informou a perda de link — SBUS, CRSF — ou enviou um acelerador abaixo de 950 µs, o failsafe configurado no rádio; veja `docs/PILOT_GUIDE.md`):
 
 | Situação | O que a aeronave faz |
 |---|---|

@@ -29,7 +29,7 @@ El bloque de pines se elige con la macro que fija `[env:*]` en `platformio.ini`
 | `PIN_ELEVATOR` | `uint8_t` | Timón de profundidad | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | Regulador del motor | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | Timón de dirección + rueda; `-1`: la salida está desactivada | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | RX del receptor iBUS (UART1) | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | RX del receptor: iBUS, SBUS o CRSF (UART1) | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | El bus de sensores (`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | El bus del OLED (`Wire1`); `-1`: no hay | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | El bus SPI común | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -62,7 +62,7 @@ pines.
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7 (TX: reservado para iBUS-SENS) |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7 (TX reservado para la telemetría a la emisora) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2: sensores |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1: la pantalla (en la WeAct, el conector de la cámara) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -76,14 +76,17 @@ pines.
 La consola `Serial` es la LPUART1 (PA9 TX / PA10 RX), el valor predeterminado de
 la variante.
 
-### iBUS y pérdida de enlace
+### Receptor y pérdida de enlace
 
 | Constante | Valor | Significado |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | Cuántos canales de la trama se usan |
+| `RX_PROTOCOL` | `IBUS` | Protocolo del receptor: `IBUS` (FlySky), `SBUS` (FrSky, Futaba, RadioMaster…), `CRSF` (ExpressLRS, TBS Crossfire) |
+| `RC_CHANNELS` | 10 | Cuántos canales de la trama se usan |
 | `IBUS_FRAME_LENGTH` | 32 | Longitud de la trama, bytes |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | La cabecera de la trama |
 | `IBUS_BAUDRATE` | 115200 | Velocidad de la UART |
+| `SBUS_BAUDRATE` | 100000 | Velocidad de SBUS (8E2, señal invertida) |
+| `CRSF_BAUDRATE` | 420000 | Velocidad de CRSF (la de ExpressLRS por defecto) |
 | `RX_TIMEOUT_US` | 500 000 | Sin una trama correcta durante más tiempo que este: enlace perdido |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | Acelerador por debajo de este valor: el receptor informa del failsafe de la emisora |
 

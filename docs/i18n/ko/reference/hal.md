@@ -46,11 +46,11 @@ HAL은 특정 MCU를 알아도 되는 유일한 계층입니다. 인터페이스
 
 | 메서드 | 설명 |
 |---|---|
-| `virtual void begin()` | I2C/SPI 버스의 일회성 초기화. UART는 각 소유자(`IBusReceiver`, GPS)가 자기 속도로 열고, PWM은 `FlightOutputs::begin()`이 엽니다 |
+| `virtual void begin()` | I2C/SPI 버스의 일회성 초기화. UART는 각 소유자(`RcReceiver`, GPS)가 자기 속도로 열고, PWM은 `FlightOutputs::begin()`이 엽니다 |
 | `virtual II2CBus& i2c()` | 센서 버스 |
 | `virtual ISpiBus& spi()` | SPI 버스 |
 | `virtual II2CBus* displayI2c()` | 화면 전용 두 번째 I2C 버스. 없으면 `nullptr` |
-| `virtual IUartPort& rcUart()` | iBUS 수신기의 UART |
+| `virtual IUartPort& rcUart()` | 조종기 수신기의 UART: iBUS, SBUS 또는 CRSF |
 | `virtual IUartPort& gpsUart()` | GPS의 UART |
 | `virtual IUartPort* telemetryUart()` | MAVLink 무선 모뎀의 UART. 기본값은 `nullptr` (ESP32에는 남는 UART가 없습니다) |
 | `virtual IServoOutput& servo(uint8_t channel)` | `ServoChannel::*` 인덱스로 고르는 PWM 출력 |
@@ -102,12 +102,14 @@ CS는 `SpiRegisterDevice`가 전환합니다.
 
 **파일:** `hal/IUartPort.h` · **종류:** 인터페이스 · **구현:** `Esp32UartPort`, `Stm32UartPort`
 
-`HardwareSerial`과 같은 모양의 UART이지만 `begin()`은 속도만 받습니다.
-핀과 형식(8N1)은 구현이 고정합니다.
+`HardwareSerial` 모양의 UART지만 `begin()`은 속도와 프레임 형식만 받습니다: 핀은 구현이
+고정합니다. `UartFormat`: `STANDARD_8N1` — 거의 모든 것, `SBUS_8E2_INVERTED` — SBUS(8E2,
+반전 신호; UART가 직접 반전).
 
 | 메서드 | 설명 |
 |---|---|
-| `begin(baud)` | 포트를 엽니다 |
+| `begin(baud)` | 포트 열기, 8N1 |
+| `virtual bool begin(baud, format)` | `UartFormat` 형식으로 포트 열기; `false` — 포트가 그렇게 못 함(기본은 8N1만) |
 | `int available()`, `int read()` | 수신 |
 | `size_t write(byte)`, `size_t write(buffer, size)` | 송신 |
 | `virtual int availableForWrite()` | 송신 버퍼의 남은 공간. `-1`은 알 수 없음 (기본값). 텔레메트리는 이 값을 보고 기다리는 대신 프레임을 뒤로 미룹니다 |
@@ -246,7 +248,7 @@ ESP32의 구체적인 주변장치 객체를 만들고 `Config.h`의 핀을 아�
 | `i2cBus` | `Esp32I2CBus` | `PIN_I2C_SDA/SCL`의 `Wire`, 400 kHz |
 | `displayBus` | `Esp32I2CBus` | `PIN_I2C2_SDA/SCL`의 `Wire1` — `SOC_I2C_NUM > 1`일 때만 |
 | `spiBus` | `Esp32SpiBus` | 전역 `SPI` |
-| `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | `PIN_IBUS`의 iBUS, RX 전용 |
+| `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | 수신기는 `PIN_RC_RX`, RX만 |
 | `gpsSerial`, `gpsPort` | `HardwareSerial(UART_NUM_GPS)`, `Esp32UartPort` | `PIN_GPS_RX/TX`의 GPS |
 | `servos[7]` | `Esp32ServoOutput` | `ServoChannel` 순서의 LEDC 채널 0~6 (AUX1/AUX2는 `PIN_AUX1/2`, 배선되어 있다면) |
 
@@ -292,8 +294,9 @@ SPI_MODEn)`을 만듭니다. `spiModeOf()`는 0~3을 Arduino 상수로 바꾸며
 
 **파일:** `hal/esp32/Esp32UartPort.h` · **상속:** `IUartPort`
 
-`HardwareSerial` 위의 래퍼입니다. `begin(baud)` → `serial.begin(baud, SERIAL_8N1,
-rx, tx)`이며, `tx = -1`이면 수신 전용입니다. 나머지는 위임입니다.
+`HardwareSerial`의 래퍼: `begin(baud)` → `serial.begin(baud, SERIAL_8N1, rx, tx)`;
+SBUS — `serial.begin(baud, SERIAL_8E2, rx, tx, true)`(ESP32 UART로 RX 반전); `tx = -1` —
+수신만. 나머지는 위임입니다.
 
 ---
 
@@ -356,7 +359,7 @@ PWM입니다. 비행기는 송신기로 수동 모드에서 조종되며, 시동
 | `i2cBus` | `Stm32I2CBus` | `PIN_I2C_SDA/SCL` (I2C2: PB11/PB10)의 `Wire`, 400 kHz |
 | `displayBus` | `Stm32I2CBus` | `PIN_I2C2_SDA/SCL` (I2C1: PB9/PB8)의 `displayWire` — 두 번째 버스는 항상 있습니다 |
 | `spiBus` | `Stm32SpiBus` | `PIN_SENSOR_SPI_*` (SPI2)의 전역 `SPI` |
-| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | iBUS: UART7, RX는 `PIN_IBUS` (PE7), TX는 `PIN_IBUS_TX` (PE8, iBUS-SENS용 예약) |
+| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | 수신기: UART7, RX `PIN_RC_RX`(PE7), TX `PIN_RC_TX`(PE8, 조종기로 보내는 텔레메트리용 예약) |
 | `gpsSerial`, `gpsPort` | `Uart`, `Stm32UartPort` | GPS: USART3, `PIN_GPS_RX/TX` (PD9/PD8) |
 | `telemetrySerial`, `telemetryPort` | `Uart`, `Stm32UartPort` | MAVLink 무선 모뎀: UART4, `PIN_TELEM_RX/TX` (PD0/PD1) |
 | `servos[7]` | `Stm32ServoOutput` | `ServoChannel` 순서 (AUX1은 PD15/TIM4, AUX2는 PE9/TIM1) |
@@ -398,12 +401,11 @@ STM32duino에서 트랜잭션 타임아웃은 메서드가 아니라 매크로
 
 **파일:** `hal/stm32/Stm32UartPort.h` · **상속:** `IUartPort`
 
-`HardwareSerial&` 위의 래퍼입니다 (STM32duino 3.x에서는 추상 기반 클래스
-`arduino::HardwareSerial`이며, 구체적인 `Uart` 객체는 `Stm32Board`가 만듭니다).
-`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`입니다. `availableForWrite()`는
-`HardwareSerial`의 것입니다. 버퍼 (env의 `SERIAL_RX/TX_BUFFER_SIZE`)는 수신이 256
-바이트 (NAV-PVT 프레임이 100바이트라서 표준 64로는 모자랍니다), 송신이 1024입니다 (로그 줄과
-MAVLink 프레임을 기다리지 않고 내보내기 위해서입니다).
+`Uart&`의 래퍼(객체는 `Stm32Board`가 만듦). `begin(baud)` → `serial.begin(baud, SERIAL_8N1)`;
+SBUS — `serial.begin(baud, SERIAL_8E2)` 전에 `setRxInvert()`(USART가 직접 RX 반전, RXINV
+비트), 패리티가 있는 9비트 워드는 코어가 알아서 고릅니다; `availableForWrite()`는
+`HardwareSerial`에서. 버퍼(env의 `SERIAL_RX/TX_BUFFER_SIZE`): 수신 256바이트(NAV-PVT 프레임은
+100, 표준 64로는 부족), 송신 1024(로그 줄과 MAVLink 프레임을 기다리지 않고).
 
 ## `Stm32ServoOutput`
 

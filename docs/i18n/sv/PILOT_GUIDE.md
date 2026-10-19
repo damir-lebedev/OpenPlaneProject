@@ -34,6 +34,7 @@ Satsen i det nuvarande bygget (firmwaren har verifierats på den):
 - **Ett STM32H743 DevEBox H743-kort** (MCUDEV) – huvudkortet. Det tidigare huvudkortet, ESP32-S3 nedan, stöds också.
 - **Ett ESP32-S3 N16R8-kort** (en DevKitC-1-klon med två USB-C-portar: ”USB” och ”COM”).
 - **En FS-i6-sändare + FS-iA6B-mottagare** (iBUS-protokoll, 10 kanaler). Du behöver en datatråd – iBUS SERVO-porten. Sändaren måste kunna ställa in failsafe – den inställningen är obligatorisk, se avsnittet om failsafe.
+- **Eller en annan sändare med SBUS-mottagare** (FrSky, Futaba, RadioMaster, Jumper …) **eller CRSF-mottagare** (ExpressLRS, TBS Crossfire) – protokollet väljs i `Config.h` (`RX_PROTOCOL`), inkopplingen finns nedan.
 - **2 MG90S-servon** för skevrodren – ett för varje vinghalva (två oberoende servon, inte ett för båda vingarna).
 - **1 MG90S-servo** för höjdrodret.
 - **1 MG90S-servo** för sidrodret – landningsställets styrhjul sitter på samma axel (styrning på marken). Landningsstället: två hjul fram och ett styrbart sporrhjul (`LANDING_GEAR = TAIL_WHEEL` i `Config.h`; ett landningsställ med noshjul är `NOSE_WHEEL`).
@@ -69,7 +70,7 @@ Firmwaren stöder fyra kort; bytet kräver en byggparameter (`pio run -e <miljö
 | Höjdroder | PA2 |
 | ESC (gas) | PA3 |
 | Sidroder + styrhjul | PD14 |
-| iBUS från mottagaren (RX) | PE7 |
+| Mottagare (RX): iBUS, SBUS, CRSF | PE7 |
 | Sensorernas I2C SDA / SCL (MPU, BMP581, kompass) | PB11 / PB10 |
 | OLED I2C SDA / SCL (separat buss) | PB9 / PB8 |
 | GPS: RX (← GPS TX) / TX (→ GPS RX) | PD9 / PD8 |
@@ -102,7 +103,7 @@ Servona drivs **inte från kortet** utan från ESC:ns BEC (eller från en separa
 | Höjdroder | GPIO6 |
 | ESC (gas) | GPIO7 |
 | Sidroder + styrhjul | GPIO18 |
-| iBUS från mottagaren (RX) | GPIO17 |
+| Mottagare (RX): iBUS, SBUS, CRSF | GPIO17 |
 | Sensorernas I2C SDA / SCL (MPU, BMP581, kompass) | GPIO41 / GPIO42 |
 | OLED I2C SDA / SCL (separat buss) | GPIO1 / GPIO2 |
 | Reserverat: GPS RX / TX | GPIO39 / GPIO40 |
@@ -137,7 +138,7 @@ Servona drivs **inte från kortet** utan från ESC:ns BEC (eller från en separa
 | Höjdroder | GPIO6 |
 | ESC (gas) | GPIO7 |
 | Sidroder | – (inga lediga stift) |
-| iBUS från mottagaren (RX) | GPIO8 |
+| Mottagare (RX): iBUS, SBUS, CRSF | GPIO8 |
 | I2C SDA (sensorer) | GPIO1 |
 | I2C SCL (sensorer) | GPIO3 |
 
@@ -152,7 +153,7 @@ Servona drivs **inte från kortet** utan från ESC:ns BEC (eller från en separa
 | Höjdroder | GPIO27 |
 | ESC (gas) | GPIO26 |
 | Sidroder | GPIO25 |
-| iBUS från mottagaren (RX) | GPIO16 |
+| Mottagare (RX): iBUS, SBUS, CRSF | GPIO16 |
 | I2C SDA (sensorer) | GPIO21 |
 | I2C SCL (sensorer) | GPIO22 |
 
@@ -162,15 +163,23 @@ Fördelen är att det är det vanligaste och billigaste kortet i familjen – l�
 
 ## Anslutning av mottagaren
 
-Allt du behöver från mottagaren är **en iBUS-datatråd**, som på de flesta FlySky-kompatibla mottagare är utdragen till en separat port (ofta märkt ”iBUS”, eller så är det den enda utgången som inte är PPM). Anslutning:
+Mottagaren kopplas med en enda datatråd till **mottagarens RX-stift** i tabellen
+för ditt kort (`PIN_RC_RX`: PE7 på DevEBox, GPIO17 på esp32-s3, GPIO8 på esp32-c3,
+GPIO16 på esp32-dev). Protokollet ska vara mottagarens; det bestäms av
+`RX_PROTOCOL` i `Config.h` (i OpenPlane Studio – steget ”Sändare”):
 
-- **Mottagarens TX (iBUS-utgång)** → kortets **RX-stift** från tabellen ovan (GPIO8 på esp32-c3, GPIO17 på esp32-s3, GPIO16 på esp32-dev).
-- **Mottagarens jord (GND)** → kortets **GND**. Det är obligatoriskt; utan gemensam jord fungerar inte protokollet.
-- **Mottagarens strömförsörjning** – från en separat BEC/regulator eller från kortets 5 V, beroende på hur du brukar driva mottagaren i dina byggen; den är inte knuten till något särskilt stift i firmwaren.
+| `RX_PROTOCOL` | Mottagare | Vad går vart |
+|---|---|---|
+| `IBUS` (standard) | FlySky FS-iA6B, FS-iA10B | porten iBUS SERVO (iBUS-utgång) → RX-stift |
+| `SBUS` | FrSky, Futaba, RadioMaster, Jumper och de flesta andra | SBUS-utgång → RX-stift; ingen inverterare behövs – kortets UART inverterar signalen själv |
+| `CRSF` | ExpressLRS, TBS Crossfire och Tracer | mottagarens TX → RX-stift; mottagarens RX kan gå till TX-stiftet (`PIN_RC_TX`) – används inte än |
 
-Firmwaren skickar ingenting tillbaka till mottagaren – den bara lyssnar, så kortets TX-ledning behöver inte anslutas någonstans.
+- **Mottagarens jord (GND)** → **kortets GND**. Obligatoriskt – utan gemensam jord fungerar inte protokollet.
+- **Mottagarens matning** – 5 V från en separat BEC/regulator eller från kortets 5V.
 
-iBUS-portens hastighet i firmwaren är 115200 baud, vilket är standard för protokollet; det finns ingen anledning att ändra den, eftersom mottagaren själv håller den hastigheten.
+Portens hastighet ställer firmwaren in: iBUS – 115200 baud, SBUS – 100000 (8E2),
+CRSF – 420000 (ExpressLRS standard). Ställ in en EdgeTX-sändare på samma sätt som
+FS-i6 (se kanalkartan nedan): CH5 – ARM, CH6–CH8 – brytare, CH9–CH10 – rattar.
 
 ---
 
@@ -261,10 +270,11 @@ Förlorad förbindelse har **absolut prioritet** över allt annat:
 - **motorn i reversering** – motorn är av i alla lägen, autopiloten styr bara med rodren (hem – i glidflykt);
 - **inte armerat** (på marken) eller IMU:n svarar inte – motorn är av, skevrodren, höjdrodret och sidrodret går till neutralläge (1500 µs); efter 10 s utan förbindelse piper ”jag är här”-summern (om den är monterad).
 
-Firmwaren känner igen förlorad förbindelse på två sätt:
+Firmwaren känner igen förlorad förbindelse på tre sätt:
 
-1. **Inga iBUS-ramar på mer än 500 ms** – en bruten tråd eller en mottagare utan ström.
-2. **Gas under 950 µs** – det är så mottagaren rapporterar att den har tappat sändaren. **Det kräver att failsafe ställs in i sändaren** (se nedan): när förbindelsen bryts slutar FS-iA6B INTE skicka ramar utan upprepar de senaste spakvärdena – utan inställningen ser firmwaren inte att förbindelsen är bruten, och flygplanet fortsätter flyga med den senaste gasen.
+1. **Inga ramar från mottagaren på mer än 500 ms** – en bruten tråd, en mottagare utan matning eller en mottagare som tystnar vid förlorad förbindelse (så gör ExpressLRS som standard).
+2. **Mottagaren rapporterar själv förlorad förbindelse** – failsafe-flaggan i en SBUS-ram, länkkvalitet 0 % i CRSF. Inget att ställa in.
+3. **Gas under 950 µs** – det är så mottagaren rapporterar att den har tappat sändaren. **Det kräver att failsafe ställs in i sändaren** (se nedan): när förbindelsen bryts slutar FS-iA6B INTE skicka ramar utan upprepar de senaste spakvärdena – utan inställningen ser firmwaren inte att förbindelsen är bruten, och flygplanet fortsätter flyga med den senaste gasen.
 
 ARM återställs **inte** vid failsafe: när förbindelsen återkommer lyder flygplanet åter spakarna och det valda läget utan ny armering (att slå om brytaren i luften med gasen på noll är farligare).
 
@@ -503,7 +513,7 @@ Läs det här avsnittet i sin helhet **före** den första starten, inte efter e
 ## Felsökning
 
 **”Ingen mottagarsignal” / RX ser bra ut, men kanalerna på panelen rör sig inte**
-Kontrollera att mottagarens datatråd är ansluten exakt till iBUS RX-stiftet från ditt korts tabell (GPIO8/GPIO17/GPIO16), inte förväxlad med jord eller ström, och att mottagarens och kortets jord är sammankopplade. Om stiftbeläggningen stämmer och trådarna är hela men det fortfarande inte finns någon signal, kontrollera att mottagaren överhuvudtaget är bunden till sändaren och att mottagarens utgång är inställd på iBUS, inte PPM/SBUS.
+Kontrollera att mottagarens datatråd sitter precis på mottagarens RX-stift i tabellen för ditt kort (PE7/GPIO17/GPIO8/GPIO16), inte förväxlad med jord eller matning, och att mottagarens och kortets jord är sammankopplade. Om stiftbeläggningen stämmer och trådarna är hela men det ändå inte finns någon signal – kontrollera att mottagaren är bundet (bind) till sändaren (för ExpressLRS – samma binding phrase och version som sändarmodulen) och att dess utgång stämmer med `RX_PROTOCOL`: iBUS, SBUS eller CRSF, inte PPM.
 
 **En sensor (IMU, barometer, kompass) visar ”svarar inte” / NO_RESPONSE**
 Firmwaren rapporterar ärligt att sensorn inte svarar i stället för att mata ut nollor. Kontrollera: (1) modulens strömförsörjning – 3.3V och kortets jord; (2) SDA/SCL – på I2C-stiften för just ditt kort; (3) adressen på ledningen: MPU 0x68 (AD0 till GND), BMP581 0x46 (SDO till GND, CSB till 3.3V; 0x47 om SDO ligger på 3.3V), BMP388 0x76 (SDO till GND, **CSB till 3.3V** – annars är kretsen i SPI-läge), QMC5883P 0x2C, QMC5883L 0x0D. Om en sensor ibland svarar och ibland inte (eller svarar på någon annans adress) är det dålig kontakt på kopplingsdäcket: tryck till VCC/GND/SDA/SCL, och helst bör varje modul matas direkt från kortets 3.3V/GND. Kommandot `s` i konsolen visar I2C-felräknarna för varje sensor.

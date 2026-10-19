@@ -194,18 +194,18 @@ PWM 出力の集合とその順序を知る唯一のクラスです。すべて�
 ## `FlightController`
 
 **ファイル：** `control/FlightController.h` · **レイヤー：** COORDINATION ·
-**依存先：** `IBusReceiver`、`ControlMixer`、`ThrottleManager`、`ArmingManager`、`FlightOutputs`、`Autopilot*`、`PilotSwitches*`、`Beeper`、`MotorReverse`、`GroundCalibration`、`SignalPlayer`
+**依存先：** `RcReceiver`、`ControlMixer`、`ThrottleManager`、`ArmingManager`、`FlightOutputs`、`Autopilot*`、`PilotSwitches*`、`Beeper`、`MotorReverse`、`GroundCalibration`、`SignalPlayer`
 
 制御ループの唯一のコーディネーターです。自分では UART を解析せず、PWM にも触れず、ミキサーの計算もしません。ほかのクラスを正しい順序で呼ぶだけです。詳しい図は
 [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-制御周期flightcontrollerupdate) にあります。
 
 | メソッド | 説明 |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | オートパイロットなしなら純粋な手動操縦、スイッチなしならスティックのみ |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | オートパイロットなしなら純粋な手動操縦、スイッチなしならスティックのみ |
 | `void begin()` | `outputs.setFailsafe()`、`receiver.begin()` |
 | `void update()` | 1 周期分の処理（下記参照） |
 | `bool isReceiverFailsafe() const` | リンクを失っている |
-| `const IBusReceiver& getReceiver() const` | ログ用（フレームカウンタ、喪失の原因） |
+| `const RcReceiver& getReceiver() const` | ログ用（フレームカウンタ、喪失の原因） |
 | `bool isArmed() const`、`const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | 出力に最後に書き込んだ状態 |
 | `const RcChannelState& getRcState() const` | チャンネル |

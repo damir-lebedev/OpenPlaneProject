@@ -46,11 +46,11 @@ HAL अकेली ऐसी परत है जिसे किसी ख़�
 
 | मेथड | विवरण |
 |---|---|
-| `virtual void begin()` | I2C/SPI बसों का एक बार का आरंभीकरण। UART को उनके मालिक (`IBusReceiver`, GPS) अपनी गति से खोलते हैं, PWM को — `FlightOutputs::begin()` |
+| `virtual void begin()` | I2C/SPI बसों का एक बार का आरंभीकरण। UART को उनके मालिक (`RcReceiver`, GPS) अपनी गति से खोलते हैं, PWM को — `FlightOutputs::begin()` |
 | `virtual II2CBus& i2c()` | सेंसर बस |
 | `virtual ISpiBus& spi()` | SPI बस |
 | `virtual II2CBus* displayI2c()` | केवल स्क्रीन के लिए दूसरी I2C बस; न हो तो `nullptr` |
-| `virtual IUartPort& rcUart()` | iBUS रिसीवर का UART |
+| `virtual IUartPort& rcUart()` | रिमोट के रिसीवर का UART: iBUS, SBUS या CRSF |
 | `virtual IUartPort& gpsUart()` | GPS का UART |
 | `virtual IUartPort* telemetryUart()` | MAVLink रेडियो मॉडेम का UART; डिफ़ॉल्ट रूप से `nullptr` (ESP32 में कोई ख़ाली UART नहीं है) |
 | `virtual IServoOutput& servo(uint8_t channel)` | `ServoChannel::*` इंडेक्स से PWM आउटपुट |
@@ -102,12 +102,14 @@ HAL अकेली ऐसी परत है जिसे किसी ख़�
 
 **फ़ाइल:** `hal/IUartPort.h` · **प्रकार:** इंटरफ़ेस · **क्रियान्वयन:** `Esp32UartPort`, `Stm32UartPort`
 
-`HardwareSerial` जैसा UART, लेकिन `begin()` केवल गति लेता है: पिन और
-फ़ॉर्मैट (8N1) क्रियान्वयन तय करता है।
+`HardwareSerial` जैसा UART, पर `begin()` केवल गति और फ़्रेम का फ़ॉर्मैट लेता है: पिन
+कार्यान्वयन तय करता है। `UartFormat`: `STANDARD_8N1` — लगभग सब कुछ, `SBUS_8E2_INVERTED` —
+SBUS (8E2, उलटा सिग्नल; उलटना UART ख़ुद करता है)।
 
 | मेथड | विवरण |
 |---|---|
-| `begin(baud)` | पोर्ट खोलना |
+| `begin(baud)` | पोर्ट खोलना, 8N1 |
+| `virtual bool begin(baud, format)` | `UartFormat` फ़ॉर्मैट में पोर्ट खोलना; `false` — पोर्ट ऐसा नहीं कर सकता (डिफ़ॉल्ट रूप से केवल 8N1) |
 | `int available()`, `int read()` | प्राप्त करना |
 | `size_t write(byte)`, `size_t write(buffer, size)` | भेजना |
 | `virtual int availableForWrite()` | भेजने वाले बफ़र में ख़ाली जगह; `-1` — अज्ञात (डिफ़ॉल्ट)। टेलीमेट्री इसी से फ़्रेम को टालती है, इंतज़ार नहीं करती |
@@ -246,7 +248,7 @@ sd-prepare`) और `0xFF` से भरी है। फ़ाइल को क
 | `i2cBus` | `Esp32I2CBus` | `PIN_I2C_SDA/SCL` पर `Wire`, 400 kHz |
 | `displayBus` | `Esp32I2CBus` | `PIN_I2C2_SDA/SCL` पर `Wire1` — केवल तब जब `SOC_I2C_NUM > 1` |
 | `spiBus` | `Esp32SpiBus` | ग्लोबल `SPI` |
-| `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | `PIN_IBUS` पर iBUS, केवल RX |
+| `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | रिसीवर `PIN_RC_RX` पर, केवल RX |
 | `gpsSerial`, `gpsPort` | `HardwareSerial(UART_NUM_GPS)`, `Esp32UartPort` | `PIN_GPS_RX/TX` पर GPS |
 | `servos[7]` | `Esp32ServoOutput` | `ServoChannel` के क्रम में LEDC चैनल 0..6 (AUX1/AUX2 — `PIN_AUX1/2`, अगर निकाले गए हों) |
 
@@ -292,8 +294,9 @@ SPI_MODEn)` बनाता है; `spiModeOf()` 0..3 को Arduino के स
 
 **फ़ाइल:** `hal/esp32/Esp32UartPort.h` · **इनहेरिट करता है:** `IUartPort`
 
-`HardwareSerial` पर आवरण: `begin(baud)` → `serial.begin(baud, SERIAL_8N1,
-rx, tx)`; `tx = -1` — केवल प्राप्त करना। बाक़ी सौंपना है।
+`HardwareSerial` का आवरण: `begin(baud)` → `serial.begin(baud, SERIAL_8N1, rx, tx)`;
+SBUS — `serial.begin(baud, SERIAL_8E2, rx, tx, true)` (ESP32 के UART से RX उलटना);
+`tx = -1` — केवल प्राप्ति। बाक़ी — सौंपना।
 
 ---
 
@@ -356,7 +359,7 @@ ESP32 से वे सामान्य अंतर जिन्हें य
 | `i2cBus` | `Stm32I2CBus` | `PIN_I2C_SDA/SCL` (I2C2: PB11/PB10) पर `Wire`, 400 kHz |
 | `displayBus` | `Stm32I2CBus` | `PIN_I2C2_SDA/SCL` (I2C1: PB9/PB8) पर `displayWire` — दूसरी बस हमेशा होती है |
 | `spiBus` | `Stm32SpiBus` | `PIN_SENSOR_SPI_*` (SPI2) पर ग्लोबल `SPI` |
-| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | iBUS: UART7, RX `PIN_IBUS` (PE7), TX `PIN_IBUS_TX` (PE8, iBUS-SENS के लिए आरक्षित) |
+| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | रिसीवर: UART7, RX `PIN_RC_RX` (PE7), TX `PIN_RC_TX` (PE8, रिमोट को टेलीमेट्री के लिए आरक्षित) |
 | `gpsSerial`, `gpsPort` | `Uart`, `Stm32UartPort` | GPS: USART3, `PIN_GPS_RX/TX` (PD9/PD8) |
 | `telemetrySerial`, `telemetryPort` | `Uart`, `Stm32UartPort` | MAVLink रेडियो मॉडेम: UART4, `PIN_TELEM_RX/TX` (PD0/PD1) |
 | `servos[7]` | `Stm32ServoOutput` | `ServoChannel` के क्रम में (AUX1 — PD15/TIM4, AUX2 — PE9/TIM1) |
@@ -398,12 +401,12 @@ STM32duino में ट्रांज़ैक्शन का टाइमआ
 
 **फ़ाइल:** `hal/stm32/Stm32UartPort.h` · **इनहेरिट करता है:** `IUartPort`
 
-`HardwareSerial&` पर आवरण (STM32duino 3.x में यह अमूर्त बेस
-`arduino::HardwareSerial` है, ठोस ऑब्जेक्ट `Uart` को `Stm32Board` बनाता है)।
-`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`; `availableForWrite()` —
-`HardwareSerial` से। बफ़र (env में `SERIAL_RX/TX_BUFFER_SIZE`): प्राप्त करने के लिए 256
-बाइट (NAV-PVT का फ़्रेम 100 का है, मानक 64 कम पड़ते हैं), भेजने के लिए 1024 (लॉग की पंक्तियाँ और
-MAVLink के फ़्रेम बिना इंतज़ार के)।
+`Uart&` का आवरण (ऑब्जेक्ट `Stm32Board` बनाता है)। `begin(baud)` →
+`serial.begin(baud, SERIAL_8N1)`; SBUS — `serial.begin(baud, SERIAL_8E2)` से पहले
+`setRxInvert()` (USART ख़ुद RX उलटता है, बिट RXINV), पैरिटी वाला 9-बिट शब्द कोर ख़ुद चुनता
+है; `availableForWrite()` — `HardwareSerial` से। बफ़र (env में `SERIAL_RX/TX_BUFFER_SIZE`):
+प्राप्ति 256 बाइट (NAV-PVT फ़्रेम 100 का है, मानक 64 कम हैं), भेजना 1024 (लॉग की
+पंक्तियाँ और MAVLink फ़्रेम बिना प्रतीक्षा)।
 
 ## `Stm32ServoOutput`
 

@@ -26,7 +26,7 @@
 | `PIN_ELEVATOR` | `uint8_t` | Руль высоты | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | Регулятор мотора | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | Руль направления + колесо; `-1` — выход отключён | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | RX приёмника iBUS (UART1) | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | RX приёмника: iBUS, SBUS или CRSF (UART1) | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | Шина датчиков (`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | Шина OLED (`Wire1`); `-1` — нет | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | Общая SPI-шина | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -57,7 +57,7 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7 (TX — резерв под iBUS-SENS) |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7 (TX — резерв под телеметрию в пульт) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 — датчики |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — экран (на WeAct — разъём камеры) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -70,14 +70,17 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 
 Консоль `Serial` — LPUART1 (PA9 TX / PA10 RX), дефолт варианта.
 
-### iBUS и потеря связи
+### Приёмник и потеря связи
 
 | Константа | Значение | Смысл |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | Сколько каналов из кадра используется |
+| `RX_PROTOCOL` | `IBUS` | Протокол приёмника: `IBUS` (FlySky), `SBUS` (FrSky, Futaba, RadioMaster…), `CRSF` (ExpressLRS, TBS Crossfire) |
+| `RC_CHANNELS` | 10 | Сколько каналов из кадра используется |
 | `IBUS_FRAME_LENGTH` | 32 | Длина кадра, байт |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | Заголовок кадра |
 | `IBUS_BAUDRATE` | 115200 | Скорость UART |
+| `SBUS_BAUDRATE` | 100000 | Скорость SBUS (8E2, сигнал инвертирован) |
+| `CRSF_BAUDRATE` | 420000 | Скорость CRSF (как у ExpressLRS по умолчанию) |
 | `RX_TIMEOUT_US` | 500 000 | Нет корректного кадра дольше — связь потеряна |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | Газ ниже — приёмник сообщает failsafe пульта |
 

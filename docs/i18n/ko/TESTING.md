@@ -85,7 +85,7 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 |---|---|
 | `ChipEmulators.h` | LSM6DSV, ICM-45686(IPREG 간접 레지스터 포함), QMC6309, SPL06-001, BMP581, u-blox NAV-PVT 프레임. I2C 또는 SPI 위의 레지스터 맵이며, 데이터는 `World` "세계"(각도와 속도, 고도, 대기속도, 침로, 좌표)에서 가져와 `IMU_ROTATION_CW_DEG`를 반영한 칩의 축으로 돌려줍니다 |
 | `PlaneSim.h` | 약 1.2 kg 비행기 모델: 질점 + 롤/피치 회전, 실속을 포함한 CL(α), 항력, 추력, 바람, 서멀, 지면; 꼬리 바퀴 또는 앞바퀴 랜딩기어: 비행기는 주바퀴 위에서 앞뒤로 흔들리고, 꼬리 바퀴 하중, 꼬리 충돌, 프로펠러 접촉을 세며, 프로펠러 토크와 조향 바퀴에 의한 지상 요잉도 다룸 |
-| `SimHarness.h` | 폐루프: 조종기 → iBUS 프레임 → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 조종면 꺾임 → `PlaneSim` → 센서(노이즈가 있는 기압계 두 개로 만든 피토관 포함). `OPENPLANE_SIM_DIR`를 지정하면 CSV 궤적을 만듭니다; `realisticImu`에서는 실제 `AttitudeEstimator`가 비력으로 각도를 계산: 활주로의 가속을 기체에서와 같이 받음 |
+| `SimHarness.h` | 폐루프: 조종기 → iBUS 프레임 → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 조종면 꺾임 → `PlaneSim` → 센서(노이즈가 있는 기압계 두 개로 만든 피토관 포함). `OPENPLANE_SIM_DIR`를 지정하면 CSV 궤적을 만듭니다; `realisticImu`에서는 실제 `AttitudeEstimator`가 비력으로 각도를 계산: 활주로의 가속을 기체에서와 같이 받음 |
 
 `test/native/helpers/TestSupport.h`는 여러 세트가 함께 쓰는 부분입니다. `resetWorld()`(`setUp()`에서 호출), `FakeUart`/`FakeServo`/`FakeBoard`와 센서(`FakeImu`, `FakeBaro`, `FakeMag`, `FakeGps`)의 대역, 프레임 조립기 `ibusFrame()`, 진짜 `Esp32I2CBus`/`Esp32SpiBus`와 시뮬레이션된 칩이 붙은 `*RegisterDevice` 위에 드라이버를 얹는 시험대 `I2cRig`/`SpiRig`입니다.
 
@@ -97,8 +97,8 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 
 | 세트 | 테스트 수 | 검증 내용 |
 |---|---|---|
-| `native/test_hal` | 18 | `II2CBus` 도우미(NACK, 짧은 읽기: 버퍼는 건드리지 않음), `I2cRegisterDevice`, `SpiRegisterDevice`(읽기 비트, BMP388의 더미 바이트), `Esp32I2CBus`(5 ms 타임아웃), `Esp32SpiBus`(모드 0–3), `Esp32UartPort`(8N1, 핀), `Esp32ServoOutput`(50 Hz/14비트, 펄스 제한, LEDC 고장, 입력 버퍼를 통한 측정), `Esp32Board`(버스, UART, 채널 순서, AUX, 부저); 모터 알림용 “펄스 없음”(`stopPulses()`) |
-| `native/test_rc` | 16 | `RcChannelState`, `RcInput`, iBUS 파싱: 조각으로 도착하는 프레임, CRC, 12비트 값, 조종기의 페일세이프, 500 ms 타임아웃(`micros()` 오버플로를 넘어가는 경우 포함), 쓰레기 데이터, 재동기화 |
+| `native/test_hal` | 19 | `II2CBus` 도우미(NACK, 짧은 읽기: 버퍼는 건드리지 않음), `I2cRegisterDevice`, `SpiRegisterDevice`(읽기 비트, BMP388의 더미 바이트), `Esp32I2CBus`(5 ms 타임아웃), `Esp32SpiBus`(모드 0–3), `Esp32UartPort`(8N1, 핀), `Esp32ServoOutput`(50 Hz/14비트, 펄스 제한, LEDC 고장, 입력 버퍼를 통한 측정), `Esp32Board`(버스, UART, 채널 순서, AUX, 부저); 모터 알림용 “펄스 없음”(`stopPulses()`); SBUS — `Esp32UartPort`의 8E2와 RX 반전 |
+| `native/test_rc` | 33 | `RcChannelState`, `RcInput`, 수신기: iBUS — 나뉘어 오는 프레임, CRC, 12비트 값, 조종기 failsafe, 500 ms 타임아웃(`micros()` 오버플로를 넘어서도), 쓰레기 데이터, 재동기화; SBUS — 반전 8E2, failsafe와 손실 프레임 플래그, SBUS2, 스트림 중간에서 동기화, 반전이 안 되는 포트; CRSF — 기준값과 맞춘 CRC8, 채널, 링크 품질 0 % = 링크 끊김, 침묵 = 타임아웃, 다른 프레임과 쓰레기 데이터; 11비트 채널 16개 |
 | `native/test_control` | 26 | 플랩(속도, 첫 호출, 일시 정지), 믹서(부호, 리버스, 플래퍼론), 스로틀, ARM 상태 머신과 모드 센서 확인, 출력 표와 펄스 자가 점검, 양방향 ESC 펄스, 모터 역회전은 DISARM 상태에서만, 방향을 바꾼 뒤 ARM 금지, 리버스 도우미(펄스 반전, 채널 반전, 모터 반전); 꼬리 바퀴 AUTO_TAKEOFF는 랜딩기어 캘리브레이션이 있을 때만 |
 | `native/test_autopilot` | 22 | PID(센서 각속도 기반 D항, 적분, 안티 와인드업, `dt`), 각도 모드로서의 STABILIZE, 자동 이륙(시작 전까지 모터 정지, 프로그램 스로틀, DISARM), 승강타를 쓰는 ALT_HOLD, 신호 상실 시 활공, 상승 중 신호 상실 — 상승 계속 |
 | `native/test_autopilot_modes` | 31 | 12개 모드 전체와 센서가 없을 때 각 모드의 반응, 바인딩 표와 `static_assert`, 기능과 노브, 항법(침로, 원, 홈 지점, 지오펜스), failsafe RTH/활공, 손으로 던져 이륙, 소어링, 오토 트림(기록은 지상에서만) |
@@ -121,10 +121,10 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743과 **SPI로 연결한** ICM-45686, BMP581 + QMC6309: 전원을 켤 때 손상된 플래시, GCS의 ALT_HOLD가 고도를 유지, 신호 상실 → RTH, MAVLink에서 확인 가능, 손상된 이미지 다시 쓰기 |
 | `native_stm32/test_blackbox_sd` | 29 | SD 카드의 블랙박스: FAT32(MBR 있음/없음, 클러스터 두 개에 걸친 디렉터리, 노이즈 항목, 남의/흩어진/빈 볼륨), `SdFileRegion`(불완전한 블록, 캐시, 삭제, 경계, 고장), 가짜 `HAL_SD` 위에서 도는 실제 `Stm32SdCard` 드라이버(4비트, 예비 속도, 재시도, 사용 중인 카드, 정렬되지 않은 버퍼), 카드 위의 링(재부팅, 전원 차단, 검증 비용), “링이 비어 있음” 표시, `FlightController`에서의 비행 기록, `RCC->RSR`로 판별하는 비정상 재부팅, 배터리 ADC, 비행 중 카드 오류, 느린 카드, 콘솔을 통한 내려받기, `D` 키 |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | 카드가 있는 `src/stm32/main.cpp`: 부팅 시 카드와 파일을 찾음, `bbox` 태스크가 비행을 기록, 루프 주기가 늘어나지 않음, `bb list` |
-| `native_stm32/test_app_stm32_no_sd` | 3 | 카드가 없는 `src/stm32/main.cpp`: 블랙박스는 비활성화되고 이유를 설명함, 비행기는 비행함, 메뉴 `k`는 망가지지 않음; PD14에서의 출력 자체 점검(코어 `pulseIn()` 결함 우회), 모터 알림 `e` |
+| `native_stm32/test_app_stm32_no_sd` | 4 | 카드가 없는 `src/stm32/main.cpp`: 블랙박스는 비활성화되고 이유를 설명함, 비행기는 비행함, 메뉴 `k`는 망가지지 않음; PD14에서의 출력 자체 점검(코어 `pulseIn()` 결함 우회), 모터 알림 `e`; `Stm32UartPort`의 SBUS — 8E2와 RX 반전 |
 | `test_feedback` | 10 | 피드백 루프가 있는 비행기의 폐루프 시뮬레이션(PC와 보드 모두) |
 | `test_imu_orientation` | 5 | 무작위 장착 300가지에서 하는 IMU 장착 보정(PC와 보드 모두) |
-| **합계** | **436** | `native`에 388개 + `native-stm32`에 48개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
+| **합계** | **455** | `native`에 406개 + `native-stm32`에 49개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
 
 ### STM32 보드에서의 테스트
 

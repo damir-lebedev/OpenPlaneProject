@@ -28,7 +28,7 @@
 | `PIN_ELEVATOR` | `uint8_t` | 승강타 | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | 모터 조속기 | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | 방향타 + 바퀴. `-1`은 출력 비활성 | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | iBUS 수신기의 RX(UART1) | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | 수신기 RX: iBUS, SBUS 또는 CRSF(UART1) | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | 센서 버스(`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | OLED 버스(`Wire1`). `-1`은 없음 | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | 공용 SPI 버스 | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -59,7 +59,7 @@
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7(TX는 iBUS-SENS용 예약) |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7(TX는 조종기로 보내는 텔레메트리용 예약) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 — 센서 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — 화면(WeAct에서는 카메라 커넥터) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -72,14 +72,17 @@
 
 콘솔 `Serial`은 LPUART1(PA9 TX / PA10 RX)이며 변종의 기본값입니다.
 
-### iBUS와 링크 상실
+### 수신기와 링크 상실
 
 | 상수 | 값 | 의미 |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | 프레임에서 사용하는 채널 수 |
+| `RX_PROTOCOL` | `IBUS` | 수신기 프로토콜: `IBUS`(FlySky), `SBUS`(FrSky, Futaba, RadioMaster…), `CRSF`(ExpressLRS, TBS Crossfire) |
+| `RC_CHANNELS` | 10 | 프레임에서 사용하는 채널 수 |
 | `IBUS_FRAME_LENGTH` | 32 | 프레임 길이(바이트) |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | 프레임 헤더 |
 | `IBUS_BAUDRATE` | 115200 | UART 속도 |
+| `SBUS_BAUDRATE` | 100000 | SBUS 속도(8E2, 반전 신호) |
+| `CRSF_BAUDRATE` | 420000 | CRSF 속도(ExpressLRS 기본값) |
 | `RX_TIMEOUT_US` | 500 000 | 이보다 오래 올바른 프레임이 없으면 링크 상실 |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | 스로틀이 이보다 낮으면 수신기가 송신기의 failsafe를 알리는 것 |
 

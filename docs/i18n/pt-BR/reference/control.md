@@ -209,7 +209,7 @@ Para adicionar uma saída: uma linha na tabela + um campo em
 ## `FlightController`
 
 **Arquivo:** `control/FlightController.h` · **Camada:** COORDINATION ·
-**Depende de:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
+**Depende de:** `RcReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 O único coordenador do laço de controle: ele mesmo não analisa a UART, não mexe
 no PWM nem calcula o mixer — só chama os outros na ordem certa. O diagrama
@@ -217,11 +217,11 @@ detalhado está em [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-o-ciclo-de-control
 
 | Método | Descrição |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Sem piloto automático — controle manual puro; sem chaves — só os sticks |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Sem piloto automático — controle manual puro; sem chaves — só os sticks |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | Um ciclo (veja abaixo) |
 | `bool isReceiverFailsafe() const` | O link foi perdido |
-| `const IBusReceiver& getReceiver() const` | Para o log (contadores de quadros, a causa da perda) |
+| `const RcReceiver& getReceiver() const` | Para o log (contadores de quadros, a causa da perda) |
 | `bool isArmed() const`, `const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | O último gravado nas saídas |
 | `const RcChannelState& getRcState() const` | Os canais |

@@ -46,7 +46,7 @@ include/
 │   └── stm32/   Stm32Board + Wire/SPI/Uart/HardwareTimer, Stm32FlashStorage,
 │                compat/Preferences.h (settings in flash instead of NVS)
 ├── storage/     KeyValueStore, KvPreferences — settings storage without NVS
-├── rc/          RcChannelState, RcInput, IBusReceiver
+├── rc/          RcChannelState, RcInput, RcReceiver, IBusParser, SbusParser, CrsfParser
 ├── control/     ControlCommand, ControlMixer, FlapsController,
 │                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
 │                FlightOutputState, FlightOutputs, Beeper, FlightController
@@ -78,7 +78,7 @@ src/stm32/main.cpp  — STM32H743 firmware (FreeRTOS tasks, MAVLink)
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │ CONTROL             │  │ AUTOPILOT             │  │ RC                    │
-│ ControlMixer        │  │ Autopilot: 12 modes   │  │ IBusReceiver          │
+│ ControlMixer        │  │ Autopilot: 12 modes   │  │ RcReceiver            │
 │  └ FlapsController  │  │  └ navigation, PID    │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
@@ -148,7 +148,7 @@ The rules that keep the architecture clean:
 
 | File | Responsible for |
 |---|---|
-| `Config.h` | All the pins (a block per board: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) and the settings: iBUS and link loss; control-surface travel; flaps; servo reverse; IMU and compass mounting; ARM; failsafe (RTH or gliding); the pitot tube (`PITOT_*`); all the numbers of the autopilot modes and functions; the loop; Wi-Fi; MAVLink; debugging |
+| `Config.h` | All the pins (a block per board: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) and the settings: iBUS/SBUS/CRSF and link loss; control-surface travel; flaps; servo reverse; IMU and compass mounting; ARM; failsafe (RTH or gliding); the pitot tube (`PITOT_*`); all the numbers of the autopilot modes and functions; the loop; Wi-Fi; MAVLink; debugging |
 | `Channels.h` | Channel names: `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `SWB`, `SWC`, `SWD`, `VRA`, `VRB` |
 | `Controls.h` | The `BINDINGS` table: what each switch and knob does, one line per channel, `static_assert` checks |
 
@@ -180,7 +180,11 @@ The rules that keep the architecture clean:
 |---|---|
 | `RcChannelState.h` | A snapshot of the 10 channels |
 | `RcInput.h` | `clamp()`, `centered(us, max, reverse)` |
-| `IBusReceiver.h` | iBUS → channels: a 32-byte frame, CRC, the channel value is the low 12 bits (`& 0x0FFF`); `isSignalLost()` = no frames (or none yet) ∥ the failsafe throttle value; frame counters |
+| `RcReceiver.h` | The receiver: UART in the protocol's format (`RX_PROTOCOL`: iBUS, SBUS, CRSF) → `RC_CHANNELS` channels; `isSignalLost()` = no frames (or none yet) ∥ the receiver reported failsafe (SBUS flag, 0 link quality on CRSF, throttle below normal); channel reversing, frame counters |
+| `IBusParser.h` | iBUS: a 32-byte frame, CRC, the channel value is the low 12 bits (`& 0x0FFF`) |
+| `SbusParser.h` | SBUS: a 25-byte frame, 16 channels of 11 bits, failsafe and lost-frame flags, SBUS2 |
+| `CrsfParser.h` | CRSF: CRC8 (polynomial 0xD5), channels (type 0x16) and link statistics (type 0x14, link quality) |
+| `Packed11.h` | 16 channels of 11 bits → µs — shared by SBUS and CRSF |
 
 ### `control/`
 
@@ -334,7 +338,7 @@ stick and the autopilot will diverge.
 ## RC channel map, ARM and failsafe
 
 The source is `include/config/Channels.h`. An FS-i6 transmitter (10 channels,
-mode 2) + an FS-iA6B receiver, iBUS 115200.
+mode 2) + an FS-iA6B receiver, iBUS 115200. Other receivers — SBUS or CRSF (`RX_PROTOCOL`), same channels.
 
 | Channel | Transmitter control | Name | Purpose |
 |---|---|---|---|
@@ -365,13 +369,14 @@ nothing until DISARM. After a direction change ARM is refused for
 `REVERSE_THROTTLE_LIMIT_PCT` (50%); the autopilot gets no throttle, and on link
 loss the motor stops.
 
-**Link loss** (`IBusReceiver::isSignalLost()`):
+**Link loss** (`RcReceiver::isSignalLost()`):
 
 1. No frames for longer than `RX_TIMEOUT_US` (500 ms) — a broken wire or
    lost power to the receiver. Before the first frame after power-on the link
    is also considered lost: the default channel values (all 1500) are not
    taken for transmitter commands.
-2. Throttle < `RX_FAILSAFE_THROTTLE_US` (950) — the failsafe set in the
+2. The receiver itself reported link loss: the failsafe flag in an SBUS frame, 0 % link quality in the CRSF statistics.
+3. Throttle < `RX_FAILSAFE_THROTTLE_US` (950) — the failsafe set in the
    transmitter. **When the transmitter is lost, the FS-iA6B does not stop
    sending frames**, it repeats the last values (verified on the bench), so
    without a failsafe configured in the transmitter the link loss is not
@@ -461,7 +466,7 @@ calibrates only the sensors that responded.
 
 Called from `loop()` every 2 ms. The order is the priority:
 
-1. **`receiver.update()`** — parsing the accumulated iBUS bytes.
+1. **`receiver.update()`** — parsing the accumulated receiver bytes (iBUS, SBUS or CRSF).
 2. **Switches** — `switches->update(rc)`, only while the link is alive (in a
    failsafe frame the channels do not reflect the switches): the mode (only
    on a change), functions, knobs.
@@ -623,7 +628,7 @@ The formats of all the channels are in the [reference](reference/telemetry.md#de
 | Aileron left / right | GPIO4 / GPIO5 | GPIO5 / GPIO4 | GPIO13 / GPIO14 |
 | Elevator / ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
 | Rudder | GPIO18 | — (no pin) | GPIO25 |
-| iBUS RX | GPIO17 | GPIO8 | GPIO16 |
+| RC RX | GPIO17 | GPIO8 | GPIO16 |
 | Sensor I2C SDA / SCL | GPIO41 / GPIO42 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | OLED I2C SDA / SCL | GPIO1 / GPIO2 | — | — |
 | SPI SCK / MISO / MOSI | GPIO12 / 13 / 11 | GPIO0 / 10 / 20 | GPIO18 / 19 / 23 |
@@ -688,7 +693,7 @@ video). The sensors are being connected to the STM32 now. **The main board is th
 | Elevator / ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
 | Rudder | PD14 | TIM4_CH3 |
 | AUX1 (payload) / AUX2 (camera) | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
-| iBUS RX (TX — spare) | PE7 (PE8) | UART7 |
+| RC RX (TX — spare) | PE7 (PE8) | UART7 |
 | Sensor I2C SDA / SCL | PB11 / PB10 | I2C2 |
 | OLED I2C SDA / SCL | PB9 / PB8 | I2C1 |
 | SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |

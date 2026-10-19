@@ -30,7 +30,7 @@
 | `PIN_ELEVATOR` | `uint8_t` | الرافعة | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | منظِّم المحرك | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | الدفة + العجلة؛ و`-1` — المخرج معطَّل | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | RX لمستقبِل iBUS (‏UART1) | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | RX المستقبِل: iBUS أو SBUS أو CRSF ‏(UART1) | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | ناقل الحساسات (`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | ناقل OLED (‏`Wire1`)؛ و`-1` — غير موجود | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | ناقل SPI المشترك | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -62,7 +62,7 @@ STM32duino (وسائر أنوية Arduino) تكون `PIN_SPI_SCK/MISO/MOSI` ما
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7 (‏TX — محجوز لـ iBUS-SENS) |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7 ‏(TX محجوز للقياس عن بُعد إلى جهاز التحكم) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 — الحساسات |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — الشاشة (وعلى WeAct — موصل الكاميرا) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -75,14 +75,17 @@ STM32duino (وسائر أنوية Arduino) تكون `PIN_SPI_SCK/MISO/MOSI` ما
 
 كونسول `Serial` هو LPUART1 (‏PA9 TX / PA10 RX)، وهو الإعداد الافتراضي للنسخة.
 
-### ‏iBUS وفقدان الاتصال
+### ‏المستقبِل وفقدان الاتصال
 
 | الثابت | القيمة | المعنى |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | عدد قنوات الإطار المستخدَمة |
+| `RX_PROTOCOL` | `IBUS` | بروتوكول المستقبِل: `IBUS` ‏(FlySky)، و`SBUS` ‏(FrSky وFutaba وRadioMaster…)، و`CRSF` ‏(ExpressLRS وTBS Crossfire) |
+| `RC_CHANNELS` | 10 | عدد قنوات الإطار المستخدَمة |
 | `IBUS_FRAME_LENGTH` | 32 | طول الإطار، بايت |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | ترويسة الإطار |
 | `IBUS_BAUDRATE` | 115200 | سرعة UART |
+| `SBUS_BAUDRATE` | 100000 | سرعة SBUS ‏(8E2، إشارة معكوسة) |
+| `CRSF_BAUDRATE` | 420000 | سرعة CRSF (القيمة الافتراضية في ExpressLRS) |
 | `RX_TIMEOUT_US` | 500 000 | لا إطار صحيحًا لمدة أطول من هذه — الاتصال مفقود |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | الخانق أدنى من هذه القيمة — يُبلغ المستقبِل عن failsafe جهاز التحكم |
 

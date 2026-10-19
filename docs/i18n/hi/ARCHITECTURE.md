@@ -61,7 +61,7 @@ flowchart TD
     CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (जुड़ा नहीं है)<br/>FeedbackSupervisor और मॉड्यूल"]
-    RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
+    RC["RC<br/>RcReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
     HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice · Rtos"]
     STORE["STORAGE<br/>KeyValueStore · KvPreferences"]
@@ -126,7 +126,7 @@ flowchart LR
     gps["SelectedGps gpsSensor"]
     pitotBaro["SelectedPitotBaro pitotBaro"]
     pitot["PitotDualBaroAirspeed pitotSensor"]
-    rx["IBusReceiver"]
+    rx["RcReceiver"]
     mixer["ControlMixer"]
     thr["ThrottleManager"]
     outs["FlightOutputs"]
@@ -176,7 +176,7 @@ setupSensors()              — हर सेंसर का begin(); जवा
                               बैरो (शून्य ऊँचाई), कम्पास (शुरुआती हेडिंग → IMU yaw),
                               पिटो ट्यूब (ज़ीरो लूप के पहले सेकंड में लिया जाता है)
 autopilot.begin()           — NVS/फ़्लैश से ट्रिम
-flightController.begin()    — setFailsafe() + UART iBUS
+flightController.begin()    — setFailsafe() + UART RC (iBUS/SBUS/CRSF)
 oledDisplay.begin(...)      — अपना टास्क (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — एक्सेस पॉइंट + कोर 0 पर अपना टास्क
 [ESP32] blackBox.begin()   — blackbox पार्टिशन, PSRAM में क्यू, कोर 0 पर bbox टास्क
@@ -356,7 +356,7 @@ classDiagram
 sequenceDiagram
     participant L as flight loop
     participant FC as FlightController
-    participant RX as IBusReceiver
+    participant RX as RcReceiver
     participant SW as PilotSwitches
     participant TM as ThrottleManager
     participant MX as ControlMixer
@@ -533,12 +533,13 @@ stateDiagram-v2
 
 उपभोक्ता एक जैसी प्रतिक्रिया देते हैं: **सेंसर नहीं है (`nullptr`) या उपलब्ध नहीं है — तो कोई असर नहीं**, विमान MANUAL की तरह चलता है। अपवाद है रनवे पर ऑटो-टेकऑफ़: IMU ख़राब हो तो वहाँ टेकऑफ़ रद्द, मोटर बंद।
 
-### संपर्क (`IBusReceiver::isSignalLost()`)
+### संपर्क (`RcReceiver::isSignalLost()`)
 
-दो स्वतंत्र संकेत:
+तीन स्वतंत्र संकेत:
 
 1. `RX_TIMEOUT_US` (500 ms) से ज़्यादा देर तक कोई सही फ़्रेम नहीं आया — या चालू होने के बाद एक भी नहीं आया;
-2. फ़्रेम में थ्रॉटल `RX_FAILSAFE_THROTTLE_US` (950 µs) से नीचे है — ट्रांसमीटर में प्रोग्राम किया गया failsafe (ट्रांसमीटर के खो जाने पर FS-iA6B फ़्रेम भेजना बंद नहीं करता)।
+2. रिसीवर ने ख़ुद संपर्क टूटने की सूचना दी — SBUS फ़्रेम में failsafe फ़्लैग, CRSF में लिंक गुणवत्ता 0 %;
+3. फ़्रेम में थ्रॉटल `RX_FAILSAFE_THROTTLE_US` (950 µs) से नीचे है — ट्रांसमीटर में प्रोग्राम किया गया failsafe (ट्रांसमीटर के खो जाने पर FS-iA6B फ़्रेम भेजना बंद नहीं करता)।
 
 ग़लत CRC वाले फ़्रेम फेंक दिए जाते हैं और गिने जाते हैं (`getBadFrameCount()`)।
 
@@ -604,7 +605,7 @@ PlatformIO के परिवेश:
 | नया आउटपुट (सर्वो) | `FlightOutputs::outputInfo()` में एक पंक्ति, `FlightOutputState` में फ़ील्ड, `ServoChannel` में इंडेक्स, `Esp32Board` में पिन और LEDC चैनल | लिखने/स्थिति का लूप |
 | नया ESP32 बोर्ड | `Config.h` में `#elif`, `platformio.ini` में `[env:*]` | बाक़ी सारा कोड |
 | दूसरा MCU | `IBoard` को लागू करने वाला `hal/<mcu>/<Mcu>Board.h` (उदाहरण — `hal/stm32/`), `Config.h` में पिन का ब्लॉक, `[env:*]` | सेंसर, उड़ान का लॉजिक |
-| रिसीवर का दूसरा प्रोटोकॉल | `IBusReceiver` को उसी API (`getState()`, `isSignalLost()`) वाले से बदलना | `FlightController` |
+| दूसरा रिसीवर प्रोटोकॉल | `IBusParser`/`SbusParser`/`CrsfParser` के पास एक फ़्रेम पार्सर (`feed()`, `values()`, `failsafe()`), `RxProtocol` में एक मान, `RcReceiver::begin()`/`update()` में शाखाएँ | `FlightController`, बाक़ी प्रोटोकॉल |
 | लॉग का नया चैनल | `LogChannel`, `LogSettings::info()` में पंक्ति, `DebugLogger::format*()`, `VERSION++` | — |
 
 ---

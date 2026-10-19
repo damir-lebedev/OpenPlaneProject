@@ -46,7 +46,7 @@ include/
 │   └── stm32/   Stm32Board + Wire/SPI/Uart/HardwareTimer, Stm32FlashStorage,
 │                compat/Preferences.h (NVS の代わりにフラッシュへ保存する設定)
 ├── storage/     KeyValueStore, KvPreferences — NVS を使わない設定ストレージ
-├── rc/          RcChannelState, RcInput, IBusReceiver
+├── rc/          RcChannelState, RcInput, RcReceiver, IBusParser, SbusParser, CrsfParser
 ├── control/     ControlCommand, ControlMixer, FlapsController,
 │                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
 │                FlightOutputState, FlightOutputs, Beeper, FlightController
@@ -78,7 +78,7 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │ CONTROL             │  │ AUTOPILOT             │  │ RC                    │
-│ ControlMixer        │  │ Autopilot: 12 モード  │  │ IBusReceiver          │
+│ ControlMixer        │  │ Autopilot: 12 モード  │  │ RcReceiver            │
 │  └ FlapsController  │  │  └ 航法、PID          │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
@@ -137,7 +137,7 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
 
 | ファイル | 担当 |
 |---|---|
-| `Config.h` | すべてのピン（ボードごとに 1 ブロック：`BOARD_ESP32_S3/C3/CLASSIC`、`BOARD_STM32H743`）と設定：iBUS と信号喪失、舵面の可動量、フラップ、サーボのリバース、IMU とコンパスの取り付け、ARM、failsafe（RTH または滑空）、ピトー管（`PITOT_*`）、オートパイロットの各モードと機能のすべての数値、制御ループ、Wi-Fi、MAVLink、デバッグ |
+| `Config.h` | すべてのピン（ボードごとに 1 ブロック：`BOARD_ESP32_S3/C3/CLASSIC`、`BOARD_STM32H743`）と設定：iBUS/SBUS/CRSF と信号喪失、舵面の可動量、フラップ、サーボのリバース、IMU とコンパスの取り付け、ARM、failsafe（RTH または滑空）、ピトー管（`PITOT_*`）、オートパイロットの各モードと機能のすべての数値、制御ループ、Wi-Fi、MAVLink、デバッグ |
 | `Channels.h` | チャンネル名：`AILERON`、`ELEVATOR`、`THROTTLE`、`RUDDER`、`ARM`、`SWB`、`SWC`、`SWD`、`VRA`、`VRB` |
 | `Controls.h` | `BINDINGS` テーブル：各スイッチとノブの役割をチャンネルごとに 1 行で記述し、`static_assert` で検査する |
 
@@ -169,7 +169,11 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
 |---|---|
 | `RcChannelState.h` | 10 チャンネルのスナップショット |
 | `RcInput.h` | `clamp()`、`centered(us, max, reverse)` |
-| `IBusReceiver.h` | iBUS → チャンネル：32 バイトのフレーム、CRC、チャンネル値は下位 12 ビット（`& 0x0FFF`）。`isSignalLost()` ＝ フレームがない（またはまだ 1 つも来ていない）∥ スロットルの failsafe 値。フレームカウンタ |
+| `RcReceiver.h` | 受信機：プロトコルの形式（`RX_PROTOCOL`：iBUS、SBUS、CRSF）で UART を開き → `RC_CHANNELS` チャンネル。`isSignalLost()` = フレームが来ない（またはまだ 1 つも来ていない）∥ 受信機が failsafe を通知（SBUS のフラグ、CRSF のリンク品質 0、正常より低いスロットル）。チャンネル反転、フレームカウンタ |
+| `IBusParser.h` | iBUS：32 バイトのフレーム、CRC、チャンネル値は下位 12 ビット（`& 0x0FFF`） |
+| `SbusParser.h` | SBUS：25 バイトのフレーム、11 ビット × 16 チャンネル、failsafe と欠落フレームのフラグ、SBUS2 |
+| `CrsfParser.h` | CRSF：CRC8（多項式 0xD5）、チャンネル（種類 0x16）とリンク統計（種類 0x14、リンク品質） |
+| `Packed11.h` | 11 ビット × 16 チャンネル → µs——SBUS と CRSF で共通 |
 
 ### `control/`
 
@@ -298,7 +302,7 @@ PID は `誤差 = 目標 − 実測` を計算します。右ロール（roll > 
 
 ## RC チャンネルの割り当て、ARM、failsafe
 
-出典は `include/config/Channels.h` です。送信機 FS-i6（10 チャンネル、モード 2）＋受信機 FS-iA6B、iBUS 115200。
+出典は `include/config/Channels.h` です。送信機 FS-i6（10 チャンネル、モード 2）＋受信機 FS-iA6B、iBUS 115200。他の受信機——SBUS または CRSF（`RX_PROTOCOL`）、チャンネルは同じ。
 
 | チャンネル | 送信機の操作部 | 名前 | 用途 |
 |---|---|---|---|
@@ -321,10 +325,11 @@ CH6〜CH10 は、`include/config/Controls.h` に 1 行書くだけで割り当�
 
 **逆転**（`MotorReverse`、`Feature::MOTOR_REVERSE`、既定では SwD）：モーターの回転方向は ARM していないときだけスイッチに従います。ARM 中に切り替えても DISARM まで何も変わりません。方向を変えたあと `REVERSE_SETTLE_MS`（3 秒）は ARM を拒否します。後退はパイロットのスロットルのみで `REVERSE_THROTTLE_LIMIT_PCT`（50%）まで。オートパイロットにはスロットルを渡さず、通信が途絶えるとモーターは止まります。
 
-**リンク喪失**（`IBusReceiver::isSignalLost()`）：
+**リンク喪失**（`RcReceiver::isSignalLost()`）：
 
 1. `RX_TIMEOUT_US`（500 ms）を超えてフレームが来ない：配線の断線、または受信機の電源喪失です。電源投入後に最初のフレームが来るまでもリンク喪失とみなします。チャンネルの既定値（すべて 1500）を送信機のコマンドと取り違えないためです。
-2. スロットル < `RX_FAILSAFE_THROTTLE_US`（950）：送信機で設定した failsafe です。
+2. 受信機自身がリンク喪失を通知した：SBUS フレームの failsafe フラグ、CRSF の統計でリンク品質 0 %。
+3. スロットル < `RX_FAILSAFE_THROTTLE_US`（950）：送信機で設定した failsafe です。
    **FS-iA6B は送信機を失ってもフレームの送出を止めず**、最後の値を繰り返します（テストベンチで確認済み）。そのため、送信機側で failsafe を設定していないとリンク喪失を検出できません。設定方法は `PILOT_GUIDE.md` にあります。
 
 リンク喪失時の動作（`FlightController::applyLinkLoss()`）：
@@ -397,7 +402,7 @@ IMU の校正（起動のたび、および `i` コマンド）：2 秒間静止
 
 `loop()` から 2 ms ごとに呼ばれます。順序がそのまま優先度です。
 
-1. **`receiver.update()`**：溜まった iBUS のバイト列を解析します。
+1. **`receiver.update()`**：溜まった受信機のバイト列（iBUS、SBUS、CRSF）を解析します。
 2. **スイッチ**：`switches->update(rc)`。リンクが生きているときだけ実行します（failsafe フレームではチャンネルがスイッチの状態を反映しません）。対象はモード（変化したときだけ）、機能、ノブです。
 3. **パイロットのスロットル**：`throttle.update(rc, receiverFailsafe)`。
 4. **スティック**：`mixer.fromSticks(rc)` × `Knob::RATES`。フラップは
@@ -534,7 +539,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 秒間での最悪値) | iBUS ok=.
 | エルロン左／右 | GPIO4 / GPIO5 | GPIO5 / GPIO4 | GPIO13 / GPIO14 |
 | エレベーター／ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
 | ラダー | GPIO18 | —（ピンなし） | GPIO25 |
-| iBUS RX | GPIO17 | GPIO8 | GPIO16 |
+| RC RX | GPIO17 | GPIO8 | GPIO16 |
 | センサーの I2C SDA / SCL | GPIO41 / GPIO42 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | OLED の I2C SDA / SCL | GPIO1 / GPIO2 | — | — |
 | SPI SCK / MISO / MOSI | GPIO12 / 13 / 11 | GPIO0 / 10 / 20 | GPIO18 / 19 / 23 |
@@ -580,7 +585,7 @@ STM32H743VIT6（Cortex-M7 480 MHz、フラッシュ 2 MB、RAM 1 MB）は**完�
 | エレベーター／ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
 | ラダー | PD14 | TIM4_CH3 |
 | AUX1（ペイロード）／AUX2（カメラ） | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
-| iBUS RX（TX は予備） | PE7（PE8） | UART7 |
+| RC RX（TX は予備） | PE7（PE8） | UART7 |
 | センサーの I2C SDA / SCL | PB11 / PB10 | I2C2 |
 | OLED の I2C SDA / SCL | PB9 / PB8 | I2C1 |
 | SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |

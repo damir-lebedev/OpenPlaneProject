@@ -4,7 +4,7 @@
 
 [← リファレンス](README.md)
 
-RC レイヤーは、UART のバイト列をチャンネル値と「リンクなし」のフラグに変換します。機体、ARM、failsafe の動作、サーボのことは何も知りません。プロトコルを（S-Bus や PPM に）置き換えても、影響を受けるのはこのレイヤーだけです。
+RC レイヤーは、UART のバイト列をチャンネル値と「リンクなし」のフラグに変換します。機体、ARM、failsafe の動作、サーボのことは何も知りません。受信機のプロトコル（iBUS、SBUS、CRSF）は `Config::RX_PROTOCOL` で決まります。新しいプロトコルは、既存の 3 つのフレームパーサーの隣にもう 1 つ加えるだけです。
 
 ---
 
@@ -40,32 +40,69 @@ RC 信号の共通の変換処理です。
 
 ---
 
-## `IBusReceiver`
+## `RcReceiver`
 
-**ファイル：** `rc/IBusReceiver.h` · **依存先：** `IUartPort`、`RcChannelState`、`Config`、`Channels`
+**ファイル：**`rc/RcReceiver.h` · **依存先：**`IUartPort`、`IBusParser`、`SbusParser`、`CrsfParser`、`RcChannelState`、`RcInput`、`Config`、`Channels`
 
-FlySky の iBUS プロトコルを 1 バイトずつ解析するパーサーです。
+RC 受信機：プロトコルの形式で UART を開き、バイトをパーサーに渡し、全プロトコル共通の処理を行います——先頭の `RC_CHANNELS` = 10 チャンネル、チャンネル反転、フレームタイムアウト、failsafe、カウンタ。
 
-**フレームの形式**（32 バイト）：`0x20 0x40 | CH1 lo hi … CH14 lo hi | CRC lo hi`、
-`CRC = 0xFFFF − Σ(first 30 bytes)`。先頭の `IBUS_CHANNELS` = 10 チャンネルを使います。チャンネル値は**下位 12 ビット**です（上位ビットで FS-iA6B はサービス用のデータを送ってきます。たとえば failsafe 時の `0x2384` → 900 µs）。
+| プロトコル（`Config::RX_PROTOCOL`） | 受信機 | UART |
+|---|---|---|
+| `IBUS` | FlySky FS-iA6B、FS-iA10B | 115200、8N1 |
+| `SBUS` | FrSky、Futaba、RadioMaster、Jumper などほとんどの受信機 | 100000、8E2、反転信号——UART 自身が反転 |
+| `CRSF` | ExpressLRS、TBS Crossfire、Tracer | 420000、8N1 |
 
 | メソッド | 説明 |
 |---|---|
-| `explicit IBusReceiver(IUartPort& serial)` | コンストラクタではポートを開かない |
-| `void begin()` | `serial.begin(IBUS_BAUDRATE)`。タイムアウトの計時は「今」から始まる |
-| `void update()` | UART に溜まったものをすべて読み出す。周期ごとに呼ぶ |
+| `explicit RcReceiver(IUartPort& serial, Config::RxProtocol protocol = Config::RX_PROTOCOL)` | コンストラクタではポートを開かない。テストでは任意のプロトコルを渡せる |
+| `void begin()` | プロトコルの形式で UART を開き（`IUartPort::begin(baud, format)`）、タイムアウトを「今」から数える |
+| `void update()` | UART にたまったものをすべて読む。毎周期呼ぶ |
 | `const RcChannelState& getState() const` | 最後に受信したチャンネル |
 | `bool isSignalLost() const` | `isFrameTimeout() \|\| isFailsafeReported()` |
-| `bool isFrameTimeout() const` | まだ 1 つもフレームが来ていない、**または**最後のフレームが `RX_TIMEOUT_US` より古い |
-| `bool isFailsafeReported() const` | 最後のフレームでスロットルが `RX_FAILSAFE_THROTTLE_US` 未満 |
+| `bool isFrameTimeout() const` | まだフレームが 1 つも来ていない、**または**最後のフレームが `RX_TIMEOUT_US` より古い |
+| `bool isFailsafeReported() const` | 受信機がリンク喪失を通知：SBUS フレームの failsafe フラグ、CRSF のリンク品質 0 %、またはスロットル < `RX_FAILSAFE_THROTTLE_US` |
 | `uint32_t getLastFrameTime() const` | 最後の正しいフレームの `micros()` |
-| `uint32_t getGoodFrameCount() const` / `getBadFrameCount() const` | 正しいフレームと CRC エラーのカウンタ |
+| `uint32_t getGoodFrameCount() const` / `getBadFrameCount() const` | 受理したフレームと破棄したフレーム（CRC、フレーム末尾）のカウンタ |
+| `Config::RxProtocol getProtocol() const` / `const char* getProtocolName() const` | プロトコル。名前は `"iBUS"`、`"SBUS"`、`"CRSF"` |
+| `int16_t getLinkQuality() const` | 無線リンク品質、%——CRSF のみ、それ以外は −1 |
+| `bool isPortReady() const` | UART が必要な形式で開けた。`false`——ポートが対応していない（反転なしの SBUS）ため、リンクは得られない |
 
-解析のステートマシン（`processByte`）：`0x20` を待ちます。次のバイトは `0x40` でなければならず、そうでなければ探索をやり直します。そのあと 32 バイトを集めて `processFrame()` を呼びます。CRC が正しくないフレームは丸ごと捨てられます（チャンネルは変わらず、
-`badFrames++`）。
+自由関数 `rxProtocolName(Config::RxProtocol)` はプロトコル名を返します。ファームウェアのパスポート（`@id` の `rx` フィールド）が出力するのも同じ名前です。
 
 不変条件：
 
-- 最初の正しいフレームが来るまで `isSignalLost() == true` です。既定値（すべて 1500）は送信機のコマンドとは見なされません。
-- failsafe のフラグは**正しいフレームごとに**再計算されます。スロットルが正常な最初のフレームで、リンクは回復します。
-- `Config::CHANNEL_REVERSED` のチャンネルは反転した値で保存されます（`RcInput::reversed`）。failsafe はその前に**生の**スロットルで判定し、CH3 の反転は `static_assert` で禁止しています。
+- 最初の正しいフレームまでは `isSignalLost() == true`——既定値（すべて 1500）を送信機の指令とはみなしません。
+- failsafe のフラグはチャンネルフレームの**たびに**計算し直されます——正常なスロットルの最初のフレームでリンクが戻ります（CRSF ではリンク品質が 0 より大きい統計フレームでも）。
+- `Config::CHANNEL_REVERSED` のチャンネルは反転した値で保存されます（`RcInput::reversed`）。failsafe はその前に**生の**スロットルで判定し、CH3 の反転は `static_assert` で禁止されています。
+
+---
+
+## `IBusParser`
+
+**ファイル：**`rc/IBusParser.h` · **依存先：**`Config`
+
+FlySky iBUS のバイト単位パーサー：`bool feed(uint8_t)` は CRC の正しいフレームがそろうと `true` を返し、チャンネルは `values()` にあります。**フレーム**（32 バイト）：`0x20 0x40 | CH1 lo hi … CH14 lo hi | CRC lo hi`、`CRC = 0xFFFF − Σ(先頭 30 バイト)`。チャンネル値は**下位 12 ビット**です（上位ビットで FS-iA6B はサービスデータを送ります。例：failsafe で `0x2384` → 900 µs）。`0x20` を待ち、次のバイトは `0x40` でなければならず、そうでなければ探索をやり直します（2 つ目の `0x20` 自体がフレームの始まりになりうる）。iBUS には failsafe フラグがなく、FS-iA6B は正常範囲より低いスロットルでリンク喪失を知らせます。
+
+---
+
+## `SbusParser`
+
+**ファイル：**`rc/SbusParser.h` · **依存先：**`Packed11`
+
+**フレーム**（25 バイト）：`0x0F | 11 ビット × 16 チャンネル（22 バイト） | フラグ | 終端`。フラグ：ビット 2——無線で 1 フレーム欠落（まだリンク喪失ではない）、ビット 3——failsafe。終端——SBUS は `0x00`、SBUS2 は `0x04`/`0x14`/`0x24`/`0x34`。バイト `0x0F` はデータ中にも現れるため、先頭と終端の両方が正しい位置にあるときだけフレームを受理し、そうでなければ受信済みデータ内の次の `0x0F` から解析を続けます——ストリームは 1〜2 フレームで同期します。
+
+---
+
+## `CrsfParser`
+
+**ファイル：**`rc/CrsfParser.h` · **依存先：**`Packed11`
+
+**フレーム：**`0xC8 | 長さ | 種類 | データ | CRC8`。長さ = 種類 + データ + CRC、フレーム全体は 64 バイト以内。CRC8 は多項式 `0xD5`（DVB-S2）で種類とデータにかけます（`static uint8_t crc8(...)`）。必要な種類は 2 つ：`0x16`——チャンネル（SBUS と同じく 11 ビット × 16）と `0x14`——リンク統計（3 バイト目がリンク品質、%）。ExpressLRS は既定ではリンク喪失時にチャンネルの送信をやめるだけで、これがフレームタイムアウトになります。「最後の位置」モードではチャンネルは届き続けますがリンク品質が 0 になり、これが `failsafe()` です。
+
+---
+
+## `Packed11`
+
+**ファイル：**`rc/Packed11.h` · **種別：**名前空間
+
+22 バイトに 11 ビット × 16 チャンネル、下位ビットが先——SBUS も CRSF もこの形で詰めます。`toMicros(raw)`：172…1811 → 988…2012 µs、992 → 1500（`5/8 · 値 + 880`、Betaflight や INAV と同じ）。`unpack(data, out)` は 22 バイトを µs 単位の 16 個の値に変換します。

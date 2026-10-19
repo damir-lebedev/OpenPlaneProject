@@ -41,6 +41,8 @@ def heavy_config(manifest, board):
         "WIFI_AP_SSID": 'Борт "№1"',         # строка с кавычками и кириллицей
         "CAL_SWITCH": "SWD",                 # канал
         "CHANNEL_REVERSED": [False] * 8 + [True, False],  # массив
+        # приёмник: SBUS (8E2 с инверсией) на одних платах, CRSF на других
+        "RX_PROTOCOL": "SBUS" if board in ("stm32h743", "esp32-dev") else "CRSF",
     })
     if env["outputs"]["aux1"]:
         params["AILERON_LEFT_REVERSED"] = not params["AILERON_LEFT_REVERSED"]

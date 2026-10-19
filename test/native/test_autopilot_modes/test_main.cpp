@@ -30,7 +30,7 @@
 #include "control/FlightController.h"
 #include "control/FlightOutputs.h"
 #include "control/ThrottleManager.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "helpers/TestSupport.h"
 
 void setUp() { resetWorld(); }
@@ -970,7 +970,7 @@ namespace
         FakeImu imu;
         FakeBaro baro;
         FakeGps gps;
-        IBusReceiver receiver{ board.rcUart() };
+        RcReceiver receiver{ board.rcUart() };
         ControlMixer mixer;
         ThrottleManager throttle;
         FlightOutputs outputs{ board };

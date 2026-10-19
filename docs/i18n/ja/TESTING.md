@@ -85,7 +85,7 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 |---|---|
 | `ChipEmulators.h` | LSM6DSV、ICM-45686（IPREG の間接レジスタ付き）、QMC6309、SPL06-001、BMP581、u-blox の NAV-PVT フレーム。I2C または SPI 上のレジスタマップで、データは `World`「世界」（角度と角速度、高度、対気速度、針路、座標）から得て、`IMU_ROTATION_CW_DEG` を考慮したチップの軸で返します |
 | `PlaneSim.h` | 約 1.2 kg の飛行機のモデル：質点 + ロール / ピッチの回転、失速を含む CL(α)、抗力、推力、風、サーマル、地面、尾輪または前輪の降着装置：機体は主輪の上で前後に揺れ、尾輪荷重、尾部の接地、プロペラの接触を数え、プロペラのトルクと操向輪による地上でのヨーも扱う |
-| `SimHarness.h` | 閉ループ：送信機 → iBUS フレーム → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面の振れ → `PlaneSim` → センサー（ノイズのある 2 つの気圧センサーによるピトー管を含む）。`OPENPLANE_SIM_DIR` を指定すると CSV の軌跡を出力します、`realisticImu` では本物の `AttitudeEstimator` が比力から角度を計算する：滑走路での加速を機上と同じように受ける |
+| `SimHarness.h` | 閉ループ：送信機 → iBUS フレーム → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面の振れ → `PlaneSim` → センサー（ノイズのある 2 つの気圧センサーによるピトー管を含む）。`OPENPLANE_SIM_DIR` を指定すると CSV の軌跡を出力します、`realisticImu` では本物の `AttitudeEstimator` が比力から角度を計算する：滑走路での加速を機上と同じように受ける |
 
 `test/native/helpers/TestSupport.h` は、各セットが共有する部分です。`resetWorld()`（`setUp()` から呼ばれます）、`FakeUart`/`FakeServo`/`FakeBoard` とセンサー（`FakeImu`、`FakeBaro`、`FakeMag`、`FakeGps`）の代役、フレームの組み立て用 `ibusFrame()`、実物の `Esp32I2CBus`/`Esp32SpiBus` とシミュレートされたチップを持つ `*RegisterDevice` の上にドライバーを載せるテスト台 `I2cRig`/`SpiRig` です。
 
@@ -97,8 +97,8 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 
 | セット | テスト数 | 検証内容 |
 |---|---|---|
-| `native/test_hal` | 18 | `II2CBus` の補助機能（NACK、短い読み出し：バッファには触れない）、`I2cRegisterDevice`、`SpiRegisterDevice`（読み出しビット、BMP388 のダミーバイト）、`Esp32I2CBus`（5 ms のタイムアウト）、`Esp32SpiBus`（モード 0〜3）、`Esp32UartPort`（8N1、ピン）、`Esp32ServoOutput`（50 Hz/14 ビット、パルスの制限、LEDC の故障、入力バッファ経由の測定）、`Esp32Board`（バス、UART、チャンネル順、AUX、ブザー）、モーターの合図用の「パルスなし」（`stopPulses()`） |
-| `native/test_rc` | 16 | `RcChannelState`、`RcInput`、iBUS の解析：分割されて届くフレーム、CRC、12 ビットの値、送信機のフェイルセーフ、500 ms のタイムアウト（`micros()` のオーバーフローをまたぐ場合も）、ゴミデータ、再同期 |
+| `native/test_hal` | 19 | `II2CBus` の補助機能（NACK、短い読み出し：バッファには触れない）、`I2cRegisterDevice`、`SpiRegisterDevice`（読み出しビット、BMP388 のダミーバイト）、`Esp32I2CBus`（5 ms のタイムアウト）、`Esp32SpiBus`（モード 0〜3）、`Esp32UartPort`（8N1、ピン）、`Esp32ServoOutput`（50 Hz/14 ビット、パルスの制限、LEDC の故障、入力バッファ経由の測定）、`Esp32Board`（バス、UART、チャンネル順、AUX、ブザー）、モーターの合図用の「パルスなし」（`stopPulses()`）。SBUS——`Esp32UartPort` の 8E2 と RX 反転 |
+| `native/test_rc` | 33 | `RcChannelState`、`RcInput`、受信機：iBUS——分割して届くフレーム、CRC、12 ビット値、送信機の failsafe、500 ms のタイムアウト（`micros()` のオーバーフローをまたぐ場合も）、ゴミデータ、再同期。SBUS——反転付き 8E2、failsafe と欠落フレームのフラグ、SBUS2、ストリーム途中からの同期、反転できないポート。CRSF——参照値による CRC8、チャンネル、リンク品質 0 % はリンク喪失、無音はタイムアウト、他種のフレームとゴミデータ。11 ビット × 16 チャンネル |
 | `native/test_control` | 26 | フラップ（速度、初回の呼び出し、一時停止）、ミキサー（符号、リバース、フラッペロン）、スロットル、ARM のステートマシンとモードのセンサー確認、出力テーブルとパルスの自己診断、双方向 ESC のパルス、モーター逆転は DISARM 中のみで方向変更後は ARM 禁止、リバースのヘルパー（パルスの反転、チャンネルの反転、モーターの反転）、尾輪の AUTO_TAKEOFF は降着装置の校正があるときだけ |
 | `native/test_autopilot` | 22 | PID（センサーの角速度に基づく D 項、積分、アンチウィンドアップ、`dt`）、角度モードとしての STABILIZE、自動離陸（開始までモーター停止、プログラムのスロットル、DISARM）、昇降舵による ALT_HOLD、信号喪失時の滑空、上昇中の信号喪失 — 上昇を続ける |
 | `native/test_autopilot_modes` | 31 | 全 12 モードと、センサーがないときの各モードの反応、割り当て表と `static_assert`、機能とダイヤル、ナビゲーション（針路、円、ホーム地点、ジオフェンス）、failsafe RTH/滑空、手投げ発進、ソアリング、オートトリム（書き込みは地上のみ） |
@@ -121,10 +121,10 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743 と **SPI 接続**の ICM-45686 および BMP581 + QMC6309：起動時のフラッシュ破損、GCS からの ALT_HOLD が高度を保持、信号喪失 → RTH、MAVLink で確認できること、壊れたイメージの書き直し |
 | `native_stm32/test_blackbox_sd` | 29 | SD カード上のブラックボックス：FAT32（MBR あり・なし、2 クラスターにまたがるディレクトリ、ノイズのエントリ、他のデータ/断片化した/空のボリューム）、`SdFileRegion`（不完全なブロック、キャッシュ、消去、境界、故障）、偽の `HAL_SD` の上で動く本物の `Stm32SdCard` ドライバー（4 ビット、予備の速度、リトライ、ビジー状態のカード、アラインされていないバッファ）、カード上のリング（再起動、電源断、照合のコスト）、「リングは空」の目印、`FlightController` でのフライト記録、`RCC->RSR` で判別する異常再起動、バッテリーの ADC、飛行中のカードのエラー、遅いカード、コンソールからの吐き出し、`D` キー |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | カードありの `src/stm32/main.cpp`：起動時にカードとファイルが見つかる、`bbox` タスクがフライトを書き込む、ループの周期が伸びない、`bb list` |
-| `native_stm32/test_app_stm32_no_sd` | 3 | カードなしの `src/stm32/main.cpp`：ブラックボックスは無効になり理由を説明する、飛行機は飛ぶ、メニュー `k` は壊れない、PD14 での出力の自己診断（コアの `pulseIn()` の不具合を回避）、モーターの合図 `e` |
+| `native_stm32/test_app_stm32_no_sd` | 4 | カードなしの `src/stm32/main.cpp`：ブラックボックスは無効になり理由を説明する、飛行機は飛ぶ、メニュー `k` は壊れない、PD14 での出力の自己診断（コアの `pulseIn()` の不具合を回避）、モーターの合図 `e`。`Stm32UartPort` での SBUS——8E2 と RX 反転 |
 | `test_feedback` | 10 | フィードバックループを備えた飛行機の閉ループシミュレーション（PC とボードの両方） |
 | `test_imu_orientation` | 5 | 300 通りのランダムな取り付けでの IMU の取り付け校正（PC とボードの両方） |
-| **合計** | **436** | `native` に 388 + `native-stm32` に 48（さらにボード専用が 9：`test_blackbox_sd`） |
+| **合計** | **455** | `native` に 406 + `native-stm32` に 49（さらにボード専用が 9：`test_blackbox_sd`） |
 
 ### STM32 ボード上のテスト
 

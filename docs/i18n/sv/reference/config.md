@@ -28,7 +28,7 @@ Stiftblocket väljs av det makro som `[env:*]` sätter i `platformio.ini`
 | `PIN_ELEVATOR` | `uint8_t` | Höjdroder | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | Motorns fartreglage | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | Sidroder + hjul; `-1` – utgången är avstängd | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | iBUS-mottagarens RX (UART1) | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | Mottagarens RX: iBUS, SBUS eller CRSF (UART1) | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | Sensorbussen (`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | OLED-bussen (`Wire1`); `-1` – ingen | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | Den gemensamma SPI-bussen | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -60,7 +60,7 @@ nummer – kärnan väljer kringutrustningen utifrån stiften.
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7 (TX – reserverad för iBUS-SENS) |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7 (TX reserverad för telemetri till sändaren) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 – sensorer |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 – skärmen (på WeAct – kamerakontakten) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -73,14 +73,17 @@ nummer – kärnan väljer kringutrustningen utifrån stiften.
 
 Konsolen `Serial` är LPUART1 (PA9 TX / PA10 RX), variantens standard.
 
-### iBUS och förlorad förbindelse
+### Mottagare och förlorad förbindelse
 
 | Konstant | Värde | Betydelse |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | Hur många av ramens kanaler som används |
+| `RX_PROTOCOL` | `IBUS` | Mottagarens protokoll: `IBUS` (FlySky), `SBUS` (FrSky, Futaba, RadioMaster …), `CRSF` (ExpressLRS, TBS Crossfire) |
+| `RC_CHANNELS` | 10 | Hur många av ramens kanaler som används |
 | `IBUS_FRAME_LENGTH` | 32 | Ramens längd, byte |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | Ramens huvud |
 | `IBUS_BAUDRATE` | 115200 | UART-hastighet |
+| `SBUS_BAUDRATE` | 100000 | SBUS-hastighet (8E2, inverterad signal) |
+| `CRSF_BAUDRATE` | 420000 | CRSF-hastighet (ExpressLRS standard) |
 | `RX_TIMEOUT_US` | 500 000 | Ingen korrekt ram på längre tid än så – förbindelsen är förlorad |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | Gas under detta – mottagaren rapporterar sändarens failsafe |
 

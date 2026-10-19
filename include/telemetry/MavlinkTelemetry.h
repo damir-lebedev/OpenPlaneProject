@@ -485,9 +485,9 @@ private:
         p.u32(now);
         for (uint8_t i = 0; i < 18; ++i)
         {
-            p.u16(i < Config::IBUS_CHANNELS ? rc.get(i) : UINT16_MAX);
+            p.u16(i < Config::RC_CHANNELS ? rc.get(i) : UINT16_MAX);
         }
-        p.u8(Config::IBUS_CHANNELS).u8(controller.isReceiverFailsafe() ? 0 : UINT8_MAX);
+        p.u8(Config::RC_CHANNELS).u8(controller.isReceiverFailsafe() ? 0 : UINT8_MAX);
         return send(Mavlink::Msg::RC_CHANNELS, p);
     }
 

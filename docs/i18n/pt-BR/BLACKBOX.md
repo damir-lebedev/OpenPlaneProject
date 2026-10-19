@@ -35,14 +35,14 @@ Nas demais placas (ESP32-C3, ESP32 comum) não há mídia de armazenamento: a ca
 |---|---|---|
 | `IMU` | a cada ciclo, 500 Hz | giroscópio (°/s), acelerômetro (g), quanto durou o trabalho do ciclo de controle (µs) |
 | `CTRL` | 100 Hz | rolagem/arfagem/rumo, alvos do piloto automático, sticks do piloto, comandos finais, **todas as 7 saídas** (µs), componentes do PID de rolagem e de arfagem (P, I, D), acelerador do piloto e do piloto automático, flaps, modo, flags (ARM, link, failsafe, sensores vivos...), funções ligadas |
-| `RC` | 50 Hz | todos os 10 canais do rádio, contadores de quadros iBUS (íntegros e corrompidos) |
+| `RC` | 50 Hz | todos os 10 canais do rádio, contadores de quadros iBUS/SBUS/CRSF (íntegros e corrompidos) |
 | `BARO` | a cada amostra (~50 Hz) | pressão, temperatura, altitude, velocidade vertical, alvo de altitude |
 | `MAG` | até 50 Hz | o campo nos três eixos, rumo |
 | `GPS` | a cada solução | coordenadas, altitude, velocidade, rumo, satélites, fix, precisão |
 | `AIR` | até 50 Hz | tubo de Pitot: diferença de pressão, velocidade indicada e verdadeira, densidade |
 | `NAV` | 10 Hz | ponto de origem (distância, marcação), rumo e alvo de rumo, velocidade de navegação, fonte do rumo, estágios do lançamento manual e do voo planado, auto-trim, etapa da decolagem automática (`takeoff_stage`) |
 | `POWER` | 10 Hz | tensão da bateria e saída do sensor de corrente (os divisores da placa da controladora de voo, [FC_BOARD.md](FC_BOARD.md), bloco B) |
-| `SYS` | 1 Hz | frequência e pior ciclo do laço de controle, memória livre, contadores do iBUS, temperatura do IMU, fila da caixa-preta, registros perdidos, a gravação mais longa na flash, espaço livre |
+| `SYS` | 1 Hz | frequência e pior ciclo do laço de controle, memória livre, contadores do iBUS/SBUS/CRSF, temperatura do IMU, fila da caixa-preta, registros perdidos, a gravação mais longa na flash, espaço livre |
 | `EVENT` | por evento | ARM/DISARM, recusa de ARM com o motivo, troca de modo, link perdido/recuperado, sensor com falha/recuperado, fix do GPS, ponto de origem registrado, funções das chaves, geofence, proteção contra estol, estágios do lançamento manual e do voo planado, etapas da decolagem automática (aborto — com o motivo), passos e resultado da calibração em solo (atitude em solo ou erro) |
 
 No início de cada voo vêm os parâmetros: o firmware (data da compilação), o motivo da partida e da última reinicialização, quais sensores estão instalados e se passaram na verificação pré-voo, os coeficientes do PID (incluindo ajustes feitos pelo painel), os trims, valores importantes do `Config` e as atribuições das chaves.

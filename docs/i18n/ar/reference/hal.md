@@ -48,11 +48,11 @@
 
 | الدالة | الوصف |
 |---|---|
-| `virtual void begin()` | تهيئة لمرة واحدة لناقلَي I2C وSPI. تفتح منافذ UART أصحابُها (`IBusReceiver`، وGPS) بسرعتها الخاصة، وتفتح PWM الدالةُ `FlightOutputs::begin()` |
+| `virtual void begin()` | تهيئة لمرة واحدة لناقلَي I2C وSPI. تفتح منافذ UART أصحابُها (`RcReceiver`، وGPS) بسرعتها الخاصة، وتفتح PWM الدالةُ `FlightOutputs::begin()` |
 | `virtual II2CBus& i2c()` | ناقل المستشعرات |
 | `virtual ISpiBus& spi()` | ناقل SPI |
 | `virtual II2CBus* displayI2c()` | ناقل I2C ثانٍ للشاشة فقط؛ و`nullptr` إن لم يوجد |
-| `virtual IUartPort& rcUart()` | منفذ UART لمستقبِل iBUS |
+| `virtual IUartPort& rcUart()` | منفذ UART لمستقبِل جهاز التحكم: iBUS أو SBUS أو CRSF |
 | `virtual IUartPort& gpsUart()` | منفذ UART لـ GPS |
 | `virtual IUartPort* telemetryUart()` | منفذ UART لمودم الراديو MAVLink؛ والقيمة الافتراضية `nullptr` (لا يوجد في ESP32 منفذ UART حرّ) |
 | `virtual IServoOutput& servo(uint8_t channel)` | مخرج PWM بحسب الفهرس `ServoChannel::*` |
@@ -105,12 +105,14 @@
 
 **الملف:** `hal/IUartPort.h` · **النوع:** واجهة · **التنفيذات:** `Esp32UartPort`، `Stm32UartPort`
 
-منفذ UART على شكل `HardwareSerial`، لكن `begin()` تأخذ السرعة فقط:
-الأطراف والصيغة (8N1) يثبّتها التنفيذ.
+منفذ UART على هيئة `HardwareSerial`، لكن `begin()` يأخذ السرعة وصيغة الإطار فقط:
+الأطراف يثبّتها التطبيق. `UartFormat`: ‏`STANDARD_8N1` — لكل شيء تقريبًا،
+و`SBUS_8E2_INVERTED` — لـSBUS ‏(8E2، إشارة معكوسة؛ يعكسها UART نفسه).
 
 | الدالة | الوصف |
 |---|---|
-| `begin(baud)` | فتح المنفذ |
+| `begin(baud)` | فتح المنفذ، 8N1 |
+| `virtual bool begin(baud, format)` | فتح المنفذ بصيغة `UartFormat`؛ `false` — المنفذ لا يستطيع ذلك (افتراضيًا 8N1 فقط) |
 | `int available()`، `int read()` | الاستقبال |
 | `size_t write(byte)`، `size_t write(buffer, size)` | الإرسال |
 | `virtual int availableForWrite()` | المساحة الحرة في مخزن الإرسال؛ و`-1` تعني غير معروفة (الافتراضي). تؤجّل القياسات عن بُعد الإطار بالاعتماد عليها بدل الانتظار |
@@ -249,7 +251,7 @@ sd-prepare`) ويُملأ بالقيمة `0xFF`. يُعثر على الملف ف
 | `i2cBus` | `Esp32I2CBus` | `Wire` على `PIN_I2C_SDA/SCL`، بتردد 400 kHz |
 | `displayBus` | `Esp32I2CBus` | `Wire1` على `PIN_I2C2_SDA/SCL` — فقط إذا كان `SOC_I2C_NUM > 1` |
 | `spiBus` | `Esp32SpiBus` | الكائن العام `SPI` |
-| `rcSerial`، `rcPort` | `HardwareSerial(1)`، `Esp32UartPort` | iBUS على `PIN_IBUS`، استقبال RX فقط |
+| `rcSerial`، `rcPort` | `HardwareSerial(1)`، `Esp32UartPort` | المستقبِل على `PIN_RC_RX`، استقبال فقط |
 | `gpsSerial`، `gpsPort` | `HardwareSerial(UART_NUM_GPS)`، `Esp32UartPort` | GPS على `PIN_GPS_RX/TX` |
 | `servos[7]` | `Esp32ServoOutput` | قنوات LEDC من 0 إلى 6 بترتيب `ServoChannel` (AUX1/AUX2 — `PIN_AUX1/2`، إذا كانت موصولة) |
 
@@ -295,8 +297,9 @@ SPI_MODEn)`؛ وتحوّل `spiModeOf()` القيم 0..3 إلى ثوابت Ardui
 
 **الملف:** `hal/esp32/Esp32UartPort.h` · **يرث من:** `IUartPort`
 
-غلاف فوق `HardwareSerial`: `begin(baud)` ← `serial.begin(baud, SERIAL_8N1,
-rx, tx)`؛ و`tx = -1` تعني الاستقبال فقط. والباقي تفويض.
+غلاف حول `HardwareSerial`: ‏`begin(baud)` ← `serial.begin(baud, SERIAL_8N1, rx, tx)`؛
+وSBUS ← `serial.begin(baud, SERIAL_8E2, rx, tx, true)` (عكس RX بواسطة UART في ESP32)؛
+و`tx = -1` — استقبال فقط. والباقي تفويض.
 
 ---
 
@@ -359,7 +362,7 @@ USB CDC)، ويجتاز cppcheck والاختبارات على الحاسوب (�
 | `i2cBus` | `Stm32I2CBus` | `Wire` على `PIN_I2C_SDA/SCL` (I2C2: PB11/PB10)، بتردد 400 kHz |
 | `displayBus` | `Stm32I2CBus` | `displayWire` على `PIN_I2C2_SDA/SCL` (I2C1: PB9/PB8) — الناقل الثاني موجود دائمًا |
 | `spiBus` | `Stm32SpiBus` | الكائن العام `SPI` على `PIN_SENSOR_SPI_*` (SPI2) |
-| `rcSerial`، `rcPort` | `Uart`، `Stm32UartPort` | iBUS: UART7، والاستقبال RX على `PIN_IBUS` (PE7)، والإرسال TX على `PIN_IBUS_TX` (PE8، محجوز لـ iBUS-SENS) |
+| `rcSerial`، `rcPort` | `Uart`، `Stm32UartPort` | المستقبِل: UART7، وRX ‏`PIN_RC_RX` ‏(PE7)، وTX ‏`PIN_RC_TX` ‏(PE8، محجوز للقياس عن بُعد إلى جهاز التحكم) |
 | `gpsSerial`، `gpsPort` | `Uart`، `Stm32UartPort` | GPS: USART3، `PIN_GPS_RX/TX` (PD9/PD8) |
 | `telemetrySerial`، `telemetryPort` | `Uart`، `Stm32UartPort` | مودم الراديو MAVLink: UART4، `PIN_TELEM_RX/TX` (PD0/PD1) |
 | `servos[7]` | `Stm32ServoOutput` | بترتيب `ServoChannel` (AUX1 — PD15/TIM4، وAUX2 — PE9/TIM1) |
@@ -401,12 +404,11 @@ USB CDC)، ويجتاز cppcheck والاختبارات على الحاسوب (�
 
 **الملف:** `hal/stm32/Stm32UartPort.h` · **يرث من:** `IUartPort`
 
-غلاف فوق `HardwareSerial&` (وهو في STM32duino 3.x الصنف الأساسي المجرد
-`arduino::HardwareSerial`، أما الكائن الملموس `Uart` فتنشئه `Stm32Board`).
-`begin(baud)` ← `serial.begin(baud, SERIAL_8N1)`؛ و`availableForWrite()` تأتي
-من `HardwareSerial`. المخازن المؤقتة (`SERIAL_RX/TX_BUFFER_SIZE` في البيئة): الاستقبال 256
-بايت (إطار NAV-PVT حجمه 100، والـ 64 القياسية قليلة)، والإرسال 1024 (أسطر السجل
-وإطارات MAVLink دون انتظار).
+غلاف حول `Uart&` (ينشئ الكائنَ `Stm32Board`). ‏`begin(baud)` ← `serial.begin(baud, SERIAL_8N1)`؛
+وSBUS — ‏`setRxInvert()` (يعكس USART نفسه RX، البت RXINV) قبل `serial.begin(baud, SERIAL_8E2)`،
+ويختار النواة بنفسها كلمة 9 بتات مع التكافؤ؛ و`availableForWrite()` من `HardwareSerial`.
+المخازن (`SERIAL_RX/TX_BUFFER_SIZE` في env): الاستقبال 256 بايتًا (إطار NAV-PVT ‏100،
+والـ 64 القياسية قليلة)، والإرسال 1024 (أسطر السجل وأطر MAVLink دون انتظار).
 
 ## ‏`Stm32ServoOutput`
 

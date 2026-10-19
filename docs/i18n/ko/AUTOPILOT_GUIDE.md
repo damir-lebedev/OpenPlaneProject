@@ -49,7 +49,7 @@
 
 ## 조종기 기본 배치
 
-FS-i6 + FS-iA6B, iBUS, 10채널(`config/Channels.h`).
+FS-i6 + FS-iA6B, iBUS, 10채널(`config/Channels.h`). 다른 수신기 — SBUS 또는 CRSF(`RX_PROTOCOL`), 채널은 같음.
 
 | 채널 | 조종기 부위 | 기본값 |
 |---|---|---|
@@ -255,7 +255,7 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 
 **홈**은 GPS가 좋으면(3D 픽스, 위성 ≥ 6개, 정확도 ≤ 5 m) ARM할 때 기록됩니다. ARM 시점에 GPS가 아직 위치를 잡지 못했다면, 잡는 즉시 홈이 기록됩니다. 현장에서 바꾸려면 `HOME_RESET` 기능을 쓰세요.
 
-**통신 두절**(iBUS 프레임이 0.5초 넘게 오지 않거나 수신기가 950 µs 아래의 스로틀을 보낸 경우로, 조종기에서 설정한 failsafe입니다. `docs/PILOT_GUIDE.md` 참고):
+**통신 두절**(수신기에서 프레임이 0.5초 넘게 오지 않거나, 수신기가 직접 링크 끊김을 알렸거나(SBUS, CRSF), 조종기에서 설정한 failsafe로 950 µs 아래의 스로틀을 보낸 경우. `docs/PILOT_GUIDE.md` 참고):
 
 | 상황 | 기체의 동작 |
 |---|---|

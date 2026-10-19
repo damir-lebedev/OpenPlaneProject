@@ -50,7 +50,7 @@ include/
 │   └── stm32/   Stm32Board + Wire/SPI/Uart/HardwareTimer, Stm32FlashStorage,
 │                compat/Preferences.h (الإعدادات في الفلاش بدل NVS)
 ├── storage/     KeyValueStore, KvPreferences — تخزين الإعدادات دون NVS
-├── rc/          RcChannelState, RcInput, IBusReceiver
+├── rc/          RcChannelState, RcInput, RcReceiver, IBusParser, SbusParser, CrsfParser
 ├── control/     ControlCommand, ControlMixer, FlapsController,
 │                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
 │                FlightOutputState, FlightOutputs, Beeper, FlightController
@@ -86,7 +86,7 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │ CONTROL             │  │ AUTOPILOT             │  │ RC                    │
-│ ControlMixer        │  │ Autopilot: 12 وضعًا    │  │ IBusReceiver          │
+│ ControlMixer        │  │ Autopilot: 12 وضعًا    │  │ RcReceiver            │
 │  └ FlapsController  │  │  └ الملاحة وPID       │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
@@ -147,7 +147,7 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 
 | الملف | مسؤول عن |
 |---|---|
-| `Config.h` | جميع الأطراف (كتلة لكل لوحة: `BOARD_ESP32_S3/C3/CLASSIC` و`BOARD_STM32H743`) والإعدادات: iBUS وفقدان الاتصال؛ أشواط أسطح التحكم؛ الفلابات؛ عكس السيرفو؛ تركيب IMU والبوصلة؛ ARM؛ failsafe (RTH أو الانسياب)؛ أنبوب بيتو (`PITOT_*`)؛ جميع أرقام أوضاع الطيار الآلي ووظائفه؛ الحلقة؛ Wi-Fi؛ MAVLink؛ التصحيح |
+| `Config.h` | جميع الأطراف (كتلة لكل لوحة: `BOARD_ESP32_S3/C3/CLASSIC` و`BOARD_STM32H743`) والإعدادات: iBUS/SBUS/CRSF وفقدان الاتصال؛ أشواط أسطح التحكم؛ الفلابات؛ عكس السيرفو؛ تركيب IMU والبوصلة؛ ARM؛ failsafe (RTH أو الانسياب)؛ أنبوب بيتو (`PITOT_*`)؛ جميع أرقام أوضاع الطيار الآلي ووظائفه؛ الحلقة؛ Wi-Fi؛ MAVLink؛ التصحيح |
 | `Channels.h` | أسماء القنوات: `AILERON` و`ELEVATOR` و`THROTTLE` و`RUDDER` و`ARM` و`SWB` و`SWC` و`SWD` و`VRA` و`VRB` |
 | `Controls.h` | جدول `BINDINGS`: ما يفعله كل مفتاح ومقبض، سطر واحد لكل قناة، مع فحوص `static_assert` |
 
@@ -179,7 +179,11 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 |---|---|
 | `RcChannelState.h` | لقطة لـ 10 قنوات |
 | `RcInput.h` | `clamp()` و`centered(us, max, reverse)` |
-| `IBusReceiver.h` | iBUS ← قنوات: إطار من 32 بايت، وCRC، وقيمة القناة هي الـ 12 بتًّا الدنيا (`& 0x0FFF`)؛ و`isSignalLost()` = لا إطارات (أو لم يصل أي إطار بعد) ∥ قيمة الخانق في failsafe؛ وعدّادات الإطارات |
+| `RcReceiver.h` | المستقبِل: UART بصيغة البروتوكول (`RX_PROTOCOL`: ‏iBUS أو SBUS أو CRSF) ← `RC_CHANNELS` قناة؛ و`isSignalLost()` = لا أطر (أو لم يصل أي إطار بعد) ∥ أبلغ المستقبِل عن failsafe (علامة SBUS، أو جودة اتصال 0 في CRSF، أو خانق دون الطبيعي)؛ وعكس القنوات، وعدّادات الأطر |
+| `IBusParser.h` | iBUS: إطار من 32 بايتًا، وCRC، وقيمة القناة هي الـ 12 بتًا الدنيا (`& 0x0FFF`) |
+| `SbusParser.h` | SBUS: إطار من 25 بايتًا، و16 قناة من 11 بتًا، وعلامتا failsafe والإطار الضائع، وSBUS2 |
+| `CrsfParser.h` | CRSF: ‏CRC8 (كثيرة الحدود 0xD5)، والقنوات (النوع 0x16) وإحصاءات الاتصال (النوع 0x14، جودة الاتصال) |
+| `Packed11.h` | 16 قناة من 11 بتًا ← µs — مشترك بين SBUS وCRSF |
 
 ### ‏`control/`
 
@@ -329,7 +333,7 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 ## خريطة قنوات RC وARM وfailsafe
 
 المصدر هو `include/config/Channels.h`. جهاز التحكم FS-i6 (10 قنوات، النمط 2) +
-المستقبِل FS-iA6B، ‏iBUS 115200.
+المستقبِل FS-iA6B، ‏iBUS 115200. والمستقبِلات الأخرى — SBUS أو CRSF ‏(`RX_PROTOCOL`)، بالقنوات نفسها.
 
 | القناة | عنصر جهاز التحكم | الاسم | الغرض |
 |---|---|---|---|
@@ -359,13 +363,14 @@ DISARM. وبعد تبديل الاتجاه يُرفض ARM مدة `REVERSE_SETTLE
 خانق الطيار وحده ولا يزيد على `REVERSE_THROTTLE_LIMIT_PCT` ‏(50%)؛ ولا يحصل الطيار
 الآلي على الخانق، وعند فقدان الاتصال يتوقف المحرك.
 
-**فقدان الاتصال** (`IBusReceiver::isSignalLost()`):
+**فقدان الاتصال** (`RcReceiver::isSignalLost()`):
 
 1. لا إطارات لمدة تزيد على `RX_TIMEOUT_US` (500 ms) — انقطاع سلك أو
    انقطاع التغذية عن المستقبِل. وقبل أول إطار بعد التشغيل يُعدّ الاتصال
    مفقودًا أيضًا: فلا تُؤخذ قيم القنوات الافتراضية (كلها 1500) على أنها
    أوامر من جهاز التحكم.
-2. الخانق أقل من `RX_FAILSAFE_THROTTLE_US` (950) — وهو failsafe المضبوط في
+2. أبلغ المستقبِل نفسه عن فقدان الاتصال: علامة failsafe في إطار SBUS، وجودة اتصال 0 % في إحصاءات CRSF.
+3. الخانق أقل من `RX_FAILSAFE_THROTTLE_US` (950) — وهو failsafe المضبوط في
    جهاز التحكم. **لا يتوقف FS-iA6B عن إرسال الإطارات عند فقدان جهاز
    التحكم**، بل يكرر آخر القيم (جرى التحقق على المنصة)، ولهذا لا يُكتشف فقدان
    الاتصال دون ضبط failsafe في جهاز التحكم. والضبط موصوف في `PILOT_GUIDE.md`.
@@ -452,7 +457,7 @@ DISARM. وبعد تبديل الاتجاه يُرفض ARM مدة `REVERSE_SETTLE
 
 تُستدعى من `loop()` كل 2 ms. والترتيب هو الأولوية:
 
-1. **‏`receiver.update()`** — تحليل بايتات iBUS المتراكمة.
+1. **‏`receiver.update()`** — تحليل بايتات المستقبِل المتراكمة (iBUS أو SBUS أو CRSF).
 2. **المفاتيح** — `switches->update(rc)`، فقط والاتصال قائم (في إطار failsafe
    لا تعكس القنوات حالة المفاتيح): الوضع (عند التغيّر فقط)، والوظائف،
    والمقابض.
@@ -620,7 +625,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (الأسوأ خلال 10 s) | iBUS ok
 | الجنيح الأيسر / الأيمن | GPIO4 / GPIO5 | GPIO5 / GPIO4 | GPIO13 / GPIO14 |
 | الرافعة / ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
 | الدفة | GPIO18 | — (لا طرف) | GPIO25 |
-| iBUS RX | GPIO17 | GPIO8 | GPIO16 |
+| RC RX | GPIO17 | GPIO8 | GPIO16 |
 | I2C الحساسات SDA / SCL | GPIO41 / GPIO42 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | I2C شاشة OLED ‏SDA / SCL | GPIO1 / GPIO2 | — | — |
 | SPI ‏SCK / MISO / MOSI | GPIO12 / 13 / 11 | GPIO0 / 10 / 20 | GPIO18 / 19 / 23 |
@@ -681,7 +686,7 @@ MAVLink وصندوق أسود على بطاقة SD. وهو يُبنى، ويجت
 | الرافعة / ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
 | الدفة | PD14 | TIM4_CH3 |
 | AUX1 (الحمولة) / AUX2 (الكاميرا) | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
-| iBUS RX (وTX احتياطي) | PE7 (PE8) | UART7 |
+| RC RX (وTX احتياطي) | PE7 (PE8) | UART7 |
 | I2C الحساسات SDA / SCL | PB11 / PB10 | I2C2 |
 | I2C شاشة OLED ‏SDA / SCL | PB9 / PB8 | I2C1 |
 | SPI ‏SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |

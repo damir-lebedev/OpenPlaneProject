@@ -18,7 +18,7 @@
 | `magDevice`、`magSensor`、`magnetometer` | … `SelectedMag`、`MagnetometerSensor* const` | 仅当 `SENSOR_MAG != NONE`，否则为 `nullptr` |
 | `gpsSensor`、`gpsReceiver` | `SelectedGps`、`GpsSensor* const` | 仅当 `SENSOR_GPS != NONE` |
 | `pitotDevice`、`pitotBaro`、`pitotSensor`、`airspeedSensor` | `SELECTED_PITOT_DEVICE(board)`、`SelectedPitotBaro`（`"PITOT-BMP581"`）、`PitotDualBaroAirspeed(pitotBaro, baroSensor)` | 仅当 `SENSOR_AIRSPEED != NONE` |
-| `ibusReceiver` | `IBusReceiver` | `board.rcUart()` |
+| `rcReceiver` | `RcReceiver` | `board.rcUart()` |
 | `controlMixer`、`throttleManager` | `ControlMixer`、`ThrottleManager` | |
 | `flightOutputs` | `FlightOutputs` | `board` |
 | `autopilot` | `Autopilot` | 全部传感器（可为空） |

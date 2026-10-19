@@ -29,7 +29,7 @@ Le bloc de broches est choisi par la macro que définit `[env:*]` dans
 | `PIN_ELEVATOR` | `uint8_t` | Profondeur | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | Régulateur du moteur | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | Direction + roue ; `-1` — la sortie est désactivée | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | RX du récepteur iBUS (UART1) | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | RX du récepteur : iBUS, SBUS ou CRSF (UART1) | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | Le bus des capteurs (`Wire`) | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | Le bus de l’OLED (`Wire1`) ; `-1` — aucun | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | Le bus SPI commun | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -62,7 +62,7 @@ périphérique d’après les broches.
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7 (TX — réservée pour iBUS-SENS) |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7 (TX réservé à la télémesure vers la radio) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 — capteurs |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — l’écran (sur la WeAct — le connecteur de la caméra) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -76,14 +76,17 @@ périphérique d’après les broches.
 La console `Serial` est la LPUART1 (PA9 TX / PA10 RX), la valeur par défaut de
 la variante.
 
-### iBUS et perte de liaison
+### Récepteur et perte de liaison
 
 | Constante | Valeur | Signification |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | Combien de canaux de la trame sont utilisés |
+| `RX_PROTOCOL` | `IBUS` | Protocole du récepteur : `IBUS` (FlySky), `SBUS` (FrSky, Futaba, RadioMaster…), `CRSF` (ExpressLRS, TBS Crossfire) |
+| `RC_CHANNELS` | 10 | Combien de canaux de la trame sont utilisés |
 | `IBUS_FRAME_LENGTH` | 32 | Longueur de la trame, octets |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | L’en-tête de la trame |
 | `IBUS_BAUDRATE` | 115200 | Vitesse de l’UART |
+| `SBUS_BAUDRATE` | 100000 | Vitesse SBUS (8E2, signal inversé) |
+| `CRSF_BAUDRATE` | 420000 | Vitesse CRSF (le défaut d’ExpressLRS) |
 | `RX_TIMEOUT_US` | 500 000 | Pas de trame correcte depuis plus longtemps que cela — la liaison est perdue |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | Gaz en dessous de cette valeur — le récepteur signale le failsafe de la radiocommande |
 

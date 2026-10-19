@@ -5,8 +5,9 @@
 [← संदर्भ](README.md)
 
 RC परत UART के बाइटों को चैनल के मानों और “संपर्क नहीं है” के संकेत में बदलती है।
-उसे विमान, ARM, failsafe के व्यवहार और सर्वो के बारे में कुछ नहीं पता — प्रोटोकॉल
-बदलना (S-Bus, PPM) केवल इसी परत को प्रभावित करता है।
+उसे विमान, ARM, failsafe के व्यवहार और सर्वो के बारे में कुछ नहीं पता। रिसीवर का
+प्रोटोकॉल — iBUS, SBUS या CRSF — `Config::RX_PROTOCOL` तय करता है; नया प्रोटोकॉल
+मौजूदा तीन के पास बस एक और फ़्रेम पार्सर है।
 
 ---
 
@@ -42,40 +43,94 @@ RC सिग्नलों के साझा रूपांतरण।
 
 ---
 
-## `IBusReceiver`
+## `RcReceiver`
 
-**फ़ाइल:** `rc/IBusReceiver.h` · **निर्भर है:** `IUartPort`, `RcChannelState`, `Config`, `Channels`
+**फ़ाइल:** `rc/RcReceiver.h` · **निर्भर है:** `IUartPort`, `IBusParser`, `SbusParser`, `CrsfParser`, `RcChannelState`, `RcInput`, `Config`, `Channels`
 
-FlySky iBUS प्रोटोकॉल का बाइट-दर-बाइट पार्सर।
+रिमोट का रिसीवर: प्रोटोकॉल के फ़ॉर्मैट में UART खोलता है, बाइट पार्सर को देता है और
+वह काम करता है जो सभी प्रोटोकॉल में साझा है — पहले `RC_CHANNELS` = 10 चैनल, चैनल
+रिवर्स, फ़्रेम टाइमआउट, failsafe, काउंटर।
 
-**फ़्रेम का प्रारूप** (32 बाइट): `0x20 0x40 | CH1 lo hi … CH14 lo hi | CRC lo hi`,
-`CRC = 0xFFFF − Σ(first 30 bytes)`। पहले `IBUS_CHANNELS` = 10 चैनल लिए जाते हैं;
-चैनल का मान — **निचले 12 बिट** (ऊपरी बिटों में FS-iA6B सेवा-डेटा भेजता है,
-जैसे failsafe में `0x2384` → 900 µs)।
+| प्रोटोकॉल (`Config::RX_PROTOCOL`) | रिसीवर | UART |
+|---|---|---|
+| `IBUS` | FlySky FS-iA6B, FS-iA10B | 115200, 8N1 |
+| `SBUS` | FrSky, Futaba, RadioMaster, Jumper और अधिकांश अन्य | 100000, 8E2, उलटा सिग्नल — उलटना UART ख़ुद करता है |
+| `CRSF` | ExpressLRS, TBS Crossfire और Tracer | 420000, 8N1 |
 
 | मेथड | विवरण |
 |---|---|
-| `explicit IBusReceiver(IUartPort& serial)` | पोर्ट कंस्ट्रक्टर में नहीं खुलता |
-| `void begin()` | `serial.begin(IBUS_BAUDRATE)`, टाइमआउट की गिनती “अभी” से |
-| `void update()` | UART में जमा सब कुछ पढ़ लेना; हर चक्र में बुलाएँ |
-| `const RcChannelState& getState() const` | आख़िरी प्राप्त चैनल |
+| `explicit RcReceiver(IUartPort& serial, Config::RxProtocol protocol = Config::RX_PROTOCOL)` | कंस्ट्रक्टर में पोर्ट नहीं खुलता; टेस्ट में कोई भी प्रोटोकॉल दिया जा सकता है |
+| `void begin()` | प्रोटोकॉल के फ़ॉर्मैट में UART खोलना (`IUartPort::begin(baud, format)`), टाइमआउट “अभी” से गिनना |
+| `void update()` | UART में जमा सब कुछ पढ़ना; हर टिक पर बुलाएँ |
+| `const RcChannelState& getState() const` | आख़िरी मिले चैनल |
 | `bool isSignalLost() const` | `isFrameTimeout() \|\| isFailsafeReported()` |
-| `bool isFrameTimeout() const` | अभी तक एक भी फ़्रेम नहीं आया **या** आख़िरी `RX_TIMEOUT_US` से पुराना है |
-| `bool isFailsafeReported() const` | आख़िरी फ़्रेम में थ्रॉटल < `RX_FAILSAFE_THROTTLE_US` |
+| `bool isFrameTimeout() const` | अभी तक एक भी फ़्रेम नहीं आया **या** आख़िरी फ़्रेम `RX_TIMEOUT_US` से पुराना है |
+| `bool isFailsafeReported() const` | रिसीवर ने संपर्क टूटने की सूचना दी: SBUS फ़्रेम में failsafe फ़्लैग, CRSF में लिंक गुणवत्ता 0 %, या थ्रॉटल < `RX_FAILSAFE_THROTTLE_US` |
 | `uint32_t getLastFrameTime() const` | आख़िरी सही फ़्रेम का `micros()` |
-| `uint32_t getGoodFrameCount() const` / `getBadFrameCount() const` | सही फ़्रेमों और CRC त्रुटियों के काउंटर |
+| `uint32_t getGoodFrameCount() const` / `getBadFrameCount() const` | स्वीकार और अस्वीकार (CRC, फ़्रेम का अंत) फ़्रेमों के काउंटर |
+| `Config::RxProtocol getProtocol() const` / `const char* getProtocolName() const` | प्रोटोकॉल; नाम — `"iBUS"`, `"SBUS"`, `"CRSF"` |
+| `int16_t getLinkQuality() const` | रेडियो लिंक की गुणवत्ता, % — केवल CRSF, वरना −1 |
+| `bool isPortReady() const` | UART ज़रूरी फ़ॉर्मैट में खुला; `false` — पोर्ट ऐसा नहीं कर सकता (बिना उलटने के SBUS), संपर्क नहीं होगा |
 
-पार्सिंग की स्टेट मशीन (`processByte`): `0x20` की प्रतीक्षा करती है; अगला बाइट
-`0x40` होना चाहिए, वरना खोज फिर से शुरू; फिर 32 बाइट जमा करती है और
-`processFrame()` बुलाती है। ग़लत CRC वाला फ़्रेम पूरा फेंक दिया जाता है (चैनल नहीं
-बदलते, `badFrames++`)।
+स्वतंत्र फ़ंक्शन `rxProtocolName(Config::RxProtocol)` प्रोटोकॉल का नाम देता है; फ़र्मवेयर
+का पासपोर्ट (`@id`, फ़ील्ड `rx`) यही छापता है।
 
 अपरिवर्तनीय नियम:
 
-- पहले सही फ़्रेम तक `isSignalLost() == true` — डिफ़ॉल्ट मान (सभी 1500)
-  ट्रांसमीटर की कमांड नहीं समझे जाते।
-- failsafe का संकेत **हर** सही फ़्रेम पर दोबारा गिना जाता है — संपर्क सामान्य
-  थ्रॉटल वाले पहले ही फ़्रेम से बहाल हो जाता है।
+- पहले सही फ़्रेम तक `isSignalLost() == true` — डिफ़ॉल्ट मान (सब 1500) रिमोट के
+  आदेश नहीं माने जाते।
+- failsafe का संकेत चैनलों के **हर** फ़्रेम पर दोबारा गिना जाता है — सामान्य थ्रॉटल
+  वाले पहले ही फ़्रेम से संपर्क लौट आता है (CRSF में साथ ही 0 से अधिक लिंक गुणवत्ता
+  वाले आँकड़ों से भी)।
 - `Config::CHANNEL_REVERSED` वाले चैनल उलटे रूप में सहेजे जाते हैं
   (`RcInput::reversed`); failsafe उससे पहले **कच्चे** थ्रॉटल से पहचाना जाता है, और
   CH3 का रिवर्स `static_assert` से मना है।
+
+---
+
+## `IBusParser`
+
+**फ़ाइल:** `rc/IBusParser.h` · **निर्भर है:** `Config`
+
+FlySky iBUS का बाइट-दर-बाइट पार्सर: `bool feed(uint8_t)` सही CRC वाला फ़्रेम पूरा होने पर
+`true` देता है; चैनल `values()` में। **फ़्रेम** (32 बाइट): `0x20 0x40 | CH1 lo hi … CH14 lo hi | CRC lo hi`,
+`CRC = 0xFFFF − Σ(पहले 30 बाइट)`; चैनल का मान — **निचले 12 बिट** (ऊपरी बिटों में FS-iA6B
+सेवा डेटा भेजता है, जैसे failsafe में `0x2384` → 900 µs)। `0x20` का इंतज़ार करता है;
+अगला बाइट `0x40` होना चाहिए, वरना खोज फिर से शुरू (दूसरा `0x20` ख़ुद फ़्रेम शुरू कर सकता
+है)। iBUS में failsafe फ़्लैग नहीं है: FS-iA6B सामान्य से कम थ्रॉटल से संपर्क टूटने की सूचना
+देता है।
+
+---
+
+## `SbusParser`
+
+**फ़ाइल:** `rc/SbusParser.h` · **निर्भर है:** `Packed11`
+
+**फ़्रेम** (25 बाइट): `0x0F | 11 बिट के 16 चैनल (22 बाइट) | फ़्लैग | अंत`; फ़्लैग: बिट 2 —
+रेडियो पर एक फ़्रेम खोया (यह अभी संपर्क टूटना नहीं), बिट 3 — failsafe; अंत — SBUS में
+`0x00`, SBUS2 में `0x04`/`0x14`/`0x24`/`0x34`। बाइट `0x0F` डेटा में भी आता है, इसलिए फ़्रेम
+तभी स्वीकार होता है जब शुरुआत और अंत दोनों अपनी जगह हों; वरना पार्सिंग मिले डेटा के
+अंदर अगले `0x0F` से जारी रहती है — धारा एक-दो फ़्रेम में तालमेल पा लेती है।
+
+---
+
+## `CrsfParser`
+
+**फ़ाइल:** `rc/CrsfParser.h` · **निर्भर है:** `Packed11`
+
+**फ़्रेम:** `0xC8 | लंबाई | प्रकार | डेटा | CRC8`; लंबाई = प्रकार + डेटा + CRC, फ़्रेम 64 बाइट
+से लंबा नहीं; CRC8 बहुपद `0xD5` (DVB-S2) के साथ प्रकार और डेटा पर (`static uint8_t crc8(...)`)।
+दो प्रकार चाहिए: `0x16` — चैनल (SBUS की तरह 11 बिट के 16) और `0x14` — लिंक के आँकड़े
+(तीसरा बाइट — लिंक गुणवत्ता, %)। संपर्क टूटने पर ExpressLRS डिफ़ॉल्ट रूप से चैनल भेजना
+बंद कर देता है — यह फ़्रेम टाइमआउट है; “आख़िरी स्थिति” मोड में चैनल आते रहते हैं, पर लिंक
+गुणवत्ता 0 होती है — यह `failsafe()` है।
+
+---
+
+## `Packed11`
+
+**फ़ाइल:** `rc/Packed11.h` · **प्रकार:** नेमस्पेस
+
+22 बाइट में 11 बिट के 16 चैनल, निचले बिट पहले — SBUS और CRSF दोनों ऐसे पैक करते हैं।
+`toMicros(raw)`: 172…1811 → 988…2012 µs, 992 → 1500 (`5/8 · मान + 880`, Betaflight और INAV
+की तरह); `unpack(data, out)` — 22 बाइट → µs में 16 मान।

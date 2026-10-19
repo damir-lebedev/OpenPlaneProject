@@ -102,6 +102,10 @@ class OpconfigTest(unittest.TestCase):
         self.assertEqual(("float", "м"), (rth["kind"], rth["unit"]))
         self.assertIn("RTH", rth["doc"])
         self.assertEqual("enum", self.param("LANDING_GEAR", self.manifest)["kind"])
+        rx = self.param("RX_PROTOCOL", self.manifest)
+        self.assertEqual(("enum", "RxProtocol::IBUS"), (rx["kind"], rx["value"]))
+        self.assertEqual(["IBUS", "SBUS", "CRSF"], rx["options"])
+        self.assertIn("ExpressLRS", rx["doc"])
         self.assertEqual("channel", self.param("CAL_SWITCH", self.manifest)["kind"])
         self.assertEqual("array", self.param("CHANNEL_REVERSED", self.manifest)["kind"])
         self.assertTrue(self.param("PWM_MIN", self.manifest)["fixed"])
@@ -152,6 +156,7 @@ class OpconfigTest(unittest.TestCase):
         self.apply(self.config(params={
             "AILERON_LEFT_REVERSED": not left,
             "LANDING_GEAR": "NOSE_WHEEL",
+            "RX_PROTOCOL": "CRSF",
             "WIFI_AP_SSID": 'Борт "№1" \\ тест',
             "CAL_SWITCH": "SWD",
             "CHANNEL_REVERSED": [False] * 8 + [True, False],
@@ -161,6 +166,7 @@ class OpconfigTest(unittest.TestCase):
         after = opconfig.describe(opconfig.Source(self.tmp))
         self.assertEqual(not left, self.param("AILERON_LEFT_REVERSED", after)["value"])
         self.assertEqual("LandingGear::NOSE_WHEEL", self.param("LANDING_GEAR", after)["value"])
+        self.assertEqual("RxProtocol::CRSF", self.param("RX_PROTOCOL", after)["value"])
         self.assertEqual('Борт "№1" \\ тест', self.param("WIFI_AP_SSID", after)["value"])
         self.assertEqual("Channels::SWD", self.param("CAL_SWITCH", after)["value"])
         self.assertEqual([False] * 8 + [True, False], self.param("CHANNEL_REVERSED", after)["value"])

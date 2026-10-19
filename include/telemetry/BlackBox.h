@@ -11,7 +11,7 @@
 #include "control/GroundCalibration.h"
 #include "hal/ResetCause.h"
 #include "hal/Rtos.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/airspeed/AirspeedSensor.h"
 #include "telemetry/BlackBoxFormat.h"
@@ -519,7 +519,7 @@ private:
 
     uint8_t linkState() const
     {
-        const IBusReceiver& rx = controller.getReceiver();
+        const RcReceiver& rx = controller.getReceiver();
         return rx.isFrameTimeout() ? 1 : (rx.isFailsafeReported() ? 2 : 0);
     }
 
@@ -791,7 +791,7 @@ private:
     uint16_t flags(bool armed) const
     {
         namespace F = BlackBoxFormat::Flag;
-        const IBusReceiver& rx = controller.getReceiver();
+        const RcReceiver& rx = controller.getReceiver();
         const NavStatus& nav = autopilot.getNavStatus();
         const uint8_t sensors = sensorBits();
         const GpsSensor* gps = autopilot.getGpsSensor();
@@ -868,11 +868,11 @@ private:
     void sampleRc()
     {
         const RcChannelState& rc = controller.getRcState();
-        const IBusReceiver& rx = controller.getReceiver();
+        const RcReceiver& rx = controller.getReceiver();
         BlackBoxFormat::RcRecord r = {};
-        static_assert(Config::IBUS_CHANNELS <= sizeof(r.ch) / sizeof(r.ch[0]), "RC: каналов больше, чем в записи");
+        static_assert(Config::RC_CHANNELS <= sizeof(r.ch) / sizeof(r.ch[0]), "RC: каналов больше, чем в записи");
         r.tUs = nowUs;
-        for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i) r.ch[i] = rc.get(i);
+        for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i) r.ch[i] = rc.get(i);
         r.status = static_cast<uint8_t>((rx.isFrameTimeout() ? 1 : 0) | (rx.isFailsafeReported() ? 2 : 0));
         r.good = static_cast<uint16_t>(rx.getGoodFrameCount());
         r.bad = static_cast<uint16_t>(rx.getBadFrameCount());
@@ -1001,7 +1001,7 @@ private:
 
     void sampleSys()
     {
-        const IBusReceiver& rx = controller.getReceiver();
+        const RcReceiver& rx = controller.getReceiver();
         const ImuSensor* imu = autopilot.getImuSensor();
         BlackBoxFormat::SysRecord r;
         r.tUs = nowUs;
@@ -1336,7 +1336,7 @@ private:
     static String reversedChannels()
     {
         String out;
-        for (uint8_t ch = 0; ch < Config::IBUS_CHANNELS; ++ch)
+        for (uint8_t ch = 0; ch < Config::RC_CHANNELS; ++ch)
         {
             if (!Config::CHANNEL_REVERSED[ch]) continue;
             if (out.length()) out += ',';

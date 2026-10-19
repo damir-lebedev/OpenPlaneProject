@@ -22,7 +22,7 @@ public:
     // Безопасные значения: все каналы в центре, кроме throttle (в минимум).
     void reset()
     {
-        for (uint8_t i = 0; i < Config::IBUS_CHANNELS; ++i)
+        for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i)
         {
             channels[i] = Config::PWM_CENTER;
         }
@@ -32,7 +32,7 @@ public:
 
     uint16_t get(uint8_t index) const
     {
-        if (index >= Config::IBUS_CHANNELS)
+        if (index >= Config::RC_CHANNELS)
         {
             return Config::PWM_CENTER;
         }
@@ -42,7 +42,7 @@ public:
 
     void set(uint8_t index, uint16_t value)
     {
-        if (index >= Config::IBUS_CHANNELS)
+        if (index >= Config::RC_CHANNELS)
         {
             return;
         }
@@ -60,5 +60,5 @@ public:
 
 private:
 
-    uint16_t channels[Config::IBUS_CHANNELS] = {};
+    uint16_t channels[Config::RC_CHANNELS] = {};
 };

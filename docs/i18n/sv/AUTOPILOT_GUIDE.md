@@ -49,7 +49,7 @@ sensorer (IMU, barometer, kompass, GPS, pitotrör) ─► Autopilot ─► roder
 
 ## Standardfördelning på sändaren
 
-FS-i6 + FS-iA6B, iBUS, 10 kanaler (`config/Channels.h`).
+FS-i6 + FS-iA6B, iBUS, 10 kanaler (`config/Channels.h`). En annan mottagare – SBUS eller CRSF (`RX_PROTOCOL`), samma kanaler.
 
 | Kanal | Reglage på sändaren | Standard |
 |---|---|---|
@@ -255,7 +255,7 @@ Mitten på en ratt = standardvärdet från `Config.h`; ändlägena är minimum o
 
 **Hempunkten** registreras vid ARM om GPS:en är bra (3D-fix, ≥ 6 satelliter, noggrannhet ≤ 5 m). Om GPS:en inte har låst före ARM registreras hempunkten så snart den gör det. För att ändra den på fältet – funktionen `HOME_RESET`.
 
-**Förlorad förbindelse** (inga iBUS-ramar på > 0,5 s, eller mottagaren skickade en gas under 950 µs – det är den failsafe som ställts in i sändaren; se `docs/PILOT_GUIDE.md`):
+**Förlorad förbindelse** (inga ramar från mottagaren på > 0,5 s, mottagaren rapporterade själv förlorad förbindelse – SBUS, CRSF – eller skickade en gas under 950 µs, den failsafe som ställts in i sändaren; se `docs/PILOT_GUIDE.md`):
 
 | Situation | Vad planet gör |
 |---|---|

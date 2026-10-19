@@ -35,14 +35,14 @@ Auf den übrigen Boards (ESP32-C3, gewöhnlicher ESP32) gibt es keinen Speicher:
 |---|---|---|
 | `IMU` | in jedem Zyklus, 500 Hz | Gyroskop (°/s), Beschleunigungssensor (g), wie lange die Arbeit des Regelzyklus gedauert hat (µs) |
 | `CTRL` | 100 Hz | Rollen/Nicken/Kurs, Sollwerte des Autopiloten, Knüppel des Piloten, endgültige Kommandos, **alle 7 Ausgänge** (µs), Anteile des PID für Rollen und Nicken (P, I, D), Gas des Piloten und des Autopiloten, Klappen, Modus, Flags (ARM, Verbindung, Failsafe, Sensoren aktiv ...), eingeschaltete Funktionen |
-| `RC` | 50 Hz | alle 10 Senderkanäle, Zähler der iBUS-Frames (intakte und defekte) |
+| `RC` | 50 Hz | alle 10 Senderkanäle, Zähler der iBUS/SBUS/CRSF-Frames (intakte und defekte) |
 | `BARO` | bei jedem Messwert (~50 Hz) | Druck, Temperatur, Höhe, Vertikalgeschwindigkeit, Höhenvorgabe |
 | `MAG` | bis 50 Hz | das Feld auf drei Achsen, Kurs |
 | `GPS` | bei jeder Lösung | Koordinaten, Höhe, Geschwindigkeit, Kurs, Satelliten, Fix, Genauigkeit |
 | `AIR` | bis 50 Hz | Pitotrohr: Druckdifferenz, angezeigte und wahre Fluggeschwindigkeit, Dichte |
 | `NAV` | 10 Hz | Startpunkt (Entfernung, Peilung), Kurs und Kursvorgabe, Navigationsgeschwindigkeit, Kursquelle, Phasen von Handstart und Segelflug, Auto-Trimm, Etappe des Autostarts (`takeoff_stage`) |
 | `POWER` | 10 Hz | Akkuspannung und Ausgang des Stromsensors (die Spannungsteiler der Flugsteuerungsplatine, [FC_BOARD.md](FC_BOARD.md), Block B) |
-| `SYS` | 1 Hz | Frequenz und schlechtester Zyklus der Regelschleife, freier Speicher, iBUS-Zähler, IMU-Temperatur, Warteschlange der Blackbox, verlorene Datensätze, der längste Schreibvorgang im Flash, freier Platz |
+| `SYS` | 1 Hz | Frequenz und schlechtester Zyklus der Regelschleife, freier Speicher, iBUS/SBUS/CRSF-Zähler, IMU-Temperatur, Warteschlange der Blackbox, verlorene Datensätze, der längste Schreibvorgang im Flash, freier Platz |
 | `EVENT` | bei einem Ereignis | ARM/DISARM, Ablehnung des ARM mit Grund, Moduswechsel, Verbindung verloren/wieder da, Sensor ausgefallen/wieder da, GPS-Fix, Startpunkt gespeichert, Funktionen der Schalter, Geofence, Schutz vor Strömungsabriss, Phasen von Handstart und Segelflug, Etappen des Autostarts (Abbruch – mit Grund), Schritte und Ergebnis der Bodenkalibrierung (Standlage oder Fehler) |
 
 Zu Beginn jedes Flugs stehen die Parameter: die Firmware (Build-Datum), der Grund für den Start und für den letzten Neustart, welche Sensoren vorhanden sind und ob sie die Prüfung vor dem Flug bestanden haben, die PID-Koeffizienten (einschließlich der Änderungen aus dem Dashboard), die Trimmungen, wichtige `Config`-Werte und die Schalterbelegungen.

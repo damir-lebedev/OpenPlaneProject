@@ -88,7 +88,7 @@ JSON の `attached`/`available` フィールドは常に含まれます。ダッ
 
 ### フェーズ 1 — 手動操縦と安全な土台 [完了]
 
-**目標**：透明性のあるデバッグを備えた、信頼でき予測しやすい RC グライダー。**技術的にすでにあるもの**：`IBusReceiver.h` の、信号喪失を検知する iBUS 解析、ミキサー `ControlMixer.h`（スティック → ロール/ピッチ/フラップの指令 → サーボのリバースを含む PWM。UART/PWM のことは何も知らない）、`ThrottleManager.h`、`ArmingManager.h`（スロットルが下のとき独立したスイッチで ARM、DISARM は即時）、双方向 ESC BLHeli 80A と、ARM していないときだけ切り替わるモーター逆転（`MotorReverse.h`）、`FlightController.h` の絶対優先のフェイルセーフ、Serial への出力（`DebugLogger.h`）、Web ダッシュボード（`WebDebugServer.h`）と OLED 画面（`OledDisplay.h`）。**これが他のすべての土台である理由**：これは常に動かなければならない唯一の層であり、ほかのフェーズがまだ実装されていなくても、そのセンサーが外されていても変わりません。だからこそフェイルセーフと ARM を最初に書き、実機で確認しました（送信機の電源を切ったときの FS-iA6B 受信機の実際の挙動を含む）。
+**目標**：透明性のあるデバッグを備えた、信頼でき予測しやすい RC グライダー。**技術的にすでにあるもの**：`RcReceiver.h` の、信号喪失を検知する iBUS/SBUS/CRSF 解析、ミキサー `ControlMixer.h`（スティック → ロール/ピッチ/フラップの指令 → サーボのリバースを含む PWM。UART/PWM のことは何も知らない）、`ThrottleManager.h`、`ArmingManager.h`（スロットルが下のとき独立したスイッチで ARM、DISARM は即時）、双方向 ESC BLHeli 80A と、ARM していないときだけ切り替わるモーター逆転（`MotorReverse.h`）、`FlightController.h` の絶対優先のフェイルセーフ、Serial への出力（`DebugLogger.h`）、Web ダッシュボード（`WebDebugServer.h`）と OLED 画面（`OledDisplay.h`）。**これが他のすべての土台である理由**：これは常に動かなければならない唯一の層であり、ほかのフェーズがまだ実装されていなくても、そのセンサーが外されていても変わりません。だからこそフェイルセーフと ARM を最初に書き、実機で確認しました（送信機の電源を切ったときの FS-iA6B 受信機の実際の挙動を含む）。
 
 ### フェーズ 2 — IMU + 気圧センサー → オートパイロット [書き上げ済み。テストとシミュレーションで検証済み、飛行試験待ち]
 

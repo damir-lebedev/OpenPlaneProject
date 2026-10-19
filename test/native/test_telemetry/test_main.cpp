@@ -16,7 +16,7 @@
 #include "control/FlightController.h"
 #include "control/FlightOutputs.h"
 #include "control/ThrottleManager.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "telemetry/DebugConsole.h"
 #include "telemetry/DebugLogger.h"
 #include "telemetry/LogSettings.h"
@@ -39,7 +39,7 @@ namespace
         FakeBaro baro;
         FakeMag mag;
         FakeGps gps;
-        IBusReceiver receiver{ board.rcUart() };
+        RcReceiver receiver{ board.rcUart() };
         ControlMixer mixer;
         ThrottleManager throttle;
         FlightOutputs outputs{ board };
@@ -641,6 +641,7 @@ void test_console_prints_identity_for_host()
     TEST_ASSERT_TRUE(contains(out, "\"board\":\"esp32-s3\""));   // env:native — BOARD_ESP32_S3, Project.h нет
     TEST_ASSERT_TRUE(contains(out, "\"commit\":\"dev\""));
     TEST_ASSERT_TRUE(contains(out, "\"config\":\"\",\"plane\":\"\""));
+    TEST_ASSERT_TRUE(contains(out, "\"rx\":\"iBUS\""));      // протокол приёмника — Config::RX_PROTOCOL
     TEST_ASSERT_TRUE(contains(out, "\"armed\":false}"));
 
     c.plane.arm();

@@ -61,7 +61,7 @@ include/
 │   └── stm32/   Stm32Board + Wire/SPI/Uart/HardwareTimer, Stm32FlashStorage,
 │                compat/Preferences.h (настройки во флеше вместо NVS)
 ├── storage/     KeyValueStore, KvPreferences — хранилище настроек без NVS
-├── rc/          RcChannelState, RcInput, IBusReceiver
+├── rc/          RcChannelState, RcInput, RcReceiver, IBusParser, SbusParser, CrsfParser
 ├── control/     ControlCommand, ControlMixer, FlapsController,
 │                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
 │                FlightOutputState, FlightOutputs, Beeper, FlightController
@@ -93,7 +93,7 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │ CONTROL             │  │ AUTOPILOT             │  │ RC                    │
-│ ControlMixer        │  │ Autopilot: 12 режимов │  │ IBusReceiver          │
+│ ControlMixer        │  │ Autopilot: 12 режимов │  │ RcReceiver            │
 │  └ FlapsController  │  │  └ навигация, ПИД     │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
@@ -177,7 +177,7 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
 
 | Файл | Отвечает за |
 |---|---|
-| `Config.h` | Все пины (блок на плату: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) и настройки: iBUS и потеря связи; ход рулей; закрылки; реверс серво; установка IMU и компаса; ARM; failsafe (RTH или планирование); трубка Пито (`PITOT_*`); все числа режимов автопилота и функций; цикл; Wi-Fi; MAVLink; отладка |
+| `Config.h` | Все пины (блок на плату: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) и настройки: iBUS/SBUS/CRSF и потеря связи; ход рулей; закрылки; реверс серво; установка IMU и компаса; ARM; failsafe (RTH или планирование); трубка Пито (`PITOT_*`); все числа режимов автопилота и функций; цикл; Wi-Fi; MAVLink; отладка |
 | `Channels.h` | Имена каналов: `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `SWB`, `SWC`, `SWD`, `VRA`, `VRB` |
 | `Controls.h` | Таблица `BINDINGS`: что делает каждый тумблер и крутилка, одна строка на канал, проверки `static_assert` |
 
@@ -209,7 +209,11 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
 |---|---|
 | `RcChannelState.h` | Снимок 10 каналов |
 | `RcInput.h` | `clamp()`, `centered(us, max, reverse)` |
-| `IBusReceiver.h` | iBUS → каналы: кадр 32 байта, CRC, значение канала — младшие 12 бит (`& 0x0FFF`); `isSignalLost()` = нет кадров (или ещё не было ни одного) ∥ failsafe-значение газа; счётчики кадров |
+| `RcReceiver.h` | Приёмник: UART в формате протокола (`RX_PROTOCOL`: iBUS, SBUS, CRSF) → `RC_CHANNELS` каналов; `isSignalLost()` = нет кадров (или ещё не было ни одного) ∥ приёмник сообщил failsafe (флаг SBUS, качество связи 0 у CRSF, газ ниже нормы); реверс каналов, счётчики кадров |
+| `IBusParser.h` | iBUS: кадр 32 байта, CRC, значение канала — младшие 12 бит (`& 0x0FFF`) |
+| `SbusParser.h` | SBUS: кадр 25 байт, 16 каналов по 11 бит, флаги failsafe и потерянного кадра, SBUS2 |
+| `CrsfParser.h` | CRSF: CRC8 (полином 0xD5), каналы (тип 0x16) и статистика связи (тип 0x14, качество связи) |
+| `Packed11.h` | 16 каналов по 11 бит → мкс — общее у SBUS и CRSF |
 
 ### `control/`
 
@@ -361,7 +365,7 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
 ## Карта RC-каналов, ARM и failsafe
 
 Источник — `include/config/Channels.h`. Пульт FS-i6 (10 каналов, режим 2) +
-приёмник FS-iA6B, iBUS 115200.
+приёмник FS-iA6B, iBUS 115200. Другие приёмники — SBUS или CRSF (`RX_PROTOCOL`), каналы те же.
 
 | Канал | Орган пульта | Имя | Назначение |
 |---|---|---|---|
@@ -391,13 +395,14 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
 (3 с). Назад — только газ пилота, не больше `REVERSE_THROTTLE_LIMIT_PCT` (50%);
 автопилот газ не получает, при потере связи мотор стоит.
 
-**Потеря связи** (`IBusReceiver::isSignalLost()`):
+**Потеря связи** (`RcReceiver::isSignalLost()`):
 
 1. Нет кадров дольше `RX_TIMEOUT_US` (500 мс) — обрыв провода/питания
    приёмника. До первого кадра после включения связь тоже считается
    потерянной: значения каналов по умолчанию (все 1500) не принимаются за
    команды пульта.
-2. Газ < `RX_FAILSAFE_THROTTLE_US` (950) — failsafe, заданный в пульте.
+2. Приёмник сам сообщил о потере связи: флаг failsafe в кадре SBUS, качество связи 0 % в статистике CRSF.
+3. Газ < `RX_FAILSAFE_THROTTLE_US` (950) — failsafe, заданный в пульте.
    **FS-iA6B при потере пульта кадры не прекращает**, а повторяет последние
    значения (проверено на стенде), поэтому без настройки failsafe в пульте
    потеря связи не распознаётся. Настройка — в `PILOT_GUIDE.md`.
@@ -483,7 +488,7 @@ OFF — DISARM сразу. Пока не armed, газ на ESC принудит
 
 Вызывается из `loop()` каждые 2 мс. Порядок и есть приоритет:
 
-1. **`receiver.update()`** — разбор накопившихся байтов iBUS.
+1. **`receiver.update()`** — разбор накопившихся байтов приёмника (iBUS, SBUS или CRSF).
 2. **Тумблеры** — `switches->update(rc)`, только при живой связи (в
    failsafe-кадре каналы не отражают тумблеры): режим (только при смене),
    функции, крутилки.
@@ -643,7 +648,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=..
 | Элерон левый / правый | GPIO4 / GPIO5 | GPIO5 / GPIO4 | GPIO13 / GPIO14 |
 | Руль высоты / ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
 | Руль направления | GPIO18 | — (нет пина) | GPIO25 |
-| iBUS RX | GPIO17 | GPIO8 | GPIO16 |
+| RC RX | GPIO17 | GPIO8 | GPIO16 |
 | I2C датчиков SDA / SCL | GPIO41 / GPIO42 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | I2C OLED SDA / SCL | GPIO1 / GPIO2 | — | — |
 | SPI SCK / MISO / MOSI | GPIO12 / 13 / 11 | GPIO0 / 10 / 20 | GPIO18 / 19 / 23 |
@@ -700,7 +705,7 @@ STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) — **п�
 | Руль высоты / ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
 | Руль направления | PD14 | TIM4_CH3 |
 | AUX1 (груз) / AUX2 (камера) | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
-| iBUS RX (TX — резерв) | PE7 (PE8) | UART7 |
+| RC RX (TX — резерв) | PE7 (PE8) | UART7 |
 | I2C датчиков SDA / SCL | PB11 / PB10 | I2C2 |
 | I2C OLED SDA / SCL | PB9 / PB8 | I2C1 |
 | SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |

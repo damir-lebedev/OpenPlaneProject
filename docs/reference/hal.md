@@ -47,11 +47,11 @@ HAL — единственный слой, которому разрешено �
 
 | Метод | Описание |
 |---|---|
-| `virtual void begin()` | Разовая инициализация шин I2C/SPI. UART открывают их владельцы (`IBusReceiver`, GPS) со своей скоростью, PWM — `FlightOutputs::begin()` |
+| `virtual void begin()` | Разовая инициализация шин I2C/SPI. UART открывают их владельцы (`RcReceiver`, GPS) со своей скоростью, PWM — `FlightOutputs::begin()` |
 | `virtual II2CBus& i2c()` | Шина датчиков |
 | `virtual ISpiBus& spi()` | Шина SPI |
 | `virtual II2CBus* displayI2c()` | Вторая шина I2C только для экрана; `nullptr`, если её нет |
-| `virtual IUartPort& rcUart()` | UART приёмника iBUS |
+| `virtual IUartPort& rcUart()` | UART приёмника пульта: iBUS, SBUS или CRSF |
 | `virtual IUartPort& gpsUart()` | UART GPS |
 | `virtual IUartPort* telemetryUart()` | UART радиомодема MAVLink; по умолчанию `nullptr` (у ESP32 свободного UART нет) |
 | `virtual IServoOutput& servo(uint8_t channel)` | PWM-выход по индексу `ServoChannel::*` |
@@ -103,12 +103,14 @@ HAL — единственный слой, которому разрешено �
 
 **Файл:** `hal/IUartPort.h` · **Вид:** интерфейс · **Реализации:** `Esp32UartPort`, `Stm32UartPort`
 
-UART в форме `HardwareSerial`, но `begin()` берёт только скорость: пины и
-формат (8N1) фиксирует реализация.
+UART в форме `HardwareSerial`, но `begin()` берёт только скорость и формат кадра:
+пины фиксирует реализация. `UartFormat`: `STANDARD_8N1` — почти всё,
+`SBUS_8E2_INVERTED` — SBUS (8E2, сигнал инвертирован; инверсию делает сам UART).
 
 | Метод | Описание |
 |---|---|
-| `begin(baud)` | Открыть порт |
+| `begin(baud)` | Открыть порт, 8N1 |
+| `virtual bool begin(baud, format)` | Открыть порт в формате `UartFormat`; `false` — порт так не умеет (по умолчанию умеет только 8N1) |
 | `int available()`, `int read()` | Приём |
 | `size_t write(byte)`, `size_t write(buffer, size)` | Передача |
 | `virtual int availableForWrite()` | свободно в буфере передачи; `-1` — неизвестно (по умолчанию). Телеметрия по нему откладывает кадр, а не ждёт |
@@ -249,7 +251,7 @@ sd-prepare`) и заполненный `0xFF`. Файл только **нахо�
 | `i2cBus` | `Esp32I2CBus` | `Wire` на `PIN_I2C_SDA/SCL`, 400 кГц |
 | `displayBus` | `Esp32I2CBus` | `Wire1` на `PIN_I2C2_SDA/SCL` — только если `SOC_I2C_NUM > 1` |
 | `spiBus` | `Esp32SpiBus` | Глобальный `SPI` |
-| `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | iBUS на `PIN_IBUS`, только RX |
+| `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | приёмник на `PIN_RC_RX`, только RX |
 | `gpsSerial`, `gpsPort` | `HardwareSerial(UART_NUM_GPS)`, `Esp32UartPort` | GPS на `PIN_GPS_RX/TX` |
 | `servos[7]` | `Esp32ServoOutput` | Каналы LEDC 0..6 в порядке `ServoChannel` (AUX1/AUX2 — `PIN_AUX1/2`, если разведены) |
 
@@ -296,7 +298,8 @@ SPI_MODEn)`; `spiModeOf()` переводит 0..3 в константы Arduino
 **Файл:** `hal/esp32/Esp32UartPort.h` · **Наследует:** `IUartPort`
 
 Обёртка над `HardwareSerial`: `begin(baud)` → `serial.begin(baud, SERIAL_8N1,
-rx, tx)`; `tx = -1` — только приём. Остальное — делегирование.
+rx, tx)`; SBUS — `serial.begin(baud, SERIAL_8E2, rx, tx, true)` (инверсия RX
+средствами UART ESP32); `tx = -1` — только приём. Остальное — делегирование.
 
 ---
 
@@ -359,7 +362,7 @@ STM32duino). На плате DevEBox **без датчиков** провере�
 | `i2cBus` | `Stm32I2CBus` | `Wire` на `PIN_I2C_SDA/SCL` (I2C2: PB11/PB10), 400 кГц |
 | `displayBus` | `Stm32I2CBus` | `displayWire` на `PIN_I2C2_SDA/SCL` (I2C1: PB9/PB8) — вторая шина есть всегда |
 | `spiBus` | `Stm32SpiBus` | Глобальный `SPI` на `PIN_SENSOR_SPI_*` (SPI2) |
-| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | iBUS: UART7, RX `PIN_IBUS` (PE7), TX `PIN_IBUS_TX` (PE8, резерв под iBUS-SENS) |
+| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | приёмник: UART7, RX `PIN_RC_RX` (PE7), TX `PIN_RC_TX` (PE8, резерв под телеметрию в пульт) |
 | `gpsSerial`, `gpsPort` | `Uart`, `Stm32UartPort` | GPS: USART3, `PIN_GPS_RX/TX` (PD9/PD8) |
 | `telemetrySerial`, `telemetryPort` | `Uart`, `Stm32UartPort` | радиомодем MAVLink: UART4, `PIN_TELEM_RX/TX` (PD0/PD1) |
 | `servos[7]` | `Stm32ServoOutput` | В порядке `ServoChannel` (AUX1 — PD15/TIM4, AUX2 — PE9/TIM1) |
@@ -401,12 +404,12 @@ STM32duino). На плате DevEBox **без датчиков** провере�
 
 **Файл:** `hal/stm32/Stm32UartPort.h` · **Наследует:** `IUartPort`
 
-Обёртка над `HardwareSerial&` (в STM32duino 3.x — абстрактная база
-`arduino::HardwareSerial`, конкретный объект `Uart` создаёт `Stm32Board`).
-`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`; `availableForWrite()` —
-от `HardwareSerial`. Буферы (`SERIAL_RX/TX_BUFFER_SIZE` в env): приём 256
-байт (кадр NAV-PVT — 100, стандартных 64 мало), передача 1024 (строки лога и
-кадры MAVLink без ожидания).
+Обёртка над `Uart&` (объект создаёт `Stm32Board`). `begin(baud)` →
+`serial.begin(baud, SERIAL_8N1)`; SBUS — `setRxInvert()` (инверсия RX самим USART,
+бит RXINV) до `serial.begin(baud, SERIAL_8E2)`, 9-битное слово с чётностью ядро
+выбирает само; `availableForWrite()` — от `HardwareSerial`. Буферы
+(`SERIAL_RX/TX_BUFFER_SIZE` в env): приём 256 байт (кадр NAV-PVT — 100, стандартных
+64 мало), передача 1024 (строки лога и кадры MAVLink без ожидания).
 
 ## `Stm32ServoOutput`
 

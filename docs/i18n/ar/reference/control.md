@@ -204,7 +204,7 @@
 ## ‏`FlightController`
 
 **الملف:** `control/FlightController.h` · **الطبقة:** COORDINATION ·
-**يعتمد على:** `IBusReceiver` و`ControlMixer` و`ThrottleManager` و`ArmingManager` و`FlightOutputs` و`Autopilot*` و`PilotSwitches*` و`Beeper` و`MotorReverse` و`GroundCalibration` و`SignalPlayer`
+**يعتمد على:** `RcReceiver` و`ControlMixer` و`ThrottleManager` و`ArmingManager` و`FlightOutputs` و`Autopilot*` و`PilotSwitches*` و`Beeper` و`MotorReverse` و`GroundCalibration` و`SignalPlayer`
 
 المنسِّق الوحيد لحلقة التحكم: لا يحلل UART بنفسه، ولا يمس PWM، ولا يحسب
 الخلّاط — بل يستدعي الآخرين بالترتيب الصحيح فقط. والمخطط المفصّل في
@@ -212,11 +212,11 @@
 
 | الدالة | الوصف |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | دون طيار آلي — تحكم يدوي صرف؛ ودون مفاتيح — العصي فقط |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | دون طيار آلي — تحكم يدوي صرف؛ ودون مفاتيح — العصي فقط |
 | `void begin()` | `outputs.setFailsafe()` و`receiver.begin()` |
 | `void update()` | دورة واحدة (انظر أدناه) |
 | `bool isReceiverFailsafe() const` | الاتصال مفقود |
-| `const IBusReceiver& getReceiver() const` | للسجل (عدّادات الإطارات، وسبب الفقدان) |
+| `const RcReceiver& getReceiver() const` | للسجل (عدّادات الإطارات، وسبب الفقدان) |
 | `bool isArmed() const` و`const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | آخر ما كُتب على المخارج |
 | `const RcChannelState& getRcState() const` | القنوات |

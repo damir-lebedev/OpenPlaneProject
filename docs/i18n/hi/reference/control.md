@@ -204,7 +204,7 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 ## `FlightController`
 
 **फ़ाइल:** `control/FlightController.h` · **परत:** COORDINATION ·
-**निर्भर है:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
+**निर्भर है:** `RcReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 नियंत्रण-चक्र का इकलौता संयोजक: ख़ुद UART नहीं पार्स करता, PWM को नहीं छूता, मिक्सर
 नहीं गिनता — बस बाक़ियों को सही क्रम में बुलाता है। विस्तृत आरेख
@@ -212,11 +212,11 @@ ARM अलग स्विच SwA (CH5) से। स्टेट मशीन
 
 | मेथड | विवरण |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | ऑटोपायलट के बिना — शुद्ध हाथ का नियंत्रण; स्विच के बिना — केवल स्टिक |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | ऑटोपायलट के बिना — शुद्ध हाथ का नियंत्रण; स्विच के बिना — केवल स्टिक |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | एक चक्र (नीचे देखें) |
 | `bool isReceiverFailsafe() const` | संपर्क खो गया |
-| `const IBusReceiver& getReceiver() const` | लॉग के लिए (फ़्रेमों के काउंटर, खोने का कारण) |
+| `const RcReceiver& getReceiver() const` | लॉग के लिए (फ़्रेमों के काउंटर, खोने का कारण) |
 | `bool isArmed() const`, `const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | आउटपुट पर आख़िरी लिखा गया |
 | `const RcChannelState& getRcState() const` | चैनल |

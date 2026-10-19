@@ -43,11 +43,11 @@ HAL 是唯一允许了解具体 MCU 的层。接口位于 `include/hal/`，实�
 
 | 方法 | 说明 |
 |---|---|
-| `virtual void begin()` | 一次性初始化 I2C/SPI 总线。UART 由各自的所有者（`IBusReceiver`、GPS）以自己的波特率打开，PWM 由 `FlightOutputs::begin()` 打开 |
+| `virtual void begin()` | 一次性初始化 I2C/SPI 总线。UART 由各自的所有者（`RcReceiver`、GPS）以自己的波特率打开，PWM 由 `FlightOutputs::begin()` 打开 |
 | `virtual II2CBus& i2c()` | 传感器总线 |
 | `virtual ISpiBus& spi()` | SPI 总线 |
 | `virtual II2CBus* displayI2c()` | 仅供屏幕使用的第二条 I2C 总线；没有则为 `nullptr` |
-| `virtual IUartPort& rcUart()` | iBUS 接收机的 UART |
+| `virtual IUartPort& rcUart()` | 遥控接收机的 UART：iBUS、SBUS 或 CRSF |
 | `virtual IUartPort& gpsUart()` | GPS 的 UART |
 | `virtual IUartPort* telemetryUart()` | MAVLink 无线电模块的 UART；默认为 `nullptr`（ESP32 没有空闲的 UART） |
 | `virtual IServoOutput& servo(uint8_t channel)` | 按 `ServoChannel::*` 索引取得的 PWM 输出 |
@@ -95,11 +95,12 @@ HAL 是唯一允许了解具体 MCU 的层。接口位于 `include/hal/`，实�
 
 **文件：** `hal/IUartPort.h` · **类别：** 接口 · **实现：** `Esp32UartPort`、`Stm32UartPort`
 
-仿照 `HardwareSerial` 的 UART，但 `begin()` 只接收波特率：引脚和格式（8N1）由实现固定。
+形如 `HardwareSerial` 的 UART，但 `begin()` 只接收波特率和帧格式：引脚由实现固定。`UartFormat`：`STANDARD_8N1`——几乎所有用途，`SBUS_8E2_INVERTED`——SBUS（8E2，信号反相；由 UART 自身反相）。
 
 | 方法 | 说明 |
 |---|---|
-| `begin(baud)` | 打开端口 |
+| `begin(baud)` | 打开端口，8N1 |
+| `virtual bool begin(baud, format)` | 按 `UartFormat` 格式打开端口；`false`——端口不支持（默认只支持 8N1） |
 | `int available()`、`int read()` | 接收 |
 | `size_t write(byte)`、`size_t write(buffer, size)` | 发送 |
 | `virtual int availableForWrite()` | 发送缓冲区的空闲空间；`-1` 表示未知（默认）。遥测据此推迟发送一帧，而不是等待 |
@@ -230,7 +231,7 @@ sd-prepare`），并用 `0xFF` 填满。程序只是**定位**该文件（不会
 | `i2cBus` | `Esp32I2CBus` | 位于 `PIN_I2C_SDA/SCL` 的 `Wire`，400 kHz |
 | `displayBus` | `Esp32I2CBus` | 位于 `PIN_I2C2_SDA/SCL` 的 `Wire1`——仅当 `SOC_I2C_NUM > 1` 时存在 |
 | `spiBus` | `Esp32SpiBus` | 全局的 `SPI` |
-| `rcSerial`、`rcPort` | `HardwareSerial(1)`、`Esp32UartPort` | 位于 `PIN_IBUS` 的 iBUS，仅 RX |
+| `rcSerial`、`rcPort` | `HardwareSerial(1)`、`Esp32UartPort` | 接收机接在 `PIN_RC_RX`，仅 RX |
 | `gpsSerial`、`gpsPort` | `HardwareSerial(UART_NUM_GPS)`、`Esp32UartPort` | 位于 `PIN_GPS_RX/TX` 的 GPS |
 | `servos[7]` | `Esp32ServoOutput` | 按 `ServoChannel` 顺序排列的 LEDC 通道 0..6（AUX1/AUX2 为 `PIN_AUX1/2`，如果已引出） |
 
@@ -274,8 +275,7 @@ SPI_MODEn)`；`spiModeOf()` 把 0..3 转换为 Arduino 常量，未知值 → `S
 
 **文件：** `hal/esp32/Esp32UartPort.h` · **继承：** `IUartPort`
 
-对 `HardwareSerial` 的封装：`begin(baud)` → `serial.begin(baud, SERIAL_8N1,
-rx, tx)`；`tx = -1` 表示只接收。其余都是委托。
+`HardwareSerial` 的封装：`begin(baud)` → `serial.begin(baud, SERIAL_8N1, rx, tx)`；SBUS——`serial.begin(baud, SERIAL_8E2, rx, tx, true)`（由 ESP32 的 UART 反相 RX）；`tx = -1`——仅接收。其余为委托。
 
 ---
 
@@ -331,7 +331,7 @@ USB CDC），并通过 cppcheck 和 PC 上的测试（env `native-stm32`，使�
 | `i2cBus` | `Stm32I2CBus` | 位于 `PIN_I2C_SDA/SCL`（I2C2：PB11/PB10）的 `Wire`，400 kHz |
 | `displayBus` | `Stm32I2CBus` | 位于 `PIN_I2C2_SDA/SCL`（I2C1：PB9/PB8）的 `displayWire`——第二条总线始终存在 |
 | `spiBus` | `Stm32SpiBus` | 位于 `PIN_SENSOR_SPI_*`（SPI2）的全局 `SPI` |
-| `rcSerial`、`rcPort` | `Uart`、`Stm32UartPort` | iBUS：UART7，RX 为 `PIN_IBUS`（PE7），TX 为 `PIN_IBUS_TX`（PE8，为 iBUS-SENS 预留） |
+| `rcSerial`、`rcPort` | `Uart`、`Stm32UartPort` | 接收机：UART7，RX `PIN_RC_RX`（PE7），TX `PIN_RC_TX`（PE8，预留给发往遥控器的遥测） |
 | `gpsSerial`、`gpsPort` | `Uart`、`Stm32UartPort` | GPS：USART3，`PIN_GPS_RX/TX`（PD9/PD8） |
 | `telemetrySerial`、`telemetryPort` | `Uart`、`Stm32UartPort` | MAVLink 无线电模块：UART4，`PIN_TELEM_RX/TX`（PD0/PD1） |
 | `servos[7]` | `Stm32ServoOutput` | 按 `ServoChannel` 顺序（AUX1 — PD15/TIM4，AUX2 — PE9/TIM1） |
@@ -371,12 +371,7 @@ USB CDC），并通过 cppcheck 和 PC 上的测试（env `native-stm32`，使�
 
 **文件：** `hal/stm32/Stm32UartPort.h` · **继承：** `IUartPort`
 
-对 `HardwareSerial&` 的封装（在 STM32duino 3.x 中它是抽象基类
-`arduino::HardwareSerial`，具体的 `Uart` 对象由 `Stm32Board` 创建）。
-`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`；`availableForWrite()` 来自
-`HardwareSerial`。缓冲区（env 中的 `SERIAL_RX/TX_BUFFER_SIZE`）：接收 256
-字节（一个 NAV-PVT 帧为 100 字节，标准的 64 不够），发送 1024（日志行和
-MAVLink 帧无需等待）。
+`Uart&` 的封装（对象由 `Stm32Board` 创建）。`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`；SBUS——在 `serial.begin(baud, SERIAL_8E2)` 之前调用 `setRxInvert()`（由 USART 自身反相 RX，RXINV 位），带校验的 9 位字长由内核自行选择；`availableForWrite()` 来自 `HardwareSerial`。缓冲区（env 中的 `SERIAL_RX/TX_BUFFER_SIZE`）：接收 256 字节（NAV-PVT 帧 100 字节，标准的 64 不够），发送 1024 字节（日志行和 MAVLink 帧无需等待）。
 
 ## `Stm32ServoOutput`
 

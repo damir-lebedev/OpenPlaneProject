@@ -49,7 +49,7 @@
 
 ## 遥控器默认布局
 
-FS-i6 + FS-iA6B，iBUS，10 个通道（`config/Channels.h`）。
+FS-i6 + FS-iA6B，iBUS，10 个通道（`config/Channels.h`）。其他接收机——SBUS 或 CRSF（`RX_PROTOCOL`），通道相同。
 
 | 通道 | 遥控器部件 | 默认功能 |
 |---|---|---|
@@ -255,7 +255,7 @@ Bind::knob   (Channels::VRB, Knob::CRUISE_SPEED),
 
 **返航点**在 ARM 时记录，前提是 GPS 良好（3D 定位，≥ 6 颗卫星，精度 ≤ 5 m）。如果 ARM 时 GPS 还没有定位——一旦定位就会记录返航点。在野外更改——使用 `HOME_RESET` 功能。
 
-**信号丢失**（超过 0.5 s 没有 iBUS 帧，或者接收机发来低于 950 µs 的油门——这是在遥控器中设置的 failsafe；见 `docs/PILOT_GUIDE.md`）：
+**信号丢失**（超过 0.5 s 没有来自接收机的帧，接收机自己报告失去链路——SBUS、CRSF——或者发来低于 950 µs 的油门，即在遥控器中设置的 failsafe；见 `docs/PILOT_GUIDE.md`）：
 
 | 情况 | 飞机的行为 |
 |---|---|

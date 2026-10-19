@@ -43,11 +43,11 @@ HAL は、特定の MCU を知ってよい唯一の層です。インターフ�
 
 | メソッド | 説明 |
 |---|---|
-| `virtual void begin()` | I2C/SPI バスの一回限りの初期化。UART はそれぞれの所有者（`IBusReceiver`、GPS）が独自の速度で開き、PWM は `FlightOutputs::begin()` が開きます |
+| `virtual void begin()` | I2C/SPI バスの一回限りの初期化。UART はそれぞれの所有者（`RcReceiver`、GPS）が独自の速度で開き、PWM は `FlightOutputs::begin()` が開きます |
 | `virtual II2CBus& i2c()` | センサー用のバス |
 | `virtual ISpiBus& spi()` | SPI バス |
 | `virtual II2CBus* displayI2c()` | 画面専用の2本目の I2C バス。なければ `nullptr` |
-| `virtual IUartPort& rcUart()` | iBUS 受信機の UART |
+| `virtual IUartPort& rcUart()` | RC 受信機の UART：iBUS、SBUS、CRSF |
 | `virtual IUartPort& gpsUart()` | GPS の UART |
 | `virtual IUartPort* telemetryUart()` | MAVLink 無線モデムの UART。既定は `nullptr`（ESP32 には空いている UART がありません） |
 | `virtual IServoOutput& servo(uint8_t channel)` | `ServoChannel::*` のインデックスで指定する PWM 出力 |
@@ -97,11 +97,12 @@ CS の切り替えは `SpiRegisterDevice` が行います。
 
 **ファイル:** `hal/IUartPort.h` · **種別:** インターフェース · **実装:** `Esp32UartPort`、`Stm32UartPort`
 
-`HardwareSerial` の形をした UART ですが、`begin()` が取るのは速度だけです。ピンとフォーマット（8N1）は実装が固定します。
+`HardwareSerial` の形をした UART ですが、`begin()` が受け取るのは速度とフレーム形式だけで、ピンは実装が固定します。`UartFormat`：`STANDARD_8N1`——ほぼすべて、`SBUS_8E2_INVERTED`——SBUS（8E2、反転信号。UART 自身が反転）。
 
 | メソッド | 説明 |
 |---|---|
-| `begin(baud)` | ポートを開く |
+| `begin(baud)` | ポートを開く、8N1 |
+| `virtual bool begin(baud, format)` | `UartFormat` の形式でポートを開く。`false`——ポートが対応していない（既定では 8N1 のみ） |
 | `int available()`、`int read()` | 受信 |
 | `size_t write(byte)`、`size_t write(buffer, size)` | 送信 |
 | `virtual int availableForWrite()` | 送信バッファの空き。`-1` は不明（既定）。テレメトリはこれを見て、待たずにフレームを先送りします |
@@ -232,7 +233,7 @@ ESP32 の具体的なペリフェラルのオブジェクトを作り、`Config.
 | `i2cBus` | `Esp32I2CBus` | `PIN_I2C_SDA/SCL` 上の `Wire`、400 kHz |
 | `displayBus` | `Esp32I2CBus` | `PIN_I2C2_SDA/SCL` 上の `Wire1`。`SOC_I2C_NUM > 1` の場合のみ |
 | `spiBus` | `Esp32SpiBus` | グローバルの `SPI` |
-| `rcSerial`、`rcPort` | `HardwareSerial(1)`、`Esp32UartPort` | `PIN_IBUS` 上の iBUS、RX のみ |
+| `rcSerial`、`rcPort` | `HardwareSerial(1)`、`Esp32UartPort` | 受信機は `PIN_RC_RX`、RX のみ |
 | `gpsSerial`、`gpsPort` | `HardwareSerial(UART_NUM_GPS)`、`Esp32UartPort` | `PIN_GPS_RX/TX` 上の GPS |
 | `servos[7]` | `Esp32ServoOutput` | `ServoChannel` の順に並ぶ LEDC チャンネル 0〜6（AUX1/AUX2 は `PIN_AUX1/2`。配線されている場合） |
 
@@ -275,8 +276,7 @@ SPI_MODEn)` を作ります。`spiModeOf()` は 0〜3 を Arduino の定数に�
 
 **ファイル:** `hal/esp32/Esp32UartPort.h` · **継承元:** `IUartPort`
 
-`HardwareSerial` のラッパーです。`begin(baud)` → `serial.begin(baud, SERIAL_8N1,
-rx, tx)`、`tx = -1` なら受信専用です。残りは委譲です。
+`HardwareSerial` のラッパー：`begin(baud)` → `serial.begin(baud, SERIAL_8N1, rx, tx)`。SBUS——`serial.begin(baud, SERIAL_8E2, rx, tx, true)`（ESP32 の UART で RX を反転）。`tx = -1`——受信のみ。残りは委譲です。
 
 ---
 
@@ -331,7 +331,7 @@ PWM を確認済みです。機体は送信機からマニュアルモードで�
 | `i2cBus` | `Stm32I2CBus` | `PIN_I2C_SDA/SCL`（I2C2: PB11/PB10）上の `Wire`、400 kHz |
 | `displayBus` | `Stm32I2CBus` | `PIN_I2C2_SDA/SCL`（I2C1: PB9/PB8）上の `displayWire`。2本目のバスは常にあります |
 | `spiBus` | `Stm32SpiBus` | `PIN_SENSOR_SPI_*`（SPI2）上のグローバルの `SPI` |
-| `rcSerial`、`rcPort` | `Uart`、`Stm32UartPort` | iBUS: UART7、RX は `PIN_IBUS`（PE7）、TX は `PIN_IBUS_TX`（PE8。iBUS-SENS 用に予約） |
+| `rcSerial`、`rcPort` | `Uart`、`Stm32UartPort` | 受信機：UART7、RX `PIN_RC_RX`（PE7）、TX `PIN_RC_TX`（PE8、送信機へのテレメトリー用に予約） |
 | `gpsSerial`、`gpsPort` | `Uart`、`Stm32UartPort` | GPS: USART3、`PIN_GPS_RX/TX`（PD9/PD8） |
 | `telemetrySerial`、`telemetryPort` | `Uart`、`Stm32UartPort` | MAVLink 無線モデム: UART4、`PIN_TELEM_RX/TX`（PD0/PD1） |
 | `servos[7]` | `Stm32ServoOutput` | `ServoChannel` の順（AUX1 は PD15/TIM4、AUX2 は PE9/TIM1） |
@@ -372,12 +372,7 @@ STM32duino では、トランザクションのタイムアウトはメソッド
 
 **ファイル:** `hal/stm32/Stm32UartPort.h` · **継承元:** `IUartPort`
 
-`HardwareSerial&` のラッパーです（STM32duino 3.x では抽象基底クラスの
-`arduino::HardwareSerial` で、具体的な `Uart` オブジェクトは `Stm32Board` が作ります）。
-`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`。`availableForWrite()` は
-`HardwareSerial` のものです。バッファ（env の `SERIAL_RX/TX_BUFFER_SIZE`）は、受信が 256
-バイト（NAV-PVT のフレームは 100 バイトあり、標準の 64 では足りません）、送信が 1024 です（ログの行と
-MAVLink のフレームを待たずに出すため）。
+`Uart&` のラッパー（オブジェクトは `Stm32Board` が作る）。`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`。SBUS——`serial.begin(baud, SERIAL_8E2)` の前に `setRxInvert()`（USART 自身が RX を反転、RXINV ビット）。パリティ付き 9 ビット語はコアが自分で選びます。`availableForWrite()` は `HardwareSerial` から。バッファ（env の `SERIAL_RX/TX_BUFFER_SIZE`）：受信 256 バイト（NAV-PVT フレームは 100、標準の 64 では足りない）、送信 1024（ログ行と MAVLink フレームを待たずに）。
 
 ## `Stm32ServoOutput`
 

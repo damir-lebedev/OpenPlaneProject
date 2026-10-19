@@ -13,7 +13,7 @@
 | [config.md](config.md) | CONFIG | `Config`, `Channels`, `Controls` |
 | [hal.md](hal.md) | HAL | `IBoard`, `ServoChannel`, `II2CBus`, `ISpiBus`, `IUartPort`, `IServoOutput`, `IRegisterDevice`, `I2cRegisterDevice`, `SpiRegisterDevice`, `Rtos`, `Esp32Board`, `Esp32I2CBus`, `Esp32SpiBus`, `Esp32UartPort`, `Esp32ServoOutput`; STM32H743: `Stm32Board`, `Stm32I2CBus`, `Stm32SpiBus`, `Stm32UartPort`, `Stm32ServoOutput`, `Stm32FlashStorage`, `compat/Preferences` |
 | [storage.md](storage.md) | STORAGE | `IFlashStorage`, `KeyValueStore`, `KvPreferences` |
-| [rc.md](rc.md) | RC | `RcChannelState`, `RcInput`, `IBusReceiver` |
+| [rc.md](rc.md) | RC | `RcChannelState`, `RcInput`, `RcReceiver`, `IBusParser`, `SbusParser`, `CrsfParser`, `Packed11` |
 | [control.md](control.md) | CONTROL / COORDINATION | `ControlCommand`, `FlightOutputState`, `FlapsController`, `ControlMixer`, `ThrottleManager`, `EscSignal`, `MotorReverse`, `ArmingManager`, `FlightOutputs`, `Beeper`, `FlightController`, `GroundCalibration`, `SignalPlayer` |
 | [autopilot.md](autopilot.md) | AUTOPILOT | `AutopilotMode`, `Feature`, `Knob`, `PilotInputs`, `Binding`/`Bind`/`BindingCheck`, `PilotSwitches`, `Autopilot`, `NavStatus`, `Geo`/`Guidance`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, `PidController` |
 | [feedback.md](feedback.md) | AUTOPILOT / feedback | `FeedbackConfig`, `FeedbackMath`, `FlightSnapshot`, `FeedbackOutput`, `PhaseTargets`, `SpeedEstimator`, `AirborneDetector`, `ControlEffectivenessEstimator`, `AxisModel`, `AdaptiveRateController`, `StallGuard`, `TakeoffSequencer`, `LandingSequencer`, `FeedbackSupervisor` |
@@ -48,6 +48,7 @@
 | `ControlEffectivenessEstimator` | class | `autopilot/feedback/ControlEffectivenessEstimator.h` | [feedback](feedback.md#controleffectivenessestimator) |
 | `ControlMixer` | class | `control/ControlMixer.h` | [control](control.md#controlmixer) |
 | `Controls` | namespace | `config/Controls.h` | [config](config.md#namespace-controls) |
+| `CrsfParser` | class | `rc/CrsfParser.h` | [rc](rc.md#crsfparser) |
 | `DebugConsole` | class | `telemetry/DebugConsole.h` | [telemetry](telemetry.md#debugconsole) |
 | `DebugLogger` | class | `telemetry/DebugLogger.h` | [telemetry](telemetry.md#debuglogger) |
 | `EscSignal` | namespace | `control/EscSignal.h` | [control](control.md#escsignal) |
@@ -71,7 +72,7 @@
 | `GroundCalibration` | class | `control/GroundCalibration.h` | [control](control.md#groundcalibration) |
 | `I2cRegisterDevice` | class | `hal/RegisterDevice.h` | [hal](hal.md#i2cregisterdevice) |
 | `IBoard` | interface | `hal/IBoard.h` | [hal](hal.md#iboard) |
-| `IBusReceiver` | class | `rc/IBusReceiver.h` | [rc](rc.md#ibusreceiver) |
+| `IBusParser` | class | `rc/IBusParser.h` | [rc](rc.md#ibusparser) |
 | `ICM42688_Sensor` | class | `sensors/imu/ICM42688_Sensor.h` | [sensors](sensors.md#icm42688_sensor) |
 | `ICM45686_Sensor` | class | `sensors/imu/ICM45686_Sensor.h` | [sensors](sensors.md#icm45686_sensor) |
 | `IFlashStorage` | interface | `storage/KeyValueStore.h` | [storage](storage.md#iflashstorage) |
@@ -98,6 +99,7 @@
 | `MotorReverse` | class | `control/MotorReverse.h` | [control](control.md#motorreverse) |
 | `MPU6050_Sensor` | class | `sensors/imu/MPU6050_Sensor.h` | [sensors](sensors.md#mpu6050_sensor) |
 | `OledDisplay` | class | `telemetry/OledDisplay.h` | [telemetry](telemetry.md#oleddisplay) |
+| `Packed11` | namespace | `rc/Packed11.h` | [rc](rc.md#packed11) |
 | `PhaseTargets` | struct | `autopilot/feedback/PhaseTargets.h` | [feedback](feedback.md#phasetargets) |
 | `PidController` | class | `autopilot/PidController.h` | [autopilot](autopilot.md#pidcontroller) |
 | `PilotSwitches` | class | `autopilot/PilotSwitches.h` | [autopilot](autopilot.md#pilotswitches) |
@@ -108,7 +110,9 @@
 | `RawImuSample` | struct | `sensors/imu/ImuSensorBase.h` | [sensors](sensors.md#imusensorbase) |
 | `RcChannelState` | class | `rc/RcChannelState.h` | [rc](rc.md#rcchannelstate) |
 | `RcInput` | class (static) | `rc/RcInput.h` | [rc](rc.md#rcinput) |
+| `RcReceiver` | class | `rc/RcReceiver.h` | [rc](rc.md#rcreceiver) |
 | `Rtos` | namespace | `hal/Rtos.h` | [hal](hal.md#rtos) |
+| `SbusParser` | class | `rc/SbusParser.h` | [rc](rc.md#sbusparser) |
 | `Sensor` | interface | `sensors/SensorInterface.h` | [sensors](sensors.md#इंटरफ़ेस-और-डेटा-की-संरचनाएँ) |
 | `SensorMounting` | namespace | `sensors/SensorMounting.h` | [sensors](sensors.md#namespace-sensormounting) |
 | `SensorSelection.h` | मैक्रो | `sensors/SensorSelection.h` | [sensors](sensors.md#sensorselectionh) |

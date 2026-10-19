@@ -65,7 +65,7 @@ flowchart TD
     CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (غير موصولة)<br/>FeedbackSupervisor والوحدات"]
-    RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
+    RC["RC<br/>RcReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
     HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice · Rtos"]
     STORE["STORAGE<br/>KeyValueStore · KvPreferences"]
@@ -134,7 +134,7 @@ flowchart LR
     gps["SelectedGps gpsSensor"]
     pitotBaro["SelectedPitotBaro pitotBaro"]
     pitot["PitotDualBaroAirspeed pitotSensor"]
-    rx["IBusReceiver"]
+    rx["RcReceiver"]
     mixer["ControlMixer"]
     thr["ThrottleManager"]
     outs["FlightOutputs"]
@@ -188,7 +188,7 @@ setupSensors()              — begin() لكل حساس; ومعايرة التي
                               مقياس الضغط (ارتفاع صفر), البوصلة (الاتجاه الابتدائي → yaw في IMU),
                               أنبوب بيتو (يُؤخذ الصفر خلال الثانية الأولى من الحلقة)
 autopilot.begin()           — الضبط (trim) من NVS/الفلاش
-flightController.begin()    — setFailsafe() + UART iBUS
+flightController.begin()    — setFailsafe() + UART RC (iBUS/SBUS/CRSF)
 oledDisplay.begin(...)      — مهمة خاصة (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — نقطة الوصول + مهمة خاصة على النواة 0
 [ESP32] blackBox.begin()   — قسم blackbox, وطابور في PSRAM, ومهمة bbox على النواة 0
@@ -384,7 +384,7 @@ classDiagram
 sequenceDiagram
     participant L as flight loop
     participant FC as FlightController
-    participant RX as IBusReceiver
+    participant RX as RcReceiver
     participant SW as PilotSwitches
     participant TM as ThrottleManager
     participant MX as ControlMixer
@@ -577,12 +577,13 @@ stateDiagram-v2
 
 وتتفاعل الجهات المستهلِكة بالطريقة نفسها: **لا حساس (`nullptr`) أو حساس غير متاح — لا أثر**، وتُقاد الطائرة كما في MANUAL. والاستثناء هو الإقلاع الآلي على المدرج: فعطل IMU هناك إلغاء للإقلاع وإيقاف للمحرك.
 
-### الاتصال (`IBusReceiver::isSignalLost()`)
+### الاتصال (`RcReceiver::isSignalLost()`)
 
-مؤشران مستقلان:
+ثلاثة مؤشرات مستقلة:
 
 1. لا إطارات صحيحة لمدة أطول من `RX_TIMEOUT_US` (500 ms) — أو لم يصل أي إطار منذ التشغيل؛
-2. الخانق في الإطار أدنى من `RX_FAILSAFE_THROTTLE_US` (950 µs) — وضع الأمان المبرمج في جهاز التحكم (فالمستقبل FS-iA6B لا يكفّ عن إرسال الإطارات عند فقدان جهاز التحكم).
+2. أبلغ المستقبِل نفسه عن فقدان الاتصال — علامة failsafe في إطار SBUS، وجودة اتصال 0 % في CRSF؛
+3. الخانق في الإطار أدنى من `RX_FAILSAFE_THROTTLE_US` (950 µs) — وضع الأمان المبرمج في جهاز التحكم (فالمستقبل FS-iA6B لا يكفّ عن إرسال الإطارات عند فقدان جهاز التحكم).
 
 تُهمَل الإطارات ذات CRC الخاطئ وتُعدّ (`getBadFrameCount()`).
 
@@ -648,7 +649,7 @@ stateDiagram-v2
 | مخرج جديد (سيرفو) | سطر في `FlightOutputs::outputInfo()` وحقل في `FlightOutputState` وفهرس في `ServoChannel` وطرف وقناة LEDC في `Esp32Board` | حلقة الكتابة/الحالة |
 | لوحة ESP32 جديدة | `#elif` في `Config.h` و`[env:*]` في `platformio.ini` | كل بقية الشيفرة |
 | متحكم دقيق آخر | `hal/<mcu>/<Mcu>Board.h` ينفّذ `IBoard` (مثال — `hal/stm32/`)، وكتلة أطراف في `Config.h`، و`[env:*]` | الحساسات ومنطق الطيران |
-| بروتوكول مستقبِل آخر | استبدال `IBusReceiver` بآخر له الواجهة نفسها (`getState()` و`isSignalLost()`) | `FlightController` |
+| بروتوكول مستقبِل آخر | محلّل إطارات بجانب `IBusParser`/`SbusParser`/`CrsfParser` ‏(`feed()` و`values()` و`failsafe()`)، وقيمة في `RxProtocol`، وفروع في `RcReceiver::begin()`/`update()` | `FlightController` والبروتوكولات الأخرى |
 | قناة سجل جديدة | `LogChannel` وسطر في `LogSettings::info()` و`DebugLogger::format*()` و`VERSION++` | — |
 
 ---

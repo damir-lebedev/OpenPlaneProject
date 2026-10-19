@@ -340,11 +340,28 @@ void test_board_uarts_map_to_hardware_serial_ports()
     TEST_ASSERT_NOT_NULL(rc);
     TEST_ASSERT_NOT_NULL(gps);
     TEST_ASSERT_EQUAL_UINT32(Config::IBUS_BAUDRATE, rc->baud());
-    TEST_ASSERT_EQUAL(Config::PIN_IBUS, rc->rxPin());
+    TEST_ASSERT_EQUAL(Config::PIN_RC_RX, rc->rxPin());
     TEST_ASSERT_EQUAL(-1, rc->txPin());   // iBUS — только приём
     TEST_ASSERT_EQUAL_UINT32(9600, gps->baud());
     TEST_ASSERT_EQUAL(Config::PIN_GPS_RX, gps->rxPin());
     TEST_ASSERT_EQUAL(Config::PIN_GPS_TX, gps->txPin());
+}
+
+// SBUS: 8E2 и инверсия средствами самого UART ESP32 (без внешнего инвертора).
+void test_board_rc_uart_opens_sbus_as_8e2_inverted()
+{
+    Esp32Board board;
+    TEST_ASSERT_TRUE(board.rcUart().begin(Config::SBUS_BAUDRATE, UartFormat::SBUS_8E2_INVERTED));
+    HardwareSerial* rc = fake::uart(1);
+    TEST_ASSERT_NOT_NULL(rc);
+    TEST_ASSERT_EQUAL_UINT32(100000, rc->baud());
+    TEST_ASSERT_EQUAL_HEX32(SERIAL_8E2, rc->config());
+    TEST_ASSERT_TRUE(rc->isRxInverted());
+    TEST_ASSERT_EQUAL(Config::PIN_RC_RX, rc->rxPin());
+
+    TEST_ASSERT_TRUE(board.gpsUart().begin(9600, UartFormat::STANDARD_8N1));   // GPS как был
+    TEST_ASSERT_EQUAL_HEX32(SERIAL_8N1, fake::uart(Config::UART_NUM_GPS)->config());
+    TEST_ASSERT_FALSE(fake::uart(Config::UART_NUM_GPS)->isRxInverted());
 }
 
 void test_board_servo_channels_follow_servo_channel_order()
@@ -381,6 +398,7 @@ int main()
     RUN_TEST(test_servo_interface_default_measurement_is_unsupported);
     RUN_TEST(test_board_begin_brings_up_buses_on_configured_pins);
     RUN_TEST(test_board_uarts_map_to_hardware_serial_ports);
+    RUN_TEST(test_board_rc_uart_opens_sbus_as_8e2_inverted);
     RUN_TEST(test_board_servo_channels_follow_servo_channel_order);
     return UNITY_END();
 }

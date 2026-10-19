@@ -43,7 +43,7 @@
 #include "hal/stm32/Stm32Board.h"
 #include "hal/stm32/Stm32FlashStorage.h"
 #include "hal/stm32/Stm32SdCard.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/SensorSelection.h"
 #include "sensors/airspeed/AirspeedSensor.h"
@@ -107,7 +107,7 @@ AirspeedSensor* const airspeedSensor = nullptr;
 // Управление полётом.
 // ------------------------------------------------------------
 
-IBusReceiver ibusReceiver(board.rcUart());
+RcReceiver rcReceiver(board.rcUart());
 ControlMixer controlMixer;
 ThrottleManager throttleManager;
 FlightOutputs flightOutputs(board);
@@ -117,7 +117,7 @@ PilotSwitches pilotSwitches(&autopilot);
 ArmingManager armingManager(&autopilot);
 
 FlightController flightController(
-    ibusReceiver,
+    rcReceiver,
     controlMixer,
     throttleManager,
     armingManager,
@@ -297,13 +297,17 @@ void setup()
 
     setupSensors();
 
-    flightController.begin();    // приёмник iBUS
+    flightController.begin();    // приёмник пульта
     mavlink.begin();             // радиомодем
     oledDisplay.begin(board.displayI2c());
     setupBlackBox();             // последним: задача записи начинает готовить место
 
     Serial.println();
-    Serial.println("Готово. iBUS 115200 бод, 10 каналов; MAVLink 57600 бод на UART4 (PD0/PD1).");
+    Serial.print("Готово. Приёмник ");
+    Serial.print(rcReceiver.getProtocolName());
+    Serial.print(rcReceiver.isPortReady() ? ", " : " (UART не умеет формат этого протокола — связи не будет), ");
+    Serial.print(Config::RC_CHANNELS);
+    Serial.println(" каналов; MAVLink 57600 бод на UART4 (PD0/PD1).");
     Serial.println("ARM: SwA вниз, к себе (CH5=2000) при газе внизу. DISARM: SwA вверх.");
     pilotSwitches.printBindings();
     debugLogger.begin();

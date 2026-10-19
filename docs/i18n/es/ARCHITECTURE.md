@@ -61,7 +61,7 @@ flowchart TD
     CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK (no conectado)<br/>FeedbackSupervisor y módulos"]
-    RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
+    RC["RC<br/>RcReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
     HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice · Rtos"]
     STORE["STORAGE<br/>KeyValueStore · KvPreferences"]
@@ -126,7 +126,7 @@ flowchart LR
     gps["SelectedGps gpsSensor"]
     pitotBaro["SelectedPitotBaro pitotBaro"]
     pitot["PitotDualBaroAirspeed pitotSensor"]
-    rx["IBusReceiver"]
+    rx["RcReceiver"]
     mixer["ControlMixer"]
     thr["ThrottleManager"]
     outs["FlightOutputs"]
@@ -176,7 +176,7 @@ setupSensors()              — begin() de cada sensor; calibración de los que 
                               baro (altitud cero), brújula (rumbo inicial → yaw de la IMU),
                               tubo de Pitot (el cero se toma durante el primer segundo del ciclo)
 autopilot.begin()           — trim desde NVS/flash
-flightController.begin()    — setFailsafe() + UART iBUS
+flightController.begin()    — setFailsafe() + UART RC (iBUS/SBUS/CRSF)
 oledDisplay.begin(...)      — tarea propia (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — punto de acceso + tarea propia en el núcleo 0
 [ESP32] blackBox.begin()   — la partición blackbox, una cola en PSRAM, la tarea bbox en el núcleo 0
@@ -356,7 +356,7 @@ classDiagram
 sequenceDiagram
     participant L as flight loop
     participant FC as FlightController
-    participant RX as IBusReceiver
+    participant RX as RcReceiver
     participant SW as PilotSwitches
     participant TM as ThrottleManager
     participant MX as ControlMixer
@@ -533,12 +533,13 @@ Además, la IMU tiene una **comprobación previa al vuelo** (`getPreflightProble
 
 Los consumidores reaccionan igual: **sin sensor (`nullptr`) o con el sensor no disponible, no hay ningún efecto**, y el avión se maneja como en MANUAL. La excepción es el despegue automático en la pista: un fallo del IMU es un despegue abortado, motor parado.
 
-### Enlace (`IBusReceiver::isSignalLost()`)
+### Enlace (`RcReceiver::isSignalLost()`)
 
-Dos indicadores independientes:
+Tres indicadores independientes:
 
 1. no hay tramas correctas durante más de `RX_TIMEOUT_US` (500 ms), o no ha habido ninguna desde el encendido;
-2. el acelerador de la trama es inferior a `RX_FAILSAFE_THROTTLE_US` (950 µs): el failsafe programado en la emisora (el FS-iA6B no deja de enviar tramas cuando se pierde la emisora).
+2. el propio receptor informó de la pérdida de enlace: indicador de failsafe en la trama SBUS, calidad de enlace 0 % en CRSF;
+3. el acelerador de la trama es inferior a `RX_FAILSAFE_THROTTLE_US` (950 µs): el failsafe programado en la emisora (el FS-iA6B no deja de enviar tramas cuando se pierde la emisora).
 
 Las tramas con un CRC erróneo se descartan y se cuentan (`getBadFrameCount()`).
 
@@ -604,7 +605,7 @@ El plan de conexión está en [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md#plan-de-
 | Una salida nueva (servo) | una fila en `FlightOutputs::outputInfo()`, un campo en `FlightOutputState`, un índice en `ServoChannel`, un pin y un canal LEDC en `Esp32Board` | el lazo de escritura y de estado |
 | Una placa ESP32 nueva | un `#elif` en `Config.h`, `[env:*]` en `platformio.ini` | todo el resto del código |
 | Otra MCU | `hal/<mcu>/<Mcu>Board.h` que implemente `IBoard` (un ejemplo: `hal/stm32/`), un bloque de pines en `Config.h`, `[env:*]` | los sensores, la lógica de vuelo |
-| Otro protocolo de receptor | sustituir `IBusReceiver` por uno con la misma API (`getState()`, `isSignalLost()`) | `FlightController` |
+| Otro protocolo de receptor | un analizador de tramas junto a `IBusParser`/`SbusParser`/`CrsfParser` (`feed()`, `values()`, `failsafe()`), un valor en `RxProtocol`, ramas en `RcReceiver::begin()`/`update()` | `FlightController`, los demás protocolos |
 | Un canal nuevo del registro | `LogChannel`, una fila en `LogSettings::info()`, `DebugLogger::format*()`, `VERSION++` | — |
 
 ---

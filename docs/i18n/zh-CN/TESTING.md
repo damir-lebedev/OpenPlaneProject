@@ -85,7 +85,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 |---|---|
 | `ChipEmulators.h` | LSM6DSV、ICM-45686（带 IPREG 间接寄存器）、QMC6309、SPL06-001、BMP581，以及 u-blox 的 NAV-PVT 帧——I2C 或 SPI 上的寄存器映射，数据取自 `World`“世界”（角度和角速度、高度、空速、航向、坐标），按芯片自身的坐标轴给出，并考虑了 `IMU_ROTATION_CW_DEG` |
 | `PlaneSim.h` | 约 1.2 kg 的飞机模型：质点 + 横滚/俯仰转动，带失速的 CL(α)，阻力、推力、风、热气流、地面；尾轮或前轮起落架——飞机在主轮上前后摆动，统计尾轮载荷、机尾撞击和螺旋桨触地，地面偏航包含螺旋桨力矩和转向轮 |
-| `SimHarness.h` | 闭环：遥控器 → iBUS 帧 → `IBusReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面偏转 → `PlaneSim` → 传感器（包括基于两个带噪声气压计的皮托管）。设置 `OPENPLANE_SIM_DIR` 时输出 CSV 轨迹；开启 `realisticImu` 时由真实的 `AttitudeEstimator` 按比力计算角度——它看到的跑道加速度和机上一样 |
+| `SimHarness.h` | 闭环：遥控器 → iBUS 帧 → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面偏转 → `PlaneSim` → 传感器（包括基于两个带噪声气压计的皮托管）。设置 `OPENPLANE_SIM_DIR` 时输出 CSV 轨迹；开启 `realisticImu` 时由真实的 `AttitudeEstimator` 按比力计算角度——它看到的跑道加速度和机上一样 |
 
 `test/native/helpers/TestSupport.h` 是各测试集共用的部分：`resetWorld()`（在 `setUp()` 中调用）、`FakeUart`/`FakeServo`/`FakeBoard` 以及各传感器（`FakeImu`、`FakeBaro`、`FakeMag`、`FakeGps`）的替身、帧构造器 `ibusFrame()`、台架 `I2cRig`/`SpiRig`（真实的 `Esp32I2CBus`/`Esp32SpiBus` 和带模拟芯片的 `*RegisterDevice` 之上的驱动）。
 
@@ -97,8 +97,8 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 
 | 测试集 | 测试数 | 检查内容 |
 |---|---|---|
-| `native/test_hal` | 18 | `II2CBus` 的辅助函数（NACK、短读取——缓冲区保持不变）、`I2cRegisterDevice`、`SpiRegisterDevice`（读位、BMP388 的哑字节）、`Esp32I2CBus`（5 ms 超时）、`Esp32SpiBus`（模式 0–3）、`Esp32UartPort`（8N1、引脚）、`Esp32ServoOutput`（50 Hz/14 位、脉宽限制、LEDC 故障、通过输入缓冲区测量）、`Esp32Board`（总线、UART、通道顺序、AUX、蜂鸣器）；电机提示用的“无脉冲”（`stopPulses()`） |
-| `native/test_rc` | 16 | `RcChannelState`、`RcInput`，iBUS 解析：分段到达的帧、CRC、12 位数值、遥控器的失控保护、500 ms 超时（包括 `micros()` 溢出时）、乱码数据、重新同步 |
+| `native/test_hal` | 19 | `II2CBus` 的辅助函数（NACK、短读取——缓冲区保持不变）、`I2cRegisterDevice`、`SpiRegisterDevice`（读位、BMP388 的哑字节）、`Esp32I2CBus`（5 ms 超时）、`Esp32SpiBus`（模式 0–3）、`Esp32UartPort`（8N1、引脚）、`Esp32ServoOutput`（50 Hz/14 位、脉宽限制、LEDC 故障、通过输入缓冲区测量）、`Esp32Board`（总线、UART、通道顺序、AUX、蜂鸣器）；电机提示用的“无脉冲”（`stopPulses()`）；SBUS——`Esp32UartPort` 的 8E2 与 RX 反相 |
+| `native/test_rc` | 33 | `RcChannelState`、`RcInput`、接收机：iBUS——分段到达的帧、CRC、12 位值、遥控器 failsafe、500 ms 超时（包括跨越 `micros()` 溢出）、垃圾数据、重新同步；SBUS——带反相的 8E2、failsafe 与丢帧标志、SBUS2、在数据流中途同步、不支持反相的端口；CRSF——按参考值校验 CRC8、通道、链路质量 0 % 即失去链路、静默即超时、其他帧和垃圾数据；16 个 11 位通道 |
 | `native/test_control` | 26 | 襟翼（速度、首次调用、暂停）、混控器（符号、反向、襟副翼）、油门、ARM 状态机与模式传感器检查、输出表与脉冲自检、双向电调脉冲、电机反转只在 DISARM 时切换以及改变方向后禁止 ARM、反向辅助函数（脉冲镜像、通道反向、电机反向）；尾轮式 AUTO_TAKEOFF 必须先有起落架校准 |
 | `native/test_autopilot` | 22 | PID（取自传感器角速度的 D 项、积分、抗积分饱和、`dt`）、作为角度模式的 STABILIZE、自动起飞（起飞前电机不转、程序控制油门、DISARM）、用升降舵实现的 ALT_HOLD、信号丢失时的滑翔、爬升中信号丢失——继续爬升 |
 | `native/test_autopilot_modes` | 31 | 全部 12 种模式及各自对传感器缺失的反应、绑定表与 `static_assert`、功能与旋钮、导航（航向、绕圈、返航点、地理围栏）、failsafe RTH/滑翔、手抛起飞、翱翔、自动配平（仅在地面写入） |
@@ -121,10 +121,10 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native_stm32/test_app_stm32_icm45686_spi` | 4 | STM32H743 配 **SPI 接口**的 ICM-45686 和 BMP581 + QMC6309：开机时闪存已损坏、从 GCS 发起的 ALT_HOLD 保持高度、信号丢失 → RTH、在 MAVLink 中可见；改写损坏的映像 |
 | `native_stm32/test_blackbox_sd` | 29 | SD 卡上的黑匣子：FAT32（有 MBR 与无 MBR、占两个簇的目录、噪声条目、他人的/碎片化的/空的卷）、`SdFileRegion`（不完整的块、缓存、擦除、边界、故障）、基于模拟 `HAL_SD` 的真实 `Stm32SdCard` 驱动（4 位、回退速率、重试、卡忙、未对齐的缓冲区）、卡上的环（重启、断电、核对开销）、“环为空”标记、在 `FlightController` 上记录飞行、通过 `RCC->RSR` 识别的异常重启、电池 ADC、飞行中的卡错误、慢速卡、通过控制台导出、`D` 键 |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | 带卡的 `src/stm32/main.cpp`：启动时能找到卡和文件、`bbox` 任务记录飞行、循环周期不被拉长、`bb list` |
-| `native_stm32/test_app_stm32_no_sd` | 3 | 不带卡的 `src/stm32/main.cpp`：黑匣子关闭并说明原因、飞机照常飞行、菜单 `k` 不出错；PD14 上的输出自检（绕过核心库 `pulseIn()` 的缺陷），电机提示 `e` |
+| `native_stm32/test_app_stm32_no_sd` | 4 | 不带卡的 `src/stm32/main.cpp`：黑匣子关闭并说明原因、飞机照常飞行、菜单 `k` 不出错；PD14 上的输出自检（绕过核心库 `pulseIn()` 的缺陷），电机提示 `e`；`Stm32UartPort` 上的 SBUS——8E2 与 RX 反相 |
 | `test_feedback` | 10 | 带反馈回路的飞机闭环仿真（在电脑和开发板上） |
 | `test_imu_orientation` | 5 | 在 300 种随机安装方式下校准 IMU 的安装姿态（在电脑和开发板上） |
-| **合计** | **436** | `native` 中 388 个 + `native-stm32` 中 48 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
+| **合计** | **455** | `native` 中 406 个 + `native-stm32` 中 49 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
 
 ### STM32 开发板上的测试
 

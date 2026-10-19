@@ -18,6 +18,7 @@
 #include "Stream.h"
 
 #define SERIAL_8N1 0x800001c
+#define SERIAL_8E2 0x800003e
 
 class HardwareSerial;
 
@@ -93,7 +94,7 @@ public:
     void begin(unsigned long baud, uint32_t config = SERIAL_8N1, int8_t rxPin = -1, int8_t txPin = -1,
                bool invert = false, unsigned long timeoutMs = 20000UL, uint8_t rxfifoFullThreshold = 112)
     {
-        (void)invert;
+        if (invert) rxInverted = true;
         (void)timeoutMs;
         (void)rxfifoFullThreshold;
         baudValue = baud;
@@ -105,6 +106,9 @@ public:
     }
 
     void end() { started = false; }
+
+    // STM32duino: инверсия RX — до begin().
+    void setRxInvert() { rxInverted = true; }
 
     // Как в Arduino core ESP32 2.x: скорость на ходу (выгрузка чёрного ящика).
     uint32_t baudRate() { return static_cast<uint32_t>(baudValue); }
@@ -186,6 +190,7 @@ public:
     int8_t rxPin() const { return rx; }
     int8_t txPin() const { return tx; }
     bool isStarted() const { return started; }
+    bool isRxInverted() const { return rxInverted; }
     unsigned beginCount() const { return beginCalls; }
     size_t txBuffer() const { return txBufferSize; }
 
@@ -200,6 +205,7 @@ public:
         frameConfig = 0;
         rx = tx = -1;
         started = false;
+        rxInverted = false;
         beginCalls = 0;
         txBufferSize = 0;
         txRoom = 4096;
@@ -220,6 +226,7 @@ private:
     int8_t rx = -1;
     int8_t tx = -1;
     bool started = false;
+    bool rxInverted = false;
     unsigned beginCalls = 0;
     size_t txBufferSize = 0;
 

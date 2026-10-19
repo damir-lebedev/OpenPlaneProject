@@ -5,11 +5,11 @@
 
 // ============================================================
 // Реализация IUartPort для ESP32 (Arduino core) — обёртка над
-// HardwareSerial. Пины и формат кадра (8N1) фиксируются в
-// конструкторе; begin(baud) вызывающая сторона (IBusReceiver,
-// GPS-драйвер) видит только скорость.
+// HardwareSerial. Пины фиксируются в конструкторе; вызывающая
+// сторона (RcReceiver, GPS-драйвер) задаёт только скорость и формат
+// кадра. Инверсию для SBUS делает сам UART ESP32.
 //
-// txPin = -1 для приёмников на чистый приём (как раньше у iBUS).
+// txPin = -1 для приёмников на чистый приём.
 // ============================================================
 
 class Esp32UartPort : public IUartPort
@@ -23,6 +23,13 @@ public:
     void begin(uint32_t baud) override
     {
         serial.begin(baud, SERIAL_8N1, rx, tx);
+    }
+
+    bool begin(uint32_t baud, UartFormat format) override
+    {
+        if (format == UartFormat::SBUS_8E2_INVERTED) serial.begin(baud, SERIAL_8E2, rx, tx, true);
+        else serial.begin(baud, SERIAL_8N1, rx, tx);
+        return true;
     }
 
     int available() override { return serial.available(); }

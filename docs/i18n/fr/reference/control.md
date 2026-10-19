@@ -211,7 +211,7 @@ LEDC dans `Esp32Board`).
 ## `FlightController`
 
 **Fichier :** `control/FlightController.h` · **Couche :** COORDINATION ·
-**Dépend de :** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
+**Dépend de :** `RcReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 Le seul coordinateur de la boucle de contrôle : il n’analyse pas lui-même
 l’UART, ne touche pas au PWM et ne calcule pas le mixeur — il ne fait qu’appeler
@@ -220,11 +220,11 @@ les autres dans le bon ordre. Un schéma détaillé se trouve dans
 
 | Méthode | Description |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Sans pilote automatique — pilotage purement manuel ; sans interrupteurs — seulement les manches |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Sans pilote automatique — pilotage purement manuel ; sans interrupteurs — seulement les manches |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | Un cycle (voir ci-dessous) |
 | `bool isReceiverFailsafe() const` | La liaison est perdue |
-| `const IBusReceiver& getReceiver() const` | Pour le journal (compteurs de trames, cause de la perte) |
+| `const RcReceiver& getReceiver() const` | Pour le journal (compteurs de trames, cause de la perte) |
 | `bool isArmed() const`, `const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | Le dernier état écrit sur les sorties |
 | `const RcChannelState& getRcState() const` | Les canaux |

@@ -38,7 +38,7 @@
 #include "hal/SdFileRegion.h"
 #include "hal/stm32/Stm32Board.h"
 #include "hal/stm32/Stm32SdCard.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "telemetry/BlackBox.h"
 #include "telemetry/BlackBoxFormat.h"
 #include "telemetry/BlackBoxStorage.h"
@@ -349,7 +349,7 @@ void test_blackbox_keeps_up_for_20_seconds_in_real_time()
 
     Stm32Board board;
     BenchImu imu;
-    IBusReceiver receiver(board.rcUart());
+    RcReceiver receiver(board.rcUart());
     ControlMixer mixer;
     ThrottleManager throttle;
     FlightOutputs outputs(board);

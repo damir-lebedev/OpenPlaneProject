@@ -91,7 +91,7 @@ JSON의 `attached`/`available` 필드는 항상 들어 있습니다. 대시보�
 
 ### 1단계 — 수동 조종과 안전한 토대 [완료]
 
-**목표**: 투명한 디버깅을 갖춘, 믿을 수 있고 예측 가능한 RC 글라이더. **기술적으로 이미 있는 것**: `IBusReceiver.h`의 신호 상실 인식이 있는 iBUS 파싱, 믹서 `ControlMixer.h`(스틱 → 롤/피치/플랩 명령 → 서보 리버스가 있는 PWM. UART/PWM에 대해서는 아무것도 모름), `ThrottleManager.h`, `ArmingManager.h`(스로틀이 아래일 때 별도 스위치로 하는 ARM, 즉시 DISARM), 양방향 ESC BLHeli 80A와 ARM이 아닐 때만 바뀌는 모터 역회전(`MotorReverse.h`), `FlightController.h`의 절대 우선순위 페일세이프, Serial 출력(`DebugLogger.h`), 웹 대시보드(`WebDebugServer.h`)와 OLED 화면(`OledDisplay.h`). **이것이 나머지 모든 것의 토대인 이유**: 이것은 항상 동작해야 하는 유일한 계층이며, 다른 단계가 아직 구현되지 않았거나 그 센서가 꺼져 있어도 마찬가지입니다. 그래서 페일세이프와 ARM을 가장 먼저 작성해 실제 하드웨어에서 확인했습니다(조종기를 껐을 때 FS-iA6B 수신기의 실제 동작 포함).
+**목표**: 투명한 디버깅을 갖춘, 믿을 수 있고 예측 가능한 RC 글라이더. **기술적으로 이미 있는 것**: `RcReceiver.h`의 신호 상실 인식이 있는 iBUS/SBUS/CRSF 파싱, 믹서 `ControlMixer.h`(스틱 → 롤/피치/플랩 명령 → 서보 리버스가 있는 PWM. UART/PWM에 대해서는 아무것도 모름), `ThrottleManager.h`, `ArmingManager.h`(스로틀이 아래일 때 별도 스위치로 하는 ARM, 즉시 DISARM), 양방향 ESC BLHeli 80A와 ARM이 아닐 때만 바뀌는 모터 역회전(`MotorReverse.h`), `FlightController.h`의 절대 우선순위 페일세이프, Serial 출력(`DebugLogger.h`), 웹 대시보드(`WebDebugServer.h`)와 OLED 화면(`OledDisplay.h`). **이것이 나머지 모든 것의 토대인 이유**: 이것은 항상 동작해야 하는 유일한 계층이며, 다른 단계가 아직 구현되지 않았거나 그 센서가 꺼져 있어도 마찬가지입니다. 그래서 페일세이프와 ARM을 가장 먼저 작성해 실제 하드웨어에서 확인했습니다(조종기를 껐을 때 FS-iA6B 수신기의 실제 동작 포함).
 
 ### 2단계 — IMU + 기압계 → 오토파일럿 [작성 완료. 테스트와 시뮬레이션으로 검증, 비행 시험 대기]
 

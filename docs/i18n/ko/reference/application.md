@@ -21,7 +21,7 @@
 | `magDevice`, `magSensor`, `magnetometer` | … `SelectedMag`, `MagnetometerSensor* const` | `SENSOR_MAG != NONE`일 때만, 아니면 `nullptr` |
 | `gpsSensor`, `gpsReceiver` | `SelectedGps`, `GpsSensor* const` | `SENSOR_GPS != NONE`일 때만 |
 | `pitotDevice`, `pitotBaro`, `pitotSensor`, `airspeedSensor` | `SELECTED_PITOT_DEVICE(board)`, `SelectedPitotBaro`(`"PITOT-BMP581"`), `PitotDualBaroAirspeed(pitotBaro, baroSensor)` | `SENSOR_AIRSPEED != NONE`일 때만 |
-| `ibusReceiver` | `IBusReceiver` | `board.rcUart()` |
+| `rcReceiver` | `RcReceiver` | `board.rcUart()` |
 | `controlMixer`, `throttleManager` | `ControlMixer`, `ThrottleManager` | |
 | `flightOutputs` | `FlightOutputs` | `board` |
 | `autopilot` | `Autopilot` | 모든 센서(null 가능) |

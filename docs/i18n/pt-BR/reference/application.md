@@ -22,7 +22,7 @@ A ordem de declaração = a ordem de construção.
 | `magDevice`, `magSensor`, `magnetometer` | … `SelectedMag`, `MagnetometerSensor* const` | somente se `SENSOR_MAG != NONE`, senão `nullptr` |
 | `gpsSensor`, `gpsReceiver` | `SelectedGps`, `GpsSensor* const` | somente se `SENSOR_GPS != NONE` |
 | `pitotDevice`, `pitotBaro`, `pitotSensor`, `airspeedSensor` | `SELECTED_PITOT_DEVICE(board)`, `SelectedPitotBaro` (`"PITOT-BMP581"`), `PitotDualBaroAirspeed(pitotBaro, baroSensor)` | somente se `SENSOR_AIRSPEED != NONE` |
-| `ibusReceiver` | `IBusReceiver` | `board.rcUart()` |
+| `rcReceiver` | `RcReceiver` | `board.rcUart()` |
 | `controlMixer`, `throttleManager` | `ControlMixer`, `ThrottleManager` | |
 | `flightOutputs` | `FlightOutputs` | `board` |
 | `autopilot` | `Autopilot` | todos os sensores (anuláveis) |

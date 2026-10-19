@@ -46,7 +46,7 @@ include/
 │   └── stm32/   Stm32Board + Wire/SPI/Uart/HardwareTimer, Stm32FlashStorage,
 │                compat/Preferences.h (NVS की जगह फ़्लैश में सेटिंग)
 ├── storage/     KeyValueStore, KvPreferences — NVS के बिना सेटिंग का भंडारण
-├── rc/          RcChannelState, RcInput, IBusReceiver
+├── rc/          RcChannelState, RcInput, RcReceiver, IBusParser, SbusParser, CrsfParser
 ├── control/     ControlCommand, ControlMixer, FlapsController,
 │                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
 │                FlightOutputState, FlightOutputs, Beeper, FlightController
@@ -78,7 +78,7 @@ src/stm32/main.cpp  — STM32H743 फ़र्मवेयर (FreeRTOS टा�
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │ CONTROL             │  │ AUTOPILOT             │  │ RC                    │
-│ ControlMixer        │  │ Autopilot: 12 मोड     │  │ IBusReceiver          │
+│ ControlMixer        │  │ Autopilot: 12 मोड     │  │ RcReceiver            │
 │  └ FlapsController  │  │  └ नेविगेशन, PID        │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
@@ -137,7 +137,7 @@ src/stm32/main.cpp  — STM32H743 फ़र्मवेयर (FreeRTOS टा�
 
 | फ़ाइल | किसके लिए ज़िम्मेदार |
 |---|---|
-| `Config.h` | सभी पिन (हर बोर्ड के लिए एक ब्लॉक: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) और सेटिंग: iBUS और सिग्नल खोना; कंट्रोल सरफ़ेस की यात्रा; फ़्लैप; सर्वो रिवर्स; IMU और कम्पास की माउंटिंग; ARM; failsafe (RTH या ग्लाइड); पिटो ट्यूब (`PITOT_*`); ऑटोपायलट के मोड और फ़ंक्शन की सारी संख्याएँ; लूप; Wi-Fi; MAVLink; डीबगिंग |
+| `Config.h` | सभी पिन (हर बोर्ड के लिए एक ब्लॉक: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) और सेटिंग: iBUS/SBUS/CRSF और सिग्नल खोना; कंट्रोल सरफ़ेस की यात्रा; फ़्लैप; सर्वो रिवर्स; IMU और कम्पास की माउंटिंग; ARM; failsafe (RTH या ग्लाइड); पिटो ट्यूब (`PITOT_*`); ऑटोपायलट के मोड और फ़ंक्शन की सारी संख्याएँ; लूप; Wi-Fi; MAVLink; डीबगिंग |
 | `Channels.h` | चैनलों के नाम: `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `SWB`, `SWC`, `SWD`, `VRA`, `VRB` |
 | `Controls.h` | तालिका `BINDINGS`: हर स्विच और नॉब क्या करता है, हर चैनल की एक पंक्ति, `static_assert` की जाँचें |
 
@@ -169,7 +169,11 @@ src/stm32/main.cpp  — STM32H743 फ़र्मवेयर (FreeRTOS टा�
 |---|---|
 | `RcChannelState.h` | 10 चैनलों का स्नैपशॉट |
 | `RcInput.h` | `clamp()`, `centered(us, max, reverse)` |
-| `IBusReceiver.h` | iBUS → चैनल: 32 बाइट का फ़्रेम, CRC, चैनल का मान — निचले 12 बिट (`& 0x0FFF`); `isSignalLost()` = फ़्रेम नहीं हैं (या अभी तक एक भी नहीं आया) ∥ थ्रॉटल का failsafe मान; फ़्रेमों के काउंटर |
+| `RcReceiver.h` | रिसीवर: प्रोटोकॉल के फ़ॉर्मैट में UART (`RX_PROTOCOL`: iBUS, SBUS, CRSF) → `RC_CHANNELS` चैनल; `isSignalLost()` = फ़्रेम नहीं (या अभी एक भी नहीं) ∥ रिसीवर ने failsafe बताया (SBUS फ़्लैग, CRSF में लिंक गुणवत्ता 0, सामान्य से कम थ्रॉटल); चैनल रिवर्स, फ़्रेम काउंटर |
+| `IBusParser.h` | iBUS: 32 बाइट का फ़्रेम, CRC, चैनल का मान — निचले 12 बिट (`& 0x0FFF`) |
+| `SbusParser.h` | SBUS: 25 बाइट का फ़्रेम, 11 बिट के 16 चैनल, failsafe और खोए फ़्रेम के फ़्लैग, SBUS2 |
+| `CrsfParser.h` | CRSF: CRC8 (बहुपद 0xD5), चैनल (प्रकार 0x16) और लिंक के आँकड़े (प्रकार 0x14, लिंक गुणवत्ता) |
+| `Packed11.h` | 11 बिट के 16 चैनल → µs — SBUS और CRSF में साझा |
 
 ### `control/`
 
@@ -320,7 +324,7 @@ PID `त्रुटि = लक्ष्य − वास्तविक` ग�
 ## RC चैनलों का नक़्शा, ARM और failsafe
 
 स्रोत है `include/config/Channels.h`। ट्रांसमीटर FS-i6 (10 चैनल, मोड 2) +
-रिसीवर FS-iA6B, iBUS 115200।
+रिसीवर FS-iA6B, iBUS 115200। दूसरे रिसीवर — SBUS या CRSF (`RX_PROTOCOL`), चैनल वही।
 
 | चैनल | ट्रांसमीटर का हिस्सा | नाम | उपयोग |
 |---|---|---|---|
@@ -350,13 +354,14 @@ DISARM तक कुछ नहीं बदलता। दिशा बदल�
 अस्वीकार होता है। पीछे — केवल पायलट का थ्रॉटल, `REVERSE_THROTTLE_LIMIT_PCT`
 (50%) से ज़्यादा नहीं; ऑटोपायलट को थ्रॉटल नहीं मिलता, संपर्क टूटने पर मोटर रुकती है।
 
-**संपर्क टूटना** (`IBusReceiver::isSignalLost()`):
+**संपर्क टूटना** (`RcReceiver::isSignalLost()`):
 
 1. `RX_TIMEOUT_US` (500 ms) से ज़्यादा समय तक कोई फ़्रेम नहीं — तार टूटना या
    रिसीवर की बिजली जाना। चालू करने के बाद पहले फ़्रेम से पहले भी संपर्क खोया हुआ
    माना जाता है: चैनलों के डिफ़ॉल्ट मान (सभी 1500) को ट्रांसमीटर की कमांड नहीं
    समझा जाता।
-2. थ्रॉटल < `RX_FAILSAFE_THROTTLE_US` (950) — ट्रांसमीटर में तय किया गया
+2. रिसीवर ने ख़ुद संपर्क टूटने की सूचना दी: SBUS फ़्रेम में failsafe फ़्लैग, CRSF के आँकड़ों में लिंक गुणवत्ता 0 %।
+3. थ्रॉटल < `RX_FAILSAFE_THROTTLE_US` (950) — ट्रांसमीटर में तय किया गया
    failsafe। **ट्रांसमीटर खो जाने पर FS-iA6B फ़्रेम भेजना बंद नहीं करता**, बल्कि
    आख़िरी मान दोहराता रहता है (टेस्ट बेंच पर जाँचा गया), इसलिए ट्रांसमीटर में
    failsafe सेट किए बिना संपर्क टूटना पहचाना नहीं जाता। सेटअप `PILOT_GUIDE.md` में है।
@@ -440,7 +445,7 @@ IMU का कैलिब्रेशन (हर शुरुआत पर औ�
 
 `loop()` से हर 2 ms पर बुलाया जाता है। क्रम ही प्राथमिकता है:
 
-1. **`receiver.update()`** — जमा हुए iBUS बाइटों का पार्सिंग।
+1. **`receiver.update()`** — रिसीवर के जमा बाइटों का पार्सिंग (iBUS, SBUS या CRSF)।
 2. **स्विच** — `switches->update(rc)`, केवल जीवित संपर्क पर (failsafe फ़्रेम में
    चैनल स्विच को नहीं दर्शाते): मोड (केवल बदलने पर), फ़ंक्शन, नॉब।
 3. **पायलट का थ्रॉटल** — `throttle.update(rc, receiverFailsafe)`।
@@ -598,7 +603,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s में सबसे ख़र
 | बायाँ / दायाँ एलेरॉन | GPIO4 / GPIO5 | GPIO5 / GPIO4 | GPIO13 / GPIO14 |
 | एलिवेटर / ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
 | रडर | GPIO18 | — (पिन नहीं) | GPIO25 |
-| iBUS RX | GPIO17 | GPIO8 | GPIO16 |
+| RC RX | GPIO17 | GPIO8 | GPIO16 |
 | सेंसरों का I2C SDA / SCL | GPIO41 / GPIO42 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | OLED का I2C SDA / SCL | GPIO1 / GPIO2 | — | — |
 | SPI SCK / MISO / MOSI | GPIO12 / 13 / 11 | GPIO0 / 10 / 20 | GPIO18 / 19 / 23 |
@@ -658,7 +663,7 @@ STM32H743VIT6 (Cortex-M7 480 MHz, 2 MB फ़्लैश, 1 MB RAM) — **प�
 | एलिवेटर / ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
 | रडर | PD14 | TIM4_CH3 |
 | AUX1 (पेलोड) / AUX2 (कैमरा) | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
-| iBUS RX (TX — आरक्षित) | PE7 (PE8) | UART7 |
+| RC RX (TX — आरक्षित) | PE7 (PE8) | UART7 |
 | सेंसरों का I2C SDA / SCL | PB11 / PB10 | I2C2 |
 | OLED का I2C SDA / SCL | PB9 / PB8 | I2C1 |
 | SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |

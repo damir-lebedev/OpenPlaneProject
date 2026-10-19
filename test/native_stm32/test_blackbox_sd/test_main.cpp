@@ -37,7 +37,7 @@
 #include "helpers/BlackBoxParse.h"
 #include "helpers/FatImage.h"
 #include "helpers/TestSupport.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "storage/Fat32File.h"
 #include "telemetry/BlackBox.h"
 #include "telemetry/BlackBoxFormat.h"
@@ -93,7 +93,7 @@ namespace
         FakeImu imu;
         FakeBaro baro;
         FakeGps gps;
-        IBusReceiver receiver{ board.rcUart() };
+        RcReceiver receiver{ board.rcUart() };
         ControlMixer mixer;
         ThrottleManager throttle;
         FlightOutputs outputs{ board };

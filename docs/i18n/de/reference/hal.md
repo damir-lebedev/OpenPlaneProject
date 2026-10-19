@@ -46,11 +46,11 @@ oder `HardwareSerial` ein, und nichts ruft LEDC direkt auf.
 
 | Methode | Beschreibung |
 |---|---|
-| `virtual void begin()` | Einmalige Initialisierung der I2C-/SPI-Busse. Die UARTs öffnen ihre Besitzer (`IBusReceiver`, GPS) mit ihrer eigenen Baudrate, das PWM `FlightOutputs::begin()` |
+| `virtual void begin()` | Einmalige Initialisierung der I2C-/SPI-Busse. Die UARTs öffnen ihre Besitzer (`RcReceiver`, GPS) mit ihrer eigenen Baudrate, das PWM `FlightOutputs::begin()` |
 | `virtual II2CBus& i2c()` | Der Sensorbus |
 | `virtual ISpiBus& spi()` | Der SPI-Bus |
 | `virtual II2CBus* displayI2c()` | Ein zweiter I2C-Bus nur für das Display; `nullptr`, wenn es ihn nicht gibt |
-| `virtual IUartPort& rcUart()` | Der UART des iBUS-Empfängers |
+| `virtual IUartPort& rcUart()` | Der UART des Fernsteuerempfängers: iBUS, SBUS oder CRSF |
 | `virtual IUartPort& gpsUart()` | Der UART des GPS |
 | `virtual IUartPort* telemetryUart()` | Der UART des MAVLink-Funkmodems; standardmäßig `nullptr` (der ESP32 hat keinen freien UART) |
 | `virtual IServoOutput& servo(uint8_t channel)` | Ein PWM-Ausgang über den Index `ServoChannel::*` |
@@ -103,12 +103,15 @@ schaltet `SpiRegisterDevice`.
 
 **Datei:** `hal/IUartPort.h` · **Art:** Schnittstelle · **Implementierungen:** `Esp32UartPort`, `Stm32UartPort`
 
-Ein UART in der Form von `HardwareSerial`, doch `begin()` nimmt nur die Baudrate:
-die Pins und das Format (8N1) legt die Implementierung fest.
+Ein UART in der Form von `HardwareSerial`, aber `begin()` nimmt nur die Baudrate und
+das Frame-Format: Die Pins legt die Implementierung fest. `UartFormat`:
+`STANDARD_8N1` — fast alles, `SBUS_8E2_INVERTED` — SBUS (8E2, invertiertes Signal; der
+UART invertiert selbst).
 
 | Methode | Beschreibung |
 |---|---|
-| `begin(baud)` | Den Port öffnen |
+| `begin(baud)` | Port öffnen, 8N1 |
+| `virtual bool begin(baud, format)` | Port in einem `UartFormat` öffnen; `false` — der Port kann das nicht (standardmäßig nur 8N1) |
 | `int available()`, `int read()` | Empfangen |
 | `size_t write(byte)`, `size_t write(buffer, size)` | Senden |
 | `virtual int availableForWrite()` | Freier Platz im Sendepuffer; `-1` — unbekannt (Standard). Die Telemetrie stellt damit einen Frame zurück, statt zu warten |
@@ -250,7 +253,7 @@ Pins aus `Config.h` kennt.
 | `i2cBus` | `Esp32I2CBus` | `Wire` an `PIN_I2C_SDA/SCL`, 400 kHz |
 | `displayBus` | `Esp32I2CBus` | `Wire1` an `PIN_I2C2_SDA/SCL` — nur wenn `SOC_I2C_NUM > 1` |
 | `spiBus` | `Esp32SpiBus` | Das globale `SPI` |
-| `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | iBUS an `PIN_IBUS`, nur RX |
+| `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | Empfänger an `PIN_RC_RX`, nur RX |
 | `gpsSerial`, `gpsPort` | `HardwareSerial(UART_NUM_GPS)`, `Esp32UartPort` | GPS an `PIN_GPS_RX/TX` |
 | `servos[7]` | `Esp32ServoOutput` | LEDC-Kanäle 0..6 in der Reihenfolge von `ServoChannel` (AUX1/AUX2 — `PIN_AUX1/2`, falls herausgeführt) |
 
@@ -297,7 +300,8 @@ Wert → `SPI_MODE0`.
 **Datei:** `hal/esp32/Esp32UartPort.h` · **Erbt von:** `IUartPort`
 
 Ein Wrapper um `HardwareSerial`: `begin(baud)` → `serial.begin(baud, SERIAL_8N1,
-rx, tx)`; `tx = -1` — nur Empfang. Der Rest ist Delegation.
+rx, tx)`; SBUS → `serial.begin(baud, SERIAL_8E2, rx, tx, true)` (RX-Invertierung durch
+den UART des ESP32); `tx = -1` — nur Empfang. Der Rest ist Delegation.
 
 ---
 
@@ -360,7 +364,7 @@ Dasselbe wie `Esp32Board`, aufgesetzt auf STM32duino.
 | `i2cBus` | `Stm32I2CBus` | `Wire` an `PIN_I2C_SDA/SCL` (I2C2: PB11/PB10), 400 kHz |
 | `displayBus` | `Stm32I2CBus` | `displayWire` an `PIN_I2C2_SDA/SCL` (I2C1: PB9/PB8) — der zweite Bus ist immer vorhanden |
 | `spiBus` | `Stm32SpiBus` | Das globale `SPI` an `PIN_SENSOR_SPI_*` (SPI2) |
-| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | iBUS: UART7, RX `PIN_IBUS` (PE7), TX `PIN_IBUS_TX` (PE8, reserviert für iBUS-SENS) |
+| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | Empfänger: UART7, RX `PIN_RC_RX` (PE7), TX `PIN_RC_TX` (PE8, reserviert für Telemetrie zum Sender) |
 | `gpsSerial`, `gpsPort` | `Uart`, `Stm32UartPort` | GPS: USART3, `PIN_GPS_RX/TX` (PD9/PD8) |
 | `telemetrySerial`, `telemetryPort` | `Uart`, `Stm32UartPort` | das MAVLink-Funkmodem: UART4, `PIN_TELEM_RX/TX` (PD0/PD1) |
 | `servos[7]` | `Stm32ServoOutput` | In der Reihenfolge von `ServoChannel` (AUX1 — PD15/TIM4, AUX2 — PE9/TIM1) |
@@ -402,12 +406,13 @@ wandelt 0..3 in `SPI_MODEn` um, ein unbekannter Wert → `SPI_MODE0`.
 
 **Datei:** `hal/stm32/Stm32UartPort.h` · **Erbt von:** `IUartPort`
 
-Ein Wrapper um `HardwareSerial&` (in STM32duino 3.x die abstrakte Basis
-`arduino::HardwareSerial`; das konkrete Objekt `Uart` legt `Stm32Board` an).
-`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`; `availableForWrite()` kommt
-von `HardwareSerial`. Die Puffer (`SERIAL_RX/TX_BUFFER_SIZE` im Env): Empfang 256
-Bytes (ein NAV-PVT-Frame hat 100, die üblichen 64 sind zu wenig), Senden 1024 (Protokollzeilen und
-MAVLink-Frames ohne Warten).
+Ein Wrapper um `Uart&` (das Objekt erzeugt `Stm32Board`). `begin(baud)` →
+`serial.begin(baud, SERIAL_8N1)`; SBUS — `setRxInvert()` (RX-Invertierung durch den
+USART selbst, Bit RXINV) vor `serial.begin(baud, SERIAL_8E2)`; das 9-Bit-Wort mit
+Parität wählt der Core selbst; `availableForWrite()` kommt von `HardwareSerial`. Puffer
+(`SERIAL_RX/TX_BUFFER_SIZE` im env): Empfang 256 Bytes (ein NAV-PVT-Frame hat 100, die
+standardmäßigen 64 reichen nicht), Senden 1024 (Logzeilen und MAVLink-Frames ohne
+Warten).
 
 ## `Stm32ServoOutput`
 

@@ -1,5 +1,5 @@
 // ============================================================
-// FlightController: полный такт на настоящих IBusReceiver,
+// FlightController: полный такт на настоящих RcReceiver,
 // ControlMixer, ThrottleManager, ArmingManager, FlightOutputs,
 // Autopilot и PilotSwitches; железо — FakeBoard, датчики —
 // фейки. Проверяется порядок приоритетов: потеря связи > ARM > стики
@@ -18,7 +18,7 @@
 #include "control/FlightController.h"
 #include "control/FlightOutputs.h"
 #include "control/ThrottleManager.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "helpers/TestSupport.h"
 
 void setUp() { resetWorld(); }
@@ -31,7 +31,7 @@ namespace
         FakeBoard board;
         FakeImu imu;
         FakeBaro baro;
-        IBusReceiver receiver{ board.rcUart() };
+        RcReceiver receiver{ board.rcUart() };
         ControlMixer mixer;
         ThrottleManager throttle;
         FlightOutputs outputs{ board };
@@ -258,7 +258,7 @@ void test_flaps_follow_switch_smoothly()
 void test_manual_only_controller_without_autopilot()
 {
     FakeBoard board;
-    IBusReceiver receiver(board.rcUart());
+    RcReceiver receiver(board.rcUart());
     ControlMixer mixer;
     ThrottleManager throttle;
     ArmingManager arming;
@@ -380,7 +380,7 @@ void test_throttle_limit_knob_stretches_allowed_throttle_over_the_stick()
     FakeBoard board;
     FakeImu imu;
     FakeBaro baro;
-    IBusReceiver receiver{ board.rcUart() };
+    RcReceiver receiver{ board.rcUart() };
     ControlMixer mixer;
     ThrottleManager throttle;
     FlightOutputs outputs{ board };

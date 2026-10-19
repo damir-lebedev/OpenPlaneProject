@@ -49,7 +49,7 @@ sensors (IMU, barometer, compass, GPS, pitot tube) ─► Autopilot ─► surfa
 
 ## Default transmitter layout
 
-FS-i6 + FS-iA6B, iBUS, 10 channels (`config/Channels.h`).
+FS-i6 + FS-iA6B, iBUS, 10 channels (`config/Channels.h`). Another receiver — SBUS or CRSF (`RX_PROTOCOL`), same channels.
 
 | Channel | Transmitter control | Default |
 |---|---|---|
@@ -255,7 +255,7 @@ The center of a knob = the default value from `Config.h`; the edges are the mini
 
 **Home** is recorded at ARM if the GPS is good (a 3D fix, ≥ 6 satellites, accuracy ≤ 5 m). If the GPS has not locked on by ARM — home is recorded as soon as it does. To change it in the field — the `HOME_RESET` feature.
 
-**Link loss** (no iBUS frames for > 0.5 s, or the receiver sent a throttle below 950 µs — that is the failsafe configured in the transmitter; see `docs/PILOT_GUIDE.md`):
+**Link loss** (no frames from the receiver for > 0.5 s, the receiver itself reported link loss — SBUS, CRSF — or it sent a throttle below 950 µs, the failsafe configured in the transmitter; see `docs/PILOT_GUIDE.md`):
 
 | Situation | What the aircraft does |
 |---|---|

@@ -211,7 +211,7 @@ Para añadir una salida: una fila en la tabla + un campo en
 ## `FlightController`
 
 **Archivo:** `control/FlightController.h` · **Capa:** COORDINATION ·
-**Depende de:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
+**Depende de:** `RcReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 El único coordinador del ciclo de control: no analiza la UART, no toca el PWM
 ni calcula el mezclador; solo llama a los demás en el orden correcto. El
@@ -219,11 +219,11 @@ diagrama detallado está en [ARCHITECTURE.md §6](../ARCHITECTURE.md#6-el-ciclo-
 
 | Método | Descripción |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Sin piloto automático: control manual puro; sin interruptores: solo los sticks |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Sin piloto automático: control manual puro; sin interruptores: solo los sticks |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | Un ciclo (véase más abajo) |
 | `bool isReceiverFailsafe() const` | El enlace está perdido |
-| `const IBusReceiver& getReceiver() const` | Para el registro (contadores de tramas, la causa de la pérdida) |
+| `const RcReceiver& getReceiver() const` | Para el registro (contadores de tramas, la causa de la pérdida) |
 | `bool isArmed() const`, `const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | Lo último escrito en las salidas |
 | `const RcChannelState& getRcState() const` | Los canales |

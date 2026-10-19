@@ -34,6 +34,7 @@ Der Bausatz des aktuellen Aufbaus (die Firmware wurde darauf geprüft):
 - **Ein STM32H743-Board DevEBox H743** (MCUDEV) – das Hauptboard. Das frühere Hauptboard, das ESP32-S3 unten, wird ebenfalls unterstützt.
 - **Ein ESP32-S3-N16R8-Board** (ein DevKitC-1-Klon mit zwei USB-C-Buchsen: „USB“ und „COM“).
 - **Ein Sender FS-i6 + Empfänger FS-iA6B** (iBUS-Protokoll, 10 Kanäle). Benötigt wird eine einzige Datenleitung – der Anschluss iBUS SERVO. Der Sender muss Failsafe einstellen können – diese Einstellung ist Pflicht, siehe den Abschnitt zu Failsafe.
+- **Oder ein anderer Sender mit SBUS-Empfänger** (FrSky, Futaba, RadioMaster, Jumper …) **oder CRSF-Empfänger** (ExpressLRS, TBS Crossfire) – das Protokoll wird in `Config.h` gewählt (`RX_PROTOCOL`), der Anschluss steht weiter unten.
 - **2 Servos MG90S** für die Querruder – eines für jede Tragflächenhälfte (zwei unabhängige Servos, nicht eines für beide Flächen).
 - **1 Servo MG90S** für das Höhenruder.
 - **1 Servo MG90S** für das Seitenruder – auf dessen Achse sitzt auch das Lenkrad des Fahrwerks (Rollen am Boden). Das Fahrwerk: zwei Räder vorn und ein lenkbares Spornrad (`LANDING_GEAR = TAIL_WHEEL` in `Config.h`; ein Bugradfahrwerk ist `NOSE_WHEEL`).
@@ -69,7 +70,7 @@ Die Firmware unterstützt vier Boards; umgeschaltet wird mit einem einzigen Buil
 | Höhenruder | PA2 |
 | ESC (Gas) | PA3 |
 | Seitenruder + Lenkrad | PD14 |
-| iBUS vom Empfänger (RX) | PE7 |
+| Empfänger (RX): iBUS, SBUS, CRSF | PE7 |
 | I2C der Sensoren SDA / SCL (MPU, BMP581, Kompass) | PB11 / PB10 |
 | I2C des OLED SDA / SCL (eigener Bus) | PB9 / PB8 |
 | GPS: RX (← TX des GPS) / TX (→ RX des GPS) | PD9 / PD8 |
@@ -102,7 +103,7 @@ Die Servos werden **nicht über das Board** versorgt, sondern über das BEC des 
 | Höhenruder | GPIO6 |
 | ESC (Gas) | GPIO7 |
 | Seitenruder + Lenkrad | GPIO18 |
-| iBUS vom Empfänger (RX) | GPIO17 |
+| Empfänger (RX): iBUS, SBUS, CRSF | GPIO17 |
 | I2C der Sensoren SDA / SCL (MPU, BMP581, Kompass) | GPIO41 / GPIO42 |
 | I2C des OLED SDA / SCL (eigener Bus) | GPIO1 / GPIO2 |
 | Reserve: GPS RX / TX | GPIO39 / GPIO40 |
@@ -137,7 +138,7 @@ Die Servos werden **nicht über das Board** versorgt, sondern über das BEC des 
 | Höhenruder | GPIO6 |
 | ESC (Gas) | GPIO7 |
 | Seitenruder | – (keine freien Pins) |
-| iBUS vom Empfänger (RX) | GPIO8 |
+| Empfänger (RX): iBUS, SBUS, CRSF | GPIO8 |
 | I2C SDA (Sensoren) | GPIO1 |
 | I2C SCL (Sensoren) | GPIO3 |
 
@@ -152,7 +153,7 @@ Die Servos werden **nicht über das Board** versorgt, sondern über das BEC des 
 | Höhenruder | GPIO27 |
 | ESC (Gas) | GPIO26 |
 | Seitenruder | GPIO25 |
-| iBUS vom Empfänger (RX) | GPIO16 |
+| Empfänger (RX): iBUS, SBUS, CRSF | GPIO16 |
 | I2C SDA (Sensoren) | GPIO21 |
 | I2C SCL (Sensoren) | GPIO22 |
 
@@ -162,15 +163,25 @@ Praktisch ist es, weil es das verbreitetste und günstigste Board der Reihe ist 
 
 ## Empfänger anschließen
 
-Vom Empfänger brauchen Sie nur **eine iBUS-Datenleitung**, die bei den meisten FlySky-kompatiblen Empfängern auf einen eigenen Anschluss herausgeführt ist (oft mit „iBUS“ beschriftet, oder es ist der einzige Ausgang, der kein PPM ist). Anschluss:
+Der Empfänger wird mit einer einzigen Datenleitung an den **Empfänger-RX-Pin** aus
+der Tabelle Ihres Boards angeschlossen (`PIN_RC_RX`: PE7 beim DevEBox, GPIO17 beim
+esp32-s3, GPIO8 beim esp32-c3, GPIO16 beim esp32-dev). Das Protokoll muss zu Ihrem
+Empfänger passen; es wird mit `RX_PROTOCOL` in `Config.h` festgelegt (in OpenPlane
+Studio — der Schritt „Sender“):
 
-- **TX des Empfängers (iBUS-Ausgang)** → **RX-Pin des Boards** aus der Tabelle oben (GPIO8 beim esp32-c3, GPIO17 beim esp32-s3, GPIO16 beim esp32-dev).
-- **Masse (GND) des Empfängers** → **GND des Boards**. Das ist Pflicht; ohne gemeinsame Masse funktioniert das Protokoll nicht.
-- **Stromversorgung des Empfängers** – über ein separates BEC bzw. einen Regler oder über die 5 V des Boards, je nachdem, wie Sie den Empfänger in Ihren Aufbauten üblicherweise versorgen; sie ist an keinen bestimmten Pin der Firmware gebunden.
+| `RX_PROTOCOL` | Empfänger | Was wohin |
+|---|---|---|
+| `IBUS` (Standard) | FlySky FS-iA6B, FS-iA10B | Port iBUS SERVO (iBUS-Ausgang) → RX-Pin |
+| `SBUS` | FrSky, Futaba, RadioMaster, Jumper und die meisten anderen | SBUS-Ausgang → RX-Pin; kein Inverter nötig — der UART des Boards invertiert das Signal selbst |
+| `CRSF` | ExpressLRS, TBS Crossfire und Tracer | TX des Empfängers → RX-Pin; RX des Empfängers kann an den TX-Pin (`PIN_RC_TX`) — noch ungenutzt |
 
-Die Firmware sendet nichts an den Empfänger zurück – sie hört nur zu, deshalb muss die TX-Leitung des Boards nirgendwo angeschlossen werden.
+- **Masse (GND) des Empfängers** → **GND des Boards**. Pflicht: Ohne gemeinsame Masse funktioniert das Protokoll nicht.
+- **Versorgung des Empfängers** — 5 V aus einem separaten BEC/Regler oder vom 5V des Boards.
 
-Die Geschwindigkeit des iBUS-Ports in der Firmware beträgt 115200 Baud; das ist der Standard des Protokolls und muss nicht geändert werden, denn der Empfänger hält diese Geschwindigkeit selbst ein.
+Die Portgeschwindigkeit setzt die Firmware: iBUS — 115200 Baud, SBUS — 100000
+(8E2), CRSF — 420000 (der ExpressLRS-Standard). Richten Sie einen EdgeTX-Sender
+genauso ein wie den FS-i6 (siehe Kanalbelegung unten): CH5 — ARM, CH6–CH8 —
+Schalter, CH9–CH10 — Drehregler.
 
 ---
 
@@ -261,10 +272,11 @@ Der Verbindungsverlust hat **absoluten Vorrang** vor allem anderen:
 - **Motor in Umkehr** – der Motor ist in jedem Fall aus, der Autopilot steuert nur mit den Rudern (nach Hause im Gleitflug);
 - **nicht scharfgeschaltet** (am Boden) oder die IMU antwortet nicht – Motor aus, Querruder, Höhen- und Seitenruder in Neutralstellung (1500 µs); nach 10 s ohne Verbindung piept der Summer „Ich bin hier“ (falls er eingelötet ist).
 
-Die Firmware erkennt den Verbindungsverlust auf zwei Wegen:
+Die Firmware erkennt den Verbindungsverlust auf drei Arten:
 
-1. **Länger als 500 ms keine iBUS-Frames** – Leitungsbruch oder Empfänger ohne Strom.
-2. **Gas unter 950 µs** – so meldet der Empfänger, dass er den Sender verloren hat. **Das erfordert die Einrichtung von Failsafe im Sender** (siehe unten): Bei Verbindungsverlust hört der FS-iA6B NICHT auf, Frames zu senden, sondern wiederholt die letzten Knüppelwerte – ohne diese Einrichtung sieht die Firmware den Verbindungsverlust nicht, und das Flugzeug fliegt mit dem letzten Gas weiter.
+1. **Länger als 500 ms keine Frames vom Empfänger** – Leitungsbruch, Empfänger ohne Strom oder ein Empfänger, der bei Verbindungsverlust verstummt (so macht es ExpressLRS standardmäßig).
+2. **Der Empfänger meldet den Verbindungsverlust selbst** – das Failsafe-Flag im SBUS-Frame, Verbindungsqualität 0 % bei CRSF. Nichts einzurichten.
+3. **Gas unter 950 µs** – so meldet der Empfänger, dass er den Sender verloren hat. **Das erfordert die Einrichtung von Failsafe im Sender** (siehe unten): Bei Verbindungsverlust hört der FS-iA6B NICHT auf, Frames zu senden, sondern wiederholt die letzten Knüppelwerte – ohne diese Einrichtung sieht die Firmware den Verbindungsverlust nicht, und das Flugzeug fliegt mit dem letzten Gas weiter.
 
 ARM wird bei Failsafe **nicht** zurückgesetzt: Kehrt die Verbindung zurück, gehorcht das Flugzeug wieder den Knüppeln und dem gewählten Modus, ohne erneut scharfgeschaltet zu werden (den Schalter in der Luft bei Gas null umzulegen wäre gefährlicher).
 
@@ -503,7 +515,7 @@ Lesen Sie diesen Abschnitt vollständig **vor** dem ersten Einschalten, nicht er
 ## Fehlersuche
 
 **„Kein Empfängersignal“ / RX sieht normal aus, aber die Kanäle im Dashboard bewegen sich nicht**
-Prüfen Sie, dass die Datenleitung des Empfängers genau am iBUS-RX-Pin aus der Tabelle Ihres Boards hängt (GPIO8/GPIO17/GPIO16), nicht mit Masse oder Versorgung vertauscht ist und dass die Massen von Empfänger und Board verbunden sind. Stimmt die Pinbelegung und sind die Leitungen intakt, es kommt aber trotzdem kein Signal, prüfen Sie, ob der Empfänger überhaupt mit dem Sender gebunden (Bind) ist und ob der Ausgang des Empfängers auf iBUS eingestellt ist und nicht auf PPM/SBUS.
+Prüfen Sie, dass die Datenleitung des Empfängers genau am Empfänger-RX-Pin aus der Tabelle Ihres Boards hängt (PE7/GPIO17/GPIO8/GPIO16), nicht mit Masse oder Versorgung verwechselt ist, und dass die Massen von Empfänger und Board verbunden sind. Wenn die Belegung stimmt und die Leitungen heil sind, aber trotzdem kein Signal kommt, prüfen Sie, ob der Empfänger mit dem Sender gebunden ist (bei ExpressLRS — dieselbe Binding Phrase und Version wie das Sendemodul) und ob sein Ausgang zu `RX_PROTOCOL` passt: iBUS, SBUS oder CRSF, nicht PPM.
 
 **Ein Sensor (IMU, Barometer, Kompass) zeigt „antwortet nicht“ / NO_RESPONSE**
 Die Firmware meldet ehrlich, dass der Sensor nicht antwortet, statt Nullen auszugeben. Prüfen Sie: (1) die Versorgung des Moduls – 3.3V und Masse des Boards; (2) SDA/SCL – an den I2C-Pins genau Ihres Boards; (3) die Adresse auf der Leitung: MPU 0x68 (AD0 an GND), BMP581 0x46 (SDO an GND, CSB an 3.3V; 0x47, wenn SDO an 3.3V liegt), BMP388 0x76 (SDO an GND, **CSB an 3.3V** – sonst befindet sich der Chip im SPI-Modus), QMC5883P 0x2C, QMC5883L 0x0D. Antwortet der Sensor mal ja, mal nein (oder meldet er sich unter einer fremden Adresse), ist es ein Wackelkontakt auf dem Steckbrett: Drücken Sie VCC/GND/SDA/SCL fest, und versorgen Sie jedes Modul am besten direkt aus 3.3V/GND des Boards. Der Befehl `s` in der Konsole zeigt die I2C-Fehlerzähler für jeden Sensor.

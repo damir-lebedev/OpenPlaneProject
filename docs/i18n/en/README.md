@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-436%20passing-3fb950?style=for-the-badge" alt="436 tests">
+  <img src="https://img.shields.io/badge/tests-455%20passing-3fb950?style=for-the-badge" alt="455 tests">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94% coverage">
   <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 builds without warnings">
   <br>
@@ -61,7 +61,7 @@
 | **What it is** | An open flight controller and autopilot for radio-controlled airplanes. The main board is the STM32H743 (a Pixhawk-class board): on a DevEBox board the firmware is **already up and flown from the transmitter** — [there is a video](#-stm32h743-came-alive-on-the-board), and the sensors are being connected now. The former base is an ESP32-S3 at ~$10, which passed the bench with all the sensors. |
 | **What it can do** | 12 flight modes — from stabilization to return-home, GPS circles, hand launch, auto-landing and **thermal soaring**. A pitot tube made of two cheap barometers. MAVLink telemetry to QGroundControl and Mission Planner. |
 | **The main trick** | Any switch or knob on the transmitter = any function. **One line** in `Controls.h` — and SwD is no longer motor reverse but a payload drop. |
-| **Why you can trust it** | 436 automated tests (plus 9 on the board itself with a real SD card), 94% of the code under test, 24 "board × sensors" builds with not a single warning, closed-loop simulations of every mode. |
+| **Why you can trust it** | 455 automated tests (plus 9 on the board itself with a real SD card), 94% of the code under test, 24 "board × sensors" builds with not a single warning, closed-loop simulations of every mode. |
 | **Honestly** | So far only manual mode has flown (the first prototype). The STM32H743 has so far been checked only on the bench, without sensors. The autopilot has been verified on the bench, by tests and by simulations, and is waiting for flight trials — [status below](#-honest-status). |
 
 ---
@@ -177,6 +177,7 @@ The board records every flight: IMU at 500 Hz, angles and autopilot decisions, P
 | **BMP581** | main barometer and the pitot tube barometer | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | bench and legacy | I2C / SPI |
 | **u-blox M10** | GPS, 10 Hz, UBX | UART |
+| **iBUS · SBUS · CRSF** | RC receiver: FlySky, FrSky, Futaba, RadioMaster, ExpressLRS, TBS Crossfire | UART |
 
 A sensor is changed with one line (`SENSOR_KIT_LSM6DSV_PITOT`), a board with one build flag. All 4 boards × 6 sensor kits build without warnings: [`tools/build_matrix.sh`](../../../tools/build_matrix.sh).
 
@@ -205,7 +206,7 @@ What this proves: the "transmitter → iBUS → firmware → PWM" chain works on
 
 | | |
 |---|---|
-| **436 automated tests** | modules, chip drivers checked at the register level, closed-loop flights, the ESP32 and STM32 firmware **in full** on a PC; plus 9 tests on the STM32 board itself with a real SD card |
+| **455 automated tests** | modules, chip drivers checked at the register level, closed-loop flights, the ESP32 and STM32 firmware **in full** on a PC; plus 9 tests on the STM32 board itself with a real SD card |
 | **93.9% of lines, 85.7% of branches** | `gcovr` coverage, including the STM32 code |
 | **24/24 builds** | 4 boards × 6 sensor kits, `-Wall -Wextra`, zero warnings |
 | **0 findings** | cppcheck and clang-tidy over all the code |
@@ -272,6 +273,7 @@ In the serial monitor: `h` — menu, `b` — which chips are visible on the buse
 | New sensors (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) | 🧪 register emulators built from the datasheets |
 | STM32H743: SD card, black box, console over USB | 🔧 on the DevEBox board (on-board tests) |
 | STM32H743: iBUS, ARM, PWM to the servos and motor, manual control | 🔧 on the board without sensors, recorded on video |
+| SBUS and CRSF receivers (ExpressLRS) | 🧪 tests: frame parsing, failsafe, the inverted UART; not yet tried with a real receiver |
 | STM32H743: sensors (IMU, barometer, compass, GPS) and autopilot modes | 🧪 the whole firmware on a PC; no sensors connected to the board yet |
 
 The airplane model in the simulations is simplified, and the coefficients are starting values. Every new mode is first tried at altitude, with a finger on the MANUAL switch.
@@ -291,6 +293,7 @@ The airplane model in the simulations is simplified, and the coefficients are st
 - [x] Black box: flights to flash (ESP32-S3) and to an SD card (STM32H743), download and decoding to CSV
 - [x] STM32H743 runs on the board: transmitter → iBUS → servos and motor (no sensors, on video)
 - [x] The [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) app: step-by-step setup, one-button flashing, ground checks
+- [x] SBUS and CRSF receivers (ExpressLRS, TBS Crossfire) alongside iBUS — chosen in `Config.h` or in OpenPlane Studio
 - [ ] STM32H743: connect the sensors and go through the bench the same way as with the ESP32-S3
 - [ ] Flight trials of the autopilot on the new airframe
 - [ ] A custom flight controller board ([FC_BOARD.md](FC_BOARD.md)) on the STM32H743

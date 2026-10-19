@@ -61,7 +61,7 @@ flowchart TD
     CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK(연결되지 않음)<br/>FeedbackSupervisor와 모듈"]
-    RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
+    RC["RC<br/>RcReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
     HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice · Rtos"]
     STORE["STORAGE<br/>KeyValueStore · KvPreferences"]
@@ -126,7 +126,7 @@ flowchart LR
     gps["SelectedGps gpsSensor"]
     pitotBaro["SelectedPitotBaro pitotBaro"]
     pitot["PitotDualBaroAirspeed pitotSensor"]
-    rx["IBusReceiver"]
+    rx["RcReceiver"]
     mixer["ControlMixer"]
     thr["ThrottleManager"]
     outs["FlightOutputs"]
@@ -176,7 +176,7 @@ setupSensors()              — 각 센서의 begin(); 응답한 센서의 보�
                               기압계 (고도 0), 나침반 (초기 침로 → IMU yaw),
                               피토관 (영점은 루프의 첫 1초 동안 수집)
 autopilot.begin()           — NVS/플래시에서 트림
-flightController.begin()    — setFailsafe() + UART iBUS
+flightController.begin()    — setFailsafe() + UART RC (iBUS/SBUS/CRSF)
 oledDisplay.begin(...)      — 전용 태스크 (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — 액세스 포인트 + 코어 0의 전용 태스크
 [ESP32] blackBox.begin()   — blackbox 파티션, PSRAM의 큐, 코어 0의 bbox 태스크
@@ -356,7 +356,7 @@ classDiagram
 sequenceDiagram
     participant L as flight loop
     participant FC as FlightController
-    participant RX as IBusReceiver
+    participant RX as RcReceiver
     participant SW as PilotSwitches
     participant TM as ThrottleManager
     participant MX as ControlMixer
@@ -530,12 +530,13 @@ stateDiagram-v2
 
 사용하는 쪽의 반응은 모두 같습니다. **센서가 없거나(`nullptr`) 사용할 수 없으면 아무 영향도 없고**, 비행기는 MANUAL처럼 조종됩니다. 예외는 활주로 위의 자동 이륙으로, IMU가 고장 나면 이륙 중단이 되고 모터를 멈춥니다.
 
-### 통신(`IBusReceiver::isSignalLost()`)
+### 통신(`RcReceiver::isSignalLost()`)
 
-서로 독립된 두 가지 판정이 있습니다.
+서로 독립된 세 가지 판정이 있습니다.
 
 1. `RX_TIMEOUT_US`(500 ms)보다 오래 올바른 프레임이 없음, 또는 전원을 켠 뒤 하나도 없었음.
-2. 프레임의 스로틀이 `RX_FAILSAFE_THROTTLE_US`(950 µs)보다 낮음. 조종기에 설정한 페일세이프입니다(FS-iA6B는 조종기가 사라져도 프레임 송신을 멈추지 않습니다).
+2. 수신기가 직접 링크 끊김을 알림 — SBUS 프레임의 failsafe 플래그, CRSF 링크 품질 0 %.
+3. 프레임의 스로틀이 `RX_FAILSAFE_THROTTLE_US`(950 µs)보다 낮음. 조종기에 설정한 페일세이프입니다(FS-iA6B는 조종기가 사라져도 프레임 송신을 멈추지 않습니다).
 
 CRC가 잘못된 프레임은 버려지고 집계됩니다(`getBadFrameCount()`).
 
@@ -601,7 +602,7 @@ PlatformIO 환경:
 | 새 출력(서보) | `FlightOutputs::outputInfo()`의 한 줄, `FlightOutputState`의 필드, `ServoChannel`의 인덱스, `Esp32Board`의 핀과 LEDC 채널 | 쓰기/상태 루프 |
 | 새 ESP32 보드 | `Config.h`의 `#elif`, `platformio.ini`의 `[env:*]` | 나머지 모든 코드 |
 | 다른 MCU | `IBoard`를 구현하는 `hal/<mcu>/<Mcu>Board.h`(예: `hal/stm32/`), `Config.h`의 핀 블록, `[env:*]` | 센서, 비행 로직 |
-| 다른 수신기 프로토콜 | 같은 API(`getState()`, `isSignalLost()`)를 가진 것으로 `IBusReceiver` 교체 | `FlightController` |
+| 다른 수신기 프로토콜 | `IBusParser`/`SbusParser`/`CrsfParser` 옆에 프레임 파서 하나(`feed()`, `values()`, `failsafe()`), `RxProtocol`에 값 하나, `RcReceiver::begin()`/`update()`에 분기 | `FlightController`, 다른 프로토콜 |
 | 새 로그 채널 | `LogChannel`, `LogSettings::info()`의 한 줄, `DebugLogger::format*()`, `VERSION++` | — |
 
 ---

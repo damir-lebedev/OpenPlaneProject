@@ -208,7 +208,7 @@ För att lägga till en utgång: en tabellrad + ett fält i `FlightOutputState` 
 ## `FlightController`
 
 **Fil:** `control/FlightController.h` · **Lager:** KOORDINERING ·
-**Beror på:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
+**Beror på:** `RcReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 Styrslingans enda koordinator: den tolkar inte UART:en, rör inte
 PWM:en och beräknar inte mixern själv – den anropar bara de andra i rätt
@@ -216,11 +216,11 @@ ordning. Ett detaljerat diagram finns i [ARCHITECTURE.md §6](../ARCHITECTURE.md
 
 | Metod | Beskrivning |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Utan autopilot – ren manuell styrning; utan brytare – bara spakarna |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Utan autopilot – ren manuell styrning; utan brytare – bara spakarna |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | En cykel (se nedan) |
 | `bool isReceiverFailsafe() const` | Förbindelsen är förlorad |
-| `const IBusReceiver& getReceiver() const` | För loggen (ramräknare, orsaken till förlusten) |
+| `const RcReceiver& getReceiver() const` | För loggen (ramräknare, orsaken till förlusten) |
 | `bool isArmed() const`, `const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | Det senast skrivna till utgångarna |
 | `const RcChannelState& getRcState() const` | Kanalerna |

@@ -16,7 +16,7 @@
 #include "control/MotorReverse.h"
 #include "control/SignalPlayer.h"
 #include "control/ThrottleManager.h"
-#include "rc/IBusReceiver.h"
+#include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "rc/RcChannelState.h"
 
@@ -71,7 +71,7 @@ public:
     // Autopilot/PilotSwitches опциональны (nullptr = чистое ручное
     // управление: рули = стики, закрылки не выпускаются).
     FlightController(
-        IBusReceiver& rcReceiver,
+        RcReceiver& rcReceiver,
         ControlMixer& controlMixer,
         ThrottleManager& throttleManager,
         ArmingManager& armingManager,
@@ -191,7 +191,7 @@ public:
 
     // Для DebugLogger/WebDebugServer/OledDisplay.
     bool isReceiverFailsafe() const { return receiver.isSignalLost(); }
-    const IBusReceiver& getReceiver() const { return receiver; }
+    const RcReceiver& getReceiver() const { return receiver; }
     bool isArmed() const { return arming.isArmed(); }
     const ArmingManager& getArming() const { return arming; }
 
@@ -217,7 +217,7 @@ public:
 
 private:
 
-    IBusReceiver& receiver;
+    RcReceiver& receiver;
     ControlMixer& mixer;
     ThrottleManager& throttle;
     ArmingManager& arming;

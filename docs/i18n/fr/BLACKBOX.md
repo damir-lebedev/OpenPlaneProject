@@ -35,14 +35,14 @@ Sur les autres cartes (ESP32-C3, ESP32 ordinaire), il n’y a pas de support de 
 |---|---|---|
 | `IMU` | à chaque cycle, 500 Hz | gyroscope (°/s), accéléromètre (g), durée du travail du cycle de contrôle (µs) |
 | `CTRL` | 100 Hz | roulis/tangage/cap, consignes du pilote automatique, sticks du pilote, commandes finales, **les 7 sorties** (µs), composantes du PID de roulis et de tangage (P, I, D), gaz du pilote et du pilote automatique, volets, mode, indicateurs (ARM, liaison, failsafe, capteurs vivants...), fonctions activées |
-| `RC` | 50 Hz | les 10 canaux de la radio, compteurs de trames iBUS (valides et corrompues) |
+| `RC` | 50 Hz | les 10 canaux de la radio, compteurs de trames iBUS/SBUS/CRSF (valides et corrompues) |
 | `BARO` | à chaque mesure (~50 Hz) | pression, température, altitude, vitesse verticale, consigne d’altitude |
 | `MAG` | jusqu’à 50 Hz | le champ sur trois axes, cap |
 | `GPS` | à chaque solution | coordonnées, altitude, vitesse, route, satellites, fix, précision |
 | `AIR` | jusqu’à 50 Hz | tube de Pitot : différence de pression, vitesse indiquée et vraie, densité |
 | `NAV` | 10 Hz | point de départ (distance, relèvement), cap et consigne de cap, vitesse de navigation, source du cap, phases du lancement à la main et du vol à voile, auto-trim, étape du décollage automatique (`takeoff_stage`) |
 | `POWER` | 10 Hz | tension de la batterie et sortie du capteur de courant (les diviseurs de la carte du contrôleur de vol, [FC_BOARD.md](FC_BOARD.md), bloc B) |
-| `SYS` | 1 Hz | fréquence et pire cycle de la boucle de contrôle, mémoire libre, compteurs iBUS, température de l’IMU, file de la boîte noire, enregistrements perdus, l’écriture en flash la plus longue, espace libre |
+| `SYS` | 1 Hz | fréquence et pire cycle de la boucle de contrôle, mémoire libre, compteurs iBUS/SBUS/CRSF, température de l’IMU, file de la boîte noire, enregistrements perdus, l’écriture en flash la plus longue, espace libre |
 | `EVENT` | sur événement | ARM/DISARM, refus d’ARM avec la cause, changement de mode, liaison perdue/rétablie, capteur en panne/revenu, fix GPS, point de départ enregistré, fonctions des interrupteurs, géorepérage, protection contre le décrochage, phases du lancement à la main et du vol à voile, étapes du décollage automatique (interruption — avec la raison), étapes et résultat de la calibration au sol (assiette au sol ou erreur) |
 
 Au début de chaque vol figurent les paramètres : le firmware (date de compilation), la cause du démarrage et du dernier redémarrage, quels capteurs sont installés et s’ils ont réussi le contrôle avant vol, les coefficients du PID (y compris les modifications faites depuis le tableau de bord), les trims, les valeurs importantes de `Config` et les affectations des interrupteurs.

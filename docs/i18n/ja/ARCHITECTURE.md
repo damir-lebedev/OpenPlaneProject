@@ -61,7 +61,7 @@ flowchart TD
     CTRL["CONTROL<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["FEEDBACK（未接続）<br/>FeedbackSupervisor とモジュール"]
-    RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
+    RC["RC<br/>RcReceiver · RcChannelState · RcInput"]
     SENS["SENSORS<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
     HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice · Rtos"]
     STORE["STORAGE<br/>KeyValueStore · KvPreferences"]
@@ -126,7 +126,7 @@ flowchart LR
     gps["SelectedGps gpsSensor"]
     pitotBaro["SelectedPitotBaro pitotBaro"]
     pitot["PitotDualBaroAirspeed pitotSensor"]
-    rx["IBusReceiver"]
+    rx["RcReceiver"]
     mixer["ControlMixer"]
     thr["ThrottleManager"]
     outs["FlightOutputs"]
@@ -176,7 +176,7 @@ setupSensors()              — 各センサーの begin(); 応答したもの�
                               気圧センサー (高度ゼロ), コンパス (初期針路 → IMU の yaw),
                               ピトー管 (ゼロ点はループの最初の 1 秒で取得)
 autopilot.begin()           — NVS/フラッシュからトリム
-flightController.begin()    — setFailsafe() + UART iBUS
+flightController.begin()    — setFailsafe() + UART RC (iBUS/SBUS/CRSF)
 oledDisplay.begin(...)      — 専用タスク (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — アクセスポイント + コア 0 上の専用タスク
 [ESP32] blackBox.begin()   — blackbox パーティション, PSRAM 上のキュー, コア 0 上の bbox タスク
@@ -356,7 +356,7 @@ classDiagram
 sequenceDiagram
     participant L as flight loop
     participant FC as FlightController
-    participant RX as IBusReceiver
+    participant RX as RcReceiver
     participant SW as PilotSwitches
     participant TM as ThrottleManager
     participant MX as ControlMixer
@@ -530,12 +530,13 @@ stateDiagram-v2
 
 利用側の反応はどれも同じです。**センサーがない（`nullptr`）か、利用できない場合は何も起こらず**、飛行機は MANUAL のように操縦されます。例外は滑走路上の自動離陸で、IMU が故障すると離陸中止となり、モーターを止めます。
 
-### 通信（`IBusReceiver::isSignalLost()`）
+### 通信（`RcReceiver::isSignalLost()`）
 
-独立した 2 つの判定があります。
+互いに独立した 3 つの判定：
 
 1. `RX_TIMEOUT_US`（500 ms）を超えて正しいフレームがない、または電源投入から 1 つも来ていない。
-2. フレーム内のスロットルが `RX_FAILSAFE_THROTTLE_US`（950 µs）を下回る。送信機に設定されたフェイルセーフです（FS-iA6B は、送信機が失われてもフレームの送信をやめません）。
+2. 受信機自身がリンク喪失を通知した——SBUS フレームの failsafe フラグ、CRSF のリンク品質 0 %。
+3. フレーム内のスロットルが `RX_FAILSAFE_THROTTLE_US`（950 µs）を下回る。送信機に設定されたフェイルセーフです（FS-iA6B は、送信機が失われてもフレームの送信をやめません）。
 
 CRC の誤ったフレームは破棄され、数えられます（`getBadFrameCount()`）。
 
@@ -601,7 +602,7 @@ PlatformIO の環境：
 | 新しい出力（サーボ） | `FlightOutputs::outputInfo()` の 1 行、`FlightOutputState` のフィールド、`ServoChannel` のインデックス、`Esp32Board` のピンと LEDC チャンネル | 書き込み/状態のループ |
 | 新しい ESP32 ボード | `Config.h` の `#elif`、`platformio.ini` の `[env:*]` | それ以外のコードすべて |
 | 別の MCU | `IBoard` を実装する `hal/<mcu>/<Mcu>Board.h`（例：`hal/stm32/`）、`Config.h` のピンのブロック、`[env:*]` | センサー、飛行ロジック |
-| 別の受信機プロトコル | 同じ API（`getState()`、`isSignalLost()`）を持つものへ `IBusReceiver` を置き換え | `FlightController` |
+| 別の受信機プロトコル | `IBusParser`/`SbusParser`/`CrsfParser` の隣にフレームパーサーを 1 つ（`feed()`、`values()`、`failsafe()`）、`RxProtocol` に値を 1 つ、`RcReceiver::begin()`/`update()` に分岐 | `FlightController`、ほかのプロトコル |
 | 新しいログチャンネル | `LogChannel`、`LogSettings::info()` の 1 行、`DebugLogger::format*()`、`VERSION++` | — |
 
 ---

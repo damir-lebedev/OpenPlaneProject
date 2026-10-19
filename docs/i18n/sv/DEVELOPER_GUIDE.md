@@ -46,7 +46,7 @@ include/
 │   └── stm32/   Stm32Board + Wire/SPI/Uart/HardwareTimer, Stm32FlashStorage,
 │                compat/Preferences.h (inställningar i flash i stället för NVS)
 ├── storage/     KeyValueStore, KvPreferences – lagring av inställningar utan NVS
-├── rc/          RcChannelState, RcInput, IBusReceiver
+├── rc/          RcChannelState, RcInput, RcReceiver, IBusParser, SbusParser, CrsfParser
 ├── control/     ControlCommand, ControlMixer, FlapsController,
 │                ThrottleManager, ArmingManager, MotorReverse, EscSignal,
 │                FlightOutputState, FlightOutputs, Beeper, FlightController
@@ -78,7 +78,7 @@ src/stm32/main.cpp  — STM32H743-firmware (FreeRTOS-uppgifter, MAVLink)
         ▼                       ▼                       ▼
 ┌────────────────────┐  ┌──────────────────────┐  ┌──────────────────────┐
 │ STYRNING            │  │ AUTOPILOT             │  │ RC                    │
-│ ControlMixer        │  │ Autopilot: 12 lägen   │  │ IBusReceiver          │
+│ ControlMixer        │  │ Autopilot: 12 lägen   │  │ RcReceiver            │
 │  └ FlapsController  │  │  └ navigering, PID    │  │ RcChannelState        │
 │ ThrottleManager     │  │ PilotSwitches         │  │ RcInput               │
 │ ArmingManager       │  └──────────┬────────────┘  └───────────────────────┘
@@ -148,7 +148,7 @@ Reglerna som håller arkitekturen ren:
 
 | Fil | Ansvarar för |
 |---|---|
-| `Config.h` | Alla stift (ett block per kort: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) och inställningarna: iBUS och förlorad förbindelse; roderytornas utslag; klaffar; servoreversering; montering av IMU och kompass; ARM; failsafe (RTH eller glidflykt); pitotröret (`PITOT_*`); alla siffror för autopilotens lägen och funktioner; slingan; Wi-Fi; MAVLink; felsökning |
+| `Config.h` | Alla stift (ett block per kort: `BOARD_ESP32_S3/C3/CLASSIC`, `BOARD_STM32H743`) och inställningarna: iBUS/SBUS/CRSF och förlorad förbindelse; roderytornas utslag; klaffar; servoreversering; montering av IMU och kompass; ARM; failsafe (RTH eller glidflykt); pitotröret (`PITOT_*`); alla siffror för autopilotens lägen och funktioner; slingan; Wi-Fi; MAVLink; felsökning |
 | `Channels.h` | Kanalnamn: `AILERON`, `ELEVATOR`, `THROTTLE`, `RUDDER`, `ARM`, `SWB`, `SWC`, `SWD`, `VRA`, `VRB` |
 | `Controls.h` | Tabellen `BINDINGS`: vad varje brytare och ratt gör, en rad per kanal, kontroller med `static_assert` |
 
@@ -180,7 +180,11 @@ Reglerna som håller arkitekturen ren:
 |---|---|
 | `RcChannelState.h` | En ögonblicksbild av de 10 kanalerna |
 | `RcInput.h` | `clamp()`, `centered(us, max, reverse)` |
-| `IBusReceiver.h` | iBUS → kanaler: en ram på 32 byte, CRC, kanalvärdet är de låga 12 bitarna (`& 0x0FFF`); `isSignalLost()` = inga ramar (eller inga ännu) ∥ failsafe-värdet för gas; ramräknare |
+| `RcReceiver.h` | Mottagaren: UART i protokollets format (`RX_PROTOCOL`: iBUS, SBUS, CRSF) → `RC_CHANNELS` kanaler; `isSignalLost()` = inga ramar (eller ingen än) ∥ mottagaren rapporterade failsafe (SBUS-flagga, länkkvalitet 0 i CRSF, gas under det normala); kanalreversering, ramräknare |
+| `IBusParser.h` | iBUS: ram på 32 byte, CRC, kanalvärdet är de låga 12 bitarna (`& 0x0FFF`) |
+| `SbusParser.h` | SBUS: ram på 25 byte, 16 kanaler à 11 bitar, flaggor för failsafe och förlorad ram, SBUS2 |
+| `CrsfParser.h` | CRSF: CRC8 (polynom 0xD5), kanaler (typ 0x16) och länkstatistik (typ 0x14, länkkvalitet) |
+| `Packed11.h` | 16 kanaler à 11 bitar → µs – gemensamt för SBUS och CRSF |
 
 ### `control/`
 
@@ -334,7 +338,7 @@ spaken och autopiloten oense.
 ## RC-kanalkarta, ARM och failsafe
 
 Källan är `include/config/Channels.h`. En FS-i6-sändare (10 kanaler,
-mode 2) + en FS-iA6B-mottagare, iBUS 115200.
+mode 2) + en FS-iA6B-mottagare, iBUS 115200. Andra mottagare – SBUS eller CRSF (`RX_PROTOCOL`), samma kanaler.
 
 | Kanal | Reglage på sändaren | Namn | Syfte |
 |---|---|---|---|
@@ -364,13 +368,14 @@ förrän DISARM. Efter ett riktningsbyte nekas ARM i `REVERSE_SETTLE_MS` (3 s).
 Bakåt – bara pilotens gas, högst `REVERSE_THROTTLE_LIMIT_PCT` (50 %);
 autopiloten får ingen gas, och vid förlorad förbindelse stannar motorn.
 
-**Förlorad förbindelse** (`IBusReceiver::isSignalLost()`):
+**Förlorad förbindelse** (`RcReceiver::isSignalLost()`):
 
 1. Inga ramar på mer än `RX_TIMEOUT_US` (500 ms) – en bruten tråd eller
    förlorad matning till mottagaren. Före den första ramen efter start räknas förbindelsen
    också som förlorad: kanalernas standardvärden (alla 1500) tas inte
    för sändarkommandon.
-2. Gas < `RX_FAILSAFE_THROTTLE_US` (950) – den failsafe som ställts in i
+2. Mottagaren rapporterade själv förlorad förbindelse: failsafe-flaggan i en SBUS-ram, länkkvalitet 0 % i CRSF-statistiken.
+3. Gas < `RX_FAILSAFE_THROTTLE_US` (950) – den failsafe som ställts in i
    sändaren. **När sändaren tappas slutar FS-iA6B inte
    skicka ramar**, den upprepar de senaste värdena (verifierat på bänken), så
    utan en failsafe inställd i sändaren upptäcks den förlorade förbindelsen
@@ -460,7 +465,7 @@ kalibrerar bara de sensorer som svarade.
 
 Anropas från `loop()` var 2:a ms. Ordningen är prioriteten:
 
-1. **`receiver.update()`** – tolkning av de ackumulerade iBUS-byten.
+1. **`receiver.update()`** – tolkning av mottagarens ansamlade byte (iBUS, SBUS eller CRSF).
 2. **Brytare** – `switches->update(rc)`, bara medan förbindelsen lever (i en
    failsafe-ram återspeglar kanalerna inte brytarna): läget (bara
    vid en ändring), funktioner, rattar.
@@ -622,7 +627,7 @@ Formaten för alla kanaler finns i [referensen](reference/telemetry.md#debuglogg
 | Skevroder vänster / höger | GPIO4 / GPIO5 | GPIO5 / GPIO4 | GPIO13 / GPIO14 |
 | Höjdroder / ESC | GPIO6 / GPIO7 | GPIO6 / GPIO7 | GPIO27 / GPIO26 |
 | Sidroder | GPIO18 | – (inget stift) | GPIO25 |
-| iBUS RX | GPIO17 | GPIO8 | GPIO16 |
+| RC RX | GPIO17 | GPIO8 | GPIO16 |
 | Sensorernas I2C SDA / SCL | GPIO41 / GPIO42 | GPIO1 / GPIO3 | GPIO21 / GPIO22 |
 | OLED I2C SDA / SCL | GPIO1 / GPIO2 | – | – |
 | SPI SCK / MISO / MOSI | GPIO12 / 13 / 11 | GPIO0 / 10 / 20 | GPIO18 / 19 / 23 |
@@ -687,7 +692,7 @@ video). Sensorerna kopplas nu in till STM32. **Huvudkortet är STM32H743 (DevEBo
 | Höjdroder / ESC | PA2 / PA3 | TIM2_CH3 / CH4 |
 | Sidroder | PD14 | TIM4_CH3 |
 | AUX1 (last) / AUX2 (kamera) | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
-| iBUS RX (TX – reserv) | PE7 (PE8) | UART7 |
+| RC RX (TX – reserv) | PE7 (PE8) | UART7 |
 | Sensorernas I2C SDA / SCL | PB11 / PB10 | I2C2 |
 | OLED I2C SDA / SCL | PB9 / PB8 | I2C1 |
 | SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |

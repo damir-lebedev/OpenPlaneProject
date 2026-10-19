@@ -46,11 +46,11 @@ Den enda ingångspunkten till hårdvaran. Ingenting ovanför inkluderar `<Wire.h
 
 | Metod | Beskrivning |
 |---|---|
-| `virtual void begin()` | Engångsinitiering av I2C-/SPI-bussarna. UART:er öppnas av sina ägare (`IBusReceiver`, GPS) med sin egen baudhastighet, PWM av `FlightOutputs::begin()` |
+| `virtual void begin()` | Engångsinitiering av I2C-/SPI-bussarna. UART:er öppnas av sina ägare (`RcReceiver`, GPS) med sin egen baudhastighet, PWM av `FlightOutputs::begin()` |
 | `virtual II2CBus& i2c()` | Sensorbussen |
 | `virtual ISpiBus& spi()` | SPI-bussen |
 | `virtual II2CBus* displayI2c()` | En andra I2C-buss enbart för skärmen; `nullptr` om den saknas |
-| `virtual IUartPort& rcUart()` | iBUS-mottagarens UART |
+| `virtual IUartPort& rcUart()` | Radiomottagarens UART: iBUS, SBUS eller CRSF |
 | `virtual IUartPort& gpsUart()` | GPS:ens UART |
 | `virtual IUartPort* telemetryUart()` | MAVLink-radiomodemets UART; `nullptr` som standard (ESP32 har ingen ledig UART) |
 | `virtual IServoOutput& servo(uint8_t channel)` | En PWM-utgång efter index `ServoChannel::*` |
@@ -103,12 +103,14 @@ En SPI-buss **utan CS-hantering**: flera enheter delar en buss, och
 
 **Fil:** `hal/IUartPort.h` · **Typ:** gränssnitt · **Implementeringar:** `Esp32UartPort`, `Stm32UartPort`
 
-En UART i stil med `HardwareSerial`, men `begin()` tar bara baudhastigheten:
-implementeringen fixerar stiften och formatet (8N1).
+En UART formad som `HardwareSerial`, men `begin()` tar bara hastigheten och
+ramformatet: stiften bestäms av implementationen. `UartFormat`: `STANDARD_8N1` – nästan
+allt, `SBUS_8E2_INVERTED` – SBUS (8E2, inverterad signal; UART:en inverterar själv).
 
 | Metod | Beskrivning |
 |---|---|
-| `begin(baud)` | Öppna porten |
+| `begin(baud)` | Öppna porten, 8N1 |
+| `virtual bool begin(baud, format)` | Öppna porten i ett `UartFormat`; `false` – porten klarar det inte (som standard bara 8N1) |
 | `int available()`, `int read()` | Mottagning |
 | `size_t write(byte)`, `size_t write(buffer, size)` | Sändning |
 | `virtual int availableForWrite()` | Ledigt utrymme i sändbufferten; `-1` – okänt (standard). Telemetrin använder det för att skjuta upp en ram i stället för att vänta |
@@ -251,7 +253,7 @@ stiften från `Config.h`.
 | `i2cBus` | `Esp32I2CBus` | `Wire` på `PIN_I2C_SDA/SCL`, 400 kHz |
 | `displayBus` | `Esp32I2CBus` | `Wire1` på `PIN_I2C2_SDA/SCL` – bara om `SOC_I2C_NUM > 1` |
 | `spiBus` | `Esp32SpiBus` | Den globala `SPI` |
-| `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | iBUS på `PIN_IBUS`, bara RX |
+| `rcSerial`, `rcPort` | `HardwareSerial(1)`, `Esp32UartPort` | mottagare på `PIN_RC_RX`, bara RX |
 | `gpsSerial`, `gpsPort` | `HardwareSerial(UART_NUM_GPS)`, `Esp32UartPort` | GPS på `PIN_GPS_RX/TX` |
 | `servos[7]` | `Esp32ServoOutput` | LEDC-kanalerna 0..6 i ordningen för `ServoChannel` (AUX1/AUX2 – `PIN_AUX1/2`, om de är dragna) |
 
@@ -298,7 +300,8 @@ värde → `SPI_MODE0`.
 **Fil:** `hal/esp32/Esp32UartPort.h` · **Ärver:** `IUartPort`
 
 Ett omslag kring `HardwareSerial`: `begin(baud)` → `serial.begin(baud, SERIAL_8N1,
-rx, tx)`; `tx = -1` – bara mottagning. Resten är delegering.
+rx, tx)`; SBUS → `serial.begin(baud, SERIAL_8E2, rx, tx, true)` (RX-invertering i
+ESP32:ns UART); `tx = -1` – bara mottagning. Resten är delegering.
 
 ---
 
@@ -361,7 +364,7 @@ Samma sak som `Esp32Board`, ovanpå STM32duino.
 | `i2cBus` | `Stm32I2CBus` | `Wire` på `PIN_I2C_SDA/SCL` (I2C2: PB11/PB10), 400 kHz |
 | `displayBus` | `Stm32I2CBus` | `displayWire` på `PIN_I2C2_SDA/SCL` (I2C1: PB9/PB8) – den andra bussen finns alltid |
 | `spiBus` | `Stm32SpiBus` | Den globala `SPI` på `PIN_SENSOR_SPI_*` (SPI2) |
-| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | iBUS: UART7, RX `PIN_IBUS` (PE7), TX `PIN_IBUS_TX` (PE8, reserverad för iBUS-SENS) |
+| `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | mottagare: UART7, RX `PIN_RC_RX` (PE7), TX `PIN_RC_TX` (PE8, reserverad för telemetri till sändaren) |
 | `gpsSerial`, `gpsPort` | `Uart`, `Stm32UartPort` | GPS: USART3, `PIN_GPS_RX/TX` (PD9/PD8) |
 | `telemetrySerial`, `telemetryPort` | `Uart`, `Stm32UartPort` | MAVLink-radiomodemet: UART4, `PIN_TELEM_RX/TX` (PD0/PD1) |
 | `servos[7]` | `Stm32ServoOutput` | I ordningen för `ServoChannel` (AUX1 – PD15/TIM4, AUX2 – PE9/TIM1) |
@@ -403,12 +406,12 @@ omvandlar 0..3 till `SPI_MODEn`, och ett okänt värde → `SPI_MODE0`.
 
 **Fil:** `hal/stm32/Stm32UartPort.h` · **Ärver:** `IUartPort`
 
-Ett omslag kring `HardwareSerial&` (i STM32duino 3.x är det den abstrakta basen
-`arduino::HardwareSerial`; `Stm32Board` skapar det konkreta objektet `Uart`).
-`begin(baud)` → `serial.begin(baud, SERIAL_8N1)`; `availableForWrite()` kommer
-från `HardwareSerial`. Buffertarna (`SERIAL_RX/TX_BUFFER_SIZE` i env): mottagning 256
-byte (en NAV-PVT-ram är 100, standardvärdet 64 är för lite), sändning 1024 (loggrader och
-MAVLink-ramar utan väntan).
+Ett omslag kring `Uart&` (objektet skapas av `Stm32Board`). `begin(baud)` →
+`serial.begin(baud, SERIAL_8N1)`; SBUS – `setRxInvert()` (RX-invertering i USART:en
+själv, biten RXINV) före `serial.begin(baud, SERIAL_8E2)`; 9-bitarsordet med paritet
+väljer kärnan själv; `availableForWrite()` kommer från `HardwareSerial`. Buffertar
+(`SERIAL_RX/TX_BUFFER_SIZE` i env): mottagning 256 byte (en NAV-PVT-ram är 100, de
+vanliga 64 räcker inte), sändning 1024 (loggrader och MAVLink-ramar utan väntan).
 
 ## `Stm32ServoOutput`
 

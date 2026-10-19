@@ -25,7 +25,7 @@
 | `PIN_ELEVATOR` | `uint8_t` | エレベーター | 6 | 6 | 27 |
 | `PIN_ESC` | `uint8_t` | モーターのコントローラー | 7 | 7 | 26 |
 | `PIN_RUDDER` | `int8_t` | ラダー＋ホイール。`-1` は出力無効 | 18 | −1 | 25 |
-| `PIN_IBUS` | `uint8_t` | iBUS 受信機の RX（UART1） | 17 | 8 | 16 |
+| `PIN_RC_RX` | `uint8_t` | 受信機の RX：iBUS、SBUS、CRSF（UART1） | 17 | 8 | 16 |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | `uint8_t` | センサーのバス（`Wire`） | 41 / 42 | 1 / 3 | 21 / 22 |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | `int8_t` | OLED のバス（`Wire1`）。`-1` はなし | 1 / 2 | −1 | −1 |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | `uint8_t` | 共用の SPI バス | 12 / 13 / 11 | 0 / 10 / 20 | 18 / 19 / 23 |
@@ -53,7 +53,7 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 |---|---|---|
 | `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_ESC` | PA0 / PA1 / PA2 / PA3 | TIM2_CH1..CH4 |
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
-| `PIN_IBUS` / `PIN_IBUS_TX` | PE7 / PE8 | UART7（TX は iBUS-SENS 用の予約） |
+| `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7（TX は送信機へのテレメトリー用に予約） |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2：センサー |
 | `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1：ディスプレイ（WeAct ではカメラ用コネクタ） |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
@@ -66,14 +66,17 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 
 コンソール `Serial` は LPUART1（PA9 TX / PA10 RX）で、バリアントの既定です。
 
-### iBUS とリンク喪失
+### 受信機とリンク喪失
 
 | 定数 | 値 | 意味 |
 |---|---|---|
-| `IBUS_CHANNELS` | 10 | フレームのうち使用するチャンネル数 |
+| `RX_PROTOCOL` | `IBUS` | 受信機のプロトコル：`IBUS`（FlySky）、`SBUS`（FrSky、Futaba、RadioMaster など）、`CRSF`（ExpressLRS、TBS Crossfire） |
+| `RC_CHANNELS` | 10 | フレームのうち使用するチャンネル数 |
 | `IBUS_FRAME_LENGTH` | 32 | フレームの長さ（バイト） |
 | `IBUS_HEADER_0` / `IBUS_HEADER_1` | `0x20` / `0x40` | フレームのヘッダー |
 | `IBUS_BAUDRATE` | 115200 | UART の速度 |
+| `SBUS_BAUDRATE` | 100000 | SBUS の速度（8E2、反転信号） |
+| `CRSF_BAUDRATE` | 420000 | CRSF の速度（ExpressLRS の既定値） |
 | `RX_TIMEOUT_US` | 500 000 | これより長く正しいフレームが来ない場合、リンク喪失 |
 | `RX_FAILSAFE_THROTTLE_US` | 950 | スロットルがこれより低い場合、受信機が送信機の failsafe を通知している |
 

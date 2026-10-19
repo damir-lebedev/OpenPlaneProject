@@ -211,7 +211,7 @@ LEDC-Kanal in `Esp32Board`).
 ## `FlightController`
 
 **Datei:** `control/FlightController.h` · **Schicht:** COORDINATION ·
-**Abhängig von:** `IBusReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
+**Abhängig von:** `RcReceiver`, `ControlMixer`, `ThrottleManager`, `ArmingManager`, `FlightOutputs`, `Autopilot*`, `PilotSwitches*`, `Beeper`, `MotorReverse`, `GroundCalibration`, `SignalPlayer`
 
 Der einzige Koordinator der Regelschleife: er parst selbst nicht den UART,
 fasst das PWM nicht an und berechnet den Mischer nicht — er ruft nur die
@@ -220,11 +220,11 @@ anderen in der richtigen Reihenfolge auf. Ein ausführliches Diagramm steht in
 
 | Methode | Beschreibung |
 |---|---|
-| `FlightController(IBusReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Ohne Autopilot — reine Handsteuerung; ohne Schalter — nur die Knüppel |
+| `FlightController(RcReceiver&, ControlMixer&, ThrottleManager&, ArmingManager&, FlightOutputs&, Autopilot* = nullptr, PilotSwitches* = nullptr)` | Ohne Autopilot — reine Handsteuerung; ohne Schalter — nur die Knüppel |
 | `void begin()` | `outputs.setFailsafe()`, `receiver.begin()` |
 | `void update()` | Ein Zyklus (siehe unten) |
 | `bool isReceiverFailsafe() const` | Die Verbindung ist verloren |
-| `const IBusReceiver& getReceiver() const` | Für das Log (Frame-Zähler, Ursache des Verlusts) |
+| `const RcReceiver& getReceiver() const` | Für das Log (Frame-Zähler, Ursache des Verlusts) |
 | `bool isArmed() const`, `const ArmingManager& getArming() const` | ARM |
 | `const FlightOutputState& getOutputState() const` | Das zuletzt auf die Ausgänge Geschriebene |
 | `const RcChannelState& getRcState() const` | Die Kanäle |

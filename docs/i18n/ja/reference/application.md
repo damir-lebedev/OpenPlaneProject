@@ -18,7 +18,7 @@
 | `magDevice`、`magSensor`、`magnetometer` | … `SelectedMag`、`MagnetometerSensor* const` | `SENSOR_MAG != NONE` の場合のみ。そうでなければ `nullptr` |
 | `gpsSensor`、`gpsReceiver` | `SelectedGps`、`GpsSensor* const` | `SENSOR_GPS != NONE` の場合のみ |
 | `pitotDevice`、`pitotBaro`、`pitotSensor`、`airspeedSensor` | `SELECTED_PITOT_DEVICE(board)`、`SelectedPitotBaro`（`"PITOT-BMP581"`）、`PitotDualBaroAirspeed(pitotBaro, baroSensor)` | `SENSOR_AIRSPEED != NONE` の場合のみ |
-| `ibusReceiver` | `IBusReceiver` | `board.rcUart()` |
+| `rcReceiver` | `RcReceiver` | `board.rcUart()` |
 | `controlMixer`、`throttleManager` | `ControlMixer`、`ThrottleManager` | |
 | `flightOutputs` | `FlightOutputs` | `board` |
 | `autopilot` | `Autopilot` | すべてのセンサー（null 可） |

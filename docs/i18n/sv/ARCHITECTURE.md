@@ -67,7 +67,7 @@ flowchart TD
     CTRL["STYRNING<br/>ControlMixer · FlapsController · ThrottleManager<br/>ArmingManager · MotorReverse · EscSignal · FlightOutputs · Beeper<br/>GroundCalibration · SignalPlayer"]
     AP["AUTOPILOT<br/>Autopilot · PilotSwitches · Navigation · AltitudeSpeedController<br/>LaunchController · TakeoffController · SoaringController · AutoTrim · PidController"]
     FB["ÅTERKOPPLING (inte ansluten)<br/>FeedbackSupervisor och moduler"]
-    RC["RC<br/>IBusReceiver · RcChannelState · RcInput"]
+    RC["RC<br/>RcReceiver · RcChannelState · RcInput"]
     SENS["SENSORER<br/>ImuSensorBase · BarometerBase · MagnetometerBase<br/>UbloxM10_Gps · PitotDualBaroAirspeed"]
     HAL["HAL<br/>IBoard · II2CBus · ISpiBus · IUartPort · IServoOutput · IRegisterDevice · Rtos"]
     STORE["LAGRING<br/>KeyValueStore · KvPreferences"]
@@ -151,7 +151,7 @@ flowchart LR
     gps["SelectedGps gpsSensor"]
     pitotBaro["SelectedPitotBaro pitotBaro"]
     pitot["PitotDualBaroAirspeed pitotSensor"]
-    rx["IBusReceiver"]
+    rx["RcReceiver"]
     mixer["ControlMixer"]
     thr["ThrottleManager"]
     outs["FlightOutputs"]
@@ -201,7 +201,7 @@ setupSensors()              — begin() för varje sensor; kalibrering av dem so
                               baro (nollhöjd), kompass (startkurs → IMU-gir),
                               pitotrör (nollpunkten samlas in under slingans första sekund)
 autopilot.begin()           — trim från NVS/flash
-flightController.begin()    — setFailsafe() + UART iBUS
+flightController.begin()    — setFailsafe() + UART RC (iBUS/SBUS/CRSF)
 oledDisplay.begin(...)      — en egen uppgift (hal/Rtos.h)
 [ESP32] webDebugServer.begin() — åtkomstpunkt + en egen uppgift på kärna 0
 [ESP32] blackBox.begin()   — blackbox-partitionen, en kö i PSRAM, uppgiften bbox på kärna 0
@@ -402,7 +402,7 @@ classDiagram
 sequenceDiagram
     participant L as flygslinga
     participant FC as FlightController
-    participant RX as IBusReceiver
+    participant RX as RcReceiver
     participant SW as PilotSwitches
     participant TM as ThrottleManager
     participant MX as ControlMixer
@@ -584,13 +584,14 @@ lägena med stabilisering.
 Konsumenterna reagerar likadant: **ingen sensor (`nullptr`) eller den är otillgänglig –
 inga effekter**, och flygplanet styrs som i MANUAL. Undantaget är autostart på banan: ett IMU-fel är där en avbruten start, motorn av.
 
-### Förbindelse (`IBusReceiver::isSignalLost()`)
+### Förbindelse (`RcReceiver::isSignalLost()`)
 
-Två oberoende indikatorer:
+Tre oberoende indikatorer:
 
 1. inga korrekta ramar på mer än `RX_TIMEOUT_US` (500 ms) – eller inga alls
    sedan start;
-2. gasen i ramen är under `RX_FAILSAFE_THROTTLE_US` (950 µs) – den failsafe som
+2. mottagaren rapporterade själv förlorad förbindelse – failsafe-flaggan i en SBUS-ram, länkkvalitet 0 % i CRSF;
+3. gasen i ramen är under `RX_FAILSAFE_THROTTLE_US` (950 µs) – den failsafe som
    programmerats i sändaren (FS-iA6B slutar inte skicka ramar när
    sändaren tappas).
 
@@ -667,7 +668,7 @@ Anslutningsplanen finns i [`DEVELOPER_GUIDE.md`](DEVELOPER_GUIDE.md#anslutningsp
 | En ny utgång (servo) | en rad i `FlightOutputs::outputInfo()`, ett fält i `FlightOutputState`, ett index i `ServoChannel`, ett stift och en LEDC-kanal i `Esp32Board` | skriv-/statusslingan |
 | Ett nytt ESP32-kort | en `#elif` i `Config.h`, `[env:*]` i `platformio.ini` | all övrig kod |
 | En annan mikrokontroller | `hal/<mcu>/<Mcu>Board.h` som implementerar `IBoard` (ett exempel – `hal/stm32/`), ett stiftblock i `Config.h`, `[env:*]` | sensorerna, flyglogiken |
-| Ett annat mottagarprotokoll | ersätt `IBusReceiver` med en som har samma API (`getState()`, `isSignalLost()`) | `FlightController` |
+| Ett annat mottagarprotokoll | en ramtolk bredvid `IBusParser`/`SbusParser`/`CrsfParser` (`feed()`, `values()`, `failsafe()`), ett värde i `RxProtocol`, grenar i `RcReceiver::begin()`/`update()` | `FlightController`, de andra protokollen |
 | En ny loggkanal | `LogChannel`, en rad i `LogSettings::info()`, `DebugLogger::format*()`, `VERSION++` | – |
 
 ---

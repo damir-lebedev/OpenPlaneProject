@@ -9,6 +9,7 @@
 //   Fake*            — управляемые реализации интерфейсов проекта
 //                      (IUartPort, IServoOutput, IBoard, датчики);
 //   ibusFrame()      — корректный кадр iBUS с нужными каналами;
+//   sbusFrame(), crsfChannels(), crsfLinkStats() — то же для SBUS и CRSF;
 //   I2cRig/SpiRig    — драйвер датчика поверх настоящих Esp32*Bus и
 //                      *RegisterDevice с симулированным чипом.
 // ============================================================
@@ -34,6 +35,7 @@
 #include "control/EscSignal.h"
 #include "hal/IBoard.h"
 #include "hal/RegisterDevice.h"
+#include "rc/CrsfParser.h"
 #if !defined(BOARD_STM32H743)
 #include "hal/esp32/Esp32I2CBus.h"
 #include "hal/esp32/Esp32SpiBus.h"
@@ -97,7 +99,7 @@ inline std::string takeSerial()
 
 struct RcChannels
 {
-    uint16_t value[Config::IBUS_CHANNELS];
+    uint16_t value[Config::RC_CHANNELS];
 
     RcChannels()
     {
@@ -125,7 +127,7 @@ inline std::string ibusFrame(const RcChannels& rc, uint8_t upperBits = 0, bool c
     frame.push_back(static_cast<char>(Config::IBUS_HEADER_1));
     for (uint8_t ch = 0; ch < 14; ++ch)
     {
-        const uint16_t us = ch < Config::IBUS_CHANNELS ? rc.value[ch] : 1500;
+        const uint16_t us = ch < Config::RC_CHANNELS ? rc.value[ch] : 1500;
         const uint16_t raw = static_cast<uint16_t>(us | (static_cast<uint16_t>(upperBits & 0x0F) << 12));
         frame.push_back(static_cast<char>(raw & 0xFF));
         frame.push_back(static_cast<char>(raw >> 8));
@@ -136,6 +138,66 @@ inline std::string ibusFrame(const RcChannels& rc, uint8_t upperBits = 0, bool c
     frame.push_back(static_cast<char>(checksum & 0xFF));
     frame.push_back(static_cast<char>(checksum >> 8));
     return frame;
+}
+
+// 16 каналов по 11 бит (SBUS, CRSF): наши RC_CHANNELS + остальные в центре.
+// мкс -> значение: обратное Packed11::toMicros (точно — для мкс, кратных 5).
+inline std::string packed11(const RcChannels& rc)
+{
+    std::string out;
+    uint32_t bits = 0;
+    uint8_t count = 0;
+    for (uint8_t ch = 0; ch < 16; ++ch)
+    {
+        const uint16_t us = ch < Config::RC_CHANNELS ? rc.value[ch] : 1500;
+        const uint32_t raw = (static_cast<uint32_t>(us) - 880) * 8 / 5;
+        bits |= (raw & 0x7FF) << count;
+        count += 11;
+        while (count >= 8)
+        {
+            out.push_back(static_cast<char>(bits & 0xFF));
+            bits >>= 8;
+            count -= 8;
+        }
+    }
+    return out;
+}
+
+// Кадр SBUS: 0x0F, каналы, флаги (0x08 — failsafe, 0x04 — потерян кадр), конец.
+inline std::string sbusFrame(const RcChannels& rc, uint8_t flags = 0, uint8_t end = 0x00)
+{
+    std::string frame(1, '\x0F');
+    frame += packed11(rc);
+    frame.push_back(static_cast<char>(flags));
+    frame.push_back(static_cast<char>(end));
+    return frame;
+}
+
+// Кадр CRSF полётнику: 0xC8, длина, тип, данные, CRC8.
+inline std::string crsfFrame(uint8_t type, const std::string& payload, bool corruptCrc = false)
+{
+    std::string body(1, static_cast<char>(type));
+    body += payload;
+    uint8_t crc = CrsfParser::crc8(reinterpret_cast<const uint8_t*>(body.data()), static_cast<uint8_t>(body.size()));
+    if (corruptCrc) crc ^= 0x5A;
+    std::string frame;
+    frame.push_back(static_cast<char>(CrsfParser::ADDRESS_FLIGHT_CONTROLLER));
+    frame.push_back(static_cast<char>(body.size() + 1));
+    frame += body;
+    frame.push_back(static_cast<char>(crc));
+    return frame;
+}
+
+inline std::string crsfChannels(const RcChannels& rc, bool corruptCrc = false)
+{
+    return crsfFrame(CrsfParser::TYPE_RC_CHANNELS, packed11(rc), corruptCrc);
+}
+
+// Статистика связи: RSSI 1/2, LQ, SNR, антенна, режим, мощность, обратный канал.
+inline std::string crsfLinkStats(uint8_t linkQuality)
+{
+    const char payload[10] = { 60, 62, static_cast<char>(linkQuality), 9, 0, 4, 2, 70, 100, 8 };
+    return crsfFrame(CrsfParser::TYPE_LINK_STATISTICS, std::string(payload, sizeof(payload)));
 }
 
 // ------------------------------------------------------------
@@ -151,10 +213,23 @@ public:
     std::vector<uint8_t> tx;
     int room = -1;   // availableForWrite(): −1 — без ограничения
 
+    UartFormat format = UartFormat::STANDARD_8N1;
+    bool supportsSbus = true;
+
     void begin(uint32_t baudRate) override
     {
         baud = baudRate;
+        format = UartFormat::STANDARD_8N1;
         beginCalls++;
+    }
+
+    bool begin(uint32_t baudRate, UartFormat frameFormat) override
+    {
+        if (frameFormat == UartFormat::SBUS_8E2_INVERTED && !supportsSbus) return false;
+        baud = baudRate;
+        format = frameFormat;
+        beginCalls++;
+        return true;
     }
 
     int available() override { return static_cast<int>(rx.size()); }
