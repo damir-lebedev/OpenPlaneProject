@@ -256,6 +256,8 @@ flowchart LR
 
 ## 🚀 بداية سريعة
 
+أسهل طريقة هي **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**: تطبيق لنظام Windows يضبط اللوحة لطائرتك خطوة بخطوة، ويبني البرنامج الثابت ويحمّله بزر واحد، ثم يساعدك على ضبط كل شيء على الأرض بالبيانات الحية من اللوحة. من سطر الأوامر:
+
 <div dir="ltr">
 
 ```bash
@@ -306,6 +308,7 @@ pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
 - [x] ‏محاكاة بحلقة مغلقة لجميع الأوضاع، والبرنامج الثابت كله في الاختبارات
 - [x] ‏الصندوق الأسود: الرحلة في الفلاش (ESP32-S3) وعلى بطاقة SD (STM32H743)، والتنزيل والفك إلى CSV
 - [x] ‏STM32H743 تعمل على اللوحة: جهاز التحكم عن بُعد، ثم iBUS، ثم السيرفو والمحرك (دون حساسات، بالفيديو)
+- [x] تطبيق [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): إعداد خطوة بخطوة، وتحميل بزر واحد، وفحوص على الأرض
 - [ ] ‏STM32H743: توصيل الحساسات واجتياز منصة الاختبار كما جرى مع ESP32-S3
 - [ ] اختبارات طيران للطيار الآلي على هيكل الطائرة الجديد
 - [ ] لوحة وحدة تحكم في الطيران خاصة ([FC_BOARD.md](FC_BOARD.md)) على STM32H743
@@ -338,6 +341,8 @@ pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
 | [reference/](reference/README.md) | مرجع لكل فئة |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | لوحة وحدة التحكم في الطيران · إلى أين يتجه المشروع |
 | [airframe/](airframe/README.md) | هيكل Astro-Cargo: مشروع Fusion 360 وملفات STL للطباعة، والعيوب المعروفة في الإصدار v2 |
+
+> **التطبيق:** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) — إعداد اللوحة خطوة بخطوة، وبناء وتحميل بزر واحد، وفحوص على الأرض بالبيانات الحية؛ واجهة بالروسية والإنجليزية.
 
 > **مشروع ذو صلة:** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) — جهاز التحكم FS-i6 كذراع تحكم USB للمحاكي على ESP32-S3 نفسها: تدرّب ساعات في المحاكي أولًا، ثم في الحقل.
 

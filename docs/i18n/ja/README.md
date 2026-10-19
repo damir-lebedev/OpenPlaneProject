@@ -242,6 +242,8 @@ flowchart LR
 
 ## 🚀 クイックスタート
 
+いちばん簡単なのは **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)** です。Windows アプリが機体に合わせてボードを順番に設定し、ファームウェアをビルドしてボタン一つで書き込み、その後はボードのライブデータで地上での調整を手伝います。コマンドラインでは：
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -288,6 +290,7 @@ DevEBox：このボードには BOOT0 ボタンがありません。初回の書
 - [x] 全モードのクローズドループ・シミュレーション、ファームウェア全体をテストで検証
 - [x] ブラックボックス：フラッシュ（ESP32-S3）と SD カード（STM32H743）へのフライト記録、ダウンロードと CSV への展開
 - [x] STM32H743 がボード上で動作：送信機 → iBUS → サーボとモーター（センサーなし、動画あり）
+- [x] [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) アプリ：ステップごとの設定、ボタン一つで書き込み、地上での確認
 - [ ] STM32H743：センサーを接続し、ESP32-S3 と同じようにテストベンチを通す
 - [ ] 新しい機体でのオートパイロットの飛行試験
 - [ ] STM32H743 を使った自作フライトコントローラー基板（[FC_BOARD.md](FC_BOARD.md)）
@@ -320,6 +323,8 @@ DevEBox：このボードには BOOT0 ボタンがありません。初回の書
 | [reference/](reference/README.md) | 各クラスのリファレンス |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | フライトコントローラー基板 · プロジェクトの進む先 |
 | [airframe/](airframe/README.md) | Astro-Cargo の機体：Fusion 360 プロジェクトと印刷用 STL ファイル、バージョン v2 の既知の欠陥 |
+
+> **アプリ：** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) — ボードのステップごとの設定、ボタン一つでビルドと書き込み、ライブデータによる地上での確認。インターフェースはロシア語と英語。
 
 > **関連プロジェクト：** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick)：FS-i6 送信機を、シミュレーター用の USB ジョイスティックにします。同じ ESP32-S3 で動き、まずシミュレーターで飛行時間を稼いでから、実際のフィールドに出られます。
 

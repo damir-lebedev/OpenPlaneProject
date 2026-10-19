@@ -242,6 +242,8 @@ Details — [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 🚀 Quick start
 
+The easiest way is **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**: a Windows app that sets up the board for your plane step by step, builds the firmware and flashes it with one button, then helps you get everything working on the ground using live data from the board. From the command line:
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -288,6 +290,7 @@ The airplane model in the simulations is simplified, and the coefficients are st
 - [x] Closed-loop simulations of all modes, the whole firmware in tests
 - [x] Black box: flights to flash (ESP32-S3) and to an SD card (STM32H743), download and decoding to CSV
 - [x] STM32H743 runs on the board: transmitter → iBUS → servos and motor (no sensors, on video)
+- [x] The [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) app: step-by-step setup, one-button flashing, ground checks
 - [ ] STM32H743: connect the sensors and go through the bench the same way as with the ESP32-S3
 - [ ] Flight trials of the autopilot on the new airframe
 - [ ] A custom flight controller board ([FC_BOARD.md](FC_BOARD.md)) on the STM32H743
@@ -320,6 +323,8 @@ What has already been done with our own resources: an architecture that moves be
 | [reference/](reference/README.md) | a reference for every class |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | the flight controller board · where the project is heading |
 | [airframe/](airframe/README.md) | the Astro-Cargo airframe: Fusion 360 project and STL files for printing, known flaws of version v2 |
+
+> **App:** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) — step-by-step board setup, one-button build and flash, ground checks on live data; Russian and English interface.
 
 > **Related project:** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) — the FS-i6 transmitter as a USB joystick for a simulator, on the same ESP32-S3: first log your hours in the simulator, then in the field.
 

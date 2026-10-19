@@ -242,6 +242,8 @@ flowchart LR
 
 ## 🚀 빠른 시작
 
+가장 쉬운 방법은 **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**입니다. Windows 앱이 비행기에 맞게 보드를 단계별로 설정하고, 펌웨어를 빌드해 버튼 하나로 플래시한 뒤, 보드의 실시간 데이터로 지상에서 모든 것을 맞추도록 도와줍니다. 명령줄에서는:
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -288,6 +290,7 @@ DevEBox: 이 보드에는 BOOT0 버튼이 없습니다. 처음 업로드하기 �
 - [x] 모든 모드의 폐루프 시뮬레이션, 펌웨어 전체를 테스트로 검증
 - [x] 블랙박스: 플래시(ESP32-S3)와 SD 카드(STM32H743)에 비행 기록, 내려받기와 CSV로 풀기
 - [x] STM32H743이 보드에서 작동: 조종기 → iBUS → 서보와 모터(센서 없이, 영상 있음)
+- [x] [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) 앱: 단계별 설정, 버튼 하나로 플래시, 지상 점검
 - [ ] STM32H743: 센서를 연결하고 ESP32-S3처럼 테스트 벤치 통과하기
 - [ ] 새 기체에서 오토파일럿 비행 시험
 - [ ] STM32H743 기반의 자체 비행 컨트롤러 보드([FC_BOARD.md](FC_BOARD.md))
@@ -320,6 +323,8 @@ DevEBox: 이 보드에는 BOOT0 버튼이 없습니다. 처음 업로드하기 �
 | [reference/](reference/README.md) | 클래스별 레퍼런스 |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | 비행 컨트롤러 보드 · 프로젝트가 나아가는 방향 |
 | [airframe/](airframe/README.md) | Astro-Cargo 기체: Fusion 360 프로젝트와 출력용 STL 파일, v2 버전의 알려진 결함 |
+
+> **앱:** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) — 단계별 보드 설정, 버튼 하나로 빌드와 플래시, 실시간 데이터로 지상 점검; 러시아어와 영어 인터페이스.
 
 > **관련 프로젝트:** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) — FS-i6 조종기를 시뮬레이터용 USB 조이스틱으로 바꿉니다. 같은 ESP32-S3에서 동작하며, 먼저 시뮬레이터에서 비행 시간을 쌓은 다음 실제 필드로 나가 보세요.
 

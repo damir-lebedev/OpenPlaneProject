@@ -242,6 +242,8 @@ Detaljer – [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 🚀 Snabbstart
 
+Enklast är **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**: en Windows-app som ställer in kortet för ditt flygplan steg för steg, bygger firmwaren och flashar den med en knapp och sedan hjälper dig att få allt att fungera på marken med livedata från kortet. Från kommandoraden:
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -288,6 +290,7 @@ Flygplansmodellen i simuleringarna är förenklad, och koefficienterna är start
 - [x] Simuleringar i sluten slinga av alla lägen, hela firmwaren i tester
 - [x] Svart låda: flygningar till flash (ESP32-S3) och till SD-kort (STM32H743), hämtning och avkodning till CSV
 - [x] STM32H743 kör på kortet: sändare → iBUS → servon och motor (utan sensorer, på video)
+- [x] Appen [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): inställning steg för steg, flashning med en knapp, kontroller på marken
 - [ ] STM32H743: koppla in sensorerna och gå igenom bänken på samma sätt som med ESP32-S3
 - [ ] Flygprov av autopiloten på den nya flygplansstommen
 - [ ] Ett eget flygkontrollerkort ([FC_BOARD.md](FC_BOARD.md)) med STM32H743
@@ -320,6 +323,8 @@ Det som redan är gjort med egna resurser: en arkitektur som flyttar mellan kort
 | [reference/](reference/README.md) | en referens för varje klass |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | flygkontrollerkortet · vart projektet är på väg |
 | [airframe/](airframe/README.md) | Astro-Cargo-stommen: Fusion 360-projekt och STL-filer för utskrift, kända brister i version v2 |
+
+> **App:** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) – inställning av kortet steg för steg, bygge och flashning med en knapp, kontroller på marken med livedata; gränssnitt på ryska och engelska.
 
 > **Närliggande projekt:** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) – FS-i6-sändaren som USB-joystick för en simulator, på samma ESP32-S3: flyg först in dina timmar i simulatorn, sedan på fältet.
 

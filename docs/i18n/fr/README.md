@@ -242,6 +242,8 @@ Détails : [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 🚀 Démarrage rapide
 
+Le plus simple : **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**, une application Windows qui configure la carte pour votre avion étape par étape, compile le firmware et le flashe en un clic, puis vous aide à tout régler au sol grâce aux données en direct de la carte. En ligne de commande :
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -288,6 +290,7 @@ Le modèle d’avion des simulations est simplifié, et les coefficients sont de
 - [x] Simulations en boucle fermée de tous les modes, firmware entier dans les tests
 - [x] Boîte noire : vol en flash (ESP32-S3) et sur carte SD (STM32H743), téléchargement et décodage en CSV
 - [x] Le STM32H743 tourne sur la carte : radio → iBUS → servos et moteur (sans capteurs, en vidéo)
+- [x] Application [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) : configuration étape par étape, flashage en un clic, réglages au sol
 - [ ] STM32H743 : brancher les capteurs et passer le banc comme pour l’ESP32-S3
 - [ ] Essais en vol du pilote automatique sur la nouvelle cellule
 - [ ] Une carte de contrôleur de vol maison ([FC_BOARD.md](FC_BOARD.md)) sur STM32H743
@@ -320,6 +323,8 @@ Ce qui a déjà été fait avec nos propres moyens : une architecture qui se tr
 | [reference/](reference/README.md) | une référence pour chaque classe |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | la carte du contrôleur de vol · où va le projet |
 | [airframe/](airframe/README.md) | la cellule Astro-Cargo : projet Fusion 360 et fichiers STL à imprimer, défauts connus de la version v2 |
+
+> **Application :** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) — configuration de la carte étape par étape, compilation et flashage en un clic, réglages au sol sur données en direct ; interface en russe et en anglais.
 
 > **Projet associé :** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) — la radio FS-i6 en joystick USB pour simulateur, sur le même ESP32-S3 : d’abord accumuler des heures de vol en simulateur, ensuite sur le terrain.
 

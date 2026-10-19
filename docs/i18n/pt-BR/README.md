@@ -242,6 +242,8 @@ Detalhes em [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 🚀 Início rápido
 
+O jeito mais fácil é o **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**: um aplicativo para Windows que configura a placa para o seu avião passo a passo, compila o firmware e grava com um só botão, e depois ajuda a acertar tudo em solo com dados ao vivo da placa. Pela linha de comando:
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -288,6 +290,7 @@ O modelo de avião nas simulações é simplificado, e os coeficientes são valo
 - [x] Simulações em malha fechada de todos os modos, o firmware inteiro nos testes
 - [x] Caixa-preta: voo na flash (ESP32-S3) e em cartão SD (STM32H743), download e decodificação para CSV
 - [x] A STM32H743 roda na placa: rádio → iBUS → servos e motor (sem sensores, em vídeo)
+- [x] Aplicativo [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): configuração passo a passo, gravação com um botão, ajustes em solo
 - [ ] STM32H743: ligar os sensores e passar pela bancada como foi feito com a ESP32-S3
 - [ ] Testes de voo do piloto automático no novo avião
 - [ ] Uma controladora de voo própria ([FC_BOARD.md](FC_BOARD.md)) com a STM32H743
@@ -320,6 +323,8 @@ O que já foi feito com recursos próprios: uma arquitetura que se leva de uma p
 | [reference/](reference/README.md) | referência de cada classe |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | a placa da controladora de voo · para onde o projeto caminha |
 | [airframe/](airframe/README.md) | o aeromodelo Astro-Cargo: projeto do Fusion 360 e arquivos STL para impressão, falhas conhecidas da versão v2 |
+
+> **Aplicativo:** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) — configuração da placa passo a passo, compilação e gravação com um botão, ajustes em solo com dados ao vivo; interface em russo e inglês.
 
 > **Projeto relacionado:** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) — o rádio FS-i6 como joystick USB para o simulador, na mesma ESP32-S3: primeiro acumule horas no simulador, depois no campo.
 

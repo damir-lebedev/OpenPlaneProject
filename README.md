@@ -240,6 +240,8 @@ flowchart LR
 
 ## 🚀 Быстрый старт
 
+Проще всего — **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**: приложение для Windows настраивает плату под ваш самолёт по шагам, собирает прошивку и прошивает её одной кнопкой, а потом помогает наладить всё на земле по живым данным с платы. Из командной строки:
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -286,6 +288,7 @@ DevEBox: на плате нет кнопки BOOT0 — перед первой �
 - [x] Замкнутые симуляции всех режимов, прошивка целиком в тестах
 - [x] Чёрный ящик: полёт во флеш (ESP32-S3) и на SD-карту (STM32H743), выгрузка и разбор в CSV
 - [x] STM32H743 запущена на плате: пульт → iBUS → сервы и мотор (без датчиков, на видео)
+- [x] Приложение [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): настройка по шагам, прошивка одной кнопкой, наладка на земле
 - [ ] STM32H743: подключить датчики и пройти стенд так же, как ESP32-S3
 - [ ] Лётные испытания автопилота на новом планере
 - [ ] Своя плата полётника ([FC_BOARD.md](docs/FC_BOARD.md)) на STM32H743
@@ -318,6 +321,8 @@ DevEBox: на плате нет кнопки BOOT0 — перед первой �
 | [reference/](docs/reference/README.md) | справочник по каждому классу |
 | [FC_BOARD.md](docs/FC_BOARD.md) · [ROADMAP.md](docs/ROADMAP.md) | плата полётника · куда движется проект |
 | [airframe/](airframe/README.md) | планер Astro-Cargo: проект Fusion 360 и STL для печати, известные недостатки версии v2 |
+
+> **Приложение:** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) — настройка платы по шагам, сборка и прошивка одной кнопкой, наладка на земле по живым данным; интерфейс на русском и английском.
 
 > **Связанный проект:** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) — пульт FS-i6 как USB-джойстик для симулятора на той же ESP32-S3: сначала налетать часы в симуляторе, потом — в поле.
 

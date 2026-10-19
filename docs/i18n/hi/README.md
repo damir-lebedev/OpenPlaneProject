@@ -242,6 +242,8 @@ flowchart LR
 
 ## 🚀 जल्दी शुरू करें
 
+सबसे आसान तरीका है **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**: Windows ऐप जो आपके विमान के लिए बोर्ड को चरण-दर-चरण सेट करता है, फ़र्मवेयर बनाकर एक बटन से फ़्लैश करता है, और फिर बोर्ड के लाइव डेटा से ज़मीन पर सब कुछ ठीक करने में मदद करता है। कमांड लाइन से:
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -288,6 +290,7 @@ DevEBox: बोर्ड पर BOOT0 बटन नहीं है — पह�
 - [x] सभी मोड के क्लोज़्ड-लूप सिमुलेशन, पूरा फ़र्मवेयर टेस्टों में
 - [x] ब्लैक बॉक्स: फ़्लैश में (ESP32-S3) और SD कार्ड पर (STM32H743) उड़ान, उतारना और CSV में खोलना
 - [x] STM32H743 बोर्ड पर चालू: रिमोट → iBUS → सर्वो और मोटर (बिना सेंसर के, वीडियो में)
+- [x] [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) ऐप: चरण-दर-चरण सेटअप, एक बटन से फ़्लैश, ज़मीनी जाँच
 - [ ] STM32H743: सेंसर जोड़ना और टेस्ट बेंच वैसे ही पार करना जैसे ESP32-S3 पर किया गया
 - [ ] नए एयरफ़्रेम पर ऑटोपायलट के उड़ान-परीक्षण
 - [ ] STM32H743 पर अपना फ़्लाइट कंट्रोलर बोर्ड ([FC_BOARD.md](FC_BOARD.md))
@@ -320,6 +323,8 @@ DevEBox: बोर्ड पर BOOT0 बटन नहीं है — पह�
 | [reference/](reference/README.md) | हर क्लास का संदर्भ |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | फ़्लाइट कंट्रोलर बोर्ड · परियोजना किस ओर बढ़ रही है |
 | [airframe/](airframe/README.md) | Astro-Cargo एयरफ़्रेम: Fusion 360 प्रोजेक्ट और प्रिंट के लिए STL फ़ाइलें, संस्करण v2 की ज्ञात खामियाँ |
+
+> **ऐप:** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) — बोर्ड का चरण-दर-चरण सेटअप, एक बटन से बिल्ड और फ़्लैश, लाइव डेटा पर ज़मीनी जाँच; रूसी और अंग्रेज़ी इंटरफ़ेस।
 
 > **संबंधित परियोजना:** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) — FS-i6 रिमोट को सिम्युलेटर के लिए USB जॉयस्टिक बनाना, उसी ESP32-S3 पर: पहले सिम्युलेटर में घंटों उड़ान का अभ्यास करें, फिर मैदान में।
 

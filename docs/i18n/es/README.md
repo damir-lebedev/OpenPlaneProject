@@ -242,6 +242,8 @@ Más detalles: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 🚀 Inicio rápido
 
+Lo más sencillo es **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**: una aplicación para Windows que configura la placa para tu avión paso a paso, compila el firmware y lo graba con un solo botón, y después te ayuda a ponerlo todo a punto en tierra con datos en vivo de la placa. Desde la línea de comandos:
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -288,6 +290,7 @@ El modelo de avión de las simulaciones está simplificado y los coeficientes so
 - [x] Simulaciones en lazo cerrado de todos los modos, todo el firmware en las pruebas
 - [x] Caja negra: vuelos en la flash (ESP32-S3) y en una tarjeta SD (STM32H743), descarga y descodificación a CSV
 - [x] La STM32H743 funciona en la placa: emisora → iBUS → servos y motor (sin sensores, en vídeo)
+- [x] La aplicación [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): configuración paso a paso, grabación con un botón, puesta a punto en tierra
 - [ ] STM32H743: conectar los sensores y pasar el banco igual que con la ESP32-S3
 - [ ] Ensayos en vuelo del piloto automático con el nuevo avión
 - [ ] Una placa de controlador de vuelo propia ([FC_BOARD.md](FC_BOARD.md)) con la STM32H743
@@ -320,6 +323,8 @@ Lo que ya se ha hecho con recursos propios: una arquitectura que se traslada de 
 | [reference/](reference/README.md) | referencia de cada clase |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | la placa del controlador de vuelo · hacia dónde va el proyecto |
 | [airframe/](airframe/README.md) | la estructura del Astro-Cargo: proyecto de Fusion 360 y archivos STL para imprimir, fallos conocidos de la versión v2 |
+
+> **Aplicación:** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): configuración de la placa paso a paso, compilación y grabación con un botón, puesta a punto en tierra con datos en vivo; interfaz en ruso e inglés.
 
 > **Proyecto relacionado:** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick): la emisora FS-i6 como joystick USB para el simulador, en la misma ESP32-S3. Primero se acumulan horas en el simulador y después, en el campo.
 

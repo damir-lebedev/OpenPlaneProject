@@ -242,6 +242,8 @@ flowchart LR
 
 ## 🚀 快速开始
 
+最简单的方式是 **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**：一个 Windows 应用，按步骤为你的飞机配置飞控板，一键编译并刷写固件，然后借助飞控板的实时数据帮你在地面完成调试。命令行方式：
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -288,6 +290,7 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 - [x] 所有模式的闭环仿真，整套固件纳入测试
 - [x] 黑匣子：飞行记录写入闪存（ESP32-S3）和 SD 卡（STM32H743），下载并解析为 CSV
 - [x] STM32H743 已在板子上运行：遥控器 → iBUS → 舵机和电机（无传感器，有视频）
+- [x] [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) 应用：分步配置、一键刷写、地面调试
 - [ ] STM32H743：接上传感器，并像 ESP32-S3 一样走完台架测试
 - [ ] 在新机体上对自动驾驶仪进行试飞
 - [ ] 基于 STM32H743 的自研飞控板（[FC_BOARD.md](FC_BOARD.md)）
@@ -320,6 +323,8 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 | [reference/](reference/README.md) | 每个类的参考手册 |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | 飞控板 · 项目的发展方向 |
 | [airframe/](airframe/README.md) | Astro-Cargo 机体：Fusion 360 工程和打印用 STL 文件，v2 版本的已知缺陷 |
+
+> **应用：** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) —— 分步配置飞控板，一键编译与刷写，基于实时数据的地面调试；界面支持俄语和英语。
 
 > **相关项目：** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) —— 把 FS-i6 遥控器变成模拟器用的 USB 摇杆，同样运行在 ESP32-S3 上：先在模拟器里积累飞行时长，再去野外飞。
 

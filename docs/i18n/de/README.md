@@ -242,6 +242,8 @@ Details – in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## 🚀 Schnellstart
 
+Am einfachsten geht es mit **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**: Eine Windows-App richtet das Board Schritt für Schritt für Ihr Flugzeug ein, baut die Firmware, flasht sie mit einem Klick und hilft Ihnen danach, am Boden alles anhand der Live-Daten des Boards einzustellen. Per Kommandozeile:
+
 ```bash
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
@@ -288,6 +290,7 @@ Das Flugzeugmodell in den Simulationen ist vereinfacht, die Koeffizienten sind S
 - [x] Simulationen aller Modi im geschlossenen Regelkreis, die ganze Firmware in den Tests
 - [x] Blackbox: Flug im Flash (ESP32-S3) und auf einer SD-Karte (STM32H743), Download und Auswertung als CSV
 - [x] STM32H743 läuft auf dem Board: Sender → iBUS → Servos und Motor (ohne Sensoren, auf Video)
+- [x] App [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): Einrichtung Schritt für Schritt, Flashen mit einem Klick, Checks am Boden
 - [ ] STM32H743: Sensoren anschließen und den Prüfstand so durchlaufen wie beim ESP32-S3
 - [ ] Flugerprobung des Autopiloten an der neuen Flugzeugzelle
 - [ ] Eine eigene Flugsteuerungsplatine ([FC_BOARD.md](FC_BOARD.md)) auf dem STM32H743
@@ -320,6 +323,8 @@ Was bereits aus eigener Kraft geschafft wurde: eine Architektur, die sich ohne U
 | [reference/](reference/README.md) | eine Referenz zu jeder Klasse |
 | [FC_BOARD.md](FC_BOARD.md) · [ROADMAP.md](ROADMAP.md) | die Flugsteuerungsplatine · wohin sich das Projekt bewegt |
 | [airframe/](airframe/README.md) | die Zelle der Astro-Cargo: Fusion-360-Projekt und STL-Dateien zum Drucken, bekannte Mängel der Version v2 |
+
+> **App:** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) – Board-Einrichtung Schritt für Schritt, Bauen und Flashen mit einem Klick, Checks am Boden mit Live-Daten; Oberfläche auf Russisch und Englisch.
 
 > **Verwandtes Projekt:** [esp32-rc-joystick](https://github.com/damir-lebedev/esp32-rc-joystick) – der FS-i6-Sender als USB-Joystick für den Simulator, auf demselben ESP32-S3: erst im Simulator Stunden sammeln, dann im Feld.
 
