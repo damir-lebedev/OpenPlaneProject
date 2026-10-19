@@ -133,7 +133,7 @@ En textmeny i seriemonitorn. En tillståndsmaskin av skärmar `Screen::{None, Ma
 | Metod | Beskrivning |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | med ett kort – kommandot `b` och menypunkt 7 |
-| `static const char* guessI2cDevice(uint8_t address)` | kretsen efter adress: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | kretsen efter adress: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06/DPS310, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
 | `void printHint() const` | En ledtråd på en rad |
 | `void update()` | Bearbeta alla byte från `Serial`; om logginställningarna har ändrats, menyn är stängd och planet **inte är armerat** – spara i NVS |
 
@@ -143,7 +143,7 @@ kalibrering av IMU-monteringen; `m` – kompasskalibrering; `p` – självtest a
 `b` – avsökning av I2C-bussarna (0x08..0x7F – upp till 0x7F, eftersom QMC6309 sitter på 0x7C) med
 kretsnamn; allt annat – en ledtråd. `\r`/`\n` ignoreras. Dessutom `c` – markkalibrering av flygplanet (pågår den, avbryts den; huvudmenyns punkt 9) och `e` – en signal med roder och ESC-melodi (kontrollerar att ESC:n spelar den efter pulspausen).
 
-Kommandon från datorn är en STX-byte (`0x02`), en sträng och `\n`: på `id` skriver `FirmwareIdentity::print()` ut firmwarens identitet som en enda rad `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; svarar även under ARM); `scan` söker igenom bussarna och skriver ut `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` (under ARM: `{"error":"armed"}`); `act X` utför åtgärden för menytangenten `X` med samma spärrar under ARM; `live` och `live 0` går till `AppLink` (nedan), allt annat går till `IFlightRecorder::handleHostCommand()` (svarta lådan). Kort, commit, konfigurationens hash och flygplanets namn bakar OpenPlane Studio in via `config/Project.h` i sin kopia av källkoden; utan den filen gäller kortets makro och `"dev"`.
+Kommandon från datorn är en STX-byte (`0x02`), en sträng och `\n`: på `id` skriver `FirmwareIdentity::print()` ut firmwarens identitet som en enda rad `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; svarar även under ARM); `scan` söker igenom bussarna och skriver ut `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}` (under ARM: `{"error":"armed"}`); `act X` utför åtgärden för menytangenten `X` med samma spärrar under ARM; `live` och `live 0` går till `AppLink` (nedan), allt annat går till `IFlightRecorder::handleHostCommand()` (svarta lådan). Kort, commit, konfigurationens hash och flygplanets namn bakar OpenPlane Studio in via `config/Project.h` i sin kopia av källkoden; utan den filen gäller kortets makro och `"dev"`.
 
 Loggmenyn: `1`..`9` – växla läge för kanalerna 0..8, `n` – NAV, `s` – SYS, `p` – period, `a` –
 allt ”vid ändring”, `x` – allt av, `d` – standardvärden, `0`/`q` – tillbaka, `l`/`h` –

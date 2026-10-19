@@ -259,6 +259,40 @@ class OpconfigTest(unittest.TestCase):
         self.assertEqual(original, read(self.tmp, opconfig.FILES["sensors"]))
         self.assert_rejected(self.config(sensors=dict(custom, imu="SENSOR_IMU_BNO085")), "нет варианта")
 
+    def test_board_with_own_sensor_kit(self):
+        """Matek H743: набор датчиков платы — флагом env, строка SENSOR_KIT ему не указ."""
+        kits = {k["id"]: k["sensors"] for k in self.manifest["sensors"]["kits"] if k["sensors"]}
+        boards = {b["env"]: b for b in self.manifest["boards"]}
+        self.assertEqual("SENSOR_KIT_MATEK_H743", boards["matek-h743"]["kit"])
+        self.assertEqual(kits["SENSOR_KIT_MATEK_H743"], boards["matek-h743"]["sensors"])
+        self.assertIsNone(boards["stm32h743-devebox"]["kit"])
+        self.assertEqual(self.manifest["current"]["sensors"], boards["stm32h743-devebox"]["sensors"])
+        self.assertEqual(kits["SENSOR_KIT_MATEK_H743"], self.config("matek-h743")["sensors"])
+        original = read(self.tmp, opconfig.FILES["sensors"])
+
+        self.assertEqual([], self.apply(self.config("matek-h743"))["changed"])
+
+        # Компас на внешний разъём: набор платы + строки SENSOR_*; строка SENSOR_KIT не тронута.
+        with_mag = dict(kits["SENSOR_KIT_MATEK_H743"], mag="SENSOR_MAG_QMC5883L")
+        self.apply(self.config("matek-h743", sensors=with_mag))
+        text = read(self.tmp, opconfig.FILES["sensors"])
+        self.assertIn("#define SENSOR_MAG SENSOR_MAG_QMC5883L", text)
+        self.assertIn("#define SENSOR_IMU SENSOR_IMU_ICM42688", text)
+        self.assertEqual(original.count("#define SENSOR_KIT SENSOR_KIT_BENCH_GY521"),
+                         text.count("#define SENSOR_KIT SENSOR_KIT_BENCH_GY521"))
+        manifest = opconfig.describe(opconfig.Source(self.tmp))
+        self.assertEqual(with_mag, next(b for b in manifest["boards"] if b["env"] == "matek-h743")["sensors"])
+
+        # Чужой набор целиком — тоже строками SENSOR_*: строку SENSOR_KIT перекрыл бы флаг.
+        self.apply(self.config("matek-h743", sensors=kits["SENSOR_KIT_LSM6DSV_PITOT"]))
+        text = read(self.tmp, opconfig.FILES["sensors"])
+        self.assertIn(opconfig.STUDIO_BEGIN, text)
+        self.assertIn("#define SENSOR_IMU SENSOR_IMU_LSM6DSV", text)
+
+        # Обратно к набору платы — файл как был.
+        self.apply(self.config("matek-h743", sensors=kits["SENSOR_KIT_MATEK_H743"]))
+        self.assertEqual(original, read(self.tmp, opconfig.FILES["sensors"]))
+
     def test_apply_writes_project_header(self):
         cfg = self.config(project={"plane": 'Astro "Cargo" \\1', "configHash": "abc123", "commit": "75d8784"})
         result = self.apply(cfg)

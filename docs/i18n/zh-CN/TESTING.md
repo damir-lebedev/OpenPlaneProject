@@ -9,7 +9,7 @@
 | **电脑（native）** | `pio test -e native` | 固件头文件原封不动地在电脑上编译，硬件被可控的模拟替身（fake）取代：模块、驱动、闭环飞行仿真，以及搭配每一种传感器套件的整套 ESP32 固件（S3 和 38 针版）。统计覆盖率 |
 | **电脑（native-stm32）** | `pio test -e native-stm32` | 整套 STM32H743 固件（`src/stm32/main.cpp`）运行在 STM32duino 模拟替身层之上：FreeRTOS 任务、闪存、MAVLink、I2C 和 SPI 上的传感器 |
 | **构建矩阵** | `tools/build_matrix.sh` | 4 种开发板 × 6 种传感器套件，使用 `-Wall -Wextra (-Wshadow)`；项目代码中的任何警告都算错误 |
-| **供应用读取的描述** | `python tools/test_opconfig.py` | `tools/opconfig.py`：在源码副本上测试 OpenPlane Studio 所用的固件描述与配置写入（14 个测试）；`tools/opconfig_build_check.py`：写入的配置能在所有开发板上编译 |
+| **供应用读取的描述** | `python tools/test_opconfig.py` | `tools/opconfig.py`：在源码副本上测试 OpenPlane Studio 所用的固件描述与配置写入（17 个测试）；`tools/opconfig_build_check.py`：写入的配置能在所有开发板上编译 |
 | **开发板** | `pio test -e esp32-s3` | 在真实的 ESP32-S3 上运行 `test_feedback` 和 `test_imu_orientation`（会烧录测试固件；之后请换回正常固件：`pio run -t upload`） |
 | **STM32 开发板** | `pio test -e stm32h743-devebox -f test_blackbox_sd` | 在 DevEBox H743 上用**真实的 SD 卡**测试黑匣子，另外在 Cortex-M7 上运行 `test_feedback` 和 `test_imu_orientation`——见[下文](#stm32-开发板上的测试) |
 
@@ -83,7 +83,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 
 | 文件 | 说明 |
 |---|---|
-| `ChipEmulators.h` | LSM6DSV、ICM-45686（带 IPREG 间接寄存器）、QMC6309、SPL06-001、BMP581，以及 u-blox 的 NAV-PVT 帧——I2C 或 SPI 上的寄存器映射，数据取自 `World`“世界”（角度和角速度、高度、空速、航向、坐标），按芯片自身的坐标轴给出，并考虑了 `IMU_ROTATION_CW_DEG` |
+| `ChipEmulators.h` | LSM6DSV、ICM-42688-P、ICM-45686（带 IPREG 间接寄存器）、QMC6309、SPL06-001、BMP581，以及 u-blox 的 NAV-PVT 帧——I2C 或 SPI 上的寄存器映射，数据取自 `World`“世界”（角度和角速度、高度、空速、航向、坐标），按芯片自身的坐标轴给出，并考虑了 `IMU_ROTATION_CW_DEG` |
 | `PlaneSim.h` | 约 1.2 kg 的飞机模型：质点 + 横滚/俯仰转动，带失速的 CL(α)，阻力、推力、风、热气流、地面；尾轮或前轮起落架——飞机在主轮上前后摆动，统计尾轮载荷、机尾撞击和螺旋桨触地，地面偏航包含螺旋桨力矩和转向轮 |
 | `SimHarness.h` | 闭环：遥控器 → iBUS 帧 → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面偏转 → `PlaneSim` → 传感器（包括基于两个带噪声气压计的皮托管）。设置 `OPENPLANE_SIM_DIR` 时输出 CSV 轨迹；开启 `realisticImu` 时由真实的 `AttitudeEstimator` 按比力计算角度——它看到的跑道加速度和机上一样 |
 
@@ -105,7 +105,7 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native/test_flight_controller` | 20 | 在真实的类上完整运行一个 `FlightController` 控制周期：优先级为 信号丢失 > ARM > 摇杆/自动驾驶仪 > 油门；AUX、`MOTOR_KILL`、蜂鸣器；SwD 反转：只在 DISARM 时、3 s 内不能 ARM、反转 50% 油门、自动驾驶仪不给油门、失去信号时电机停转；油门上限旋钮把允许的范围拉伸到整个摇杆行程；通过 SwB 手势和控制台进行地面校准，输出上的提示（舵面点头；只有未解锁时才停掉电调脉冲），校准和提示期间禁止 ARM，拨一下 ARM 会取消校准，起飞被拒时只点头不碰电调，没有信号时提示照常进行 |
 | `native/test_imu` | 21 | MPU6050/6500/9250 与 ICM-42688：识别、寄存器、比例系数、轴旋转与航空坐标符号约定、总线错误、陀螺仪校准与飞行前检查、基于三个姿态的安装校准、NVS、姿态滤波器 |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`、通过 I2C 和 SPI 的 BMP388、对照 Bosch 参考算法的 BME280/BMP280、电子罗盘（航向、NVS 中的 hard-iron 校准）、u-blox M10（CFG-VALSET、NAV-PVT、损坏的帧、超时）、`SensorSelection` |
-| `native/test_sensors_new` | 23 | LSM6DSV（16X/32X、备用地址、SPI）、ICM-45686（间接寄存器）、QMC6309、SPL06-001（数据手册公式）、BMP581（DRDY 与备用路径）、皮托管（零点、滤波、空气密度、软管接反、过期数据、带两个气压计噪声的“飞行”） |
+| `native/test_sensors_new` | 24 | LSM6DSV（16X/32X、备用地址、SPI）、ICM-45686（间接寄存器）、QMC6309、SPL06-001（数据手册公式）、BMP581（DRDY 与备用路径）、皮托管（零点、滤波、空气密度、软管接反、过期数据、带两个气压计噪声的“飞行”）、DPS310（复位后的温度传感器修正） |
 | `native/test_storage` | 16 | `KeyValueStore`（重新加载、磨损——相同的值不重复写入、溢出不丢数据、CRC、擦除时断电、乱码数据、格式版本）、`KvPreferences`（行为与 ESP32 的 NVS 相同） |
 | `native/test_mavlink` | 20 | 编解码器对照 pymavlink 的参考帧（v1、v2、带签名）、CRC、重新同步；遥测：各数据流的频率、HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS、PID 参数（列表、读取、写入、拒绝非法值）、从地面切换模式、从地面 ARM——被拒绝、任务——0、UART 缓冲区写满也不会阻塞循环 |
 | `native/test_blackbox` | 20 | 黑匣子：格式与 CRC，NOR 模拟件上的扇区环（全新分区无需擦除、垃圾数据总会被擦除、旧飞行记录整段擦除且仅为腾出空间、最新一次飞行从不触碰、环尾回绕、重启后的头指针、断电、写了一半的记录由 CRC 识别），在真实的 `FlightController`/`Autopilot` 上记录飞行：按 ARM 和油门启动并带预录、DISARM 且“停在地面”后停止、信号丢失不会停止记录、异常重启后的记录、手动启动、事件、电池、空中闪存写满、飞行时长超过分区、按带 CRC 的帧导出并切换速率、控制台菜单 `k`、没有分区——黑匣子关闭；地面校准和自动起飞各阶段的事件 |
@@ -122,9 +122,10 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native_stm32/test_blackbox_sd` | 29 | SD 卡上的黑匣子：FAT32（有 MBR 与无 MBR、占两个簇的目录、噪声条目、他人的/碎片化的/空的卷）、`SdFileRegion`（不完整的块、缓存、擦除、边界、故障）、基于模拟 `HAL_SD` 的真实 `Stm32SdCard` 驱动（4 位、回退速率、重试、卡忙、未对齐的缓冲区）、卡上的环（重启、断电、核对开销）、“环为空”标记、在 `FlightController` 上记录飞行、通过 `RCC->RSR` 识别的异常重启、电池 ADC、飞行中的卡错误、慢速卡、通过控制台导出、`D` 键 |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | 带卡的 `src/stm32/main.cpp`：启动时能找到卡和文件、`bbox` 任务记录飞行、循环周期不被拉长、`bb list` |
 | `native_stm32/test_app_stm32_no_sd` | 4 | 不带卡的 `src/stm32/main.cpp`：黑匣子关闭并说明原因、飞机照常飞行、菜单 `k` 不出错；PD14 上的输出自检（绕过核心库 `pulseIn()` 的缺陷），电机提示 `e`；`Stm32UartPort` 上的 SBUS——8E2 与 RX 反相 |
+| `native_stm32/test_app_stm32_matek_h743` | 4 | 在 **Matek H743-WING V3** 上运行 `src/stm32/main.cpp`：板载传感器（SPI1 上的 ICM-42688-P、I2C2 上的 DPS310），单独的外部 I2C1 总线上的罗盘，带 `ext` 字段的 `@scan`，身份 `matek-h743`；带增稳的 ARM 等待安装校准（MANUAL 可以）；飞控板前后颠倒安装——三个姿态之后角度正确 |
 | `test_feedback` | 10 | 带反馈回路的飞机闭环仿真（在电脑和开发板上） |
 | `test_imu_orientation` | 5 | 在 300 种随机安装方式下校准 IMU 的安装姿态（在电脑和开发板上） |
-| **合计** | **455** | `native` 中 406 个 + `native-stm32` 中 49 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
+| **合计** | **460** | `native` 中 407 个 + `native-stm32` 中 53 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
 
 ### STM32 开发板上的测试
 
@@ -206,14 +207,15 @@ pio test -e stm32h743-devebox -f test_feedback -f test_imu_orientation
 
 clang-tidy 借助 `test/native/support` 里的模拟替身运行：clang 无法按主机架构解析 ESP-IDF 的头文件（如果用 `clangtidy` 去跑 `pio check`，分析会在解析错误处中断，实际上什么也没检查）。`misc-include-cleaner` 负责保证每个头文件都包含自己用到的东西：“伞形”头文件（`FeedbackModules.h`、`IBoard.h`/`RegisterDevice.h` 的 API、`SensorSelection.h` 的宏）标有 `// IWYU pragma: export`。脚本会跳过 STM32 代码（`include/hal/stm32/`、`src/stm32/`）——这部分由构建、`stm32h743` 环境的 cppcheck 和 `native-stm32` 环境的测试来检查。
 
-最近一次运行时的构建矩阵——**24/24 无警告**：
+最近一次运行时的构建矩阵——**33/33 无警告**：
 
-| 开发板 | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c |
-|---|---|---|---|---|---|---|
-| esp32-s3 | OK | OK | OK | OK | OK | OK |
-| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK |
-| esp32-c3 | OK | OK | OK | OK | OK | OK |
-| stm32h743 | OK | OK | OK | OK | OK | OK |
+| 开发板 | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c | icm42688-spi + dps310 |
+|---|---|---|---|---|---|---|---|
+| esp32-s3 | OK | OK | OK | OK | OK | OK | OK |
+| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK | OK |
+| esp32-c3 | OK | OK | OK | OK | OK | OK | OK |
+| stm32h743 | OK | OK | OK | OK | OK | OK | OK |
+| matek-h743 (板载组合: OK) | — | — | — | OK | OK | OK | OK |
 
 cppcheck（`esp32-s3`、`stm32h743`）——项目代码中 0 条问题。
 

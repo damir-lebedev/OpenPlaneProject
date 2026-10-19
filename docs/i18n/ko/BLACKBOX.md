@@ -195,7 +195,7 @@ DevEBox H743 + 16 GB 카드(테스트 `test_blackbox_sd`, [TESTING.md](TESTING.m
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | 다음 비행을 위해 지워 둔 채로 유지할 양 |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | 지상에서 지우기와 지우기 사이의 휴지 |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU를 N주기에 한 번 기록: 2이면 250 Hz이고 기록 시간이 약 25% 길어짐 |
-| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 | 보드의 배터리와 전류 센서 분압비 |
+| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 (Matek H743: 11, 1) | 보드의 배터리와 전류 센서 분압비 |
 
 파티션 테이블은 `partitions_blackbox.csv`입니다. 애플리케이션이 2 MB(펌웨어는 현재 약 0.9 MB), 블랙박스가 13.9 MB, coredump가 64 KB입니다. NVS 파티션은 예전 위치에 그대로 있으므로, 이 테이블로 바꾼 뒤에도 IMU와 나침반의 캘리브레이션과 트림이 보존됩니다. 무선 업데이트(OTA)용 두 번째 슬롯은 없습니다.
 

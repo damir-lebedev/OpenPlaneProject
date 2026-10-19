@@ -133,7 +133,7 @@ Un menu textuel dans le moniteur série. Un automate d’écrans `Screen::{None,
 | Méthode | Description |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | avec une carte — la commande `b` et l’entrée 7 du menu |
-| `static const char* guessI2cDevice(uint8_t address)` | la puce d’après l’adresse : 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | la puce d’après l’adresse : 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06/DPS310, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
 | `void printHint() const` | Une aide d’une ligne |
 | `void update()` | Traiter tous les octets de `Serial` ; si les réglages du journal ont été modifiés, que le menu est fermé et que l’appareil **n’est pas armed** — enregistrer dans la NVS |
 
@@ -143,7 +143,7 @@ pause du journal ; `s` — état des capteurs ; `i` — étalonnage du gyrosco
 `b` — balayage des bus I2C (0x08..0x7F — jusqu’à 0x7F, parce que le QMC6309 se trouve en 0x7C) avec
 les noms des puces ; toute autre touche — une aide. `\r`/`\n` sont ignorés. Et aussi `c` — la calibration au sol de l’avion (en cours — annulation ; point 9 du menu principal) et `e` — un signal par les gouvernes et la mélodie de l’ESC (vérifie qu’il la joue après la pause des impulsions).
 
-Les commandes du PC sont un octet STX (`0x02`), une chaîne et `\n` : sur `id`, `FirmwareIdentity::print()` affiche l’identité du firmware sur une seule ligne `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed` ; elle répond aussi en ARM) ; `scan` interroge les bus et affiche `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` (en ARM : `{"error":"armed"}`) ; `act X` exécute l’action de la touche `X` du menu, avec les mêmes interdictions en ARM ; `live` et `live 0` vont à `AppLink` (ci-dessous), le reste part vers `IFlightRecorder::handleHostCommand()` (la boîte noire). OpenPlane Studio inscrit la carte, le commit, le hachage de la configuration et le nom de l’avion via `config/Project.h` dans sa copie des sources ; sans ce fichier, ce sont la macro de la carte et `"dev"`.
+Les commandes du PC sont un octet STX (`0x02`), une chaîne et `\n` : sur `id`, `FirmwareIdentity::print()` affiche l’identité du firmware sur une seule ligne `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed` ; elle répond aussi en ARM) ; `scan` interroge les bus et affiche `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}` (en ARM : `{"error":"armed"}`) ; `act X` exécute l’action de la touche `X` du menu, avec les mêmes interdictions en ARM ; `live` et `live 0` vont à `AppLink` (ci-dessous), le reste part vers `IFlightRecorder::handleHostCommand()` (la boîte noire). OpenPlane Studio inscrit la carte, le commit, le hachage de la configuration et le nom de l’avion via `config/Project.h` dans sa copie des sources ; sans ce fichier, ce sont la macro de la carte et `"dev"`.
 
 Le menu du journal : `1`..`9` — fait tourner le mode des canaux 0..8, `n` — NAV, `s` — SYS, `p` — période, `a` —
 tout « au changement », `x` — tout désactivé, `d` — valeurs par défaut, `0`/`q` — retour, `l`/`h` —

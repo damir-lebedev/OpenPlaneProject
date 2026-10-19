@@ -129,12 +129,13 @@ Y は左）に変換します。`rotationCwDeg` は、チップの X 軸が向�
 | `SENSOR_KIT_BENCH_GY521`（1、既定） | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT`（2） | LSM6DSV | SPL06（胴体） | QMC6309 | 管内の BMP581 | M10 |
 | `SENSOR_KIT_ICM45686_PITOT`（3） | ICM-45686 | SPL06（胴体） | QMC6309 | 管内の BMP581 | M10 |
+| `SENSOR_KIT_MATEK_H743`（4） | ICM-42688-P（SPI、ボード上） | DPS310（ボード上） | — | — | M10 |
 | `SENSOR_KIT_CUSTOM`（0） | 下の5つのマクロをすべて指定 | | | | |
 
 | 選択用マクロ | 選択肢 |
 |---|---|
 | `SENSOR_IMU` | `MPU6050`（1）、`ICM42688`（2、SPI）、`LSM6DSV`（3）、`LSM6DSV_SPI`（4）、`ICM45686`（5）、`ICM45686_SPI`（6） |
-| `SENSOR_BARO` | `BME280`（1）、`BMP388`（2、SPI）、`BMP388_I2C`（3）、`SPL06`（4）、`SPL06_SPI`（5）、`BMP581`（6）、`BMP581_SPI`（7） |
+| `SENSOR_BARO` | `BME280`（1）、`BMP388`（2、SPI）、`BMP388_I2C`（3）、`SPL06`（4）、`SPL06_SPI`（5）、`BMP581`（6）、`BMP581_SPI`（7）、`DPS310`（8） |
 | `SENSOR_MAG` | `NONE`（0）、`QMC5883P`（1）、`QMC5883L`（2）、`QMC6309`（3） |
 | `SENSOR_AIRSPEED` | `NONE`（0）、`PITOT_BMP581`（1）— 管内の BMP581、I2C 0x47 |
 | `SENSOR_GPS` | `NONE`（0）、`UBLOX_M10`（1） |
@@ -256,6 +257,7 @@ rightWingDown の ⟂ Z の成分、X₂ = Y × Z、X = norm(X₁ + X₂)、Y = 
 | `NotOneG` | \|a\| が 1g から 0.2g を超えてずれている |
 | `MountingMismatch` | （取り付けが較正済み）「上」が保存した値から 45° を超えて離れている |
 | `NotChipUp` | （較正なし）基板がチップを上にして置かれていない（`z < 0.5g`） |
+| `MountNotCalibrated` | （未キャリブレーションで、`IMU_MOUNT_CALIBRATION_REQUIRED`：IMU がフライトコントローラー上）`NotChipUp` の代わり。安定化ありの ARM は取り付けキャリブレーションの後のみ |
 
 ---
 
@@ -369,6 +371,19 @@ SPL06-001（Goertek）。数式はデータシート §4.9 によります。
 
 - `begin()`: `ID`（0x0D）= 0x10（0x11 は SPA06 で、係数の組が異なるため拒否します）、リセット、`COEF_RDY | SENSOR_RDY` の待機、係数 18 バイト（符号付きの 12/20/16 ビットのフィールド）、温度の取得元は `COEF_SRCE` で決定、気圧 16×（32 Hz）、温度 1×、連続モード。
 - `isNewSampleReady()` は `PRS_RDY` ビット、`readSample()` は 24 ビットのビッグエンディアンのサンプルで、`kP = 253952`、`kT = 524288`。
+
+## `DPS310_Sensor`
+
+**ファイル:** `sensors/baro/DPS310_Sensor.h` · **継承元:** `SPL06_Sensor` · **状態:** 実機では未確認
+
+DPS310（Infineon）は完成品のフライトコントローラー（Matek H743）の気圧計です。
+レジスタ、ID `0x10`、係数、式は SPL06-001 と同じなので、ドライバーは
+`SPL06_Sensor` のサブクラスです。違いは 1 つだけで、リセット直後に
+`afterReset()` が温度センサーの補正を書き込みます（`0x0E←0xA5`、`0x0F←0x96`、
+`0x62←0x02`、`0x0E←0x00`、`0x0F←0x00`：Infineon の手順で、ArduPilot も同様）。
+これがないと一部のチップは誤った温度を返し、それにつられて気圧も狂います。
+書き込みに失敗すると `begin()` は `false` を返します（「レジスタ書き込みエラー」）。
+ID では SPL06 と区別できないため、チップは明示的に選びます：`SENSOR_BARO_DPS310`。
 
 ## `BMP581_Sensor`
 

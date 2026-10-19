@@ -35,9 +35,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-455%20passing-3fb950?style=for-the-badge" alt="테스트 455개">
+  <img src="https://img.shields.io/badge/tests-460%20passing-3fb950?style=for-the-badge" alt="테스트 460개">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="커버리지 94%">
-  <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="경고 없는 빌드 24개">
+  <img src="https://img.shields.io/badge/builds-33%2F33%20clean-3fb950?style=for-the-badge" alt="경고 없는 빌드 33개">
   <br>
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
   <img src="https://img.shields.io/badge/STM32H743-flies%20from%20the%20RC-39d0ff?style=for-the-badge&logo=stmicroelectronics&logoColor=white" alt="STM32H743: 조종기로 조종 가능">
@@ -61,7 +61,7 @@
 | **무엇인가** | 무선 조종 비행기를 위한 개방형 비행 컨트롤러이자 오토파일럿입니다. 주력 보드는 STM32H743(Pixhawk급 보드)이며, DevEBox 보드에서는 **이미 작동하며 조종기로 조종됩니다**([영상 있음](#-stm32h743이-보드-위에서-깨어났습니다)). 지금은 센서를 연결하는 중입니다. 이전 기반은 약 10달러짜리 ESP32-S3이며, 모든 센서를 단 테스트 벤치를 통과했습니다. |
 | **무엇을 할 수 있나** | 12가지 비행 모드: 자세 안정화부터 귀환, GPS 선회, 손으로 던져 발진, 자동 착륙, **서멀 소어링**까지. 저렴한 기압계 두 개로 만든 피토관. QGroundControl과 Mission Planner용 MAVLink 텔레메트리. |
 | **핵심 기능** | 조종기의 어떤 스위치나 노브든 원하는 기능으로 바꿀 수 있습니다. `Controls.h`에서 **한 줄**만 고치면 SwD는 더 이상 모터 역회전이 아니라 화물 투하가 됩니다. |
-| **믿을 수 있는 이유** | 자동 테스트 455개(실제 SD 카드를 꽂은 보드에서 도는 테스트 9개는 별도), 코드의 94%가 테스트로 검증됨, "보드 × 센서" 빌드 24개가 경고 없이 통과, 모든 모드의 폐루프 시뮬레이션. |
+| **믿을 수 있는 이유** | 자동 테스트 460개(실제 SD 카드를 꽂은 보드에서 도는 테스트 9개는 별도), 코드의 94%가 테스트로 검증됨, "보드 × 센서" 빌드 33개가 경고 없이 통과, 모든 모드의 폐루프 시뮬레이션. |
 | **솔직히 말씀드리면** | 지금까지 실제로 날아 본 것은 수동 모드뿐입니다(첫 번째 시제기). STM32H743은 아직 센서 없이 테스트 벤치에서만 확인했습니다. 오토파일럿은 테스트 벤치, 테스트, 시뮬레이션으로 검증했고 비행 시험을 기다리고 있습니다. [아래 현황](#-솔직한-현황)을 확인하세요. |
 
 ---
@@ -160,11 +160,12 @@ SwD를 모터 역회전 대신 서멀 소어링으로 쓰고 싶으신가요? `B
 
 ---
 
-## 🔩 하드웨어: 펌웨어 하나, 보드 네 종류, 센서 열두 종류
+## 🔩 하드웨어: 펌웨어 하나, 보드 다섯 종류, 센서 열세 종류
 
 | 보드 | 상태 | 확인된 내용 |
 |---|---|---|
 | **STM32H743VIT6** | ✅ 주력 · 🔧 DevEBox, 센서 연결 중 + 🧪 테스트 | 보드에서: 부팅, USB 콘솔, **SD 카드와 블랙박스**(보드 위 테스트), **iBUS 수신, ARM, 조종기로 서보와 모터 제어**(발진 장면은 영상으로 남김). PC에서: 펌웨어 전체(FreeRTOS 태스크, 플래시, MAVLink, I2C, SPI). 센서는 아직 보드에 연결하지 않았음 |
+| **Matek H743-WING V3** | 🧪 테스트 · 완성형 비행 컨트롤러 | 보드의 센서(ICM-42688-P, DPS310), 외부 I2C 버스, IMU 장착 보정을 포함한 펌웨어 전체를 PC에서 검증; 실제 보드에서는 아직 시험하지 않음 |
 | **ESP32-S3 N16R8** | ✅ 이전 주력, 테스트 벤치 | 모든 센서, 서보, iBUS, OLED, 대시보드를 실기로 확인. 펌웨어 전체는 테스트로 확인 |
 | **ESP32 38-pin** | 🧪 테스트 | ICM-45686 세트로 펌웨어 전체를 테스트에서 확인 |
 | **ESP32-C3 SuperMini** | ✈️ 비행 실적 있음(수동) | 첫 번째 시제기, 모든 세트의 빌드 |
@@ -174,12 +175,13 @@ SwD를 모터 역회전 대신 서멀 소어링으로 쓰고 싶으신가요? `B
 | **LSM6DSV** + **QMC6309** | IMU + 나침반(모듈) | I2C / SPI |
 | **ICM-45686** + **QMC6309** | IMU + 나침반(대체품) | I2C / SPI |
 | **SPL06-001** | 기체의 기압계 | I2C / SPI |
+| **DPS310** | Matek H743 보드의 기압계 | I2C |
 | **BMP581** | 주 기압계 및 피토관의 기압계 | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | 테스트 벤치용 및 이전 센서 | I2C / SPI |
 | **u-blox M10** | GPS, 10 Hz, UBX | UART |
 | **iBUS · SBUS · CRSF** | 조종기 수신기: FlySky, FrSky, Futaba, RadioMaster, ExpressLRS, TBS Crossfire | UART |
 
-센서는 한 줄(`SENSOR_KIT_LSM6DSV_PITOT`)로, 보드는 빌드 플래그 하나로 바꿉니다. 보드 4종 × 센서 세트 6종이 모두 경고 없이 빌드됩니다: [`tools/build_matrix.sh`](../../../tools/build_matrix.sh).
+센서는 한 줄(`SENSOR_KIT_LSM6DSV_PITOT`)로, 보드는 빌드 플래그 하나로 바꿉니다. 보드 4종 × 센서 세트 7종과 전용 세트를 쓰는 Matek H743이 모두 경고 없이 빌드됩니다: [`tools/build_matrix.sh`](../../../tools/build_matrix.sh).
 
 <table>
   <tr>
@@ -206,9 +208,9 @@ STM32H743 펌웨어는 **센서를 하나도 달지 않은** DevEBox 보드에�
 
 | | |
 |---|---|
-| **자동 테스트 455개** | 모듈, 칩 레지스터 수준에서 검증한 드라이버, 폐루프 비행, PC에서 ESP32와 STM32의 **펌웨어 전체**. 여기에 실제 SD 카드를 쓰는 STM32 보드 위의 테스트 9개 |
+| **자동 테스트 460개** | 모듈, 칩 레지스터 수준에서 검증한 드라이버, 폐루프 비행, PC에서 ESP32와 STM32의 **펌웨어 전체**. 여기에 실제 SD 카드를 쓰는 STM32 보드 위의 테스트 9개 |
 | **줄 커버리지 93.9%, 분기 커버리지 85.7%** | `gcovr` 커버리지(STM32 코드 포함) |
-| **빌드 24/24** | 보드 4종 × 센서 세트 6종, `-Wall -Wextra`, 경고 0개 |
+| **빌드 33/33** | 보드 4종 × 센서 세트 7종 + Matek H743, `-Wall -Wextra`, 경고 0개 |
 | **지적 사항 0건** | 전체 코드에 대한 cppcheck와 clang-tidy |
 | **코드 복사가 아니라 기준 자료** | 센서 수식은 데이터시트(Bosch, ST, TDK, Goertek)를, MAVLink는 pymavlink를 따름 |
 
@@ -249,6 +251,7 @@ flowchart LR
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
 pio run -e stm32h743-devebox -t upload                    # DevEBox H743: USB DFU, USB 콘솔
+pio run -e matek-h743 -t upload                           # Matek H743-WING V3: BOOT 버튼 + USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
 ```
@@ -274,6 +277,7 @@ DevEBox: 이 보드에는 BOOT0 버튼이 없습니다. 처음 업로드하기 �
 | STM32H743: SD 카드, 블랙박스, USB 콘솔 | 🔧 DevEBox 보드(보드 위 테스트) |
 | STM32H743: iBUS, ARM, 서보와 모터 PWM, 수동 조종 | 🔧 센서 없는 보드, 영상으로 기록 |
 | SBUS와 CRSF 수신기(ExpressLRS) | 🧪 테스트: 프레임 해석, failsafe, 반전 UART; 실제 수신기로는 아직 시험하지 않음 |
+| Matek H743-WING V3: 보드의 센서, 외부 I2C 버스, IMU 장착 보정 | 🧪 PC에서 펌웨어 전체; 실제 보드에서는 아직 시험하지 않음 |
 | STM32H743: 센서(IMU, 기압계, 나침반, GPS)와 오토파일럿 모드 | 🧪 펌웨어 전체를 PC에서 확인, 보드에는 아직 센서를 연결하지 않음 |
 
 시뮬레이션의 비행기 모델은 단순화한 것이고 계수는 초깃값입니다. 새 모드는 항상 먼저 높은 고도에서 MANUAL 스위치에 손가락을 올려 둔 채 시험합니다.
@@ -294,7 +298,9 @@ DevEBox: 이 보드에는 BOOT0 버튼이 없습니다. 처음 업로드하기 �
 - [x] STM32H743이 보드에서 작동: 조종기 → iBUS → 서보와 모터(센서 없이, 영상 있음)
 - [x] [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) 앱: 단계별 설정, 버튼 하나로 플래시, 지상 점검
 - [x] iBUS와 함께 SBUS·CRSF 수신기(ExpressLRS, TBS Crossfire) — `Config.h` 또는 OpenPlane Studio에서 선택
+- [x] 완성형 비행 컨트롤러 Matek H743-WING V3: 보드의 센서, 버튼 하나로 펌웨어 쓰기(실제 하드웨어에서는 아직 시험하지 않음)
 - [ ] STM32H743: 센서를 연결하고 ESP32-S3처럼 테스트 벤치 통과하기
+- [ ] STM32F405를 쓰는 인기 비행 컨트롤러: SpeedyBee F405 WING, Matek F405-WTE
 - [ ] 새 기체에서 오토파일럿 비행 시험
 - [ ] STM32H743 기반의 자체 비행 컨트롤러 보드([FC_BOARD.md](FC_BOARD.md))
 - [ ] 웨이포인트 비행, MAVLink 미션

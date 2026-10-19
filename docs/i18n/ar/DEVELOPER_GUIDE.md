@@ -60,7 +60,7 @@ include/
 │   └── feedback/  تمهيد للتغذية الراجعة — غير موصول (انظر القسم أدناه)
 ├── sensors/     SensorInterface, SensorSelection, SensorMounting
 │   ├── imu/     ImuSensorBase, AttitudeEstimator, MPU6050, ICM42688, LSM6DSV, ICM45686
-│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, BMP581
+│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, DPS310, BMP581
 │   ├── mag/     MagnetometerBase, QMC5883P, QMC5883L, QMC6309
 │   ├── gps/     UbloxM10_Gps
 │   └── airspeed/ AirspeedSensor, PitotDualBaroAirspeed (أنبوب من مقياسَي ضغط)
@@ -155,7 +155,7 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 
 | الملف | مسؤول عن |
 |---|---|
-| `IBoard.h` | نقطة الدخول إلى العتاد: `i2c()` و`displayI2c()` (ناقل ثانٍ للشاشة، قد يكون `nullptr`) و`spi()` و`rcUart()` و`gpsUart()` و`telemetryUart()` (MAVLink، قد يكون `nullptr`) و`servo(ServoChannel::*)` (7 مخارج مع AUX1/AUX2) و`setBuzzer()` |
+| `IBoard.h` | نقطة الدخول إلى العتاد: `i2c()` و`displayI2c()` (ناقل ثانٍ للشاشة، قد يكون `nullptr`) و`spi()` و`rcUart()` و`gpsUart()` و`telemetryUart()` (MAVLink، قد يكون `nullptr`) و`servo(ServoChannel::*)` (7 مخارج مع AUX1/AUX2) و`setBuzzer()` و`externalI2c()` (ناقل الموصل الخارجي: افتراضيًا `i2c()` نفسه، وفي Matek H743 ناقل مستقل) |
 | `Rtos.h` | مهام FreeRTOS بالطريقة نفسها في ESP32 (النواة 0) وSTM32 (الأولويات)، والكومة الحرة |
 | `II2CBus.h` | ناقل I2C: دوال أولية على شكل `Wire` + مساعِدات `writeRegister()` و`readRegisters()` (تتحقق من وصول `count` بايت بالضبط) و`readRegister()` و`probe()` |
 | `ISpiBus.h` و`IUartPort.h` و`IServoOutput.h` | SPI وUART ومخرج PWM واحد (`measurePulseUs()` — تشخيص النبضة الفعلية) |
@@ -237,6 +237,7 @@ src/stm32/main.cpp  — البرنامج الثابت لـ STM32H743 (مهام F
 | `baro/BMP388_Sensor.h` | ‏BMP388 عبر I2C أو SPI (مع بايت SPI الوهمي)، وتعويض Bosch، والقراءة بحسب علَم الجاهزية. **على المنصة (I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280، وتعويض Bosch §8.1. لم يُختبر على العتاد |
 | `baro/SPL06_Sensor.h` | SPL06-001: المعاملات والصيغ من ورقة البيانات، ‏32 Hz ×16؛ ‏I2C بالعنوان 0x76/0x77 أو SPI. لم يُختبر على العتاد |
+| `baro/DPS310_Sensor.h` | ‏DPS310: صنف فرعي من `SPL06_Sensor` — السجلات والصيغ نفسها مع تصحيح حساس الحرارة بعد إعادة الضبط؛ I2C ‏0x76/0x77. لم يُجرَّب على العتاد |
 | `baro/BMP581_Sensor.h` | BMP581: تسلسل BMP5_SensorAPI، ‏16×/2×، ‏IIR؛ ‏I2C بالعنوان 0x46/0x47 أو SPI؛ ويصلح مقياس ضغط رئيسيًّا (طقم المنصة الافتراضي) وأنبوب بيتو معًا. لم يُختبر على العتاد |
 | `mag/MagnetometerBase.h` | القاسم المشترك بين البوصلات: استطلاع 50 Hz، ومعايرة hard-iron في NVS، وتدوير المحاور، والاتجاه، والأخطاء |
 | `mag/QMC5883P_Sensor.h` | QMC5883P، بالعنوان 0x2C. **على المنصة** |
@@ -619,6 +620,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (الأسوأ خلال 10 s) | iBUS ok
 | `pio run -e esp32-dev` | `esp32dev` | `BOARD_ESP32_CLASSIC` | للمنصة، ولم يُختبر توزيع الأطراف على العتاد |
 | `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | STM32H743VIT6: البرنامج الثابت الكامل + MAVLink + الصندوق الأسود على SD؛ اختُبرت على لوحة عارية ([أدناه](#stm32h743)) |
 | `pio run -e stm32h743-devebox` | `devebox_h743vitx` | `BOARD_STM32H743` | الشيء نفسه على DevEBox H743: الكونسول عبر USB CDC، ورفع البرنامج الثابت عبر DFU |
+| `pio run -e matek-h743` | `devebox_h743vitx` + ساعات خاصة | `BOARD_MATEK_H743` + `BOARD_STM32H743` | وحدة تحكم جاهزة Matek H743-WING V3: حساسات على اللوحة، والتحميل عبر DFU (زر BOOT)؛ لم تُجرَّب على العتاد ([أدناه](#stm32h743)) |
 
 | الغرض | ESP32-S3 (المنصة) | ESP32-C3 | ESP32 classic |
 |---|---|---|---|
@@ -713,6 +715,17 @@ MAVLink وصندوق أسود على بطاقة SD. وهو يُبنى، ويجت
   البرنامج الثابت العامل يتجمد على H7 — تحققنا من ذلك على اللوحة، ولهذا جاءت
   الخطوتان. ويلزم كونسول مفتوح (USB CDC)؛ وإن لم تستجب اللوحة — فاضغط RST
   مع بقاء سلك BT0.
+- **‏Matek H743-WING V3** — env ‏`matek-h743`: وحدة تحكم طيران جاهزة على
+  STM32H743VIT6 نفسه. تُبنى بمتغيّر النواة الخاص بـ DevEBox (الغلاف نفسه، وUSB
+  وSDMMC1 على الأطراف نفسها)، لكن بلورة اللوحة 8 MHz: فدالة `SystemClock_Config()`
+  الخاصة بها في `src/stm32/clock_matek.cpp` (شجرة الساعات نفسها كما في DevEBox)،
+  و`HSE_VALUE` علَم في `platformio.ini`. يختار الماكرو `BOARD_MATEK_H743` كتلة
+  أطراف خاصة في `Config.h`، ويبقى `BOARD_STM32H743` — فشيفرة STM32 كلها مشتركة.
+  الحساسات ملحومة على اللوحة: طقمها (`SENSOR_KIT_MATEK_H743`) يحدّده علَم البيئة،
+  وأطراف الحساسات موسومة بـ `@fixed` — فلا يغيّرها التطبيق. موصل I2C1 الخارجي ناقل
+  مستقل (`IBoard::externalI2c()`) للبوصلة وأنبوب بيتو. وقد تُركَّب اللوحة بأي
+  اتجاه، ولذلك `IMU_MOUNT_CALIBRATION_REQUIRED = true`: من دون معايرة التركيب يُرفض
+  ARM مع التثبيت. التحميل الأول — زر BOOT + USB ‏(DFU)، وبعده المفتاح `D`.
 - **نقطة الدخول** — `src/stm32/main.cpp` (مستبعَد من بناءات ESP32 عبر
   `build_src_filter`). والكائنات هي نفسها الموجودة في `src/main.cpp`؛ وبدلًا من
   `loop()` توجد مهام، ويقع `vTaskStartScheduler()` في آخر `setup()`.

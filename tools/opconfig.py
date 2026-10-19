@@ -263,10 +263,13 @@ def parse_platformio(text):
         for ref in re.findall(r"\$\{([^}]+)\.build_flags\}", flags):
             flags += "\n" + resolve(ref if ref.startswith("env:") else ref).get("build_flags", "")
         macro = next(iter(re.findall(r"-D\s*(BOARD_[A-Z0-9_]+)", flags)), None)
+        # Полётник с датчиками на плате задаёт их набор сам (-D SENSOR_KIT=…).
+        kit = next(iter(re.findall(r"-D\s*SENSOR_KIT=(SENSOR_KIT_\w+)", flags)), None)
         envs.append({
             "env": env,
             "title": titles.get(env, env),
             "macro": macro,
+            "kit": kit,
             "board": sec.get("board", "").strip() or None,
             "platform": sec.get("platform", "").strip() or None,
             "uploadProtocol": sec.get("upload_protocol", "").strip() or None,
@@ -558,7 +561,15 @@ def parse_sensors(tf):
     for kit in kits:
         kit["sensors"] = kit_map.get(kit["id"], {})
     current = {c: explicit.get(c, kit_map.get(current_kit, {}).get(c)) for c in SENSOR_CATEGORIES}
-    return {"options": options, "kits": kits, "currentKit": current_kit, "current": current}
+    return {"options": options, "kits": kits, "currentKit": current_kit, "current": current, "explicit": explicit}
+
+
+def board_sensors(info, board_kit):
+    """Датчики, с которыми соберётся плата: строки SENSOR_* файла поверх набора —
+    своего у платы (-D SENSOR_KIT=… в её env) или из строки SENSOR_KIT."""
+    kits = {k["id"]: k["sensors"] for k in info["kits"]}
+    base = kits.get(board_kit or info["currentKit"], {})
+    return {c: info["explicit"].get(c, base.get(c)) for c in SENSOR_CATEGORIES}
 
 
 # ------------------------------------------------------------
@@ -695,6 +706,7 @@ def describe(src):
         boards.append(dict(env, **{
             "blackbox": tags.get("blackbox", "none"),
             "telemetry": tags.get("telemetry", "none"),
+            "sensors": board_sensors(sensors, env["kit"]),
             "outputs": {"rudder": present("PIN_RUDDER"), "aux1": present("PIN_AUX1"), "aux2": present("PIN_AUX2"),
                         "buzzer": present("PIN_BUZZER"), "screen": present("PIN_I2C2_SDA"),
                         "battery": present("PIN_VBAT_ADC"), "gpsTx": present("PIN_GPS_TX")},
@@ -736,7 +748,7 @@ def current_config(manifest, board_env=None):
         "board": env["env"],
         "params": params,
         "channels": {c["name"]: c["index"] for c in manifest["channels"]["list"]},
-        "sensors": dict(manifest["current"]["sensors"]),
+        "sensors": dict(env["sensors"]),
         "bindings": list(manifest["current"]["bindings"]),
     }
 
@@ -906,17 +918,18 @@ def apply_bindings(tf, bindings, errors):
         tf.lines[start + 1:end] = new_body
 
 
-def apply_sensors(tf, requested, manifest, errors):
+def apply_sensors(tf, requested, manifest, errors, board_kit=None):
     info = parse_sensors(tf)
+    current = board_sensors(info, board_kit)
     wanted = {}
     for cat in SENSOR_CATEGORIES:
-        value = requested.get(cat, info["current"].get(cat))
+        value = requested.get(cat, current.get(cat))
         valid = {o["id"] for o in info["options"][cat]}
         if value not in valid:
             errors.append("Датчики: нет варианта {} для {}".format(value, cat))
             return
         wanted[cat] = value
-    if wanted == info["current"]:
+    if wanted == current:
         return
     lines = tf.lines
     # убрать прежний блок приложения
@@ -925,11 +938,17 @@ def apply_sensors(tf, requested, manifest, errors):
         e = lines.index(STUDIO_END, b)
         del lines[b:e + 1]
     guard = next(i for i in range(len(lines) - 1) if KIT_GUARD.match(lines[i]) and KIT_DEFINE.match(lines[i + 1]))
-    kit = next((k["id"] for k in info["kits"] if k["sensors"] and k["sensors"] == wanted), None)
-    if kit:
-        lines[guard + 1] = "#define SENSOR_KIT " + kit
-        return
-    lines[guard + 1] = "#define SENSOR_KIT SENSOR_KIT_CUSTOM"
+    if board_kit:
+        # Набор задан флагом окружения, строка SENSOR_KIT для этой платы не
+        # действует: свои датчики — только строками SENSOR_*.
+        if wanted == board_sensors(dict(info, explicit={}), board_kit):
+            return
+    else:
+        kit = next((k["id"] for k in info["kits"] if k["sensors"] and k["sensors"] == wanted), None)
+        if kit:
+            lines[guard + 1] = "#define SENSOR_KIT " + kit
+            return
+        lines[guard + 1] = "#define SENSOR_KIT SENSOR_KIT_CUSTOM"
     block = [STUDIO_BEGIN]
     for cat in SENSOR_CATEGORIES:
         macro = "SENSOR_" + cat.upper()
@@ -970,7 +989,7 @@ def apply(src, config, write=True):
         if not errors:
             apply_bindings(src.files["controls"], config["bindings"], errors)
     if "sensors" in config:
-        apply_sensors(src.files["sensors"], config["sensors"], manifest, errors)
+        apply_sensors(src.files["sensors"], config["sensors"], manifest, errors, env["kit"])
     header = None
     if "project" in config:
         try:
@@ -1041,6 +1060,14 @@ def check(root):
         for key, allowed in BOARD_TAG_KEYS.items():
             if tags.get(key) not in allowed:
                 errors.append("Config.h: @board в {}: {}= одно из {}".format(macro, key, ", ".join(allowed)))
+        for key in tags:
+            if key not in BOARD_TAG_KEYS:
+                errors.append("Config.h: @board в {}: неизвестная метка {}".format(macro, key))
+    kits = {k["id"] for k in manifest["sensors"]["kits"] if k["sensors"]}
+    for b in manifest["boards"]:
+        if b["kit"] and b["kit"] not in kits:
+            errors.append("platformio.ini: env {}: SENSOR_KIT={} — нет такого набора в SensorSelection.h".format(
+                b["env"], b["kit"]))
     for b in manifest["boards"]:
         try:
             result = apply(Source(root), current_config(manifest, b["env"]), write=False)

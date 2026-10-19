@@ -50,6 +50,7 @@ HAL अकेली ऐसी परत है जिसे किसी ख़�
 | `virtual II2CBus& i2c()` | सेंसर बस |
 | `virtual ISpiBus& spi()` | SPI बस |
 | `virtual II2CBus* displayI2c()` | केवल स्क्रीन के लिए दूसरी I2C बस; न हो तो `nullptr` |
+| `virtual II2CBus& externalI2c()` | बाहरी कनेक्टर की बस: कम्पास, पिटो ट्यूब। डिफ़ॉल्ट रूप से `i2c()`; Matek H743 पर अलग I2C1 |
 | `virtual IUartPort& rcUart()` | रिमोट के रिसीवर का UART: iBUS, SBUS या CRSF |
 | `virtual IUartPort& gpsUart()` | GPS का UART |
 | `virtual IUartPort* telemetryUart()` | MAVLink रेडियो मॉडेम का UART; डिफ़ॉल्ट रूप से `nullptr` (ESP32 में कोई ख़ाली UART नहीं है) |
@@ -369,7 +370,8 @@ ESP32 से वे सामान्य अंतर जिन्हें य
 | `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `displayBus.begin()`, बज़र का पिन |
 | `telemetryUart()` | `&telemetryPort` |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
-| `displayI2c()` | हमेशा `&displayBus` |
+| `displayI2c()` | स्क्रीन के पिन दिए हों (`PIN_I2C2_*` ≥ 0) तो `&displayBus`, वरना `nullptr` (Matek H743 पर स्क्रीन नहीं) |
+| `externalI2c()` | `PIN_I2C_EXT_*` दिए हों तो `&externalBus` (I2C1), वरना सेंसर बस |
 | `static constexpr pin_size_t pinOf(int16_t)` | `Config.h` के पिन को कोर API के प्रकार में बदलना |
 | बाक़ी | संबंधित फ़ील्ड लौटाते हैं |
 

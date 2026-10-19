@@ -19,7 +19,7 @@ kan behöva ändras för ett visst flygplan eller kort finns här.
 
 Stiftblocket väljs av det makro som `[env:*]` sätter i `platformio.ini`
 (`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
-`BOARD_STM32H743`). Utan makro – `#error`. STM32-blocket beskrivs
+`BOARD_STM32H743` / `BOARD_MATEK_H743`). Utan makro – `#error`. STM32-blocket beskrivs
 [nedan](#stm32h743vit6-board_stm32h743).
 
 | Konstant | Typ | Syfte | S3 | C3 | classic |
@@ -72,6 +72,27 @@ nummer – kärnan väljer kringutrustningen utifrån stiften.
 | `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4 – MAVLink-radiomodemet (samma stift är FDCAN1) |
 
 Konsolen `Serial` är LPUART1 (PA9 TX / PA10 RX), variantens standard.
+
+#### Matek H743-WING V3 (`BOARD_MATEK_H743`)
+
+En färdig flygkontroller: env `matek-h743` sätter både `BOARD_STM32H743` (all STM32-kod är gemensam) och ett eget stiftblock – enligt kortbeskrivningen i ArduPilot (hwdef MatekH743), inte provad på hårdvara. Stiften för det som är fastlött på kortet är märkta `@fixed`.
+
+| Konstant | Stift | Lödyta, periferi |
+|---|---|---|
+| `PIN_ESC` | PB0 | S1, TIM1_CH2N |
+| `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_RUDDER` | PA0 / PA1 / PA2 / PA3 | S3–S6, TIM2_CH1..CH4 |
+| `PIN_AUX1` / `PIN_AUX2` | PD12 / PD13 | S7 / S8, TIM4_CH1 / CH2 |
+| `PIN_RC_RX` / `PIN_RC_TX` | PC7 / PC6 | R6 / T6, USART6 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | PD6 / PD5 | R2 / T2, USART2 |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PE7 / PE8 | R7 / T7, UART7 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 på kortet: barometer DPS310 |
+| `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` | PB7 / PB6 | SDA / SCL, I2C1 – extern kontakt: kompass, pitotrör |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | −1 | ingen skärmbuss |
+| `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI`, `PIN_SPI_CS_IMU` | PA5 / PA6 / PD7, PC15 | SPI1 på kortet: ICM-42688-P |
+| `PIN_BUZZER` | PA15 | BZ+ / BZ− |
+| `PIN_VBAT_ADC` / `PIN_CURRENT_ADC` | PC0 / PC1 | VBAT (delare ×11) / Curr (40 A per volt) |
+
+`PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` finns även i det allmänna STM32-blocket: där är de −1 – kompassen och pitotröret sitter på sensorbussen. Delarna `BLACKBOX_VBAT_DIVIDER` / `BLACKBOX_CURRENT_DIVIDER` och `IMU_MOUNT_CALIBRATION_REQUIRED` är också egna för varje kort.
 
 ### Mottagare och förlorad förbindelse
 
@@ -144,6 +165,7 @@ från autopiloten – det är en utgångsflagga; bara från spaken – en kanalf
 | Konstant | Värde | Betydelse |
 |---|---|---|
 | `IMU_ROTATION_CW_DEG` | 90 | Rotationen av IMU-kretsens axlar kring vertikalen (0/90/180/270), vart kretsens X-axel pekar. Används bara så länge det inte finns någon monteringskalibrering `o` i NVS |
+| `IMU_MOUNT_CALIBRATION_REQUIRED` | `false` (Matek H743 – `true`) | ARM med stabilisering först efter monteringskalibreringen `o`: IMU:n är fastlödd på flygkontrollern, och kortet monteras hur som helst. Eget för varje kort, i dess stiftblock |
 | `MAG_ROTATION_CW_DEG` | 0 | Samma sak för kompassen (kompassen har ingen monteringskalibrering) |
 
 ### Landningsställ, markkalibrering, signaler
@@ -235,7 +257,7 @@ I detalj – [BLACKBOX.md](../BLACKBOX.md).
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | Raderat utrymme som hålls redo; gamla flygningar raderas i sin helhet på marken |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | Pausen mellan raderingar |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU:n var N:te cykel (1–500 Hz) |
-| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | Spänningsdelarna för batteriet (56k/10k) och strömsensorn (10k/15k) på flygkontrollerkortet |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 (Matek H743: 11 / 1) | Spänningsdelarna för batteriet (56k/10k) och strömsensorn (10k/15k) på flygkontrollerkortet |
 
 ---
 

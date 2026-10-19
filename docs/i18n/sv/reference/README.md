@@ -18,7 +18,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | [control.md](control.md) | STYRNING / KOORDINERING | `ControlCommand`, `FlightOutputState`, `FlapsController`, `ControlMixer`, `ThrottleManager`, `EscSignal`, `MotorReverse`, `ArmingManager`, `FlightOutputs`, `Beeper`, `FlightController`, `GroundCalibration`, `SignalPlayer` |
 | [autopilot.md](autopilot.md) | AUTOPILOT | `AutopilotMode`, `Feature`, `Knob`, `PilotInputs`, `Binding`/`Bind`/`BindingCheck`, `PilotSwitches`, `Autopilot`, `NavStatus`, `Geo`/`Guidance`, `AltitudeSpeedController`, `LaunchController`, `TakeoffController`, `SoaringController`, `AutoTrim`, `PidController` |
 | [feedback.md](feedback.md) | AUTOPILOT / återkoppling | `FeedbackConfig`, `FeedbackMath`, `FlightSnapshot`, `FeedbackOutput`, `PhaseTargets`, `SpeedEstimator`, `AirborneDetector`, `ControlEffectivenessEstimator`, `AxisModel`, `AdaptiveRateController`, `StallGuard`, `TakeoffSequencer`, `LandingSequencer`, `FeedbackSupervisor` |
-| [sensors.md](sensors.md) | SENSORER | gränssnitt och data, `SensorMounting`, `SensorSelection`, `ImuOrientation`, `AttitudeEstimator`, `ImuSensorBase`, `MPU6050_Sensor`, `ICM42688_Sensor`, `LSM6DSV_Sensor`, `ICM45686_Sensor`, `BarometerBase`, `BMP388_Sensor`, `BME280_Sensor`, `SPL06_Sensor`, `BMP581_Sensor`, `MagnetometerBase`, `QMC5883P_Sensor`, `QMC5883L_Sensor`, `QMC6309_Sensor`, `UbloxM10_Gps`, `AirspeedSensor`, `PitotDualBaroAirspeed` |
+| [sensors.md](sensors.md) | SENSORER | gränssnitt och data, `SensorMounting`, `SensorSelection`, `ImuOrientation`, `AttitudeEstimator`, `ImuSensorBase`, `MPU6050_Sensor`, `ICM42688_Sensor`, `LSM6DSV_Sensor`, `ICM45686_Sensor`, `BarometerBase`, `BMP388_Sensor`, `BME280_Sensor`, `SPL06_Sensor`, `DPS310_Sensor`, `BMP581_Sensor`, `MagnetometerBase`, `QMC5883P_Sensor`, `QMC5883L_Sensor`, `QMC6309_Sensor`, `UbloxM10_Gps`, `AirspeedSensor`, `PitotDualBaroAirspeed` |
 | [telemetry.md](telemetry.md) | TELEMETRI | `LoopStats`, `LogChannel`, `LogMode`, `LogSettings`, `DebugLogger`, `DebugConsole`, `WebDashboardPage`, `WebDebugServer`, `OledDisplay`, `Mavlink` (kodek), `MavlinkModes`, `MavlinkTelemetry` |
 | [application.md](application.md) | APPLIKATION | `src/main.cpp` (ESP32) och `src/stm32/main.cpp` (STM32H743): globala objekt, `setup()`, slingan och uppgifterna |
 
@@ -123,6 +123,7 @@ Alla sökvägar är relativa till `include/`, utom `src/`. Alla klasser är head
 | `SpeedEstimator` | klass | `autopilot/feedback/SpeedEstimator.h` | [feedback](feedback.md#speedestimator) |
 | `SpiRegisterDevice` | klass | `hal/RegisterDevice.h` | [hal](hal.md#spiregisterdevice) |
 | `SPL06_Sensor` | klass | `sensors/baro/SPL06_Sensor.h` | [sensors](sensors.md#spl06_sensor) |
+| `DPS310_Sensor` | klass | `sensors/baro/DPS310_Sensor.h` | [sensors](sensors.md#dps310_sensor) |
 | `StallGuard` | klass | `autopilot/feedback/StallGuard.h` | [feedback](feedback.md#stallguard) |
 | `Stm32Board` | klass | `hal/stm32/Stm32Board.h` | [hal](hal.md#stm32board) |
 | `Stm32FlashStorage` | klass | `hal/stm32/Stm32FlashStorage.h` | [hal](hal.md#stm32flashstorage) |

@@ -616,6 +616,7 @@ stateDiagram-v2
 | `esp32-dev` | ESP32 الكلاسيكية، منصة |
 | `stm32h743` | STM32H743VIT6: برنامج ثابت كامل (`src/stm32/main.cpp`)، والإعدادات في الفلاش، وMAVLink، والصندوق الأسود على SD، وFreeRTOS؛ فُحص على لوحة عارية — انظر [reference/hal.md](reference/hal.md#التنفيذ-لمعالج-stm32h743) |
 | `stm32h743-devebox` | DevEBox H743: الأمر نفسه، والكونسول عبر USB CDC، والرفع عبر DFU ([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
+| `matek-h743` | ‏Matek H743-WING V3: وحدة تحكم جاهزة بحساسات على اللوحة، وبلورة 8 MHz، والتحميل عبر DFU ‏([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
 | `native` | بناء واختبارات على الحاسوب مع بدائل Arduino/ESP-IDF المحاكية والتغطية — انظر [`TESTING.md`](TESTING.md) |
 
 ---

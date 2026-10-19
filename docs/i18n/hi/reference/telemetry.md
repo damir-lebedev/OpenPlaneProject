@@ -133,7 +133,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s में सबसे बुर
 | मेथड | विवरण |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | बोर्ड के साथ — आदेश `b` और मेनू का बिंदु 7 |
-| `static const char* guessI2cDevice(uint8_t address)` | पते से चिप: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | पते से चिप: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06/DPS310, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
 | `void printHint() const` | एक पंक्ति का संकेत |
 | `void update()` | `Serial` के सभी बाइट संसाधित करना; अगर लॉग की सेटिंग बदली हैं, मेनू बंद है और विमान **armed नहीं** है — तो NVS में सहेजना |
 
@@ -143,7 +143,7 @@ IMU की माउंटिंग का कैलिब्रेशन; `m` �
 `b` — I2C बसों की जाँच (0x08..0x7F — 0x7F तक, क्योंकि QMC6309 0x7C पर है) चिपों के
 नामों के साथ; बाक़ी — संकेत। `\r`/`\n` अनदेखे किए जाते हैं। साथ ही `c` — विमान का ग्राउंड कैलिब्रेशन (चल रहा हो तो रद्द; मुख्य मेनू का बिंदु 9) और `e` — सरफ़ेस और ESC की धुन से एक संकेत (जाँचता है कि पल्स रुकने के बाद ESC धुन बजाता है)।
 
-PC की कमांड — STX बाइट (`0x02`), एक स्ट्रिंग और `\n`: `id` पर `FirmwareIdentity::print()` फ़र्मवेयर की पहचान एक पंक्ति `@id {...}` में छापता है (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; ARM में भी जवाब देता है); `scan` बसों को जाँचकर `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` छापता है (ARM में `{"error":"armed"}`); `act X` मेनू की कुंजी `X` वाला काम करता है, ARM में वही पाबंदियाँ लागू; `live` और `live 0` `AppLink` (नीचे) को जाते हैं, बाक़ी सब `IFlightRecorder::handleHostCommand()` (ब्लैक बॉक्स) को जाता है। बोर्ड, कमिट, कॉन्फ़िगरेशन का हैश और विमान का नाम OpenPlane Studio अपनी सोर्स कोड की प्रति में `config/Project.h` के ज़रिए डालता है; इस फ़ाइल के बिना बोर्ड का मैक्रो और `"dev"` लगते हैं।
+PC की कमांड — STX बाइट (`0x02`), एक स्ट्रिंग और `\n`: `id` पर `FirmwareIdentity::print()` फ़र्मवेयर की पहचान एक पंक्ति `@id {...}` में छापता है (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; ARM में भी जवाब देता है); `scan` बसों को जाँचकर `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}` छापता है (ARM में `{"error":"armed"}`); `act X` मेनू की कुंजी `X` वाला काम करता है, ARM में वही पाबंदियाँ लागू; `live` और `live 0` `AppLink` (नीचे) को जाते हैं, बाक़ी सब `IFlightRecorder::handleHostCommand()` (ब्लैक बॉक्स) को जाता है। बोर्ड, कमिट, कॉन्फ़िगरेशन का हैश और विमान का नाम OpenPlane Studio अपनी सोर्स कोड की प्रति में `config/Project.h` के ज़रिए डालता है; इस फ़ाइल के बिना बोर्ड का मैक्रो और `"dev"` लगते हैं।
 
 लॉग का मेनू: `1`..`9` — चैनल 0..8 का मोड चक्र में बदलना, `n` — NAV, `s` — SYS, `p` — अवधि, `a` —
 सब कुछ “बदलने पर”, `x` — सब कुछ बंद, `d` — डिफ़ॉल्ट, `0`/`q` — पीछे, `l`/`h` —

@@ -56,7 +56,7 @@ include/
 │   └── feedback/  反馈回路的雏形——未接入（见下文）
 ├── sensors/     SensorInterface, SensorSelection, SensorMounting
 │   ├── imu/     ImuSensorBase, AttitudeEstimator, MPU6050, ICM42688, LSM6DSV, ICM45686
-│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, BMP581
+│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, DPS310, BMP581
 │   ├── mag/     MagnetometerBase, QMC5883P, QMC5883L, QMC6309
 │   ├── gps/     UbloxM10_Gps
 │   └── airspeed/ AirspeedSensor, PitotDualBaroAirspeed (由两个气压计组成的皮托管)
@@ -145,7 +145,7 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
 
 | 文件 | 负责内容 |
 |---|---|
-| `IBoard.h` | 通向硬件的入口：`i2c()`、`displayI2c()`（给屏幕用的第二条总线，可以是 `nullptr`）、`spi()`、`rcUart()`、`gpsUart()`、`telemetryUart()`（MAVLink，可以是 `nullptr`）、`servo(ServoChannel::*)`（7 路输出，含 AUX1/AUX2）、`setBuzzer()` |
+| `IBoard.h` | 通向硬件的入口：`i2c()`、`displayI2c()`（给屏幕用的第二条总线，可以是 `nullptr`）、`spi()`、`rcUart()`、`gpsUart()`、`telemetryUart()`（MAVLink，可以是 `nullptr`）、`servo(ServoChannel::*)`（7 路输出，含 AUX1/AUX2）、`setBuzzer()`、`externalI2c()`（外部接口的总线，默认就是 `i2c()`，Matek H743 上是单独的） |
 | `Rtos.h` | FreeRTOS 任务，在 ESP32（核心 0）和 STM32（优先级）上用法一致，以及空闲堆 |
 | `II2CBus.h` | I2C 总线：与 `Wire` 形式一致的基本操作 + 辅助函数 `writeRegister()`、`readRegisters()`（检查恰好收到了 `count` 个字节）、`readRegister()`、`probe()` |
 | `ISpiBus.h`、`IUartPort.h`、`IServoOutput.h` | SPI、UART、单路 PWM 输出（`measurePulseUs()`——诊断实际脉冲） |
@@ -227,6 +227,7 @@ src/stm32/main.cpp  — STM32H743 固件（FreeRTOS 任务、MAVLink）
 | `baro/BMP388_Sensor.h` | 通过 I2C 或 SPI 连接的 BMP388（SPI 带哑字节），Bosch 补偿，按就绪标志读取。**已在试验台上验证（I2C）** |
 | `baro/BME280_Sensor.h` | BME280/BMP280，Bosch 补偿（§8.1）。未在硬件上验证 |
 | `baro/SPL06_Sensor.h` | SPL06-001：系数和公式取自数据手册，32 Hz ×16；I2C 0x76/0x77 或 SPI。未在硬件上验证 |
+| `baro/DPS310_Sensor.h` | DPS310：`SPL06_Sensor` 的子类——寄存器和公式相同，另加复位后的温度传感器修正；I2C 0x76/0x77。未在硬件上验证 |
 | `baro/BMP581_Sensor.h` | BMP581：遵循 BMP5_SensorAPI 的流程，16×/2×，IIR；I2C 0x46/0x47 或 SPI；既可作主气压计（默认台架套件），也可用作皮托管。未在硬件上验证 |
 | `mag/MagnetometerBase.h` | 电子罗盘的通用部分：50 Hz 轮询，硬铁校准存于 NVS，坐标轴旋转，航向，错误 |
 | `mag/QMC5883P_Sensor.h` | QMC5883P，0x2C。**已在试验台上验证** |
@@ -541,6 +542,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s 内最差) | iBUS ok=... crc_err
 | `pio run -e esp32-dev` | `esp32dev` | `BOARD_ESP32_CLASSIC` | 用于试验台，引脚分配尚未在硬件上验证 |
 | `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | STM32H743VIT6：完整固件 + MAVLink + SD 卡黑匣子；已在裸板上验证（[见下文](#stm32h743)） |
 | `pio run -e stm32h743-devebox` | `devebox_h743vitx` | `BOARD_STM32H743` | 同样适用于 DevEBox H743：控制台为 USB CDC，通过 DFU 烧录固件 |
+| `pio run -e matek-h743` | `devebox_h743vitx` + 自有时钟 | `BOARD_MATEK_H743` + `BOARD_STM32H743` | 现成的飞控 Matek H743-WING V3：板载传感器，通过 DFU 烧录（BOOT 键）；未在硬件上验证（[见下文](#stm32h743)） |
 
 | 用途 | ESP32-S3（试验台） | ESP32-C3 | ESP32 classic |
 |---|---|---|---|
@@ -607,6 +609,16 @@ STM32H743VIT6（Cortex-M7 480 MHz，2 MB 闪存，1 MB RAM）运行**完整固�
   4. 可以拿掉 BT0 导线——固件会自行启动。
 
   之后就不再需要导线：在控制台中按 **`D`** 键（在任何菜单里都可以，ARM 时除外）会让板子重启进入引导程序：在 RAM 中留下标记 → 复位 → 在配置时钟之前跳转到系统存储器（`src/stm32/bootloader.cpp`）。在 H7 上直接从正在运行的固件跳转会死机——已在板子上验证，所以才分成两步。需要打开控制台（USB CDC）；如果板子没有响应——接上 BT0 导线后按 RST。
+- **Matek H743-WING V3**——env `matek-h743`：基于同一颗 STM32H743VIT6 的现成飞控。
+  它用 DevEBox 的内核变体构建（同样的封装，USB 和 SDMMC1 在同样的引脚上），但板上
+  晶振是 8 MHz：自己的 `SystemClock_Config()` 由 `src/stm32/clock_matek.cpp` 提供
+  （与 DevEBox 相同的时钟树），`HSE_VALUE` 是 `platformio.ini` 中的标志。宏
+  `BOARD_MATEK_H743` 选择 `Config.h` 中自己的引脚块，`BOARD_STM32H743` 保留——全部
+  STM32 代码共用。传感器焊在板上：它们的组合（`SENSOR_KIT_MATEK_H743`）由环境标志
+  设定，传感器引脚标有 `@fixed`——应用不会改动它们。外部 I2C1 接口是单独的总线
+  （`IBoard::externalI2c()`），接罗盘和皮托管。飞控板可以任意方向安装，因此
+  `IMU_MOUNT_CALIBRATION_REQUIRED = true`：没有安装校准时，带增稳的 ARM 会被拒绝。
+  第一次烧录——BOOT 键 + USB（DFU），之后用 `D` 键。
 - **入口点**——`src/stm32/main.cpp`（在 ESP32 构建中通过 `build_src_filter`
   排除）。对象与 `src/main.cpp` 中的相同；取代 `loop()` 的是各个任务，
   `vTaskStartScheduler()` 位于 `setup()` 末尾。

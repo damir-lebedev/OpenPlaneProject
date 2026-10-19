@@ -569,6 +569,7 @@ PlatformIO の環境：
 | `esp32-dev` | 標準の ESP32、ベンチ用 |
 | `stm32h743` | STM32H743VIT6：完全なファームウェア（`src/stm32/main.cpp`）、設定はフラッシュ、MAVLink、SD 上のブラックボックス、FreeRTOS。素の基板で確認済み。[reference/hal.md](reference/hal.md#stm32h743-向けの実装) を参照 |
 | `stm32h743-devebox` | DevEBox H743：同じ構成で、コンソールは USB CDC、書き込みは DFU（[DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)） |
+| `matek-h743` | Matek H743-WING V3：センサーをボードに載せた完成品のフライトコントローラー、8 MHz 水晶、DFU で書き込み（[DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)） |
 | `native` | Arduino/ESP-IDF のフェイクとカバレッジを使う、PC 上のビルドとテスト。[`TESTING.md`](TESTING.md) を参照 |
 
 ---

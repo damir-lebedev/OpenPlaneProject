@@ -195,7 +195,7 @@ Den sämsta sidskrivningen är kortets interna ”städning”; kön i RAM (384 
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | Hur mycket som hålls raderat för nästa flygning |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | Pausen mellan raderingar på marken |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU var N:te cykel: 2–250 Hz och ~25 % längre inspelning |
-| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 | Spänningsdelarna för batteriet och strömsensorn på kortet |
+| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 (Matek H743: 11, 1) | Spänningsdelarna för batteriet och strömsensorn på kortet |
 
 Partitionstabellen är `partitions_blackbox.csv`: applikationen 2 MB (firmwaren är nu ~0,9 MB), den svarta lådan 13,9 MB, coredump 64 KB. NVS-partitionen stannade där den var – kalibreringarna av IMU och kompass samt trimmen bevaras efter bytet till den här tabellen. Det finns ingen andra plats för trådlösa (OTA) uppdateringar.
 

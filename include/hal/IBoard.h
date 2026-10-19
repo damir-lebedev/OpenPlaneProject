@@ -58,6 +58,11 @@ public:
     // задерживала опрос датчиков. nullptr, если на плате её нет.
     virtual II2CBus* displayI2c() = 0;
 
+    // Шина внешнего разъёма: компас, трубка Пито. У самодельных плат —
+    // та же шина датчиков; у готовых полётников (Matek H743) барометр
+    // распаян на плате на одной шине, а разъём для внешних — на другой.
+    virtual II2CBus& externalI2c() { return i2c(); }
+
     virtual IUartPort& rcUart() = 0;   // приёмник пульта: iBUS, SBUS или CRSF
     virtual IUartPort& gpsUart() = 0;  // новый UART для GPS
 

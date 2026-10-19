@@ -36,8 +36,10 @@ public:
 
     Stm32Board()
         : displayWire(pinOf(Config::PIN_I2C2_SDA), pinOf(Config::PIN_I2C2_SCL)),
+          externalWire(pinOf(Config::PIN_I2C_EXT_SDA), pinOf(Config::PIN_I2C_EXT_SCL)),
           i2cBus(Wire, pinOf(Config::PIN_I2C_SDA), pinOf(Config::PIN_I2C_SCL)),
           displayBus(displayWire, pinOf(Config::PIN_I2C2_SDA), pinOf(Config::PIN_I2C2_SCL)),
+          externalBus(externalWire, pinOf(Config::PIN_I2C_EXT_SDA), pinOf(Config::PIN_I2C_EXT_SCL)),
           spiBus(SPI, pinOf(Config::PIN_SENSOR_SPI_SCK), pinOf(Config::PIN_SENSOR_SPI_MISO), pinOf(Config::PIN_SENSOR_SPI_MOSI)),
           rcSerial(pinOf(Config::PIN_RC_RX), pinOf(Config::PIN_RC_TX)),
           gpsSerial(pinOf(Config::PIN_GPS_RX), pinOf(Config::PIN_GPS_TX)),
@@ -61,7 +63,8 @@ public:
     {
         i2cBus.begin();
         spiBus.begin();
-        displayBus.begin();
+        if (hasDisplayBus()) displayBus.begin();
+        if (hasExternalBus()) externalBus.begin();
 
         pinMode(pinOf(Config::PIN_BUZZER), OUTPUT);
         digitalWrite(pinOf(Config::PIN_BUZZER), LOW);
@@ -69,7 +72,8 @@ public:
 
     II2CBus& i2c() override { return i2cBus; }
     ISpiBus& spi() override { return spiBus; }
-    II2CBus* displayI2c() override { return &displayBus; }
+    II2CBus* displayI2c() override { return hasDisplayBus() ? &displayBus : nullptr; }
+    II2CBus& externalI2c() override { return hasExternalBus() ? static_cast<II2CBus&>(externalBus) : i2cBus; }
 
     IUartPort& rcUart() override { return rcPort; }
     IUartPort& gpsUart() override { return gpsPort; }
@@ -85,13 +89,16 @@ public:
 
 private:
 
-    // Второй контроллер I2C — отдельный объект TwoWire (глобальный
-    // Wire занят шиной датчиков). Объявлен раньше displayBus, который
-    // хранит ссылку на него.
+    // Второй и третий контроллеры I2C — свои объекты TwoWire (глобальный
+    // Wire занят шиной датчиков). Объявлены раньше шин, которые хранят
+    // ссылки на них. Пин −1 — такой шины на плате нет: экрана (Matek)
+    // или отдельного внешнего разъёма (DevEBox — всё на шине датчиков).
     TwoWire displayWire;
+    TwoWire externalWire;
 
     Stm32I2CBus i2cBus;
     Stm32I2CBus displayBus;
+    Stm32I2CBus externalBus;
     Stm32SpiBus spiBus;
 
     Uart rcSerial;
@@ -102,6 +109,9 @@ private:
     Stm32UartPort telemetryPort;
 
     Stm32ServoOutput servos[ServoChannel::COUNT];
+
+    static constexpr bool hasDisplayBus() { return Config::PIN_I2C2_SDA >= 0 && Config::PIN_I2C2_SCL >= 0; }
+    static constexpr bool hasExternalBus() { return Config::PIN_I2C_EXT_SDA >= 0 && Config::PIN_I2C_EXT_SCL >= 0; }
 
     // В Config.h пины — int16_t (−1 = не разведён); API ядра ждёт pin_size_t.
     static constexpr pin_size_t pinOf(int16_t pin)

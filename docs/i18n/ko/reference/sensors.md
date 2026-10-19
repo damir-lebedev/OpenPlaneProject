@@ -134,12 +134,13 @@ Y는 왼쪽)으로 변환합니다. `rotationCwDeg`는 칩의 X축이 향하는 
 | `SENSOR_KIT_BENCH_GY521` (1, 기본값) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (동체) | QMC6309 | 관 안의 BMP581 | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (동체) | QMC6309 | 관 안의 BMP581 | M10 |
+| `SENSOR_KIT_MATEK_H743` (4) | ICM-42688-P(SPI, 보드) | DPS310(보드) | — | — | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | 아래 다섯 매크로를 모두 지정 | | | | |
 
 | 선택 매크로 | 선택지 |
 |---|---|
 | `SENSOR_IMU` | `MPU6050` (1), `ICM42688` (2, SPI), `LSM6DSV` (3), `LSM6DSV_SPI` (4), `ICM45686` (5), `ICM45686_SPI` (6) |
-| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7) |
+| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7), `DPS310` (8) |
 | `SENSOR_MAG` | `NONE` (0), `QMC5883P` (1), `QMC5883L` (2), `QMC6309` (3) |
 | `SENSOR_AIRSPEED` | `NONE` (0), `PITOT_BMP581` (1) — 관 안의 BMP581, I2C 0x47 |
 | `SENSOR_GPS` | `NONE` (0), `UBLOX_M10` (1) |
@@ -263,6 +264,7 @@ rightWingDown의 ⟂ Z 성분, X₂ = Y × Z, X = norm(X₁ + X₂), Y = Z × X.
 | `NotOneG` | \|a\|가 1g와 0.2g를 넘게 다름 |
 | `MountingMismatch` | (장착 방향이 보정되어 있음) “위”가 저장된 값에서 45°를 넘게 벗어남 |
 | `NotChipUp` | (보정되지 않음) 기판이 칩을 위로 하고 놓여 있지 않음 (`z < 0.5g`) |
+| `MountNotCalibrated` | (보정 안 됨, 그리고 `IMU_MOUNT_CALIBRATION_REQUIRED` — IMU가 비행 컨트롤러 보드에 있음) `NotChipUp` 대신: 안정화가 있는 ARM은 장착 보정 후에만 |
 
 ---
 
@@ -389,6 +391,19 @@ SPL06-001 (Goertek). 공식은 데이터시트 §4.9에 따랐습니다.
   기압 16× (32 Hz), 온도 1×, 연속 모드.
 - `isNewSampleReady()`는 `PRS_RDY` 비트이고, `readSample()`은 24비트
   빅 엔디언 샘플이며 `kP = 253952`, `kT = 524288`입니다.
+
+## `DPS310_Sensor`
+
+**파일:** `sensors/baro/DPS310_Sensor.h` · **상속:** `SPL06_Sensor` · **상태:** 하드웨어에서는 확인하지 않음
+
+DPS310(Infineon) — 완성형 비행 컨트롤러(Matek H743)의 기압계입니다. 레지스터,
+ID `0x10`, 계수, 공식이 SPL06-001과 같아서 드라이버는 `SPL06_Sensor`의 하위
+클래스입니다. 차이는 하나: 리셋 직후 `afterReset()`이 온도 센서 보정을 씁니다
+(`0x0E←0xA5`, `0x0F←0x96`, `0x62←0x02`, `0x0E←0x00`, `0x0F←0x00` — Infineon의
+순서이며 ArduPilot도 같게 합니다). 이것이 없으면 일부 칩은 온도를, 그에 따라
+압력도 틀리게 냅니다. 쓰기에 실패하면 `begin()`은 `false`를 돌려줍니다("레지스터
+쓰기 오류"). ID로는 SPL06과 구별할 수 없어 칩은 명시적으로 고릅니다:
+`SENSOR_BARO_DPS310`.
 
 ## `BMP581_Sensor`
 

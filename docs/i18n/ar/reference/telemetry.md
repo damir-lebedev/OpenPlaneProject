@@ -139,7 +139,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (الأسوأ خلال 10 s) | iBUS ok
 | الدالة | الوصف |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | مع اللوحة — الأمر `b` والبند 7 في القائمة |
-| `static const char* guessI2cDevice(uint8_t address)` | الرقاقة بحسب العنوان: 0x6A LSM6DSV، و0x68 MPU/ICM، و0x76 BME280/BMP388/SPL06، و0x46/0x47 BMP581، و0x7C QMC6309، و0x2C QMC5883P، و0x0D QMC5883L، و0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | الرقاقة بحسب العنوان: 0x6A LSM6DSV، و0x68 MPU/ICM، و0x76 BME280/BMP388/SPL06/DPS310، و0x46/0x47 BMP581، و0x7C QMC6309، و0x2C QMC5883P، و0x0D QMC5883L، و0x3C OLED |
 | `void printHint() const` | تلميح من سطر واحد |
 | `void update()` | معالجة كل البايتات الواردة من `Serial`؛ وإذا تغيّرت إعدادات السجل وكانت القائمة مغلقة والطائرة **ليست armed** — فتُحفظ في NVS |
 
@@ -149,7 +149,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (الأسوأ خلال 10 s) | iBUS ok
 `b` — مسح ناقلات I2C (من 0x08 إلى 0x7F — حتى 0x7F لأن QMC6309 على العنوان 0x7C) مع
 أسماء الرقاقات؛ وأي مفتاح آخر — تلميح. ويُتجاهل `\r`/`\n`. وإضافة إلى ذلك `c` — معايرة الطائرة على الأرض (وإن كانت جارية فإلغاؤها؛ البند 9 في القائمة الرئيسية) و`e` — تنبيه بالأسطح ولحن ESC (يتحقق من أن ESC يعزفه بعد توقف النبضات).
 
-أوامر الحاسوب هي بايت STX (`0x02`) ثم سلسلة ثم `\n`: عند `id` يطبع `FirmwareIdentity::print()` هوية البرنامج الثابت في سطر واحد `@id {...}` (`fw` و`proto` و`board` و`commit` و`config` و`plane` و`rx` و`armed`؛ ويجيب حتى أثناء ARM)؛ ويفحص `scan` الناقلات ويطبع `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` (وأثناء ARM: `{"error":"armed"}`)؛ وينفذ `act X` إجراء مفتاح القائمة `X` بالقيود نفسها أثناء ARM؛ ويذهب `live` و`live 0` إلى `AppLink` (أدناه)، وما عدا ذلك يذهب إلى `IFlightRecorder::handleHostCommand()` (الصندوق الأسود). يضمّن OpenPlane Studio اللوحة والإيداع وبصمة الإعداد واسم الطائرة عبر `config/Project.h` في نسخته من الشيفرة المصدرية؛ ومن دون هذا الملف يُستخدم ماكرو اللوحة و`"dev"`.
+أوامر الحاسوب هي بايت STX (`0x02`) ثم سلسلة ثم `\n`: عند `id` يطبع `FirmwareIdentity::print()` هوية البرنامج الثابت في سطر واحد `@id {...}` (`fw` و`proto` و`board` و`commit` و`config` و`plane` و`rx` و`armed`؛ ويجيب حتى أثناء ARM)؛ ويفحص `scan` الناقلات ويطبع `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}` (وأثناء ARM: `{"error":"armed"}`)؛ وينفذ `act X` إجراء مفتاح القائمة `X` بالقيود نفسها أثناء ARM؛ ويذهب `live` و`live 0` إلى `AppLink` (أدناه)، وما عدا ذلك يذهب إلى `IFlightRecorder::handleHostCommand()` (الصندوق الأسود). يضمّن OpenPlane Studio اللوحة والإيداع وبصمة الإعداد واسم الطائرة عبر `config/Project.h` في نسخته من الشيفرة المصدرية؛ ومن دون هذا الملف يُستخدم ماكرو اللوحة و`"dev"`.
 
 قائمة السجل: `1`..`9` — تدوير نمط القنوات من 0 إلى 8، و`n` — NAV، و`s` — SYS، و`p` — الفترة، و`a` —
 الكل «عند التغيّر»، و`x` — إطفاء الكل، و`d` — الافتراضي، و`0`/`q` — رجوع، و`l`/`h` —

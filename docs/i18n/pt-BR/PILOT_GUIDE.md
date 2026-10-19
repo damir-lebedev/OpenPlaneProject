@@ -55,7 +55,7 @@ Estrutura: envergadura de 1200 mm, corda de 250 mm, perfil NACA 4412, construç�
 
 ## Escolha da placa e pinagem
 
-O firmware suporta quatro placas; para trocar de uma para outra basta um parâmetro de build (`pio run -e <nome do ambiente>`). Cada placa tem a sua própria pinagem, fixada no firmware para cada ambiente específico: não troque os fios por conta própria, consulte a tabela da sua placa.
+O firmware suporta cinco placas; para trocar de uma para outra basta um parâmetro de build (`pio run -e <nome do ambiente>`). Cada placa tem a sua própria pinagem, fixada no firmware para cada ambiente específico: não troque os fios por conta própria, consulte a tabela da sua placa.
 
 > **Importante:** a placa principal agora é a **STM32H743 (DevEBox H743)**; nela já foram verificados o boot, o console por USB, o cartão SD, o iBUS, os servos e o motor, e os sensores estão sendo ligados pela primeira vez. A **esp32-s3 (N16R8)** é a antiga placa principal; sua pinagem foi verificada na bancada com todos os sensores. A **esp32-c3** é o antigo protótipo que já voou. A pinagem da **esp32-dev** foi escolhida pela documentação do chip e **não foi verificada em hardware real**.
 
@@ -91,6 +91,30 @@ Ligação dos sensores na bancada (todos os módulos funcionam com **3,3 V**, e 
 | OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
 
 Os servos são alimentados **não pela placa**, e sim pelo BEC do controlador de velocidade (ou por uma fonte separada de 5 V com pelo menos 2 A); o terra de todas as fontes é comum. Não ligue o fio vermelho do ESC aos 5 V da placa enquanto o USB estiver conectado.
+
+### Matek H743-WING V3: uma controladora de voo pronta
+
+`pio run -e matek-h743`: a placa Matek H743-WING V3 (a H743-WLITE e a H743-SLIM V3 têm a mesma pinagem). Uma controladora de voo pronta com o mesmo STM32H743: regulador de alimentação, sensor de corrente, IMU ICM-42688-P, barômetro DPS310 e slot microSD já estão na placa — não há nada para soldar; servos, ESC, receptor e GPS vão nos pads marcados. **O firmware ainda não foi testado numa placa real** (a pinagem vem da descrição da placa no ArduPilot, e todo o firmware é verificado por testes no PC): antes do primeiro voo, confira em solo as superfícies, o motor e os modos.
+
+| Função | Pad | Pino |
+|---|---|---|
+| ESC (acelerador) | S1 | PB0 |
+| Aileron, asa esquerda / direita | S3 / S4 | PA0 / PA1 |
+| Profundor | S5 | PA2 |
+| Leme + roda de direção | S6 | PA3 |
+| AUX1 / AUX2 (lançamento de carga, câmera) | S7 / S8 | PD12 / PD13 |
+| Receptor: iBUS, SBUS, CRSF (TX só para CRSF) | R6 / T6 | PC7 / PC6 |
+| GPS: RX (← TX do GPS) / TX (→ RX do GPS) | R2 / T2 | PD6 / PD5 |
+| Telemetria MAVLink (rádio modem): RX / TX | R7 / T7 | PE7 / PE8 |
+| Bússola, tubo de Pitot (I2C externo) | SDA / SCL | PB7 / PB6 |
+| Buzzer | BZ+ / BZ− | PA15 |
+| Bateria / sensor de corrente | VBAT / Curr | PC0 / PC1 |
+
+- **Sensores na placa**: a IMU e o barômetro; o kit deles (`SENSOR_KIT_MATEK_H743`) é definido pelo ambiente `matek-h743`, não é preciso mudar nada em `SensorSelection.h`. A placa não tem bússola: um módulo GPS com bússola vai nos pads SDA/SCL — no OpenPlane Studio, é a escolha da bússola na etapa "Sensores"; pela linha de comando, o flag `-D SENSOR_MAG=SENSOR_MAG_QMC5883L` no `platformio.ini`.
+- **A placa pode ficar como for mais prático**, até com a seta para trás: a IMU é soldada nela, então antes do primeiro ARM com estabilização é preciso a calibração de montagem com três poses (`o` no console ou "Ajuste" → "Montagem da IMU" no aplicativo). Sem ela, o ARM em modos estabilizados é recusado com uma explicação; em MANUAL, pode.
+- **Primeira gravação:** segure o botão BOOT e conecte o USB — a placa entra em modo DFU (o Windows precisa do driver WinUSB, como para a DevEBox); depois `pio run -e matek-h743 -t upload` ou o botão "Gravar" do OpenPlane Studio. Daí em diante, a tecla `D` no console reinicia a placa no bootloader sozinha.
+- **A caixa-preta** grava no cartão microSD do slot da placa. A bateria é medida pelo divisor da placa (×11), e o sensor de corrente, pela tensão da saída dele (40 A por volt).
+- S2 e S9–S12 ficam livres. Os servos são alimentados pelo BEC da placa (o trilho Vx) ou pelo BEC do ESC — como no manual da Matek; os terras de todas as fontes são comuns.
 
 ### esp32-s3 (N16R8): a antiga placa principal, verificada na bancada
 
@@ -313,6 +337,9 @@ Abra o projeto (a pasta do repositório) no VS Code com o PlatformIO instalado, 
 # STM32H743 DevEBox (placa principal)
 pio run -e stm32h743-devebox -t upload
 
+# Matek H743-WING V3 (controladora pronta): botão BOOT + USB
+pio run -e matek-h743 -t upload
+
 # esp32-s3 N16R8 (antiga placa principal)
 pio run -e esp32-s3 -t upload
 
@@ -326,6 +353,8 @@ pio run -e esp32-dev -t upload
 Se você não indicar `-e`, será compilada a placa padrão: `stm32h743-devebox`.
 
 **STM32 DevEBox:** a primeira gravação é por USB DFU: um jumper BT0→3V3, aperte RST e depois o comando acima (o Windows precisa do driver WinUSB para "STM32 BOOTLOADER", instalado com o Zadig). Depois disso, a tecla `D` no console reinicia a placa no bootloader sozinha, e o jumper não é mais necessário. O console passa pelo mesmo USB-C.
+
+**Matek H743:** a primeira gravação também é por USB DFU, mas sem jumper: segure o botão BOOT da placa, conecte o USB e rode o comando acima. Depois disso, a tecla `D` no console.
 
 **esp32-s3:** a placa tem dois conectores USB-C. A gravação e o Serial passam pelo conector **"COM"** (ponte CH343; no Windows aparece como "USB-Enhanced-SERIAL CH343"). O conector "USB" (o USB nativo do chip) não é necessário para o trabalho, mas pode ficar conectado: não atrapalha em nada.
 

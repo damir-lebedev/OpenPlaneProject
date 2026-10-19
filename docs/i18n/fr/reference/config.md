@@ -20,7 +20,7 @@ précis se trouve ici.
 
 Le bloc de broches est choisi par la macro que définit `[env:*]` dans
 `platformio.ini` (`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
-`BOARD_STM32H743`). Sans macro — `#error`. Le bloc STM32 est décrit
+`BOARD_STM32H743` / `BOARD_MATEK_H743`). Sans macro — `#error`. Le bloc STM32 est décrit
 [plus bas](#stm32h743vit6-board_stm32h743).
 
 | Constante | Type | Rôle | S3 | C3 | classic |
@@ -75,6 +75,27 @@ périphérique d’après les broches.
 
 La console `Serial` est la LPUART1 (PA9 TX / PA10 RX), la valeur par défaut de
 la variante.
+
+#### Matek H743-WING V3 (`BOARD_MATEK_H743`)
+
+Un contrôleur de vol prêt à l’emploi : l’env `matek-h743` définit à la fois `BOARD_STM32H743` (tout le code STM32 est commun) et son propre bloc de broches — d’après la description de la carte dans ArduPilot (hwdef MatekH743), pas essayé sur le matériel. Les broches de ce qui est soudé sur la carte portent `@fixed`.
+
+| Constante | Broche | Pastille, périphérique |
+|---|---|---|
+| `PIN_ESC` | PB0 | S1, TIM1_CH2N |
+| `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_RUDDER` | PA0 / PA1 / PA2 / PA3 | S3–S6, TIM2_CH1..CH4 |
+| `PIN_AUX1` / `PIN_AUX2` | PD12 / PD13 | S7 / S8, TIM4_CH1 / CH2 |
+| `PIN_RC_RX` / `PIN_RC_TX` | PC7 / PC6 | R6 / T6, USART6 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | PD6 / PD5 | R2 / T2, USART2 |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PE7 / PE8 | R7 / T7, UART7 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 sur la carte : baromètre DPS310 |
+| `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` | PB7 / PB6 | SDA / SCL, I2C1 — connecteur externe : compas, tube de Pitot |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | −1 | pas de bus d’écran |
+| `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI`, `PIN_SPI_CS_IMU` | PA5 / PA6 / PD7, PC15 | SPI1 sur la carte : ICM-42688-P |
+| `PIN_BUZZER` | PA15 | BZ+ / BZ− |
+| `PIN_VBAT_ADC` / `PIN_CURRENT_ADC` | PC0 / PC1 | VBAT (diviseur ×11) / Curr (40 A par volt) |
+
+`PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` existent aussi dans le bloc STM32 général : elles y valent −1 — le compas et le tube de Pitot sont sur le bus des capteurs. Les diviseurs `BLACKBOX_VBAT_DIVIDER` / `BLACKBOX_CURRENT_DIVIDER` et `IMU_MOUNT_CALIBRATION_REQUIRED` sont eux aussi propres à chaque carte.
 
 ### Récepteur et perte de liaison
 
@@ -148,6 +169,7 @@ sortie ; seulement au manche — un indicateur de voie.
 | Constante | Valeur | Signification |
 |---|---|---|
 | `IMU_ROTATION_CW_DEG` | 90 | La rotation des axes de la puce de l’IMU autour de la verticale (0/90/180/270), vers où pointe l’axe X de la puce. N’est utilisée que tant qu’il n’y a pas de calibration du montage `o` dans la NVS |
+| `IMU_MOUNT_CALIBRATION_REQUIRED` | `false` (Matek H743 — `true`) | ARM avec stabilisation seulement après la calibration du montage `o` : l’IMU est soudée sur le contrôleur de vol, et la carte se monte n’importe comment. Propre à chaque carte, dans son bloc de broches |
 | `MAG_ROTATION_CW_DEG` | 0 | Pareil pour la boussole (la boussole n’a pas de calibration du montage) |
 
 ### Train d’atterrissage, calibration au sol, signaux
@@ -240,7 +262,7 @@ En détail — [BLACKBOX.md](../BLACKBOX.md).
 | `BLACKBOX_MIN_FREE_BYTES` | 10 Mo | Espace effacé tenu prêt ; les anciens vols sont effacés en entier au sol |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | La pause entre les effacements |
 | `BLACKBOX_IMU_DIVIDER` | 1 | L’IMU tous les N cycles (1 — 500 Hz) |
-| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | Les diviseurs de la batterie (56k/10k) et du capteur de courant (10k/15k) sur la carte du contrôleur de vol |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 (Matek H743: 11 / 1) | Les diviseurs de la batterie (56k/10k) et du capteur de courant (10k/15k) sur la carte du contrôleur de vol |
 
 ---
 

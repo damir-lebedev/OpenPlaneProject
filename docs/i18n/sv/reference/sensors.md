@@ -134,12 +134,13 @@ med en byggflagga (`-D SENSOR_KIT=SENSOR_KIT_LSM6DSV_PITOT`,
 | `SENSOR_KIT_BENCH_GY521` (1, standard) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | – | – |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (flygkropp) | QMC6309 | BMP581 i röret | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (flygkropp) | QMC6309 | BMP581 i röret | M10 |
+| `SENSOR_KIT_MATEK_H743` (4) | ICM-42688-P (SPI, på kortet) | DPS310 (på kortet) | — | — | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | sätt alla fem makrona nedan | | | | |
 
 | Valmakro | Alternativ |
 |---|---|
 | `SENSOR_IMU` | `MPU6050` (1), `ICM42688` (2, SPI), `LSM6DSV` (3), `LSM6DSV_SPI` (4), `ICM45686` (5), `ICM45686_SPI` (6) |
-| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7) |
+| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7), `DPS310` (8) |
 | `SENSOR_MAG` | `NONE` (0), `QMC5883P` (1), `QMC5883L` (2), `QMC6309` (3) |
 | `SENSOR_AIRSPEED` | `NONE` (0), `PITOT_BMP581` (1) – en BMP581 I2C 0x47 i röret |
 | `SENSOR_GPS` | `NONE` (0), `UBLOX_M10` (1) |
@@ -263,6 +264,7 @@ Kontrollen före flygning (`runPreflightCheck`), i ordning:
 | `NotOneG` | \|a\| skiljer sig från 1g med mer än 0,2g |
 | `MountingMismatch` | (monteringen är kalibrerad) ”upp” ligger mer än 45° från det sparade |
 | `NotChipUp` | (inte kalibrerad) kortet ligger inte med kretsen uppåt (`z < 0.5g`) |
+| `MountNotCalibrated` | (inte kalibrerad och `IMU_MOUNT_CALIBRATION_REQUIRED` – IMU på en flygkontroller) i stället för `NotChipUp`: ARM med stabilisering först efter monteringskalibreringen |
 
 ---
 
@@ -389,6 +391,20 @@ SPL06-001 (Goertek). Formlerna kommer från datablad §4.9.
   tryck 16× (32 Hz), temperatur 1×, kontinuerligt läge.
 - `isNewSampleReady()` – biten `PRS_RDY`; `readSample()` – 24-bitars
   big-endian-mätningar, `kP = 253952`, `kT = 524288`.
+
+## `DPS310_Sensor`
+
+**Fil:** `sensors/baro/DPS310_Sensor.h` · **Ärver:** `SPL06_Sensor` · **Status:** inte verifierad på hårdvara
+
+DPS310 (Infineon) – barometern på färdiga flygkontroller (Matek H743).
+Register, ID `0x10`, koefficienter och formler är desamma som hos SPL06-001,
+därför är drivrutinen en underklass till `SPL06_Sensor`. En skillnad: direkt
+efter återställningen skriver `afterReset()` korrigeringen av temperatursensorn
+(`0x0E←0xA5`, `0x0F←0x96`, `0x62←0x02`, `0x0E←0x00`, `0x0F←0x00` – Infineons
+sekvens, ArduPilot gör likadant): utan den visar vissa kretsar fel temperatur
+och därmed fel tryck. Misslyckas skrivningen returnerar `begin()` `false`
+(”fel vid skrivning av register”). Via ID går den inte att skilja från SPL06 –
+kretsen väljs uttryckligen: `SENSOR_BARO_DPS310`.
 
 ## `BMP581_Sensor`
 

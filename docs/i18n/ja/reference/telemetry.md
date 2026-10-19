@@ -128,7 +128,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10秒間の最悪値) | iBUS ok=… c
 | メソッド | 説明 |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | ボードがある場合 — コマンド `b` とメニューの項目 7 |
-| `static const char* guessI2cDevice(uint8_t address)` | アドレスからチップを推定します: 0x6A LSM6DSV、0x68 MPU/ICM、0x76 BME280/BMP388/SPL06、0x46/0x47 BMP581、0x7C QMC6309、0x2C QMC5883P、0x0D QMC5883L、0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | アドレスからチップを推定します: 0x6A LSM6DSV、0x68 MPU/ICM、0x76 BME280/BMP388/SPL06/DPS310、0x46/0x47 BMP581、0x7C QMC6309、0x2C QMC5883P、0x0D QMC5883L、0x3C OLED |
 | `void printHint() const` | 1行のヒント |
 | `void update()` | `Serial` のバイトをすべて処理します。ログ設定が変更されていて、メニューが閉じており、機体が **armed ではない**場合は、NVS に保存します |
 
@@ -137,7 +137,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10秒間の最悪値) | iBUS ok=… c
 IMU の取り付けの較正、`m` — コンパスの較正、`p` — 出力のセルフテスト、
 `b` — I2C バスのスキャン（0x08..0x7F — 0x7F まで。QMC6309 が 0x7C にあるため）でチップ名を表示します。それ以外はヒントを表示します。`\r`/`\n` は無視します。さらに `c` は機体の地上校正（実行中なら中止。メインメニューの 9 番）、`e` は舵面と ESC のメロディによる合図です（パルス停止の後に ESC が鳴らすかを確認）。
 
-PC のコマンドは STX バイト（`0x02`）、文字列、`\n` です。`id` に対しては `FirmwareIdentity::print()` がファームウェアの ID 情報を 1 行の `@id {...}` で出力し（`fw`、`proto`、`board`、`commit`、`config`、`plane`、`rx`、`armed`。ARM 中でも応答します）。`scan` はバスを調べて `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` を出力し（ARM 中は `{"error":"armed"}`）、`act X` はメニューのキー `X` の動作を ARM 中の同じ制限付きで実行し、`live` と `live 0` は `AppLink`（後述）へ、それ以外は `IFlightRecorder::handleHostCommand()`（ブラックボックス）へ渡ります。ボード、コミット、設定のハッシュ、機体名は、OpenPlane Studio が自分のソースのコピーの `config/Project.h` で埋め込みます。このファイルがなければボードのマクロと `"dev"` になります。
+PC のコマンドは STX バイト（`0x02`）、文字列、`\n` です。`id` に対しては `FirmwareIdentity::print()` がファームウェアの ID 情報を 1 行の `@id {...}` で出力し（`fw`、`proto`、`board`、`commit`、`config`、`plane`、`rx`、`armed`。ARM 中でも応答します）。`scan` はバスを調べて `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}` を出力し（ARM 中は `{"error":"armed"}`）、`act X` はメニューのキー `X` の動作を ARM 中の同じ制限付きで実行し、`live` と `live 0` は `AppLink`（後述）へ、それ以外は `IFlightRecorder::handleHostCommand()`（ブラックボックス）へ渡ります。ボード、コミット、設定のハッシュ、機体名は、OpenPlane Studio が自分のソースのコピーの `config/Project.h` で埋め込みます。このファイルがなければボードのマクロと `"dev"` になります。
 
 ログのメニュー: `1`..`9` — チャンネル 0..8 のモードを巡回、`n` — NAV、`s` — SYS、`p` — 周期、`a` —
 すべて「変化時」、`x` — すべてオフ、`d` — 既定値、`0`/`q` — 戻る、`l`/`h` —

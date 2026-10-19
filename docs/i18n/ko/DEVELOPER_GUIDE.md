@@ -56,7 +56,7 @@ include/
 │   └── feedback/  피드백의 기초 작업: 연결되지 않음(아래 절 참고)
 ├── sensors/     SensorInterface, SensorSelection, SensorMounting
 │   ├── imu/     ImuSensorBase, AttitudeEstimator, MPU6050, ICM42688, LSM6DSV, ICM45686
-│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, BMP581
+│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, DPS310, BMP581
 │   ├── mag/     MagnetometerBase, QMC5883P, QMC5883L, QMC6309
 │   ├── gps/     UbloxM10_Gps
 │   └── airspeed/ AirspeedSensor, PitotDualBaroAirspeed (기압계 두 개로 만든 피토관)
@@ -145,7 +145,7 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
 
 | 파일 | 담당 |
 |---|---|
-| `IBoard.h` | 하드웨어로 들어가는 진입점: `i2c()`, `displayI2c()`(화면용 두 번째 버스, `nullptr`일 수 있음), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()`(MAVLink, `nullptr`일 수 있음), `servo(ServoChannel::*)`(AUX1/AUX2를 포함한 7개 출력), `setBuzzer()` |
+| `IBoard.h` | 하드웨어로 들어가는 진입점: `i2c()`, `displayI2c()`(화면용 두 번째 버스, `nullptr`일 수 있음), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()`(MAVLink, `nullptr`일 수 있음), `servo(ServoChannel::*)`(AUX1/AUX2를 포함한 7개 출력), `setBuzzer()`, `externalI2c()`(외부 커넥터의 버스: 기본은 같은 `i2c()`, Matek H743은 별도) |
 | `Rtos.h` | FreeRTOS 태스크. ESP32(코어 0)와 STM32(우선순위)에서 같은 방식으로 쓰며, 남은 힙 확인 |
 | `II2CBus.h` | I2C 버스: `Wire` 형태의 기본 동작 + 보조 함수 `writeRegister()`, `readRegisters()`(정확히 `count` 바이트가 도착했는지 확인), `readRegister()`, `probe()` |
 | `ISpiBus.h`, `IUartPort.h`, `IServoOutput.h` | SPI, UART, PWM 출력 하나(`measurePulseUs()` — 실제 펄스 진단) |
@@ -227,6 +227,7 @@ src/stm32/main.cpp  — STM32H743 펌웨어(FreeRTOS 태스크, MAVLink)
 | `baro/BMP388_Sensor.h` | I2C 또는 SPI(SPI 더미 바이트 포함)로 연결하는 BMP388, Bosch 보정, 데이터 준비 플래그로 읽기. **테스트 벤치에서 확인(I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280, Bosch 보정 §8.1. 실제 하드웨어에서는 확인하지 않음 |
 | `baro/SPL06_Sensor.h` | SPL06-001: 데이터시트의 계수와 수식, 32 Hz ×16. I2C 0x76/0x77 또는 SPI. 실제 하드웨어에서는 확인하지 않음 |
+| `baro/DPS310_Sensor.h` | DPS310: `SPL06_Sensor`의 하위 클래스 — 같은 레지스터와 공식에 리셋 직후 온도 센서 보정을 더함; I2C 0x76/0x77. 하드웨어에서 미검증 |
 | `baro/BMP581_Sensor.h` | BMP581: BMP5_SensorAPI의 절차, 16×/2×, IIR. I2C 0x46/0x47 또는 SPI. 주 기압계(기본 벤치 세트)로도 피토관으로도 쓸 수 있음. 실제 하드웨어에서는 확인하지 않음 |
 | `mag/MagnetometerBase.h` | 나침반의 공통 부분: 50 Hz 폴링, NVS의 hard-iron 보정, 축 회전, 방위, 오류 |
 | `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C. **테스트 벤치에서 확인** |
@@ -595,6 +596,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10초 중 최악) | iBUS ok=... crc_e
 | `pio run -e esp32-dev` | `esp32dev` | `BOARD_ESP32_CLASSIC` | 테스트 벤치용. 핀 배치는 실제 하드웨어에서 확인하지 않음 |
 | `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | STM32H743VIT6: 전체 펌웨어 + MAVLink + SD 블랙박스. 맨 보드에서 확인([아래](#stm32h743)) |
 | `pio run -e stm32h743-devebox` | `devebox_h743vitx` | `BOARD_STM32H743` | DevEBox H743에서도 동일: 콘솔은 USB CDC, 펌웨어는 DFU로 기록 |
+| `pio run -e matek-h743` | `devebox_h743vitx` + 자체 클록 | `BOARD_MATEK_H743` + `BOARD_STM32H743` | 완성형 비행 컨트롤러 Matek H743-WING V3: 보드의 센서, DFU(BOOT 버튼)로 펌웨어 쓰기; 하드웨어에서 미검증([아래](#stm32h743)) |
 
 | 용도 | ESP32-S3(테스트 벤치) | ESP32-C3 | ESP32 classic |
 |---|---|---|---|
@@ -687,6 +689,18 @@ DevEBox H743 보드**입니다: 부팅, USB 콘솔, SD 카드, 블랙박스
   동작 중인 펌웨어에서 곧바로 점프하면 멈춥니다. 보드에서 확인한 사실이며, 그래서
   두 단계로 나눕니다. 콘솔(USB CDC)을 열어 두어야 하고, 보드가 응답하지 않으면 BT0
   전선을 연결한 채로 RST를 누르세요.
+- **Matek H743-WING V3** — env `matek-h743`: 같은 STM32H743VIT6을 쓰는 완성형
+  비행 컨트롤러. DevEBox의 코어 변형으로 빌드하지만(같은 패키지, USB와 SDMMC1도
+  같은 핀) 보드의 크리스털은 8 MHz입니다. 자체 `SystemClock_Config()`는
+  `src/stm32/clock_matek.cpp`가 제공하고(DevEBox와 같은 클록 트리),
+  `HSE_VALUE`는 `platformio.ini`의 플래그입니다. 매크로 `BOARD_MATEK_H743`이
+  `Config.h`에서 자체 핀 블록을 고르고 `BOARD_STM32H743`도 남아 있어 STM32 코드는
+  모두 공통입니다. 센서는 보드에 납땜되어 있습니다. 그 세트
+  (`SENSOR_KIT_MATEK_H743`)는 환경 플래그가 정하고, 센서 핀에는 `@fixed`가 붙어
+  앱이 바꾸지 않습니다. 외부 I2C1 커넥터는 별도 버스(`IBoard::externalI2c()`)로
+  나침반과 피토관용입니다. 보드는 아무 방향으로나 달 수 있어
+  `IMU_MOUNT_CALIBRATION_REQUIRED = true`: 장착 보정 없이는 안정화가 있는 ARM이
+  거부됩니다. 첫 펌웨어는 BOOT 버튼 + USB(DFU), 이후로는 `D` 키입니다.
 - **진입점** — `src/stm32/main.cpp`(ESP32 빌드에서는 `build_src_filter`로
   제외). 객체는 `src/main.cpp`와 같고, `loop()` 대신 태스크가 있으며
   `vTaskStartScheduler()`는 `setup()`의 끝에 있습니다.

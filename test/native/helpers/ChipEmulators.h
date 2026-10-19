@@ -96,6 +96,14 @@ namespace chips
         regs[reg + 1] = static_cast<uint8_t>(static_cast<uint16_t>(s) >> 8);
     }
 
+    inline void putBe16(uint8_t* regs, uint8_t reg, float value)
+    {
+        const long v = lroundf(value);
+        const int16_t s = static_cast<int16_t>(v > 32767 ? 32767 : (v < -32768 ? -32768 : v));
+        regs[reg] = static_cast<uint8_t>(static_cast<uint16_t>(s) >> 8);
+        regs[reg + 1] = static_cast<uint8_t>(static_cast<uint16_t>(s) & 0xFF);
+    }
+
     inline void putBe24(uint8_t* regs, uint8_t reg, int32_t value)
     {
         const uint32_t v = static_cast<uint32_t>(value) & 0xFFFFFFu;
@@ -193,6 +201,30 @@ namespace chips
         }
     };
 
+    // ICM-42688-P: WHO_AM_I 0x47 (0x75), данные BE с 0x1D: температура,
+    // акселерометр ±16g, гироскоп ±2000°/с. rotationCwDeg — как чип
+    // повёрнут в самолёте; у полётника с IMU на плате это то, как
+    // поставили плату, и Config о нём не знает.
+    struct Icm42688 : Chip
+    {
+        uint16_t rotationCwDeg = Config::IMU_ROTATION_CW_DEG;
+
+        void install() { regs()[0x75] = 0x47; }
+
+        void update(const World& w)
+        {
+            float ax, ay, az, gx, gy, gz, a[3], g[3];
+            w.accelBody(ax, ay, az);
+            w.gyroBody(gx, gy, gz);
+            World::toChip(rotationCwDeg, ax, ay, az, a);
+            World::toChip(rotationCwDeg, gx, gy, gz, g);
+            uint8_t* r = regs();
+            putBe16(r, 0x1D, (w.temperatureC - 25.0f) * 132.48f);
+            for (int i = 0; i < 3; ++i) putBe16(r, static_cast<uint8_t>(0x1F + 2 * i), a[i] * 2048.0f);
+            for (int i = 0; i < 3; ++i) putBe16(r, static_cast<uint8_t>(0x25 + 2 * i), g[i] * 16.4f);
+        }
+    };
+
     // QMC6309 (I2C 0x7C): ID 0x90, NVM готова, данные LE с 0x01, 40.96 LSB/мкТл.
     struct Qmc6309 : Chip
     {
@@ -217,8 +249,9 @@ namespace chips
         }
     };
 
-    // SPL06-001: ID 0x10, коэффициенты подобраны так, что давление
-    // линейно по сырому отсчёту: P = c00 + c10·(raw / 253952), T = c0/2.
+    // SPL06-001 (и DPS310 — те же регистры): ID 0x10, коэффициенты
+    // подобраны так, что давление линейно по сырому отсчёту:
+    // P = c00 + c10·(raw / 253952), T = c0/2.
     struct Spl06 : Chip
     {
         static constexpr int32_t C0 = 30;        // 15 °C

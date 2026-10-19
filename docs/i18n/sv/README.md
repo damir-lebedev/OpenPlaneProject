@@ -35,9 +35,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-455%20passing-3fb950?style=for-the-badge" alt="455 tester">
+  <img src="https://img.shields.io/badge/tests-460%20passing-3fb950?style=for-the-badge" alt="460 tester">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94 % testtäckning">
-  <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 byggen utan varningar">
+  <img src="https://img.shields.io/badge/builds-33%2F33%20clean-3fb950?style=for-the-badge" alt="33 byggen utan varningar">
   <br>
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
   <img src="https://img.shields.io/badge/STM32H743-flies%20from%20the%20RC-39d0ff?style=for-the-badge&logo=stmicroelectronics&logoColor=white" alt="STM32H743: styrs från radiosändaren">
@@ -61,7 +61,7 @@
 | **Vad det är** | En öppen flygkontroller och autopilot för radiostyrda flygplan. Huvudkortet är STM32H743 (ett kort i Pixhawk-klassen): på ett DevEBox-kort är firmwaren **redan igång och styrs från sändaren** – [det finns en video](#-stm32h743-har-vaknat-till-liv-på-kortet), och sensorerna kopplas in just nu. Den tidigare basen är en ESP32-S3 för cirka 10 $, som klarade testbänken med alla sensorer. |
 | **Vad den kan** | 12 flyglägen – från stabilisering till hemflygning, GPS-cirklar, handstart, autolandning och **termikflygning**. Ett pitotrör av två billiga barometrar. MAVLink-telemetri till QGroundControl och Mission Planner. |
 | **Huvudtricket** | Vilken brytare eller ratt som helst på sändaren = vilken funktion som helst. **En rad** i `Controls.h` – och SwD är inte längre motorreversering utan lastsläpp. |
-| **Varför man kan lita på den** | 455 automatiska tester (plus 9 på själva kortet med ett riktigt SD-kort), 94 % av koden täckt av tester, 24 bygg ”kort × sensorer” utan en enda varning, simuleringar i sluten slinga av varje läge. |
+| **Varför man kan lita på den** | 460 automatiska tester (plus 9 på själva kortet med ett riktigt SD-kort), 94 % av koden täckt av tester, 33 bygg ”kort × sensorer” utan en enda varning, simuleringar i sluten slinga av varje läge. |
 | **Ärligt talat** | Hittills har bara manuellt läge flugit (den första prototypen). STM32H743 har hittills bara provats på bänken, utan sensorer. Autopiloten är verifierad på bänken, med tester och simuleringar och väntar på flygprov – [status nedan](#-ärlig-status). |
 
 ---
@@ -160,11 +160,12 @@ Kortet registrerar varje flygning: IMU på 500 Hz, vinklar och autopilotens besl
 
 ---
 
-## 🔩 Hårdvara: en firmware – fyra kort, tolv sensorer
+## 🔩 Hårdvara: en firmware – fem kort, tretton sensorer
 
 | Kort | Status | Vad som har kontrollerats |
 |---|---|---|
 | **STM32H743VIT6** | ✅ huvudkort · 🔧 DevEBox, sensorer kopplas in + 🧪 tester | på kortet: uppstart, konsol via USB, **SD-kort och svart låda** (tester på kortet), **iBUS-mottagning, ARM och styrning av servon och motor från sändaren** (starten finns på video); på datorn – hela firmwaren: FreeRTOS-uppgifter, flash, MAVLink, I2C och SPI. Sensorer har ännu inte kopplats till kortet |
+| **Matek H743-WING V3** | 🧪 tester · färdig flygkontroller | hela firmwaren på datorn med kortets sensorer (ICM-42688-P, DPS310), den externa I2C-bussen och IMU:ns monteringskalibrering; ännu inte provad på ett riktigt kort |
 | **ESP32-S3 N16R8** | ✅ tidigare huvudkort, på bänken | alla sensorer, servon, iBUS, OLED, panelen live; hela firmwaren i tester |
 | **ESP32 38-pin** | 🧪 tester | hela firmwaren i tester med ICM-45686-satsen |
 | **ESP32-C3 SuperMini** | ✈️ har flugit (manuellt) | den första prototypen; bygg av alla satser |
@@ -174,12 +175,13 @@ Kortet registrerar varje flygning: IMU på 500 Hz, vinklar och autopilotens besl
 | **LSM6DSV** + **QMC6309** | IMU + kompass (modul) | I2C / SPI |
 | **ICM-45686** + **QMC6309** | IMU + kompass (alternativ) | I2C / SPI |
 | **SPL06-001** | barometer i flygkroppen | I2C / SPI |
+| **DPS310** | barometer på Matek H743-kortet | I2C |
 | **BMP581** | huvudbarometer och pitotrörets barometer | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | bänk och äldre | I2C / SPI |
 | **u-blox M10** | GPS, 10 Hz, UBX | UART |
 | **iBUS · SBUS · CRSF** | radiomottagare: FlySky, FrSky, Futaba, RadioMaster, ExpressLRS, TBS Crossfire | UART |
 
-En sensor byts med en rad (`SENSOR_KIT_LSM6DSV_PITOT`), ett kort med en byggflagga. Alla 4 kort × 6 sensorsatser byggs utan varningar: [`tools/build_matrix.sh`](../../../tools/build_matrix.sh).
+En sensor byts med en rad (`SENSOR_KIT_LSM6DSV_PITOT`), ett kort med en byggflagga. Alla 4 kort × 7 sensorsatser och Matek H743 med sin egen sats byggs utan varningar: [`tools/build_matrix.sh`](../../../tools/build_matrix.sh).
 
 <table>
   <tr>
@@ -206,9 +208,9 @@ Vad det bevisar: kedjan ”sändare → iBUS → firmware → PWM” fungerar p�
 
 | | |
 |---|---|
-| **455 automatiska tester** | moduler, kretsdrivrutiner kontrollerade på registernivå, flygningar i sluten slinga, firmwaren för ESP32 och STM32 **i sin helhet** på en dator; plus 9 tester på själva STM32-kortet med ett riktigt SD-kort |
+| **460 automatiska tester** | moduler, kretsdrivrutiner kontrollerade på registernivå, flygningar i sluten slinga, firmwaren för ESP32 och STM32 **i sin helhet** på en dator; plus 9 tester på själva STM32-kortet med ett riktigt SD-kort |
 | **93,9 % av raderna, 85,7 % av grenarna** | täckning med `gcovr`, inklusive STM32-koden |
-| **24/24 bygg** | 4 kort × 6 sensorsatser, `-Wall -Wextra`, noll varningar |
+| **33/33 bygg** | 4 kort × 7 sensorsatser + Matek H743, `-Wall -Wextra`, noll varningar |
 | **0 anmärkningar** | cppcheck och clang-tidy över all kod |
 | **Referenser, inte kopior av kod** | sensorformlerna följer databladen (Bosch, ST, TDK, Goertek), MAVLink följer pymavlink |
 
@@ -249,6 +251,7 @@ Enklast är **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-stud
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
 pio run -e stm32h743-devebox -t upload                    # DevEBox H743: USB DFU, konsol via USB
+pio run -e matek-h743 -t upload                           # Matek H743-WING V3: BOOT-knappen + USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
 ```
@@ -274,6 +277,7 @@ I seriemonitorn: `h` – meny, `b` – vilka kretsar som syns på bussarna, `s` 
 | STM32H743: SD-kort, svart låda, konsol via USB | 🔧 på DevEBox-kortet (tester på kortet) |
 | STM32H743: iBUS, ARM, PWM till servon och motor, manuell styrning | 🔧 på kortet utan sensorer, inspelat på video |
 | SBUS- och CRSF-mottagare (ExpressLRS) | 🧪 tester: ramtolkning, failsafe, inverterad UART; ännu inte provade med en riktig mottagare |
+| Matek H743-WING V3: sensorer på kortet, extern I2C-buss, IMU:ns monteringskalibrering | 🧪 hela firmwaren på datorn; ännu inte provad på ett riktigt kort |
 | STM32H743: sensorer (IMU, barometer, kompass, GPS) och autopilotlägen | 🧪 hela firmwaren på en dator; inga sensorer anslutna till kortet ännu |
 
 Flygplansmodellen i simuleringarna är förenklad, och koefficienterna är startvärden. Varje nytt läge provas först på höjd, med fingret på MANUAL-brytaren.
@@ -294,7 +298,9 @@ Flygplansmodellen i simuleringarna är förenklad, och koefficienterna är start
 - [x] STM32H743 kör på kortet: sändare → iBUS → servon och motor (utan sensorer, på video)
 - [x] Appen [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): inställning steg för steg, flashning med en knapp, kontroller på marken
 - [x] SBUS- och CRSF-mottagare (ExpressLRS, TBS Crossfire) vid sidan av iBUS – väljs i `Config.h` eller i OpenPlane Studio
+- [x] Färdig flygkontroller Matek H743-WING V3: sensorer på kortet, flashning med en knapp (ännu inte provad på hårdvara)
 - [ ] STM32H743: koppla in sensorerna och gå igenom bänken på samma sätt som med ESP32-S3
+- [ ] Populära flygkontroller med STM32F405: SpeedyBee F405 WING, Matek F405-WTE
 - [ ] Flygprov av autopiloten på den nya flygplansstommen
 - [ ] Ett eget flygkontrollerkort ([FC_BOARD.md](FC_BOARD.md)) med STM32H743
 - [ ] Flygning längs vägpunkter, MAVLink-uppdrag

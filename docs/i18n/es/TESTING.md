@@ -9,7 +9,7 @@ El firmware se verifica en dos niveles:
 | **PC (native)** | `pio test -e native` | Los encabezados del firmware se compilan en el PC sin cambios, con el hardware sustituido por simulaciones (fakes) controlables: módulos, controladores, simulaciones de vuelo en lazo cerrado, todo el firmware del ESP32 (S3 y de 38 pines) con cada kit de sensores. Se calcula la cobertura |
 | **PC (native-stm32)** | `pio test -e native-stm32` | Todo el firmware de la STM32H743 (`src/stm32/main.cpp`) sobre una capa de fakes de STM32duino: tareas de FreeRTOS, flash, MAVLink, sensores en I2C y SPI |
 | **Matriz de compilaciones** | `tools/build_matrix.sh` | 4 placas × 6 kits de sensores con `-Wall -Wextra (-Wshadow)`; cualquier aviso en el código del proyecto es un error |
-| **Descripción para la aplicación** | `python tools/test_opconfig.py` | `tools/opconfig.py`: descripción del firmware y escritura de la configuración para OpenPlane Studio, sobre una copia de las fuentes (14 pruebas); `tools/opconfig_build_check.py`: la configuración escrita compila en todas las placas |
+| **Descripción para la aplicación** | `python tools/test_opconfig.py` | `tools/opconfig.py`: descripción del firmware y escritura de la configuración para OpenPlane Studio, sobre una copia de las fuentes (17 pruebas); `tools/opconfig_build_check.py`: la configuración escrita compila en todas las placas |
 | **Placa** | `pio test -e esp32-s3` | `test_feedback` y `test_imu_orientation` en un ESP32-S3 real (carga un firmware de prueba; después vuelve a poner el normal: `pio run -t upload`) |
 | **Placa STM32** | `pio test -e stm32h743-devebox -f test_blackbox_sd` | La caja negra en una **tarjeta SD real** de la DevEBox H743, además de `test_feedback` y `test_imu_orientation` en un Cortex-M7 — [más abajo](#pruebas-en-la-placa-stm32) |
 
@@ -83,7 +83,7 @@ En los fakes comunes se ha añadido para STM32: `TwoWire(sda, scl)`, `setSDA/SCL
 
 | Archivo | Qué es |
 |---|---|
-| `ChipEmulators.h` | LSM6DSV, ICM-45686 (con registros indirectos IPREG), QMC6309, SPL06-001, BMP581, tramas NAV-PVT de u-blox: mapas de registros en I2C o SPI, con datos del «mundo» `World` (ángulos y velocidades, altitud, velocidad aerodinámica, rumbo, coordenadas), en los ejes del chip teniendo en cuenta `IMU_ROTATION_CW_DEG` |
+| `ChipEmulators.h` | LSM6DSV, ICM-42688-P, ICM-45686 (con registros indirectos IPREG), QMC6309, SPL06-001, BMP581, tramas NAV-PVT de u-blox: mapas de registros en I2C o SPI, con datos del «mundo» `World` (ángulos y velocidades, altitud, velocidad aerodinámica, rumbo, coordenadas), en los ejes del chip teniendo en cuenta `IMU_ROTATION_CW_DEG` |
 | `PlaneSim.h` | un modelo de avión de ~1.2 kg: una masa puntual + giro en alabeo/cabeceo, CL(α) con pérdida de sustentación, resistencia, empuje, viento, térmicas, suelo; tren de aterrizaje con rueda de cola o de morro: el avión bascula sobre las ruedas principales, se cuentan la carga sobre la rueda de cola, los golpes de la cola y los toques de la hélice, la guiñada en tierra con el par de la hélice y la rueda direccional |
 | `SimHarness.h` | un lazo cerrado: emisora → trama iBUS → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → deflexiones de las superficies → `PlaneSim` → sensores (incluido un tubo de Pitot sobre dos barómetros ruidosos). Una trayectoria en CSV con `OPENPLANE_SIM_DIR`; con `realisticImu`, el `AttitudeEstimator` real calcula los ángulos a partir de la fuerza específica: ve la aceleración en la pista como a bordo |
 
@@ -105,7 +105,7 @@ Las pruebas de la placa (`test_feedback`, `test_imu_orientation`) son portables:
 | `native/test_flight_controller` | 20 | Un ciclo completo de `FlightController` con las clases reales: prioridades pérdida de señal > ARM > sticks/piloto automático > acelerador; AUX, `MOTOR_KILL`, zumbador; inversión en SwD: solo en DISARM, 3 s sin ARM, 50 % de gas hacia atrás, sin gas del piloto automático, el motor se para al perder el enlace; el potenciómetro de límite de gas estira lo permitido por todo el recorrido del stick; calibración en tierra con el gesto de SwB y desde la consola, señales en las salidas (cabezada de los timones; los pulsos del variador se quitan solo sin ARM), ARM bloqueado durante la calibración y la señal, un movimiento del ARM cancela la calibración, un rechazo del despegue da cabezadas sin tocar el variador, la señal suena también sin enlace |
 | `native/test_imu` | 21 | MPU6050/6500/9250 e ICM-42688: identificación, registros, escalas, giro de ejes y signos aeronáuticos, errores del bus, calibración del giroscopio y comprobación previa al vuelo, calibración del montaje a partir de tres posiciones, NVS, filtro de orientación |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`, BMP388 por I2C y SPI, BME280/BMP280 según la referencia de Bosch, brújulas (rumbo, calibración hard-iron en NVS), u-blox M10 (CFG-VALSET, NAV-PVT, tramas dañadas, tiempo de espera), `SensorSelection` |
-| `native/test_sensors_new` | 23 | LSM6DSV (16X/32X, dirección alternativa, SPI), ICM-45686 (registros indirectos), QMC6309, SPL06-001 (fórmulas de la hoja de datos), BMP581 (DRDY y la vía de respaldo), el tubo de Pitot (cero, filtro, densidad, mangueras cruzadas, datos obsoletos, un «vuelo» con el ruido de dos barómetros) |
+| `native/test_sensors_new` | 24 | LSM6DSV (16X/32X, dirección alternativa, SPI), ICM-45686 (registros indirectos), QMC6309, SPL06-001 (fórmulas de la hoja de datos), BMP581 (DRDY y la vía de respaldo), el tubo de Pitot (cero, filtro, densidad, mangueras cruzadas, datos obsoletos, un «vuelo» con el ruido de dos barómetros), DPS310 (corrección del sensor de temperatura tras el reinicio) |
 | `native/test_storage` | 16 | `KeyValueStore` (recarga, desgaste: un valor idéntico no se reescribe, desbordamiento sin pérdida de datos, CRC, corte de energía durante el borrado, basura, versión del formato), `KvPreferences` (se comporta como el NVS del ESP32) |
 | `native/test_mavlink` | 20 | El códec frente a tramas de referencia de pymavlink (v1, v2, firmado), CRC, resincronización; telemetría: frecuencias de los flujos, HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS, parámetros del PID (lista, lectura, escritura, rechazo de valores incorrectos), cambio de modo desde tierra, ARM desde tierra: rechazado, misiones: 0, un búfer UART desbordado no bloquea el ciclo |
 | `native/test_blackbox` | 20 | La caja negra: formato y CRC, el anillo de sectores sobre un fake de NOR (una partición nueva sin borrado, la basura siempre se borra, los vuelos antiguos se borran enteros y solo para liberar espacio, el último no se toca, paso por el final del anillo, la cabeza tras un reinicio, corte de energía, un registro a medio escribir detectado por CRC), grabación del vuelo con los `FlightController`/`Autopilot` reales: inicio por ARM y acelerador con pregrabación, parada tras DISARM y «parado en tierra», la pérdida de señal no la detiene, grabación tras un reinicio por fallo, inicio manual, eventos, batería, la flash se agotó en el aire, un vuelo más largo que la partición, descarga en tramas con CRC y cambio de velocidad, el menú de la consola `k`, sin partición: desactivada; eventos de la calibración en tierra y de las etapas del despegue automático |
@@ -122,9 +122,10 @@ Las pruebas de la placa (`test_feedback`, `test_imu_orientation`) son portables:
 | `native_stm32/test_blackbox_sd` | 29 | La caja negra en la tarjeta SD: FAT32 (con MBR y sin él, un directorio en dos clústeres, entradas de ruido, un volumen ajeno/disperso/vacío), `SdFileRegion` (bloques incompletos, caché, borrado, límites, fallos), el driver real `Stm32SdCard` sobre un `HAL_SD` falso (4 bits, velocidades de respaldo, reintento, tarjeta ocupada, búferes desalineados), el anillo en la tarjeta (reinicio, corte de energía, coste de la verificación), la marca «anillo vacío», grabación del vuelo con un `FlightController`, un reinicio por fallo detectado mediante `RCC->RSR`, el ADC de la batería, errores de la tarjeta en vuelo, una tarjeta lenta, descarga por la consola, la tecla `D` |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | `src/stm32/main.cpp` con tarjeta: el arranque encuentra la tarjeta y el archivo, la tarea `bbox` graba el vuelo, el periodo del ciclo no se alarga, `bb list` |
 | `native_stm32/test_app_stm32_no_sd` | 4 | `src/stm32/main.cpp` sin tarjeta: la caja negra está desactivada y explica por qué, el avión vuela, el menú `k` no se rompe; autocomprobación de las salidas en PD14 (rodeo del fallo de `pulseIn()` del núcleo), señal del motor `e`; SBUS en `Stm32UartPort`: 8E2 e inversión de RX |
+| `native_stm32/test_app_stm32_matek_h743` | 4 | `src/stm32/main.cpp` en la **Matek H743-WING V3**: sensores en la placa (ICM-42688-P en SPI1, DPS310 en I2C2), brújula en el bus I2C1 externo aparte, `@scan` con el campo `ext`, identidad `matek-h743`; el ARM con estabilización espera la calibración de montaje (en MANUAL se puede); la placa va al revés y, tras las tres posturas, los ángulos son correctos |
 | `test_feedback` | 10 | Simulación del avión en lazo cerrado con el lazo de realimentación (en el PC y en la placa) |
 | `test_imu_orientation` | 5 | Calibración del montaje de la IMU en 300 montajes aleatorios (en el PC y en la placa) |
-| **Total** | **455** | 406 en `native` + 49 en `native-stm32` (más 9 solo en la placa: `test_blackbox_sd`) |
+| **Total** | **460** | 407 en `native` + 53 en `native-stm32` (más 9 solo en la placa: `test_blackbox_sd`) |
 
 ### Pruebas en la placa STM32
 
@@ -206,14 +207,15 @@ Lo que queda sin cubrir y por qué:
 
 clang-tidy se ejecuta con los fakes de `test/native/support`: clang no puede analizar las cabeceras de ESP-IDF para la arquitectura del anfitrión (si se intenta `pio check` con `clangtidy`, el análisis se interrumpe por errores de análisis sintáctico y, siendo honestos, no comprueba nada). `misc-include-cleaner` vela por que cada cabecera incluya lo que usa: las cabeceras «paraguas» (`FeedbackModules.h`, la API de `IBoard.h`/`RegisterDevice.h`, las macros de `SensorSelection.h`) están marcadas con `// IWYU pragma: export`. El script se salta el código de STM32 (`include/hal/stm32/`, `src/stm32/`): lo comprueban la compilación, cppcheck con el entorno `stm32h743` y las pruebas del entorno `native-stm32`.
 
-La matriz de compilaciones en la última pasada: **24/24 sin advertencias**:
+La matriz de compilaciones en la última pasada: **33/33 sin advertencias**:
 
-| Placa | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c |
-|---|---|---|---|---|---|---|
-| esp32-s3 | OK | OK | OK | OK | OK | OK |
-| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK |
-| esp32-c3 | OK | OK | OK | OK | OK | OK |
-| stm32h743 | OK | OK | OK | OK | OK | OK |
+| Placa | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c | icm42688-spi + dps310 |
+|---|---|---|---|---|---|---|---|
+| esp32-s3 | OK | OK | OK | OK | OK | OK | OK |
+| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK | OK |
+| esp32-c3 | OK | OK | OK | OK | OK | OK | OK |
+| stm32h743 | OK | OK | OK | OK | OK | OK | OK |
+| matek-h743 (kit de la placa: OK) | — | — | — | OK | OK | OK | OK |
 
 cppcheck (`esp32-s3`, `stm32h743`): 0 observaciones sobre el código del proyecto.
 

@@ -17,7 +17,7 @@
 
 Блок пинов выбирается макросом, который задаёт `[env:*]` в `platformio.ini`
 (`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
-`BOARD_STM32H743`). Без макроса — `#error`. Блок STM32 описан
+`BOARD_STM32H743` / `BOARD_MATEK_H743`). Без макроса — `#error`. Блок STM32 описан
 [ниже](#stm32h743vit6-board_stm32h743).
 
 | Константа | Тип | Назначение | S3 | C3 | classic |
@@ -69,6 +69,27 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4 — радиомодем MAVLink (эти же пины — FDCAN1) |
 
 Консоль `Serial` — LPUART1 (PA9 TX / PA10 RX), дефолт варианта.
+
+#### Matek H743-WING V3 (`BOARD_MATEK_H743`)
+
+Готовый полётник: env `matek-h743` задаёт и `BOARD_STM32H743` (весь код STM32 общий), и свой блок пинов — по описанию платы в ArduPilot (hwdef MatekH743), на железе не проверен. Пины распаянного на плате помечены `@fixed`.
+
+| Константа | Пин | Площадка, периферия |
+|---|---|---|
+| `PIN_ESC` | PB0 | S1, TIM1_CH2N |
+| `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_RUDDER` | PA0 / PA1 / PA2 / PA3 | S3–S6, TIM2_CH1..CH4 |
+| `PIN_AUX1` / `PIN_AUX2` | PD12 / PD13 | S7 / S8, TIM4_CH1 / CH2 |
+| `PIN_RC_RX` / `PIN_RC_TX` | PC7 / PC6 | R6 / T6, USART6 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | PD6 / PD5 | R2 / T2, USART2 |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PE7 / PE8 | R7 / T7, UART7 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 на плате: барометр DPS310 |
+| `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` | PB7 / PB6 | SDA / SCL, I2C1 — внешний разъём: компас, трубка Пито |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | −1 | шины экрана нет |
+| `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI`, `PIN_SPI_CS_IMU` | PA5 / PA6 / PD7, PC15 | SPI1 на плате: ICM-42688-P |
+| `PIN_BUZZER` | PA15 | BZ+ / BZ− |
+| `PIN_VBAT_ADC` / `PIN_CURRENT_ADC` | PC0 / PC1 | VBAT (делитель ×11) / Curr (40 А на вольт) |
+
+`PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` есть и в общем блоке STM32: там они −1 — компас и трубка Пито на шине датчиков. Делители `BLACKBOX_VBAT_DIVIDER` / `BLACKBOX_CURRENT_DIVIDER` и `IMU_MOUNT_CALIBRATION_REQUIRED` тоже у каждой платы свои.
 
 ### Приёмник и потеря связи
 
@@ -141,6 +162,7 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | Константа | Значение | Смысл |
 |---|---|---|
 | `IMU_ROTATION_CW_DEG` | 90 | Поворот осей чипа IMU вокруг вертикали (0/90/180/270), куда смотрит ось X чипа. Используется, только пока нет калибровки установки `o` в NVS |
+| `IMU_MOUNT_CALIBRATION_REQUIRED` | `false` (Matek H743 — `true`) | ARM со стабилизацией — только после калибровки установки `o`: IMU распаян на плате полётника, а плату ставят как угодно. Своё у каждой платы, в её блоке пинов |
 | `MAG_ROTATION_CW_DEG` | 0 | То же для компаса (калибровки установки у компаса нет) |
 
 ### Шасси, калибровка на земле, сигналы
@@ -232,7 +254,7 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `BLACKBOX_MIN_FREE_BYTES` | 10 МБ | Стёртого места наготове; старые полёты стираются целиком на земле |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | Пауза между стираниями |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU каждый N-й такт (1 — 500 Гц) |
-| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | Делители батареи (56k/10k) и датчика тока (10k/15k) на плате полётника |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 (Matek H743: 11 / 1) | Делители батареи (56k/10k) и датчика тока (10k/15k) на плате полётника |
 
 ---
 

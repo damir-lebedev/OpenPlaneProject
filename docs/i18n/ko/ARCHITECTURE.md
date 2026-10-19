@@ -569,6 +569,7 @@ PlatformIO 환경:
 | `esp32-dev` | 일반 ESP32, 벤치용 |
 | `stm32h743` | STM32H743VIT6: 전체 펌웨어(`src/stm32/main.cpp`), 설정은 플래시에, MAVLink, SD의 블랙박스, FreeRTOS. 맨 보드에서 확인함. [reference/hal.md](reference/hal.md#stm32h743용-구현) 참고 |
 | `stm32h743-devebox` | DevEBox H743: 같은 구성이며 콘솔은 USB CDC, 펌웨어는 DFU로 올림([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
+| `matek-h743` | Matek H743-WING V3: 보드에 센서가 있는 완성형 비행 컨트롤러, 8 MHz 크리스털, DFU로 펌웨어 쓰기([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
 | `native` | Arduino/ESP-IDF 페이크와 커버리지를 쓰는 PC에서의 빌드와 테스트. [`TESTING.md`](TESTING.md) 참고 |
 
 ---

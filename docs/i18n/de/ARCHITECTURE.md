@@ -573,6 +573,7 @@ PlatformIO-Umgebungen:
 | `esp32-dev` | Der klassische ESP32, Prüfstand |
 | `stm32h743` | STM32H743VIT6: vollständige Firmware (`src/stm32/main.cpp`), Einstellungen im Flash, MAVLink, Blackbox auf SD, FreeRTOS; auf einem blanken Board geprüft — siehe [reference/hal.md](reference/hal.md#implementierung-für-den-stm32h743) |
 | `stm32h743-devebox` | DevEBox H743: dasselbe, Konsole über USB CDC, Flashen per DFU ([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
+| `matek-h743` | Matek H743-WING V3: fertiger Flugcontroller mit Sensoren auf dem Board, 8-MHz-Quarz, Flashen über DFU ([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
 | `native` | Build und Tests auf dem PC mit Arduino-/ESP-IDF-Fakes und Abdeckung — siehe [`TESTING.md`](TESTING.md) |
 
 ---

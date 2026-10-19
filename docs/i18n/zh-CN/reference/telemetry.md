@@ -126,7 +126,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s 内最差) | iBUS ok=… crc_err
 | 方法 | 说明 |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | 带电路板时——提供 `b` 命令和菜单第 7 项 |
-| `static const char* guessI2cDevice(uint8_t address)` | 按地址推断芯片：0x6A LSM6DSV，0x68 MPU/ICM，0x76 BME280/BMP388/SPL06，0x46/0x47 BMP581，0x7C QMC6309，0x2C QMC5883P，0x0D QMC5883L，0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | 按地址推断芯片：0x6A LSM6DSV，0x68 MPU/ICM，0x76 BME280/BMP388/SPL06/DPS310，0x46/0x47 BMP581，0x7C QMC6309，0x2C QMC5883P，0x0D QMC5883L，0x3C OLED |
 | `void printHint() const` | 一行提示 |
 | `void update()` | 处理来自 `Serial` 的所有字节；如果日志设置有改动，菜单已关闭且飞机**未处于 armed 状态**，则保存到 NVS |
 
@@ -135,7 +135,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s 内最差) | iBUS ok=… crc_err
 IMU 安装方向校准；`m`——指南针校准；`p`——输出自检；
 `b`——扫描 I2C 总线（0x08..0x7F——一直扫到 0x7F，因为 QMC6309 位于 0x7C），并给出芯片名称；其他——提示。`\r`/`\n` 会被忽略。另外还有 `c`——飞机地面校准（正在进行时则取消；主菜单第 9 项）和 `e`——用舵面和电调提示音发出一次提示（检查电调在脉冲暂停后是否会播放）。
 
-电脑命令由 STX 字节（`0x02`）、字符串和 `\n` 组成：收到 `id` 时，`FirmwareIdentity::print()` 以一行 `@id {...}` 输出固件身份信息（`fw`、`proto`、`board`、`commit`、`config`、`plane`、`rx`、`armed`；ARM 状态下同样应答）；`scan` 扫描总线并输出 `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}`（ARM 时为 `{"error":"armed"}`）；`act X` 执行菜单按键 `X` 的动作，ARM 时同样受限；`live` 和 `live 0` 交给 `AppLink`（见下文），其余命令交给 `IFlightRecorder::handleHostCommand()`（黑匣子）。开发板、提交、配置哈希和飞机名称由 OpenPlane Studio 通过其源码副本中的 `config/Project.h` 写入；没有这个文件时，使用开发板宏和 `"dev"`。
+电脑命令由 STX 字节（`0x02`）、字符串和 `\n` 组成：收到 `id` 时，`FirmwareIdentity::print()` 以一行 `@id {...}` 输出固件身份信息（`fw`、`proto`、`board`、`commit`、`config`、`plane`、`rx`、`armed`；ARM 状态下同样应答）；`scan` 扫描总线并输出 `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}`（ARM 时为 `{"error":"armed"}`）；`act X` 执行菜单按键 `X` 的动作，ARM 时同样受限；`live` 和 `live 0` 交给 `AppLink`（见下文），其余命令交给 `IFlightRecorder::handleHostCommand()`（黑匣子）。开发板、提交、配置哈希和飞机名称由 OpenPlane Studio 通过其源码副本中的 `config/Project.h` 写入；没有这个文件时，使用开发板宏和 `"dev"`。
 
 日志菜单：`1`..`9`——循环切换通道 0..8 的模式，`n`——NAV，`s`——SYS，`p`——周期，`a`——
 全部“变化时”，`x`——全部关，`d`——恢复默认，`0`/`q`——返回，`l`/`h`——

@@ -24,6 +24,7 @@
 #include "sensors/SensorSelection.h"
 #include "sensors/airspeed/PitotDualBaroAirspeed.h"
 #include "sensors/baro/BMP581_Sensor.h"
+#include "sensors/baro/DPS310_Sensor.h"
 #include "sensors/baro/SPL06_Sensor.h"
 #include "sensors/imu/ICM45686_Sensor.h"
 #include "sensors/imu/LSM6DSV_Sensor.h"
@@ -505,6 +506,47 @@ void test_spl06_failure_paths()
     TEST_ASSERT_TRUE(contains(takeSerial(), "SPL06: ошибка записи регистров"));
 }
 
+// DPS310 — тот же SPL06, но сразу после сброса — исправление
+// термодатчика (последовательность Infineon), до настройки измерений.
+void test_dps310_fixes_temperature_sensor_after_reset()
+{
+    AltI2cRig rig(SPL06_Sensor::DEFAULT_ADDRESS, SPL06_Sensor::ALTERNATE_ADDRESS, 0x76);
+    loadSpl06(rig.chip.regs, COEF);
+    DPS310_Sensor dps(rig.device);
+    TEST_ASSERT_TRUE(dps.begin());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "DPS310: подключён"));
+    TEST_ASSERT_EQUAL_STRING("DPS310", dps.getSensorType());
+
+    const std::vector<std::pair<uint8_t, uint8_t>> fix = {
+        { 0x0C, 0x09 }, { 0x0E, 0xA5 }, { 0x0F, 0x96 }, { 0x62, 0x02 }, { 0x0E, 0x00 }, { 0x0F, 0x00 } };
+    TEST_ASSERT_TRUE(rig.chip.writes.size() > fix.size());
+    for (size_t i = 0; i < fix.size(); ++i)
+    {
+        TEST_ASSERT_EQUAL_HEX8(fix[i].first, rig.chip.writes[i].first);
+        TEST_ASSERT_EQUAL_HEX8(fix[i].second, rig.chip.writes[i].second);
+    }
+    TEST_ASSERT_EQUAL_HEX8(0x07, rig.chip.lastWrite(0x08));   // дальше — как SPL06
+
+    // У SPL06 этих записей нет.
+    I2cRig plain(0x76);
+    loadSpl06(plain.chip.regs, COEF);
+    SPL06_Sensor spl(plain.device);
+    TEST_ASSERT_TRUE(spl.begin());
+    TEST_ASSERT_EQUAL(-1, plain.chip.lastWrite(0x62));
+    takeSerial();
+
+    // Исправление не записалось — барометр недоступен, а не врёт.
+    I2cRig readOnly(0x76);
+    loadSpl06(readOnly.chip.regs, COEF);
+    readOnly.chip.onRegisterWrite = [&readOnly](uint8_t reg, uint8_t) {
+        if (reg == 0x0C) readOnly.chip.failWrites = true;
+    };
+    DPS310_Sensor broken(readOnly.device);
+    TEST_ASSERT_FALSE(broken.begin());
+    TEST_ASSERT_FALSE(broken.isAvailable());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "DPS310: ошибка записи регистров"));
+}
+
 // ------------------------------------------------------------
 // BMP581
 // ------------------------------------------------------------
@@ -925,6 +967,7 @@ int main()
     RUN_TEST(test_qmc6309_failure_paths);
     RUN_TEST(test_spl06_configures_and_compensates_like_datasheet);
     RUN_TEST(test_spl06_uses_internal_temperature_sensor_when_calibrated_so);
+    RUN_TEST(test_dps310_fixes_temperature_sensor_after_reset);
     RUN_TEST(test_spl06_failure_paths);
     RUN_TEST(test_bmp581_configuration_and_scaling);
     RUN_TEST(test_bmp581_reads_without_drdy_after_two_periods);

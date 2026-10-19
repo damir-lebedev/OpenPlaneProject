@@ -16,7 +16,7 @@
 ### ピン（ボードごとに異なる）
 
 ピンのブロックは、`platformio.ini` の `[env:*]` が定義するマクロで選ばれます（`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
-`BOARD_STM32H743`）。マクロがなければ `#error` になります。STM32 のブロックは
+`BOARD_STM32H743` / `BOARD_MATEK_H743`）。マクロがなければ `#error` になります。STM32 のブロックは
 [後述](#stm32h743vit6board_stm32h743)します。
 
 | 定数 | 型 | 用途 | S3 | C3 | classic |
@@ -65,6 +65,27 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 | `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4：MAVLink の無線モデム（同じピンは FDCAN1 でもある） |
 
 コンソール `Serial` は LPUART1（PA9 TX / PA10 RX）で、バリアントの既定です。
+
+#### Matek H743-WING V3（`BOARD_MATEK_H743`）
+
+完成品のフライトコントローラー：env `matek-h743` は `BOARD_STM32H743`（STM32 のコードはすべて共通）と専用のピンブロックの両方を設定します。ピン配置は ArduPilot のボード記述（hwdef MatekH743）によるもので、実機では未確認です。ボードにはんだ付けされた部品のピンには `@fixed` が付いています。
+
+| 定数 | ピン | パッド、ペリフェラル |
+|---|---|---|
+| `PIN_ESC` | PB0 | S1, TIM1_CH2N |
+| `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_RUDDER` | PA0 / PA1 / PA2 / PA3 | S3–S6, TIM2_CH1..CH4 |
+| `PIN_AUX1` / `PIN_AUX2` | PD12 / PD13 | S7 / S8, TIM4_CH1 / CH2 |
+| `PIN_RC_RX` / `PIN_RC_TX` | PC7 / PC6 | R6 / T6, USART6 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | PD6 / PD5 | R2 / T2, USART2 |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PE7 / PE8 | R7 / T7, UART7 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | ボード上の I2C2：気圧計 DPS310 |
+| `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` | PB7 / PB6 | SDA / SCL、I2C1：外部コネクター（コンパス、ピトー管） |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | −1 | 画面用のバスはない |
+| `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI`、`PIN_SPI_CS_IMU` | PA5 / PA6 / PD7、PC15 | ボード上の SPI1：ICM-42688-P |
+| `PIN_BUZZER` | PA15 | BZ+ / BZ− |
+| `PIN_VBAT_ADC` / `PIN_CURRENT_ADC` | PC0 / PC1 | VBAT（分圧 ×11）/ Curr（1 V あたり 40 A） |
+
+`PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` は一般の STM32 ブロックにもあり、そこでは −1 です（コンパスとピトー管はセンサーバス上）。分圧比 `BLACKBOX_VBAT_DIVIDER` / `BLACKBOX_CURRENT_DIVIDER` と `IMU_MOUNT_CALIBRATION_REQUIRED` もボードごとに持ちます。
 
 ### 受信機とリンク喪失
 
@@ -134,6 +155,7 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 | 定数 | 値 | 意味 |
 |---|---|---|
 | `IMU_ROTATION_CW_DEG` | 90 | IMU チップの軸を鉛直軸まわりに回す角度（0/90/180/270）、つまりチップの X 軸が向く方向。NVS に取り付け校正 `o` がない間だけ使われる |
+| `IMU_MOUNT_CALIBRATION_REQUIRED` | `false`（Matek H743 は `true`） | 安定化ありの ARM は取り付けキャリブレーション `o` の後のみ：IMU がフライトコントローラーにはんだ付けされ、ボードはどの向きにも取り付けられるため。ボードごと、そのピンブロック内 |
 | `MAG_ROTATION_CW_DEG` | 0 | コンパスについて同じ設定（コンパスには取り付け校正がない） |
 
 ### 降着装置、地上校正、合図
@@ -224,7 +246,7 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | 常に確保しておく消去済みの領域。古いフライトは地上でまとめて消去する |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | 消去の間の休止 |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU を N 周期に 1 回記録（1 なら 500 Hz） |
-| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | フライトコントローラー基板上のバッテリー（56k/10k）と電流センサー（10k/15k）の分圧比 |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 (Matek H743: 11 / 1) | フライトコントローラー基板上のバッテリー（56k/10k）と電流センサー（10k/15k）の分圧比 |
 
 ---
 

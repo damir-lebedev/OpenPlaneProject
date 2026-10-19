@@ -572,6 +572,7 @@ Ambientes do PlatformIO:
 | `esp32-dev` | A ESP32 clássica, bancada |
 | `stm32h743` | STM32H743VIT6: firmware completo (`src/stm32/main.cpp`), configurações na flash, MAVLink, caixa-preta no SD, FreeRTOS; verificado em uma placa nua — veja [reference/hal.md](reference/hal.md#implementação-para-o-stm32h743) |
 | `stm32h743-devebox` | DevEBox H743: o mesmo, com o console por USB CDC e gravação por DFU ([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
+| `matek-h743` | Matek H743-WING V3: controladora pronta com sensores na placa, cristal de 8 MHz, gravação por DFU ([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
 | `native` | Build e testes no PC com fakes do Arduino/ESP-IDF e cobertura — veja [`TESTING.md`](TESTING.md) |
 
 ---

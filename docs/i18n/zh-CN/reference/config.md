@@ -16,7 +16,7 @@
 ### 引脚（取决于开发板）
 
 引脚块由 `platformio.ini` 中 `[env:*]` 设置的宏来选择（`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
-`BOARD_STM32H743`）。没有定义宏时——`#error`。STM32 的引脚块见
+`BOARD_STM32H743` / `BOARD_MATEK_H743`）。没有定义宏时——`#error`。STM32 的引脚块见
 [下文](#stm32h743vit6board_stm32h743)。
 
 | 常量 | 类型 | 用途 | S3 | C3 | classic |
@@ -64,6 +64,27 @@ STM32duino 内核（以及其他 Arduino 内核）中，`PIN_SPI_SCK/MISO/MOSI` 
 | `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4——MAVLink 数传电台（同样的引脚也是 FDCAN1） |
 
 控制台 `Serial` 是 LPUART1（PA9 TX / PA10 RX），即该变体的默认设置。
+
+#### Matek H743-WING V3（`BOARD_MATEK_H743`）
+
+现成的飞控：env `matek-h743` 同时定义 `BOARD_STM32H743`（全部 STM32 代码共用）和自己的引脚块——依据 ArduPilot 中的板子描述（hwdef MatekH743），未在硬件上验证。板载器件的引脚标有 `@fixed`。
+
+| 常量 | 引脚 | 焊盘、外设 |
+|---|---|---|
+| `PIN_ESC` | PB0 | S1, TIM1_CH2N |
+| `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_RUDDER` | PA0 / PA1 / PA2 / PA3 | S3–S6, TIM2_CH1..CH4 |
+| `PIN_AUX1` / `PIN_AUX2` | PD12 / PD13 | S7 / S8, TIM4_CH1 / CH2 |
+| `PIN_RC_RX` / `PIN_RC_TX` | PC7 / PC6 | R6 / T6, USART6 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | PD6 / PD5 | R2 / T2, USART2 |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PE7 / PE8 | R7 / T7, UART7 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | 板载 I2C2：气压计 DPS310 |
+| `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` | PB7 / PB6 | SDA / SCL，I2C1——外部接口：罗盘、皮托管 |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | −1 | 没有屏幕总线 |
+| `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI`，`PIN_SPI_CS_IMU` | PA5 / PA6 / PD7，PC15 | 板载 SPI1：ICM-42688-P |
+| `PIN_BUZZER` | PA15 | BZ+ / BZ− |
+| `PIN_VBAT_ADC` / `PIN_CURRENT_ADC` | PC0 / PC1 | VBAT（分压 ×11）/ Curr（每伏 40 A） |
+
+通用的 STM32 块里也有 `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL`：在那里它们为 −1——罗盘和皮托管接在传感器总线上。分压比 `BLACKBOX_VBAT_DIVIDER` / `BLACKBOX_CURRENT_DIVIDER` 和 `IMU_MOUNT_CALIBRATION_REQUIRED` 也是每块板各自的。
 
 ### 接收机与信号丢失
 
@@ -133,6 +154,7 @@ STM32duino 内核（以及其他 Arduino 内核）中，`PIN_SPI_SCK/MISO/MOSI` 
 | 常量 | 值 | 含义 |
 |---|---|---|
 | `IMU_ROTATION_CW_DEG` | 90 | IMU 芯片坐标轴绕垂直方向的旋转角度（0/90/180/270），即芯片 X 轴的朝向。仅在 NVS 中没有安装校准 `o` 时使用 |
+| `IMU_MOUNT_CALIBRATION_REQUIRED` | `false`（Matek H743 为 `true`） | 带增稳的 ARM 只能在安装校准 `o` 之后：IMU 焊在飞控上，而飞控板可以任意方向安装。每块板各自设定，在其引脚块中 |
 | `MAG_ROTATION_CW_DEG` | 0 | 电子罗盘的同类设置（电子罗盘没有安装校准） |
 
 ### 起落架、地面校准、提示
@@ -223,7 +245,7 @@ STM32duino 内核（以及其他 Arduino 内核）中，`PIN_SPI_SCK/MISO/MOSI` 
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | 随时备好的已擦除空间；旧的飞行记录在地面上整段擦除 |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | 两次擦除之间的停顿 |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU 每隔 N 个周期记录一次（1——500 Hz） |
-| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | 飞控板上电池（56k/10k）和电流传感器（10k/15k）的分压比 |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 (Matek H743: 11 / 1) | 飞控板上电池（56k/10k）和电流传感器（10k/15k）的分压比 |
 
 ---
 

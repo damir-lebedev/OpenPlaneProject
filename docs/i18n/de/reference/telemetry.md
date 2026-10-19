@@ -133,7 +133,7 @@ Ein Textmenü im seriellen Monitor. Ein Automat der Bildschirme `Screen::{None, 
 | Methode | Beschreibung |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | mit Board — der Befehl `b` und Menüpunkt 7 |
-| `static const char* guessI2cDevice(uint8_t address)` | der Chip nach der Adresse: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | der Chip nach der Adresse: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06/DPS310, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
 | `void printHint() const` | Ein einzeiliger Hinweis |
 | `void update()` | Alle Bytes aus `Serial` verarbeiten; wurden die Protokolleinstellungen geändert, ist das Menü geschlossen und das Flugzeug **nicht armed** — im NVS speichern |
 
@@ -143,7 +143,7 @@ Kalibrierung des IMU-Einbaus; `m` — Kalibrierung des Kompasses; `p` — Selbst
 `b` — Scan der I2C-Busse (0x08..0x7F — bis 0x7F, weil der QMC6309 auf 0x7C sitzt) mit
 den Namen der Chips; alles andere — ein Hinweis. `\r`/`\n` werden ignoriert. Außerdem `c` – Bodenkalibrierung des Flugzeugs (läuft sie, Abbruch; Hauptmenüpunkt 9) und `e` – ein Signal per Rudern und ESC-Melodie (prüft, ob der Regler sie nach der Impulspause spielt).
 
-PC-Befehle sind ein STX-Byte (`0x02`), eine Zeichenkette und `\n`: Auf `id` gibt `FirmwareIdentity::print()` die Firmware-Kennung als eine Zeile `@id {...}` aus (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; antwortet auch im ARM-Zustand); `scan` fragt die Busse ab und gibt `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` aus (im ARM-Zustand `{"error":"armed"}`); `act X` führt die Aktion der Menütaste `X` aus, mit denselben Sperren im ARM-Zustand; `live` und `live 0` gehen an `AppLink` (unten), alles andere an `IFlightRecorder::handleHostCommand()` (Blackbox). Board, Commit, Konfigurations-Hash und Flugzeugname schreibt OpenPlane Studio über `config/Project.h` in seine Kopie der Quellen; ohne diese Datei gelten das Board-Makro und `"dev"`.
+PC-Befehle sind ein STX-Byte (`0x02`), eine Zeichenkette und `\n`: Auf `id` gibt `FirmwareIdentity::print()` die Firmware-Kennung als eine Zeile `@id {...}` aus (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; antwortet auch im ARM-Zustand); `scan` fragt die Busse ab und gibt `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}` aus (im ARM-Zustand `{"error":"armed"}`); `act X` führt die Aktion der Menütaste `X` aus, mit denselben Sperren im ARM-Zustand; `live` und `live 0` gehen an `AppLink` (unten), alles andere an `IFlightRecorder::handleHostCommand()` (Blackbox). Board, Commit, Konfigurations-Hash und Flugzeugname schreibt OpenPlane Studio über `config/Project.h` in seine Kopie der Quellen; ohne diese Datei gelten das Board-Makro und `"dev"`.
 
 Das Protokollmenü: `1`..`9` — schalten den Modus der Kanäle 0..8 reihum um, `n` — NAV, `s` — SYS, `p` — Periode, `a` —
 alles „bei Änderung“, `x` — alles aus, `d` — Standard, `0`/`q` — zurück, `l`/`h` —

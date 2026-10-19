@@ -656,6 +656,7 @@ stateDiagram-v2
 | `esp32-dev` | Классическая ESP32, стенд |
 | `stm32h743` | STM32H743VIT6: полная прошивка (`src/stm32/main.cpp`), настройки во флеше, MAVLink, чёрный ящик на SD, FreeRTOS; на голой плате проверена — см. [reference/hal.md](reference/hal.md#реализация-для-stm32h743) |
 | `stm32h743-devebox` | DevEBox H743: то же, консоль — USB CDC, прошивка по DFU ([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
+| `matek-h743` | Matek H743-WING V3: готовый полётник с датчиками на плате, кварц 8 МГц, прошивка по DFU ([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
 | `native` | Сборка и тесты на ПК с фейками Arduino/ESP-IDF и покрытием — см. [`TESTING.md`](TESTING.md) |
 
 ---

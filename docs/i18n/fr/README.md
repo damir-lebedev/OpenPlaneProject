@@ -35,9 +35,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-455%20passing-3fb950?style=for-the-badge" alt="455 tests">
+  <img src="https://img.shields.io/badge/tests-460%20passing-3fb950?style=for-the-badge" alt="460 tests">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="couverture de 94 %">
-  <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 compilations sans avertissement">
+  <img src="https://img.shields.io/badge/builds-33%2F33%20clean-3fb950?style=for-the-badge" alt="33 compilations sans avertissement">
   <br>
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
   <img src="https://img.shields.io/badge/STM32H743-flies%20from%20the%20RC-39d0ff?style=for-the-badge&logo=stmicroelectronics&logoColor=white" alt="STM32H743 : se pilote avec la radio">
@@ -61,7 +61,7 @@
 | **Ce que c’est** | Un contrôleur de vol et pilote automatique ouverts pour avions radiocommandés. La carte principale est la STM32H743 (une carte de la classe Pixhawk) : sur une carte DevEBox, le firmware **tourne déjà et se pilote avec la radio** — [il y a une vidéo](#-le-stm32h743sanime-sur-la-carte), et les capteurs sont en cours de branchement. L’ancienne base est un ESP32-S3 à environ 10 $, qui a passé le banc avec tous les capteurs. |
 | **Ce qu’il sait faire** | 12 modes de vol, de la stabilisation au retour à la maison, en passant par les cercles au GPS, le lancer à la main, l’atterrissage automatique et le **vol à voile en thermiques**. Un tube de Pitot fait de deux baromètres bon marché. Télémétrie MAVLink vers QGroundControl et Mission Planner. |
 | **L’atout principal** | N’importe quel interrupteur ou potentiomètre de la radio = n’importe quelle fonction. **Une seule ligne** dans `Controls.h`, et SwD n’est plus l’inversion du moteur mais un largage de charge. |
-| **Pourquoi lui faire confiance** | 455 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 94 % du code couvert par les tests, 24 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
+| **Pourquoi lui faire confiance** | 460 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 94 % du code couvert par les tests, 33 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
 | **En toute franchise** | Pour l’instant, seul le mode manuel a volé (le premier prototype). Le STM32H743 n’a été vérifié que sur le banc, sans capteurs. Le pilote automatique a été vérifié sur le banc, par des tests et des simulations, et attend les essais en vol — [état des lieux plus bas](#-état-réel). |
 
 ---
@@ -160,11 +160,12 @@ La carte enregistre chaque vol : IMU à 500 Hz, angles et décisions du pilote
 
 ---
 
-## 🔩 Matériel : un seul firmware, quatre cartes, douze capteurs
+## 🔩 Matériel : un seul firmware, cinq cartes, treize capteurs
 
 | Carte | État | Ce qui a été vérifié |
 |---|---|---|
 | **STM32H743VIT6** | ✅ principale · 🔧 DevEBox, capteurs en cours de branchement + 🧪 tests | sur la carte : démarrage, console par USB, **carte SD et boîte noire** (tests sur la carte), **réception iBUS, ARM et pilotage des servos et du moteur avec la radio** (le lancement est filmé) ; sur PC : le firmware entier — tâches FreeRTOS, flash, MAVLink, I2C et SPI. Aucun capteur n’a encore été branché sur la carte |
+| **Matek H743-WING V3** | 🧪 tests · contrôleur prêt à l’emploi | tout le firmware sur PC avec les capteurs de la carte (ICM-42688-P, DPS310), le bus I2C externe et la calibration du montage de l’IMU ; pas encore essayé sur une vraie carte |
 | **ESP32-S3 N16R8** | ✅ ancienne principale, sur le banc | tous les capteurs, servos, iBUS, OLED, tableau de bord en direct ; le firmware complet dans les tests |
 | **ESP32 38-pin** | 🧪 tests | le firmware complet dans les tests avec le kit ICM-45686 |
 | **ESP32-C3 SuperMini** | ✈️ a volé (manuel) | le premier prototype ; compilation de tous les kits |
@@ -174,12 +175,13 @@ La carte enregistre chaque vol : IMU à 500 Hz, angles et décisions du pilote
 | **LSM6DSV** + **QMC6309** | IMU + boussole (module) | I2C / SPI |
 | **ICM-45686** + **QMC6309** | IMU + boussole (alternative) | I2C / SPI |
 | **SPL06-001** | baromètre du fuselage | I2C / SPI |
+| **DPS310** | baromètre de la carte Matek H743 | I2C |
 | **BMP581** | baromètre principal et baromètre du tube de Pitot | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | de banc et anciens | I2C / SPI |
 | **u-blox M10** | GPS, 10 Hz, UBX | UART |
 | **iBUS · SBUS · CRSF** | récepteur radio : FlySky, FrSky, Futaba, RadioMaster, ExpressLRS, TBS Crossfire | UART |
 
-Un capteur se change en une ligne (`SENSOR_KIT_LSM6DSV_PITOT`), une carte avec un seul indicateur de compilation. Les 4 cartes × 6 kits de capteurs se compilent sans avertissement : [`tools/build_matrix.sh`](../../../tools/build_matrix.sh).
+Un capteur se change en une ligne (`SENSOR_KIT_LSM6DSV_PITOT`), une carte avec un seul indicateur de compilation. Les 4 cartes × 7 kits de capteurs et la Matek H743 avec son propre kit se compilent sans avertissement : [`tools/build_matrix.sh`](../../../tools/build_matrix.sh).
 
 <table>
   <tr>
@@ -206,9 +208,9 @@ Ce que cela prouve : la chaîne « radio → iBUS → firmware → PWM » fon
 
 | | |
 |---|---|
-| **455 tests automatiques** | modules, pilotes vérifiés au niveau des registres des puces, vols en boucle fermée, firmware ESP32 et STM32 **complet** sur PC ; plus 9 tests sur la carte STM32 elle-même avec une vraie carte SD |
+| **460 tests automatiques** | modules, pilotes vérifiés au niveau des registres des puces, vols en boucle fermée, firmware ESP32 et STM32 **complet** sur PC ; plus 9 tests sur la carte STM32 elle-même avec une vraie carte SD |
 | **93,9 % des lignes, 85,7 % des branches** | couverture `gcovr`, code STM32 compris |
-| **24/24 compilations** | 4 cartes × 6 kits de capteurs, `-Wall -Wextra`, zéro avertissement |
+| **33/33 compilations** | 4 cartes × 7 kits de capteurs + Matek H743, `-Wall -Wextra`, zéro avertissement |
 | **0 remarque** | cppcheck et clang-tidy sur tout le code |
 | **Des références, pas des copies de code** | formules des capteurs d’après les fiches techniques (Bosch, ST, TDK, Goertek), MAVLink d’après pymavlink |
 
@@ -249,6 +251,7 @@ Le plus simple : **[OpenPlane Studio](https://github.com/damir-lebedev/openplane
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
 pio run -e stm32h743-devebox -t upload                    # DevEBox H743 : USB DFU, console par USB
+pio run -e matek-h743 -t upload                           # Matek H743-WING V3 : bouton BOOT + USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
 ```
@@ -274,6 +277,7 @@ Dans le moniteur série : `h` — menu, `b` — quelles puces sont visibles sur
 | STM32H743 : carte SD, boîte noire, console par USB | 🔧 sur la carte DevEBox (tests sur la carte) |
 | STM32H743 : iBUS, ARM, PWM des servos et du moteur, pilotage manuel | 🔧 sur la carte sans capteurs, filmé |
 | Récepteurs SBUS et CRSF (ExpressLRS) | 🧪 tests : analyse des trames, failsafe, UART inversé ; pas encore essayés avec un vrai récepteur |
+| Matek H743-WING V3 : capteurs sur la carte, bus I2C externe, calibration du montage de l’IMU | 🧪 tout le firmware sur PC ; pas encore essayé sur une vraie carte |
 | STM32H743 : capteurs (IMU, baromètre, boussole, GPS) et modes du pilote automatique | 🧪 firmware entier sur PC ; aucun capteur n’est encore branché sur la carte |
 
 Le modèle d’avion des simulations est simplifié, et les coefficients sont des valeurs de départ. Chaque nouveau mode est d’abord essayé en altitude, le doigt sur l’interrupteur MANUAL.
@@ -294,7 +298,9 @@ Le modèle d’avion des simulations est simplifié, et les coefficients sont de
 - [x] Le STM32H743 tourne sur la carte : radio → iBUS → servos et moteur (sans capteurs, en vidéo)
 - [x] Application [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) : configuration étape par étape, flashage en un clic, réglages au sol
 - [x] Récepteurs SBUS et CRSF (ExpressLRS, TBS Crossfire) à côté de l’iBUS — choix dans `Config.h` ou dans OpenPlane Studio
+- [x] Contrôleur de vol prêt à l’emploi Matek H743-WING V3 : capteurs sur la carte, flashage en un clic (pas encore essayé sur le matériel)
 - [ ] STM32H743 : brancher les capteurs et passer le banc comme pour l’ESP32-S3
+- [ ] Contrôleurs de vol populaires sur STM32F405 : SpeedyBee F405 WING, Matek F405-WTE
 - [ ] Essais en vol du pilote automatique sur la nouvelle cellule
 - [ ] Une carte de contrôleur de vol maison ([FC_BOARD.md](FC_BOARD.md)) sur STM32H743
 - [ ] Vol par points de passage, missions MAVLink

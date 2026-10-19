@@ -55,7 +55,7 @@ Zelle: Spannweite 1200 mm, Flügeltiefe 250 mm, Profil NACA 4412, Aufbau aus PET
 
 ## Boardauswahl und Pinbelegung
 
-Die Firmware unterstützt vier Boards; umgeschaltet wird mit einem einzigen Build-Parameter (`pio run -e <Name der Umgebung>`). Jedes Board hat seine eigene Pinbelegung, die in der Firmware für die jeweilige Umgebung fest verdrahtet ist – stecken Sie Leitungen nicht eigenmächtig um, sondern halten Sie sich an die Tabelle für Ihr Board.
+Die Firmware unterstützt fünf Boards; umgeschaltet wird mit einem einzigen Build-Parameter (`pio run -e <Name der Umgebung>`). Jedes Board hat seine eigene Pinbelegung, die in der Firmware für die jeweilige Umgebung fest verdrahtet ist – stecken Sie Leitungen nicht eigenmächtig um, sondern halten Sie sich an die Tabelle für Ihr Board.
 
 > **Wichtig:** Das Hauptboard ist jetzt das **STM32H743 (DevEBox H743)** – darauf sind Start, USB-Konsole, SD-Karte, iBUS, Servos und Motor geprüft; die Sensoren werden zum ersten Mal angeschlossen. Das **esp32-s3 (N16R8)** ist das frühere Hauptboard, seine Pinbelegung wurde auf dem Prüfstand mit allen Sensoren geprüft. Das **esp32-c3** ist der alte Prototyp, der geflogen ist. Die Pinbelegung des **esp32-dev** wurde anhand der Chip-Dokumentation gewählt und **nicht auf echter Hardware geprüft**.
 
@@ -91,6 +91,30 @@ Anschluss der Sensoren auf dem Prüfstand (alle Module laufen mit **3,3 V**, nic
 | OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
 
 Die Servos werden **nicht über das Board** versorgt, sondern über das BEC des Fahrtreglers (oder über ein separates 5-V-Netzteil mit mindestens 2 A); die Massen aller Quellen sind gemeinsam. Schließen Sie die rote Leitung des ESC nicht an die 5 V des Boards an, solange USB angesteckt ist.
+
+### Matek H743-WING V3 – fertiger Flugcontroller
+
+`pio run -e matek-h743` – das Board Matek H743-WING V3 (H743-WLITE und H743-SLIM V3 haben dieselbe Pinbelegung). Ein fertiger Flugcontroller mit demselben STM32H743: Spannungsregler, Stromsensor, IMU ICM-42688-P, Barometer DPS310 und microSD-Slot sind schon auf dem Board – nichts zu löten; Servos, Regler, Empfänger und GPS kommen an die beschrifteten Pads. **Auf einem echten Board wurde die Firmware noch nicht ausprobiert** (die Pinbelegung stammt aus der Boardbeschreibung in ArduPilot, die ganze Firmware ist durch Tests auf dem PC geprüft) – prüfen Sie vor dem ersten Flug am Boden Ruder, Motor und Modi.
+
+| Zweck | Pad | Pin |
+|---|---|---|
+| ESC (Gas) | S1 | PB0 |
+| Querruder, linke / rechte Fläche | S3 / S4 | PA0 / PA1 |
+| Höhenruder | S5 | PA2 |
+| Seitenruder + Lenkrad | S6 | PA3 |
+| AUX1 / AUX2 (Lastabwurf, Kamera) | S7 / S8 | PD12 / PD13 |
+| Empfänger: iBUS, SBUS, CRSF (TX – nur für CRSF) | R6 / T6 | PC7 / PC6 |
+| GPS: RX (← TX des GPS) / TX (→ RX des GPS) | R2 / T2 | PD6 / PD5 |
+| MAVLink-Telemetrie (Funkmodem): RX / TX | R7 / T7 | PE7 / PE8 |
+| Kompass, Pitotrohr (externes I2C) | SDA / SCL | PB7 / PB6 |
+| Summer | BZ+ / BZ− | PA15 |
+| Akku / Stromsensor | VBAT / Curr | PC0 / PC1 |
+
+- **Sensoren auf dem Board** – IMU und Barometer; ihr Set (`SENSOR_KIT_MATEK_H743`) legt die Umgebung `matek-h743` fest, in `SensorSelection.h` ist nichts zu ändern. Einen Kompass hat das Board nicht: Ein GPS-Modul mit Kompass kommt an die Pads SDA/SCL – in OpenPlane Studio ist das die Kompasswahl im Schritt „Sensoren“, auf der Kommandozeile das Flag `-D SENSOR_MAG=SENSOR_MAG_QMC5883L` in `platformio.ini`.
+- **Das Board darf beliebig sitzen**, sogar mit dem Pfeil nach hinten: Die IMU ist aufgelötet, deshalb braucht es vor dem ersten ARM mit Stabilisierung die Einbaukalibrierung mit drei Posen (`o` in der Konsole oder „Einrichtung“ → „IMU-Einbau“ in der App). Ohne sie wird ARM in stabilisierten Modi mit Erklärung abgelehnt; in MANUAL geht es.
+- **Erste Firmware:** BOOT-Taste halten und USB einstecken – das Board ist im DFU-Modus (Windows braucht den WinUSB-Treiber wie für das DevEBox); dann `pio run -e matek-h743 -t upload` oder die Schaltfläche „Flashen“ in OpenPlane Studio. Danach startet die Taste `D` in der Konsole das Board selbst in den Bootloader neu.
+- **Die Blackbox** schreibt auf die microSD-Karte im Slot des Boards. Der Akku wird über den Teiler des Boards (×11) gemessen, der Stromsensor als seine Ausgangsspannung (40 A pro Volt).
+- S2 und S9–S12 sind frei. Die Servos versorgt das BEC des Boards (Schiene Vx) oder das BEC des Reglers – wie in der Anleitung von Matek; die Massen aller Quellen sind verbunden.
 
 ### esp32-s3 (N16R8) – früheres Hauptboard, auf dem Prüfstand geprüft
 
@@ -314,6 +338,9 @@ Am einfachsten installiert man die Erweiterung **PlatformIO IDE** in VS Code (Ex
 # STM32H743 DevEBox (Hauptboard)
 pio run -e stm32h743-devebox -t upload
 
+# Matek H743-WING V3 (fertiger Flugcontroller): BOOT-Taste + USB
+pio run -e matek-h743 -t upload
+
 # esp32-s3 N16R8 (früheres Hauptboard)
 pio run -e esp32-s3 -t upload
 
@@ -327,6 +354,8 @@ pio run -e esp32-dev -t upload
 Wenn Sie `-e` gar nicht angeben, wird das Standardboard gebaut – `stm32h743-devebox`.
 
 **STM32 DevEBox:** Die erste Firmware kommt über USB-DFU: Brücke BT0→3V3, RST drücken, dann der Befehl oben (Windows braucht den WinUSB-Treiber für „STM32 BOOTLOADER“, installiert mit Zadig). Danach startet die Taste `D` in der Konsole das Board selbst in den Bootloader neu, die Brücke wird nicht mehr gebraucht. Die Konsole läuft über dieselbe USB-C-Buchse.
+
+**Matek H743:** Die erste Firmware kommt ebenfalls über USB-DFU, aber ohne Brücke: BOOT-Taste auf dem Board halten, USB einstecken und den Befehl oben ausführen. Danach – die Taste `D` in der Konsole.
 
 **esp32-s3:** Das Board hat zwei USB-C-Buchsen. Flashen und Serial laufen über die Buchse **„COM“** (CH343-Brücke; unter Windows „USB-Enhanced-SERIAL CH343“). Die Buchse „USB“ (der native USB des Chips) wird für den Betrieb nicht gebraucht, darf aber angesteckt sein – sie stört nicht.
 

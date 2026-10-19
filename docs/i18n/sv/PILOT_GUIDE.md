@@ -55,7 +55,7 @@ Flygplansstomme: spännvidd 1200 mm, korda 250 mm, profil NACA 4412, konstruktio
 
 ## Val av kort och stiftbeläggning
 
-Firmwaren stöder fyra kort; bytet kräver en byggparameter (`pio run -e <miljöns namn>`). Varje kort har sin egen stiftbeläggning, hårdkodad i firmwaren för den specifika miljön – flytta inte om trådar på eget bevåg; titta i tabellen för ditt kort.
+Firmwaren stöder fem kort; bytet kräver en byggparameter (`pio run -e <miljöns namn>`). Varje kort har sin egen stiftbeläggning, hårdkodad i firmwaren för den specifika miljön – flytta inte om trådar på eget bevåg; titta i tabellen för ditt kort.
 
 > **Viktigt:** huvudkortet är nu **STM32H743 (DevEBox H743)** – uppstart, USB-konsolen, SD-kortet, iBUS, servona och motorn har verifierats på det; sensorerna kopplas in för första gången. **esp32-s3 (N16R8)** är det tidigare huvudkortet; dess stiftbeläggning har verifierats på bänken med alla sensorer. **esp32-c3** är den gamla prototypen som har flugit. Stiftbeläggningen för **esp32-dev** valdes utifrån kretsens dokumentation och **har inte provats på riktig hårdvara**.
 
@@ -91,6 +91,30 @@ Anslutning av sensorerna på bänken (alla moduler drivs med **3,3 V**, inte 5 V
 | OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
 
 Servona drivs **inte från kortet** utan från ESC:ns BEC (eller från en separat 5 V-källa på minst 2 A); alla källor har gemensam jord. Anslut inte ESC:ns röda tråd till kortets 5 V medan USB är inkopplad.
+
+### Matek H743-WING V3 – en färdig flygkontroller
+
+`pio run -e matek-h743` – kortet Matek H743-WING V3 (H743-WLITE och H743-SLIM V3 har samma stiftplacering). En färdig flygkontroller med samma STM32H743: spänningsregulator, strömsensor, IMU ICM-42688-P, barometer DPS310 och microSD-plats sitter redan på kortet – inget att löda; servon, fartreglage, mottagare och GPS ansluts till de märkta lödytorna. **Firmwaren har ännu inte provats på ett riktigt kort** (stiftplaceringen kommer från kortbeskrivningen i ArduPilot, hela firmwaren är kontrollerad med tester på datorn) – kontrollera roder, motor och lägen på marken före den första flygningen.
+
+| Funktion | Lödyta | Stift |
+|---|---|---|
+| ESC (gas) | S1 | PB0 |
+| Skevroder, vänster / höger vinge | S3 / S4 | PA0 / PA1 |
+| Höjdroder | S5 | PA2 |
+| Sidoroder + styrhjul | S6 | PA3 |
+| AUX1 / AUX2 (lastfällning, kamera) | S7 / S8 | PD12 / PD13 |
+| Mottagare: iBUS, SBUS, CRSF (TX – bara för CRSF) | R6 / T6 | PC7 / PC6 |
+| GPS: RX (← GPS:ens TX) / TX (→ GPS:ens RX) | R2 / T2 | PD6 / PD5 |
+| MAVLink-telemetri (radiomodem): RX / TX | R7 / T7 | PE7 / PE8 |
+| Kompass, pitotrör (extern I2C) | SDA / SCL | PB7 / PB6 |
+| Summer | BZ+ / BZ− | PA15 |
+| Batteri / strömsensor | VBAT / Curr | PC0 / PC1 |
+
+- **Sensorer på kortet** – IMU och barometer; deras sats (`SENSOR_KIT_MATEK_H743`) bestäms av miljön `matek-h743`, inget behöver ändras i `SensorSelection.h`. Kortet har ingen kompass: en GPS-modul med kompass ansluts till lödytorna SDA/SCL – i OpenPlane Studio är det kompassvalet i steget ”Sensorer”, från kommandoraden flaggan `-D SENSOR_MAG=SENSOR_MAG_QMC5883L` i `platformio.ini`.
+- **Kortet får sitta hur det passar**, till och med med pilen bakåt: IMU:n är fastlödd på det, så före den första ARM med stabilisering behövs monteringskalibreringen med tre poser (`o` i konsolen eller ”Inställning” → ”IMU-montering” i appen). Utan den nekas ARM i stabiliserade lägen med en förklaring; i MANUAL går det.
+- **Första flashningen:** håll in BOOT-knappen och sätt i USB – kortet är i DFU-läge (Windows behöver WinUSB-drivrutinen, som för DevEBox); sedan `pio run -e matek-h743 -t upload` eller knappen ”Flasha” i OpenPlane Studio. Därefter startar tangenten `D` i konsolen om kortet i bootloadern av sig självt.
+- **Svarta lådan** skriver till microSD-kortet i kortets plats. Batteriet mäts via kortets delare (×11), strömsensorn som spänningen på dess utgång (40 A per volt).
+- S2 och S9–S12 är lediga. Servona matas från kortets BEC (skenan Vx) eller fartreglagets BEC – som i Mateks handbok; jord från alla källor är gemensam.
 
 ### esp32-s3 (N16R8) – det tidigare huvudkortet, verifierat på bänken
 
@@ -312,6 +336,9 @@ Det enklaste är att installera tillägget **PlatformIO IDE** i VS Code (Extensi
 # STM32H743 DevEBox (huvudkort)
 pio run -e stm32h743-devebox -t upload
 
+# Matek H743-WING V3 (färdig flygkontroller): BOOT-knappen + USB
+pio run -e matek-h743 -t upload
+
 # esp32-s3 N16R8 (tidigare huvudkort)
 pio run -e esp32-s3 -t upload
 
@@ -325,6 +352,8 @@ pio run -e esp32-dev -t upload
 Om du inte anger `-e` alls byggs standardkortet – `stm32h743-devebox`.
 
 **STM32 DevEBox:** den första flashningen går via USB DFU: en bygel BT0→3V3, tryck på RST, sedan kommandot ovan (Windows behöver WinUSB-drivrutinen för ”STM32 BOOTLOADER”, installerad med Zadig). Därefter startar tangenten `D` i konsolen om kortet i bootloadern av sig självt, och bygeln behövs inte längre. Konsolen går via samma USB-C.
+
+**Matek H743:** den första flashningen går också via USB DFU, men utan bygel: håll in BOOT-knappen på kortet, sätt i USB och kör kommandot ovan. Därefter – tangenten `D` i konsolen.
 
 **esp32-s3:** kortet har två USB-C-kontakter. Flashning och Serial går via **”COM”**-kontakten (en CH343-brygga; i Windows visas den som ”USB-Enhanced-SERIAL CH343”). ”USB”-kontakten (kretsens inbyggda USB) behövs inte för driften, men den får vara ansluten – den stör ingenting.
 

@@ -71,7 +71,7 @@ include/
 │   └── feedback/  заготовка обратной связи — НЕ подключена (см. раздел ниже)
 ├── sensors/     SensorInterface, SensorSelection, SensorMounting
 │   ├── imu/     ImuSensorBase, AttitudeEstimator, MPU6050, ICM42688, LSM6DSV, ICM45686
-│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, BMP581
+│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, DPS310, BMP581
 │   ├── mag/     MagnetometerBase, QMC5883P, QMC5883L, QMC6309
 │   ├── gps/     UbloxM10_Gps
 │   └── airspeed/ AirspeedSensor, PitotDualBaroAirspeed (трубка на двух барометрах)
@@ -185,7 +185,7 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
 
 | Файл | Отвечает за |
 |---|---|
-| `IBoard.h` | Точка входа в железо: `i2c()`, `displayI2c()` (вторая шина под экран, может быть `nullptr`), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()` (MAVLink, может быть `nullptr`), `servo(ServoChannel::*)` (7 выходов с AUX1/AUX2), `setBuzzer()` |
+| `IBoard.h` | Точка входа в железо: `i2c()`, `displayI2c()` (вторая шина под экран, может быть `nullptr`), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()` (MAVLink, может быть `nullptr`), `servo(ServoChannel::*)` (7 выходов с AUX1/AUX2), `setBuzzer()`, `externalI2c()` (шина внешнего разъёма: по умолчанию та же `i2c()`, у Matek H743 — своя) |
 | `Rtos.h` | Задачи FreeRTOS одинаково на ESP32 (ядро 0) и STM32 (приоритеты), свободная куча |
 | `II2CBus.h` | Шина I2C: примитивы в форме `Wire` + помощники `writeRegister()`, `readRegisters()` (проверяет, что пришло ровно `count` байт), `readRegister()`, `probe()` |
 | `ISpiBus.h`, `IUartPort.h`, `IServoOutput.h` | SPI, UART, один PWM-выход (`measurePulseUs()` — диагностика реального импульса) |
@@ -267,6 +267,7 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
 | `baro/BMP388_Sensor.h` | BMP388 по I2C или SPI (с фиктивным байтом SPI), компенсация Bosch, чтение по флагу готовности. **На стенде (I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280, компенсация Bosch §8.1. Не проверен на железе |
 | `baro/SPL06_Sensor.h` | SPL06-001: коэффициенты и формулы датащита, 32 Гц ×16; I2C 0x76/0x77 или SPI. Не проверен на железе |
+| `baro/DPS310_Sensor.h` | DPS310: наследник `SPL06_Sensor` — те же регистры и формулы плюс исправление термодатчика после сброса; I2C 0x76/0x77. Не проверен на железе |
 | `baro/BMP581_Sensor.h` | BMP581: последовательность BMP5_SensorAPI, 16×/2×, IIR; I2C 0x46/0x47 или SPI; и основной барометр (стендовый набор по умолчанию), и трубка Пито. Не проверен на железе |
 | `mag/MagnetometerBase.h` | Общее для компасов: опрос 50 Гц, hard-iron калибровка в NVS, поворот осей, курс, ошибки |
 | `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C. **На стенде** |
@@ -642,6 +643,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=..
 | `pio run -e esp32-dev` | `esp32dev` | `BOARD_ESP32_CLASSIC` | Для стенда, распиновка не проверена на железе |
 | `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | STM32H743VIT6: полная прошивка + MAVLink + чёрный ящик на SD; на голой плате проверена ([ниже](#stm32h743)) |
 | `pio run -e stm32h743-devebox` | `devebox_h743vitx` | `BOARD_STM32H743` | То же на DevEBox H743: консоль — USB CDC, прошивка по DFU |
+| `pio run -e matek-h743` | `devebox_h743vitx` + свои такты | `BOARD_MATEK_H743` + `BOARD_STM32H743` | Готовый полётник Matek H743-WING V3: датчики на плате, прошивка по DFU (кнопка BOOT); на железе не проверен ([ниже](#stm32h743)) |
 
 | Назначение | ESP32-S3 (стенд) | ESP32-C3 | ESP32 classic |
 |---|---|---|---|
@@ -731,6 +733,19 @@ STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) — **п�
   Прыжок прямо из работающей прошивки на H7 зависает — проверено на плате,
   поэтому в два шага. Нужна открытая консоль (USB CDC); если плата не
   отвечает — RST при проводе BT0.
+- **Matek H743-WING V3** — env `matek-h743`: готовый полётник на том же
+  STM32H743VIT6. Собирается с вариантом ядра DevEBox (тот же корпус, USB и
+  SDMMC1 на тех же пинах), но кварц на плате — 8 МГц: свою
+  `SystemClock_Config()` даёт `src/stm32/clock_matek.cpp` (то же дерево частот,
+  что у DevEBox), `HSE_VALUE` — флаг в `platformio.ini`. Макрос
+  `BOARD_MATEK_H743` выбирает свой блок пинов в `Config.h`, `BOARD_STM32H743`
+  остаётся — весь код STM32 общий. Датчики распаяны на плате: их набор
+  (`SENSOR_KIT_MATEK_H743`) задаёт флаг окружения, пины датчиков помечены
+  `@fixed` — приложение их не меняет. Внешний разъём I2C1 — отдельная шина
+  (`IBoard::externalI2c()`), на ней компас и трубка Пито. Плату ставят как
+  угодно, поэтому `IMU_MOUNT_CALIBRATION_REQUIRED = true`: без калибровки
+  установки ARM со стабилизацией запрещён. Первая прошивка — кнопка BOOT +
+  USB (DFU), дальше — клавиша `D`.
 - **Точка входа** — `src/stm32/main.cpp` (в сборках ESP32 исключён через
   `build_src_filter`). Объекты те же, что в `src/main.cpp`; вместо `loop()` —
   задачи, `vTaskStartScheduler()` в конце `setup()`.

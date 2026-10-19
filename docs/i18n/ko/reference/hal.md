@@ -50,6 +50,7 @@ HAL은 특정 MCU를 알아도 되는 유일한 계층입니다. 인터페이스
 | `virtual II2CBus& i2c()` | 센서 버스 |
 | `virtual ISpiBus& spi()` | SPI 버스 |
 | `virtual II2CBus* displayI2c()` | 화면 전용 두 번째 I2C 버스. 없으면 `nullptr` |
+| `virtual II2CBus& externalI2c()` | 외부 커넥터의 버스: 나침반, 피토관. 기본은 `i2c()`; Matek H743은 별도의 I2C1 |
 | `virtual IUartPort& rcUart()` | 조종기 수신기의 UART: iBUS, SBUS 또는 CRSF |
 | `virtual IUartPort& gpsUart()` | GPS의 UART |
 | `virtual IUartPort* telemetryUart()` | MAVLink 무선 모뎀의 UART. 기본값은 `nullptr` (ESP32에는 남는 UART가 없습니다) |
@@ -369,7 +370,8 @@ PWM입니다. 비행기는 송신기로 수동 모드에서 조종되며, 시동
 | `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `displayBus.begin()`, 부저 핀 |
 | `telemetryUart()` | `&telemetryPort` |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
-| `displayI2c()` | 항상 `&displayBus` |
+| `displayI2c()` | 화면 핀이 설정되어 있으면(`PIN_I2C2_*` ≥ 0) `&displayBus`, 아니면 `nullptr`(Matek H743에는 화면이 없음) |
+| `externalI2c()` | `PIN_I2C_EXT_*`가 설정되어 있으면 `&externalBus`(I2C1), 아니면 센서 버스 |
 | `static constexpr pin_size_t pinOf(int16_t)` | `Config.h`의 핀을 코어 API의 타입으로 바꿉니다 |
 | 나머지 | 해당하는 필드를 반환합니다 |
 

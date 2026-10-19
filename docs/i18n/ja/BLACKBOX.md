@@ -195,7 +195,7 @@ DevEBox H743 + 16 GB のカード（テスト `test_blackbox_sd`、[TESTING.md](
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | 次のフライトのために消去済みにしておく量 |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | 地上での消去と消去のあいだの休止 |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU を N 周期に 1 回記録する：2 なら 250 Hz で、記録時間は約 25% 長くなる |
-| `BLACKBOX_VBAT_DIVIDER`、`_CURRENT_DIVIDER` | 6.6、1.667 | ボード上のバッテリーと電流センサーの分圧比 |
+| `BLACKBOX_VBAT_DIVIDER`、`_CURRENT_DIVIDER` | 6.6、1.667 (Matek H743: 11, 1) | ボード上のバッテリーと電流センサーの分圧比 |
 
 パーティションテーブルは `partitions_blackbox.csv` です。アプリケーションが 2 MB（ファームウェアは現在約 0.9 MB）、ブラックボックスが 13.9 MB、coredump が 64 KB です。NVS パーティションは元の位置のままなので、このテーブルに移行したあとも、IMU とコンパスのキャリブレーション、およびトリムは保持されます。無線経由のアップデート（OTA）用の 2 つ目のスロットはありません。
 

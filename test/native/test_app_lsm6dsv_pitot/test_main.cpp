@@ -216,7 +216,7 @@ void test_console_bus_scan_names_the_chips()
     const std::string out = takeSerial();
     TEST_ASSERT_TRUE(contains(out, "0x47  BMP581"));
     TEST_ASSERT_TRUE(contains(out, "0x6A  LSM6DSV"));
-    TEST_ASSERT_TRUE(contains(out, "0x76  BME280/BMP388/SPL06"));
+    TEST_ASSERT_TRUE(contains(out, "0x76  BME280/BMP388/SPL06/DPS310"));
     TEST_ASSERT_TRUE(contains(out, "0x7C  QMC6309"));
     TEST_ASSERT_TRUE(contains(out, "I2C экрана"));
     TEST_ASSERT_TRUE(contains(out, "0x3C  OLED"));

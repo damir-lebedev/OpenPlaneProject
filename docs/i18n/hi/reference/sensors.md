@@ -134,12 +134,13 @@ Y बाएँ) में घुमाता है। `rotationCwDeg` बता
 | `SENSOR_KIT_BENCH_GY521` (1, डिफ़ॉल्ट) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (धड़) | QMC6309 | नली में BMP581 | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (धड़) | QMC6309 | नली में BMP581 | M10 |
+| `SENSOR_KIT_MATEK_H743` (4) | ICM-42688-P (SPI, बोर्ड पर) | DPS310 (बोर्ड पर) | — | — | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | नीचे के पाँचों मैक्रो तय करें | | | | |
 
 | चुनाव का मैक्रो | विकल्प |
 |---|---|
 | `SENSOR_IMU` | `MPU6050` (1), `ICM42688` (2, SPI), `LSM6DSV` (3), `LSM6DSV_SPI` (4), `ICM45686` (5), `ICM45686_SPI` (6) |
-| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7) |
+| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7), `DPS310` (8) |
 | `SENSOR_MAG` | `NONE` (0), `QMC5883P` (1), `QMC5883L` (2), `QMC6309` (3) |
 | `SENSOR_AIRSPEED` | `NONE` (0), `PITOT_BMP581` (1) — नली में BMP581 I2C 0x47 |
 | `SENSOR_GPS` | `NONE` (0), `UBLOX_M10` (1) |
@@ -263,6 +264,7 @@ rightWingDown का ⟂ Z हिस्सा, X₂ = Y × Z; X = norm(X₁ + X�
 | `NotOneG` | \|a\| 1g से 0.2g से अधिक अलग है |
 | `MountingMismatch` | (माउंटिंग कैलिब्रेट है) “ऊपर” सहेजे गए से 45° से अधिक दूर है |
 | `NotChipUp` | (कैलिब्रेट नहीं) बोर्ड चिप ऊपर की ओर करके नहीं रखा है (`z < 0.5g`) |
+| `MountNotCalibrated` | (कैलिब्रेशन नहीं, और `IMU_MOUNT_CALIBRATION_REQUIRED` — IMU फ़्लाइट कंट्रोलर बोर्ड पर) `NotChipUp` की जगह: स्टेबिलाइज़ेशन वाला ARM सिर्फ़ माउंटिंग कैलिब्रेशन के बाद |
 
 ---
 
@@ -389,6 +391,19 @@ SPL06-001 (Goertek)। सूत्र डेटाशीट §4.9 से है
   दाब 16× (32 Hz), तापमान 1×, सतत मोड।
 - `isNewSampleReady()` — `PRS_RDY` बिट; `readSample()` — 24-बिट
   big-endian नमूने, `kP = 253952`, `kT = 524288`।
+
+## `DPS310_Sensor`
+
+**फ़ाइल:** `sensors/baro/DPS310_Sensor.h` · **इनहेरिट करता है:** `SPL06_Sensor` · **स्थिति:** हार्डवेयर पर जाँचा नहीं गया
+
+DPS310 (Infineon) — तैयार फ़्लाइट कंट्रोलरों (Matek H743) का बैरोमीटर। रजिस्टर,
+ID `0x10`, गुणांक और फ़ॉर्मूले SPL06-001 जैसे ही हैं, इसलिए ड्राइवर
+`SPL06_Sensor` का सबक्लास है। फ़र्क़ एक है: रीसेट के तुरंत बाद `afterReset()`
+तापमान सेंसर का सुधार लिखता है (`0x0E←0xA5`, `0x0F←0x96`, `0x62←0x02`,
+`0x0E←0x00`, `0x0F←0x00` — Infineon का क्रम, ArduPilot भी यही करता है): इसके
+बिना कुछ चिप ग़लत तापमान और उसके साथ ग़लत दबाव देते हैं। लिखना न हो पाए तो
+`begin()` `false` लौटाता है («रजिस्टर लिखने में त्रुटि»)। ID से इसे SPL06 से
+अलग नहीं पहचाना जा सकता — चिप साफ़ तौर पर चुनी जाती है: `SENSOR_BARO_DPS310`।
 
 ## `BMP581_Sensor`
 

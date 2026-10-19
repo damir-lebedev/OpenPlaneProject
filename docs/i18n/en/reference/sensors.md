@@ -134,12 +134,13 @@ with a build flag (`-D SENSOR_KIT=SENSOR_KIT_LSM6DSV_PITOT`,
 | `SENSOR_KIT_BENCH_GY521` (1, the default) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (fuselage) | QMC6309 | BMP581 in the tube | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (fuselage) | QMC6309 | BMP581 in the tube | M10 |
+| `SENSOR_KIT_MATEK_H743` (4) | ICM-42688-P (SPI, on the board) | DPS310 (on the board) | — | — | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | set all five macros below | | | | |
 
 | Selection macro | Options |
 |---|---|
 | `SENSOR_IMU` | `MPU6050` (1), `ICM42688` (2, SPI), `LSM6DSV` (3), `LSM6DSV_SPI` (4), `ICM45686` (5), `ICM45686_SPI` (6) |
-| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7) |
+| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7), `DPS310` (8) |
 | `SENSOR_MAG` | `NONE` (0), `QMC5883P` (1), `QMC5883L` (2), `QMC6309` (3) |
 | `SENSOR_AIRSPEED` | `NONE` (0), `PITOT_BMP581` (1) — a BMP581 I2C 0x47 in the tube |
 | `SENSOR_GPS` | `NONE` (0), `UBLOX_M10` (1) |
@@ -263,6 +264,7 @@ The preflight check (`runPreflightCheck`), in order:
 | `NotOneG` | \|a\| differs from 1g by more than 0.2g |
 | `MountingMismatch` | (the mounting is calibrated) "up" is more than 45° away from the saved one |
 | `NotChipUp` | (not calibrated) the board is not lying chip-up (`z < 0.5g`) |
+| `MountNotCalibrated` | (not calibrated, and `IMU_MOUNT_CALIBRATION_REQUIRED` — the IMU is on a flight-controller board) instead of `NotChipUp`: ARM with stabilization only after mounting calibration |
 
 ---
 
@@ -389,6 +391,20 @@ SPL06-001 (Goertek). The formulas are from datasheet §4.9.
   pressure 16× (32 Hz), temperature 1×, continuous mode.
 - `isNewSampleReady()` — the `PRS_RDY` bit; `readSample()` — 24-bit
   big-endian samples, `kP = 253952`, `kT = 524288`.
+
+## `DPS310_Sensor`
+
+**File:** `sensors/baro/DPS310_Sensor.h` · **Inherits:** `SPL06_Sensor` · **Status:** not verified on hardware
+
+DPS310 (Infineon) — the barometer of ready-made flight controllers (Matek H743).
+The registers, ID `0x10`, coefficients and formulas are the same as the
+SPL06-001's, so the driver is a subclass of `SPL06_Sensor`. There is one
+difference: right after reset `afterReset()` writes the temperature-sensor fix
+(`0x0E←0xA5`, `0x0F←0x96`, `0x62←0x02`, `0x0E←0x00`, `0x0F←0x00` — Infineon's
+sequence, ArduPilot does the same): without it some chips report a wrong
+temperature, and with it a wrong pressure. If the write fails, `begin()`
+returns `false` ("register write error"). By ID it can't be told from the
+SPL06 — the chip is chosen explicitly: `SENSOR_BARO_DPS310`.
 
 ## `BMP581_Sensor`
 

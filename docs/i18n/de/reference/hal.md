@@ -50,6 +50,7 @@ oder `HardwareSerial` ein, und nichts ruft LEDC direkt auf.
 | `virtual II2CBus& i2c()` | Der Sensorbus |
 | `virtual ISpiBus& spi()` | Der SPI-Bus |
 | `virtual II2CBus* displayI2c()` | Ein zweiter I2C-Bus nur für das Display; `nullptr`, wenn es ihn nicht gibt |
+| `virtual II2CBus& externalI2c()` | Bus des externen Anschlusses: Kompass, Pitotrohr. Standardmäßig `i2c()`; beim Matek H743 ein eigener I2C1 |
 | `virtual IUartPort& rcUart()` | Der UART des Fernsteuerempfängers: iBUS, SBUS oder CRSF |
 | `virtual IUartPort& gpsUart()` | Der UART des GPS |
 | `virtual IUartPort* telemetryUart()` | Der UART des MAVLink-Funkmodems; standardmäßig `nullptr` (der ESP32 hat keinen freien UART) |
@@ -374,7 +375,8 @@ Dasselbe wie `Esp32Board`, aufgesetzt auf STM32duino.
 | `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `displayBus.begin()`, der Pin des Summers |
 | `telemetryUart()` | `&telemetryPort` |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
-| `displayI2c()` | Immer `&displayBus` |
+| `displayI2c()` | `&displayBus`, wenn Bildschirmpins gesetzt sind (`PIN_I2C2_*` ≥ 0), sonst `nullptr` (das Matek H743 hat keinen Bildschirm) |
+| `externalI2c()` | `&externalBus` (I2C1), wenn `PIN_I2C_EXT_*` gesetzt sind, sonst der Sensorbus |
 | `static constexpr pin_size_t pinOf(int16_t)` | Wandelt einen Pin aus `Config.h` in den Typ der Kern-API um |
 | die übrigen | Liefern die entsprechenden Felder |
 

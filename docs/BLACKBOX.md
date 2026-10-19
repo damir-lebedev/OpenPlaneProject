@@ -261,7 +261,7 @@ DevEBox H743 + карта 16 ГБ (тест `test_blackbox_sd`, [TESTING.md](TES
 | `BLACKBOX_MIN_FREE_BYTES` | 10 МБ | Сколько держать стёртым к следующему полёту |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | Пауза между стираниями на земле |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU каждый N-й такт: 2 — 250 Гц и на ~25% дольше запись |
-| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 | Делители батареи и датчика тока на плате |
+| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 (Matek H743: 11, 1) | Делители батареи и датчика тока на плате |
 
 Таблица разделов — `partitions_blackbox.csv`: приложение 2 МБ (прошивка
 сейчас ~0.9 МБ), чёрный ящик 13.9 МБ, coredump 64 КБ. Раздел NVS остался на

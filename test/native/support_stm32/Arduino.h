@@ -6,7 +6,7 @@
 // только то, что есть лишь у STM32duino:
 //   - имена пинов PA0..PE15 (порт·16 + номер, 0x00..0x4F);
 //   - pin_size_t, PinName, таблица таймеров PinMap_TIM для пинов
-//     сервовыходов из Config.h (BOARD_STM32H743);
+//     сервовыходов из Config.h (BOARD_STM32H743, BOARD_MATEK_H743);
 //   - HardwareTimer: ширина импульса видна тесту (fake::timerPulseUs)
 //     и pulseIn() — как у настоящего таймера;
 //   - Uart (= HardwareSerial с пинами), noInterrupts()/interrupts().
@@ -24,8 +24,15 @@ typedef uint32_t PinName;
 #define PA1  STM32_FAKE_PIN(0, 1)
 #define PA2  STM32_FAKE_PIN(0, 2)
 #define PA3  STM32_FAKE_PIN(0, 3)
+#define PA5  STM32_FAKE_PIN(0, 5)
+#define PA6  STM32_FAKE_PIN(0, 6)
 #define PA9  STM32_FAKE_PIN(0, 9)
 #define PA10 STM32_FAKE_PIN(0, 10)
+#define PA15 STM32_FAKE_PIN(0, 15)
+#define PB0  STM32_FAKE_PIN(1, 0)
+#define PB1  STM32_FAKE_PIN(1, 1)
+#define PB6  STM32_FAKE_PIN(1, 6)
+#define PB7  STM32_FAKE_PIN(1, 7)
 #define PB8  STM32_FAKE_PIN(1, 8)
 #define PB9  STM32_FAKE_PIN(1, 9)
 #define PB10 STM32_FAKE_PIN(1, 10)
@@ -36,11 +43,19 @@ typedef uint32_t PinName;
 #define PB15 STM32_FAKE_PIN(1, 15)
 #define PC0  STM32_FAKE_PIN(2, 0)
 #define PC1  STM32_FAKE_PIN(2, 1)
+#define PC6  STM32_FAKE_PIN(2, 6)
+#define PC7  STM32_FAKE_PIN(2, 7)
+#define PC15 STM32_FAKE_PIN(2, 15)
 #define PD0  STM32_FAKE_PIN(3, 0)
 #define PD1  STM32_FAKE_PIN(3, 1)
+#define PD5  STM32_FAKE_PIN(3, 5)
+#define PD6  STM32_FAKE_PIN(3, 6)
+#define PD7  STM32_FAKE_PIN(3, 7)
 #define PD8  STM32_FAKE_PIN(3, 8)
 #define PD9  STM32_FAKE_PIN(3, 9)
 #define PD10 STM32_FAKE_PIN(3, 10)
+#define PD12 STM32_FAKE_PIN(3, 12)
+#define PD13 STM32_FAKE_PIN(3, 13)
 #define PD14 STM32_FAKE_PIN(3, 14)
 #define PD15 STM32_FAKE_PIN(3, 15)
 #define PE7  STM32_FAKE_PIN(4, 7)
@@ -146,11 +161,13 @@ struct PinMap
     int channel;
 };
 
-// Пины сервовыходов Config.h (BOARD_STM32H743) — как в PeripheralPins
-// варианта WeAct H743: TIM2 CH1..4, TIM4 CH3/CH4, TIM1 CH1.
+// Пины сервовыходов Config.h — как в PeripheralPins вариантов WeAct и
+// DevEBox H743: TIM2 CH1..4, TIM4 CH3/CH4, TIM1 CH1; у Matek H743 ещё
+// PB0 (TIM1 CH2N — N-канал фейку не важен) и PD12/PD13 (TIM4 CH1/CH2).
 inline const PinMap PinMap_TIM[] = {
     { PA0, 2, 1 }, { PA1, 2, 2 }, { PA2, 2, 3 }, { PA3, 2, 4 },
     { PD14, 4, 3 }, { PD15, 4, 4 }, { PE9, 1, 1 },
+    { PB0, 1, 2 }, { PD12, 4, 1 }, { PD13, 4, 2 },
     { 0xFFFFFFFFu, 0, 0 },
 };
 

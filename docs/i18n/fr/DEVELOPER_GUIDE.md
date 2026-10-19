@@ -56,7 +56,7 @@ include/
 │   └── feedback/  ébauche de la rétroaction — NON branchée (voir la section ci-dessous)
 ├── sensors/     SensorInterface, SensorSelection, SensorMounting
 │   ├── imu/     ImuSensorBase, AttitudeEstimator, MPU6050, ICM42688, LSM6DSV, ICM45686
-│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, BMP581
+│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, DPS310, BMP581
 │   ├── mag/     MagnetometerBase, QMC5883P, QMC5883L, QMC6309
 │   ├── gps/     UbloxM10_Gps
 │   └── airspeed/ AirspeedSensor, PitotDualBaroAirspeed (un tube fait de deux baromètres)
@@ -145,7 +145,7 @@ Les règles qui gardent l’architecture propre :
 
 | Fichier | Rôle |
 |---|---|
-| `IBoard.h` | Le point d’entrée vers le matériel : `i2c()`, `displayI2c()` (un second bus pour l’écran, peut valoir `nullptr`), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()` (MAVLink, peut valoir `nullptr`), `servo(ServoChannel::*)` (7 sorties avec AUX1/AUX2), `setBuzzer()` |
+| `IBoard.h` | Le point d’entrée vers le matériel : `i2c()`, `displayI2c()` (un second bus pour l’écran, peut valoir `nullptr`), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()` (MAVLink, peut valoir `nullptr`), `servo(ServoChannel::*)` (7 sorties avec AUX1/AUX2), `setBuzzer()`, `externalI2c()` (bus du connecteur externe : par défaut le même `i2c()`, un bus à part sur la Matek H743) |
 | `Rtos.h` | Les tâches FreeRTOS de la même façon sur l’ESP32 (cœur 0) et sur la STM32 (priorités), le tas libre |
 | `II2CBus.h` | Le bus I2C : primitives à la forme de `Wire` + les utilitaires `writeRegister()`, `readRegisters()` (vérifie qu’exactement `count` octets sont arrivés), `readRegister()`, `probe()` |
 | `ISpiBus.h`, `IUartPort.h`, `IServoOutput.h` | SPI, UART, une sortie PWM (`measurePulseUs()` — diagnostic de l’impulsion réelle) |
@@ -227,6 +227,7 @@ Les règles qui gardent l’architecture propre :
 | `baro/BMP388_Sensor.h` | BMP388 en I2C ou en SPI (avec l’octet factice du SPI), compensation Bosch, lecture sur l’indicateur de donnée prête. **Sur le banc (I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280, compensation Bosch §8.1. Non testé sur le matériel |
 | `baro/SPL06_Sensor.h` | SPL06-001 : coefficients et formules de la fiche technique, 32 Hz ×16 ; I2C 0x76/0x77 ou SPI. Non testé sur le matériel |
+| `baro/DPS310_Sensor.h` | DPS310 : sous-classe de `SPL06_Sensor` — mêmes registres et formules, plus la correction du capteur de température après la réinitialisation ; I2C 0x76/0x77. Pas essayé sur le matériel |
 | `baro/BMP581_Sensor.h` | BMP581 : la séquence du BMP5_SensorAPI, 16×/2×, IIR ; I2C 0x46/0x47 ou SPI ; sert à la fois de baromètre principal (kit de banc par défaut) et de tube de Pitot. Non testé sur le matériel |
 | `mag/MagnetometerBase.h` | Ce qui est commun aux boussoles : interrogation à 50 Hz, calibration hard-iron dans la NVS, rotation des axes, cap, erreurs |
 | `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C. **Sur le banc** |
@@ -631,6 +632,7 @@ Les formats de tous les canaux figurent dans la [référence](reference/telemetr
 | `pio run -e esp32-dev` | `esp32dev` | `BOARD_ESP32_CLASSIC` | Pour le banc, le brochage n’a pas été testé sur le matériel |
 | `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | STM32H743VIT6 : le micrologiciel complet + MAVLink + boîte noire sur SD ; testée sur une carte nue ([ci-dessous](#stm32h743)) |
 | `pio run -e stm32h743-devebox` | `devebox_h743vitx` | `BOARD_STM32H743` | Pareil sur la DevEBox H743 : la console est en USB CDC, le micrologiciel se charge par DFU |
+| `pio run -e matek-h743` | `devebox_h743vitx` + horloges propres | `BOARD_MATEK_H743` + `BOARD_STM32H743` | Contrôleur prêt à l’emploi Matek H743-WING V3 : capteurs sur la carte, flashage par DFU (bouton BOOT) ; pas essayé sur le matériel ([plus bas](#stm32h743)) |
 
 | Rôle | ESP32-S3 (banc) | ESP32-C3 | ESP32 classic |
 |---|---|---|---|
@@ -734,6 +736,21 @@ mode manuel (en vidéo). Les capteurs sont en cours de branchement sur la STM32.
   saut direct depuis le micrologiciel en cours d’exécution se fige sur le H7 —
   vérifié sur la carte, d’où les deux étapes. Il faut une console ouverte (USB
   CDC) ; si la carte ne répond pas — RST avec le fil de BT0 en place.
+- **Matek H743-WING V3** — env `matek-h743` : un contrôleur de vol prêt à
+  l’emploi avec le même STM32H743VIT6. Il se compile avec la variante de cœur
+  de la DevEBox (même boîtier, USB et SDMMC1 sur les mêmes broches), mais le
+  quartz de la carte est à 8 MHz : son propre `SystemClock_Config()` vient de
+  `src/stm32/clock_matek.cpp` (le même arbre d’horloges que la DevEBox), et
+  `HSE_VALUE` est un flag dans `platformio.ini`. La macro `BOARD_MATEK_H743`
+  choisit son propre bloc de broches dans `Config.h`, `BOARD_STM32H743` reste —
+  tout le code STM32 est commun. Les capteurs sont soudés sur la carte : leur
+  kit (`SENSOR_KIT_MATEK_H743`) est fixé par un flag de l’environnement, et les
+  broches des capteurs portent `@fixed` — l’application ne les change pas. Le
+  connecteur I2C1 externe est un bus à part (`IBoard::externalI2c()`) pour le
+  compas et le tube de Pitot. La carte se monte n’importe comment, d’où
+  `IMU_MOUNT_CALIBRATION_REQUIRED = true` : sans calibration du montage, l’ARM
+  avec stabilisation est refusé. Premier flashage — bouton BOOT + USB (DFU),
+  ensuite la touche `D`.
 - **Point d’entrée** — `src/stm32/main.cpp` (exclu des compilations ESP32 par
   `build_src_filter`). Les objets sont les mêmes que dans `src/main.cpp` ; à la
   place de `loop()` il y a des tâches, et `vTaskStartScheduler()` se trouve à la

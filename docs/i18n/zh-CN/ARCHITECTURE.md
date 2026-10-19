@@ -569,6 +569,7 @@ PlatformIO 环境：
 | `esp32-dev` | 经典 ESP32，台架 |
 | `stm32h743` | STM32H743VIT6：完整固件（`src/stm32/main.cpp`），设置存于闪存，MAVLink，SD 上的黑匣子，FreeRTOS；已在裸板上验证——见 [reference/hal.md](reference/hal.md#stm32h743-的实现) |
 | `stm32h743-devebox` | DevEBox H743：同上，控制台走 USB CDC，通过 DFU 烧录（[DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)） |
+| `matek-h743` | Matek H743-WING V3：带板载传感器的现成飞控，8 MHz 晶振，通过 DFU 烧录（[DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)） |
 | `native` | 在电脑上用 Arduino/ESP-IDF 模拟替身构建并运行测试，带覆盖率——见 [`TESTING.md`](TESTING.md) |
 
 ---

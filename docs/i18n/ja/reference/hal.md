@@ -47,6 +47,7 @@ HAL は、特定の MCU を知ってよい唯一の層です。インターフ�
 | `virtual II2CBus& i2c()` | センサー用のバス |
 | `virtual ISpiBus& spi()` | SPI バス |
 | `virtual II2CBus* displayI2c()` | 画面専用の2本目の I2C バス。なければ `nullptr` |
+| `virtual II2CBus& externalI2c()` | 外部コネクターのバス：コンパス、ピトー管。既定は `i2c()`。Matek H743 では別の I2C1 |
 | `virtual IUartPort& rcUart()` | RC 受信機の UART：iBUS、SBUS、CRSF |
 | `virtual IUartPort& gpsUart()` | GPS の UART |
 | `virtual IUartPort* telemetryUart()` | MAVLink 無線モデムの UART。既定は `nullptr`（ESP32 には空いている UART がありません） |
@@ -341,7 +342,8 @@ PWM を確認済みです。機体は送信機からマニュアルモードで�
 | `begin()` | `i2cBus.begin()`、`spiBus.begin()`、`displayBus.begin()`、ブザーのピン |
 | `telemetryUart()` | `&telemetryPort` |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
-| `displayI2c()` | 常に `&displayBus` |
+| `displayI2c()` | 画面のピンが設定されていれば（`PIN_I2C2_*` ≥ 0）`&displayBus`、なければ `nullptr`（Matek H743 には画面がない） |
+| `externalI2c()` | `PIN_I2C_EXT_*` が設定されていれば `&externalBus`（I2C1）、なければセンサーバス |
 | `static constexpr pin_size_t pinOf(int16_t)` | `Config.h` のピンをコア API の型に変換します |
 | そのほか | 対応するフィールドを返します |
 

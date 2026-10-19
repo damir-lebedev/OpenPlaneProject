@@ -19,7 +19,7 @@
 
 पिनों का ब्लॉक उस मैक्रो से चुना जाता है जो `platformio.ini` में `[env:*]` तय करता है
 (`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
-`BOARD_STM32H743`)। मैक्रो के बिना — `#error`। STM32 का ब्लॉक
+`BOARD_STM32H743` / `BOARD_MATEK_H743`)। मैक्रो के बिना — `#error`। STM32 का ब्लॉक
 [नीचे](#stm32h743vit6-board_stm32h743) वर्णित है।
 
 | स्थिरांक | प्रकार | उपयोग | S3 | C3 | classic |
@@ -71,6 +71,27 @@ STM32duino वेरिएंट की `PeripheralPins` तालिकाओ�
 | `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4 — MAVLink का रेडियो मॉडेम (यही पिन FDCAN1 भी हैं) |
 
 कंसोल `Serial` — LPUART1 (PA9 TX / PA10 RX), वेरिएंट का डिफ़ॉल्ट।
+
+#### Matek H743-WING V3 (`BOARD_MATEK_H743`)
+
+तैयार फ़्लाइट कंट्रोलर: env `matek-h743` `BOARD_STM32H743` (STM32 का पूरा कोड साझा) और अपना पिन ब्लॉक, दोनों तय करता है — ArduPilot में बोर्ड के विवरण (hwdef MatekH743) के अनुसार, हार्डवेयर पर नहीं आज़माया। बोर्ड पर सोल्डर चीज़ों के पिन पर `@fixed` है।
+
+| कॉन्स्टेंट | पिन | पैड, पेरिफ़ेरल |
+|---|---|---|
+| `PIN_ESC` | PB0 | S1, TIM1_CH2N |
+| `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_RUDDER` | PA0 / PA1 / PA2 / PA3 | S3–S6, TIM2_CH1..CH4 |
+| `PIN_AUX1` / `PIN_AUX2` | PD12 / PD13 | S7 / S8, TIM4_CH1 / CH2 |
+| `PIN_RC_RX` / `PIN_RC_TX` | PC7 / PC6 | R6 / T6, USART6 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | PD6 / PD5 | R2 / T2, USART2 |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PE7 / PE8 | R7 / T7, UART7 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | बोर्ड पर I2C2: बैरोमीटर DPS310 |
+| `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` | PB7 / PB6 | SDA / SCL, I2C1 — बाहरी कनेक्टर: कम्पास, पिटो ट्यूब |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | −1 | स्क्रीन की बस नहीं |
+| `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI`, `PIN_SPI_CS_IMU` | PA5 / PA6 / PD7, PC15 | बोर्ड पर SPI1: ICM-42688-P |
+| `PIN_BUZZER` | PA15 | BZ+ / BZ− |
+| `PIN_VBAT_ADC` / `PIN_CURRENT_ADC` | PC0 / PC1 | VBAT (डिवाइडर ×11) / Curr (40 A प्रति वोल्ट) |
+
+`PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` सामान्य STM32 ब्लॉक में भी हैं: वहाँ ये −1 हैं — कम्पास और पिटो ट्यूब सेंसर बस पर हैं। डिवाइडर `BLACKBOX_VBAT_DIVIDER` / `BLACKBOX_CURRENT_DIVIDER` और `IMU_MOUNT_CALIBRATION_REQUIRED` भी हर बोर्ड के अपने हैं।
 
 ### रिसीवर और संपर्क टूटना
 
@@ -143,6 +164,7 @@ STM32duino वेरिएंट की `PeripheralPins` तालिकाओ�
 | स्थिरांक | मान | अर्थ |
 |---|---|---|
 | `IMU_ROTATION_CW_DEG` | 90 | IMU चिप की अक्षों का ऊर्ध्वाधर के चारों ओर घुमाव (0/90/180/270), यानी चिप की X अक्ष किधर देखती है। केवल तब इस्तेमाल होता है जब NVS में माउंटिंग का कैलिब्रेशन `o` नहीं है |
+| `IMU_MOUNT_CALIBRATION_REQUIRED` | `false` (Matek H743 — `true`) | स्टेबिलाइज़ेशन वाला ARM सिर्फ़ माउंटिंग कैलिब्रेशन `o` के बाद: IMU फ़्लाइट कंट्रोलर पर सोल्डर है, और बोर्ड किसी भी तरह लगता है। हर बोर्ड का अपना, उसके पिन ब्लॉक में |
 | `MAG_ROTATION_CW_DEG` | 0 | कम्पास के लिए वही (कम्पास में माउंटिंग का कैलिब्रेशन नहीं है) |
 
 ### लैंडिंग गियर, ग्राउंड कैलिब्रेशन, संकेत
@@ -234,7 +256,7 @@ STM32duino वेरिएंट की `PeripheralPins` तालिकाओ�
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | तैयार रखी गई मिटाई हुई जगह; पुरानी उड़ानें ज़मीन पर पूरी की पूरी मिटाई जाती हैं |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | मिटाने के बीच का विराम |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU हर N-वें चक्र में (1 — 500 Hz) |
-| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | फ़्लाइट-कंट्रोलर बोर्ड पर बैटरी (56k/10k) और करंट सेंसर (10k/15k) के डिवाइडर |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 (Matek H743: 11 / 1) | फ़्लाइट-कंट्रोलर बोर्ड पर बैटरी (56k/10k) और करंट सेंसर (10k/15k) के डिवाइडर |
 
 ---
 

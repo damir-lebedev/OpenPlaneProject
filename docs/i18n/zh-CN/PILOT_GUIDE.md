@@ -55,7 +55,7 @@
 
 ## 选择开发板与引脚分配
 
-固件支持四种开发板；切换只需一个构建参数（`pio run -e <环境名>`）。每块板的引脚分配各不相同，并且针对具体的构建环境写死在固件里——不要自作主张挪线，请对照自己那块板的表格。
+固件支持五种开发板；切换只需一个构建参数（`pio run -e <环境名>`）。每块板的引脚分配各不相同，并且针对具体的构建环境写死在固件里——不要自作主张挪线，请对照自己那块板的表格。
 
 > **重要**：现在的主力板是 **STM32H743 (DevEBox H743)**——已在它上面验证了启动、USB 控制台、SD 卡、iBUS、舵机和电机；传感器是第一次接上去。**esp32-s3 (N16R8)** 是之前的主力板，它的引脚分配已在装有全部传感器的台架上验证。**esp32-c3** 是飞过的旧原型机。**esp32-dev** 的引脚分配是根据芯片文档选定的，**没有在真实硬件上验证过**。
 
@@ -91,6 +91,30 @@
 | OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
 
 舵机**不由开发板供电**，而是由电调的 BEC（或另一个不低于 2 A 的 5 V 电源）供电；所有电源的地线共地。USB 插着的时候，不要把电调的红线接到开发板的 5 V 上。
+
+### Matek H743-WING V3——现成的飞控
+
+`pio run -e matek-h743`——Matek H743-WING V3 飞控板（H743-WLITE 和 H743-SLIM V3 的引脚分配相同）。这是基于同一颗 STM32H743 的现成飞控：电源稳压、电流传感器、IMU ICM-42688-P、气压计 DPS310 和 microSD 卡槽都已在板上——无需焊接，舵机、电调、接收机和 GPS 接到有丝印标注的焊盘即可。**固件还没有在真实的板子上试过**（引脚分配取自 ArduPilot 中的板子描述，整套固件已由电脑上的测试验证）——首飞前请在地面检查舵面、电机和各模式。
+
+| 用途 | 焊盘 | 引脚 |
+|---|---|---|
+| 电调（油门） | S1 | PB0 |
+| 副翼，左 / 右机翼 | S3 / S4 | PA0 / PA1 |
+| 升降舵 | S5 | PA2 |
+| 方向舵 + 转向轮 | S6 | PA3 |
+| AUX1 / AUX2（投放货物、相机） | S7 / S8 | PD12 / PD13 |
+| 接收机：iBUS、SBUS、CRSF（TX 仅用于 CRSF） | R6 / T6 | PC7 / PC6 |
+| GPS：RX（← GPS 的 TX）/ TX（→ GPS 的 RX） | R2 / T2 | PD6 / PD5 |
+| MAVLink 遥测（数传电台）：RX / TX | R7 / T7 | PE7 / PE8 |
+| 罗盘、皮托管（外部 I2C） | SDA / SCL | PB7 / PB6 |
+| 蜂鸣器 | BZ+ / BZ− | PA15 |
+| 电池 / 电流传感器 | VBAT / Curr | PC0 / PC1 |
+
+- **板载传感器**——IMU 和气压计；它们的组合（`SENSOR_KIT_MATEK_H743`）由环境 `matek-h743` 设定，`SensorSelection.h` 无需改动。板上没有罗盘：带罗盘的 GPS 模块接到 SDA/SCL 焊盘——在 OpenPlane Studio 中是「传感器」步骤里的罗盘选择，命令行下则是 `platformio.ini` 中的标志 `-D SENSOR_MAG=SENSOR_MAG_QMC5883L`。
+- **飞控板怎么装方便就怎么装**，箭头朝后也行：IMU 焊在板上，所以在第一次带增稳的 ARM 之前，需要用三个姿态做安装校准（控制台中按 `o`，或在应用里「调试」→「IMU 安装」）。没有校准时，增稳模式下的 ARM 会被拒绝并说明原因；MANUAL 下可以 ARM。
+- **第一次烧录：**按住 BOOT 键插上 USB——飞控进入 DFU 模式（Windows 需要 WinUSB 驱动，和 DevEBox 一样）；然后执行 `pio run -e matek-h743 -t upload`，或点击 OpenPlane Studio 的「烧录」按钮。之后在控制台按 `D` 键，飞控会自己重启进入引导程序。
+- **黑匣子**写入飞控卡槽中的 microSD 卡。电池电压经板上分压器（×11）测量，电流传感器记录其输出电压（每伏 40 A）。
+- S2 和 S9–S12 空闲。舵机由飞控的 BEC（Vx 电源轨）或电调的 BEC 供电——按 Matek 的说明书；所有电源共地。
 
 ### esp32-s3 (N16R8)——之前的主力板，已在台架上验证
 
@@ -306,6 +330,9 @@ CH6–CH10 在 `include/config/Controls.h` 中**只需一行就能随意指定**
 # STM32H743 DevEBox（主力板）
 pio run -e stm32h743-devebox -t upload
 
+# Matek H743-WING V3（现成的飞控）：BOOT 键 + USB
+pio run -e matek-h743 -t upload
+
 # esp32-s3 N16R8（之前的主力板）
 pio run -e esp32-s3 -t upload
 
@@ -319,6 +346,8 @@ pio run -e esp32-dev -t upload
 如果完全不指定 `-e`，就会编译默认开发板——`stm32h743-devebox`。
 
 **STM32 DevEBox：** 第一次烧录走 USB DFU：用跳线把 BT0 接到 3V3，按一下 RST，然后执行上面的命令（Windows 需要为“STM32 BOOTLOADER”安装 WinUSB 驱动，用 Zadig 安装）。之后在控制台按 `D` 键，板子会自己重启进入引导程序，跳线就不再需要了。控制台也走同一个 USB-C。
+
+**Matek H743：**第一次烧录同样走 USB DFU，但不需要跳线：按住飞控上的 BOOT 键插上 USB，再执行上面的命令。之后——控制台中的 `D` 键。
 
 **esp32-s3**：这块板有两个 USB-C 接口。烧录和串口都走 **“COM”** 接口（CH343 桥接芯片，在 Windows 中显示为“USB-Enhanced-SERIAL CH343”）。“USB”接口（芯片自带的原生 USB）工作时用不到，但可以插着——不会影响任何东西。
 

@@ -25,7 +25,7 @@ sys.path.insert(0, HERE)
 
 import opconfig  # noqa: E402
 
-DEFAULT_BOARDS = ["esp32-s3", "esp32-dev", "esp32-c3", "stm32h743"]
+DEFAULT_BOARDS = ["esp32-s3", "esp32-dev", "esp32-c3", "stm32h743", "matek-h743"]
 
 
 def heavy_config(manifest, board):

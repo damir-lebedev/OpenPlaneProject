@@ -133,7 +133,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10초 중 최악) | iBUS ok=… crc_e
 | 메서드 | 설명 |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | 보드가 있으면 — 명령 `b`와 메뉴의 7번 항목 |
-| `static const char* guessI2cDevice(uint8_t address)` | 주소로 칩을 추정합니다: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | 주소로 칩을 추정합니다: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06/DPS310, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
 | `void printHint() const` | 한 줄짜리 도움말 |
 | `void update()` | `Serial`의 모든 바이트를 처리합니다. 로그 설정이 바뀌었고 메뉴가 닫혀 있으며 기체가 **armed가 아니면** NVS에 저장합니다 |
 
@@ -143,7 +143,7 @@ IMU 장착 방향 보정, `m` — 나침반 보정, `p` — 출력 자가 점검
 `b` — I2C 버스 스캔 (0x08..0x7F — QMC6309가 0x7C에 있으므로 0x7F까지)과
 칩 이름 표시, 그 밖의 키 — 도움말. `\r`/`\n`은 무시합니다. 그 밖에 `c`는 비행기 지상 캘리브레이션(진행 중이면 취소. 주 메뉴 9번), `e`는 조종면과 ESC 멜로디로 내는 알림입니다(펄스를 멈춘 뒤 ESC가 멜로디를 내는지 확인).
 
-PC 명령은 STX 바이트(`0x02`), 문자열, `\n`입니다. `id`에는 `FirmwareIdentity::print()`가 펌웨어 식별 정보를 `@id {...}` 한 줄로 출력하고(`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; ARM 중에도 응답합니다). `scan`은 버스를 조사해 `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}`을 출력하고(ARM 중에는 `{"error":"armed"}`), `act X`는 메뉴 키 `X`의 동작을 ARM 중의 같은 제한 아래 실행하며, `live`와 `live 0`은 `AppLink`(아래)로, 나머지는 `IFlightRecorder::handleHostCommand()`(블랙박스)로 넘어갑니다. 보드, 커밋, 설정 해시, 기체 이름은 OpenPlane Studio가 자신의 소스 사본에 있는 `config/Project.h`로 넣습니다. 이 파일이 없으면 보드 매크로와 `"dev"`가 쓰입니다.
+PC 명령은 STX 바이트(`0x02`), 문자열, `\n`입니다. `id`에는 `FirmwareIdentity::print()`가 펌웨어 식별 정보를 `@id {...}` 한 줄로 출력하고(`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; ARM 중에도 응답합니다). `scan`은 버스를 조사해 `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}`을 출력하고(ARM 중에는 `{"error":"armed"}`), `act X`는 메뉴 키 `X`의 동작을 ARM 중의 같은 제한 아래 실행하며, `live`와 `live 0`은 `AppLink`(아래)로, 나머지는 `IFlightRecorder::handleHostCommand()`(블랙박스)로 넘어갑니다. 보드, 커밋, 설정 해시, 기체 이름은 OpenPlane Studio가 자신의 소스 사본에 있는 `config/Project.h`로 넣습니다. 이 파일이 없으면 보드 매크로와 `"dev"`가 쓰입니다.
 
 로그 메뉴: `1`..`9` — 채널 0..8의 모드를 순환, `n` — NAV, `s` — SYS, `p` — 주기, `a` —
 모두 “변경 시”, `x` — 모두 끄기, `d` — 기본값, `0`/`q` — 뒤로, `l`/`h` —

@@ -20,7 +20,7 @@ aqui.
 
 O bloco de pinos é escolhido pela macro que o `[env:*]` define no
 `platformio.ini` (`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
-`BOARD_STM32H743`). Sem macro — `#error`. O bloco da STM32 está descrito
+`BOARD_STM32H743` / `BOARD_MATEK_H743`). Sem macro — `#error`. O bloco da STM32 está descrito
 [abaixo](#stm32h743vit6-board_stm32h743).
 
 | Constante | Tipo | Função | S3 | C3 | classic |
@@ -73,6 +73,27 @@ de UART — o núcleo escolhe o periférico pelos pinos.
 | `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4 — o rádio modem MAVLink (os mesmos pinos são o FDCAN1) |
 
 O console `Serial` é a LPUART1 (PA9 TX / PA10 RX), o padrão da variante.
+
+#### Matek H743-WING V3 (`BOARD_MATEK_H743`)
+
+Uma controladora pronta: o env `matek-h743` define tanto `BOARD_STM32H743` (todo o código STM32 é comum) quanto o próprio bloco de pinos — pela descrição da placa no ArduPilot (hwdef MatekH743), não testado no hardware. Os pinos do que é soldado na placa levam `@fixed`.
+
+| Constante | Pino | Pad, periférico |
+|---|---|---|
+| `PIN_ESC` | PB0 | S1, TIM1_CH2N |
+| `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_RUDDER` | PA0 / PA1 / PA2 / PA3 | S3–S6, TIM2_CH1..CH4 |
+| `PIN_AUX1` / `PIN_AUX2` | PD12 / PD13 | S7 / S8, TIM4_CH1 / CH2 |
+| `PIN_RC_RX` / `PIN_RC_TX` | PC7 / PC6 | R6 / T6, USART6 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | PD6 / PD5 | R2 / T2, USART2 |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PE7 / PE8 | R7 / T7, UART7 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 na placa: barômetro DPS310 |
+| `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` | PB7 / PB6 | SDA / SCL, I2C1 — conector externo: bússola, tubo de Pitot |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | −1 | sem barramento de tela |
+| `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI`, `PIN_SPI_CS_IMU` | PA5 / PA6 / PD7, PC15 | SPI1 na placa: ICM-42688-P |
+| `PIN_BUZZER` | PA15 | BZ+ / BZ− |
+| `PIN_VBAT_ADC` / `PIN_CURRENT_ADC` | PC0 / PC1 | VBAT (divisor ×11) / Curr (40 A por volt) |
+
+`PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` também existem no bloco geral do STM32: lá valem −1 — a bússola e o tubo de Pitot ficam no barramento dos sensores. Os divisores `BLACKBOX_VBAT_DIVIDER` / `BLACKBOX_CURRENT_DIVIDER` e `IMU_MOUNT_CALIBRATION_REQUIRED` também são próprios de cada placa.
 
 ### Receptor e perda de link
 
@@ -146,6 +167,7 @@ pulso em torno de 1500.
 | Constante | Valor | Significado |
 |---|---|---|
 | `IMU_ROTATION_CW_DEG` | 90 | A rotação dos eixos do chip da IMU em torno da vertical (0/90/180/270), para onde aponta o eixo X do chip. Usada apenas enquanto não há a calibração da instalação `o` no NVS |
+| `IMU_MOUNT_CALIBRATION_REQUIRED` | `false` (Matek H743 — `true`) | ARM com estabilização só após a calibração de montagem `o`: a IMU é soldada na controladora, e a placa é montada de qualquer jeito. Próprio de cada placa, no bloco de pinos dela |
 | `MAG_ROTATION_CW_DEG` | 0 | O mesmo para a bússola (a bússola não tem calibração da instalação) |
 
 ### Trem de pouso, calibração em solo, sinais
@@ -238,7 +260,7 @@ Em detalhe — [BLACKBOX.md](../BLACKBOX.md).
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | Espaço apagado mantido pronto; os voos antigos são apagados inteiros no solo |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | A pausa entre apagamentos |
 | `BLACKBOX_IMU_DIVIDER` | 1 | A IMU a cada N-ésimo ciclo (1 — 500 Hz) |
-| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | Os divisores da bateria (56k/10k) e do sensor de corrente (10k/15k) na placa do controlador de voo |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 (Matek H743: 11 / 1) | Os divisores da bateria (56k/10k) e do sensor de corrente (10k/15k) na placa do controlador de voo |
 
 ---
 

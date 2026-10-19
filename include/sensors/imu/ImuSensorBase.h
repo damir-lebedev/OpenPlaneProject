@@ -220,7 +220,8 @@ public:
         // гироскопа при включении — нет (калибровку гироскопа это не
         // повторяет).
         if (preflightProblem == PreflightProblem::MountingMismatch ||
-            preflightProblem == PreflightProblem::NotChipUp)
+            preflightProblem == PreflightProblem::NotChipUp ||
+            preflightProblem == PreflightProblem::MountNotCalibrated)
         {
             preflightProblem = PreflightProblem::None;
         }
@@ -250,6 +251,9 @@ public:
             case PreflightProblem::MountingMismatch:
                 return "IMU: \"верх\" не совпадает с калибровкой установки "
                        "(плату переставили?) — откалибруйте заново, 'o'";
+            case PreflightProblem::MountNotCalibrated:
+                return "IMU на плате полётника: установка не откалибрована — "
+                       "три позы, 'o' (или «Наладка» в OpenPlane Studio)";
             case PreflightProblem::NotChipUp:
                 return "IMU: плата не лежит чипом вверх, а установка не "
                        "откалибрована — команда 'o'";
@@ -297,7 +301,8 @@ public:
 
         // Горизонт только что измерен — проблемы установки сняты.
         if (preflightProblem == PreflightProblem::MountingMismatch ||
-            preflightProblem == PreflightProblem::NotChipUp)
+            preflightProblem == PreflightProblem::NotChipUp ||
+            preflightProblem == PreflightProblem::MountNotCalibrated)
         {
             preflightProblem = PreflightProblem::None;
         }
@@ -442,7 +447,7 @@ private:
 
     enum class PreflightProblem : uint8_t
     {
-        None, NotResponding, Moved, NotOneG, MountingMismatch, NotChipUp
+        None, NotResponding, Moved, NotOneG, MountingMismatch, NotChipUp, MountNotCalibrated
     };
     PreflightProblem preflightProblem = PreflightProblem::None;
 
@@ -547,6 +552,12 @@ private:
             {
                 preflightProblem = PreflightProblem::MountingMismatch;
             }
+        }
+        else if (Config::IMU_MOUNT_CALIBRATION_REQUIRED)
+        {
+            // IMU распаян на плате полётника, а плату в самолёт ставят как
+            // угодно: без калибровки установки оси могут быть перепутаны.
+            preflightProblem = PreflightProblem::MountNotCalibrated;
         }
         else if (chipUp[2] < 0.5f * g)
         {

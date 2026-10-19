@@ -19,7 +19,7 @@ may need to change for a particular airplane or board lives here.
 
 The pin block is selected by the macro that `[env:*]` sets in `platformio.ini`
 (`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
-`BOARD_STM32H743`). Without a macro — `#error`. The STM32 block is described
+`BOARD_STM32H743` / `BOARD_MATEK_H743`). Without a macro — `#error`. The STM32 block is described
 [below](#stm32h743vit6-board_stm32h743).
 
 | Constant | Type | Purpose | S3 | C3 | classic |
@@ -72,6 +72,27 @@ numbers — the core picks the peripheral by the pins.
 | `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4 — the MAVLink radio modem (the same pins are FDCAN1) |
 
 The `Serial` console is LPUART1 (PA9 TX / PA10 RX), the variant's default.
+
+#### Matek H743-WING V3 (`BOARD_MATEK_H743`)
+
+A ready-made flight controller: the `matek-h743` env sets both `BOARD_STM32H743` (all STM32 code is shared) and its own pin block — from the board description in ArduPilot (hwdef MatekH743), not tried on hardware. Pins of what is soldered onto the board are tagged `@fixed`.
+
+| Constant | Pin | Pad, peripheral |
+|---|---|---|
+| `PIN_ESC` | PB0 | S1, TIM1_CH2N |
+| `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_RUDDER` | PA0 / PA1 / PA2 / PA3 | S3–S6, TIM2_CH1..CH4 |
+| `PIN_AUX1` / `PIN_AUX2` | PD12 / PD13 | S7 / S8, TIM4_CH1 / CH2 |
+| `PIN_RC_RX` / `PIN_RC_TX` | PC7 / PC6 | R6 / T6, USART6 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | PD6 / PD5 | R2 / T2, USART2 |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PE7 / PE8 | R7 / T7, UART7 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 on the board: DPS310 barometer |
+| `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` | PB7 / PB6 | SDA / SCL, I2C1 — external connector: compass, pitot tube |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | −1 | no screen bus |
+| `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI`, `PIN_SPI_CS_IMU` | PA5 / PA6 / PD7, PC15 | SPI1 on the board: ICM-42688-P |
+| `PIN_BUZZER` | PA15 | BZ+ / BZ− |
+| `PIN_VBAT_ADC` / `PIN_CURRENT_ADC` | PC0 / PC1 | VBAT (divider ×11) / Curr (40 A per volt) |
+
+`PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` also exist in the general STM32 block: there they are −1 — the compass and pitot tube sit on the sensor bus. The `BLACKBOX_VBAT_DIVIDER` / `BLACKBOX_CURRENT_DIVIDER` dividers and `IMU_MOUNT_CALIBRATION_REQUIRED` are per board too.
 
 ### Receiver and link loss
 
@@ -145,6 +166,7 @@ around 1500.
 | Constant | Value | Meaning |
 |---|---|---|
 | `IMU_ROTATION_CW_DEG` | 90 | The rotation of the IMU chip axes about the vertical (0/90/180/270), where the chip's X axis points. Used only while there is no mounting calibration `o` in NVS |
+| `IMU_MOUNT_CALIBRATION_REQUIRED` | `false` (Matek H743 — `true`) | ARM with stabilization only after mounting calibration `o`: the IMU is soldered onto the flight controller, and the board goes in any way. Per board, in its pin block |
 | `MAG_ROTATION_CW_DEG` | 0 | The same for the compass (the compass has no mounting calibration) |
 
 ### Landing gear, ground calibration, signals
@@ -236,7 +258,7 @@ In detail — [BLACKBOX.md](../BLACKBOX.md).
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | Erased space kept ready; old flights are erased whole on the ground |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | The pause between erases |
 | `BLACKBOX_IMU_DIVIDER` | 1 | The IMU every Nth cycle (1–500 Hz) |
-| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | The battery (56k/10k) and current sensor (10k/15k) dividers on the flight-controller board |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 (Matek H743: 11 / 1) | The battery (56k/10k) and current sensor (10k/15k) dividers on the flight-controller board |
 
 ---
 

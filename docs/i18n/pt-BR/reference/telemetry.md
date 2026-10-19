@@ -133,7 +133,7 @@ Um menu de texto no monitor serial. Uma máquina de estados das telas `Screen::{
 | Método | Descrição |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | com a placa — o comando `b` e o item 7 do menu |
-| `static const char* guessI2cDevice(uint8_t address)` | o chip pelo endereço: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | o chip pelo endereço: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06/DPS310, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
 | `void printHint() const` | Uma dica de uma linha |
 | `void update()` | Processa todos os bytes de `Serial`; se as configurações do registro foram alteradas, o menu está fechado e a aeronave **não está armed** — salva na NVS |
 
@@ -143,7 +143,7 @@ calibração da montagem da IMU; `m` — calibração da bússola; `p` — autot
 `b` — varredura dos barramentos I2C (0x08..0x7F — até 0x7F, porque o QMC6309 fica em 0x7C) com
 os nomes dos chips; qualquer outra — uma dica. `\r`/`\n` são ignorados. Além disso, `c` — a calibração em solo do avião (em andamento — cancela; item 9 do menu principal) e `e` — um sinal pelas superfícies e pela melodia do ESC (verifica se ele a toca depois da pausa dos pulsos).
 
-Os comandos do PC são um byte STX (`0x02`), uma string e `\n`: no `id`, `FirmwareIdentity::print()` imprime a identidade do firmware em uma única linha `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; responde também com ARM); `scan` varre os barramentos e imprime `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` (com ARM: `{"error":"armed"}`); `act X` executa a ação da tecla `X` do menu, com as mesmas restrições com ARM; `live` e `live 0` vão para o `AppLink` (abaixo); o resto vai para `IFlightRecorder::handleHostCommand()` (a caixa-preta). O OpenPlane Studio grava a placa, o commit, o hash da configuração e o nome do avião via `config/Project.h` na sua cópia do código-fonte; sem esse arquivo valem a macro da placa e `"dev"`.
+Os comandos do PC são um byte STX (`0x02`), uma string e `\n`: no `id`, `FirmwareIdentity::print()` imprime a identidade do firmware em uma única linha `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; responde também com ARM); `scan` varre os barramentos e imprime `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}` (com ARM: `{"error":"armed"}`); `act X` executa a ação da tecla `X` do menu, com as mesmas restrições com ARM; `live` e `live 0` vão para o `AppLink` (abaixo); o resto vai para `IFlightRecorder::handleHostCommand()` (a caixa-preta). O OpenPlane Studio grava a placa, o commit, o hash da configuração e o nome do avião via `config/Project.h` na sua cópia do código-fonte; sem esse arquivo valem a macro da placa e `"dev"`.
 
 O menu do registro: `1`..`9` — alternam o modo dos canais 0..8, `n` — NAV, `s` — SYS, `p` — período, `a` —
 tudo “ao mudar”, `x` — tudo desligado, `d` — padrão, `0`/`q` — voltar, `l`/`h` —

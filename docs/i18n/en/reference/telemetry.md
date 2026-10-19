@@ -133,7 +133,7 @@ A text menu in the serial monitor. A state machine of screens `Screen::{None, Ma
 | Method | Description |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | with a board — the `b` command and menu item 7 |
-| `static const char* guessI2cDevice(uint8_t address)` | the chip by address: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | the chip by address: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06/DPS310, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
 | `void printHint() const` | A one-line hint |
 | `void update()` | Process all bytes from `Serial`; if the log settings were changed, the menu is closed and the aircraft is **not armed** — save to NVS |
 
@@ -143,7 +143,7 @@ IMU mounting calibration; `m` — compass calibration; `p` — output self-test;
 `b` — scan of the I2C buses (0x08..0x7F — up to 0x7F, because the QMC6309 sits at 0x7C) with
 chip names; anything else — a hint. `\r`/`\n` are ignored. Also `c` — ground calibration of the airplane (cancels while it runs; main-menu item 9) and `e` — a signal by the control surfaces and the ESC tune (checks that the ESC plays it after the pulse pause).
 
-PC commands are an STX byte (`0x02`), a string and `\n`: on `id`, `FirmwareIdentity::print()` prints the firmware identity as one `@id {...}` line (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; it answers while armed too); `scan` probes the buses and prints `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` (while armed: `{"error":"armed"}`); `act X` runs the action of menu key `X`, with the same restrictions while armed; `live` and `live 0` go to `AppLink` (below); anything else goes to `IFlightRecorder::handleHostCommand()` (the black box). OpenPlane Studio bakes in the board, commit, configuration hash and plane name through `config/Project.h` in its copy of the sources; without that file the board macro and `"dev"` are used.
+PC commands are an STX byte (`0x02`), a string and `\n`: on `id`, `FirmwareIdentity::print()` prints the firmware identity as one `@id {...}` line (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; it answers while armed too); `scan` probes the buses and prints `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}` (while armed: `{"error":"armed"}`); `act X` runs the action of menu key `X`, with the same restrictions while armed; `live` and `live 0` go to `AppLink` (below); anything else goes to `IFlightRecorder::handleHostCommand()` (the black box). OpenPlane Studio bakes in the board, commit, configuration hash and plane name through `config/Project.h` in its copy of the sources; without that file the board macro and `"dev"` are used.
 
 The log menu: `1`..`9` — cycle the mode of channels 0..8, `n` — NAV, `s` — SYS, `p` — period, `a` —
 everything "on change", `x` — everything off, `d` — defaults, `0`/`q` — back, `l`/`h` —

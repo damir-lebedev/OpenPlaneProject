@@ -136,12 +136,13 @@ BMP581 داخل الأنبوب (الضغط الكلي)، و`stat` هو مقيا�
 | `SENSOR_KIT_BENCH_GY521` (1، الافتراضي) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (الجسم) | QMC6309 | BMP581 في الأنبوب | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (الجسم) | QMC6309 | BMP581 في الأنبوب | M10 |
+| `SENSOR_KIT_MATEK_H743` (4) | ICM-42688-P (SPI، على اللوحة) | DPS310 (على اللوحة) | — | — | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | حدّد الماكرو الخمسة التالية كلها | | | | |
 
 | ماكرو الاختيار | الخيارات |
 |---|---|
 | `SENSOR_IMU` | `MPU6050` (1)، `ICM42688` (2، SPI)، `LSM6DSV` (3)، `LSM6DSV_SPI` (4)، `ICM45686` (5)، `ICM45686_SPI` (6) |
-| `SENSOR_BARO` | `BME280` (1)، `BMP388` (2، SPI)، `BMP388_I2C` (3)، `SPL06` (4)، `SPL06_SPI` (5)، `BMP581` (6)، `BMP581_SPI` (7) |
+| `SENSOR_BARO` | `BME280` (1)، `BMP388` (2، SPI)، `BMP388_I2C` (3)، `SPL06` (4)، `SPL06_SPI` (5)، `BMP581` (6)، `BMP581_SPI` (7)، `DPS310` (8) |
 | `SENSOR_MAG` | `NONE` (0)، `QMC5883P` (1)، `QMC5883L` (2)، `QMC6309` (3) |
 | `SENSOR_AIRSPEED` | `NONE` (0)، `PITOT_BMP581` (1) — BMP581 على I2C بالعنوان 0x47 في الأنبوب |
 | `SENSOR_GPS` | `NONE` (0)، `UBLOX_M10` (1) |
@@ -269,6 +270,7 @@ rightWingDown العمودية على Z، وX₂ = Y × Z؛ X = norm(X₁ + X₂
 | `NotOneG` | \|a\| يختلف عن 1g بأكثر من 0.2g |
 | `MountingMismatch` | (التركيب معايَر) «الأعلى» يبعد أكثر من 45° عن المحفوظ |
 | `NotChipUp` | (غير معايَر) اللوحة ليست موضوعة والرقاقة لأعلى (`z < 0.5g`) |
+| `MountNotCalibrated` | (غير معايَرة، مع `IMU_MOUNT_CALIBRATION_REQUIRED` — وحدة IMU على لوحة تحكم طيران) بدلًا من `NotChipUp`: لا ARM مع التثبيت إلا بعد معايرة التركيب |
 
 ---
 
@@ -395,6 +397,19 @@ rightWingDown العمودية على Z، وX₂ = Y × Z؛ X = norm(X₁ + X₂
   والضغط 16× (32 Hz) ودرجة الحرارة 1× والنمط المستمر.
 - ‏`isNewSampleReady()` — البت `PRS_RDY`؛ و`readSample()` — عيّنات من 24 بتًّا
   big-endian، مع `kP = 253952` و`kT = 524288`.
+
+## ‏`DPS310_Sensor`
+
+**الملف:** `sensors/baro/DPS310_Sensor.h` · **يرث من:** `SPL06_Sensor` · **الحالة:** لم يُتحقق منه على العتاد
+
+‏DPS310 (من Infineon) — بارومتر وحدات التحكم الجاهزة (Matek H743). السجلات
+والمعرّف `0x10` والمعاملات والصيغ هي نفسها في SPL06-001، لذا فالمشغّل صنف فرعي من
+`SPL06_Sensor`. والفرق واحد: بعد إعادة الضبط مباشرة تكتب `afterReset()` تصحيح حساس
+الحرارة (`0x0E←0xA5` و`0x0F←0x96` و`0x62←0x02` و`0x0E←0x00` و`0x0F←0x00` —
+تسلسل Infineon، وكذلك يفعل ArduPilot): فمن دونه تعطي بعض الشرائح حرارة خاطئة،
+ومعها ضغطًا خاطئًا. إن فشلت الكتابة أعادت `begin()` القيمة `false` («خطأ في كتابة
+السجلات»). ولا يمكن تمييزه من SPL06 بالمعرّف — فتُختار الشريحة صراحة:
+`SENSOR_BARO_DPS310`.
 
 ## ‏`BMP581_Sensor`
 

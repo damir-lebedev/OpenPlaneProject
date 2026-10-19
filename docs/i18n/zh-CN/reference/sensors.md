@@ -128,12 +128,13 @@ Y 向左）。`rotationCwDeg` 是芯片 X 轴的指向，从上方看顺时针�
 | `SENSOR_KIT_BENCH_GY521`（1，默认） | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT`（2） | LSM6DSV | SPL06（机身） | QMC6309 | 管内的 BMP581 | M10 |
 | `SENSOR_KIT_ICM45686_PITOT`（3） | ICM-45686 | SPL06（机身） | QMC6309 | 管内的 BMP581 | M10 |
+| `SENSOR_KIT_MATEK_H743`（4） | ICM-42688-P（SPI，板载） | DPS310（板载） | — | — | M10 |
 | `SENSOR_KIT_CUSTOM`（0） | 设定下面全部五个宏 | | | | |
 
 | 选择宏 | 可选项 |
 |---|---|
 | `SENSOR_IMU` | `MPU6050`（1）、`ICM42688`（2，SPI）、`LSM6DSV`（3）、`LSM6DSV_SPI`（4）、`ICM45686`（5）、`ICM45686_SPI`（6） |
-| `SENSOR_BARO` | `BME280`（1）、`BMP388`（2，SPI）、`BMP388_I2C`（3）、`SPL06`（4）、`SPL06_SPI`（5）、`BMP581`（6）、`BMP581_SPI`（7） |
+| `SENSOR_BARO` | `BME280`（1）、`BMP388`（2，SPI）、`BMP388_I2C`（3）、`SPL06`（4）、`SPL06_SPI`（5）、`BMP581`（6）、`BMP581_SPI`（7）、`DPS310`（8） |
 | `SENSOR_MAG` | `NONE`（0）、`QMC5883P`（1）、`QMC5883L`（2）、`QMC6309`（3） |
 | `SENSOR_AIRSPEED` | `NONE`（0）、`PITOT_BMP581`（1）——管内的 BMP581，I2C 0x47 |
 | `SENSOR_GPS` | `NONE`（0）、`UBLOX_M10`（1） |
@@ -256,6 +257,7 @@ rightWingDown 中 ⟂ Z 的部分，X₂ = Y × Z；X = norm(X₁ + X₂)，Y = 
 | `NotOneG` | \|a\| 与 1g 相差超过 0.2g |
 | `MountingMismatch` | （已做安装校准）“向上”方向与保存的方向相差超过 45° |
 | `NotChipUp` | （未校准）电路板没有芯片朝上放置（`z < 0.5g`） |
+| `MountNotCalibrated` | （未校准，且 `IMU_MOUNT_CALIBRATION_REQUIRED`——IMU 在飞控板上）代替 `NotChipUp`：带增稳的 ARM 只能在安装校准之后 |
 
 ---
 
@@ -371,6 +373,17 @@ SPL06-001（Goertek）。公式出自数据手册 §4.9。
 - `begin()`：`ID`（0x0D）= 0x10（0x11 是 SPA06，系数集不同——
   会被拒绝）；复位，等待 `COEF_RDY | SENSOR_RDY`；读取 18 字节系数（有符号的 12/20/16 位字段）；温度源由 `COEF_SRCE` 决定；压力 16×（32 Hz），温度 1×，连续模式。
 - `isNewSampleReady()`——`PRS_RDY` 位；`readSample()`——24 位大端序采样，`kP = 253952`，`kT = 524288`。
+
+## `DPS310_Sensor`
+
+**文件：** `sensors/baro/DPS310_Sensor.h` · **继承：** `SPL06_Sensor` · **状态：** 未在硬件上验证
+
+DPS310（Infineon）——现成飞控（Matek H743）上的气压计。寄存器、ID `0x10`、系数和
+公式都与 SPL06-001 相同，所以驱动是 `SPL06_Sensor` 的子类。区别只有一处：复位后
+`afterReset()` 立即写入温度传感器修正（`0x0E←0xA5`、`0x0F←0x96`、`0x62←0x02`、
+`0x0E←0x00`、`0x0F←0x00`——Infineon 给出的序列，ArduPilot 也这样做）：没有它，
+部分芯片的温度会出错，气压也随之出错。写入失败时 `begin()` 返回 `false`（「寄存器
+写入错误」）。凭 ID 无法与 SPL06 区分——芯片需要明确选择：`SENSOR_BARO_DPS310`。
 
 ## `BMP581_Sensor`
 

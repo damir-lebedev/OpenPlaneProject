@@ -52,6 +52,7 @@
 | `virtual II2CBus& i2c()` | ناقل المستشعرات |
 | `virtual ISpiBus& spi()` | ناقل SPI |
 | `virtual II2CBus* displayI2c()` | ناقل I2C ثانٍ للشاشة فقط؛ و`nullptr` إن لم يوجد |
+| `virtual II2CBus& externalI2c()` | ناقل الموصل الخارجي: البوصلة وأنبوب بيتو. افتراضيًا `i2c()`؛ وفي Matek H743 ناقل I2C1 مستقل |
 | `virtual IUartPort& rcUart()` | منفذ UART لمستقبِل جهاز التحكم: iBUS أو SBUS أو CRSF |
 | `virtual IUartPort& gpsUart()` | منفذ UART لـ GPS |
 | `virtual IUartPort* telemetryUart()` | منفذ UART لمودم الراديو MAVLink؛ والقيمة الافتراضية `nullptr` (لا يوجد في ESP32 منفذ UART حرّ) |
@@ -372,7 +373,8 @@ USB CDC)، ويجتاز cppcheck والاختبارات على الحاسوب (�
 | `begin()` | `i2cBus.begin()`، ثم `spiBus.begin()`، ثم `displayBus.begin()`، وطرف الجرس |
 | `telemetryUart()` | `&telemetryPort` |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
-| `displayI2c()` | دائمًا `&displayBus` |
+| `displayI2c()` | `&displayBus` إن حُدِّدت أطراف الشاشة (`PIN_I2C2_*` ≥ 0)، وإلا `nullptr` (لا شاشة في Matek H743) |
+| `externalI2c()` | `&externalBus` ‏(I2C1) إن حُدِّدت `PIN_I2C_EXT_*`، وإلا ناقل الحساسات |
 | `static constexpr pin_size_t pinOf(int16_t)` | تحويل طرف من `Config.h` إلى نوع واجهة النواة البرمجية |
 | الباقي | تُرجع الحقول المقابلة |
 

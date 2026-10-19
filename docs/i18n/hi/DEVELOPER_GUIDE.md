@@ -56,7 +56,7 @@ include/
 │   └── feedback/  फ़ीडबैक की तैयारी — जुड़ा नहीं है (नीचे का खंड देखें)
 ├── sensors/     SensorInterface, SensorSelection, SensorMounting
 │   ├── imu/     ImuSensorBase, AttitudeEstimator, MPU6050, ICM42688, LSM6DSV, ICM45686
-│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, BMP581
+│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, DPS310, BMP581
 │   ├── mag/     MagnetometerBase, QMC5883P, QMC5883L, QMC6309
 │   ├── gps/     UbloxM10_Gps
 │   └── airspeed/ AirspeedSensor, PitotDualBaroAirspeed (दो बैरोमीटरों वाली ट्यूब)
@@ -145,7 +145,7 @@ src/stm32/main.cpp  — STM32H743 फ़र्मवेयर (FreeRTOS टा�
 
 | फ़ाइल | किसके लिए ज़िम्मेदार |
 |---|---|
-| `IBoard.h` | हार्डवेयर का प्रवेश-बिंदु: `i2c()`, `displayI2c()` (स्क्रीन के लिए दूसरी बस, `nullptr` हो सकती है), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()` (MAVLink, `nullptr` हो सकता है), `servo(ServoChannel::*)` (AUX1/AUX2 के साथ 7 आउटपुट), `setBuzzer()` |
+| `IBoard.h` | हार्डवेयर का प्रवेश-बिंदु: `i2c()`, `displayI2c()` (स्क्रीन के लिए दूसरी बस, `nullptr` हो सकती है), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()` (MAVLink, `nullptr` हो सकता है), `servo(ServoChannel::*)` (AUX1/AUX2 के साथ 7 आउटपुट), `setBuzzer()`, `externalI2c()` (बाहरी कनेक्टर की बस: डिफ़ॉल्ट रूप से वही `i2c()`, Matek H743 पर अलग) |
 | `Rtos.h` | FreeRTOS टास्क, ESP32 (कोर 0) और STM32 (प्राथमिकताएँ) पर एक जैसे, ख़ाली हीप |
 | `II2CBus.h` | I2C बस: `Wire` जैसे आदिम फ़ंक्शन + सहायक `writeRegister()`, `readRegisters()` (जाँचता है कि ठीक `count` बाइट आए), `readRegister()`, `probe()` |
 | `ISpiBus.h`, `IUartPort.h`, `IServoOutput.h` | SPI, UART, एक PWM आउटपुट (`measurePulseUs()` — असली पल्स का निदान) |
@@ -227,6 +227,7 @@ src/stm32/main.cpp  — STM32H743 फ़र्मवेयर (FreeRTOS टा�
 | `baro/BMP388_Sensor.h` | I2C या SPI पर BMP388 (SPI के डमी बाइट के साथ), Bosch का कंपेंसेशन, तैयार होने के फ़्लैग पर पढ़ना। **टेस्ट बेंच पर (I2C)** |
 | `baro/BME280_Sensor.h` | BME280/BMP280, Bosch का कंपेंसेशन §8.1। हार्डवेयर पर जाँचा नहीं गया |
 | `baro/SPL06_Sensor.h` | SPL06-001: डेटाशीट के गुणांक और सूत्र, 32 Hz ×16; I2C 0x76/0x77 या SPI। हार्डवेयर पर जाँचा नहीं गया |
+| `baro/DPS310_Sensor.h` | DPS310: `SPL06_Sensor` का सबक्लास — वही रजिस्टर और फ़ॉर्मूले, साथ में रीसेट के बाद तापमान सेंसर का सुधार; I2C 0x76/0x77। हार्डवेयर पर नहीं आज़माया |
 | `baro/BMP581_Sensor.h` | BMP581: BMP5_SensorAPI का क्रम, 16×/2×, IIR; I2C 0x46/0x47 या SPI; मुख्य बैरोमीटर (डिफ़ॉल्ट बेंच किट) भी और पिटो ट्यूब भी। हार्डवेयर पर जाँचा नहीं गया |
 | `mag/MagnetometerBase.h` | कम्पास का साझा हिस्सा: 50 Hz पोलिंग, NVS में hard-iron कैलिब्रेशन, अक्षों का घुमाव, हेडिंग, त्रुटियाँ |
 | `mag/QMC5883P_Sensor.h` | QMC5883P, 0x2C। **टेस्ट बेंच पर** |
@@ -597,6 +598,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 s में सबसे ख़र
 | `pio run -e esp32-dev` | `esp32dev` | `BOARD_ESP32_CLASSIC` | टेस्ट बेंच के लिए, पिन-व्यवस्था हार्डवेयर पर जाँची नहीं गई |
 | `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | STM32H743VIT6: पूरा फ़र्मवेयर + MAVLink + SD पर ब्लैक बॉक्स; ख़ाली बोर्ड पर जाँचा गया ([नीचे](#stm32h743)) |
 | `pio run -e stm32h743-devebox` | `devebox_h743vitx` | `BOARD_STM32H743` | वही DevEBox H743 पर: कंसोल — USB CDC, फ़र्मवेयर DFU से |
+| `pio run -e matek-h743` | `devebox_h743vitx` + अपनी क्लॉक | `BOARD_MATEK_H743` + `BOARD_STM32H743` | तैयार फ़्लाइट कंट्रोलर Matek H743-WING V3: बोर्ड पर सेंसर, DFU से फ़्लैशिंग (BOOT बटन); हार्डवेयर पर नहीं आज़माया ([नीचे](#stm32h743)) |
 
 | उपयोग | ESP32-S3 (टेस्ट बेंच) | ESP32-C3 | ESP32 classic |
 |---|---|---|---|
@@ -688,6 +690,19 @@ STM32H743VIT6 (Cortex-M7 480 MHz, 2 MB फ़्लैश, 1 MB RAM) — **प�
   करने से पहले सिस्टम मेमोरी में छलाँग (`src/stm32/bootloader.cpp`)। H7 पर चल रहे
   फ़र्मवेयर से सीधी छलाँग अटक जाती है — बोर्ड पर जाँचा गया, इसीलिए दो चरणों में।
   खुला हुआ कंसोल (USB CDC) चाहिए; अगर बोर्ड जवाब न दे — BT0 के तार के साथ RST।
+- **Matek H743-WING V3** — env `matek-h743`: उसी STM32H743VIT6 पर बना तैयार
+  फ़्लाइट कंट्रोलर। यह DevEBox के कोर वेरिएंट से बनता है (वही पैकेज, USB और
+  SDMMC1 उन्हीं पिन पर), पर बोर्ड का क्रिस्टल 8 MHz का है: अपना
+  `SystemClock_Config()` `src/stm32/clock_matek.cpp` देता है (DevEBox जैसा ही
+  क्लॉक ट्री), `HSE_VALUE` — `platformio.ini` में फ़्लैग। मैक्रो
+  `BOARD_MATEK_H743` `Config.h` में अपना पिन ब्लॉक चुनता है, `BOARD_STM32H743`
+  बना रहता है — STM32 का पूरा कोड साझा है। सेंसर बोर्ड पर सोल्डर हैं: इनका सेट
+  (`SENSOR_KIT_MATEK_H743`) एनवायरनमेंट का फ़्लैग तय करता है, सेंसर के पिन पर
+  `@fixed` है — ऐप इन्हें नहीं बदलता। बाहरी I2C1 कनेक्टर अलग बस है
+  (`IBoard::externalI2c()`), उस पर कम्पास और पिटो ट्यूब। बोर्ड किसी भी तरह लग
+  सकता है, इसलिए `IMU_MOUNT_CALIBRATION_REQUIRED = true`: माउंटिंग कैलिब्रेशन के
+  बिना स्टेबिलाइज़ेशन वाला ARM मना है। पहली फ़्लैशिंग — BOOT बटन + USB (DFU),
+  उसके बाद `D` कुंजी।
 - **एंट्री पॉइंट** — `src/stm32/main.cpp` (ESP32 की बिल्ड में `build_src_filter`
   से बाहर रखा गया)। ऑब्जेक्ट वही हैं जो `src/main.cpp` में हैं; `loop()` की जगह
   टास्क हैं, और `vTaskStartScheduler()` `setup()` के अंत में है।

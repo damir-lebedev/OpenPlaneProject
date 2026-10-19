@@ -96,6 +96,15 @@ namespace Config
     constexpr int8_t PIN_TELEM_TX    = 9;   // радиомодем / iBUS-SENS
     constexpr int8_t PIN_TELEM_RX    = 10;
 
+    // Во сколько раз напряжение на входе больше, чем на пине АЦП
+    // (делители на плате полётника — docs/FC_BOARD.md, блок B).
+    constexpr float BLACKBOX_VBAT_DIVIDER = (56.0f + 10.0f) / 10.0f;    // батарея: 56k/10k
+    constexpr float BLACKBOX_CURRENT_DIVIDER = (10.0f + 15.0f) / 15.0f;  // датчик тока: 10k/15k
+
+    // IMU — модуль на проводах: его оси задаёт IMU_ROTATION_CW_DEG,
+    // калибровка установки ('o') — по желанию.
+    constexpr bool IMU_MOUNT_CALIBRATION_REQUIRED = false;  // @fixed
+
 #elif defined(BOARD_ESP32_CLASSIC)
     // @board(blackbox=none, telemetry=wifi) — для приложения OpenPlane Studio (tools/opconfig.py)
     // Обычная ESP32 38-pin (esp32dev/DOIT/NodeMCU-32S).
@@ -137,6 +146,10 @@ namespace Config
     constexpr int8_t PIN_AUX1   = 33;
     constexpr int8_t PIN_AUX2   = 15;
     constexpr int8_t PIN_BUZZER = 2;
+
+    // IMU — модуль на проводах: его оси задаёт IMU_ROTATION_CW_DEG,
+    // калибровка установки ('o') — по желанию.
+    constexpr bool IMU_MOUNT_CALIBRATION_REQUIRED = false;  // @fixed
 
 #elif defined(BOARD_ESP32_C3)
     // @board(blackbox=none, telemetry=wifi) — для приложения OpenPlane Studio (tools/opconfig.py)
@@ -200,6 +213,75 @@ namespace Config
     constexpr int8_t PIN_AUX1   = -1;
     constexpr int8_t PIN_AUX2   = -1;
     constexpr int8_t PIN_BUZZER = -1;
+
+    // IMU — модуль на проводах: его оси задаёт IMU_ROTATION_CW_DEG,
+    // калибровка установки ('o') — по желанию.
+    constexpr bool IMU_MOUNT_CALIBRATION_REQUIRED = false;  // @fixed
+
+#elif defined(BOARD_MATEK_H743)
+    // @board(blackbox=sd, telemetry=mavlink) — для приложения OpenPlane Studio (tools/opconfig.py)
+    // Matek H743-WING V3, H743-WLITE, H743-SLIM V3 — готовый полётник на
+    // том же STM32H743VIT6, что DevEBox. Распиновка — по описанию платы в
+    // ArduPilot (hwdef MatekH743) и надписям на плате; на железе ещё не
+    // проверялась.
+    //
+    // Отличия от DevEBox: кварц 8 МГц (src/stm32/clock_matek.cpp,
+    // HSE_VALUE в platformio.ini); датчики на самой плате — IMU
+    // ICM-42688-P на SPI1, барометр DPS310 на I2C2 (набор датчиков —
+    // SENSOR_KIT_MATEK_H743, его задаёт env matek-h743); внешний разъём
+    // I2C1 (компас, трубка Пито) — отдельная шина. Первая прошивка: зажать
+    // кнопку BOOT и вставить USB (DFU), дальше — клавиша 'D' в консоли.
+    //
+    // Выходы — как подписаны площадки: S1 — мотор, S3–S8 — сервы (мотор
+    // на S1 ставят и INAV, и ArduPilot). S1 и S2 — N-каналы таймера TIM1,
+    // ядро включает их само. Свободны S2 (PB1) и S9–S12 (PD14, PD15, PE5, PE6).
+    constexpr int16_t PIN_ESC           = PB0;   // S1: TIM1_CH2N
+    constexpr int16_t PIN_AILERON_LEFT  = PA0;   // S3: TIM2_CH1
+    constexpr int16_t PIN_AILERON_RIGHT = PA1;   // S4: TIM2_CH2
+    constexpr int16_t PIN_ELEVATOR      = PA2;   // S5: TIM2_CH3
+    constexpr int16_t PIN_RUDDER        = PA3;   // S6: TIM2_CH4 — руль направления + колесо
+    constexpr int16_t PIN_AUX1          = PD12;  // S7: TIM4_CH1 — сброс груза
+    constexpr int16_t PIN_AUX2          = PD13;  // S8: TIM4_CH2 — камера
+
+    // Приёмник — USART6, площадки R6/T6 (iBUS, SBUS или CRSF: RX_PROTOCOL).
+    constexpr int16_t PIN_RC_RX = PC7;   // USART6_RX
+    constexpr int16_t PIN_RC_TX = PC6;   // USART6_TX
+
+    // Распаяно на плате, приложение эти пины не меняет: I2C2 — барометр
+    // DPS310 (0x76), SPI1 — IMU, I2C1 — внешний разъём.
+    constexpr int16_t PIN_I2C_SDA = PB11;  // I2C2 на плате: барометр DPS310 @fixed
+    constexpr int16_t PIN_I2C_SCL = PB10;  // @fixed
+    constexpr int16_t PIN_I2C_EXT_SDA = PB7;  // внешний разъём I2C1: компас, трубка Пито @fixed
+    constexpr int16_t PIN_I2C_EXT_SCL = PB6;  // @fixed
+    constexpr int16_t PIN_I2C2_SDA = -1;  // отдельной шины под экран нет @fixed
+    constexpr int16_t PIN_I2C2_SCL = -1;  // @fixed
+    constexpr int16_t PIN_SENSOR_SPI_SCK  = PA5;   // SPI1 на плате: IMU @fixed
+    constexpr int16_t PIN_SENSOR_SPI_MISO = PA6;   // @fixed
+    constexpr int16_t PIN_SENSOR_SPI_MOSI = PD7;   // @fixed
+    constexpr int16_t PIN_SPI_CS_IMU      = PC15;  // ICM-42688-P (у V1–V2 здесь MPU6000) @fixed
+    constexpr int16_t PIN_SPI_CS_BARO     = -1;    // барометр на I2C @fixed
+
+    // GPS — USART2, площадки R2/T2.
+    constexpr int16_t PIN_GPS_RX = PD6;    // USART2_RX
+    constexpr int16_t PIN_GPS_TX = PD5;    // USART2_TX
+
+    // Телеметрия MAVLink (радиомодем) — UART7, площадки R7/T7.
+    constexpr int16_t PIN_TELEM_RX = PE7;   // UART7_RX
+    constexpr int16_t PIN_TELEM_TX = PE8;   // UART7_TX
+
+    // Пищалка, батарея и датчик тока — площадки платы.
+    constexpr int16_t PIN_BUZZER      = PA15;  // площадки BZ+/BZ−, активная пищалка @fixed
+    constexpr int16_t PIN_VBAT_ADC    = PC0;   // делитель батареи на плате @fixed
+    constexpr int16_t PIN_CURRENT_ADC = PC1;   // вход датчика тока, площадка Curr @fixed
+
+    // Делители на плате: во сколько раз напряжение на входе больше, чем на пине АЦП.
+    constexpr float BLACKBOX_VBAT_DIVIDER = 11.0f;     // батарея @fixed
+    constexpr float BLACKBOX_CURRENT_DIVIDER = 1.0f;   // датчик тока — прямо на пин, 40 А на вольт @fixed
+
+    // IMU распаян на плате, а плату в самолёт ставят как угодно (часто
+    // повёрнутой): без калибровки установки тремя позами ('o') ARM в
+    // режимах со стабилизацией запрещён.
+    constexpr bool IMU_MOUNT_CALIBRATION_REQUIRED = true;  // IMU на плате: ARM со стабилизацией — после калибровки установки @fixed
 
 #elif defined(BOARD_STM32H743)
     // @board(blackbox=sd, telemetry=mavlink) — для приложения OpenPlane Studio (tools/opconfig.py)
@@ -267,6 +349,19 @@ namespace Config
     constexpr int16_t PIN_CURRENT_ADC = PC1;   // ADC1_INP11: датчик тока
     constexpr int16_t PIN_TELEM_RX    = PD0;   // UART4 (эти же пины — FDCAN1)
     constexpr int16_t PIN_TELEM_TX    = PD1;
+
+    // Отдельного внешнего разъёма I2C нет: компас и трубка Пито — на шине датчиков.
+    constexpr int16_t PIN_I2C_EXT_SDA = -1;
+    constexpr int16_t PIN_I2C_EXT_SCL = -1;
+
+    // Во сколько раз напряжение на входе больше, чем на пине АЦП
+    // (делители на плате полётника — docs/FC_BOARD.md, блок B).
+    constexpr float BLACKBOX_VBAT_DIVIDER = (56.0f + 10.0f) / 10.0f;    // батарея: 56k/10k
+    constexpr float BLACKBOX_CURRENT_DIVIDER = (10.0f + 15.0f) / 15.0f;  // датчик тока: 10k/15k
+
+    // IMU — модуль на проводах: его оси задаёт IMU_ROTATION_CW_DEG,
+    // калибровка установки ('o') — по желанию.
+    constexpr bool IMU_MOUNT_CALIBRATION_REQUIRED = false;  // @fixed
 
 #else
     #error "Не задана плата: используйте env esp32-c3/esp32-s3/esp32-dev/stm32h743 из platformio.ini (или определите свой -D BOARD_... и добавьте ветку в Config.h)"
@@ -1062,12 +1157,10 @@ namespace Config
     // IMU пишется каждый BLACKBOX_IMU_DIVIDER-й такт (1 — каждый, 500 Гц).
     constexpr uint8_t BLACKBOX_IMU_DIVIDER = 1;
 
-    // Батарея и датчик тока (S3 и STM32H743, пины PIN_VBAT_ADC/PIN_CURRENT_ADC,
-    // делители на плате полётника — docs/FC_BOARD.md, блок B): во сколько
-    // раз напряжение на входе больше, чем на пине АЦП. Делитель не
-    // распаян — в логе будет шум, полёту это не мешает.
-    constexpr float BLACKBOX_VBAT_DIVIDER = (56.0f + 10.0f) / 10.0f;
-    constexpr float BLACKBOX_CURRENT_DIVIDER = (10.0f + 15.0f) / 15.0f;
+    // Батарея и датчик тока (S3 и STM32H743, пины PIN_VBAT_ADC/PIN_CURRENT_ADC)
+    // пишутся с делителями BLACKBOX_VBAT_DIVIDER/BLACKBOX_CURRENT_DIVIDER —
+    // они у каждой платы свои, в её блоке пинов. Делитель не распаян — в
+    // логе будет шум, полёту это не мешает.
 
 
     // --------------------------------------------------------

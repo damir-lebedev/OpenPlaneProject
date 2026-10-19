@@ -75,6 +75,14 @@ public:
         device.writeRegister(REG_RESET, RESET_SOFT);
         delay(RESET_TIME_MS);  // коэффициенты доступны через 40 мс после сброса
 
+        if (!afterReset(device))
+        {
+            printName();
+            Serial.println(": ошибка записи регистров");
+            setAvailable(false);
+            return false;
+        }
+
         if (!waitReady() || !readCoefficients())
         {
             printName();
@@ -109,6 +117,14 @@ public:
 
 
 protected:
+
+    // Сразу после сброса, до коэффициентов и настройки (DPS310_Sensor
+    // пишет здесь исправление термодатчика).
+    virtual bool afterReset(IRegisterDevice& dev)
+    {
+        (void)dev;
+        return true;
+    }
 
     bool isNewSampleReady(bool& ready) override
     {

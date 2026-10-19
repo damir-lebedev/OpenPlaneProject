@@ -195,7 +195,7 @@ The worst page write is the card's internal "housekeeping"; the queue in RAM (38
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | How much to keep erased for the next flight |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | The pause between erases on the ground |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU every Nth cycle: 2–250 Hz and ~25% longer recording |
-| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 | The battery and current-sensor dividers on the board |
+| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 (Matek H743: 11, 1) | The battery and current-sensor dividers on the board |
 
 The partition table is `partitions_blackbox.csv`: the application 2 MB (the firmware is now ~0.9 MB), the black box 13.9 MB, coredump 64 KB. The NVS partition stayed where it was — the IMU and compass calibrations and the trims are preserved after moving to this table. There is no second slot for over-the-air (OTA) updates.
 

@@ -50,6 +50,7 @@ El único punto de entrada al hardware. Nada de lo que hay por encima incluye
 | `virtual II2CBus& i2c()` | El bus de sensores |
 | `virtual ISpiBus& spi()` | El bus SPI |
 | `virtual II2CBus* displayI2c()` | Un segundo bus I2C solo para la pantalla; `nullptr` si no existe |
+| `virtual II2CBus& externalI2c()` | Bus del conector externo: brújula, tubo de Pitot. Por defecto `i2c()`; en la Matek H743, un I2C1 aparte |
 | `virtual IUartPort& rcUart()` | La UART del receptor de la emisora: iBUS, SBUS o CRSF |
 | `virtual IUartPort& gpsUart()` | El UART del GPS |
 | `virtual IUartPort* telemetryUart()` | El UART del módem de radio MAVLink; por defecto `nullptr` (el ESP32 no tiene un UART libre) |
@@ -375,7 +376,8 @@ Lo mismo que `Esp32Board`, sobre STM32duino.
 | `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `displayBus.begin()`, el pin del zumbador |
 | `telemetryUart()` | `&telemetryPort` |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
-| `displayI2c()` | Siempre `&displayBus` |
+| `displayI2c()` | `&displayBus` si están definidos los pines de la pantalla (`PIN_I2C2_*` ≥ 0); si no, `nullptr` (la Matek H743 no tiene pantalla) |
+| `externalI2c()` | `&externalBus` (I2C1) si están definidos `PIN_I2C_EXT_*`; si no, el bus de sensores |
 | `static constexpr pin_size_t pinOf(int16_t)` | Convierte un pin de `Config.h` al tipo de la API del núcleo |
 | el resto | Devuelven los campos correspondientes |
 

@@ -9,7 +9,7 @@
 | **PC（native）** | `pio test -e native` | ファームウェアのヘッダーを PC でそのままビルドし、ハードウェアは制御可能なフェイクに置き換えます。モジュール、ドライバー、閉ループのフライトシミュレーション、各センサーセットを載せた ESP32 のファームウェア全体（S3 と 38 ピン）です。カバレッジを計測します |
 | **PC（native-stm32）** | `pio test -e native-stm32` | STM32duino のフェイク層の上で、STM32H743 のファームウェア全体（`src/stm32/main.cpp`）を動かします。FreeRTOS のタスク、フラッシュ、MAVLink、I2C と SPI のセンサーです |
 | **ビルドマトリクス** | `tools/build_matrix.sh` | 4 種類のボード × 6 種類のセンサーセットを `-Wall -Wextra (-Wshadow)` でビルドします。プロジェクトのコードに警告が 1 つでもあればエラーです |
-| **アプリ向けの記述** | `python tools/test_opconfig.py` | `tools/opconfig.py`：OpenPlane Studio 向けのファームウェアの記述と設定の書き込みを、ソースのコピー上でテスト（14 件）。`tools/opconfig_build_check.py`：書き込んだ設定がすべてのボードでビルドできること |
+| **アプリ向けの記述** | `python tools/test_opconfig.py` | `tools/opconfig.py`：OpenPlane Studio 向けのファームウェアの記述と設定の書き込みを、ソースのコピー上でテスト（17 件）。`tools/opconfig_build_check.py`：書き込んだ設定がすべてのボードでビルドできること |
 | **ボード** | `pio test -e esp32-s3` | 実機の ESP32-S3 での `test_feedback` と `test_imu_orientation`（テスト用ファームウェアを書き込みます。終わったら通常のものに戻してください：`pio run -t upload`） |
 | **STM32 ボード** | `pio test -e stm32h743-devebox -f test_blackbox_sd` | DevEBox H743 の**本物の SD カード**でのブラックボックスのテストと、Cortex-M7 での `test_feedback` と `test_imu_orientation` です。[後述](#stm32-ボード上のテスト) |
 
@@ -83,7 +83,7 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 
 | ファイル | 内容 |
 |---|---|
-| `ChipEmulators.h` | LSM6DSV、ICM-45686（IPREG の間接レジスタ付き）、QMC6309、SPL06-001、BMP581、u-blox の NAV-PVT フレーム。I2C または SPI 上のレジスタマップで、データは `World`「世界」（角度と角速度、高度、対気速度、針路、座標）から得て、`IMU_ROTATION_CW_DEG` を考慮したチップの軸で返します |
+| `ChipEmulators.h` | LSM6DSV、ICM-42688-P、ICM-45686（IPREG の間接レジスタ付き）、QMC6309、SPL06-001、BMP581、u-blox の NAV-PVT フレーム。I2C または SPI 上のレジスタマップで、データは `World`「世界」（角度と角速度、高度、対気速度、針路、座標）から得て、`IMU_ROTATION_CW_DEG` を考慮したチップの軸で返します |
 | `PlaneSim.h` | 約 1.2 kg の飛行機のモデル：質点 + ロール / ピッチの回転、失速を含む CL(α)、抗力、推力、風、サーマル、地面、尾輪または前輪の降着装置：機体は主輪の上で前後に揺れ、尾輪荷重、尾部の接地、プロペラの接触を数え、プロペラのトルクと操向輪による地上でのヨーも扱う |
 | `SimHarness.h` | 閉ループ：送信機 → iBUS フレーム → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面の振れ → `PlaneSim` → センサー（ノイズのある 2 つの気圧センサーによるピトー管を含む）。`OPENPLANE_SIM_DIR` を指定すると CSV の軌跡を出力します、`realisticImu` では本物の `AttitudeEstimator` が比力から角度を計算する：滑走路での加速を機上と同じように受ける |
 
@@ -105,7 +105,7 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 | `native/test_flight_controller` | 20 | 実物のクラスでの `FlightController` の 1 周期：優先順位は 信号喪失 > ARM > スティック/オートパイロット > スロットル、AUX、`MOTOR_KILL`、ブザー。SwD の逆転：DISARM 中のみ、3 s は ARM 不可、後退はスロットル 50%、オートパイロットのスロットルなし、通信途絶でモーター停止。スロットル上限ダイヤルが許された範囲をスティックの全ストロークに引き伸ばす、SwB の操作とコンソールによる地上校正、出力への合図（舵面のうなずき、ESC のパルスを止めるのは ARM なしのときだけ）、校正中と合図中の ARM 禁止、ARM の切り替えで校正を中止、離陸拒否の合図は ESC に触れずにうなずくだけ、通信がなくても合図は続く |
 | `native/test_imu` | 21 | MPU6050/6500/9250 と ICM-42688：識別、レジスタ、スケール、軸の回転と航空機の符号、バスのエラー、ジャイロの校正と飛行前チェック、3 つの姿勢による取り付け校正、NVS、姿勢フィルター |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`、I2C と SPI の BMP388、Bosch の基準実装との照合による BME280/BMP280、コンパス（針路、NVS に保存するハードアイアン校正）、u-blox M10（CFG-VALSET、NAV-PVT、壊れたフレーム、タイムアウト）、`SensorSelection` |
-| `native/test_sensors_new` | 23 | LSM6DSV（16X/32X、代替アドレス、SPI）、ICM-45686（間接レジスタ）、QMC6309、SPL06-001（データシートの式）、BMP581（DRDY と予備経路）、ピトー管（ゼロ点、フィルター、密度、ホースの取り違え、古いデータ、2 つの気圧センサーのノイズを含む「飛行」） |
+| `native/test_sensors_new` | 24 | LSM6DSV（16X/32X、代替アドレス、SPI）、ICM-45686（間接レジスタ）、QMC6309、SPL06-001（データシートの式）、BMP581（DRDY と予備経路）、ピトー管（ゼロ点、フィルター、密度、ホースの取り違え、古いデータ、2 つの気圧センサーのノイズを含む「飛行」）、DPS310（リセット後の温度センサー補正） |
 | `native/test_storage` | 16 | `KeyValueStore`（再読み込み、摩耗：同じ値は書かない、データを失わないオーバーフロー、CRC、消去中の電源断、ゴミデータ、フォーマットのバージョン）、`KvPreferences`（ESP32 の NVS と同じ挙動） |
 | `native/test_mavlink` | 20 | pymavlink の基準フレームと突き合わせるコーデック（v1、v2、署名付き）、CRC、再同期、テレメトリー：ストリームの周波数、HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS、PID パラメーター（一覧、読み出し、書き込み、不正な値の拒否）、地上からのモード変更、地上からの ARM は拒否、ミッションは 0 件、あふれた UART バッファがループを止めないこと |
 | `native/test_blackbox` | 20 | ブラックボックス：フォーマットと CRC、NOR のフェイク上のセクターリング（消去なしの新しいパーティション、ゴミは必ず消去、古いフライトは丸ごと、かつ空き領域のためだけに消去、最新のフライトには触れない、リング末尾をまたぐ書き込み、再起動後の先頭位置、電源断、書きかけのレコードを CRC で検出）、本物の `FlightController`/`Autopilot` でのフライト記録：ARM とスロットルでの開始（プリ録画付き）、DISARM と「地上に静止」のあとの停止、信号喪失では止まらない、異常再起動のあとの記録、手動開始、イベント、バッテリー、飛行中にフラッシュが尽きる、パーティションより長いフライト、CRC 付きフレームでの吐き出しと速度の切り替え、コンソールのメニュー `k`、パーティションがない場合は無効、地上校正と自動離陸の段階のイベント |
@@ -122,9 +122,10 @@ STM32 向けに共通のフェイクへ追加されたもの：`TwoWire(sda, scl
 | `native_stm32/test_blackbox_sd` | 29 | SD カード上のブラックボックス：FAT32（MBR あり・なし、2 クラスターにまたがるディレクトリ、ノイズのエントリ、他のデータ/断片化した/空のボリューム）、`SdFileRegion`（不完全なブロック、キャッシュ、消去、境界、故障）、偽の `HAL_SD` の上で動く本物の `Stm32SdCard` ドライバー（4 ビット、予備の速度、リトライ、ビジー状態のカード、アラインされていないバッファ）、カード上のリング（再起動、電源断、照合のコスト）、「リングは空」の目印、`FlightController` でのフライト記録、`RCC->RSR` で判別する異常再起動、バッテリーの ADC、飛行中のカードのエラー、遅いカード、コンソールからの吐き出し、`D` キー |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | カードありの `src/stm32/main.cpp`：起動時にカードとファイルが見つかる、`bbox` タスクがフライトを書き込む、ループの周期が伸びない、`bb list` |
 | `native_stm32/test_app_stm32_no_sd` | 4 | カードなしの `src/stm32/main.cpp`：ブラックボックスは無効になり理由を説明する、飛行機は飛ぶ、メニュー `k` は壊れない、PD14 での出力の自己診断（コアの `pulseIn()` の不具合を回避）、モーターの合図 `e`。`Stm32UartPort` での SBUS——8E2 と RX 反転 |
+| `native_stm32/test_app_stm32_matek_h743` | 4 | **Matek H743-WING V3** 上の `src/stm32/main.cpp`：ボード上のセンサー（SPI1 の ICM-42688-P、I2C2 の DPS310）、別の外部 I2C1 バスのコンパス、`ext` フィールド付きの `@scan`、識別子 `matek-h743`。安定化ありの ARM は取り付けキャリブレーションを待つ（MANUAL は可）。ボードは前後逆向き：3 つの姿勢の後は角度が正しい |
 | `test_feedback` | 10 | フィードバックループを備えた飛行機の閉ループシミュレーション（PC とボードの両方） |
 | `test_imu_orientation` | 5 | 300 通りのランダムな取り付けでの IMU の取り付け校正（PC とボードの両方） |
-| **合計** | **455** | `native` に 406 + `native-stm32` に 49（さらにボード専用が 9：`test_blackbox_sd`） |
+| **合計** | **460** | `native` に 407 + `native-stm32` に 53（さらにボード専用が 9：`test_blackbox_sd`） |
 
 ### STM32 ボード上のテスト
 
@@ -206,14 +207,15 @@ DevEBox H743 + 16 GB カードでの結果（2026-10-02）：`test_blackbox_sd` 
 
 clang-tidy は `test/native/support` のフェイクを使って実行します。clang はホストのアーキテクチャ向けに ESP-IDF のヘッダーを解析できないためです（`pio check` を `clangtidy` で試すと、解析は構文エラーで中断し、実際には何も検査しません）。`misc-include-cleaner` は、各ヘッダーが使うものをきちんとインクルードしているかを見ます。「傘」のヘッダー（`FeedbackModules.h`、`IBoard.h`/`RegisterDevice.h` の API、`SensorSelection.h` のマクロ）には `// IWYU pragma: export` を付けてあります。スクリプトは STM32 のコード（`include/hal/stm32/`、`src/stm32/`）を飛ばします。これはビルド、環境 `stm32h743` の cppcheck、環境 `native-stm32` のテストで確認します。
 
-ビルドマトリクス（直近の実行時点）：**24/24 で警告なし**
+ビルドマトリクス（直近の実行時点）：**33/33 で警告なし**
 
-| ボード | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c |
-|---|---|---|---|---|---|---|
-| esp32-s3 | OK | OK | OK | OK | OK | OK |
-| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK |
-| esp32-c3 | OK | OK | OK | OK | OK | OK |
-| stm32h743 | OK | OK | OK | OK | OK | OK |
+| ボード | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c | icm42688-spi + dps310 |
+|---|---|---|---|---|---|---|---|
+| esp32-s3 | OK | OK | OK | OK | OK | OK | OK |
+| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK | OK |
+| esp32-c3 | OK | OK | OK | OK | OK | OK | OK |
+| stm32h743 | OK | OK | OK | OK | OK | OK | OK |
+| matek-h743 (ボード専用セット: OK) | — | — | — | OK | OK | OK | OK |
 
 cppcheck（`esp32-s3`、`stm32h743`）：プロジェクトのコードへの指摘は 0 件です。
 

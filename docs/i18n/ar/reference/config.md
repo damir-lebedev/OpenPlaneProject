@@ -21,7 +21,7 @@
 
 تُختار كتلة الأطراف بالماكرو الذي يضبطه `[env:*]` في `platformio.ini`
 (‏`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
-`BOARD_STM32H743`). ودون ماكرو — `#error`. وكتلة STM32 موصوفة
+`BOARD_STM32H743` / `BOARD_MATEK_H743`). ودون ماكرو — `#error`. وكتلة STM32 موصوفة
 [أدناه](#stm32h743vit6-board_stm32h743).
 
 | الثابت | النوع | الغرض | S3 | C3 | classic |
@@ -74,6 +74,27 @@ STM32duino (وسائر أنوية Arduino) تكون `PIN_SPI_SCK/MISO/MOSI` ما
 | `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4 — مودم راديو MAVLink (والأطراف نفسها هي FDCAN1) |
 
 كونسول `Serial` هو LPUART1 (‏PA9 TX / PA10 RX)، وهو الإعداد الافتراضي للنسخة.
+
+#### ‏Matek H743-WING V3 (‏`BOARD_MATEK_H743`)
+
+وحدة تحكم طيران جاهزة: تعرّف البيئة `matek-h743` كلًّا من `BOARD_STM32H743` (شيفرة STM32 كلها مشتركة) وكتلة أطرافها الخاصة — بحسب وصف اللوحة في ArduPilot ‏(hwdef MatekH743)، ولم تُجرَّب على العتاد. أطراف ما هو ملحوم على اللوحة موسومة بـ `@fixed`.
+
+| الثابت | الطرف | الوسادة، الطرفية |
+|---|---|---|
+| `PIN_ESC` | PB0 | S1, TIM1_CH2N |
+| `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_RUDDER` | PA0 / PA1 / PA2 / PA3 | S3–S6, TIM2_CH1..CH4 |
+| `PIN_AUX1` / `PIN_AUX2` | PD12 / PD13 | S7 / S8, TIM4_CH1 / CH2 |
+| `PIN_RC_RX` / `PIN_RC_TX` | PC7 / PC6 | R6 / T6, USART6 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | PD6 / PD5 | R2 / T2, USART2 |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PE7 / PE8 | R7 / T7, UART7 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | ‏I2C2 على اللوحة: البارومتر DPS310 |
+| `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` | PB7 / PB6 | ‏SDA / SCL، ‏I2C1 — الموصل الخارجي: البوصلة وأنبوب بيتو |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | −1 | لا ناقل للشاشة |
+| `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI`، `PIN_SPI_CS_IMU` | PA5 / PA6 / PD7، PC15 | ‏SPI1 على اللوحة: ICM-42688-P |
+| `PIN_BUZZER` | PA15 | BZ+ / BZ− |
+| `PIN_VBAT_ADC` / `PIN_CURRENT_ADC` | PC0 / PC1 | ‏VBAT (مقسّم ×11) / Curr ‏(40 A لكل فولت) |
+
+يوجد `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` في كتلة STM32 العامة أيضًا: وقيمتهما هناك −1 — فالبوصلة وأنبوب بيتو على ناقل الحساسات. وكذلك المقسّمان `BLACKBOX_VBAT_DIVIDER` / `BLACKBOX_CURRENT_DIVIDER` و`IMU_MOUNT_CALIBRATION_REQUIRED` خاصة بكل لوحة.
 
 ### ‏المستقبِل وفقدان الاتصال
 
@@ -146,6 +167,7 @@ STM32duino (وسائر أنوية Arduino) تكون `PIN_SPI_SCK/MISO/MOSI` ما
 | الثابت | القيمة | المعنى |
 |---|---|---|
 | `IMU_ROTATION_CW_DEG` | 90 | دوران محاور شريحة IMU حول المحور الرأسي (0/90/180/270)، أي إلى أين يشير المحور X للشريحة. ويُستخدم فقط ما دامت معايرة التركيب `o` غير موجودة في NVS |
+| `IMU_MOUNT_CALIBRATION_REQUIRED` | `false` (في Matek H743 ‏`true`) | لا ARM مع التثبيت إلا بعد معايرة التركيب `o`: وحدة IMU ملحومة على لوحة التحكم، واللوحة تُركَّب بأي اتجاه. خاص بكل لوحة، في كتلة أطرافها |
 | `MAG_ROTATION_CW_DEG` | 0 | الشيء نفسه للبوصلة (فلا معايرة تركيب للبوصلة) |
 
 ### عجلات الهبوط، والمعايرة على الأرض، والتنبيهات
@@ -237,7 +259,7 @@ STM32duino (وسائر أنوية Arduino) تكون `PIN_SPI_SCK/MISO/MOSI` ما
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | مساحة ممسوحة جاهزة دائمًا؛ وتُمسح الرحلات القديمة كاملةً على الأرض |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | الفاصل بين عمليات المسح |
 | `BLACKBOX_IMU_DIVIDER` | 1 | قراءة IMU مرة كل N دورة (1 — 500 Hz) |
-| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | مقسِّما البطارية (56k/10k) وحساس التيار (10k/15k) على لوحة وحدة التحكم بالطيران |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 (Matek H743: 11 / 1) | مقسِّما البطارية (56k/10k) وحساس التيار (10k/15k) على لوحة وحدة التحكم بالطيران |
 
 ---
 

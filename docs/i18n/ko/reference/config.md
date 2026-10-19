@@ -19,7 +19,7 @@
 
 핀 블록은 `platformio.ini`의 `[env:*]`가 정의하는 매크로로 선택됩니다
 (`-D BOARD_ESP32_S3` / `BOARD_ESP32_C3` / `BOARD_ESP32_CLASSIC` /
-`BOARD_STM32H743`). 매크로가 없으면 `#error`입니다. STM32 블록은
+`BOARD_STM32H743` / `BOARD_MATEK_H743`). 매크로가 없으면 `#error`입니다. STM32 블록은
 [아래](#stm32h743vit6board_stm32h743)에서 설명합니다.
 
 | 상수 | 타입 | 용도 | S3 | C3 | classic |
@@ -71,6 +71,27 @@
 | `PIN_TELEM_RX` / `PIN_TELEM_TX` | PD0 / PD1 | UART4 — MAVLink 무선 모뎀(같은 핀이 FDCAN1이기도 함) |
 
 콘솔 `Serial`은 LPUART1(PA9 TX / PA10 RX)이며 변종의 기본값입니다.
+
+#### Matek H743-WING V3 (`BOARD_MATEK_H743`)
+
+완성형 비행 컨트롤러: env `matek-h743`은 `BOARD_STM32H743`(STM32 코드는 모두 공통)과 자체 핀 블록을 함께 정합니다. 핀 배치는 ArduPilot의 보드 설명(hwdef MatekH743)을 따르며 하드웨어에서는 미검증입니다. 보드에 납땜된 부품의 핀에는 `@fixed`가 붙습니다.
+
+| 상수 | 핀 | 패드, 주변 장치 |
+|---|---|---|
+| `PIN_ESC` | PB0 | S1, TIM1_CH2N |
+| `PIN_AILERON_LEFT` / `PIN_AILERON_RIGHT` / `PIN_ELEVATOR` / `PIN_RUDDER` | PA0 / PA1 / PA2 / PA3 | S3–S6, TIM2_CH1..CH4 |
+| `PIN_AUX1` / `PIN_AUX2` | PD12 / PD13 | S7 / S8, TIM4_CH1 / CH2 |
+| `PIN_RC_RX` / `PIN_RC_TX` | PC7 / PC6 | R6 / T6, USART6 |
+| `PIN_GPS_RX` / `PIN_GPS_TX` | PD6 / PD5 | R2 / T2, USART2 |
+| `PIN_TELEM_RX` / `PIN_TELEM_TX` | PE7 / PE8 | R7 / T7, UART7 |
+| `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | 보드의 I2C2: 기압계 DPS310 |
+| `PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL` | PB7 / PB6 | SDA / SCL, I2C1 — 외부 커넥터: 나침반, 피토관 |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | −1 | 화면 버스 없음 |
+| `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI`, `PIN_SPI_CS_IMU` | PA5 / PA6 / PD7, PC15 | 보드의 SPI1: ICM-42688-P |
+| `PIN_BUZZER` | PA15 | BZ+ / BZ− |
+| `PIN_VBAT_ADC` / `PIN_CURRENT_ADC` | PC0 / PC1 | VBAT(분압 ×11) / Curr(1 V당 40 A) |
+
+`PIN_I2C_EXT_SDA` / `PIN_I2C_EXT_SCL`은 일반 STM32 블록에도 있으며 거기서는 −1입니다 — 나침반과 피토관은 센서 버스에 있습니다. 분압비 `BLACKBOX_VBAT_DIVIDER` / `BLACKBOX_CURRENT_DIVIDER`와 `IMU_MOUNT_CALIBRATION_REQUIRED`도 보드마다 따로 있습니다.
 
 ### 수신기와 링크 상실
 
@@ -140,6 +161,7 @@
 | 상수 | 값 | 의미 |
 |---|---|---|
 | `IMU_ROTATION_CW_DEG` | 90 | IMU 칩의 축을 수직축 둘레로 돌리는 각도(0/90/180/270), 즉 칩의 X축이 향하는 방향. NVS에 장착 보정 `o`가 없을 때만 사용 |
+| `IMU_MOUNT_CALIBRATION_REQUIRED` | `false`(Matek H743은 `true`) | 안정화가 있는 ARM은 장착 보정 `o` 후에만: IMU가 비행 컨트롤러에 납땜되어 있고 보드는 아무 방향으로나 달기 때문. 보드마다, 그 핀 블록 안에 |
 | `MAG_ROTATION_CW_DEG` | 0 | 나침반에 대한 같은 설정(나침반에는 장착 보정이 없음) |
 
 ### 랜딩기어, 지상 캘리브레이션, 알림
@@ -231,7 +253,7 @@
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | 항상 준비해 두는 지워진 공간. 오래된 비행은 지상에서 통째로 지움 |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | 지우기 사이의 휴지 |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU를 N 주기에 한 번 기록(1이면 500 Hz) |
-| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 | 비행 컨트롤러 보드에서 배터리(56k/10k)와 전류 센서(10k/15k)의 분압비 |
+| `BLACKBOX_VBAT_DIVIDER` / `_CURRENT_DIVIDER` | 6.6 / 1.667 (Matek H743: 11 / 1) | 비행 컨트롤러 보드에서 배터리(56k/10k)와 전류 센서(10k/15k)의 분압비 |
 
 ---
 

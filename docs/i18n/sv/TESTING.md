@@ -9,7 +9,7 @@ Firmwaren verifieras på två nivåer:
 | **Dator (native)** | `pio test -e native` | Firmwarens headerfiler byggs på datorn oförändrade, med hårdvaran ersatt av styrbara attrapper: moduler, drivrutiner, flygsimuleringar i sluten slinga, hela ESP32-firmwaren (S3 och 38-pin) med varje sensorsats. Täckningen räknas |
 | **Dator (native-stm32)** | `pio test -e native-stm32` | Hela STM32H743-firmwaren (`src/stm32/main.cpp`) ovanpå ett lager av STM32duino-attrapper: FreeRTOS-uppgifter, flash, MAVLink, sensorer på I2C och SPI |
 | **Byggmatris** | `tools/build_matrix.sh` | 4 kort × 6 sensorsatser med `-Wall -Wextra (-Wshadow)`; varje varning i projektets kod är ett fel |
-| **Beskrivning för appen** | `python tools/test_opconfig.py` | `tools/opconfig.py`: beskrivning av firmwaren och skrivning av konfigurationen för OpenPlane Studio, på en kopia av källkoden (14 tester); `tools/opconfig_build_check.py` – den skrivna konfigurationen bygger på alla kort |
+| **Beskrivning för appen** | `python tools/test_opconfig.py` | `tools/opconfig.py`: beskrivning av firmwaren och skrivning av konfigurationen för OpenPlane Studio, på en kopia av källkoden (17 tester); `tools/opconfig_build_check.py` – den skrivna konfigurationen bygger på alla kort |
 | **Kort** | `pio test -e esp32-s3` | `test_feedback` och `test_imu_orientation` på en riktig ESP32-S3 (den flashar en testfirmware; lägg tillbaka den vanliga efteråt: `pio run -t upload`) |
 | **STM32-kort** | `pio test -e stm32h743-devebox -f test_blackbox_sd` | Den svarta lådan på ett **riktigt SD-kort** i DevEBox H743, plus `test_feedback` och `test_imu_orientation` på en Cortex-M7 – [nedan](#tester-på-stm32-kortet) |
 
@@ -83,7 +83,7 @@ Tillagt i de gemensamma attrapperna för STM32: `TwoWire(sda, scl)`, `setSDA/SCL
 
 | Fil | Vad det är |
 |---|---|
-| `ChipEmulators.h` | LSM6DSV, ICM-45686 (med IPREG-indirekta register), QMC6309, SPL06-001, BMP581, u-blox NAV-PVT-ramar – registerkartor på I2C eller SPI, med data från ”världen” `World` (vinklar och hastigheter, höjd, lufthastighet, kurs, koordinater), i kretsens axlar med hänsyn till `IMU_ROTATION_CW_DEG` |
+| `ChipEmulators.h` | LSM6DSV, ICM-42688-P, ICM-45686 (med IPREG-indirekta register), QMC6309, SPL06-001, BMP581, u-blox NAV-PVT-ramar – registerkartor på I2C eller SPI, med data från ”världen” `World` (vinklar och hastigheter, höjd, lufthastighet, kurs, koordinater), i kretsens axlar med hänsyn till `IMU_ROTATION_CW_DEG` |
 | `PlaneSim.h` | en flygplansmodell på ~1,2 kg: en punktmassa + rotation i roll/tippning, CL(α) med överstegring, luftmotstånd, dragkraft, vind, termik, mark; landningsställ med sporrhjul eller noshjul – flygplanet vickar på huvudhjulen, lasten på sporrhjulet, stjärtslag och propellerberöringar räknas, girning på marken med propellermoment och styrhjul |
 | `SimHarness.h` | en sluten slinga: sändare → iBUS-ram → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → roderutslag → `PlaneSim` → sensorer (inklusive ett pitotrör med två brusiga barometrar). En CSV-bana med `OPENPLANE_SIM_DIR`; med `realisticImu` räknar den riktiga `AttitudeEstimator` vinklarna ur den specifika kraften – den ser accelerationen på banan som ombord |
 
@@ -105,7 +105,7 @@ Korttesterna (`test_feedback`, `test_imu_orientation`) är portabla: med `ARDUIN
 | `native/test_flight_controller` | 20 | En fullständig `FlightController`-cykel på de riktiga klasserna: prioriteterna förlorad förbindelse > ARM > spakar/autopilot > gas; AUX, `MOTOR_KILL`, summer; reversering på SwD: bara i DISARM, 3 s utan ARM, 50 % gas bakåt, ingen gas från autopiloten, motorn stannar vid förlorad förbindelse; gasgränsratten sträcker ut det tillåtna över hela spakens slag; markkalibrering med SwB-gesten och från konsolen, signaler på utgångarna (rodren nickar, ESC-pulserna tas bort bara utan ARM), ARM spärrad under kalibrering och signal, en ARM-omslagning avbryter kalibreringen, en startvägran nickar utan att röra ESC:n, signalen spelas även utan förbindelse |
 | `native/test_imu` | 21 | MPU6050/6500/9250 och ICM-42688: identifiering, register, skalor, axelrotation och flygtekniska teckenkonventioner, bussfel, gyroskopkalibrering och kontrollen före flygning, monteringskalibrering från tre positioner, NVS, orienteringsfiltret |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`, BMP388 över I2C och SPI, BME280/BMP280 mot Bosch-referensen, kompasser (kurs, hard-iron-kalibrering i NVS), u-blox M10 (CFG-VALSET, NAV-PVT, korrupta ramar, tidsgräns), `SensorSelection` |
-| `native/test_sensors_new` | 23 | LSM6DSV (16X/32X, alternativ adress, SPI), ICM-45686 (indirekta register), QMC6309, SPL06-001 (formlerna i databladet), BMP581 (DRDY och reservvägen), pitotröret (nollpunkt, filter, densitet, förväxlade slangar, inaktuella data, en ”flygning” med bruset från två barometrar) |
+| `native/test_sensors_new` | 24 | LSM6DSV (16X/32X, alternativ adress, SPI), ICM-45686 (indirekta register), QMC6309, SPL06-001 (formlerna i databladet), BMP581 (DRDY och reservvägen), pitotröret (nollpunkt, filter, densitet, förväxlade slangar, inaktuella data, en ”flygning” med bruset från två barometrar), DPS310 (korrigering av temperatursensorn efter återställning) |
 | `native/test_storage` | 16 | `KeyValueStore` (omladdning, slitage – ett identiskt värde skrivs inte om, överfyllnad utan dataförlust, CRC, strömavbrott under radering, skräp, formatversion), `KvPreferences` (beter sig som ESP32:s NVS) |
 | `native/test_mavlink` | 20 | Kodeken mot referensramar från pymavlink (v1, v2, signerade), CRC, omsynkronisering; telemetri: strömfrekvenser, HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS, PID-parametrar (lista, läsning, skrivning, avvisning av dåliga värden), lägesbyte från marken, ARM från marken – nekas, uppdrag – 0, en överfull UART-buffert blockerar inte slingan |
 | `native/test_blackbox` | 20 | Den svarta lådan: format och CRC, sektorringen på en NOR-attrapp (en ny partition utan radering, skräp raderas alltid, gamla flygningar raderas i sin helhet och bara för att frigöra utrymme, den senaste rörs aldrig, omslag vid ringens slut, huvudet efter en omstart, strömavbrott, en halvskriven post fångas av CRC), inspelning av en flygning på riktiga `FlightController`/`Autopilot`: start vid ARM och gas med förinspelning, stopp efter DISARM och ”står på marken”, förlorad förbindelse stoppar den inte, inspelning efter en felomstart, manuell start, händelser, batteri, flash tog slut i luften, en flygning längre än partitionen, hämtning i CRC-ramar med hastighetsbyte, konsolmenyn `k`, ingen partition – avstängd; händelser för markkalibreringen och autostartens etapper |
@@ -122,9 +122,10 @@ Korttesterna (`test_feedback`, `test_imu_orientation`) är portabla: med `ARDUIN
 | `native_stm32/test_blackbox_sd` | 29 | Den svarta lådan på ett SD-kort: FAT32 (med och utan MBR, en katalog som sträcker sig över två kluster, brusposter, en främmande/fragmenterad/tom volym), `SdFileRegion` (delblock, cache, radering, gränser, fel), den riktiga drivrutinen `Stm32SdCard` ovanpå en attrapp av `HAL_SD` (4 bitar, reservhastigheter, omförsök, upptaget kort, ojusterade buffertar), ringen på kortet (omstart, strömavbrott, avsökningskostnad), markören ”ringen är tom”, inspelning av en flygning på en `FlightController`, en felomstart upptäckt via `RCC->RSR`, batteriets ADC, kortfel under flygning, ett långsamt kort, hämtning via konsolen, tangenten `D` |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | `src/stm32/main.cpp` med ett SD-kort: uppstarten hittar kortet och filen, uppgiften `bbox` skriver flygningen, slingans period sträcks inte ut, `bb list` |
 | `native_stm32/test_app_stm32_no_sd` | 4 | `src/stm32/main.cpp` utan SD-kort: den svarta lådan är avstängd och förklarar varför, flygplanet flyger, menyn `k` går inte sönder; självtest av utgångar på PD14 (kringgår `pulseIn()`-felet i kärnan), motorsignal `e`; SBUS på `Stm32UartPort` – 8E2 och RX-invertering |
+| `native_stm32/test_app_stm32_matek_h743` | 4 | `src/stm32/main.cpp` på **Matek H743-WING V3**: sensorer på kortet (ICM-42688-P på SPI1, DPS310 på I2C2), kompass på den separata externa I2C1-bussen, `@scan` med fältet `ext`, identiteten `matek-h743`; ARM med stabilisering väntar på monteringskalibreringen (i MANUAL går det); kortet sitter baklänges – efter tre poser stämmer vinklarna |
 | `test_feedback` | 10 | En flygplanssimulering i sluten slinga med en återkopplingsslinga (på datorn och på kortet) |
 | `test_imu_orientation` | 5 | Kalibrering av IMU-monteringen på 300 slumpmässiga monteringar (på datorn och på kortet) |
-| **Totalt** | **455** | 406 i `native` + 49 i `native-stm32` (plus 9 bara på kortet – `test_blackbox_sd`) |
+| **Totalt** | **460** | 407 i `native` + 53 i `native-stm32` (plus 9 bara på kortet – `test_blackbox_sd`) |
 
 ### Tester på STM32-kortet
 
@@ -206,14 +207,15 @@ Vad som förblir otäckt, och varför:
 
 clang-tidy körs med attrapperna från `test/native/support`: clang kan inte tolka ESP-IDF:s headerfiler för värdarkitekturen (om du försöker med `pio check` med `clangtidy` avbryts analysen på tolkningsfel och kontrollerar ärligt talat ingenting). `misc-include-cleaner` ser till att varje headerfil inkluderar det den använder: ”paraply”-headerfilerna (`FeedbackModules.h`, API:t i `IBoard.h`/`RegisterDevice.h`, makrona i `SensorSelection.h`) är märkta med `// IWYU pragma: export`. Skriptet hoppar över STM32-koden (`include/hal/stm32/`, `src/stm32/`) – den täcks av bygget, av cppcheck för env `stm32h743` och av testerna i env `native-stm32`.
 
-Byggmatrisen vid den senaste körningen – **24/24 utan varningar**:
+Byggmatrisen vid den senaste körningen – **33/33 utan varningar**:
 
-| Kort | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c |
-|---|---|---|---|---|---|---|
-| esp32-s3 | OK | OK | OK | OK | OK | OK |
-| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK |
-| esp32-c3 | OK | OK | OK | OK | OK | OK |
-| stm32h743 | OK | OK | OK | OK | OK | OK |
+| Kort | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c | icm42688-spi + dps310 |
+|---|---|---|---|---|---|---|---|
+| esp32-s3 | OK | OK | OK | OK | OK | OK | OK |
+| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK | OK |
+| esp32-c3 | OK | OK | OK | OK | OK | OK | OK |
+| stm32h743 | OK | OK | OK | OK | OK | OK | OK |
+| matek-h743 (kortets sats: OK) | — | — | — | OK | OK | OK | OK |
 
 cppcheck (`esp32-s3`, `stm32h743`) – 0 anmärkningar i projektets kod.
 

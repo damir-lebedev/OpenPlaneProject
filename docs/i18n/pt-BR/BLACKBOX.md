@@ -195,7 +195,7 @@ A pior gravação de página é a "faxina" interna do cartão; a fila na RAM (38
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | Quanto manter apagado para o próximo voo |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | A pausa entre apagamentos no solo |
 | `BLACKBOX_IMU_DIVIDER` | 1 | O IMU a cada N ciclos: 2 equivale a 250 Hz e a uma gravação ~25% mais longa |
-| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6,6, 1,667 | Os divisores da bateria e do sensor de corrente na placa |
+| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6,6, 1,667 (Matek H743: 11, 1) | Os divisores da bateria e do sensor de corrente na placa |
 
 A tabela de partições é `partitions_blackbox.csv`: o aplicativo, 2 MB (o firmware ocupa agora ~0,9 MB), a caixa-preta, 13,9 MB, e o coredump, 64 KB. A partição NVS ficou no mesmo lugar: as calibrações do IMU e da bússola e os trims são preservados depois da mudança para esta tabela. Não há um segundo slot para atualizações pelo ar (OTA).
 

@@ -195,7 +195,7 @@ La pire écriture de page est le « nettoyage » interne de la carte ; la fil
 | `BLACKBOX_MIN_FREE_BYTES` | 10 Mo | Combien garder effacé pour le prochain vol |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | La pause entre les effacements au sol |
 | `BLACKBOX_IMU_DIVIDER` | 1 | L’IMU tous les N cycles : 2 donne 250 Hz et un enregistrement ~25 % plus long |
-| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6,6, 1,667 | Les diviseurs de la batterie et du capteur de courant sur la carte |
+| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6,6, 1,667 (Matek H743: 11, 1) | Les diviseurs de la batterie et du capteur de courant sur la carte |
 
 La table des partitions est `partitions_blackbox.csv` : l’application 2 Mo (le firmware fait maintenant ~0,9 Mo), la boîte noire 13,9 Mo, le coredump 64 Ko. La partition NVS est restée à sa place — les calibrations de l’IMU et de la boussole et les trims sont conservés après le passage à cette table. Il n’y a pas de second emplacement pour les mises à jour par voie hertzienne (OTA).
 

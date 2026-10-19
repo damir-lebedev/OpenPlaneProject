@@ -195,7 +195,7 @@ Der schlechteste Schreibvorgang einer Seite ist die interne „Aufräumarbeit“
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | Wie viel für den nächsten Flug gelöscht gehalten wird |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | Die Pause zwischen den Löschvorgängen am Boden |
 | `BLACKBOX_IMU_DIVIDER` | 1 | Die IMU in jedem N-ten Zyklus: 2 bedeutet 250 Hz und eine um ~25 % längere Aufzeichnung |
-| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6,6, 1,667 | Die Teiler für Akku und Stromsensor auf dem Board |
+| `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6,6, 1,667 (Matek H743: 11, 1) | Die Teiler für Akku und Stromsensor auf dem Board |
 
 Die Partitionstabelle ist `partitions_blackbox.csv`: die Anwendung 2 MB (die Firmware ist jetzt ~0,9 MB groß), die Blackbox 13,9 MB, der Coredump 64 KB. Die NVS-Partition ist an ihrem alten Platz geblieben – die Kalibrierungen von IMU und Kompass sowie die Trimmungen bleiben nach dem Wechsel auf diese Tabelle erhalten. Einen zweiten Slot für Updates über die Luft (OTA) gibt es nicht.
 

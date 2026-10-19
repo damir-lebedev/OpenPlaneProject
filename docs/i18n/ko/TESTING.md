@@ -9,7 +9,7 @@
 | **PC(native)** | `pio test -e native` | 펌웨어 헤더를 PC에서 그대로 빌드하고, 하드웨어는 제어할 수 있는 페이크로 대체합니다. 모듈, 드라이버, 폐루프 비행 시뮬레이션, 각 센서 세트를 갖춘 ESP32 펌웨어 전체(S3와 38핀)입니다. 커버리지를 계산합니다 |
 | **PC(native-stm32)** | `pio test -e native-stm32` | STM32duino 페이크 계층 위에서 STM32H743 펌웨어 전체(`src/stm32/main.cpp`)를 돌립니다. FreeRTOS 태스크, 플래시, MAVLink, I2C와 SPI의 센서입니다 |
 | **빌드 매트릭스** | `tools/build_matrix.sh` | 보드 4종 × 센서 세트 6종을 `-Wall -Wextra (-Wshadow)`로 빌드합니다. 프로젝트 코드에 경고가 하나라도 있으면 오류입니다 |
-| **앱용 기술 정보** | `python tools/test_opconfig.py` | `tools/opconfig.py`: OpenPlane Studio용 펌웨어 기술과 설정 기록을 소스 사본에서 시험합니다(테스트 14개). `tools/opconfig_build_check.py`: 기록한 설정이 모든 보드에서 빌드되는지 확인합니다 |
+| **앱용 기술 정보** | `python tools/test_opconfig.py` | `tools/opconfig.py`: OpenPlane Studio용 펌웨어 기술과 설정 기록을 소스 사본에서 시험합니다(테스트 17개). `tools/opconfig_build_check.py`: 기록한 설정이 모든 보드에서 빌드되는지 확인합니다 |
 | **보드** | `pio test -e esp32-s3` | 실제 ESP32-S3에서 `test_feedback`과 `test_imu_orientation`을 실행합니다(테스트용 펌웨어를 올립니다. 끝나면 평소 펌웨어로 되돌리세요: `pio run -t upload`) |
 | **STM32 보드** | `pio test -e stm32h743-devebox -f test_blackbox_sd` | DevEBox H743의 **실제 SD 카드**에서 블랙박스를 시험하고, Cortex-M7에서 `test_feedback`과 `test_imu_orientation`도 실행합니다. [아래](#stm32-보드에서의-테스트) 참고 |
 
@@ -83,7 +83,7 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 
 | 파일 | 내용 |
 |---|---|
-| `ChipEmulators.h` | LSM6DSV, ICM-45686(IPREG 간접 레지스터 포함), QMC6309, SPL06-001, BMP581, u-blox NAV-PVT 프레임. I2C 또는 SPI 위의 레지스터 맵이며, 데이터는 `World` "세계"(각도와 속도, 고도, 대기속도, 침로, 좌표)에서 가져와 `IMU_ROTATION_CW_DEG`를 반영한 칩의 축으로 돌려줍니다 |
+| `ChipEmulators.h` | LSM6DSV, ICM-42688-P, ICM-45686(IPREG 간접 레지스터 포함), QMC6309, SPL06-001, BMP581, u-blox NAV-PVT 프레임. I2C 또는 SPI 위의 레지스터 맵이며, 데이터는 `World` "세계"(각도와 속도, 고도, 대기속도, 침로, 좌표)에서 가져와 `IMU_ROTATION_CW_DEG`를 반영한 칩의 축으로 돌려줍니다 |
 | `PlaneSim.h` | 약 1.2 kg 비행기 모델: 질점 + 롤/피치 회전, 실속을 포함한 CL(α), 항력, 추력, 바람, 서멀, 지면; 꼬리 바퀴 또는 앞바퀴 랜딩기어: 비행기는 주바퀴 위에서 앞뒤로 흔들리고, 꼬리 바퀴 하중, 꼬리 충돌, 프로펠러 접촉을 세며, 프로펠러 토크와 조향 바퀴에 의한 지상 요잉도 다룸 |
 | `SimHarness.h` | 폐루프: 조종기 → iBUS 프레임 → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 조종면 꺾임 → `PlaneSim` → 센서(노이즈가 있는 기압계 두 개로 만든 피토관 포함). `OPENPLANE_SIM_DIR`를 지정하면 CSV 궤적을 만듭니다; `realisticImu`에서는 실제 `AttitudeEstimator`가 비력으로 각도를 계산: 활주로의 가속을 기체에서와 같이 받음 |
 
@@ -105,7 +105,7 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native/test_flight_controller` | 20 | 실제 클래스로 돌리는 `FlightController`의 한 주기: 우선순위는 신호 상실 > ARM > 스틱/오토파일럿 > 스로틀, AUX, `MOTOR_KILL`, 부저; SwD 역회전: DISARM 상태에서만, 3 s 동안 ARM 불가, 후진 스로틀 50%, 오토파일럿 스로틀 없음, 통신이 끊기면 모터 정지; 스로틀 상한 노브가 허용 범위를 스틱 전체 행정으로 늘림; SwB 동작과 콘솔로 하는 지상 캘리브레이션, 출력 위의 알림(조종면 끄덕임, ESC 펄스는 ARM하지 않았을 때만 멈춤), 캘리브레이션과 알림 중 ARM 금지, ARM 스위치를 젖히면 캘리브레이션 취소, 이륙 거부 알림은 ESC를 건드리지 않고 끄덕이기만 함, 통신이 없어도 알림은 계속 |
 | `native/test_imu` | 21 | MPU6050/6500/9250과 ICM-42688: 식별, 레지스터, 스케일, 축 회전과 항공 부호, 버스 오류, 자이로 보정과 비행 전 점검, 세 가지 자세로 하는 장착 보정, NVS, 자세 필터 |
 | `native/test_baro_mag_gps` | 23 | `BarometerBase`, I2C와 SPI의 BMP388, Bosch 기준 구현과 비교한 BME280/BMP280, 나침반(침로, NVS에 저장하는 하드 아이언 보정), u-blox M10(CFG-VALSET, NAV-PVT, 손상된 프레임, 타임아웃), `SensorSelection` |
-| `native/test_sensors_new` | 23 | LSM6DSV(16X/32X, 예비 주소, SPI), ICM-45686(간접 레지스터), QMC6309, SPL06-001(데이터시트 공식), BMP581(DRDY와 대체 경로), 피토관(영점, 필터, 밀도, 바뀐 호스, 오래된 데이터, 기압계 두 개의 노이즈를 반영한 “비행”) |
+| `native/test_sensors_new` | 24 | LSM6DSV(16X/32X, 예비 주소, SPI), ICM-45686(간접 레지스터), QMC6309, SPL06-001(데이터시트 공식), BMP581(DRDY와 대체 경로), 피토관(영점, 필터, 밀도, 바뀐 호스, 오래된 데이터, 기압계 두 개의 노이즈를 반영한 “비행”), DPS310(리셋 후 온도 센서 보정) |
 | `native/test_storage` | 16 | `KeyValueStore`(재로드, 마모: 같은 값은 쓰지 않음, 데이터 손실 없는 오버플로, CRC, 삭제 중 전원 차단, 쓰레기 데이터, 포맷 버전), `KvPreferences`(ESP32 NVS와 같은 동작) |
 | `native/test_mavlink` | 20 | pymavlink 기준 프레임과 대조하는 코덱(v1, v2, 서명된 것), CRC, 재동기화, 텔레메트리: 스트림 주파수, HEARTBEAT/ATTITUDE/POSITION/HUD/GPS/SYS_STATUS, PID 파라미터(목록, 읽기, 쓰기, 잘못된 값 거부), 지상에서의 모드 변경, 지상에서의 ARM은 거부, 미션은 0개, 가득 찬 UART 버퍼가 루프를 막지 않음 |
 | `native/test_blackbox` | 20 | 블랙박스: 포맷과 CRC, NOR 페이크 위의 섹터 링(지우지 않은 새 파티션, 쓰레기는 항상 삭제, 오래된 비행은 통째로 그리고 공간 확보를 위해서만 삭제, 마지막 비행은 건드리지 않음, 링 끝을 넘어가는 경우, 재부팅 뒤의 머리 위치, 전원 차단, 쓰다 만 레코드를 CRC로 감지), 실제 `FlightController`/`Autopilot`으로 하는 비행 기록: ARM과 스로틀로 시작(사전 기록 포함), DISARM과 “지상에 정지” 뒤 중지, 신호 상실로는 멈추지 않음, 비정상 재부팅 뒤의 기록, 수동 시작, 이벤트, 배터리, 공중에서 플래시가 다 참, 파티션보다 긴 비행, CRC 프레임과 속도 전환을 쓰는 내려받기, 콘솔 메뉴 `k`, 파티션이 없으면 비활성; 지상 캘리브레이션과 자동 이륙 단계의 이벤트 |
@@ -122,9 +122,10 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native_stm32/test_blackbox_sd` | 29 | SD 카드의 블랙박스: FAT32(MBR 있음/없음, 클러스터 두 개에 걸친 디렉터리, 노이즈 항목, 남의/흩어진/빈 볼륨), `SdFileRegion`(불완전한 블록, 캐시, 삭제, 경계, 고장), 가짜 `HAL_SD` 위에서 도는 실제 `Stm32SdCard` 드라이버(4비트, 예비 속도, 재시도, 사용 중인 카드, 정렬되지 않은 버퍼), 카드 위의 링(재부팅, 전원 차단, 검증 비용), “링이 비어 있음” 표시, `FlightController`에서의 비행 기록, `RCC->RSR`로 판별하는 비정상 재부팅, 배터리 ADC, 비행 중 카드 오류, 느린 카드, 콘솔을 통한 내려받기, `D` 키 |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | 카드가 있는 `src/stm32/main.cpp`: 부팅 시 카드와 파일을 찾음, `bbox` 태스크가 비행을 기록, 루프 주기가 늘어나지 않음, `bb list` |
 | `native_stm32/test_app_stm32_no_sd` | 4 | 카드가 없는 `src/stm32/main.cpp`: 블랙박스는 비활성화되고 이유를 설명함, 비행기는 비행함, 메뉴 `k`는 망가지지 않음; PD14에서의 출력 자체 점검(코어 `pulseIn()` 결함 우회), 모터 알림 `e`; `Stm32UartPort`의 SBUS — 8E2와 RX 반전 |
+| `native_stm32/test_app_stm32_matek_h743` | 4 | **Matek H743-WING V3**의 `src/stm32/main.cpp`: 보드의 센서(SPI1의 ICM-42688-P, I2C2의 DPS310), 별도의 외부 I2C1 버스에 있는 나침반, `ext` 필드가 있는 `@scan`, 식별자 `matek-h743`; 안정화가 있는 ARM은 장착 보정을 기다림(MANUAL은 가능); 보드가 거꾸로 앉아 있어도 세 자세 후 각도가 맞음 |
 | `test_feedback` | 10 | 피드백 루프가 있는 비행기의 폐루프 시뮬레이션(PC와 보드 모두) |
 | `test_imu_orientation` | 5 | 무작위 장착 300가지에서 하는 IMU 장착 보정(PC와 보드 모두) |
-| **합계** | **455** | `native`에 406개 + `native-stm32`에 49개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
+| **합계** | **460** | `native`에 407개 + `native-stm32`에 53개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
 
 ### STM32 보드에서의 테스트
 
@@ -206,14 +207,15 @@ DevEBox H743 + 16 GB 카드에서의 결과(2026-10-02): `test_blackbox_sd`는 9
 
 clang-tidy는 `test/native/support`의 페이크와 함께 실행합니다. clang이 호스트 아키텍처용으로 ESP-IDF 헤더를 해석하지 못하기 때문입니다(`pio check`를 `clangtidy`로 시도하면 분석이 파싱 오류에서 중단되어 사실상 아무것도 검사하지 않습니다). `misc-include-cleaner`는 각 헤더가 자기가 쓰는 것을 직접 포함하는지 살핍니다. “우산” 헤더(`FeedbackModules.h`, `IBoard.h`/`RegisterDevice.h`의 API, `SensorSelection.h`의 매크로)에는 `// IWYU pragma: export`를 붙여 두었습니다. 스크립트는 STM32 코드(`include/hal/stm32/`, `src/stm32/`)를 건너뜁니다. 이 코드는 빌드, 환경 `stm32h743`의 cppcheck, 환경 `native-stm32`의 테스트로 확인합니다.
 
-마지막으로 실행한 시점의 빌드 매트릭스: **24/24 경고 없음**
+마지막으로 실행한 시점의 빌드 매트릭스: **33/33 경고 없음**
 
-| 보드 | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c |
-|---|---|---|---|---|---|---|
-| esp32-s3 | OK | OK | OK | OK | OK | OK |
-| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK |
-| esp32-c3 | OK | OK | OK | OK | OK | OK |
-| stm32h743 | OK | OK | OK | OK | OK | OK |
+| 보드 | bench-gy521 | lsm6dsv-pitot | icm45686-pitot | lsm6dsv-spi + spl06-spi | icm45686-spi + bmp581-spi | icm45686 + bmp581 i2c | icm42688-spi + dps310 |
+|---|---|---|---|---|---|---|---|
+| esp32-s3 | OK | OK | OK | OK | OK | OK | OK |
+| esp32-dev (38 pin) | OK | OK | OK | OK | OK | OK | OK |
+| esp32-c3 | OK | OK | OK | OK | OK | OK | OK |
+| stm32h743 | OK | OK | OK | OK | OK | OK | OK |
+| matek-h743 (보드 전용 세트: OK) | — | — | — | OK | OK | OK | OK |
 
 cppcheck(`esp32-s3`, `stm32h743`): 프로젝트 코드에 대한 지적은 0건입니다.
 

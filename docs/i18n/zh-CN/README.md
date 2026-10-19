@@ -35,9 +35,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-455%20passing-3fb950?style=for-the-badge" alt="455 项测试">
+  <img src="https://img.shields.io/badge/tests-460%20passing-3fb950?style=for-the-badge" alt="460 项测试">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94% 代码覆盖率">
-  <img src="https://img.shields.io/badge/builds-24%2F24%20clean-3fb950?style=for-the-badge" alt="24 次构建零警告">
+  <img src="https://img.shields.io/badge/builds-33%2F33%20clean-3fb950?style=for-the-badge" alt="33 次构建零警告">
   <br>
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
   <img src="https://img.shields.io/badge/STM32H743-flies%20from%20the%20RC-39d0ff?style=for-the-badge&logo=stmicroelectronics&logoColor=white" alt="STM32H743：可用遥控器操控">
@@ -61,7 +61,7 @@
 | **这是什么** | 面向遥控飞机的开放式飞控与自动驾驶仪。主力板是 STM32H743（Pixhawk 级别的开发板）：固件在 DevEBox 板上**已经运行起来，可以用遥控器操控**——[有视频](#-stm32h743-在开发板上跑起来了)，现在正在接传感器。之前的基础是约 10 美元的 ESP32-S3，它已在装有全部传感器的台架上验证过。 |
 | **能做什么** | 12 种飞行模式——从自稳到返航、GPS 盘旋、手抛起飞、自动降落，还有**热气流翱翔**。用两个廉价气压计做成的空速管。通过 MAVLink 把遥测数据送到 QGroundControl 和 Mission Planner。 |
 | **最大亮点** | 遥控器上的任何开关或旋钮 = 任何功能。在 `Controls.h` 里**改一行**，SwD 就不再是电机反转，而变成投放载荷。 |
-| **为什么可以信任** | 455 项自动化测试（另有 9 项在带真实 SD 卡的开发板上运行），94% 的代码有测试覆盖，24 种“开发板 × 传感器”组合构建零警告，每种模式都有闭环仿真。 |
+| **为什么可以信任** | 460 项自动化测试（另有 9 项在带真实 SD 卡的开发板上运行），94% 的代码有测试覆盖，33 种“开发板 × 传感器”组合构建零警告，每种模式都有闭环仿真。 |
 | **实话实说** | 目前飞过的只有手动模式（第一架原型机）。STM32H743 目前只在台架上、没有接传感器的情况下验证过。自动驾驶仪已通过台架测试、自动化测试和仿真验证，正等待试飞——[现状见下文](#-真实现状)。 |
 
 ---
@@ -160,11 +160,12 @@ constexpr Binding BINDINGS[] = {
 
 ---
 
-## 🔩 硬件：一套固件——四种开发板，十二种传感器
+## 🔩 硬件：一套固件——五种开发板，十三种传感器
 
 | 开发板 | 状态 | 已验证的内容 |
 |---|---|---|
 | **STM32H743VIT6** | ✅ 主力板 · 🔧 DevEBox，正在接传感器 + 🧪 测试 | 开发板上：启动、USB 控制台、**SD 卡和黑匣子**（板载测试）、**接收 iBUS、解锁（ARM），并用遥控器操控舵机和电机**（启动过程有视频）；电脑上：整套固件——FreeRTOS 任务、闪存、MAVLink、I2C 和 SPI。传感器尚未接到这块板上 |
+| **Matek H743-WING V3** | 🧪 测试 · 现成的飞控 | 在电脑上运行整套固件，带板载传感器（ICM-42688-P、DPS310）、外部 I2C 总线和 IMU 安装校准；尚未在真实的板子上试过 |
 | **ESP32-S3 N16R8** | ✅ 之前的主力板，台架验证 | 所有传感器、舵机、iBUS、OLED、网页仪表盘实机运行；整套固件通过测试 |
 | **ESP32 38-pin** | 🧪 测试 | 整套固件配合 ICM-45686 套件通过测试 |
 | **ESP32-C3 SuperMini** | ✈️ 飞过（手动模式） | 第一架原型机；所有套件均可构建 |
@@ -174,12 +175,13 @@ constexpr Binding BINDINGS[] = {
 | **LSM6DSV** + **QMC6309** | IMU + 罗盘（模块） | I2C / SPI |
 | **ICM-45686** + **QMC6309** | IMU + 罗盘（替代方案） | I2C / SPI |
 | **SPL06-001** | 机身气压计 | I2C / SPI |
+| **DPS310** | Matek H743 板载气压计 | I2C |
 | **BMP581** | 主气压计和空速管里的气压计 | I2C / SPI |
 | MPU6050/6500, ICM-42688, BMP388, BME280, QMC5883P/L | 台架用和旧款 | I2C / SPI |
 | **u-blox M10** | GPS，10 Hz，UBX | UART |
 | **iBUS · SBUS · CRSF** | 遥控接收机：FlySky、FrSky、Futaba、RadioMaster、ExpressLRS、TBS Crossfire | UART |
 
-换传感器只需改一行（`SENSOR_KIT_LSM6DSV_PITOT`），换开发板只需一个构建标志。4 种开发板 × 6 套传感器组合全部零警告构建通过：[`tools/build_matrix.sh`](../../../tools/build_matrix.sh)。
+换传感器只需改一行（`SENSOR_KIT_LSM6DSV_PITOT`），换开发板只需一个构建标志。4 种开发板 × 7 套传感器组合，加上使用自带组合的 Matek H743，全部零警告构建通过：[`tools/build_matrix.sh`](../../../tools/build_matrix.sh)。
 
 <table>
   <tr>
@@ -206,9 +208,9 @@ STM32H743 的固件已在**没有任何传感器**的 DevEBox 板上运行，并
 
 | | |
 |---|---|
-| **455 项自动化测试** | 模块、按芯片寄存器层面验证的驱动、闭环飞行、在电脑上**完整运行**的 ESP32 和 STM32 固件；另外在 STM32 板上用真实 SD 卡跑 9 项测试 |
+| **460 项自动化测试** | 模块、按芯片寄存器层面验证的驱动、闭环飞行、在电脑上**完整运行**的 ESP32 和 STM32 固件；另外在 STM32 板上用真实 SD 卡跑 9 项测试 |
 | **93.9% 的代码行，85.7% 的分支** | `gcovr` 覆盖率，包括 STM32 代码 |
-| **24/24 次构建** | 4 种开发板 × 6 套传感器组合，`-Wall -Wextra`，零警告 |
+| **33/33 次构建** | 4 种开发板 × 7 套传感器组合 + Matek H743，`-Wall -Wextra`，零警告 |
 | **0 条问题** | 对全部代码运行 cppcheck 和 clang-tidy |
 | **以标准为准，而非照搬代码** | 传感器公式依据数据手册（Bosch、ST、TDK、Goertek），MAVLink 依据 pymavlink |
 
@@ -249,6 +251,7 @@ flowchart LR
 pip install platformio
 git clone https://github.com/damir-lebedev/OpenPlaneProject && cd OpenPlaneProject
 pio run -e stm32h743-devebox -t upload                    # DevEBox H743：USB DFU，通过 USB 使用控制台
+pio run -e matek-h743 -t upload                           # Matek H743-WING V3：BOOT 键 + USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
 ```
@@ -274,6 +277,7 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 | STM32H743：SD 卡、黑匣子、USB 控制台 | 🔧 DevEBox 板上验证（板载测试） |
 | STM32H743：iBUS、ARM、舵机和电机的 PWM、手动控制 | 🔧 无传感器的板子上验证，已录制视频 |
 | SBUS 和 CRSF 接收机（ExpressLRS） | 🧪 测试：帧解析、failsafe、反相 UART；尚未用真实接收机验证 |
+| Matek H743-WING V3：板载传感器、外部 I2C 总线、IMU 安装校准 | 🧪 整套固件在电脑上；尚未在真实的板子上试过 |
 | STM32H743：传感器（IMU、气压计、罗盘、GPS）和自动驾驶仪模式 | 🧪 整套固件在电脑上运行；传感器尚未接到板子上 |
 
 仿真中的飞机模型是简化的，各项系数都是起始值。每个新模式都要先在高空试飞，手指放在 MANUAL 开关上。
@@ -294,7 +298,9 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 - [x] STM32H743 已在板子上运行：遥控器 → iBUS → 舵机和电机（无传感器，有视频）
 - [x] [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) 应用：分步配置、一键刷写、地面调试
 - [x] 在 iBUS 之外支持 SBUS 和 CRSF 接收机（ExpressLRS、TBS Crossfire）——在 `Config.h` 或 OpenPlane Studio 中选择
+- [x] 现成的飞控 Matek H743-WING V3：板载传感器，一键烧录（尚未在硬件上试过）
 - [ ] STM32H743：接上传感器，并像 ESP32-S3 一样走完台架测试
+- [ ] 基于 STM32F405 的热门飞控：SpeedyBee F405 WING、Matek F405-WTE
 - [ ] 在新机体上对自动驾驶仪进行试飞
 - [ ] 基于 STM32H743 的自研飞控板（[FC_BOARD.md](FC_BOARD.md)）
 - [ ] 航点飞行、MAVLink 任务

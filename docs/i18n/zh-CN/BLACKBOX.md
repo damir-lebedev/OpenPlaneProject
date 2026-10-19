@@ -195,7 +195,7 @@ DevEBox H743 + 16 GB 的卡（测试 `test_blackbox_sd`，[TESTING.md](TESTING.m
 | `BLACKBOX_MIN_FREE_BYTES` | 10 MB | 为下一次飞行要保持擦除多少空间 |
 | `BLACKBOX_ERASE_PAUSE_MS` | 100 | 在地面上两次擦除之间的停顿 |
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU 每隔 N 个控制周期记录一次：2——250 Hz，记录时间延长约 25% |
-| `BLACKBOX_VBAT_DIVIDER`、`_CURRENT_DIVIDER` | 6.6、1.667 | 开发板上电池和电流传感器的分压比 |
+| `BLACKBOX_VBAT_DIVIDER`、`_CURRENT_DIVIDER` | 6.6、1.667 (Matek H743: 11, 1) | 开发板上电池和电流传感器的分压比 |
 
 分区表是 `partitions_blackbox.csv`：应用程序 2 MB（固件目前约 0.9 MB），黑匣子 13.9 MB，coredump 64 KB。NVS 分区仍在原来的位置——换用这张分区表之后，IMU 和罗盘的校准数据以及配平值都会保留。没有用于空中升级（OTA）的第二个槽位。
 

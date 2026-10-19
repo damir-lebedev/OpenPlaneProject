@@ -134,12 +134,13 @@ par une option de compilation (`-D SENSOR_KIT=SENSOR_KIT_LSM6DSV_PITOT`,
 | `SENSOR_KIT_BENCH_GY521` (1, par défaut) | MPU6500 | BMP581 I2C (0x46/0x47) | QMC5883P | — | — |
 | `SENSOR_KIT_LSM6DSV_PITOT` (2) | LSM6DSV | SPL06 (fuselage) | QMC6309 | BMP581 dans le tube | M10 |
 | `SENSOR_KIT_ICM45686_PITOT` (3) | ICM-45686 | SPL06 (fuselage) | QMC6309 | BMP581 dans le tube | M10 |
+| `SENSOR_KIT_MATEK_H743` (4) | ICM-42688-P (SPI, sur la carte) | DPS310 (sur la carte) | — | — | M10 |
 | `SENSOR_KIT_CUSTOM` (0) | définir les cinq macros ci-dessous | | | | |
 
 | Macro de sélection | Variantes |
 |---|---|
 | `SENSOR_IMU` | `MPU6050` (1), `ICM42688` (2, SPI), `LSM6DSV` (3), `LSM6DSV_SPI` (4), `ICM45686` (5), `ICM45686_SPI` (6) |
-| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7) |
+| `SENSOR_BARO` | `BME280` (1), `BMP388` (2, SPI), `BMP388_I2C` (3), `SPL06` (4), `SPL06_SPI` (5), `BMP581` (6), `BMP581_SPI` (7), `DPS310` (8) |
 | `SENSOR_MAG` | `NONE` (0), `QMC5883P` (1), `QMC5883L` (2), `QMC6309` (3) |
 | `SENSOR_AIRSPEED` | `NONE` (0), `PITOT_BMP581` (1) — un BMP581 I2C 0x47 dans le tube |
 | `SENSOR_GPS` | `NONE` (0), `UBLOX_M10` (1) |
@@ -263,6 +264,7 @@ La vérification avant le vol (`runPreflightCheck`), dans l’ordre :
 | `NotOneG` | \|a\| diffère de 1g de plus de 0,2g |
 | `MountingMismatch` | (le montage est étalonné) le « haut » est à plus de 45° de celui qui est enregistré |
 | `NotChipUp` | (non étalonné) la carte n’est pas posée puce vers le haut (`z < 0.5g`) |
+| `MountNotCalibrated` | (non calibré, avec `IMU_MOUNT_CALIBRATION_REQUIRED` — IMU sur un contrôleur de vol) à la place de `NotChipUp` : ARM avec stabilisation seulement après la calibration du montage |
 
 ---
 
@@ -389,6 +391,21 @@ SPL06-001 (Goertek). Les formules viennent de la fiche technique §4.9.
   pression 16× (32 Hz), température 1×, mode continu.
 - `isNewSampleReady()` — le bit `PRS_RDY` ; `readSample()` — échantillons de 24 bits
   big-endian, `kP = 253952`, `kT = 524288`.
+
+## `DPS310_Sensor`
+
+**Fichier :** `sensors/baro/DPS310_Sensor.h` · **Hérite de :** `SPL06_Sensor` · **Statut :** non vérifié sur le matériel
+
+DPS310 (Infineon) — le baromètre des contrôleurs de vol prêts à l’emploi
+(Matek H743). Registres, ID `0x10`, coefficients et formules sont ceux du
+SPL06-001, d’où un pilote sous-classe de `SPL06_Sensor`. Une seule différence :
+juste après la réinitialisation, `afterReset()` écrit la correction du capteur
+de température (`0x0E←0xA5`, `0x0F←0x96`, `0x62←0x02`, `0x0E←0x00`,
+`0x0F←0x00` — la séquence d’Infineon, ArduPilot fait de même) : sans elle,
+certaines puces donnent une température fausse, et donc une pression fausse.
+Si l’écriture échoue, `begin()` renvoie `false` (« erreur d’écriture des
+registres »). Par l’ID, il est impossible de le distinguer du SPL06 — la puce
+se choisit explicitement : `SENSOR_BARO_DPS310`.
 
 ## `BMP581_Sensor`
 

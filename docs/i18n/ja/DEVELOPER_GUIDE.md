@@ -56,7 +56,7 @@ include/
 │   └── feedback/  フィードバックの土台。未接続（下の節を参照）
 ├── sensors/     SensorInterface, SensorSelection, SensorMounting
 │   ├── imu/     ImuSensorBase, AttitudeEstimator, MPU6050, ICM42688, LSM6DSV, ICM45686
-│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, BMP581
+│   ├── baro/    BarometerBase, BMP388, BME280, SPL06, DPS310, BMP581
 │   ├── mag/     MagnetometerBase, QMC5883P, QMC5883L, QMC6309
 │   ├── gps/     UbloxM10_Gps
 │   └── airspeed/ AirspeedSensor, PitotDualBaroAirspeed (気圧センサー 2 つで作るピトー管)
@@ -145,7 +145,7 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
 
 | ファイル | 担当 |
 |---|---|
-| `IBoard.h` | ハードウェアへの入口：`i2c()`、`displayI2c()`（ディスプレイ用の第 2 バス、`nullptr` の場合あり）、`spi()`、`rcUart()`、`gpsUart()`、`telemetryUart()`（MAVLink、`nullptr` の場合あり）、`servo(ServoChannel::*)`（AUX1/AUX2 を含む 7 出力）、`setBuzzer()` |
+| `IBoard.h` | ハードウェアへの入口：`i2c()`、`displayI2c()`（ディスプレイ用の第 2 バス、`nullptr` の場合あり）、`spi()`、`rcUart()`、`gpsUart()`、`telemetryUart()`（MAVLink、`nullptr` の場合あり）、`servo(ServoChannel::*)`（AUX1/AUX2 を含む 7 出力）、`setBuzzer()`、`externalI2c()`（外部コネクターのバス。既定では同じ `i2c()`、Matek H743 では専用） |
 | `Rtos.h` | FreeRTOS のタスク。ESP32（コア 0）と STM32（優先度）で同じ形で扱える。空きヒープ |
 | `II2CBus.h` | I2C バス：`Wire` の形をした基本操作と、補助関数 `writeRegister()`、`readRegisters()`（ちょうど `count` バイト届いたかを確認）、`readRegister()`、`probe()` |
 | `ISpiBus.h`、`IUartPort.h`、`IServoOutput.h` | SPI、UART、PWM 出力 1 本（`measurePulseUs()`：実際のパルスの診断） |
@@ -227,6 +227,7 @@ src/stm32/main.cpp  — STM32H743 のファームウェア（FreeRTOS のタス�
 | `baro/BMP388_Sensor.h` | I2C または SPI（SPI のダミーバイト付き）の BMP388、Bosch の補正、データ準備完了フラグによる読み出し。**テストベンチで確認済み（I2C）** |
 | `baro/BME280_Sensor.h` | BME280/BMP280、Bosch の補正（§8.1）。実機では未確認 |
 | `baro/SPL06_Sensor.h` | SPL06-001：データシートの係数と式、32 Hz ×16。I2C 0x76/0x77 または SPI。実機では未確認 |
+| `baro/DPS310_Sensor.h` | DPS310：`SPL06_Sensor` のサブクラス。同じレジスタと式に、リセット直後の温度センサー補正を加えたもの。I2C 0x76/0x77。実機では未確認 |
 | `baro/BMP581_Sensor.h` | BMP581：BMP5_SensorAPI の手順、16×/2×、IIR。I2C 0x46/0x47 または SPI。メインの気圧計（既定のベンチセット）としてもピトー管としても使える。実機では未確認 |
 | `mag/MagnetometerBase.h` | コンパスに共通の処理：50 Hz のポーリング、NVS への hard-iron 校正、軸の回転、方位、エラー |
 | `mag/QMC5883P_Sensor.h` | QMC5883P、0x2C。**テストベンチで確認済み** |
@@ -533,6 +534,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (10 秒間での最悪値) | iBUS ok=.
 | `pio run -e esp32-dev` | `esp32dev` | `BOARD_ESP32_CLASSIC` | テストベンチ用。ピン配置は実機では未確認 |
 | `pio run -e stm32h743` | `weact_mini_h743vitx` | `BOARD_STM32H743` | STM32H743VIT6：完全なファームウェア＋MAVLink＋SD ブラックボックス。素の基板で確認済み（[下記](#stm32h743)） |
 | `pio run -e stm32h743-devebox` | `devebox_h743vitx` | `BOARD_STM32H743` | DevEBox H743 でも同じ：コンソールは USB CDC、ファームウェアは DFU で書き込む |
+| `pio run -e matek-h743` | `devebox_h743vitx`＋独自クロック | `BOARD_MATEK_H743`＋`BOARD_STM32H743` | 完成品のフライトコントローラー Matek H743-WING V3：ボード上のセンサー、DFU（BOOT ボタン）で書き込み。実機では未確認（[下記](#stm32h743)） |
 
 | 用途 | ESP32-S3（テストベンチ） | ESP32-C3 | ESP32 classic |
 |---|---|---|---|
@@ -607,6 +609,19 @@ STM32H743VIT6（Cortex-M7 480 MHz、フラッシュ 2 MB、RAM 1 MB）は**完�
   中は不可）で、基板をブートローダーへ再起動します。RAM にマーカーを残す → リセット
   → クロック設定の前にシステムメモリへジャンプ（`src/stm32/bootloader.cpp`）。
   H7 では、動作中のファームウェアから直接ジャンプするとハングします。基板で確認済みで、そのため 2 段階にしています。コンソール（USB CDC）を開いておく必要があります。基板が応答しない場合は、BT0 を配線したまま RST を押してください。
+- **Matek H743-WING V3** — env `matek-h743`：同じ STM32H743VIT6 を積んだ完成品の
+  フライトコントローラー。DevEBox のコアバリアントでビルドします（同じパッケージ、
+  USB と SDMMC1 も同じピン）が、ボードの水晶は 8 MHz です。独自の
+  `SystemClock_Config()` を `src/stm32/clock_matek.cpp` が提供し（DevEBox と同じ
+  クロックツリー）、`HSE_VALUE` は `platformio.ini` のフラグです。マクロ
+  `BOARD_MATEK_H743` が `Config.h` の専用ピンブロックを選び、`BOARD_STM32H743`
+  も残るので STM32 のコードはすべて共通です。センサーはボードにはんだ付けされて
+  おり、そのセット（`SENSOR_KIT_MATEK_H743`）は環境のフラグで決まります。センサー
+  のピンには `@fixed` が付いていて、アプリは変更しません。外部 I2C1 コネクターは
+  別のバス（`IBoard::externalI2c()`）で、コンパスとピトー管をつなぎます。ボード
+  はどの向きにも取り付けられるため `IMU_MOUNT_CALIBRATION_REQUIRED = true`：
+  取り付けキャリブレーションなしでは安定化ありの ARM は拒否されます。最初の書き
+  込みは BOOT ボタン＋USB（DFU）、以降は `D` キーです。
 - **エントリポイント**：`src/stm32/main.cpp`（ESP32 のビルドでは
   `build_src_filter` で除外）。オブジェクトは `src/main.cpp` と同じで、`loop()`
   の代わりにタスクがあり、`vTaskStartScheduler()` は `setup()` の最後にあります。

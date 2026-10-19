@@ -81,7 +81,7 @@ public:
             case 0x46: case 0x47: return "BMP581 (0x47 — трубка Пито)";
             case 0x68: case 0x69: return "MPU6050/6500, ICM-42688/45686";
             case 0x6A: case 0x6B: return "LSM6DSV";
-            case 0x76: case 0x77: return "BME280/BMP388/SPL06";
+            case 0x76: case 0x77: return "BME280/BMP388/SPL06/DPS310";
             case 0x7C: return "QMC6309";
             default: return "?";
         }
@@ -519,10 +519,12 @@ private:
             return;
         }
         scanBus("I2C датчиков", board->i2c());
+        if (&board->externalI2c() != &board->i2c()) scanBus("I2C внешнего разъёма", board->externalI2c());
         if (II2CBus* display = board->displayI2c()) scanBus("I2C экрана", *display);
     }
 
-    // "@scan {"sensor":[{"a":104,"g":"..."}],"screen":[...]}" — для приложения.
+    // "@scan {"sensor":[{"a":104,"g":"..."}],"screen":[...]}" — для приложения;
+    // "ext":[...] — шина внешнего разъёма, если она отдельная (Matek H743).
     // Опрос блокирует цикл на доли секунды — при ARM не делается.
     void printScanJson() const
     {
@@ -533,6 +535,11 @@ private:
         }
         Serial.print("@scan {\"sensor\":");
         printBusJson(board->i2c());
+        if (&board->externalI2c() != &board->i2c())
+        {
+            Serial.print(",\"ext\":");
+            printBusJson(board->externalI2c());
+        }
         Serial.print(",\"screen\":");
         if (II2CBus* display = board->displayI2c()) printBusJson(*display);
         else Serial.print("null");

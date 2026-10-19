@@ -50,6 +50,7 @@ Den enda ingångspunkten till hårdvaran. Ingenting ovanför inkluderar `<Wire.h
 | `virtual II2CBus& i2c()` | Sensorbussen |
 | `virtual ISpiBus& spi()` | SPI-bussen |
 | `virtual II2CBus* displayI2c()` | En andra I2C-buss enbart för skärmen; `nullptr` om den saknas |
+| `virtual II2CBus& externalI2c()` | Den externa kontaktens buss: kompass, pitotrör. Som standard `i2c()`; på Matek H743 en egen I2C1 |
 | `virtual IUartPort& rcUart()` | Radiomottagarens UART: iBUS, SBUS eller CRSF |
 | `virtual IUartPort& gpsUart()` | GPS:ens UART |
 | `virtual IUartPort* telemetryUart()` | MAVLink-radiomodemets UART; `nullptr` som standard (ESP32 har ingen ledig UART) |
@@ -374,7 +375,8 @@ Samma sak som `Esp32Board`, ovanpå STM32duino.
 | `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `displayBus.begin()`, summerns stift |
 | `telemetryUart()` | `&telemetryPort` |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
-| `displayI2c()` | Alltid `&displayBus` |
+| `displayI2c()` | `&displayBus` om skärmstiften är satta (`PIN_I2C2_*` ≥ 0), annars `nullptr` (Matek H743 har ingen skärm) |
+| `externalI2c()` | `&externalBus` (I2C1) om `PIN_I2C_EXT_*` är satta, annars sensorbussen |
 | `static constexpr pin_size_t pinOf(int16_t)` | Omvandlar ett stift från `Config.h` till kärn-API:ts typ |
 | resten | Returnerar motsvarande fält |
 

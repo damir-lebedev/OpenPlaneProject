@@ -55,7 +55,7 @@ Cellule : envergure 1200 mm, corde 250 mm, profil NACA 4412, construction en 
 
 ## Choix de la carte et brochage
 
-Le firmware prend en charge quatre cartes ; pour passer de l’une à l’autre, il suffit d’un paramètre de compilation (`pio run -e <nom de l’environnement>`). Chaque carte a son propre brochage, fixé dans le firmware pour l’environnement concerné — ne déplacez pas les fils de votre propre initiative, consultez le tableau de votre carte.
+Le firmware prend en charge cinq cartes ; pour passer de l’une à l’autre, il suffit d’un paramètre de compilation (`pio run -e <nom de l’environnement>`). Chaque carte a son propre brochage, fixé dans le firmware pour l’environnement concerné — ne déplacez pas les fils de votre propre initiative, consultez le tableau de votre carte.
 
 > **Important :** la carte principale est désormais la **STM32H743 (DevEBox H743)** — le démarrage, la console USB, la carte SD, l’iBUS, les servos et le moteur y ont été vérifiés ; les capteurs sont branchés pour la première fois. L’**esp32-s3 (N16R8)** est l’ancienne carte principale ; son brochage a été vérifié sur le banc avec tous les capteurs. L’**esp32-c3** est l’ancien prototype qui a volé. Le brochage de l’**esp32-dev** a été choisi d’après la documentation de la puce et **n’a pas été vérifié sur du vrai matériel**.
 
@@ -91,6 +91,30 @@ Branchement des capteurs sur le banc (tous les modules fonctionnent en **3,3 V*
 | OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
 
 Les servos sont alimentés **non pas par la carte**, mais par le BEC du variateur (ou par une alimentation 5 V séparée d’au moins 2 A) ; la masse de toutes les sources est commune. Ne reliez pas le fil rouge de l’ESC au 5 V de la carte tant que l’USB est branché.
+
+### Matek H743-WING V3 — un contrôleur de vol prêt à l’emploi
+
+`pio run -e matek-h743` — la carte Matek H743-WING V3 (les H743-WLITE et H743-SLIM V3 ont le même brochage). Un contrôleur de vol prêt à l’emploi avec le même STM32H743 : régulateur d’alimentation, capteur de courant, IMU ICM-42688-P, baromètre DPS310 et emplacement microSD sont déjà sur la carte — rien à souder ; servos, contrôleur moteur, récepteur et GPS se branchent sur les pastilles marquées. **Le firmware n’a pas encore été essayé sur une vraie carte** (le brochage vient de la description de la carte dans ArduPilot, tout le firmware est vérifié par des tests sur PC) — avant le premier vol, vérifiez au sol les gouvernes, le moteur et les modes.
+
+| Rôle | Pastille | Broche |
+|---|---|---|
+| ESC (gaz) | S1 | PB0 |
+| Aileron, aile gauche / droite | S3 / S4 | PA0 / PA1 |
+| Profondeur | S5 | PA2 |
+| Direction + roue directrice | S6 | PA3 |
+| AUX1 / AUX2 (largage, caméra) | S7 / S8 | PD12 / PD13 |
+| Récepteur : iBUS, SBUS, CRSF (TX — seulement pour CRSF) | R6 / T6 | PC7 / PC6 |
+| GPS : RX (← TX du GPS) / TX (→ RX du GPS) | R2 / T2 | PD6 / PD5 |
+| Télémétrie MAVLink (modem radio) : RX / TX | R7 / T7 | PE7 / PE8 |
+| Compas, tube de Pitot (I2C externe) | SDA / SCL | PB7 / PB6 |
+| Buzzer | BZ+ / BZ− | PA15 |
+| Batterie / capteur de courant | VBAT / Curr | PC0 / PC1 |
+
+- **Capteurs sur la carte** — l’IMU et le baromètre ; leur kit (`SENSOR_KIT_MATEK_H743`) est fixé par l’environnement `matek-h743`, rien à changer dans `SensorSelection.h`. La carte n’a pas de compas : un module GPS avec compas se branche sur les pastilles SDA/SCL — dans OpenPlane Studio, c’est le choix du compas à l’étape « Capteurs » ; en ligne de commande, le flag `-D SENSOR_MAG=SENSOR_MAG_QMC5883L` dans `platformio.ini`.
+- **La carte peut être posée comme on veut**, même la flèche vers l’arrière : l’IMU y est soudée, donc avant le premier ARM avec stabilisation il faut la calibration du montage en trois poses (`o` dans la console ou « Réglages » → « Montage de l’IMU » dans l’application). Sans elle, l’ARM dans les modes stabilisés est refusé avec une explication ; en MANUAL, c’est possible.
+- **Premier flashage :** maintenez le bouton BOOT et branchez l’USB — la carte passe en mode DFU (Windows a besoin du pilote WinUSB, comme pour la DevEBox) ; puis `pio run -e matek-h743 -t upload` ou le bouton « Flasher » d’OpenPlane Studio. Ensuite, la touche `D` dans la console redémarre d’elle-même la carte dans le bootloader.
+- **La boîte noire** écrit sur la carte microSD de l’emplacement de la carte. La batterie est mesurée par le diviseur de la carte (×11), le capteur de courant par la tension de sa sortie (40 A par volt).
+- S2 et S9–S12 sont libres. Les servos sont alimentés par le BEC de la carte (le rail Vx) ou par le BEC du contrôleur moteur — comme dans le manuel de Matek ; les masses de toutes les sources sont communes.
 
 ### esp32-s3 (N16R8) — l’ancienne carte principale, vérifiée sur le banc
 
@@ -314,6 +338,9 @@ Ouvrez le projet (le dossier du dépôt) dans VS Code avec PlatformIO installé,
 # STM32H743 DevEBox (carte principale)
 pio run -e stm32h743-devebox -t upload
 
+# Matek H743-WING V3 (contrôleur prêt à l’emploi) : bouton BOOT + USB
+pio run -e matek-h743 -t upload
+
 # esp32-s3 N16R8 (ancienne carte principale)
 pio run -e esp32-s3 -t upload
 
@@ -327,6 +354,8 @@ pio run -e esp32-dev -t upload
 Si vous n’indiquez pas du tout `-e`, la carte par défaut est compilée — `stm32h743-devebox`.
 
 **STM32 DevEBox :** le premier flashage passe par l’USB DFU : un strap BT0→3V3, appuyez sur RST, puis la commande ci-dessus (Windows a besoin du pilote WinUSB pour « STM32 BOOTLOADER », installé avec Zadig). Ensuite, la touche `D` dans la console redémarre la carte dans le bootloader toute seule, et le strap n’est plus nécessaire. La console passe par le même USB-C.
+
+**Matek H743 :** le premier flashage passe aussi par l’USB DFU, mais sans strap : maintenez le bouton BOOT de la carte, branchez l’USB et lancez la commande ci-dessus. Ensuite — la touche `D` dans la console.
 
 **esp32-s3 :** la carte a deux connecteurs USB-C. Le téléversement et Serial passent par le connecteur **« COM »** (pont CH343 ; sous Windows, « USB-Enhanced-SERIAL CH343 »). Le connecteur « USB » (l’USB natif de la puce) n’est pas nécessaire au travail, mais il peut rester branché — il ne gêne en rien.
 

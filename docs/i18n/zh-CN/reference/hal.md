@@ -47,6 +47,7 @@ HAL 是唯一允许了解具体 MCU 的层。接口位于 `include/hal/`，实�
 | `virtual II2CBus& i2c()` | 传感器总线 |
 | `virtual ISpiBus& spi()` | SPI 总线 |
 | `virtual II2CBus* displayI2c()` | 仅供屏幕使用的第二条 I2C 总线；没有则为 `nullptr` |
+| `virtual II2CBus& externalI2c()` | 外部接口的总线：罗盘、皮托管。默认为 `i2c()`；Matek H743 上是单独的 I2C1 |
 | `virtual IUartPort& rcUart()` | 遥控接收机的 UART：iBUS、SBUS 或 CRSF |
 | `virtual IUartPort& gpsUart()` | GPS 的 UART |
 | `virtual IUartPort* telemetryUart()` | MAVLink 无线电模块的 UART；默认为 `nullptr`（ESP32 没有空闲的 UART） |
@@ -341,7 +342,8 @@ USB CDC），并通过 cppcheck 和 PC 上的测试（env `native-stm32`，使�
 | `begin()` | `i2cBus.begin()`、`spiBus.begin()`、`displayBus.begin()`、蜂鸣器引脚 |
 | `telemetryUart()` | `&telemetryPort` |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
-| `displayI2c()` | 始终为 `&displayBus` |
+| `displayI2c()` | 若设置了屏幕引脚（`PIN_I2C2_*` ≥ 0）则为 `&displayBus`，否则为 `nullptr`（Matek H743 没有屏幕） |
+| `externalI2c()` | 若设置了 `PIN_I2C_EXT_*` 则为 `&externalBus`（I2C1），否则为传感器总线 |
 | `static constexpr pin_size_t pinOf(int16_t)` | 把 `Config.h` 中的引脚转换为内核 API 的类型 |
 | 其余方法 | 返回对应的字段 |
 

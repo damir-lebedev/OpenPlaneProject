@@ -51,6 +51,7 @@ HAL — единственный слой, которому разрешено �
 | `virtual II2CBus& i2c()` | Шина датчиков |
 | `virtual ISpiBus& spi()` | Шина SPI |
 | `virtual II2CBus* displayI2c()` | Вторая шина I2C только для экрана; `nullptr`, если её нет |
+| `virtual II2CBus& externalI2c()` | Шина внешнего разъёма: компас, трубка Пито. По умолчанию — `i2c()`; у Matek H743 — отдельная I2C1 |
 | `virtual IUartPort& rcUart()` | UART приёмника пульта: iBUS, SBUS или CRSF |
 | `virtual IUartPort& gpsUart()` | UART GPS |
 | `virtual IUartPort* telemetryUart()` | UART радиомодема MAVLink; по умолчанию `nullptr` (у ESP32 свободного UART нет) |
@@ -372,7 +373,8 @@ STM32duino). На плате DevEBox **без датчиков** провере�
 | `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `displayBus.begin()`, пин пищалки |
 | `telemetryUart()` | `&telemetryPort` |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
-| `displayI2c()` | Всегда `&displayBus` |
+| `displayI2c()` | `&displayBus`, если заданы пины экрана (`PIN_I2C2_*` ≥ 0), иначе `nullptr` (у Matek H743 экрана нет) |
+| `externalI2c()` | `&externalBus` (I2C1), если заданы `PIN_I2C_EXT_*`, иначе шина датчиков |
 | `static constexpr pin_size_t pinOf(int16_t)` | Перевод пина из `Config.h` в тип API ядра |
 | остальные | Возвращают соответствующие поля |
 

@@ -24,7 +24,9 @@
 #endif
 
 #ifndef OP_BOARD_ENV
-    #if defined(BOARD_STM32H743)
+    #if defined(BOARD_MATEK_H743)       // раньше BOARD_STM32H743: у Matek определены оба
+        #define OP_BOARD_ENV "matek-h743"
+    #elif defined(BOARD_STM32H743)
         #define OP_BOARD_ENV "stm32h743"
     #elif defined(BOARD_ESP32_S3)
         #define OP_BOARD_ENV "esp32-s3"

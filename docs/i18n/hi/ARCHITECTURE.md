@@ -572,6 +572,7 @@ PlatformIO के परिवेश:
 | `esp32-dev` | क्लासिक ESP32, बेंच |
 | `stm32h743` | STM32H743VIT6: पूरा फ़र्मवेयर (`src/stm32/main.cpp`), सेटिंग फ़्लैश में, MAVLink, SD पर ब्लैक बॉक्स, FreeRTOS; सादे बोर्ड पर जाँचा गया — देखें [reference/hal.md](reference/hal.md#stm32h743-के-लिए-क्रियान्वयन) |
 | `stm32h743-devebox` | DevEBox H743: वही, कंसोल USB CDC पर, फ़र्मवेयर DFU से ([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
+| `matek-h743` | Matek H743-WING V3: बोर्ड पर सेंसर वाला तैयार फ़्लाइट कंट्रोलर, 8 MHz क्रिस्टल, DFU से फ़्लैशिंग ([DEVELOPER_GUIDE](DEVELOPER_GUIDE.md#stm32h743)) |
 | `native` | PC पर Arduino/ESP-IDF के फ़ेक और कवरेज के साथ बिल्ड और टेस्ट — देखें [`TESTING.md`](TESTING.md) |
 
 ---

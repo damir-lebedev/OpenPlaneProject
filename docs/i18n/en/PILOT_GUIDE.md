@@ -55,7 +55,7 @@ Airframe: wingspan 1200 mm, chord 250 mm, NACA 4412 airfoil, PETG construction (
 
 ## Choosing a board and pinout
 
-The firmware supports four boards; switching takes one build parameter (`pio run -e <environment name>`). Each board has its own pinout, hard-coded in the firmware for the specific environment — do not rearrange wires on your own; look at the table for your board.
+The firmware supports five boards; switching takes one build parameter (`pio run -e <environment name>`). Each board has its own pinout, hard-coded in the firmware for the specific environment — do not rearrange wires on your own; look at the table for your board.
 
 > **Important:** the main board is now the **STM32H743 (DevEBox H743)** — boot, the USB console, the SD card, iBUS, servos and the motor have been verified on it; the sensors are being connected for the first time. **esp32-s3 (N16R8)** is the former main board; its pinout has been verified on the bench with all sensors. **esp32-c3** is the old flown prototype. The **esp32-dev** pinout was chosen from the chip documentation and **has not been checked on real hardware**.
 
@@ -91,6 +91,30 @@ Connecting the sensors on the bench (all modules run from **3.3 V**, not 5 V):
 | OLED 128×64 SSD1306 | VCC–3.3V, GND–GND, SCL–PB8, SDA–PB9 |
 
 The servos are powered **not from the board** but from the ESC's BEC (or from a separate 5 V supply rated at 2 A or more); the grounds of all sources are common. Do not connect the ESC's red wire to the board's 5 V while USB is plugged in.
+
+### Matek H743-WING V3 — a ready-made flight controller
+
+`pio run -e matek-h743` — the Matek H743-WING V3 board (the H743-WLITE and H743-SLIM V3 share its pinout). A ready-made flight controller on the same STM32H743: the power regulator, current sensor, ICM-42688-P IMU, DPS310 barometer and microSD slot are already on the board — nothing to solder; servos, ESC, receiver and GPS connect to the labelled pads. **The firmware has not been tried on a real board yet** (the pinout comes from the board description in ArduPilot, the whole firmware is checked by tests on a PC) — before the first flight, check the control surfaces, the motor and the modes on the ground.
+
+| Purpose | Pad | Pin |
+|---|---|---|
+| ESC (throttle) | S1 | PB0 |
+| Aileron, left / right wing | S3 / S4 | PA0 / PA1 |
+| Elevator | S5 | PA2 |
+| Rudder + steering wheel | S6 | PA3 |
+| AUX1 / AUX2 (payload drop, camera) | S7 / S8 | PD12 / PD13 |
+| Receiver: iBUS, SBUS, CRSF (TX — CRSF only) | R6 / T6 | PC7 / PC6 |
+| GPS: RX (← GPS TX) / TX (→ GPS RX) | R2 / T2 | PD6 / PD5 |
+| MAVLink telemetry (radio modem): RX / TX | R7 / T7 | PE7 / PE8 |
+| Compass, pitot tube (external I2C) | SDA / SCL | PB7 / PB6 |
+| Buzzer | BZ+ / BZ− | PA15 |
+| Battery / current sensor | VBAT / Curr | PC0 / PC1 |
+
+- **Sensors on the board** — the IMU and the barometer; their kit (`SENSOR_KIT_MATEK_H743`) is set by the `matek-h743` environment, nothing to change in `SensorSelection.h`. There is no compass on the board: a GPS module with a compass connects to the SDA/SCL pads — in OpenPlane Studio that is the compass choice on the "Sensors" step, from the command line the `-D SENSOR_MAG=SENSOR_MAG_QMC5883L` flag in `platformio.ini`.
+- **The board can sit any way that's convenient**, even with the arrow pointing back: the IMU is soldered onto it, so before the first ARM with stabilization you need the mounting calibration with three poses (`o` in the console, or "Setup" → "IMU mounting" in the app). Without it, ARM in stabilized modes is refused with an explanation; in MANUAL it is allowed.
+- **First flash:** hold the BOOT button and plug in USB — the board is in DFU mode (Windows needs the WinUSB driver, as for the DevEBox); then `pio run -e matek-h743 -t upload` or the "Flash" button in OpenPlane Studio. After that the `D` key in the console reboots the board into the bootloader by itself.
+- **The black box** writes to the microSD card in the board's slot. The battery is measured through the board's divider (×11), the current sensor as its output voltage (40 A per volt).
+- S2 and S9–S12 are free. Servos are powered by the board's BEC (the Vx rail) or the ESC's BEC — as in Matek's manual; the grounds of all sources are common.
 
 ### esp32-s3 (N16R8) — the former main board, verified on the bench
 
@@ -313,6 +337,9 @@ Open the project (the repository folder) in VS Code with PlatformIO installed, c
 # STM32H743 DevEBox (main board)
 pio run -e stm32h743-devebox -t upload
 
+# Matek H743-WING V3 (ready-made flight controller): BOOT button + USB
+pio run -e matek-h743 -t upload
+
 # esp32-s3 N16R8 (former main board)
 pio run -e esp32-s3 -t upload
 
@@ -326,6 +353,8 @@ pio run -e esp32-dev -t upload
 If you do not specify `-e` at all, the default board is built — `stm32h743-devebox`.
 
 **STM32 DevEBox:** the first flash goes over USB DFU: a jumper BT0→3V3, press RST, then the command above (Windows needs the WinUSB driver for "STM32 BOOTLOADER", installed with Zadig). After that the `D` key in the console reboots the board into the bootloader by itself, and the jumper is no longer needed. The console runs over the same USB-C.
+
+**Matek H743:** the first flash is also over USB DFU, but without a jumper: hold the BOOT button on the board, plug in USB and run the command above. After that — the `D` key in the console.
 
 **esp32-s3:** the board has two USB-C connectors. Flashing and Serial go through the **"COM"** connector (a CH343 bridge; on Windows it shows up as "USB-Enhanced-SERIAL CH343"). The "USB" connector (the chip's native USB) is not needed for operation, but it may be plugged in — it interferes with nothing.
 

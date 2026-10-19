@@ -133,7 +133,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=�
 | Метод | Описание |
 |---|---|
 | `DebugConsole(FlightController&, FlightOutputs&, Autopilot&, DebugLogger&, IBoard* boardForScan = nullptr)` | с платой — команда `b` и пункт меню 7 |
-| `static const char* guessI2cDevice(uint8_t address)` | чип по адресу: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
+| `static const char* guessI2cDevice(uint8_t address)` | чип по адресу: 0x6A LSM6DSV, 0x68 MPU/ICM, 0x76 BME280/BMP388/SPL06/DPS310, 0x46/0x47 BMP581, 0x7C QMC6309, 0x2C QMC5883P, 0x0D QMC5883L, 0x3C OLED |
 | `void printHint() const` | Однострочная подсказка |
 | `void update()` | Обработать все байты из `Serial`; если настройки лога изменены, меню закрыто и **не armed** — сохранить в NVS |
 
@@ -145,7 +145,7 @@ SYS  loop 500 Hz, avg 700 us, max 1400 us (худший за 10 с) | iBUS ok=�
 `b` — опрос шин I2C (0x08..0x7F — до 0x7F, потому что QMC6309 сидит на 0x7C) с
 именами чипов; прочее — подсказка. `\r`/`\n` игнорируются.
 
-Команды ПК — байт STX (`0x02`), строка и `\n`: на `id` метод `FirmwareIdentity::print()` печатает паспорт прошивки одной строкой `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; отвечает и при ARM); `scan` опрашивает шины и печатает `@scan {"sensor":[{"a":104,"g":"…"}],"screen":[…]|null}` (при ARM — `{"error":"armed"}`); `act X` выполняет действие клавиши `X` меню с теми же запретами при ARM; `live` и `live 0` уходят в `AppLink` (ниже), остальное — в `IFlightRecorder::handleHostCommand()` (чёрный ящик). Плату, коммит, хэш конфигурации и имя самолёта вшивает приложение OpenPlane Studio через `config/Project.h` в своей копии исходников; без этого файла — макрос платы и `"dev"`.
+Команды ПК — байт STX (`0x02`), строка и `\n`: на `id` метод `FirmwareIdentity::print()` печатает паспорт прошивки одной строкой `@id {...}` (`fw`, `proto`, `board`, `commit`, `config`, `plane`, `rx`, `armed`; отвечает и при ARM); `scan` опрашивает шины и печатает `@scan {"sensor":[{"a":104,"g":"…"}],"ext":[…],"screen":[…]|null}` (при ARM — `{"error":"armed"}`); `act X` выполняет действие клавиши `X` меню с теми же запретами при ARM; `live` и `live 0` уходят в `AppLink` (ниже), остальное — в `IFlightRecorder::handleHostCommand()` (чёрный ящик). Плату, коммит, хэш конфигурации и имя самолёта вшивает приложение OpenPlane Studio через `config/Project.h` в своей копии исходников; без этого файла — макрос платы и `"dev"`.
 
 Меню лога: `1`..`9` — цикл режима каналов 0..8, `n` — NAV, `s` — SYS, `p` — период, `a` —
 всё «при изменении», `x` — всё выкл, `d` — по умолчанию, `0`/`q` — назад, `l`/`h` —

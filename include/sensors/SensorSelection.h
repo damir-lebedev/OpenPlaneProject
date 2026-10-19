@@ -27,6 +27,9 @@
 //     • BME280 / BMP280           — I2C 0x76
 //     • SPL06-001                 — I2C 0x76 или 0x77 (сам находит), или SPI
 //     • BMP581                    — I2C 0x46 (0x47 — если нет трубки Пито), или SPI
+//     • DPS310                    — I2C 0x76 или 0x77 (сам находит); на плате Matek H743 — 0x76
+//   Компас и трубка Пито висят на шине внешнего разъёма (board.externalI2c()):
+//   у самодельных плат это та же шина датчиков, у Matek H743 — I2C1.
 //   Магнитометр:
 //     • QMC5883P (GY-273)         — I2C 0x2C
 //     • QMC5883L                  — I2C 0x0D
@@ -61,6 +64,7 @@
 #define SENSOR_BARO_SPL06_SPI   5
 #define SENSOR_BARO_BMP581      6   // I2C
 #define SENSOR_BARO_BMP581_SPI  7
+#define SENSOR_BARO_DPS310      8   // I2C
 
 #define SENSOR_MAG_NONE      0
 #define SENSOR_MAG_QMC5883P  1
@@ -78,13 +82,16 @@
 #define SENSOR_KIT_BENCH_GY521     1   // стенд: GY-521 (MPU6500), BMP581 I2C, GY-273 (QMC5883P)
 #define SENSOR_KIT_LSM6DSV_PITOT   2   // LSM6DSV+QMC6309, SPL06 в фюзеляже, BMP581 в трубке Пито, GPS
 #define SENSOR_KIT_ICM45686_PITOT  3   // ICM-45686+QMC6309, SPL06, BMP581 в трубке, GPS
+#define SENSOR_KIT_MATEK_H743      4   // датчики на плате Matek H743: ICM-42688-P (SPI), DPS310, GPS
 
 
 // --------------------------------------------------------
 // АКТИВНЫЙ ВЫБОР — одна строка SENSOR_KIT...
 //
 // Любую строку можно переопределить флагом сборки без правки файла,
-// например build_flags = -D SENSOR_KIT=SENSOR_KIT_LSM6DSV_PITOT.
+// например build_flags = -D SENSOR_KIT=SENSOR_KIT_LSM6DSV_PITOT. Так
+// сделано у полётников с датчиками на плате: env matek-h743 сам ставит
+// SENSOR_KIT_MATEK_H743, строка ниже для него не действует.
 // --------------------------------------------------------
 
 #ifndef SENSOR_KIT
@@ -108,6 +115,12 @@
     #define KIT_BARO     SENSOR_BARO_SPL06
     #define KIT_MAG      SENSOR_MAG_QMC6309
     #define KIT_AIRSPEED SENSOR_AIRSPEED_PITOT_BMP581
+    #define KIT_GPS      SENSOR_GPS_UBLOX_M10
+#elif SENSOR_KIT == SENSOR_KIT_MATEK_H743
+    #define KIT_IMU      SENSOR_IMU_ICM42688
+    #define KIT_BARO     SENSOR_BARO_DPS310
+    #define KIT_MAG      SENSOR_MAG_NONE
+    #define KIT_AIRSPEED SENSOR_AIRSPEED_NONE
     #define KIT_GPS      SENSOR_GPS_UBLOX_M10
 #elif SENSOR_KIT != SENSOR_KIT_CUSTOM
     #error "SensorSelection.h: неизвестный SENSOR_KIT"
@@ -201,6 +214,10 @@
     #include "sensors/baro/BMP581_Sensor.h"
     using SelectedBaro = BMP581_Sensor;
     #define SELECTED_BARO_DEVICE(board) BMP581_Sensor::spiDevice((board).spi(), Config::PIN_SPI_CS_BARO)
+#elif SENSOR_BARO == SENSOR_BARO_DPS310
+    #include "sensors/baro/DPS310_Sensor.h"
+    using SelectedBaro = DPS310_Sensor;
+    #define SELECTED_BARO_DEVICE(board) I2cRegisterDevice((board).i2c(), SPL06_Sensor::DEFAULT_ADDRESS, SPL06_Sensor::ALTERNATE_ADDRESS)
 #else
     #error "SensorSelection.h: не задан SENSOR_BARO"
 #endif
@@ -208,15 +225,15 @@
 #if SENSOR_MAG == SENSOR_MAG_QMC5883P
     #include "sensors/mag/QMC5883P_Sensor.h"
     using SelectedMag = QMC5883P_Sensor;
-    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).i2c(), QMC5883P_Sensor::DEFAULT_ADDRESS)
+    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).externalI2c(), QMC5883P_Sensor::DEFAULT_ADDRESS)
 #elif SENSOR_MAG == SENSOR_MAG_QMC5883L
     #include "sensors/mag/QMC5883L_Sensor.h"
     using SelectedMag = QMC5883L_Sensor;
-    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).i2c(), QMC5883L_Sensor::DEFAULT_ADDRESS)
+    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).externalI2c(), QMC5883L_Sensor::DEFAULT_ADDRESS)
 #elif SENSOR_MAG == SENSOR_MAG_QMC6309
     #include "sensors/mag/QMC6309_Sensor.h"
     using SelectedMag = QMC6309_Sensor;
-    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).i2c(), QMC6309_Sensor::DEFAULT_ADDRESS)
+    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).externalI2c(), QMC6309_Sensor::DEFAULT_ADDRESS)
 #elif SENSOR_MAG == SENSOR_MAG_NONE
     // main.cpp оборачивает создание компаса в #if SENSOR_MAG != SENSOR_MAG_NONE.
 #else
@@ -228,7 +245,7 @@
     #include "sensors/baro/BMP581_Sensor.h"
     using SelectedPitotBaro = BMP581_Sensor;
     // Трубка — всегда 0x47 (SDO на VDD), чтобы не спутать её с основным BMP581.
-    #define SELECTED_PITOT_DEVICE(board) I2cRegisterDevice((board).i2c(), BMP581_Sensor::ALTERNATE_ADDRESS)
+    #define SELECTED_PITOT_DEVICE(board) I2cRegisterDevice((board).externalI2c(), BMP581_Sensor::ALTERNATE_ADDRESS)
 #elif SENSOR_AIRSPEED == SENSOR_AIRSPEED_NONE
     // main.cpp оборачивает создание трубки в #if SENSOR_AIRSPEED != SENSOR_AIRSPEED_NONE.
 #else
