@@ -103,6 +103,9 @@ namespace CopterConfig
 #if defined(BOARD_MATEK_H743)
     // Площадки S1–S8: S1/S2 — TIM1, S3–S6 — TIM2, S7/S8 — TIM4.
     constexpr int16_t MOTOR_PINS[] = { PB0, PB1, PA0, PA1, PA2, PA3, PD12, PD13 };
+#elif defined(BOARD_STM32F405)
+    // Полётник под Betaflight: M1…M8 — как в заголовке платы (config/boards/*.h).
+    constexpr int16_t MOTOR_PINS[] = { OPB_MOTOR_PINS };
 #elif defined(BOARD_STM32H743)
     // Сервовыходы самолётной распиновки: PA0–PA3 (TIM2), PD14/PD15 (TIM4), PE9 (TIM1).
     constexpr int16_t MOTOR_PINS[] = { PA0, PA1, PA2, PA3, PD14, PD15, PE9 };

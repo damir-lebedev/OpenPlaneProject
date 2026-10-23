@@ -4,9 +4,11 @@
 #include <string.h>
 
 #include "copter/CopterCli.h"
+#include "copter/Battery.h"
 #include "copter/CopterController.h"
 #include "copter/Params.h"
 #include "copter/RcSetup.h"
+#include "hal/Platform.h"
 #include "rc/RcReceiver.h"
 #include "telemetry/FirmwareIdentity.h"
 #include "telemetry/JsonWriter.h"
@@ -42,7 +44,7 @@
 class CopterLink
 {
 public:
-#if defined(BOARD_STM32H743)
+#if defined(OP_STM32)
     static constexpr uint32_t FRAME_PERIOD_MS = 50;
 #else
     static constexpr uint32_t FRAME_PERIOD_MS = 100;
@@ -58,6 +60,7 @@ public:
     }
 
     void setRxInput(const copter::RxInput* input) { rxInput = input; }
+    void setBattery(const copter::BatteryMonitor* monitor) { battery = monitor; }
     void setOutputs(const copter::CopterOutputs& out) { outputs = out; }
     void setLoop(uint32_t avgUs, uint32_t hz)
     {
@@ -251,6 +254,11 @@ public:
         for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i) w.add(i ? ",%u" : "%u", static_cast<unsigned>(rc.getState().get(i)));
         w.add("],\"att\":[%.1f,%.1f,%.1f],\"alt\":%.2f,\"vz\":%.2f,\"thr\":%.3f,\"v\":%.2f", s.roll, s.pitch, s.yaw,
               s.altitude, s.climbRate, s.throttle, s.volts);
+        if (battery)
+        {
+            w.add(",\"bat\":\"%s\",\"cell\":%.2f", copter::batteryStateName(battery->state()), battery->cellVolts());
+            if (battery->hasCurrent()) w.add(",\"amps\":%.1f,\"mah\":%.0f", battery->amps(), battery->mahDrawn());
+        }
         w.add(",\"motors\":[");
         for (uint8_t i = 0; i < outputs.count && i < MAX_MOTORS; ++i) w.add(i ? ",%.3f" : "%.3f", outputs.motor[i]);
         w.add("],\"block\":[");
@@ -512,6 +520,7 @@ private:
         {
             case copter::ParamDefault::TUNE: return "tune";
             case copter::ParamDefault::BUILD: return "build";
+            case copter::ParamDefault::BATTERY: return "battery";
             case copter::ParamDefault::TABLE:
             default: return "table";
         }
@@ -533,6 +542,7 @@ private:
     copter::CopterCli& cli;
     RcReceiver& rc;
     const copter::RxInput* rxInput = nullptr;
+    const copter::BatteryMonitor* battery = nullptr;
     copter::CopterOutputs outputs;
     uint32_t loopAvgUs = 0, loopHz = 0;
     bool dirty = false;

@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdint.h>
 
+#include "copter/Battery.h"
 #include "copter/Filters.h"
 
 // ============================================================
@@ -58,7 +59,8 @@ namespace copter
     {
         uint8_t cells = 6;
         uint16_t capacityMah = 1300;
-        float voltsPerCellLoaded = 3.75f;   // под нагрузкой (LiPo); Li-ion — ~3.5
+        float voltsPerCellLoaded = 3.75f;   // под нагрузкой (LiPo); Li-ion — ~3.5 (cellVoltages())
+        BatteryChemistry chemistry = BatteryChemistry::LIPO;
     };
 
     class Propulsion

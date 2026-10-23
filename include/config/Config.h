@@ -1,8 +1,19 @@
 #pragma once
 #include <stdint.h>
 
-#if defined(BOARD_STM32H743)
+#include "hal/Platform.h"
+
+#if defined(OP_STM32)
 #include <Arduino.h>   // PA0...PE15 — номера пинов варианта STM32duino
+#endif
+
+// Полётник F405 — распиновка в заголовке платы (config/boards/*.h), его
+// пишет tools/bf_board.py из Betaflight: -D OP_BOARD_FILE=\"config/boards/ИМЯ.h\".
+#if defined(BOARD_STM32F405)
+#if !defined(OP_BOARD_FILE)
+#error "F405: не задан заголовок платы — -D OP_BOARD_FILE=\"config/boards/ИМЯ.h\" (tools/bf_board.py)"
+#endif
+#include OP_BOARD_FILE
 #endif
 
 #include "config/Channels.h"
@@ -283,6 +294,68 @@ namespace Config
     // режимах со стабилизацией запрещён.
     constexpr bool IMU_MOUNT_CALIBRATION_REQUIRED = true;  // IMU на плате: ARM со стабилизацией — после калибровки установки @fixed
 
+#elif defined(BOARD_STM32F405)
+    // @board(blackbox=none, telemetry=mavlink) — для приложения OpenPlane Studio (tools/opconfig.py)
+    // Полётник на STM32F405RG (Cortex-M4 168 МГц, 1 МБ флеша, 192 КБ ОЗУ) —
+    // GETFUN F405V3, AocodaRC F405 V3 и другие платы под Betaflight. Пины —
+    // не здесь, а в заголовке платы (OP_BOARD_FILE, config/boards/*.h): его
+    // пишет tools/bf_board.py из дампа CLI Betaflight с самой платы или из
+    // config.h репозитория BF. Ниже — только что для чего.
+    //
+    // Выходы M1…M8 — регуляторы коптера по номерам BF (CopterConfig.h); у
+    // самолёта M1 — мотор, M2…M7 — сервы. Приёмник, GPS и телеметрия — на тех
+    // UART, где их держал Betaflight (`serial` в дампе). Датчики на плате —
+    // набор SENSOR_KIT_BF_BOARD: гироскоп на SPI, барометр на I2C.
+    constexpr int16_t BOARD_UART_TX[7] = { -1, OPB_UART1_TX, OPB_UART2_TX, OPB_UART3_TX, OPB_UART4_TX, OPB_UART5_TX, OPB_UART6_TX };
+    constexpr int16_t BOARD_UART_RX[7] = { -1, OPB_UART1_RX, OPB_UART2_RX, OPB_UART3_RX, OPB_UART4_RX, OPB_UART5_RX, OPB_UART6_RX };
+    constexpr int16_t BOARD_MOTORS[8] = { OPB_MOTOR_PINS };   // недостающие — 0, см. boardMotor()
+    constexpr int16_t boardMotor(uint8_t n) { return n < OPB_MOTOR_COUNT ? BOARD_MOTORS[n] : -1; }
+    constexpr int16_t BOARD_SPI_SCK[4] = { -1, OPB_SPI1_SCK, OPB_SPI2_SCK, OPB_SPI3_SCK };
+    constexpr int16_t BOARD_SPI_MISO[4] = { -1, OPB_SPI1_MISO, OPB_SPI2_MISO, OPB_SPI3_MISO };
+    constexpr int16_t BOARD_SPI_MOSI[4] = { -1, OPB_SPI1_MOSI, OPB_SPI2_MOSI, OPB_SPI3_MOSI };
+    constexpr int16_t BOARD_I2C_SDA[4] = { -1, OPB_I2C1_SDA, OPB_I2C2_SDA, OPB_I2C3_SDA };
+    constexpr int16_t BOARD_I2C_SCL[4] = { -1, OPB_I2C1_SCL, OPB_I2C2_SCL, OPB_I2C3_SCL };
+
+    constexpr int16_t PIN_ESC           = boardMotor(0);  // M1 @fixed
+    constexpr int16_t PIN_AILERON_LEFT  = boardMotor(1);  // M2 @fixed
+    constexpr int16_t PIN_AILERON_RIGHT = boardMotor(2);  // M3 @fixed
+    constexpr int16_t PIN_ELEVATOR      = boardMotor(3);  // M4 @fixed
+    constexpr int16_t PIN_RUDDER        = boardMotor(4);  // M5 @fixed
+    constexpr int16_t PIN_AUX1          = boardMotor(5);  // M6 @fixed
+    constexpr int16_t PIN_AUX2          = boardMotor(6);  // M7 @fixed
+
+    constexpr int16_t PIN_RC_RX = BOARD_UART_RX[OPB_UART_RX];  // @fixed
+    constexpr int16_t PIN_RC_TX = BOARD_UART_TX[OPB_UART_RX];  // @fixed
+    constexpr int16_t PIN_GPS_RX = BOARD_UART_RX[OPB_UART_GPS];  // @fixed
+    constexpr int16_t PIN_GPS_TX = BOARD_UART_TX[OPB_UART_GPS];  // @fixed
+    constexpr int16_t PIN_TELEM_RX = BOARD_UART_RX[OPB_UART_MSP];  // @fixed
+    constexpr int16_t PIN_TELEM_TX = BOARD_UART_TX[OPB_UART_MSP];  // @fixed
+
+    constexpr int16_t PIN_I2C_SDA = BOARD_I2C_SDA[OPB_I2C_SENSORS];  // барометр на плате и площадки SDA/SCL (компас GPS) @fixed
+    constexpr int16_t PIN_I2C_SCL = BOARD_I2C_SCL[OPB_I2C_SENSORS];  // @fixed
+    constexpr int16_t PIN_I2C_EXT_SDA = -1;  // компас — на той же шине @fixed
+    constexpr int16_t PIN_I2C_EXT_SCL = -1;  // @fixed
+    constexpr int16_t PIN_I2C2_SDA = -1;  // @fixed
+    constexpr int16_t PIN_I2C2_SCL = -1;  // @fixed
+    constexpr int16_t PIN_SENSOR_SPI_SCK  = BOARD_SPI_SCK[OPB_GYRO_SPI];   // шина гироскопа @fixed
+    constexpr int16_t PIN_SENSOR_SPI_MISO = BOARD_SPI_MISO[OPB_GYRO_SPI];  // @fixed
+    constexpr int16_t PIN_SENSOR_SPI_MOSI = BOARD_SPI_MOSI[OPB_GYRO_SPI];  // @fixed
+    constexpr int16_t PIN_SPI_CS_IMU      = OPB_GYRO_CS;  // @fixed
+    constexpr int16_t PIN_SPI_CS_BARO     = -1;           // барометр на I2C @fixed
+
+    constexpr int16_t PIN_BUZZER      = OPB_BEEPER;    // @fixed
+    constexpr int16_t PIN_VBAT_ADC    = OPB_ADC_VBAT;  // @fixed
+    constexpr int16_t PIN_CURRENT_ADC = OPB_ADC_CURR;  // @fixed
+
+    // Делитель батареи — vbat_scale Betaflight (110 — 1:11); ток считается
+    // по ibata_scale (Battery.h), делителя у него нет.
+    constexpr float BLACKBOX_VBAT_DIVIDER = OPB_VBAT_SCALE / 10.0f;  // @fixed
+    constexpr float BLACKBOX_CURRENT_DIVIDER = 1.0f;                  // @fixed
+
+    // IMU распаян на плате, плату ставят как угодно: ARM со стабилизацией —
+    // после калибровки установки тремя позами ('o').
+    constexpr bool IMU_MOUNT_CALIBRATION_REQUIRED = true;  // IMU на плате: ARM со стабилизацией — после калибровки установки @fixed
+
 #elif defined(BOARD_STM32H743)
     // @board(blackbox=sd, telemetry=mavlink) — для приложения OpenPlane Studio (tools/opconfig.py)
     // STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) —
@@ -365,6 +438,19 @@ namespace Config
 
 #else
     #error "Не задана плата: используйте env esp32-c3/esp32-s3/esp32-dev/stm32h743 из platformio.ini (или определите свой -D BOARD_... и добавьте ветку в Config.h)"
+#endif
+
+    // Датчик тока платы в единицах Betaflight (ibata_scale — 0.1 мВ на ампер,
+    // ibata_offset — мВ): умолчание настроек ibata_* коптера (copter/Battery.h).
+#if defined(BOARD_STM32F405)
+    constexpr int16_t BOARD_IBATA_SCALE = OPB_IBATA_SCALE;      // @fixed
+    constexpr int16_t BOARD_IBATA_OFFSET_MV = OPB_IBATA_OFFSET;  // @fixed
+#elif defined(BOARD_MATEK_H743)
+    constexpr int16_t BOARD_IBATA_SCALE = 250;   // 40 А на вольт = 25 мВ/А @fixed
+    constexpr int16_t BOARD_IBATA_OFFSET_MV = 0;  // @fixed
+#else
+    constexpr int16_t BOARD_IBATA_SCALE = 400;   // как по умолчанию в BF: 40 мВ/А @fixed
+    constexpr int16_t BOARD_IBATA_OFFSET_MV = 0;  // @fixed
 #endif
 
 

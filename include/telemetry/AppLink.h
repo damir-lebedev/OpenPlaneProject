@@ -6,6 +6,7 @@
 #include "autopilot/Autopilot.h"
 #include "autopilot/AutopilotTypes.h"
 #include "config/Config.h"
+#include "hal/Platform.h"
 #include "control/FlightController.h"
 #include "control/FlightOutputState.h"
 #include "control/GroundCalibration.h"
@@ -36,7 +37,7 @@
 // USB CDC у STM32duino: очередь передачи — CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER
 // пакетов по 64 байта (по умолчанию 2 = 128 байт). Кадр должен влезать в неё
 // целиком, иначе он пропускается всегда — живых данных не будет вовсе.
-#if defined(BOARD_STM32H743) && defined(USBD_USE_CDC)
+#if defined(OP_STM32) && defined(USBD_USE_CDC)
 #if !defined(CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER) || CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER < 12
 #error "AppLink: очередь USB CDC меньше кадра — добавьте -D CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER=16 в platformio.ini"
 #endif
@@ -47,7 +48,7 @@ class AppLink
 public:
 
     // USB CDC у STM32 — 20 кадров в секунду; UART 115200 у ESP32 — 10.
-#if defined(BOARD_STM32H743)
+#if defined(OP_STM32)
     static constexpr uint32_t FRAME_PERIOD_MS = 50;
 #else
     static constexpr uint32_t FRAME_PERIOD_MS = 100;

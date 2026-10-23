@@ -1050,7 +1050,9 @@ def check(root):
                 errors.append("Config.h: {} — неизвестное «{}»".format(p["name"], token))
         if p["kind"] == "channel" and not str(p["value"]).startswith("Channels::"):
             errors.append("Config.h: {} помечен @channel, но значение не Channels::...".format(p["name"]))
-        if p["valueKind"] == "raw":
+        # @fixed приложение не показывает и не пишет — там можно выражение
+        # (у плат F405 пины берутся из заголовка платы: BOARD_UART_RX[OPB_UART_RX])
+        if p["valueKind"] == "raw" and not p["fixed"]:
             errors.append("Config.h: {} — не разобрать значение «{}»".format(p["name"], p["expr"]))
         if "range" in p:
             lo, hi = p["range"]

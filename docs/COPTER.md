@@ -94,6 +94,7 @@ constexpr copter::EscProtocol ESC_PROTOCOL = copter::EscProtocol::ONESHOT125;
 ```bash
 pio run -e matek-h743-quad -t upload          # Matek H743-WING V3: кнопка BOOT + USB
 pio run -e stm32h743-devebox-quad -t upload   # DevEBox H743
+pio run -e aocodarc-f405v3-quad -t upload     # полётник F405 из-под Betaflight — ниже
 ```
 
 Выходы на моторы — по порядку: Matek — S1…S8, DevEBox — PA0–PA3, PD14,
@@ -111,6 +112,34 @@ PD15, PE9. **Первый запуск — без пропеллеров**, мо
 Не тот мотор крутится — поменять порядок в `CopterConfig::MOTOR_PINS`; не в
 ту сторону — направление в конфигураторе регулятора (BLHeliSuite,
 ESC-Configurator), провода не перепаивать.
+
+### Полётник на F405 из-под Betaflight
+
+Почти любой квадрокоптерный полётник на STM32F405 (Betaflight, кварц 8 МГц)
+подходит, если на нём ICM-42688-P и барометр SPL06 или DPS310. Распиновку
+берём у самого Betaflight — так работает и плата, чьего таргета нет ни в
+одном репозитории (GETFUN F405V3):
+
+```bash
+# 1. На плате ещё Betaflight; Configurator закрыт. Дамп CLI в файл
+#    (Python из PlatformIO — в нём есть pyserial):
+~/.platformio/penv/Scripts/python tools/bf_board.py read --port COM5 --out stack/МОЯПЛАТА_bf.txt
+# 2. Родная прошивка целиком — чтобы вернуть Betaflight, если что
+#    (плата в DFU: зажать BOOT и вставить USB):
+python tools/bf_board.py backup --out stack/МОЯПЛАТА_original.bin
+# 3. Заголовок платы: что на каких ножках (тип барометра BF не знает — по описанию):
+python tools/bf_board.py header stack/МОЯПЛАТА_bf.txt --baro SPL06 --out include/config/boards/МОЯПЛАТА.h
+```
+
+Потом env в `platformio.ini` — как `aocodarc-f405v3-quad` (эталонная плата:
+её распиновка публичная, по ней ядро F405 собирается и проверяется всегда),
+с `-D OP_BOARD_FILE=\"config/boards/МОЯПЛАТА.h\"`. Моторы — M1…M8 по
+номерам Betaflight, приёмник, GPS и телеметрия — на тех UART, где их держал
+Betaflight. Плата уже с нашей прошивкой — `bf_board.py header` и по
+`config.h` из [github.com/betaflight/config](https://github.com/betaflight/config).
+
+У F405 один банк флеша: запись настроек на 1–2 с останавливает процессор,
+поэтому настройки пишутся только без ARM.
 
 ## Настройки: CLI как в Betaflight
 
@@ -185,6 +214,10 @@ ESC-Configurator), провода не перепаивать.
 | `motor_stator_mm` `motor_height_mm` `motor_kv` | общая | 3–120 мм, 0.5–60 мм, 50–80000 | из сборки | мотор: 2207 — 22 и 7 |
 | `battery_cells` `battery_mah` | общая | 1–14 S, 50–50000 мА·ч | из сборки | батарея |
 | `props_out` | общая | `OFF`, `ON` | `PROPS_OUT` | пропеллеры наружу: все моторы крутятся наоборот |
+| `battery_chemistry` | общая | `LIPO`, `LIHV`, `LIION` | из сборки (Li-Po) | химия: пороги банки и напряжение под нагрузкой для модели тяги (3.75 / 3.85 / 3.5 В) |
+| `vbat_min_cell_voltage` `vbat_warning_cell_voltage` `vbat_max_cell_voltage` | общая | 100–500 (×0.01 В) | по химии: Li-Po 330/350/430, Li-HV 330/350/440, Li-ion 280/310/425 | банка: пуста (CRITICAL) · пора домой (WARNING; ниже без нагрузки — не армить) · полная |
+| `vbat_scale` | общая | 0–255 | делитель платы ×10 (110 — 1:11) | напряжение батареи |
+| `current_meter` · `ibata_scale` · `ibata_offset` | общая | `NONE`/`ADC` · ±16000 (×0.1 мВ/А) · ±32000 мВ | `ADC`, если у платы есть вход тока; 400 (Matek — 250, F405 — из дампа платы); 0 | датчик тока: ток, израсходованные мА·ч, остаток |
 
 Описание коптера (`copter_build` … `props_out`): умолчание — сборка из
 каталога с поправками «своего коптера» из `CopterConfig.h`; сменили
@@ -294,6 +327,8 @@ Betaflight описывает её целиком, умолчания проши
 | `copter/CopterController.h` | всё вместе: ARM, режимы, failsafe, авария |
 | `copter/Params.h` | реестр настроек: имена, единицы и дефолты Betaflight, профили, описание коптера, флеш |
 | `copter/RcSetup.h` | пульт: `map`, `rxrange`, режимы на тумблерах (`aux`) |
+| `copter/Battery.h` | батарея: напряжение, ток, мА·ч, пороги банки по химии (Li-Po, Li-HV, Li-ion) |
+| `tools/bf_board.py` · `include/config/boards/` | плата из Betaflight: дамп CLI с платы, родная прошивка по DFU, заголовок с распиновкой |
 | `copter/CopterCli.h` | CLI как в Betaflight (`telemetry/CopterConsole.h` — консоль по клавишам) |
 | `telemetry/CopterLink.h` | протокол настроек и живые данные для приложения |
 | `hal/stm32/Stm32MotorOutput.h` · `src/stm32/main_copter.cpp` | регуляторы и точка входа на STM32 |

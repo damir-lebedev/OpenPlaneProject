@@ -29,6 +29,7 @@
 #include "config/Channels.h"
 #include "config/Config.h"
 #include "config/CopterConfig.h"
+#include "copter/Battery.h"
 #include "copter/CopterController.h"
 #include "copter/Params.h"
 #include "hal/Rtos.h"
@@ -72,7 +73,7 @@ CopterConsole copterConsole(Serial, copterController, copterParams, imuSensor, r
 static bool configOk = false;
 static bool rebootRequired = false;
 static uint8_t outputsAtBoot = 0;   // выходов на моторы настроено при включении
-static float batteryVolts = 0.0f;
+copter::BatteryMonitor battery;
 
 // Части цикла для `tasks` (TaskStats::add — по порядку).
 enum : uint8_t
@@ -103,6 +104,7 @@ static void applySettings()
     rcReceiver.setThrottleChannel(rxInput.throttleChannel());
     rcReceiver.setProtocol(static_cast<Config::RxProtocol>(static_cast<uint8_t>(copterParams.value(copter::PARAM_SERIALRX_PROVIDER))));
     copterBuild = copterParams.buildSpec();
+    battery.configure(copterParams.batteryConfig());
     // другая рама — выходы на моторы настраиваются только при включении
     const uint8_t motorCount = copterController.getTune().frame.count;
     const bool reboot = outputsAtBoot && motorCount != outputsAtBoot;
@@ -121,13 +123,15 @@ static uint32_t lap(uint8_t task, uint32_t sinceUs)
     return now;
 }
 
-// Батарея: делитель на плате, усреднение ~0.1 с (контроллер сглаживает дальше).
+// Батарея и ток (раз в 10 мс): мВ на пинах АЦП -> copter/Battery.h (масштабы
+// vbat_scale, ibata_scale, ibata_offset — настройки коптера).
 static void readBattery()
 {
     if (Config::PIN_VBAT_ADC < 0) return;
-    const float mv = static_cast<float>(analogRead(Config::PIN_VBAT_ADC)) * 3300.0f / 4095.0f;
-    const float volts = mv * 0.001f * Config::BLACKBOX_VBAT_DIVIDER;
-    batteryVolts = batteryVolts <= 0.0f ? volts : batteryVolts + 0.1f * (volts - batteryVolts);
+    auto pinMv = [](int16_t pin) {
+        return pin < 0 ? 0.0f : static_cast<float>(analogRead(static_cast<uint32_t>(pin))) * 3300.0f / 4095.0f;
+    };
+    battery.update(pinMv(Config::PIN_VBAT_ADC), pinMv(Config::PIN_CURRENT_ADC), 0.01f);
 }
 
 static void flightTask(void*)
@@ -167,7 +171,7 @@ static void flightTask(void*)
         sens.imuOk = imuSensor.isAvailable();
         sens.baroOk = baroSensor.isAvailable();
         sens.baroAltM = baroSensor.getBarometerData().altitude;
-        sens.batteryVolts = batteryVolts;
+        sens.batteryVolts = battery.state() == copter::BatteryState::NOT_PRESENT ? 0.0f : battery.volts();
 
         // ARM запрещён, пока описание коптера не сошлось с платой,
         // установка IMU не откалибрована (если плата этого требует),
@@ -207,6 +211,12 @@ static void storageTask(void*)
 {
     for (;;)
     {
+#if defined(BOARD_STM32F405)
+        // у F405 один банк флеша: пока стирается сектор (1–2 с), процессор
+        // стоит — и полётный цикл тоже. Пишем только без ARM (настройки и
+        // калибровки и так меняются только на земле).
+        if (!copterController.isArmed())
+#endif
         Stm32FlashStorage::instance().service();
         vTaskDelay(pdMS_TO_TICKS(100));
     }
@@ -224,13 +234,19 @@ static void setupCopter(KeyValueStore& store)
     }
 
     copterParams.setTableDefault(copter::PARAM_SERIALRX_PROVIDER, static_cast<uint8_t>(Config::RX_PROTOCOL));
+    copterParams.setTableDefault(copter::PARAM_VBAT_SCALE, roundf(Config::BLACKBOX_VBAT_DIVIDER * 10.0f));
+    copterParams.setTableDefault(copter::PARAM_CURRENT_METER, Config::PIN_CURRENT_ADC >= 0 ? 1.0f : 0.0f);
+    copterParams.setTableDefault(copter::PARAM_IBATA_SCALE, Config::BOARD_IBATA_SCALE);
+    copterParams.setTableDefault(copter::PARAM_IBATA_OFFSET, Config::BOARD_IBATA_OFFSET_MV);
     copter::AuxRange fallback[copter::RcConfig::AUX_SLOTS];
     copterParams.rc().setFallback(fallback, CopterConfig::defaultAux(fallback, copter::RcConfig::AUX_SLOTS));
     copterParams.begin(copterBuild, CopterConfig::LOOP_HZ, CopterConfig::ESC_PROTOCOL, CopterConfig::applyOverrides);
     copterParams.load(store);   // описание во флеше другое — модель заново
     copterConsole.setStore(&store);
     const copter::CopterTune tune = copterParams.tune();
-    copterController.configure(tune, CopterConfig::settings());
+    copter::CopterSettings settings = CopterConfig::settings();
+    copterParams.applyTo(settings);
+    copterController.configure(tune, settings);
     copterBuild = copterParams.buildSpec();
 
     if (tune.frame.count > CopterConfig::MOTOR_PIN_COUNT)
@@ -318,6 +334,7 @@ void setup()
 #endif
     copterConsole.setApplyHook(applySettings);
     copterConsole.setRxInput(&rxInput);
+    copterConsole.setBattery(&battery);
     copterConsole.setTaskStats(&taskStats);
     copterConsole.printHint();
 

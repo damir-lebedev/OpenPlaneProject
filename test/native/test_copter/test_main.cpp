@@ -18,6 +18,7 @@
 #include <string>
 
 #include "copter/AltitudeHold.h"
+#include "copter/Battery.h"
 #include "copter/Attitude.h"
 #include "copter/CopterCli.h"
 #include "copter/CopterController.h"
@@ -1763,6 +1764,139 @@ void test_cli_aux_map_rxrange_and_diff()
     port.take();
 }
 
+// ---- батарея (copter/Battery.h) ----
+
+namespace
+{
+    // мВ на пине при напряжении батареи v (делитель 1:11)
+    float pinMv(float v) { return v * 1000.0f / 11.0f; }
+
+    void feed(BatteryMonitor& b, float volts, float currentMv, float seconds)
+    {
+        for (int i = 0; i < static_cast<int>(seconds * 100.0f); ++i) b.update(pinMv(volts), currentMv, 0.01f);
+    }
+
+    BatteryConfig liion6s()
+    {
+        BatteryConfig c;
+        c.vbatScale = 110;
+        c.ibataScale = 100;   // 10 мВ на ампер (4-в-1 BLS 100A)
+        c.currentSensor = true;
+        c.cells = 6;
+        c.capacityMah = 4000;
+        c.minCellVolts = 2.80f;
+        c.warningCellVolts = 3.10f;
+        c.maxCellVolts = 4.25f;
+        return c;
+    }
+}
+
+void test_battery_voltage_current_and_mah()
+{
+    BatteryMonitor b;
+    b.configure(liion6s());
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::NOT_PRESENT), static_cast<int>(b.state()));
+    feed(b, 25.2f, 100.0f, 36.0f);   // 10 А, 36 с — 100 мА·ч
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 25.2f, b.volts());
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 4.2f, b.cellVolts());
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 10.0f, b.amps());
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 100.0f, b.mahDrawn());
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 97.5f, b.percentLeft());
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(b.state()));
+    TEST_ASSERT_EQUAL_STRING("OK", batteryStateName(b.state()));
+
+    // смещение датчика: 50 мВ при нуле ампер; ниже нуля — не бывает
+    BatteryConfig c = liion6s();
+    c.ibataOffsetMv = 50.0f;
+    b.configure(c);
+    feed(b, 25.2f, 150.0f, 1.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 10.0f, b.amps());
+    feed(b, 25.2f, 0.0f, 1.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, b.amps());
+}
+
+void test_battery_warning_critical_hysteresis_and_sag()
+{
+    BatteryMonitor b;
+    b.configure(liion6s());
+    feed(b, 22.0f, 0.0f, 1.0f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(b.state()));
+
+    // провал под газом на 0.3 с — не тревога: состояние — по среднему за ~2 с
+    feed(b, 15.0f, 0.0f, 0.3f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(b.state()));
+    feed(b, 22.0f, 0.0f, 3.0f);
+
+    feed(b, 18.0f, 0.0f, 6.0f);   // 3.00 В на банку
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::WARNING), static_cast<int>(b.state()));
+    feed(b, 16.2f, 0.0f, 6.0f);   // 2.70
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::CRITICAL), static_cast<int>(b.state()));
+    feed(b, 17.0f, 0.0f, 6.0f);   // 2.83 — у порога, но без запаса 0.05: всё ещё CRITICAL
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::CRITICAL), static_cast<int>(b.state()));
+    feed(b, 18.0f, 0.0f, 6.0f);   // 3.00
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::WARNING), static_cast<int>(b.state()));
+    feed(b, 18.84f, 0.0f, 6.0f);  // 3.14 — без запаса
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::WARNING), static_cast<int>(b.state()));
+    feed(b, 19.5f, 0.0f, 6.0f);   // 3.25
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(b.state()));
+
+    // только USB — батареи нет; подключили полную — сразу OK, без «критично» по дороге
+    feed(b, 0.0f, 0.0f, 1.0f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::NOT_PRESENT), static_cast<int>(b.state()));
+    feed(b, 25.0f, 0.0f, 0.05f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(b.state()));
+
+    // без датчика тока — ампер нет, остаток — по напряжению
+    BatteryConfig c = liion6s();
+    c.currentSensor = false;
+    b.configure(c);
+    feed(b, 6.0f * 3.525f, 300.0f, 20.0f);
+    TEST_ASSERT_FALSE(b.hasCurrent());
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, b.amps());
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 50.0f, b.percentLeft());
+}
+
+void test_battery_chemistry_params()
+{
+    CopterParams& p = five5Params();
+    char err[96], out[48];
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryChemistry::LIPO), static_cast<int>(p.chemistry()));
+    TEST_ASSERT_EQUAL_FLOAT(330.0f, p.value(PARAM_VBAT_MIN_CELL_VOLTAGE));
+    TEST_ASSERT_EQUAL_FLOAT(350.0f, p.value(PARAM_VBAT_WARNING_CELL_VOLTAGE));
+    TEST_ASSERT_EQUAL_FLOAT(430.0f, p.value(PARAM_VBAT_MAX_CELL_VOLTAGE));
+    TEST_ASSERT_EQUAL_STRING("power", paramGroupName(paramInfo(PARAM_IBATA_SCALE).group));
+
+    // Li-ion: пороги — его, модель тяги — 3.5 В на банку под нагрузкой
+    const float liPoVolts = p.modelTune().volts;
+    TEST_ASSERT_TRUE(p.parse(PARAM_BATTERY_CHEMISTRY, 0, "liion", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(280.0f, p.value(PARAM_VBAT_MIN_CELL_VOLTAGE));
+    TEST_ASSERT_EQUAL_FLOAT(310.0f, p.value(PARAM_VBAT_WARNING_CELL_VOLTAGE));
+    TEST_ASSERT_EQUAL_FLOAT(425.0f, p.value(PARAM_VBAT_MAX_CELL_VOLTAGE));
+    TEST_ASSERT_EQUAL_FLOAT(3.5f, p.buildSpec().battery.voltsPerCellLoaded);
+    TEST_ASSERT_TRUE(p.updateModel());
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 21.0f, p.modelTune().volts);
+    TEST_ASSERT_TRUE(p.modelTune().volts < liPoVolts);
+    TEST_ASSERT_EQUAL_UINT8(6, p.modelTune().cells);
+
+    // заданный руками порог остаётся при смене химии
+    TEST_ASSERT_TRUE(p.parse(PARAM_VBAT_WARNING_CELL_VOLTAGE, 0, "320", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_IBATA_SCALE, 0, "100", err, sizeof(err)));
+    p.setTableDefault(PARAM_CURRENT_METER, 1);
+    const BatteryConfig c = p.batteryConfig();
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, c.ibataScale);
+    TEST_ASSERT_TRUE(c.currentSensor);
+    TEST_ASSERT_EQUAL_UINT8(6, c.cells);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 2.80f, c.minCellVolts);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 3.20f, c.warningCellVolts);
+    CopterSettings s;
+    p.applyTo(s);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 3.20f, s.minCellVolts);   // ниже без нагрузки — не армить
+    p.format(PARAM_BATTERY_CHEMISTRY, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("LIION", out);
+    TEST_ASSERT_EQUAL_STRING("Li-ion", chemistryName(p.chemistry()));
+    p.setTableDefault(PARAM_CURRENT_METER, 0);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -1820,5 +1954,8 @@ int main()
     RUN_TEST(test_rc_tables_survive_flash);
     RUN_TEST(test_copter_description_is_params);
     RUN_TEST(test_cli_aux_map_rxrange_and_diff);
+    RUN_TEST(test_battery_voltage_current_and_mah);
+    RUN_TEST(test_battery_warning_critical_hysteresis_and_sag);
+    RUN_TEST(test_battery_chemistry_params);
     return UNITY_END();
 }

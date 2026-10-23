@@ -1,7 +1,9 @@
 #pragma once
 #include <Arduino.h>
 
-#if !defined(BOARD_STM32H743)
+#include "hal/Platform.h"
+
+#if !defined(OP_STM32)
 #include <esp_system.h>
 #endif
 
@@ -11,10 +13,10 @@
 // из-за сбоя в воздухе — это как раз то, что нужно записать.
 //
 // ESP32 — esp_reset_reason().
-// STM32H743 — флаги RCC->RSR. Читать нужно один раз при включении: флаги
-// сбрасываются здесь же (RMVF), иначе они остались бы и после следующей
-// перезагрузки. PINRSTF у H7 выставляется при ЛЮБОМ сбросе (внутренние
-// источники тянут NRST), поэтому проверяются сначала более
+// STM32 — флаги RCC (H743 — RSR, F405 — CSR). Читать нужно один раз при
+// включении: флаги сбрасываются здесь же (RMVF), иначе они остались бы и
+// после следующей перезагрузки. PINRSTF выставляется при ЛЮБОМ сбросе
+// (внутренние источники тянут NRST), поэтому проверяются сначала более
 // конкретные причины.
 // ============================================================
 
@@ -71,6 +73,21 @@ inline ResetCause readResetCause()
     if (flags & RCC_RSR_BORRSTF) return ResetCause::Brownout;
     if (flags & RCC_RSR_SFTRSTF) return ResetCause::Software;
     if (flags & RCC_RSR_PINRSTF) return ResetCause::External;
+    return ResetCause::Unknown;
+}
+
+#elif defined(BOARD_STM32F405)
+
+inline ResetCause readResetCause()
+{
+    const uint32_t flags = RCC->CSR;
+    RCC->CSR |= RCC_CSR_RMVF;
+
+    if (flags & (RCC_CSR_IWDGRSTF | RCC_CSR_WWDGRSTF)) return ResetCause::Watchdog;
+    if (flags & RCC_CSR_PORRSTF) return ResetCause::PowerOn;
+    if (flags & RCC_CSR_BORRSTF) return ResetCause::Brownout;
+    if (flags & RCC_CSR_SFTRSTF) return ResetCause::Software;
+    if (flags & RCC_CSR_PINRSTF) return ResetCause::External;
     return ResetCause::Unknown;
 }
 

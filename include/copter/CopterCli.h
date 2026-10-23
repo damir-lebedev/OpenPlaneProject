@@ -528,7 +528,9 @@ namespace copter
         {
             if (ctl.isArmed()) return;
             params.updateModel();
-            ctl.configure(params.tune(), ctl.getSettings());
+            CopterSettings s = ctl.getSettings();
+            params.applyTo(s);
+            ctl.configure(params.tune(), s);
             dirty = false;
             port.settingsApplied();
         }
@@ -548,6 +550,9 @@ namespace copter
                     return params.source() == TuneSource::BETAFLIGHT ? " (Betaflight 4.5)" : " (из модели коптера)";
                 case ParamDefault::BUILD:
                     snprintf(buf, size, " (из сборки %s)", params.buildSpec().id);
+                    return buf;
+                case ParamDefault::BATTERY:
+                    snprintf(buf, size, " (для %s)", chemistryName(params.chemistry()));
                     return buf;
                 case ParamDefault::TABLE:
                 default: return "";

@@ -83,6 +83,7 @@
 #define SENSOR_KIT_LSM6DSV_PITOT   2   // LSM6DSV+QMC6309, SPL06 в фюзеляже, BMP581 в трубке Пито, GPS
 #define SENSOR_KIT_ICM45686_PITOT  3   // ICM-45686+QMC6309, SPL06, BMP581 в трубке, GPS
 #define SENSOR_KIT_MATEK_H743      4   // датчики на плате Matek H743: ICM-42688-P (SPI), DPS310, GPS
+#define SENSOR_KIT_BF_BOARD        5   // полётник под Betaflight (config/boards/*.h): ICM-42688-P (SPI), барометр платы, GPS
 
 
 // --------------------------------------------------------
@@ -119,6 +120,17 @@
 #elif SENSOR_KIT == SENSOR_KIT_MATEK_H743
     #define KIT_IMU      SENSOR_IMU_ICM42688
     #define KIT_BARO     SENSOR_BARO_DPS310
+    #define KIT_MAG      SENSOR_MAG_NONE
+    #define KIT_AIRSPEED SENSOR_AIRSPEED_NONE
+    #define KIT_GPS      SENSOR_GPS_UBLOX_M10
+#elif SENSOR_KIT == SENSOR_KIT_BF_BOARD
+    // Тип барометра — в заголовке платы (OPB_BARO_*, флаг tools/bf_board.py --baro).
+    #define KIT_IMU      SENSOR_IMU_ICM42688
+    #if defined(OPB_BARO_DPS310)
+        #define KIT_BARO SENSOR_BARO_DPS310
+    #else
+        #define KIT_BARO SENSOR_BARO_SPL06
+    #endif
     #define KIT_MAG      SENSOR_MAG_NONE
     #define KIT_AIRSPEED SENSOR_AIRSPEED_NONE
     #define KIT_GPS      SENSOR_GPS_UBLOX_M10

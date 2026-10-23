@@ -202,7 +202,7 @@ namespace copter
         float failsafeRecoveryS = 1.0f;    // связь держится столько — управление пилоту
         float failsafeGuardS = 0.3f;       // столько связи нет — failsafe
         float failsafeMaxS = 120.0f;       // не села за это время — DISARM
-        float minCellVolts = 3.3f;         // ниже (без нагрузки) — не армить
+        float minCellVolts = 3.5f;         // ниже (без нагрузки) — не армить: vbat_warning_cell_voltage
         bool crashDetection = true;
         AltitudeController::Settings alt;
     };
@@ -578,7 +578,7 @@ namespace copter
             if (motionTimer < 0.3f) b |= ARM_BLOCK_MOVING;
             if (status.volts > 1.0f && tune.volts > 1.0f)
             {
-                const float cells = roundf(tune.volts / 3.75f);
+                const float cells = tune.cells ? tune.cells : roundf(tune.volts / 3.75f);
                 if (cells >= 1.0f && status.volts / cells < set.minCellVolts) b |= ARM_BLOCK_BATTERY;
             }
             if (testLeft > 0.0f) b |= ARM_BLOCK_MOTOR_TEST;

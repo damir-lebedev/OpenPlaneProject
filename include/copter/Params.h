@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "copter/Battery.h"
 #include "copter/Presets.h"
 #include "copter/RcSetup.h"
 #include "storage/KeyValueStore.h"
@@ -75,6 +76,7 @@ namespace copter
         RECEIVER,
         MODES,
         COPTER,
+        POWER,
         OTHER,
     };
 
@@ -90,6 +92,7 @@ namespace copter
             case ParamGroup::RECEIVER: return "receiver";
             case ParamGroup::MODES: return "modes";
             case ParamGroup::COPTER: return "copter";
+            case ParamGroup::POWER: return "power";
             case ParamGroup::OTHER: return "other";
         }
         return "other";
@@ -107,6 +110,7 @@ namespace copter
         TABLE,   // число из таблицы (прошивка может заменить: setTableDefault)
         TUNE,    // вывод из модели коптера или дефолт BF 4.5 (tune_source)
         BUILD,   // из сборки copter_build с поправками CopterConfig.h
+        BATTERY, // по химии батареи (battery_chemistry)
     };
 
     // Сборки каталога по именам — варианты copter_build.
@@ -166,6 +170,14 @@ namespace copter
         PARAM_BATTERY_CELLS,
         PARAM_BATTERY_MAH,
         PARAM_PROPS_OUT,
+        PARAM_BATTERY_CHEMISTRY,
+        PARAM_VBAT_MIN_CELL_VOLTAGE,
+        PARAM_VBAT_WARNING_CELL_VOLTAGE,
+        PARAM_VBAT_MAX_CELL_VOLTAGE,
+        PARAM_VBAT_SCALE,
+        PARAM_CURRENT_METER,
+        PARAM_IBATA_SCALE,
+        PARAM_IBATA_OFFSET,
         PARAM_COUNT
     };
 
@@ -190,14 +202,18 @@ namespace copter
         // порядок — как Config::RxProtocol (static_assert в main_copter.cpp)
         static const char* const RX_PROVIDERS[] = { "IBUS", "SBUS", "CRSF" };
         static const char* const OFF_ON[] = { "OFF", "ON" };
+        // порядок — как BatteryChemistry
+        static const char* const CHEMISTRIES[] = { "LIPO", "LIHV", "LIION" };
+        static const char* const CURRENT_METERS[] = { "NONE", "ADC" };
         uint8_t buildCount = 0;
         const char* const* builds = buildIds(buildCount);
         constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
                             kText = ParamType::STRING;
         constexpr ParamScope kMaster = ParamScope::MASTER, kPid = ParamScope::PID_PROFILE, kRate = ParamScope::RATE_PROFILE;
         constexpr ParamGroup kGroupPid = ParamGroup::PID, kGroupRates = ParamGroup::RATES, kGroupRx = ParamGroup::RECEIVER,
-                             kGroupCopter = ParamGroup::COPTER;
-        constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD;
+                             kGroupCopter = ParamGroup::COPTER, kGroupPower = ParamGroup::POWER;
+        constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD,
+                               kBattery = ParamDefault::BATTERY;
         static const ParamInfo table[] = {
             { "tune_source", kEnum, kMaster, kGroupPid, 0, 1, 0, kTable, "", TUNE_SOURCES, 2,
               "откуда PID и фильтры: MODEL — из описания коптера, BETAFLIGHT — дефолты BF 4.5" },
@@ -248,6 +264,22 @@ namespace copter
             { "battery_mah", kInt, kMaster, kGroupCopter, 50, 50000, 0, kBuild, "мА·ч", nullptr, 0, "ёмкость батареи" },
             { "props_out", kEnum, kMaster, kGroupCopter, 0, 1, 0, kBuild, "", OFF_ON, 2,
               "пропеллеры наружу: все моторы крутятся наоборот" },
+            { "battery_chemistry", kEnum, kMaster, kGroupCopter, 0, 2, 0, kBuild, "", CHEMISTRIES, 3,
+              "химия батареи: пороги банки и напряжение под нагрузкой для модели тяги" },
+            { "vbat_min_cell_voltage", kInt, kMaster, kGroupPower, 100, 500, 0, kBattery, "x0.01 В", nullptr, 0,
+              "банка ниже — батарея пуста: тревога CRITICAL" },
+            { "vbat_warning_cell_voltage", kInt, kMaster, kGroupPower, 100, 500, 0, kBattery, "x0.01 В", nullptr, 0,
+              "банка ниже — пора домой: тревога WARNING; ниже без нагрузки — не армить" },
+            { "vbat_max_cell_voltage", kInt, kMaster, kGroupPower, 100, 500, 0, kBattery, "x0.01 В", nullptr, 0,
+              "полная банка (для остатка в процентах без датчика тока)" },
+            { "vbat_scale", kInt, kMaster, kGroupPower, 0, 255, 110, kTable, "", nullptr, 0,
+              "делитель батареи на плате x10 (110 — 1:11)" },
+            { "current_meter", kEnum, kMaster, kGroupPower, 0, 1, 0, kTable, "", CURRENT_METERS, 2,
+              "датчик тока: ADC — площадка CUR регулятора" },
+            { "ibata_scale", kInt, kMaster, kGroupPower, -16000, 16000, 400, kTable, "x0.1 мВ/А", nullptr, 0,
+              "датчик тока: мВ на ампер x10 (у BLS 100A — 100)" },
+            { "ibata_offset", kInt, kMaster, kGroupPower, -32000, 32000, 0, kTable, "мВ", nullptr, 0,
+              "датчик тока: напряжение при нуле ампер" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;
@@ -363,6 +395,8 @@ namespace copter
             b.battery.cells = static_cast<uint8_t>(value(PARAM_BATTERY_CELLS));
             b.battery.capacityMah = static_cast<uint16_t>(value(PARAM_BATTERY_MAH));
             b.propsOut = value(PARAM_PROPS_OUT) > 0.5f;
+            b.battery.chemistry = chemistry();
+            b.battery.voltsPerCellLoaded = cellVoltages(b.battery.chemistry).loaded;
             // другой винт или мотор — масса заново по размеру
             if (b.prop.diameterIn != base.prop.diameterIn || b.prop.blades != base.prop.blades) b.prop.massG = 0;
             if (b.motor.statorWidthMm != base.motor.statorWidthMm || b.motor.statorHeightMm != base.motor.statorHeightMm)
@@ -383,6 +417,31 @@ namespace copter
             refreshDefaults();
             return true;
         }
+
+        BatteryChemistry chemistry() const
+        {
+            return static_cast<BatteryChemistry>(static_cast<uint8_t>(value(PARAM_BATTERY_CHEMISTRY)));
+        }
+
+        // Батарея: масштабы, пороги, банки и ёмкость — монитору (Battery.h).
+        BatteryConfig batteryConfig() const
+        {
+            BatteryConfig c;
+            c.vbatScale = value(PARAM_VBAT_SCALE);
+            c.ibataScale = value(PARAM_IBATA_SCALE);
+            c.ibataOffsetMv = value(PARAM_IBATA_OFFSET);
+            c.currentSensor = value(PARAM_CURRENT_METER) > 0.5f;
+            c.cells = static_cast<uint8_t>(value(PARAM_BATTERY_CELLS));
+            c.capacityMah = value(PARAM_BATTERY_MAH);
+            c.minCellVolts = value(PARAM_VBAT_MIN_CELL_VOLTAGE) * 0.01f;
+            c.warningCellVolts = value(PARAM_VBAT_WARNING_CELL_VOLTAGE) * 0.01f;
+            c.maxCellVolts = value(PARAM_VBAT_MAX_CELL_VOLTAGE) * 0.01f;
+            return c;
+        }
+
+        // Настройки контроллера, которые задаёт реестр: батарея ниже порога
+        // «пора домой» без нагрузки — не армить.
+        void applyTo(CopterSettings& s) const { s.minCellVolts = value(PARAM_VBAT_WARNING_CELL_VOLTAGE) * 0.01f; }
 
         // Пульт: карта каналов, rxrange, таблица aux.
         RcConfig& rc() { return rcConfig; }
@@ -448,7 +507,7 @@ namespace copter
                 values[id][slot] = v;
                 setMask[id] |= static_cast<uint8_t>(1u << slot);
             }
-            if (id == PARAM_TUNE_SOURCE || id == PARAM_COPTER_BUILD) refreshDefaults();
+            if (id == PARAM_TUNE_SOURCE || id == PARAM_COPTER_BUILD || id == PARAM_BATTERY_CHEMISTRY) refreshDefaults();
             return true;
         }
 
@@ -465,7 +524,7 @@ namespace copter
             char* s = stringSlot(id, slot);
             if (s) s[0] = '\0';
             if (slot < PROFILES) setMask[id] &= static_cast<uint8_t>(~(1u << slot));
-            if (id == PARAM_TUNE_SOURCE || id == PARAM_COPTER_BUILD) refreshDefaults();
+            if (id == PARAM_TUNE_SOURCE || id == PARAM_COPTER_BUILD || id == PARAM_BATTERY_CHEMISTRY) refreshDefaults();
         }
 
         // Всё по умолчанию, профили 0, таблицы пульта пусты (как `defaults`
@@ -739,6 +798,11 @@ namespace copter
             defaults[PARAM_BATTERY_CELLS] = base.battery.cells;
             defaults[PARAM_BATTERY_MAH] = base.battery.capacityMah;
             defaults[PARAM_PROPS_OUT] = base.propsOut ? 1.0f : 0.0f;
+            defaults[PARAM_BATTERY_CHEMISTRY] = static_cast<float>(base.battery.chemistry);
+            const CellVoltages cells = cellVoltages(chemistry());
+            defaults[PARAM_VBAT_MIN_CELL_VOLTAGE] = roundf(cells.min * 100.0f);
+            defaults[PARAM_VBAT_WARNING_CELL_VOLTAGE] = roundf(cells.warning * 100.0f);
+            defaults[PARAM_VBAT_MAX_CELL_VOLTAGE] = roundf(cells.max * 100.0f);
 
             const bool bf = source() == TuneSource::BETAFLIGHT;
             const AxisGains* gains[3] = { &model.roll, &model.pitch, &model.yaw };

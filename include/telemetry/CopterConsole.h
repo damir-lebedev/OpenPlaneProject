@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 #include "copter/CopterCli.h"
+#include "copter/Battery.h"
 #include "copter/CopterController.h"
 #include "copter/Params.h"
 #include "copter/RcSetup.h"
@@ -69,6 +70,11 @@ public:
         link.setRxInput(input);
     }
     void setOutputs(const copter::CopterOutputs& out) { link.setOutputs(out); }
+    void setBattery(const copter::BatteryMonitor* monitor)
+    {
+        battery = monitor;
+        link.setBattery(monitor);
+    }
     void setLoopLoad(uint32_t avgUs, uint32_t maxUs, uint32_t hz)
     {
         loopAvgUs = avgUs;
@@ -150,11 +156,16 @@ public:
         io.printf("CPU:%lu%%, cycle time: %.0f, GYRO rate: %lu, RX rate: %lu, System rate: %lu\n",
                   static_cast<unsigned long>(cpuPercent()), periodUs, static_cast<unsigned long>(loopHz),
                   static_cast<unsigned long>(rxRateHz), static_cast<unsigned long>(loopHz));
-        const float cells = roundf(ctl.getTune().volts / 3.75f);
-        const char* battery = s.volts < 1.0f                                                     ? "NOT PRESENT"
-                              : cells >= 1.0f && s.volts / cells < ctl.getSettings().minCellVolts ? "LOW"
-                                                                                                  : "OK";
-        io.printf("Voltage: %ld * 0.01V (%.0fS battery - %s)\n", lroundf(s.volts * 100.0f), cells, battery);
+        if (battery)
+        {
+            io.printf("Voltage: %ld * 0.01V (%uS battery - %s)\n", lroundf(battery->volts() * 100.0f),
+                      battery->config().cells, copter::batteryStateName(battery->state()));
+            if (battery->hasCurrent())
+            {
+                io.printf("Amperage: %.1f A, %.0f mAh drawn (%.0f %% left)\n", battery->amps(), battery->mahDrawn(),
+                          battery->percentLeft());
+            }
+        }
         io.print("Arming disable flags:");
         for (uint32_t bit = 1; bit <= copter::ARM_BLOCK_LAST; bit <<= 1)
         {
@@ -309,10 +320,11 @@ private:
         const copter::BuildSpec build = params.buildSpec();
         io.printf("Сборка: %s — %s, %s, стиль «%s»\n", build.id, build.title, copter::frameName(t.frame.type),
                   copter::flyStyleName(t.style));
-        io.printf("Винт %.1fx%.1f, %u лоп.; мотор %.0f%02.0f %.0fKV; %uS %u мА·ч; масса %.0f г; рама %.0f мм%s\n",
+        io.printf("Винт %.1fx%.1f, %u лоп.; мотор %.0f%02.0f %.0fKV; %uS %u мА·ч %s; масса %.0f г; рама %.0f мм%s\n",
                   build.prop.diameterIn, build.prop.pitchIn, build.prop.blades, build.motor.statorWidthMm,
                   build.motor.statorHeightMm, build.motor.kv, build.battery.cells, build.battery.capacityMah,
-                  t.massKg * 1000.0f, build.wheelbaseMm, build.propsOut ? ", пропеллеры наружу" : "");
+                  copter::chemistryName(build.battery.chemistry), t.massKg * 1000.0f, build.wheelbaseMm,
+                  build.propsOut ? ", пропеллеры наружу" : "");
         io.printf("Тяговооружённость %.1f, висение на %.0f %% тяги, %.1f А на висении\n", t.thrustToWeight,
                   t.hoverThrust * 100.0f, t.hoverAmpsTotal);
         io.printf("Обороты: холостые %.0f Гц, висение %.0f, полный газ %.0f; мотор на полном — %.0f А, %.0f Вт\n",
@@ -432,6 +444,7 @@ private:
     copter::CopterCli cli;
     CopterLink link;
     const copter::RxInput* rxInput = nullptr;
+    const copter::BatteryMonitor* battery = nullptr;
     const TaskStats* tasks = nullptr;
     void (*bootloaderHook)() = nullptr;
     void (*applyHook)() = nullptr;

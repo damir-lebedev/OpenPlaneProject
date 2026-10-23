@@ -6,7 +6,8 @@
 // только то, что есть лишь у STM32duino:
 //   - имена пинов PA0..PE15 (порт·16 + номер, 0x00..0x4F);
 //   - pin_size_t, PinName, таблица таймеров PinMap_TIM для пинов
-//     сервовыходов из Config.h (BOARD_STM32H743, BOARD_MATEK_H743);
+//     сервовыходов из Config.h (BOARD_STM32H743, BOARD_MATEK_H743) и
+//     моторов полётников F405 (config/boards/*.h);
 //   - HardwareTimer: ширина импульса видна тесту (fake::timerPulseUs)
 //     и pulseIn() — как у настоящего таймера;
 //   - Uart (= HardwareSerial с пинами), noInterrupts()/interrupts().
@@ -24,13 +25,24 @@ typedef uint32_t PinName;
 #define PA1  STM32_FAKE_PIN(0, 1)
 #define PA2  STM32_FAKE_PIN(0, 2)
 #define PA3  STM32_FAKE_PIN(0, 3)
+#define PA4  STM32_FAKE_PIN(0, 4)
 #define PA5  STM32_FAKE_PIN(0, 5)
 #define PA6  STM32_FAKE_PIN(0, 6)
+#define PA7  STM32_FAKE_PIN(0, 7)
+#define PA8  STM32_FAKE_PIN(0, 8)
 #define PA9  STM32_FAKE_PIN(0, 9)
 #define PA10 STM32_FAKE_PIN(0, 10)
+#define PA11 STM32_FAKE_PIN(0, 11)
+#define PA12 STM32_FAKE_PIN(0, 12)
+#define PA13 STM32_FAKE_PIN(0, 13)
+#define PA14 STM32_FAKE_PIN(0, 14)
 #define PA15 STM32_FAKE_PIN(0, 15)
 #define PB0  STM32_FAKE_PIN(1, 0)
 #define PB1  STM32_FAKE_PIN(1, 1)
+#define PB2  STM32_FAKE_PIN(1, 2)
+#define PB3  STM32_FAKE_PIN(1, 3)
+#define PB4  STM32_FAKE_PIN(1, 4)
+#define PB5  STM32_FAKE_PIN(1, 5)
 #define PB6  STM32_FAKE_PIN(1, 6)
 #define PB7  STM32_FAKE_PIN(1, 7)
 #define PB8  STM32_FAKE_PIN(1, 8)
@@ -43,24 +55,51 @@ typedef uint32_t PinName;
 #define PB15 STM32_FAKE_PIN(1, 15)
 #define PC0  STM32_FAKE_PIN(2, 0)
 #define PC1  STM32_FAKE_PIN(2, 1)
+#define PC2  STM32_FAKE_PIN(2, 2)
+#define PC3  STM32_FAKE_PIN(2, 3)
+#define PC4  STM32_FAKE_PIN(2, 4)
+#define PC5  STM32_FAKE_PIN(2, 5)
 #define PC6  STM32_FAKE_PIN(2, 6)
 #define PC7  STM32_FAKE_PIN(2, 7)
+#define PC8  STM32_FAKE_PIN(2, 8)
+#define PC9  STM32_FAKE_PIN(2, 9)
+#define PC10 STM32_FAKE_PIN(2, 10)
+#define PC11 STM32_FAKE_PIN(2, 11)
+#define PC12 STM32_FAKE_PIN(2, 12)
+#define PC13 STM32_FAKE_PIN(2, 13)
+#define PC14 STM32_FAKE_PIN(2, 14)
 #define PC15 STM32_FAKE_PIN(2, 15)
 #define PD0  STM32_FAKE_PIN(3, 0)
 #define PD1  STM32_FAKE_PIN(3, 1)
+#define PD2  STM32_FAKE_PIN(3, 2)
+#define PD3  STM32_FAKE_PIN(3, 3)
+#define PD4  STM32_FAKE_PIN(3, 4)
 #define PD5  STM32_FAKE_PIN(3, 5)
 #define PD6  STM32_FAKE_PIN(3, 6)
 #define PD7  STM32_FAKE_PIN(3, 7)
 #define PD8  STM32_FAKE_PIN(3, 8)
 #define PD9  STM32_FAKE_PIN(3, 9)
 #define PD10 STM32_FAKE_PIN(3, 10)
+#define PD11 STM32_FAKE_PIN(3, 11)
 #define PD12 STM32_FAKE_PIN(3, 12)
 #define PD13 STM32_FAKE_PIN(3, 13)
 #define PD14 STM32_FAKE_PIN(3, 14)
 #define PD15 STM32_FAKE_PIN(3, 15)
+#define PE0  STM32_FAKE_PIN(4, 0)
+#define PE1  STM32_FAKE_PIN(4, 1)
+#define PE2  STM32_FAKE_PIN(4, 2)
+#define PE3  STM32_FAKE_PIN(4, 3)
+#define PE4  STM32_FAKE_PIN(4, 4)
+#define PE5  STM32_FAKE_PIN(4, 5)
+#define PE6  STM32_FAKE_PIN(4, 6)
 #define PE7  STM32_FAKE_PIN(4, 7)
 #define PE8  STM32_FAKE_PIN(4, 8)
 #define PE9  STM32_FAKE_PIN(4, 9)
+#define PE10 STM32_FAKE_PIN(4, 10)
+#define PE11 STM32_FAKE_PIN(4, 11)
+#define PE12 STM32_FAKE_PIN(4, 12)
+#define PE13 STM32_FAKE_PIN(4, 13)
+#define PE14 STM32_FAKE_PIN(4, 14)
 #define PE15 STM32_FAKE_PIN(4, 15)
 
 using Uart = HardwareSerial;
@@ -136,7 +175,7 @@ namespace fake
 {
     inline TIM_TypeDef* timerInstance(int number)
     {
-        static TIM_TypeDef timers[8] = { { 0 }, { 1 }, { 2 }, { 3 }, { 4 }, { 5 }, { 6 }, { 7 } };
+        static TIM_TypeDef timers[9] = { { 0 }, { 1 }, { 2 }, { 3 }, { 4 }, { 5 }, { 6 }, { 7 }, { 8 } };
         return &timers[number];
     }
 
@@ -164,11 +203,15 @@ struct PinMap
 // Пины сервовыходов Config.h — как в PeripheralPins вариантов WeAct и
 // DevEBox H743: TIM2 CH1..4, TIM4 CH3/CH4, TIM1 CH1; у Matek H743 ещё
 // PB0/PB1 (TIM1 CH2N/CH3N — N-канал фейку не важен) и PD12/PD13 (TIM4
-// CH1/CH2).
+// CH1/CH2). Моторы F405 (AocodaRC F405 V3): PC6–PC9 — TIM8 CH1–4 (у
+// варианта STM32duino первым идёт TIM3, фейку всё равно), PA15 — TIM2 CH1,
+// PA8 — TIM1 CH1, PB10/PB11 — TIM2 CH3/CH4.
 inline const PinMap PinMap_TIM[] = {
     { PA0, 2, 1 }, { PA1, 2, 2 }, { PA2, 2, 3 }, { PA3, 2, 4 },
     { PD14, 4, 3 }, { PD15, 4, 4 }, { PE9, 1, 1 },
     { PB0, 1, 2 }, { PB1, 1, 3 }, { PD12, 4, 1 }, { PD13, 4, 2 },
+    { PC6, 8, 1 }, { PC7, 8, 2 }, { PC8, 8, 3 }, { PC9, 8, 4 },
+    { PA15, 2, 1 }, { PA8, 1, 1 }, { PB10, 2, 3 }, { PB11, 2, 4 },
     { 0xFFFFFFFFu, 0, 0 },
 };
 

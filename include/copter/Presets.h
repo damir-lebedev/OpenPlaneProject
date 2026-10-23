@@ -168,6 +168,7 @@ namespace copter
         Propulsion prop;
         FlyStyle style = FlyStyle::FREESTYLE;
         float volts = 0, massKg = 0, armM = 0, loopHz = 1000;
+        uint8_t cells = 0;              // банок в батарее (из описания)
 
         AxisGains roll, pitch, yaw;
         bool gainsFromModel = true;     // false — PID заданы руками: запасы ниже посчитаны не для них
@@ -373,6 +374,7 @@ namespace copter
         t.style = b.style;
         t.loopHz = loopHz;
         t.volts = b.battery.cells * b.battery.voltsPerCellLoaded;
+        t.cells = b.battery.cells;
         const uint8_t n = t.frame.count;
         t.massKg = estimateMassG(b, t.prop, n) * 0.001f;
         t.armM = b.wheelbaseMm * 0.0005f;
