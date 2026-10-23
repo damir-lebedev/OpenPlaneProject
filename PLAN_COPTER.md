@@ -51,43 +51,48 @@
 
 ## 0. Основа
 
-### [ ] 001 · Реестр настроек коптера
+### [x] 001 · Реестр настроек коптера
 - **BF:** все `set имя = значение` из CLI BF — механизм
 - **Что:** таблица параметров (имя BF, тип int/float/enum/bool, мин, макс, дефолт, единицы, группа, описание); указатель на поле CopterSettings/CopterTune; сохранение в KeyValueStore (флеш, как калибровки), версия схемы; «0 = из модели» для параметров, которые выводит Presets.
 - **Сейчас:** CopterSettings (поля в коде), CopterConfig.h (constexpr), ничего не сохраняется.
 - **Файлы:** новый include/copter/Params.h, copter/CopterController.h, config/CopterConfig.h, storage/KeyValueStore.h
 - **Тест:** test_copter: set/get/границы/enum по имени/сохранение-загрузка через фейк флеша/неизвестное имя
 - **UI:** основа всех вкладок — список параметров по группам
+- **Итог:** реестр copter/Params.h: имя BF, тип, границы, умолчание (у PID и расходов — вывод из модели, а не «0»), единицы, группа, описание; 4+4 профиля; во флеш — только заданное, ключ — хеш имени, версия схемы (коммит 3d293e9)
 
-### [ ] 002 · CLI как в Betaflight
+### [x] 002 · CLI как в Betaflight
 - **BF:** `#` вход в CLI, `set`, `get`, `dump`, `diff`, `save`, `defaults`, `exit`, `status`, `version`, `help`
 - **Что:** строковый режим консоли коптера по `#` (как BF): разбор `set x = y`, `get` по подстроке, `diff` (только отличные от дефолта), `dump`, `save` (во флеш + перезапуск контроллера), `defaults`; ответы в формате BF (чтобы diff из BF можно было вставить).
 - **Сейчас:** консоль по одной клавише (t, m, s, o, i, r, l, D).
 - **Файлы:** telemetry/CopterConsole.h, copter/Params.h
 - **Тест:** test_app_stm32_copter: `#` → `set p_roll = 50` → `save` → перезагрузка фейка → `get p_roll`
 - **UI:** вкладка «CLI» в приложении (терминал + вставка diff)
+- **Итог:** CLI copter/CopterCli.h по «#»: set/get/diff/dump/profile/rateprofile/save/defaults/status/version/exit, вставка diff из BF, ARM запрещён, пока CLI открыт (коммит 3d293e9)
 
-### [ ] 003 · PID в единицах Betaflight
+### [x] 003 · PID в единицах Betaflight
 - **BF:** `p_roll i_roll d_roll f_roll` и то же для pitch/yaw
 - **Что:** перевод BF ↔ наши (P·0.032029/1000 на °/с, I·0.244381/1000, D·0.000529/1000, F·0.013754/1000 — масштабы BF, проверить по документации); 0 = из модели; `t` показывает и BF-числа.
 - **Сейчас:** AxisGains p/i/d/ff в «команда смесителя на °/с».
 - **Файлы:** copter/Params.h, copter/Presets.h, telemetry/CopterConsole.h
 - **Тест:** test_copter: модельный 5" в BF-единицах — порядок BF-дефолтов (P 30–60); set p_roll меняет AxisGains
 - **UI:** вкладка «PID»: таблица P/I/D/F по осям, как в конфигураторе BF
+- **Итог:** масштабы BF 4.5 в Presets.h (I рысканья ×2.5, F ×0.01); модель 5" = P 25 I 41 D 28 F 35; «t» печатает и BF-числа (коммит 3d293e9)
 
-### [ ] 004 · Дефолты Betaflight 4.5 как источник настройки
+### [x] 004 · Дефолты Betaflight 4.5 как источник настройки
 - **BF:** дефолтный профиль 4.5 (P/I/D/F, d_max, фильтры, TPA, AG, FF)
 - **Что:** `tune_source = MODEL | BETAFLIGHT` (наша настройка): BF-дефолты целиком; симуляция всех 12 сборок на BF-дефолтах при нашем цикле 1 кГц и OneShot — где не летает, честно записать в COPTER.md.
 - **Файлы:** copter/Presets.h, copter/Params.h, test_copter_sim
 - **Тест:** test_copter_sim: freestyle5 висит и держит расход на BF-дефолтах
 - **UI:** вкладка «PID»: переключатель «из модели / как в BF»
+- **Итог:** tune_source = BETAFLIGHT: PID 4.5, Actual 70/670/0, TPA только на D, фильтры в пересчёте; симуляция: 10 из 12 сборок летают, hex13/hex15 — раскачка ~36 °/с (COPTER.md) (коммит 3d293e9)
 
-### [ ] 005 · Профили PID и расходов
+### [x] 005 · Профили PID и расходов
 - **BF:** `profile 0..3`, `rateprofile 0..3`, `pid_profile`, `rateprofile_name`, `profile_name`
 - **Что:** 4 PID-профиля и 4 профиля расходов в реестре, переключение из CLI (и с тумблера/крутилки — пункт 122).
 - **Файлы:** copter/Params.h, telemetry/CopterConsole.h
 - **Тест:** test_copter: профили независимы, переключение без перезапуска
 - **UI:** выпадающий список профиля на вкладках PID и Rates
+- **Итог:** 4 PID-профиля и 4 профиля расходов, profile/rateprofile в CLI, CopterController::applyProfile — на ходу, без сброса интегралов и ARM (коммит 3d293e9)
 
 ### [ ] 006 · Режимы на тумблерах как в BF
 - **BF:** `aux <i> <режим> <канал> <от> <до>`, режимы ARM, ANGLE, HORIZON, AIRMODE, ALTHOLD, FAILSAFE, BEEPER…
