@@ -141,42 +141,47 @@
 
 ## 1. Регулятор (PID-профиль)
 
-### [ ] 011 · d_max (d_min) — D растёт при резких движениях
+### [x] 011 · d_max (d_min) — D растёт при резких движениях
 - **BF:** `d_max_roll d_max_pitch d_max_yaw d_max_gain d_max_advance` (до 4.5 — `d_min_*`, `d_min_gain`, `d_min_advance`)
 - **Что:** базовый D меньше, до d_max — по скорости изменения гироскопа/уставки.
 - **Файлы:** copter/RateController.h, copter/Params.h
 - **Тест:** test_copter: D растёт на ступеньке; test_copter_sim: шум моторов на висении не выше прежнего
 - **UI:** вкладка «PID»: колонка D max и ползунок «D max»
+- **Итог:** D растёт от рывков гироскопа и стика между D в покое и d_max_* (имена BF 2025.12) или d_min_* и D (BF 4.5, d_min_gain/advance — псевдонимы); в модели выкл, в BF — 30/34 → 40/46; в симуляторе D в покое −30 % даёт −25–30 % шума моторов на висении на всех сборках (вупы — на 4 кГц) (коммит c95be05)
 
-### [ ] 012 · iterm_relax — тип и частота
+### [x] 012 · iterm_relax — тип и частота
 - **BF:** `iterm_relax` (OFF/RP/RPY/RP_INC/RPY_INC), `iterm_relax_type` (GYRO/SETPOINT), `iterm_relax_cutoff`
 - **Что:** BF-вариант relax по ФВЧ уставки; наш relax по ошибке — отдельной настройкой `iterm_relax_error` (наша, дефолт вкл).
 - **Сейчас:** RateAxis: relax по уставке (PT1 10 Гц, 40 °/с) и по ошибке (20–80 °/с).
 - **Файлы:** copter/RateController.h, copter/Params.h
 - **Тест:** test_copter: типы; test_copter_sim: «вялая» гекса — перелёт ≤ 12 %
 - **UI:** вкладка «PID → дополнительно»
+- **Итог:** iterm_relax OFF/RP/RPY/*_INC, iterm_relax_type SETPOINT/GYRO, iterm_relax_cutoff; наш relax по ошибке — iterm_relax_error (вкл); модель — RPY 10 Гц как было, BF — RP 15 Гц; «вялые» гексы с relax BF — перелёт 10–12 % (коммит c95be05)
 
-### [ ] 013 · iterm_rotation
+### [x] 013 · iterm_rotation
 - **BF:** `iterm_rotation`
 - **Что:** вектор интеграла поворачивается вместе с рамой при вращении (полезно в рысканье на крене).
 - **Файлы:** copter/RateController.h, copter/CopterController.h
 - **Тест:** test_copter: пируэт — интеграл крена переходит в тангаж
 - **UI:** «PID → дополнительно», переключатель
+- **Итог:** iterm_rotation: интеграл поворачивается вместе с рамой (FRD, v −= ω×v·dt), пируэт переносит крен в тангаж (коммит c95be05)
 
-### [ ] 014 · iterm_windup
+### [x] 014 · iterm_windup
 - **BF:** `iterm_windup` (%)
 - **Что:** интеграл не копится, когда моторы упираются больше заданного процента.
 - **Сейчас:** anti-windup по флагу saturated смесителя.
 - **Файлы:** copter/RateController.h, copter/Mixer.h
 - **Тест:** test_copter: на упоре интеграл стоит
 - **UI:** «PID → дополнительно»
+- **Итог:** iterm_windup: разброс моторов выше порога — I копится слабее, на полном стоит; модель 100 (выкл), BF 85 (коммит c95be05)
 
-### [ ] 015 · iterm_limit
+### [x] 015 · iterm_limit
 - **BF:** `iterm_limit`
 - **Что:** предел интеграла в BF-единицах (сейчас iLimit 0.3 доли смесителя).
 - **Файлы:** copter/RateController.h, copter/Params.h
 - **Тест:** test_copter: предел соблюдается
 - **UI:** «PID → дополнительно»
+- **Итог:** iterm_limit в единицах BF (1000 — весь ход): модель 300, BF 400; все тонкости — настройки PID-профиля, переключаются на ходу (коммит c95be05)
 
 ### [ ] 016 · pidsum_limit, pidsum_limit_yaw
 - **BF:** `pidsum_limit`, `pidsum_limit_yaw`

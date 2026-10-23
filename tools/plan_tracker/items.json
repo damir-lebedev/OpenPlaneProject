@@ -273,7 +273,7 @@
    "id": "011",
    "section": 1,
    "title": "d_max (d_min) — D растёт при резких движениях",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -282,6 +282,7 @@
    "files": "copter/RateController.h, copter/Params.h",
    "test": "test_copter: D растёт на ступеньке; test_copter_sim: шум моторов на висении не выше прежнего",
    "ui": "вкладка «PID»: колонка D max и ползунок «D max»",
+   "result": "D растёт от рывков гироскопа и стика между D в покое и d_max_* (имена BF 2025.12) или d_min_* и D (BF 4.5, d_min_gain/advance — псевдонимы); в модели выкл, в BF — 30/34 → 40/46; в симуляторе D в покое −30 % даёт −25–30 % шума моторов на висении на всех сборках (вупы — на 4 кГц) (коммит c95be05)",
    "settings": [
     "d_max_roll",
     "d_max_pitch",
@@ -297,7 +298,7 @@
    "id": "012",
    "section": 1,
    "title": "iterm_relax — тип и частота",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -307,6 +308,7 @@
    "files": "copter/RateController.h, copter/Params.h",
    "test": "test_copter: типы; test_copter_sim: «вялая» гекса — перелёт ≤ 12 %",
    "ui": "вкладка «PID → дополнительно»",
+   "result": "iterm_relax OFF/RP/RPY/*_INC, iterm_relax_type SETPOINT/GYRO, iterm_relax_cutoff; наш relax по ошибке — iterm_relax_error (вкл); модель — RPY 10 Гц как было, BF — RP 15 Гц; «вялые» гексы с relax BF — перелёт 10–12 % (коммит c95be05)",
    "settings": [
     "iterm_relax",
     "iterm_relax_type",
@@ -318,7 +320,7 @@
    "id": "013",
    "section": 1,
    "title": "iterm_rotation",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -327,6 +329,7 @@
    "files": "copter/RateController.h, copter/CopterController.h",
    "test": "test_copter: пируэт — интеграл крена переходит в тангаж",
    "ui": "«PID → дополнительно», переключатель",
+   "result": "iterm_rotation: интеграл поворачивается вместе с рамой (FRD, v −= ω×v·dt), пируэт переносит крен в тангаж (коммит c95be05)",
    "settings": [
     "iterm_rotation"
    ],
@@ -336,7 +339,7 @@
    "id": "014",
    "section": 1,
    "title": "iterm_windup",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -346,6 +349,7 @@
    "files": "copter/RateController.h, copter/Mixer.h",
    "test": "test_copter: на упоре интеграл стоит",
    "ui": "«PID → дополнительно»",
+   "result": "iterm_windup: разброс моторов выше порога — I копится слабее, на полном стоит; модель 100 (выкл), BF 85 (коммит c95be05)",
    "settings": [
     "iterm_windup"
    ],
@@ -355,7 +359,7 @@
    "id": "015",
    "section": 1,
    "title": "iterm_limit",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -364,6 +368,7 @@
    "files": "copter/RateController.h, copter/Params.h",
    "test": "test_copter: предел соблюдается",
    "ui": "«PID → дополнительно»",
+   "result": "iterm_limit в единицах BF (1000 — весь ход): модель 300, BF 400; все тонкости — настройки PID-профиля, переключаются на ходу (коммит c95be05)",
    "settings": [
     "iterm_limit"
    ],
