@@ -4,6 +4,7 @@
 #include "copter/CopterCli.h"
 #include "copter/Battery.h"
 #include "copter/CopterController.h"
+#include "copter/GpsHome.h"
 #include "copter/Params.h"
 #include "copter/RcSetup.h"
 #include "copter/Vtx.h"
@@ -30,6 +31,7 @@
 //           просит подтвердить клавишей 'y'
 //   i     — калибровка гироскопа (коптер неподвижен ~2 с)
 //   o     — калибровка установки платы (три позы)
+//   c     — калибровка компаса (15 с вращать коптер по всем осям)
 //   D     — перезагрузка в загрузчик USB DFU
 //   #     — CLI как в Betaflight: set/get/diff/dump/aux/map/profile/
 //           status/tasks/save (copter/CopterCli.h); пока он открыт, ARM
@@ -80,6 +82,19 @@ public:
     {
         vtx = controller;
         link.setVtx(controller);
+    }
+    void setGps(const GpsSensor* sensor, const copter::GpsHome* home)
+    {
+        gps = sensor;
+        gpsHome = home;
+        link.setGps(sensor, home);
+    }
+    void setCompass(MagnetometerSensor* sensor) { compass = sensor; }
+    // Курс носа, 0 — север (компас, GPS или гироскоп — main_copter.cpp).
+    void setHeading(float deg)
+    {
+        headingDeg = deg;
+        link.setHeading(deg);
     }
     void setLoopLoad(uint32_t avgUs, uint32_t maxUs, uint32_t hz)
     {
@@ -203,6 +218,7 @@ public:
                   static_cast<unsigned long>(loopMaxUs), periodUs);
         io.printf("Газ висения %.3f (расчёт %.3f), обороты %.0f Гц\n", s.hoverLearned, ctl.getTune().hoverThrust, s.rotationHz);
         printVtxLine();
+        printGpsLines();
     }
 
     // CliPort: vtx_info — что ответил видеопередатчик и его мощности.
@@ -268,6 +284,15 @@ private:
                 if (refuseArmed()) return;
                 imu.calibrate();
                 break;
+            case 'c':
+                if (refuseArmed()) return;
+                if (!compass)
+                {
+                    io.println("Компаса нет (QMC5883L/P на I2C модуля GPS не ответил).");
+                    return;
+                }
+                compass->calibrate();
+                break;
             case 'o':
                 if (refuseArmed()) return;
                 io.println("Калибровка установки: «нос вверх» — передние моторы вверх, «правое крыло вниз» — правые моторы вниз.");
@@ -288,6 +313,42 @@ private:
             case ' ': break;
             default: io.println("Неизвестная команда. h — список."); break;
         }
+    }
+
+    void printGpsLines()
+    {
+        if (gps && gpsHome)
+        {
+            const copter::GpsFix& f = gpsHome->fix();
+            if (!gps->isAvailable())
+            {
+                io.println("GPS: не отвечает");
+            }
+            else if (!f.valid)
+            {
+                io.printf("GPS: нет 3D-фикса, %u спутн.\n", f.satellites);
+            }
+            else
+            {
+                io.printf("GPS: 3D, %u спутн., ±%.1f м, %.1f м/с; ", f.satellites, f.accuracyM, f.speedMs);
+                if (gpsHome->hasHome())
+                {
+                    io.printf("дом: %.0f м, на %.0f°%s\n", gpsHome->distanceM(), gpsHome->bearingHomeDeg(),
+                              gpsHome->homeSetInFlight() ? " (поставлен уже в полёте)" : "");
+                }
+                else
+                {
+                    io.println("дом — при ARM");
+                }
+            }
+        }
+        if (!compass)
+        {
+            io.println("Компас: нет");
+            return;
+        }
+        io.printf("Компас: %s, курс %.0f°%s\n", compass->isAvailable() ? "есть" : "не отвечает", headingDeg,
+                  compass->isCalibrated() ? "" : " — не откалиброван ('c')");
     }
 
     void printVtxLine()
@@ -351,7 +412,7 @@ private:
     {
         io.println("s — состояние, t — настройка, r — каналы пульта, l — живая строка,");
         io.println("m — проверка моторов (без пропеллеров!), i — калибровка гироскопа,");
-        io.println("o — калибровка установки платы, D — загрузчик DFU,");
+        io.println("o — калибровка установки платы, c — калибровка компаса, D — загрузчик DFU,");
         io.println("# — CLI как в Betaflight (set, get, diff, aux, map, profile, save; help — внутри).");
     }
 
@@ -487,6 +548,10 @@ private:
     const copter::RxInput* rxInput = nullptr;
     const copter::BatteryMonitor* battery = nullptr;
     const copter::VtxController* vtx = nullptr;
+    const GpsSensor* gps = nullptr;
+    const copter::GpsHome* gpsHome = nullptr;
+    MagnetometerSensor* compass = nullptr;
+    float headingDeg = 0.0f;
     const TaskStats* tasks = nullptr;
     void (*bootloaderHook)() = nullptr;
     void (*applyHook)() = nullptr;

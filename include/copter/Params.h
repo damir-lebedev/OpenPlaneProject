@@ -79,6 +79,7 @@ namespace copter
         COPTER,
         POWER,
         VTX,
+        GPS,
         OTHER,
     };
 
@@ -96,6 +97,7 @@ namespace copter
             case ParamGroup::COPTER: return "copter";
             case ParamGroup::POWER: return "power";
             case ParamGroup::VTX: return "vtx";
+            case ParamGroup::GPS: return "gps";
             case ParamGroup::OTHER: return "other";
         }
         return "other";
@@ -188,6 +190,8 @@ namespace copter
         PARAM_VTX_POWER,
         PARAM_VTX_MAX_POWER_MW,
         PARAM_VTX_LOW_POWER_DISARM,
+        PARAM_GPS_MINIMUM_SATS,
+        PARAM_CRSF_TELEMETRY,
         PARAM_COUNT
     };
 
@@ -225,7 +229,7 @@ namespace copter
         constexpr ParamScope kMaster = ParamScope::MASTER, kPid = ParamScope::PID_PROFILE, kRate = ParamScope::RATE_PROFILE;
         constexpr ParamGroup kGroupPid = ParamGroup::PID, kGroupRates = ParamGroup::RATES, kGroupRx = ParamGroup::RECEIVER,
                              kGroupCopter = ParamGroup::COPTER, kGroupPower = ParamGroup::POWER,
-                             kGroupVtx = ParamGroup::VTX;
+                             kGroupVtx = ParamGroup::VTX, kGroupGps = ParamGroup::GPS;
         constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD,
                                kBattery = ParamDefault::BATTERY;
         static const ParamInfo table[] = {
@@ -307,6 +311,10 @@ namespace copter
               "потолок мощности: выше не уйдёт ни с тумблера, ни кнопкой на передатчике (0 — без потолка)" },
             { "vtx_low_power_disarm", kEnum, kMaster, kGroupVtx, 0, 2, 0, kTable, "", LOW_POWER_DISARM, 3,
               "без ARM — самый слабый уровень: ON — всегда, UNTIL_FIRST_ARM — до первого ARM" },
+            { "gps_minimum_sats", kInt, kMaster, kGroupGps, 4, 50, 8, kTable, "", nullptr, 0,
+              "дом ставится при ARM, если спутников не меньше" },
+            { "crsf_telemetry", kEnum, kMaster, kGroupRx, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "телеметрия в пульт по CRSF: батарея, GPS, ориентация, режим" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;

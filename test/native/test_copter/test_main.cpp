@@ -25,6 +25,8 @@
 #include "copter/Attitude.h"
 #include "copter/CopterCli.h"
 #include "copter/CopterController.h"
+#include "copter/CrsfTelemetry.h"
+#include "copter/GpsHome.h"
 #include "copter/EscProtocol.h"
 #include "copter/Filters.h"
 #include "copter/Frames.h"
@@ -2193,6 +2195,134 @@ void test_cli_vtx_and_params()
     cli.execute("exit");
 }
 
+// ---- дом по GPS и телеметрия CRSF ----
+
+namespace
+{
+    GpsFix fixAt(double lat, double lon, uint8_t sats = 12)
+    {
+        GpsFix f;
+        f.valid = true;
+        f.satellites = sats;
+        f.latitude = lat;
+        f.longitude = lon;
+        f.altitudeM = 150.0f;
+        return f;
+    }
+}
+
+void test_gps_home_distance_and_direction()
+{
+    GpsHome h;
+    h.setMinimumSats(8);
+    const double lat0 = 55.75, lon0 = 37.61;
+    h.update(fixAt(lat0, lon0), false);
+    TEST_ASSERT_FALSE(h.hasHome());   // дом — при ARM
+    h.update(fixAt(lat0, lon0, 6), true);
+    TEST_ASSERT_FALSE(h.hasHome());   // спутников мало
+    h.update(fixAt(lat0, lon0), true);
+    TEST_ASSERT_TRUE(h.hasHome());
+    TEST_ASSERT_TRUE(h.homeSetInFlight());   // фиксы были и до него — поставлен уже заармленным
+
+    // 100 м на север: дом — на юге (180°)
+    const double dLat = 100.0 / 6371000.0 * 180.0 / 3.14159265358979;
+    h.update(fixAt(lat0 + dLat, lon0), true);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 100.0f, h.distanceM());
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 180.0f, h.bearingHomeDeg());
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 180.0f, fabsf(h.relativeHomeDeg(0.0f)));   // нос на север — дом за спиной
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 0.0f, h.relativeHomeDeg(180.0f));          // нос на юг — дом прямо
+
+    // 200 м на восток от дома: дом — на западе (270°)
+    const double dLon = 200.0 / (6371000.0 * cos(lat0 * 3.14159265358979 / 180.0)) * 180.0 / 3.14159265358979;
+    h.update(fixAt(lat0, lon0 + dLon), true);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 200.0f, h.distanceM());
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 270.0f, h.bearingHomeDeg());
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, -90.0f, h.relativeHomeDeg(0.0f));   // налево
+
+    // DISARM дом не стирает; новый ARM — новый дом, сразу (фикс хороший)
+    h.update(fixAt(lat0, lon0 + dLon), false);
+    TEST_ASSERT_TRUE(h.hasHome());
+    h.update(fixAt(lat0, lon0 + dLon), true);
+    TEST_ASSERT_TRUE(h.hasHome());
+    TEST_ASSERT_FALSE(h.homeSetInFlight());
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, h.distanceM());
+}
+
+void test_crsf_telemetry_frames()
+{
+    CrsfTelemetryData d;
+    d.volts = 25.2f;
+    d.amps = 12.3f;
+    d.mahDrawn = 1234;
+    d.percentLeft = 69;
+    uint8_t f[CrsfTelemetry::MAX_FRAME];
+
+    // батарея: C8 0A 08 | 00 FC | 00 7B | 00 04 D2 | 45 | CRC
+    uint8_t n = CrsfTelemetry::build(0, d, f);
+    TEST_ASSERT_EQUAL_UINT8(12, n);
+    const uint8_t battery[] = { 0xC8, 0x0A, 0x08, 0x00, 0xFC, 0x00, 0x7B, 0x00, 0x04, 0xD2, 0x45 };
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(battery, f, sizeof(battery));
+    TEST_ASSERT_EQUAL_HEX8(crsfCrc(f + 2, 9), f[11]);
+
+    // ориентация: тангаж 10° = 0.1745 рад -> 1745; крен −20° -> −3491; курс 270° -> −90° -> −15708
+    d.pitchDeg = 10;
+    d.rollDeg = -20;
+    d.yawDeg = 270;
+    n = CrsfTelemetry::build(1, d, f);
+    TEST_ASSERT_EQUAL_UINT8(10, n);
+    TEST_ASSERT_EQUAL_HEX8(0x1E, f[2]);
+    TEST_ASSERT_EQUAL_INT16(1745, static_cast<int16_t>((f[3] << 8) | f[4]));
+    TEST_ASSERT_EQUAL_INT16(-3491, static_cast<int16_t>((f[5] << 8) | f[6]));
+    TEST_ASSERT_EQUAL_INT16(-15708, static_cast<int16_t>((f[7] << 8) | f[8]));
+
+    // режим: строка с нулём; без ARM — «*», failsafe — «!FS!»
+    CrsfTelemetry::modeName(d.mode, sizeof(d.mode), "ANGL", false, false);
+    TEST_ASSERT_EQUAL_STRING("ANGL*", d.mode);
+    n = CrsfTelemetry::build(2, d, f);
+    TEST_ASSERT_EQUAL_UINT8(4 + 6, n);
+    TEST_ASSERT_EQUAL_HEX8(0x21, f[2]);
+    TEST_ASSERT_EQUAL_STRING("ANGL*", reinterpret_cast<const char*>(f + 3));
+    CrsfTelemetry::modeName(d.mode, sizeof(d.mode), "ACRO", true, true);
+    TEST_ASSERT_EQUAL_STRING("!FS!", d.mode);
+
+    // вариометр: см/с
+    d.climbMs = -1.5f;
+    n = CrsfTelemetry::build(3, d, f);
+    TEST_ASSERT_EQUAL_HEX8(0x07, f[2]);
+    TEST_ASSERT_EQUAL_INT16(-150, static_cast<int16_t>((f[3] << 8) | f[4]));
+
+    // GPS — только с фиксом
+    TEST_ASSERT_EQUAL_UINT8(0, CrsfTelemetry::build(4, d, f));
+    d.gps = true;
+    d.latitude = 55.75;
+    d.longitude = 37.61;
+    d.speedMs = 10.0f;      // 36 км/ч -> 360
+    d.courseDeg = 90.0f;    // 9000
+    d.altitudeM = 150.0f;   // 1150
+    d.satellites = 12;
+    n = CrsfTelemetry::build(4, d, f);
+    TEST_ASSERT_EQUAL_UINT8(19, n);
+    TEST_ASSERT_EQUAL_HEX8(0x02, f[2]);
+    TEST_ASSERT_EQUAL_INT32(557500000, static_cast<int32_t>((f[3] << 24) | (f[4] << 16) | (f[5] << 8) | f[6]));
+    TEST_ASSERT_EQUAL_UINT16(360, static_cast<uint16_t>((f[11] << 8) | f[12]));
+    TEST_ASSERT_EQUAL_UINT16(9000, static_cast<uint16_t>((f[13] << 8) | f[14]));
+    TEST_ASSERT_EQUAL_UINT16(1150, static_cast<uint16_t>((f[15] << 8) | f[16]));
+    TEST_ASSERT_EQUAL_UINT8(12, f[17]);
+    TEST_ASSERT_EQUAL_HEX8(crsfCrc(f + 2, 16), f[18]);
+
+    // по кругу: без GPS — четыре вида, пятый пропускается
+    CrsfTelemetry t;
+    d.gps = false;
+    uint8_t types[8];
+    for (int i = 0; i < 8; ++i)
+    {
+        TEST_ASSERT_TRUE(t.next(d, f) > 0);
+        types[i] = f[2];
+    }
+    const uint8_t expected[8] = { 0x08, 0x1E, 0x21, 0x07, 0x08, 0x1E, 0x21, 0x07 };
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, types, 8);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -2259,5 +2389,7 @@ int main()
     RUN_TEST(test_vtx_auto_finds_tramp_and_offline_without_vtx);
     RUN_TEST(test_vtx_ranges_from_switches);
     RUN_TEST(test_cli_vtx_and_params);
+    RUN_TEST(test_gps_home_distance_and_direction);
+    RUN_TEST(test_crsf_telemetry_frames);
     return UNITY_END();
 }

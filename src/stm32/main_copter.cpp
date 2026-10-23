@@ -31,6 +31,8 @@
 #include "config/CopterConfig.h"
 #include "copter/Battery.h"
 #include "copter/CopterController.h"
+#include "copter/CrsfTelemetry.h"
+#include "copter/GpsHome.h"
 #include "copter/Params.h"
 #include "copter/Vtx.h"
 #include "hal/Rtos.h"
@@ -41,6 +43,9 @@
 #include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/SensorSelection.h"
+#include "sensors/gps/UbloxM10_Gps.h"
+#include "sensors/mag/QMC5883L_Sensor.h"
+#include "sensors/mag/QMC5883P_Sensor.h"
 #include "telemetry/CopterConsole.h"
 #include "telemetry/LoopStats.h"
 #include "telemetry/TaskStats.h"
@@ -62,6 +67,15 @@ SelectedImu imuSensor(imuDevice);
 auto baroDevice = SELECTED_BARO_DEVICE(board);
 SelectedBaro baroSensor(baroDevice);
 
+// GPS (u-blox M10) — на UART, где его держал Betaflight; компас на модуле
+// GPS (HGLRC M100-5883 и т.п.) — QMC5883L или QMC5883P, какой ответит.
+UbloxM10_Gps gps(board.gpsUart());
+I2cRegisterDevice magLDevice(board.externalI2c(), QMC5883L_Sensor::DEFAULT_ADDRESS);
+QMC5883L_Sensor magL(magLDevice);
+I2cRegisterDevice magPDevice(board.externalI2c(), QMC5883P_Sensor::DEFAULT_ADDRESS);
+QMC5883P_Sensor magP(magPDevice);
+MagnetometerSensor* compass = nullptr;
+
 RcReceiver rcReceiver(board.rcUart());
 Stm32MotorOutput motors;
 copter::CopterController copterController;
@@ -81,6 +95,12 @@ copter::VtxController vtx(vtxPort);
 static copter::VtxProtocol vtxProtocol = copter::VtxProtocol::NONE;
 static bool everArmed = false;
 static uint8_t pinioLevels = 0;
+copter::GpsHome gpsHome;
+static uint32_t lastGpsStamp = 0;
+static uint32_t lastGpsMs = 0, lastTelemetryMs = 0;
+copter::CrsfTelemetry crsfTelemetry;
+static bool crsfTelemetryOn = false;
+static copter::CopterMode switchMode = copter::CopterMode::ACRO;   // режим на тумблерах (без ARM — для пульта)
 
 // Части цикла для `tasks` (TaskStats::add — по порядку).
 enum : uint8_t
@@ -92,6 +112,8 @@ enum : uint8_t
     TASK_PID,
     TASK_MOTORS,
     TASK_CONSOLE,
+    TASK_GPS,
+    TASK_TELEMETRY,
 };
 
 
@@ -119,6 +141,9 @@ static void applySettings()
         vtx.setProtocol(vtxProtocol);
     }
     vtx.setMaxPowerMw(static_cast<uint16_t>(copterParams.value(copter::PARAM_VTX_MAX_POWER_MW)));
+    gpsHome.setMinimumSats(static_cast<uint8_t>(copterParams.value(copter::PARAM_GPS_MINIMUM_SATS)));
+    crsfTelemetryOn = copterParams.value(copter::PARAM_CRSF_TELEMETRY) > 0.5f &&
+                      rcReceiver.getProtocol() == Config::RxProtocol::CRSF;
     // другая рама — выходы на моторы настраиваются только при включении
     const uint8_t motorCount = copterController.getTune().frame.count;
     const bool reboot = outputsAtBoot && motorCount != outputsAtBoot;
@@ -167,6 +192,78 @@ static void updatePinio(bool force)
     }
 }
 
+// Новый фикс GPS -> дом, расстояние, направление (copter/GpsHome.h).
+static void updateGps()
+{
+    const GpsData& d = gps.getGpsData();
+    if (d.timestamp == lastGpsStamp) return;
+    lastGpsStamp = d.timestamp;
+    copter::GpsFix f;
+    f.valid = gps.isAvailable() && d.fixType >= 3;
+    f.satellites = d.numSatellites;
+    f.latitude = d.latitude;
+    f.longitude = d.longitude;
+    f.altitudeM = d.altitude;
+    f.speedMs = d.groundSpeed;
+    f.courseDeg = d.heading;
+    f.accuracyM = d.horizontalAccuracy;
+    gpsHome.update(f, copterController.isArmed());
+}
+
+// Курс носа, 0 — север: по компасу (если откалиброван), на скорости — по
+// GPS, иначе — то, что насчитал гироскоп (от точки включения).
+static float headingDeg()
+{
+    if (compass && compass->isAvailable() && compass->isCalibrated()) return compass->getMagData().headingDegrees;
+    const copter::GpsFix& f = gpsHome.fix();
+    if (f.valid && f.speedMs > 3.0f) return f.courseDeg;
+    float yaw = copterController.getStatus().yaw;
+    if (yaw < 0.0f) yaw += 360.0f;
+    return yaw;
+}
+
+// Режим для пульта, как пишет Betaflight (4 буквы, без ARM — «*»).
+static const char* crsfModeName(copter::CopterMode m)
+{
+    switch (m)
+    {
+        case copter::CopterMode::ANGLE: return "ANGL";
+        case copter::CopterMode::HORIZON: return "HOR";
+        case copter::CopterMode::ALT_HOLD: return "ALTH";
+        case copter::CopterMode::ACRO:
+        default: return "ACRO";
+    }
+}
+
+// Следующий кадр телеметрии CRSF — в UART приёмника (copter/CrsfTelemetry.h).
+static void sendTelemetry()
+{
+    const copter::CopterStatus& s = copterController.getStatus();
+    copter::CrsfTelemetryData d;
+    d.volts = battery.volts();
+    d.amps = battery.amps();
+    d.mahDrawn = battery.mahDrawn();
+    d.percentLeft = battery.percentLeft();
+    d.rollDeg = s.roll;
+    d.pitchDeg = s.pitch;
+    d.yawDeg = headingDeg();
+    d.climbMs = s.climbRate;
+    const copter::GpsFix& f = gpsHome.fix();
+    d.gps = f.valid;
+    d.latitude = f.latitude;
+    d.longitude = f.longitude;
+    d.speedMs = f.speedMs;
+    d.courseDeg = f.courseDeg;
+    d.altitudeM = f.altitudeM;
+    d.satellites = f.satellites;
+    const copter::CopterMode mode = copterController.isArmed() ? s.mode : switchMode;
+    copter::CrsfTelemetry::modeName(d.mode, sizeof(d.mode), crsfModeName(mode), copterController.isArmed(),
+                                    s.state == copter::CopterState::FAILSAFE);
+    uint8_t frame[copter::CrsfTelemetry::MAX_FRAME];
+    const uint8_t n = crsfTelemetry.next(d, frame);
+    if (n) board.rcUart().write(frame, n);
+}
+
 static uint32_t lap(uint8_t task, uint32_t sinceUs)
 {
     const uint32_t now = micros();
@@ -209,7 +306,16 @@ static void flightTask(void*)
         }
         rcReceiver.update();
         const copter::CopterRc rc = readRc();
+        switchMode = rc.mode;
         t = lap(TASK_RX, t);
+        if (millis() - lastGpsMs >= 5)
+        {
+            lastGpsMs = millis();
+            gps.update();
+            updateGps();
+            if (compass) compass->update();   // сам — 50 Гц
+            t = lap(TASK_GPS, t);
+        }
 
         copter::CopterSensors sens;
         const ImuData& imu = imuSensor.getImuData();
@@ -247,8 +353,15 @@ static void flightTask(void*)
         vtx.request(vtxRequest());
         vtx.update(millis());
         copterConsole.setOutputs(out);
+        copterConsole.setHeading(headingDeg());
         copterConsole.update(millis());
-        lap(TASK_CONSOLE, t);
+        t = lap(TASK_CONSOLE, t);
+        if (crsfTelemetryOn && millis() - lastTelemetryMs >= 50)
+        {
+            lastTelemetryMs = millis();
+            sendTelemetry();
+            lap(TASK_TELEMETRY, t);
+        }
 
         const uint32_t workUs = micros() - start;
         loopStats.record(workUs);
@@ -348,6 +461,8 @@ void setup()
     taskStats.add("PID/MIXER");
     taskStats.add("MOTORS");
     taskStats.add("CONSOLE");
+    taskStats.add("GPS");
+    taskStats.add("TELEMETRY");
 
     Serial.begin(115200);
     delay(200);
@@ -369,6 +484,9 @@ void setup()
 
     if (imuSensor.begin()) imuSensor.calibrate();
     if (baroSensor.begin()) baroSensor.calibrateAltitude();
+    if (Config::PIN_GPS_RX >= 0) gps.begin();
+    if (magL.begin()) compass = &magL;
+    else if (magP.begin()) compass = &magP;
 
     rcReceiver.begin();
     applySettings();   // протокол из настроек, карта каналов, режимы
@@ -394,6 +512,8 @@ void setup()
     copterConsole.setRxInput(&rxInput);
     copterConsole.setBattery(&battery);
     copterConsole.setVtx(&vtx);
+    copterConsole.setGps(&gps, &gpsHome);
+    copterConsole.setCompass(compass);
     copterConsole.setTaskStats(&taskStats);
     copterConsole.printHint();
 

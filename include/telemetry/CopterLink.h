@@ -6,6 +6,7 @@
 #include "copter/CopterCli.h"
 #include "copter/Battery.h"
 #include "copter/CopterController.h"
+#include "copter/GpsHome.h"
 #include "copter/Params.h"
 #include "copter/RcSetup.h"
 #include "copter/Vtx.h"
@@ -66,6 +67,12 @@ public:
     void setRxInput(const copter::RxInput* input) { rxInput = input; }
     void setBattery(const copter::BatteryMonitor* monitor) { battery = monitor; }
     void setVtx(const copter::VtxController* controller) { vtx = controller; }
+    void setGps(const GpsSensor* sensor, const copter::GpsHome* home)
+    {
+        gps = sensor;
+        gpsHome = home;
+    }
+    void setHeading(float deg) { headingDeg = deg; }
     void setOutputs(const copter::CopterOutputs& out) { outputs = out; }
     void setLoop(uint32_t avgUs, uint32_t hz)
     {
@@ -279,6 +286,15 @@ public:
             const copter::VtxState& v = vtx->state();
             w.add(",\"vtx\":{\"on\":%s,\"mhz\":%u,\"mw\":%u,\"pit\":%s,\"cap\":%u}", v.online ? "true" : "false",
                   v.frequencyMhz, v.powerMw, v.pit ? "true" : "false", vtx->levelMw(vtx->topAllowedLevel()));
+        }
+        w.add(",\"hdg\":%.0f", headingDeg);
+        if (gps && gpsHome && gps->isAvailable())
+        {
+            const copter::GpsFix& f = gpsHome->fix();
+            w.add(",\"gps\":{\"fix\":%s,\"sats\":%u,\"lat\":%.7f,\"lon\":%.7f,\"spd\":%.1f", f.valid ? "true" : "false",
+                  f.satellites, f.latitude, f.longitude, f.speedMs);
+            if (gpsHome->hasHome()) w.add(",\"home\":%.0f,\"dir\":%.0f", gpsHome->distanceM(), gpsHome->bearingHomeDeg());
+            w.add("}");
         }
         w.add(",\"motors\":[");
         for (uint8_t i = 0; i < outputs.count && i < MAX_MOTORS; ++i) w.add(i ? ",%.3f" : "%.3f", outputs.motor[i]);
@@ -565,6 +581,9 @@ private:
     const copter::RxInput* rxInput = nullptr;
     const copter::BatteryMonitor* battery = nullptr;
     const copter::VtxController* vtx = nullptr;
+    const GpsSensor* gps = nullptr;
+    const copter::GpsHome* gpsHome = nullptr;
+    float headingDeg = 0.0f;
     copter::CopterOutputs outputs;
     uint32_t loopAvgUs = 0, loopHz = 0;
     bool dirty = false;

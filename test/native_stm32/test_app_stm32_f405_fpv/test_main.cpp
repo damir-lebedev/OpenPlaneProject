@@ -8,7 +8,8 @@
 // VtxEmulator.h) на однопроводном UART: прошивка сама находит его, ставит
 // полосу и канал из настроек, мощность — с тумблера (`vtx` в CLI), но не
 // выше потолка vtx_max_power_mw. PINIO1 (PC5, режим USER1, инверсия) —
-// переключатель камер у GETFUN.
+// переключатель камер у GETFUN. GPS (u-blox M10, UART1 этой платы) и
+// телеметрия CRSF в пульт — в тот же UART2, откуда приходят каналы ELRS.
 //
 // Запуск: pio test -e native-stm32 -f native_stm32/test_app_stm32_f405_fpv
 // ============================================================
@@ -38,6 +39,8 @@ namespace
     chips::Icm42688 imuChip;
     chips::Spl06 baroChip;
     VtxEmulator vtxChip;
+    bool crsfReceiver = false;
+    uint32_t lastGpsMs = 0;
 
     HardwareSerial& port(uint32_t pin)
     {
@@ -50,7 +53,13 @@ namespace
     {
         imuChip.update(world);
         baroChip.update(world);
-        if (millis() % 7 == 0) port(PA3).pushRx(ibusFrame(rc));
+        if (millis() % 7 == 0) port(PA3).pushRx(crsfReceiver ? crsfChannels(rc) : ibusFrame(rc));
+        if (millis() - lastGpsMs >= 100)
+        {
+            lastGpsMs = millis();
+            const std::vector<uint8_t> frame = chips::navPvt(world);
+            port(PA10).pushRx(std::string(frame.begin(), frame.end()));
+        }
         fake::runTask(*fake::findTask("flight"), 1);
         // провод SmartAudio: что прошивка послала — передатчику, его ответ — обратно
         HardwareSerial& wire = port(PA0);
@@ -148,11 +157,77 @@ void test_user1_switches_pinio_with_board_inversion()
     TEST_ASSERT_EQUAL(HIGH, digitalRead(PA14));  // PINIO2 (USER2) — не включали
 }
 
+// CRSF-кадры телеметрии из того, что прошивка написала в UART приёмника.
+namespace
+{
+    std::vector<std::vector<uint8_t>> crsfFrames(const std::string& tx)
+    {
+        std::vector<std::vector<uint8_t>> frames;
+        size_t at = 0;
+        while (at + 2 < tx.size())
+        {
+            const uint8_t len = static_cast<uint8_t>(tx[at + 1]);
+            if (static_cast<uint8_t>(tx[at]) != 0xC8 || at + 2 + len > tx.size())
+            {
+                ++at;
+                continue;
+            }
+            const std::vector<uint8_t> f(tx.begin() + static_cast<long>(at), tx.begin() + static_cast<long>(at + 2 + len));
+            if (copter::crsfCrc(f.data() + 2, static_cast<uint8_t>(len - 1)) == f.back()) frames.push_back(f);
+            at += 2 + len;
+        }
+        return frames;
+    }
+}
+
+void test_gps_and_telemetry_to_the_radio()
+{
+    RcChannels rc;
+    run(rc, 1.0);
+    Serial.pushRx("s");
+    run(rc, 0.01);
+    std::string status = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(status, "GPS: 3D, 12 спутн."), status.c_str());
+    TEST_ASSERT_TRUE(contains(status, "дом — при ARM"));
+    TEST_ASSERT_TRUE(contains(status, "Компас: нет"));
+    TEST_ASSERT_TRUE(port(PA3).takeTx().empty());   // iBUS — телеметрии CRSF нет
+
+    // приёмник ELRS: CRSF на том же UART2
+    Serial.pushRx("#set serialrx_provider = CRSF\r\nsave\r\n");
+    run(rc, 0.05);
+    crsfReceiver = true;
+    run(rc, 1.0);
+    TEST_ASSERT_FALSE(rcReceiver.isSignalLost());
+    const auto frames = crsfFrames(port(PA3).takeTx());
+    TEST_ASSERT_TRUE(frames.size() >= 15);   // 20 кадров в секунду
+    bool batteryFrame = false, gpsFrame = false, mode = false, attitude = false;
+    for (const auto& f : frames)
+    {
+        if (f[2] == copter::CRSF_FRAME_BATTERY && ((f[3] << 8) | f[4]) == 252) batteryFrame = true;   // 25.2 В
+        if (f[2] == copter::CRSF_FRAME_GPS && f[17] == 12) gpsFrame = true;
+        if (f[2] == copter::CRSF_FRAME_FLIGHT_MODE && std::string(reinterpret_cast<const char*>(&f[3])) == "ACRO*") mode = true;
+        if (f[2] == copter::CRSF_FRAME_ATTITUDE) attitude = true;
+    }
+    TEST_ASSERT_TRUE(batteryFrame);
+    TEST_ASSERT_TRUE(gpsFrame);
+    TEST_ASSERT_TRUE(mode);
+    TEST_ASSERT_TRUE(attitude);
+
+    // выключить — молчит
+    Serial.pushRx("#set crsf_telemetry = OFF\r\nsave\r\n");
+    run(rc, 0.1);
+    port(PA3).takeTx();
+    run(rc, 0.5);
+    TEST_ASSERT_TRUE(port(PA3).takeTx().empty());
+    takeSerial();
+}
+
 int main()
 {
     UNITY_BEGIN();
     RUN_TEST(test_vtx_found_on_tx4_and_tuned_from_settings);
     RUN_TEST(test_power_from_switch_capped_for_the_city);
     RUN_TEST(test_user1_switches_pinio_with_board_inversion);
+    RUN_TEST(test_gps_and_telemetry_to_the_radio);
     return UNITY_END();
 }
