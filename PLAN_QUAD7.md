@@ -34,24 +34,27 @@
   хотя бы выключить).
 - Плата не только для квадрика: потом самолёт на ней же (выходы M1–M8).
 
-## [ ] Q1 · Ядро STM32F405
+## [x] Q1 · Ядро STM32F405
 Семейство STM32 в коде — `OP_STM32` (H743 и F405), такты от кварца 8 МГц
 (168 МГц, USB 48 МГц), FreeRTOS, настройки в секторе 11 (стирание
 останавливает процессор — запись только без ARM), загрузчик DFU
 (0x1FFF0000), причина сброса, UART без RXINV (на F4 его нет). Сборка
 эталонной платы из BF (AOCODARCF405V3) — чтобы ядро проверялось всегда.
+**Итог:** ядро F405 (OP_STM32, такты от кварца с запасным HSI, DFU через 0x1FFF0000, сброс по RCC->CSR, запись флеша только без ARM); эталон AocodaRC F405 V3 собирается и проверяется тестом на ПК (коммит 6a2c35b)
 
-## [ ] Q2 · Плата из Betaflight
+## [x] Q2 · Плата из Betaflight
 `tools/bf_board.py`: `config.h` из репозитория BF или дамп CLI с платы
 (файл или прямо COM-порт) → `include/config/boards/<ИМЯ>.h`: моторы,
 UART (и роли по `serial`), SPI/I2C, CS гироскопа/OSD/флеша, АЦП батареи и
 тока с масштабами, PINIO и их режимы, светодиод, пищалка. Сохранение родной
 прошивки по DFU (`dfu-util -U`). Тест — на дампах эталонных плат.
+**Итог:** tools/bf_board.py: read (дамп CLI по COM-порту), backup (родная прошивка по DFU), header (из дампа или config.h BF); блок BOARD_STM32F405 и набор SENSOR_KIT_BF_BOARD берут всё из заголовка (коммит 6a2c35b)
 
-## [ ] Q3 · Батарея: Li-ion, ток, мА·ч
+## [x] Q3 · Батарея: Li-ion, ток, мА·ч
 `battery_chemistry` (LIPO/LIION/LIHV), `vbat_min/warning/max_cell_voltage`,
 `vbat_scale`, `ibata_scale`/`ibata_offset`, израсходованные мА·ч,
 предупреждения; модель тяги — по химии (В/банку под нагрузкой).
+**Итог:** copter/Battery.h: напряжение, ток, мА·ч, OK/WARNING/CRITICAL; battery_chemistry с порогами Li-Po/Li-HV/Li-ion, vbat_*, ibata_*, current_meter; ARM — только если банка выше порога WARNING (коммит 6a2c35b)
 
 ## [ ] Q4 · PINIO и режимы USER1–USER4
 BF-режимы 40–43 → ножки PINIO платы: камера CAM1/CAM2, 12 В.
