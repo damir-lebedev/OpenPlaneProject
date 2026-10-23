@@ -94,43 +94,48 @@
 - **UI:** выпадающий список профиля на вкладках PID и Rates
 - **Итог:** 4 PID-профиля и 4 профиля расходов, profile/rateprofile в CLI, CopterController::applyProfile — на ходу, без сброса интегралов и ARM (коммит 3d293e9)
 
-### [ ] 006 · Режимы на тумблерах как в BF
+### [x] 006 · Режимы на тумблерах как в BF
 - **BF:** `aux <i> <режим> <канал> <от> <до>`, режимы ARM, ANGLE, HORIZON, AIRMODE, ALTHOLD, FAILSAFE, BEEPER…
 - **Что:** таблица диапазонов вместо зашитых SwA/SwC; режимы с приоритетом как в BF; `aux` в CLI.
 - **Сейчас:** ARM = CH5 > 1700, режим — SwC (CopterConfig::MODE_*).
 - **Файлы:** copter/Params.h, src/stm32/main_copter.cpp, config/CopterConfig.h
 - **Тест:** test_app_stm32_copter: `aux` ARM на CH6, ANGLE на CH7 1300–1700
 - **UI:** вкладка «Режимы»: полосы каналов с ползунками диапазонов и живой меткой положения тумблера
+- **Итог:** таблица aux как в BF (copter/RcSetup.h): 20 строк, номера режимов BF, ИЛИ/И, связь; ARM, ANGLE, HORIZON, ALTHOLD, AIR MODE, FAILSAFE, PREARM действуют, прочие хранятся; пустая таблица — тумблеры CopterConfig.h, своя строка заменяет её целиком (коммит abb5d63)
 
-### [ ] 007 · Карта каналов и диапазон приёмника
+### [x] 007 · Карта каналов и диапазон приёмника
 - **BF:** `map`, `rx_min_usec`, `rx_max_usec`, `rxrange`, `serialrx_provider`
 - **Что:** AETR/TAER… порядок, калибровка концов стиков по каналу, выбор протокола без пересборки.
 - **Сейчас:** порядок — config/Channels.h, протокол — Config::RX_PROTOCOL (сборка).
 - **Файлы:** rc/RcReceiver.h, copter/Params.h, src/stm32/main_copter.cpp
 - **Тест:** test_app_stm32_copter: `map TAER1234` меняет газ/крен
 - **UI:** вкладка «Приёмник»: живые полосы каналов, выбор порядка, протокол
+- **Итог:** map AETR1234, rxrange, rx_min_usec/rx_max_usec (стик вне — потеря связи, AUX — держится), serialrx_provider меняется после save без перезагрузки; failsafe по газу — на канале газа по map (коммит abb5d63)
 
-### [ ] 008 · `status` и `tasks` как в BF
+### [x] 008 · `status` и `tasks` как в BF
 - **BF:** `status` (CPU, цикл, флаги запрета ARM), `tasks`
 - **Что:** загрузка цикла, пик, причины запрета ARM кодами BF (RXLOSS, ANGLE, THROTTLE, CLI, MSP…) и словами.
 - **Файлы:** telemetry/CopterConsole.h, copter/CopterController.h
 - **Тест:** test_app_stm32_copter: вывод status содержит флаги
 - **UI:** строка состояния внизу приложения (как в конфигураторе)
+- **Итог:** status как в BF (CPU, cycle time, GYRO/RX/System rate, Voltage, Arming disable flags кодами BF + словами), tasks — 7 частей цикла (TaskStats.h); новые причины: CLI, MSP, NO_ACC_CAL, REBOOT_REQD, LOAD, BOXFAILSAFE, NOPREARM, NO_ARM_AUX (коммит abb5d63)
 
-### [ ] 009 · Описание коптера — тоже параметры
+### [x] 009 · Описание коптера — тоже параметры
 - **BF:** — (наше; в BF это пресеты)
 - **Что:** COPTER_BUILD, масса, винт, мотор, KV, батарея, рама — в реестр (`set copter_build = race5`, `set copter_mass_g = 742`), пересчёт настройки при `save`.
 - **Сейчас:** только constexpr в CopterConfig.h + пересборка.
 - **Файлы:** config/CopterConfig.h, copter/Params.h, src/stm32/main_copter.cpp
 - **Тест:** test_app_stm32_copter: смена сборки через CLI → `t` показывает новую
 - **UI:** вкладка «Коптер»: мастер «рама → винт → мотор → батарея → масса» с картинками и итогом (тяга/вес, висение, предупреждения)
+- **Итог:** copter_build, масса, рама, винт, мотор, KV, батарея, props_out — в реестре; умолчание — сборка + поправки CopterConfig.h, модель пересчитывается при save и загрузке; другое число моторов — REBOOT_REQD (коммит abb5d63)
 
-### [ ] 010 · Машинный протокол параметров для приложения
+### [x] 010 · Машинный протокол параметров для приложения
 - **BF:** аналог MSP-запросов настроек
 - **Что:** строки `@params` (JSON-список с группами, единицами, границами), `@set`, `@save`, `@live` коптера (углы, моторы, газ, батарея, режим, причины запрета ARM) — как AppLink самолёта.
 - **Файлы:** telemetry/CopterConsole.h (или новый CopterLink.h), telemetry/AppLink.h (образец)
 - **Тест:** test_app_stm32_copter: `@params` разбирается как JSON, `@set` меняет параметр
 - **UI:** транспорт для всех вкладок приложения
+- **Итог:** telemetry/CopterLink.h: id, params (@params/@param/@rc/@modes по строке, когда есть место), set, profile, aux/map/rxrange, save, revert, live; менять — только без ARM, несохранённое — флаг MSP (коммит abb5d63)
 
 ---
 

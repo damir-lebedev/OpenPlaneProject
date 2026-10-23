@@ -174,7 +174,7 @@
    "id": "006",
    "section": 0,
    "title": "Режимы на тумблерах как в BF",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -184,6 +184,7 @@
    "files": "copter/Params.h, src/stm32/main_copter.cpp, config/CopterConfig.h",
    "test": "test_app_stm32_copter: `aux` ARM на CH6, ANGLE на CH7 1300–1700",
    "ui": "вкладка «Режимы»: полосы каналов с ползунками диапазонов и живой меткой положения тумблера",
+   "result": "таблица aux как в BF (copter/RcSetup.h): 20 строк, номера режимов BF, ИЛИ/И, связь; ARM, ANGLE, HORIZON, ALTHOLD, AIR MODE, FAILSAFE, PREARM действуют, прочие хранятся; пустая таблица — тумблеры CopterConfig.h, своя строка заменяет её целиком (коммит abb5d63)",
    "settings": [
     "aux"
    ],
@@ -193,7 +194,7 @@
    "id": "007",
    "section": 0,
    "title": "Карта каналов и диапазон приёмника",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -203,6 +204,7 @@
    "files": "rc/RcReceiver.h, copter/Params.h, src/stm32/main_copter.cpp",
    "test": "test_app_stm32_copter: `map TAER1234` меняет газ/крен",
    "ui": "вкладка «Приёмник»: живые полосы каналов, выбор порядка, протокол",
+   "result": "map AETR1234, rxrange, rx_min_usec/rx_max_usec (стик вне — потеря связи, AUX — держится), serialrx_provider меняется после save без перезагрузки; failsafe по газу — на канале газа по map (коммит abb5d63)",
    "settings": [
     "map",
     "rx_min_usec",
@@ -216,7 +218,7 @@
    "id": "008",
    "section": 0,
    "title": "`status` и `tasks` как в BF",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -225,6 +227,7 @@
    "files": "telemetry/CopterConsole.h, copter/CopterController.h",
    "test": "test_app_stm32_copter: вывод status содержит флаги",
    "ui": "строка состояния внизу приложения (как в конфигураторе)",
+   "result": "status как в BF (CPU, cycle time, GYRO/RX/System rate, Voltage, Arming disable flags кодами BF + словами), tasks — 7 частей цикла (TaskStats.h); новые причины: CLI, MSP, NO_ACC_CAL, REBOOT_REQD, LOAD, BOXFAILSAFE, NOPREARM, NO_ARM_AUX (коммит abb5d63)",
    "settings": [
     "status",
     "tasks"
@@ -235,7 +238,7 @@
    "id": "009",
    "section": 0,
    "title": "Описание коптера — тоже параметры",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -245,6 +248,7 @@
    "files": "config/CopterConfig.h, copter/Params.h, src/stm32/main_copter.cpp",
    "test": "test_app_stm32_copter: смена сборки через CLI → `t` показывает новую",
    "ui": "вкладка «Коптер»: мастер «рама → винт → мотор → батарея → масса» с картинками и итогом (тяга/вес, висение, предупреждения)",
+   "result": "copter_build, масса, рама, винт, мотор, KV, батарея, props_out — в реестре; умолчание — сборка + поправки CopterConfig.h, модель пересчитывается при save и загрузке; другое число моторов — REBOOT_REQD (коммит abb5d63)",
    "settings": [],
    "tab": "Коптер"
   },
@@ -252,7 +256,7 @@
    "id": "010",
    "section": 0,
    "title": "Машинный протокол параметров для приложения",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -261,6 +265,7 @@
    "files": "telemetry/CopterConsole.h (или новый CopterLink.h), telemetry/AppLink.h (образец)",
    "test": "test_app_stm32_copter: `@params` разбирается как JSON, `@set` меняет параметр",
    "ui": "транспорт для всех вкладок приложения",
+   "result": "telemetry/CopterLink.h: id, params (@params/@param/@rc/@modes по строке, когда есть место), set, profile, aux/map/rxrange, save, revert, live; менять — только без ARM, несохранённое — флаг MSP (коммит abb5d63)",
    "settings": [],
    "tab": ""
   },
