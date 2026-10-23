@@ -85,6 +85,8 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 |---|---|
 | `ChipEmulators.h` | LSM6DSV、ICM-42688-P、ICM-45686（带 IPREG 间接寄存器）、QMC6309、SPL06-001、BMP581，以及 u-blox 的 NAV-PVT 帧——I2C 或 SPI 上的寄存器映射，数据取自 `World`“世界”（角度和角速度、高度、空速、航向、坐标），按芯片自身的坐标轴给出，并考虑了 `IMU_ROTATION_CW_DEG` |
 | `PlaneSim.h` | 约 1.2 kg 的飞机模型：质点 + 横滚/俯仰转动，带失速的 CL(α)，阻力、推力、风、热气流、地面；尾轮或前轮起落架——飞机在主轮上前后摆动，统计尾轮载荷、机尾撞击和螺旋桨触地，地面偏航包含螺旋桨力矩和转向轮 |
+| `QuadSim.h` | 6 自由度多旋翼模型：每个电机都使用与 `copter/Propulsion.h` 相同的模型（经过电阻和反电动势的电流、螺旋桨推力和扭矩、转子加速），但参数被刻意扭曲（`QuadPerturb`：推力、扭矩、电阻、惯量、质量、重心、电机间差异）；电池在电流下压降（电压与电机电流一起求解），螺旋桨反扭矩，空气阻力，阵风，电调延迟，经过芯片滤波后带噪声和电机振动的陀螺仪与加速度计，50 Hz 气压计，地面，电机故障 |
+| `QuadHarness.h` | 多旋翼闭环：真实的 `CopterController`（由 `deriveTune()` 根据机型描述得出参数）↔ `QuadSim`；飞行统计（倾角、晃动、电机“抖动”、饱和、高度），ALT_HOLD 起飞 |
 | `SimHarness.h` | 闭环：遥控器 → iBUS 帧 → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 舵面偏转 → `PlaneSim` → 传感器（包括基于两个带噪声气压计的皮托管）。设置 `OPENPLANE_SIM_DIR` 时输出 CSV 轨迹；开启 `realisticImu` 时由真实的 `AttitudeEstimator` 按比力计算角度——它看到的跑道加速度和机上一样 |
 
 `test/native/helpers/TestSupport.h` 是各测试集共用的部分：`resetWorld()`（在 `setUp()` 中调用）、`FakeUart`/`FakeServo`/`FakeBoard` 以及各传感器（`FakeImu`、`FakeBaro`、`FakeMag`、`FakeGps`）的替身、帧构造器 `ibusFrame()`、台架 `I2cRig`/`SpiRig`（真实的 `Esp32I2CBus`/`Esp32SpiBus` 和带模拟芯片的 `*RegisterDevice` 之上的驱动）。
@@ -112,6 +114,8 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native/test_blackbox_scan` | 3 | 开机时环的抽样核对与完整核对的对比：300 段随机的环历史 × 5 个探测步（头指针、编号和飞行列表一致；当情况对不上时则退回完整核对），以及在 64 MB SD 区域上的开销（约 530 次读取，而不是 32,000 次） |
 | `native/test_telemetry` | 35 | `LoopStats`、`LogSettings`（NVS、版本）、`DebugLogger`（所有通道、NAV）、`DebugConsole`（菜单、热键、总线探测 `b`、ARM 时禁用、仅在未 ARM 时保存）、`WebDebugServer`（路由、JSON、邮箱）、`OledDisplay`（通过 I2C 发送的字节、帧、信号丢失时反色）；控制台中的校准 `c` 和提示 `e`，日志行 `AP` 中的起飞阶段，OLED 上的校准步骤和起飞阶段，PC 命令 `id` 返回的固件身份信息（供 OpenPlane Studio 使用），供应用使用的实时数据（`AppLink`：带校准状态和拒绝 ARM 原因的 `@live` 帧，端口缓冲区满时跳过该帧），以及 `scan` 和 `act X` 命令 |
 | `native/test_sim` | 18 | 整套固件与飞机模型的闭环飞行：从倾斜姿态改平、侧风中的 CRUISE、LOITER、RTH、failsafe RTH/滑翔、地理围栏、尾轮式自动起飞（尾轮载荷从不超过停机载荷，螺旋桨和机尾都不触及跑道，真实的姿态滤波器；有气压计和无气压计）、前轮式起飞、用油门中止的起飞、手抛起飞、自动降落、热气流、从螺旋中 RESCUE、速度保持与失速保护、回路中的真实皮托管、“歪”飞机的自动配平、飞行中的传感器故障（IMU、气压计、皮托管、GPS） |
+| `native/test_copter` | 41 | 逐个模块检查多旋翼：机架（电机数量、平衡、归一化、Betaflight 顺序、外旋桨、共轴对、用文字描述电机），混控器（零油门 airmode、先削减偏航、横滚与俯仰一起缩放、推力线性化），滤波器（PT1、PT2 在截止频率处 −3 dB、陷波、低通），电调协议（脉冲、DShot 帧和 CRC 对照参考值、位时序），动力系统模型对照 5" 台架数据，整个目录的参数（回路裕度、滤波器、TPA、不良机型的警告、PWM 使回路变窄、whoop 用 4 kHz），角速度环（P、I、I-relax、anti-gravity、anti-windup、基于测量值的 D、FF），四元数姿态（360° 翻滚、何时不信任加速度计），高度（气压计 + 加速度计、偏置、无气压计），定高，转速陷波，ARM 及每个拒绝原因，电机测试，地面信号丢失 |
+| `native/test_copter_sim` | 16 | 多旋翼闭环飞行（`QuadHarness`）：目录中全部 12 种机型——用各自的参数，以及在“迟钝”和“灵敏”的物理参数上——在 ALT_HOLD 中悬停并学习悬停油门，在 ANGLE 中按摇杆倾斜并改平，在 ACRO 中保持速率，信号丢失时降落并停转电机；在 5" 上——零油门 airmode、偏航、阵风、无气压计的 failsafe、PWM 电调、4 kHz 控制周期的 whoop、信号中断与恢复、背朝下摔落、电机故障、电机测试、电池压降 |
 | `native/test_takeoff` | 23 | 自动起飞和飞机地面校准：由“抬尾”姿态得到水平基准和停机姿态（`ImuOrientation`），滑跑时不用加速度计的姿态滤波器，真实 `ImuSensorBase` 闪存中的起落架校准（停在轮子上上电后的水平基准、`o` 清除停机姿态、陀螺仪零点修正），`GroundCalibration`（两个步骤、角度检查、取消、开关手势），`SignalPlayer`，`TakeoffController` 尾轮式和前轮式的各阶段，舵面控制律，中止起飞（油门、信号、IMU 故障、横滚、航向、机头、机尾、未离地），无气压计时按时间，“仅陀螺仪”窗口 |
 | `native/test_feedback_units` | 14 | 各反馈模块的单独测试：速度来源、空中/地面判断、RLS 估计、控制器、失速征兆、起飞/降落中止 |
 | `native/test_app` | 10 | 在 ESP32-S3 上运行 `src/main.cpp`，配台架套件 MPU6500/BMP581/QMC5883P/OLED：`loop()` 周期、遥控器 → 舵机、ARM、模式、信号丢失、控制台、仪表盘、屏幕、黑匣子（运行在核心 0 上的任务、按油门记录、DISARM 之后的飞行、`bb list`） |
@@ -122,10 +126,11 @@ python3 tools/check_mavlink.py /tmp/tlm.bin
 | `native_stm32/test_blackbox_sd` | 29 | SD 卡上的黑匣子：FAT32（有 MBR 与无 MBR、占两个簇的目录、噪声条目、他人的/碎片化的/空的卷）、`SdFileRegion`（不完整的块、缓存、擦除、边界、故障）、基于模拟 `HAL_SD` 的真实 `Stm32SdCard` 驱动（4 位、回退速率、重试、卡忙、未对齐的缓冲区）、卡上的环（重启、断电、核对开销）、“环为空”标记、在 `FlightController` 上记录飞行、通过 `RCC->RSR` 识别的异常重启、电池 ADC、飞行中的卡错误、慢速卡、通过控制台导出、`D` 键 |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | 带卡的 `src/stm32/main.cpp`：启动时能找到卡和文件、`bbox` 任务记录飞行、循环周期不被拉长、`bb list` |
 | `native_stm32/test_app_stm32_no_sd` | 4 | 不带卡的 `src/stm32/main.cpp`：黑匣子关闭并说明原因、飞机照常飞行、菜单 `k` 不出错；PD14 上的输出自检（绕过核心库 `pulseIn()` 的缺陷），电机提示 `e`；`Stm32UartPort` 上的 SBUS——8E2 与 RX 反相 |
+| `native_stm32/test_app_stm32_copter` | 5 | 在 **Matek H743-WING V3** 上运行 `src/stm32/main_copter.cpp`：启动时由描述得出参数，ARM 前 S1–S4 输出 OneShot125“停止”脉冲，ARM 需等待 IMU 安装校准，ARM 后怠速，由 SwC 开关切换模式，地面信号丢失——DISARM，且只有重新拨动开关才能再次 ARM，控制台（`t`、`s`、需确认的电机测试、一次一个电机、按键取消、ARM 时拒绝） |
 | `native_stm32/test_app_stm32_matek_h743` | 4 | 在 **Matek H743-WING V3** 上运行 `src/stm32/main.cpp`：板载传感器（SPI1 上的 ICM-42688-P、I2C2 上的 DPS310），单独的外部 I2C1 总线上的罗盘，带 `ext` 字段的 `@scan`，身份 `matek-h743`；带增稳的 ARM 等待安装校准（MANUAL 可以）；飞控板前后颠倒安装——三个姿态之后角度正确 |
 | `test_feedback` | 10 | 带反馈回路的飞机闭环仿真（在电脑和开发板上） |
 | `test_imu_orientation` | 5 | 在 300 种随机安装方式下校准 IMU 的安装姿态（在电脑和开发板上） |
-| **合计** | **460** | `native` 中 407 个 + `native-stm32` 中 53 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
+| **合计** | **522** | `native` 中 464 个 + `native-stm32` 中 58 个（另有 9 个仅在开发板上运行——`test_blackbox_sd`） |
 
 ### STM32 开发板上的测试
 
@@ -174,22 +179,24 @@ pio test -e stm32h743-devebox -f test_feedback -f test_imu_orientation
 |---|---|---|
 | `autopilot` | 1328/1395 (95.2%) | 921/1039 (88.6%) |
 | `autopilot/feedback` | 682/713 (95.7%) | 502/571 (87.9%) |
-| `config` | 2/2 (100%) | 2/2 (100%) |
-| `control` | 561/584 (96.1%) | 438/469 (93.4%) |
-| `hal` | 238/301 (79.1%) | 130/168 (77.4%) |
-| `hal/esp32` | 117/148 (79.1%) | 32/38 (84.2%) |
-| `hal/stm32` | 241/288 (83.7%) | 115/144 (79.9%) |
-| `rc` | 93/100 (93.0%) | 44/46 (95.7%) |
-| `sensors`（全部） | 1533/1625 (94.3%) | 835/994 (84.0%) |
+| `config` | 16/16 (100%) | 7/8 (87.5%) |
+| `control` | 568/591 (96.1%) | 447/479 (93.3%) |
+| `copter` | 1118/1132 (98.8%) | 608/670 (90.7%) |
+| `hal` | 239/306 (78.1%) | 130/170 (76.5%) |
+| `hal/esp32` | 121/152 (79.6%) | 34/40 (85.0%) |
+| `hal/stm32` | 303/364 (83.2%) | 148/197 (75.1%) |
+| `rc` | 201/211 (95.3%) | 126/134 (94.0%) |
+| `sensors`（全部） | 1561/1655 (94.3%) | 851/1014 (83.9%) |
 | `storage` | 350/364 (96.2%) | 275/334 (82.3%) |
-| `telemetry` | 2775/2920 (95.0%) | 2082/2464 (84.5%) |
-| `src`（`main.cpp`、`stm32/main.cpp`） | 145/150 (96.7%) | 26/32 (81.2%) |
-| **总计** | **8065/8590 (93.9%)** | **5402/6301 (85.7%)**；函数 1204/1245 (96.7%) |
+| `telemetry` | 3093/3277 (94.4%) | 2310/2789 (82.8%) |
+| `src`（`main.cpp`、`stm32/main.cpp`、`stm32/main_copter.cpp`） | 240/261 (92.0%) | 62/93 (66.7%) |
+| **总计** | **9820/10437 (94.1%)** | **6421/7538 (85.2%)**；函数 1432/1487 (96.3%) |
 
 仍未覆盖的部分及原因：
 
 - **手抛起飞**（`TakeoffSequencer`：`WaitLaunch`、`launchDetected()`）——当 `FeedbackConfig::TAKEOFF_HAND_LAUNCH = false` 时无法到达；等该常量可配置（迁入 `Config.h`）后，会加入测试。
 - **与开发板相关的部分**：没有引脚的输出（`PIN_RUDDER = -1` 只会出现在 C3 上）、没有 TX 引脚的 GPS（C3）——原生测试覆盖 S3、38 针版和 STM32 的引脚分配，但不覆盖 C3（C3 由构建矩阵检查）。
+- **STM32 上的多旋翼：**启动时的错误分支（目录中没有该机型、机架电机数多于输出、某个输出未能配置），多旋翼控制台中的 `D`/`i`/`o`——在电脑上，这些分支与飞机固件中已检查的分支相同。
 - **STM32**：内核的错误分支（引脚上没有定时器、定时器池耗尽）、消息 `FreeRTOS не запустился`（“FreeRTOS 未能启动”）——在电脑上 `vTaskStartScheduler()` 总是会返回。
 - **防御性分支**，无法通过公共 API 到达：对枚举做 `switch` 时的 `default`/`Count`、`return "?"`。
 - **接口中的析构函数和默认实现**（`IBoard`、`IUartPort`、`ImuSensor` 等）——所有实现都会覆盖它们，而开启 `-fkeep-inline-functions` 后 gcov 也会统计这些行。

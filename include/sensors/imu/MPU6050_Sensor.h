@@ -126,14 +126,16 @@ private:
         // (MPU6500), задержка ~5 мс. Срезает вибрацию мотора и винта
         // (10x5 на ~8000 об/мин — ~130 Гц), не добавляя заметного
         // запаздывания для стабилизации самолёта.
-        ok &= device.writeRegister(REG_CONFIG, 0x03);
+        // У коптера (Config::IMU_WIDE_BANDWIDTH) — DLPF_CFG=1: ~188 Гц, 1.9 мс.
+        const uint8_t dlpf = Config::IMU_WIDE_BANDWIDTH ? 0x01 : 0x03;
+        ok &= device.writeRegister(REG_CONFIG, dlpf);
         ok &= device.writeRegister(REG_SMPLRT_DIV, 0x00);    // 1 кГц — быстрее цикла
 
         // У MPU6500 фильтр акселерометра отдельный и по умолчанию
         // почти выключен (218 Гц) — ставим те же ~41 Гц.
         if (isMpu6500Family)
         {
-            ok &= device.writeRegister(REG_ACCEL_CONFIG2, 0x03);
+            ok &= device.writeRegister(REG_ACCEL_CONFIG2, dlpf);
         }
 
         return ok;

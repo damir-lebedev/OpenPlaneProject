@@ -38,6 +38,8 @@ tested in the air**. In other words: so far only manual control has flown; the a
 written, checked by everything that can be used to check it without flying, and is waiting for
 flight tests.
 
+The same firmware now also flies multicopters — quad, hex, octo, Y6 and X8 on the same STM32H743 boards: it derives the PID and filters itself from the copter description (frame, props, motors, battery, mass). This is checked by a 6-DOF simulator on 12 builds from a whoop to a hex with 15" props — including physics that deliberately does not match the description — but it has **not flown yet** either ([COPTER.md](COPTER.md)).
+
 ## 2. Why this matters
 
 Autonomous small aviation with a low barrier to entry covers tasks where what decides
@@ -223,6 +225,14 @@ For now the GPS/compass data are available through `Autopilot::getGpsSensor()`/`
 
 **Goal:** managing several aircraft at the same time — task dispatching, an operations panel, flight history. This is the level at which the project stops being only an engineering hobby prototype and becomes an operational tool, interesting as a business problem: route planning for several aircraft, a task queue, the status of each aircraft in real time. Technically this is a superstructure over Phases 3–6 (GPS, telemetry, GUI) — in effect the same `WebDebugServer` API, but extended to many telemetry sources instead of one.
 
+### Multicopters — the same firmware [in the firmware, checked by a simulator]
+
+**Goal:** one code base for airplanes and copters, so that delivery and monitoring can pick the aircraft for the task, not for the firmware.
+
+**Done:** frames from a quad to an X8, a mixer with airmode, a rate loop whose PID and filters are derived from a model of the motor and prop (12 dB gain margin — holds a copter whose thrust and inertia are off by a factor of two), quaternion attitude, altitude hold with hover throttle learning, rpm notches, failsafe with landing, protection against flip-over and motor failure, PWM/OneShot/Multishot ESCs, a console with a motor test. Checked by closed-loop flights of 12 builds × 3 physics variants and by the whole firmware on Matek H743 fakes.
+
+**Next:** DShot with DMA (and bidirectional — exact rpm), a 4 kHz loop for whoops, black box and MAVLink for the copter, OpenPlane Studio, GPS position hold and return, flight tests.
+
 ## 6. GUI: from a debugging page to a ground station
 
 The key thesis of this section: the GUI does not need to be built from scratch — it already partly exists and works. Today `WebDebugServer.h`:
@@ -245,6 +255,7 @@ In other words, the element of the future ground station that is the riskiest in
 So that the roadmap does not read like marketing, we record separately what has not been done yet or has been done only partially:
 
 - The autopilot has been verified on the bench, by 395 automated tests and by closed-loop simulations, but it has never been tested in flight — so far only manual control has flown (on the first prototype). The airplane model in the simulations is simplified, and the coefficients are starting values.
+- The multicopter firmware is checked by a simulator and on board fakes, not in the air. ESCs are analog only for now (PWM, OneShot, Multishot); DShot is the next stage.
 - The new sensors (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) have been verified by register emulators built from the datasheets; on hardware, not yet.
 - STM32H743: the whole firmware runs on a PC on top of STM32duino fakes; there is no physical board yet.
 - The horizon for stabilization is the attitude of the aircraft at power-on (the IMU calibrates at every start), or the mounting calibration from three poses.

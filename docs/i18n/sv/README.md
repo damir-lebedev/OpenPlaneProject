@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-460%20passing-3fb950?style=for-the-badge" alt="460 tester">
+  <img src="https://img.shields.io/badge/tests-522%20passing-3fb950?style=for-the-badge" alt="522 tester">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94 % testtäckning">
   <img src="https://img.shields.io/badge/builds-33%2F33%20clean-3fb950?style=for-the-badge" alt="33 byggen utan varningar">
   <br>
@@ -60,8 +60,9 @@
 |---|---|
 | **Vad det är** | En öppen flygkontroller och autopilot för radiostyrda flygplan. Huvudkortet är STM32H743 (ett kort i Pixhawk-klassen): på ett DevEBox-kort är firmwaren **redan igång och styrs från sändaren** – [det finns en video](#-stm32h743-har-vaknat-till-liv-på-kortet), och sensorerna kopplas in just nu. Den tidigare basen är en ESP32-S3 för cirka 10 $, som klarade testbänken med alla sensorer. |
 | **Vad den kan** | 12 flyglägen – från stabilisering till hemflygning, GPS-cirklar, handstart, autolandning och **termikflygning**. Ett pitotrör av två billiga barometrar. MAVLink-telemetri till QGroundControl och Mission Planner. |
+| **Multikoptrar** | Samma firmware för quads, hexor, oktor, Y6 och X8: du beskriver ram, propellrar, motorer och batteri, och firmwaren härleder PID och filter själv ur en fysikalisk modell. Hittills kontrollerat i simulator – [COPTER.md](COPTER.md). |
 | **Huvudtricket** | Vilken brytare eller ratt som helst på sändaren = vilken funktion som helst. **En rad** i `Controls.h` – och SwD är inte längre motorreversering utan lastsläpp. |
-| **Varför man kan lita på den** | 460 automatiska tester (plus 9 på själva kortet med ett riktigt SD-kort), 94 % av koden täckt av tester, 33 bygg ”kort × sensorer” utan en enda varning, simuleringar i sluten slinga av varje läge. |
+| **Varför man kan lita på den** | 522 automatiska tester (plus 9 på själva kortet med ett riktigt SD-kort), 94 % av koden täckt av tester, 33 bygg ”kort × sensorer” utan en enda varning, simuleringar i sluten slinga av varje läge. |
 | **Ärligt talat** | Hittills har bara manuellt läge flugit (den första prototypen). STM32H743 har hittills bara provats på bänken, utan sensorer. Autopiloten är verifierad på bänken, med tester och simuleringar och väntar på flygprov – [status nedan](#-ärlig-status). |
 
 ---
@@ -130,6 +131,25 @@ Inte ”en funktion returnerade ett tal”, utan en **flygning**: sändare → i
     <td>🌬️ Lufthastighet från ett rör av två <b>brusiga</b> barometrar med 150 Pa skillnad mellan kretsarna – felet är under 0,5 m/s.</td>
   </tr>
 </table>
+
+---
+
+## 🚁 Multikoptrar: beskriv koptern – inställningen är klar
+
+Quad, hexa, okto, Y6, X8 – på samma kort. **PID, filter, tomgång och rates ställs inte in för hand**: i `CopterConfig.h` står ram, propeller, motor, batteri och massa (eller ett färdigt bygge ur katalogen: från en 65 mm-whoop till en hexa med 15"-propellrar), och resten härleder firmwaren ur en modell av motor och propeller – med en marginal som klarar en kopter vars dragkraft och tröghet är fel med en faktor två. Under flygning lär den sig hovringsgasen själv och flyttar notchfiltren efter motorernas varvtal.
+
+| | |
+|---|---|
+| **Lägen** | ACRO (airmode), HORIZON, ANGLE, ALT_HOLD – med brytaren SwC |
+| **Skydd** | ARM bara när alla kontroller går igenom (varje avslagsorsak i ord), förlorad förbindelse → plant läge, sjunkning och DISARM på marken, vält och motorfel → motorerna stannar |
+| **Fartreglage** | PWM, OneShot125/42, Multishot; DShot är nästa steg |
+| **Kontrollerat** | 12 byggen × 3 varianter av ”fel” fysik i en simulator med 6 frihetsgrader: hovring ±0,3 m, lutning efter spaken på 0,14–0,35 s, landning vid förlorad förbindelse. **Inte i luften än** |
+
+```bash
+pio run -e matek-h743-quad -t upload    # sedan i konsolen: t – inställning, m – motorer (propellrarna av!)
+```
+
+Mer – [COPTER.md](COPTER.md).
 
 ---
 
@@ -208,9 +228,9 @@ Vad det bevisar: kedjan ”sändare → iBUS → firmware → PWM” fungerar p�
 
 | | |
 |---|---|
-| **460 automatiska tester** | moduler, kretsdrivrutiner kontrollerade på registernivå, flygningar i sluten slinga, firmwaren för ESP32 och STM32 **i sin helhet** på en dator; plus 9 tester på själva STM32-kortet med ett riktigt SD-kort |
-| **93,9 % av raderna, 85,7 % av grenarna** | täckning med `gcovr`, inklusive STM32-koden |
-| **33/33 bygg** | 4 kort × 7 sensorsatser + Matek H743, `-Wall -Wextra`, noll varningar |
+| **522 automatiska tester** | moduler, kretsdrivrutiner kontrollerade på registernivå, flygningar i sluten slinga, firmwaren för ESP32 och STM32 **i sin helhet** på en dator; plus 9 tester på själva STM32-kortet med ett riktigt SD-kort |
+| **94,1 % av raderna, 85,2 % av grenarna** | täckning med `gcovr`, inklusive STM32-koden |
+| **33/33 bygg** | 4 kort × 7 sensorsatser + Matek H743, `-Wall -Wextra`, noll varningar; plus 2 kopterbyggen |
 | **0 anmärkningar** | cppcheck och clang-tidy över all kod |
 | **Referenser, inte kopior av kod** | sensorformlerna följer databladen (Bosch, ST, TDK, Goertek), MAVLink följer pymavlink |
 
@@ -254,6 +274,7 @@ pio run -e stm32h743-devebox -t upload                    # DevEBox H743: USB DF
 pio run -e matek-h743 -t upload                           # Matek H743-WING V3: BOOT-knappen + USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
+pio run -e matek-h743-quad -t upload                      # multikopter på Matek H743 (COPTER.md)
 ```
 
 DevEBox: kortet har ingen BOOT0-knapp – före den första uppladdningen ansluter du stiftet BT0 till 3V3 och trycker på RST; därefter startar tangenten `D` i konsolen om kortet i bootloadern av sig självt ([detaljer](DEVELOPER_GUIDE.md#stm32h743)).
@@ -279,6 +300,7 @@ I seriemonitorn: `h` – meny, `b` – vilka kretsar som syns på bussarna, `s` 
 | SBUS- och CRSF-mottagare (ExpressLRS) | 🧪 tester: ramtolkning, failsafe, inverterad UART; ännu inte provade med en riktig mottagare |
 | Matek H743-WING V3: sensorer på kortet, extern I2C-buss, IMU:ns monteringskalibrering | 🧪 hela firmwaren på datorn; ännu inte provad på ett riktigt kort |
 | STM32H743: sensorer (IMU, barometer, kompass, GPS) och autopilotlägen | 🧪 hela firmwaren på en dator; inga sensorer anslutna till kortet ännu |
+| Multikoptrar: inställning ur beskrivningen, lägen, failsafe, skydd | 🧪 simulator med 6 frihetsgrader (12 byggen × 3 fysikvarianter) och hela firmwaren på datorn; inte i luften än |
 
 Flygplansmodellen i simuleringarna är förenklad, och koefficienterna är startvärden. Varje nytt läge provas först på höjd, med fingret på MANUAL-brytaren.
 
@@ -299,7 +321,9 @@ Flygplansmodellen i simuleringarna är förenklad, och koefficienterna är start
 - [x] Appen [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): inställning steg för steg, flashning med en knapp, kontroller på marken
 - [x] SBUS- och CRSF-mottagare (ExpressLRS, TBS Crossfire) vid sidan av iBUS – väljs i `Config.h` eller i OpenPlane Studio
 - [x] Färdig flygkontroller Matek H743-WING V3: sensorer på kortet, flashning med en knapp (ännu inte provad på hårdvara)
+- [x] Multikoptrar (quad, hexa, okto, Y6, X8): inställning härledd ur kopterns beskrivning, kontrollerad i simulator
 - [ ] STM32H743: koppla in sensorerna och gå igenom bänken på samma sätt som med ESP32-S3
+- [ ] Kopter: DShot, 4 kHz-cykel, svart låda och MAVLink, flygprov
 - [ ] Populära flygkontroller med STM32F405: SpeedyBee F405 WING, Matek F405-WTE
 - [ ] Flygprov av autopiloten på den nya flygplansstommen
 - [ ] Ett eget flygkontrollerkort ([FC_BOARD.md](FC_BOARD.md)) med STM32H743
@@ -324,6 +348,7 @@ Det som redan är gjort med egna resurser: en arkitektur som flyttar mellan kort
 
 | Dokument | För vem |
 |---|---|
+| [COPTER.md](COPTER.md) | multikoptrar: katalog över byggen, din egen kopter, första start, lägen, skydd, hur det kontrollerades |
 | [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md) | piloten: varje läge, funktion och ratt, hur de läggs på en brytare, pitotröret, markstationen |
 | [PILOT_GUIDE.md](PILOT_GUIDE.md) | montering, stiftbeläggning, sändare, failsafe, första flygningen |
 | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | utvecklaren: filer, teckenkonventioner, API, hur man lägger till en sensor, ett läge eller ett kort |

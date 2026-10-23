@@ -38,6 +38,8 @@ provats i luften**. Med andra ord: hittills har bara manuell styrning flugit; au
 skriven, kontrollerad med allt som går att kontrollera den med utan att flyga, och väntar på
 flygprov.
 
+Samma firmware flyger nu också multikoptrar – quad, hexa, okto, Y6 och X8 på samma STM32H743-kort: PID och filter härleder den själv ur kopterns beskrivning (ram, propellrar, motorer, batteri, massa). Det är kontrollerat med en simulator med 6 frihetsgrader på 12 byggen från en whoop till en hexa med 15"-propellrar – även med fysik som med avsikt inte stämmer med beskrivningen – men har inte heller **flugit än** ([COPTER.md](COPTER.md)).
+
 ## 2. Varför detta är viktigt
 
 Autonom småskalig luftfart med låg inträdesbarriär täcker uppgifter där det avgörande
@@ -223,6 +225,14 @@ Tills vidare är GPS-/kompassdata tillgängliga via `Autopilot::getGpsSensor()`/
 
 **Mål:** att hantera flera farkoster samtidigt – uppgiftsfördelning, en driftpanel, flyghistorik. Det är den nivå där projektet slutar vara bara en ingenjörsmässig hobbyprototyp och blir ett operativt verktyg, intressant som affärsproblem: ruttplanering för flera farkoster, en uppgiftskö, status för varje farkost i realtid. Tekniskt är detta en överbyggnad över faserna 3–6 (GPS, telemetri, gränssnitt) – i praktiken samma `WebDebugServer`-API, men utvidgat till många telemetrikällor i stället för en.
 
+### Multikoptrar – samma firmware [i firmwaren, kontrollerat i simulator]
+
+**Mål:** en kodbas för flygplan och koptrar, så att leverans och övervakning kan välja farkost efter uppgiften och inte efter firmwaren.
+
+**Klart:** ramar från quad till X8, en mixer med airmode, en vinkelhastighetsslinga vars PID och filter härleds ur en modell av motor och propeller (12 dB förstärkningsmarginal – klarar en kopter vars dragkraft och tröghet är fel med en faktor två), orientering som kvaternion, höjdhållning med inlärd hovringsgas, varvtalsnotchar, failsafe med landning, skydd mot vält och motorfel, fartreglage med PWM/OneShot/Multishot, en konsol med motortest. Kontrollerat med flygningar i sluten slinga av 12 byggen × 3 fysikvarianter och med hela firmwaren på attrapper av Matek H743.
+
+**Härnäst:** DShot med DMA (även dubbelriktat – exakt varvtal), en 4 kHz-cykel för whoops, svart låda och MAVLink för koptern, OpenPlane Studio, positionshållning och hemflygning med GPS, flygprov.
+
 ## 6. Gränssnitt: från en felsökningssida till en markstation
 
 Den här sektionens huvudtes: gränssnittet behöver inte byggas från grunden – det finns redan delvis och fungerar. I dag gör `WebDebugServer.h` följande:
@@ -245,6 +255,7 @@ Med andra ord: den del av den framtida markstationen som är mest riskabel i fr�
 För att färdplanen inte ska läsas som marknadsföring redovisar vi separat vad som ännu inte har gjorts eller bara har gjorts delvis:
 
 - Autopiloten har verifierats på bänken, med 395 automatiska tester och simuleringar i sluten slinga, men den har aldrig provats under flygning – hittills har bara manuell styrning flugit (på den första prototypen). Flygplansmodellen i simuleringarna är förenklad, och koefficienterna är startvärden.
+- Multikopter-firmwaren är kontrollerad med en simulator och på kortattrapper, inte i luften. Fartreglagen är än så länge bara analoga (PWM, OneShot, Multishot); DShot är nästa steg.
 - De nya sensorerna (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) har verifierats med registeremulatorer byggda efter databladen; på hårdvara ännu inte.
 - STM32H743: hela firmwaren körs på en dator ovanpå STM32duino-attrapper; det finns ännu inget fysiskt kort.
 - Horisonten för stabiliseringen är farkostens attityd vid start (IMU:n kalibreras vid varje start), eller monteringskalibreringen från tre positioner.

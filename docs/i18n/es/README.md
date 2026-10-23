@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-460%20passing-3fb950?style=for-the-badge" alt="460 pruebas">
+  <img src="https://img.shields.io/badge/tests-522%20passing-3fb950?style=for-the-badge" alt="522 pruebas">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="cobertura del 94 %">
   <img src="https://img.shields.io/badge/builds-33%2F33%20clean-3fb950?style=for-the-badge" alt="33 compilaciones sin avisos">
   <br>
@@ -60,8 +60,9 @@
 |---|---|
 | **Qué es** | Un controlador de vuelo y piloto automático abiertos para aviones de radiocontrol. La placa principal es la STM32H743 (una placa de la clase Pixhawk): en una placa DevEBox el firmware **ya está en marcha y se pilota con la emisora** ([hay vídeo](#-la-stm32h743-cobra-vida-en-la-placa)), y ahora se están conectando los sensores. La base anterior es un ESP32-S3 de unos 10 $, que pasó el banco con todos los sensores. |
 | **Qué hace** | 12 modos de vuelo: desde la estabilización hasta el regreso a casa, círculos por GPS, lanzamiento a mano, aterrizaje automático y **vuelo a vela en térmicas**. Un tubo de Pitot hecho con dos barómetros baratos. Telemetría MAVLink para QGroundControl y Mission Planner. |
+| **Multicópteros** | El mismo firmware para cuadricópteros, hexas, octos, Y6 y X8: describes el chasis, las hélices, los motores y la batería, y el firmware deduce por sí mismo los PID y los filtros a partir de un modelo físico. De momento, comprobado en simulador — [COPTER.md](COPTER.md). |
 | **Lo principal** | Cualquier interruptor o potenciómetro de la emisora = cualquier función. **Una línea** en `Controls.h` y SwD deja de ser la inversión del motor para convertirse en lanzamiento de carga. |
-| **Por qué fiarse** | 460 pruebas automáticas (y 9 más en la propia placa, con una tarjeta SD real), el 94 % del código cubierto por pruebas, 33 compilaciones «placa × sensores» sin un solo aviso y simulaciones en lazo cerrado de cada modo. |
+| **Por qué fiarse** | 522 pruebas automáticas (y 9 más en la propia placa, con una tarjeta SD real), el 94 % del código cubierto por pruebas, 33 compilaciones «placa × sensores» sin un solo aviso y simulaciones en lazo cerrado de cada modo. |
 | **Con honestidad** | De momento solo ha volado el modo manual (el primer prototipo). La STM32H743 solo se ha probado en el banco, sin sensores. El piloto automático se ha verificado en el banco, con pruebas y con simulaciones, y está a la espera de los ensayos en vuelo: [estado más abajo](#-estado-real). |
 
 ---
@@ -130,6 +131,25 @@ No es «una función devolvió un número», sino un **vuelo**: emisora → tram
     <td>🌬️ Velocidad del aire con un tubo hecho de dos barómetros <b>ruidosos</b>, con un desfase de 150 Pa entre los chips: el error es inferior a 0.5 m/s.</td>
   </tr>
 </table>
+
+---
+
+## 🚁 Multicópteros: describe el cóptero y el ajuste está listo
+
+Cuadricóptero, hexa, octo, Y6, X8, en las mismas placas. **Los PID, los filtros, el ralentí y las tasas no se ajustan a mano**: en `CopterConfig.h` van el chasis, la hélice, el motor, la batería y la masa (o un montaje listo del catálogo: desde un whoop de 65 mm hasta un hexa con hélices de 15"), y el resto lo deduce el firmware a partir de un modelo del motor y la hélice, con un margen que aguanta un cóptero cuyo empuje e inercia están equivocados por un factor de dos. En vuelo aprende solo el gas de estacionario y mueve los notches con las rpm de los motores.
+
+| | |
+|---|---|
+| **Modos** | ACRO (airmode), HORIZON, ANGLE, ALT_HOLD, desde el interruptor SwC |
+| **Protecciones** | ARM solo si pasan todas las comprobaciones (cada motivo de rechazo con palabras), pérdida de señal → nivelación, descenso y DISARM en el suelo, vuelco y fallo de motor → motores parados |
+| **Variadores** | PWM, OneShot125/42, Multishot; DShot es la siguiente etapa |
+| **Comprobado** | 12 montajes × 3 variantes de física «equivocada» en un simulador de 6 grados de libertad: estacionario ±0.3 m, inclinación con el stick en 0.14–0.35 s, aterrizaje con pérdida de señal. **Todavía no en el aire** |
+
+```bash
+pio run -e matek-h743-quad -t upload    # luego en la consola: t — ajuste, m — motores (¡sin hélices!)
+```
+
+Detalles — [COPTER.md](COPTER.md).
 
 ---
 
@@ -208,9 +228,9 @@ Lo que esto demuestra: la cadena «emisora → iBUS → firmware → PWM» funci
 
 | | |
 |---|---|
-| **460 pruebas automáticas** | módulos, controladores comprobados a nivel de registros del chip, vuelos en lazo cerrado, el firmware de ESP32 y STM32 **completo** en el PC; además, 9 pruebas en la propia placa STM32 con una tarjeta SD real |
-| **93.9 % de líneas, 85.7 % de ramas** | cobertura de `gcovr`, incluido el código de STM32 |
-| **33/33 compilaciones** | 4 placas × 7 kits de sensores + Matek H743, `-Wall -Wextra`, cero avisos |
+| **522 pruebas automáticas** | módulos, controladores comprobados a nivel de registros del chip, vuelos en lazo cerrado, el firmware de ESP32 y STM32 **completo** en el PC; además, 9 pruebas en la propia placa STM32 con una tarjeta SD real |
+| **94.1 % de líneas, 85.2 % de ramas** | cobertura de `gcovr`, incluido el código de STM32 |
+| **33/33 compilaciones** | 4 placas × 7 kits de sensores + Matek H743, `-Wall -Wextra`, cero avisos; además, 2 compilaciones de cóptero |
 | **0 observaciones** | cppcheck y clang-tidy sobre todo el código |
 | **Referencias, no copias de código** | las fórmulas de los sensores siguen las hojas de datos (Bosch, ST, TDK, Goertek) y MAVLink sigue pymavlink |
 
@@ -254,6 +274,7 @@ pio run -e stm32h743-devebox -t upload                    # DevEBox H743: USB DF
 pio run -e matek-h743 -t upload                           # Matek H743-WING V3: botón BOOT + USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
+pio run -e matek-h743-quad -t upload                      # multicóptero en la Matek H743 (COPTER.md)
 ```
 
 DevEBox: la placa no tiene botón BOOT0; antes de la primera carga, une el pin BT0 con 3V3 y pulsa RST. Después, la tecla `D` de la consola reinicia la placa en el cargador de arranque por sí sola ([más detalles](DEVELOPER_GUIDE.md#stm32h743)).
@@ -279,6 +300,7 @@ En el monitor serie: `h`, menú; `b`, qué chips se ven en los buses; `s`, senso
 | Receptores SBUS y CRSF (ExpressLRS) | 🧪 pruebas: análisis de tramas, failsafe, UART invertida; aún no probados con un receptor real |
 | Matek H743-WING V3: sensores en la placa, bus I2C externo, calibración de montaje de la IMU | 🧪 todo el firmware en el PC; aún sin probar en una placa real |
 | STM32H743: sensores (IMU, barómetro, brújula, GPS) y modos del piloto automático | 🧪 todo el firmware en el PC; aún no hay sensores conectados a la placa |
+| Multicópteros: ajuste a partir de la descripción, modos, failsafe, protecciones | 🧪 simulador de 6 grados de libertad (12 montajes × 3 variantes de física) y el firmware completo en el PC; todavía no en el aire |
 
 El modelo de avión de las simulaciones está simplificado y los coeficientes son valores iniciales. Cada modo nuevo se prueba primero en altura, con el dedo sobre el interruptor MANUAL.
 
@@ -299,7 +321,9 @@ El modelo de avión de las simulaciones está simplificado y los coeficientes so
 - [x] La aplicación [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): configuración paso a paso, grabación con un botón, puesta a punto en tierra
 - [x] Receptores SBUS y CRSF (ExpressLRS, TBS Crossfire) junto a iBUS: se eligen en `Config.h` o en OpenPlane Studio
 - [x] Controladora lista para usar Matek H743-WING V3: sensores en la placa, flasheo con un botón (aún sin probar en hardware)
+- [x] Multicópteros (cuadricóptero, hexa, octo, Y6, X8): ajuste deducido de la descripción del cóptero, comprobado en simulador
 - [ ] STM32H743: conectar los sensores y pasar el banco igual que con la ESP32-S3
+- [ ] Cóptero: DShot, ciclo de 4 kHz, caja negra y MAVLink, pruebas de vuelo
 - [ ] Controladoras populares con STM32F405: SpeedyBee F405 WING, Matek F405-WTE
 - [ ] Ensayos en vuelo del piloto automático con el nuevo avión
 - [ ] Una placa de controlador de vuelo propia ([FC_BOARD.md](FC_BOARD.md)) con la STM32H743
@@ -324,6 +348,7 @@ Lo que ya se ha hecho con recursos propios: una arquitectura que se traslada de 
 
 | Documento | Para quién |
 |---|---|
+| [COPTER.md](COPTER.md) | multicópteros: catálogo de montajes, tu propio cóptero, primer arranque, modos, protecciones, cómo se comprobó |
 | [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md) | el piloto: cada modo, función y potenciómetro, cómo asignarlos a un interruptor, el tubo de Pitot, la estación de tierra |
 | [PILOT_GUIDE.md](PILOT_GUIDE.md) | montaje, asignación de pines, emisora, failsafe, primer vuelo |
 | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | el desarrollador: archivos, convenio de signos, API, cómo añadir un sensor, un modo o una placa |

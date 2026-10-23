@@ -163,11 +163,12 @@ struct PinMap
 
 // Пины сервовыходов Config.h — как в PeripheralPins вариантов WeAct и
 // DevEBox H743: TIM2 CH1..4, TIM4 CH3/CH4, TIM1 CH1; у Matek H743 ещё
-// PB0 (TIM1 CH2N — N-канал фейку не важен) и PD12/PD13 (TIM4 CH1/CH2).
+// PB0/PB1 (TIM1 CH2N/CH3N — N-канал фейку не важен) и PD12/PD13 (TIM4
+// CH1/CH2).
 inline const PinMap PinMap_TIM[] = {
     { PA0, 2, 1 }, { PA1, 2, 2 }, { PA2, 2, 3 }, { PA3, 2, 4 },
     { PD14, 4, 3 }, { PD15, 4, 4 }, { PE9, 1, 1 },
-    { PB0, 1, 2 }, { PD12, 4, 1 }, { PD13, 4, 2 },
+    { PB0, 1, 2 }, { PB1, 1, 3 }, { PD12, 4, 1 }, { PD13, 4, 2 },
     { 0xFFFFFFFFu, 0, 0 },
 };
 
@@ -194,13 +195,20 @@ inline int pinmap_function(PinName pin, const PinMap* map)
 #define STM_PIN_CHANNEL(function) (static_cast<uint32_t>(function))
 
 enum TimerModes_t { TIMER_OUTPUT_COMPARE_PWM1 = 6 };
-enum TimerFormat_t { MICROSEC_FORMAT, MICROSEC_COMPARE_FORMAT };
+enum TimerFormat_t { MICROSEC_FORMAT, MICROSEC_COMPARE_FORMAT, TICK_FORMAT, TICK_COMPARE_FORMAT };
 
 class HardwareTimer
 {
 public:
     void setup(TIM_TypeDef* timerInstance) { instance = timerInstance; }
-    void setOverflow(uint32_t value, TimerFormat_t) { periodUs = value; }
+    void setOverflow(uint32_t value, TimerFormat_t format = TICK_FORMAT)
+    {
+        overflow = value;
+        overflowFormat = format;
+        periodUs = format == TICK_FORMAT ? value * prescaler / (getTimerClkFreq() / 1000000u) : value;
+    }
+    void setPrescaleFactor(uint32_t value) { prescaler = value; }
+    uint32_t getTimerClkFreq() const { return 240000000u; }   // APB-таймеры H743 при 480 МГц
 
     void setMode(uint32_t channel, TimerModes_t, PinName pin)
     {
@@ -208,10 +216,15 @@ public:
         fake::timerPulses()[pin] = 0;
     }
 
-    void setCaptureCompare(uint32_t channel, uint32_t value, TimerFormat_t)
+    void setCaptureCompare(uint32_t channel, uint32_t compare, TimerFormat_t format)
     {
         if (channel >= 5) return;
         const uint32_t pin = channelPin[channel];
+        // в тиках (выходы мотора) — переводим в мкс по делителю
+        const uint32_t value = format == TICK_COMPARE_FORMAT
+                                   ? static_cast<uint32_t>((static_cast<uint64_t>(compare) * prescaler * 1000000u + getTimerClkFreq() / 2) / getTimerClkFreq())
+                                   : compare;
+        lastCompare[channel] = compare;
         fake::timerPulses()[pin] = static_cast<long>(value);
         // pulseIn() видит импульс таймера (вход GPIO STM32 читает пин в AF-режиме).
         // Как у настоящего ядра: на пинах с номером бита 8+ (PD14, PE9...)
@@ -230,6 +243,10 @@ public:
 
     TIM_TypeDef* instance = nullptr;
     uint32_t periodUs = 0;
+    uint32_t overflow = 0;
+    uint32_t prescaler = 1;
+    TimerFormat_t overflowFormat = MICROSEC_FORMAT;
     bool running = false;
     uint32_t channelPin[5] = {};
+    uint32_t lastCompare[5] = {};
 };

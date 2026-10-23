@@ -15,6 +15,8 @@ Der aktuelle Aufbau ist auf den ESP32-S3 (N16R8) umgezogen, mit einem Motor D354
 
 Seitdem hat die Firmware 12 Autopilot-Modi bekommen (Stabilisierung, Höhenhaltung, Reiseflug, Kreise und Rückkehr zum Startpunkt per GPS, Handstart, automatische Landung, Segelflug in Thermik, „Rettung“), einen Geofence, die Rückkehr zum Startpunkt bei Signalverlust, Lastabwurf, ein Pitotrohr aus zwei Barometern, Unterstützung neuer Sensoren (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) und eine vollständige Firmware für den STM32H743 mit MAVLink-Telemetrie für QGroundControl. All das wurde durch 395 automatisierte Tests und geschlossene Flugsimulationen überprüft (die gesamte Firmware fliegt ein Flugzeugmodell), ist aber **in der Luft noch nicht erprobt**. Mit anderen Worten: Bisher ist nur die manuelle Steuerung geflogen; der Autopilot ist geschrieben, mit allem geprüft, was sich ohne Flug prüfen lässt, und wartet auf die Flugtests.
 
+Dieselbe Firmware fliegt jetzt auch Multicopter – Quad, Hexa, Okto, Y6 und X8 auf denselben STM32H743-Boards: PID und Filter leitet sie selbst aus der Beschreibung des Copters ab (Rahmen, Propeller, Motoren, Akku, Masse). Das ist mit einem Simulator mit 6 Freiheitsgraden an 12 Builds vom Whoop bis zum Hexa mit 15"-Propellern geprüft – auch mit Physik, die absichtlich nicht zur Beschreibung passt –, ist aber ebenfalls **noch nicht geflogen** ([COPTER.md](COPTER.md)).
+
 ## 2. Warum das wichtig ist
 
 Autonome Kleinluftfahrt mit niedriger Einstiegshürde deckt Aufgaben ab, bei denen nicht die maximale Nutzlast oder Reichweite entscheidet, sondern die Reaktionsgeschwindigkeit und niedrige Betriebskosten:
@@ -135,6 +137,14 @@ Derzeit sind die GPS-/Kompassdaten über `Autopilot::getGpsSensor()`/`getMagneto
 
 **Ziel:** mehrere Fluggeräte gleichzeitig verwalten – Aufgabenverteilung, ein Betriebspanel, Flugverlauf. Das ist die Ebene, auf der das Projekt nicht mehr nur ein ingenieurmäßiger Hobby-Prototyp ist, sondern zu einem Betriebswerkzeug wird, das als geschäftliche Aufgabe interessant ist: Routenplanung für mehrere Fluggeräte, eine Aufgabenwarteschlange, der Status jedes Fluggeräts in Echtzeit. Technisch ist das ein Aufbau auf den Phasen 3–6 (GPS, Telemetrie, GUI) – im Grunde dieselbe API von `WebDebugServer`, aber auf viele Telemetriequellen statt auf eine erweitert.
 
+### Multicopter – dieselbe Firmware [in der Firmware, im Simulator geprüft]
+
+**Ziel:** eine Codebasis für Flugzeuge und Copter, damit Lieferung und Überwachung das Fluggerät nach der Aufgabe wählen können, nicht nach der Firmware.
+
+**Erledigt:** Rahmen vom Quad bis zum X8, ein Mischer mit Airmode, ein Drehratenregler, dessen PID und Filter aus einem Modell von Motor und Propeller abgeleitet werden (12 dB Amplitudenreserve – hält einen Copter aus, dessen Schub und Trägheit um den Faktor zwei „falsch“ sind), Lage als Quaternion, Höhenhaltung mit gelerntem Schwebegas, Drehzahl-Notches, Failsafe mit Landung, Schutz gegen Überschlag und Motorausfall, ESCs mit PWM/OneShot/Multishot, eine Konsole mit Motortest. Geprüft mit Flügen im geschlossenen Regelkreis von 12 Builds × 3 Physik-Varianten und mit der ganzen Firmware auf Fakes des Matek H743.
+
+**Als Nächstes:** DShot mit DMA (auch bidirektional – genaue Drehzahl), ein 4-kHz-Zyklus für Whoops, Blackbox und MAVLink für den Copter, OpenPlane Studio, Positionshalten und Rückkehr per GPS, Flugtests.
+
 ## 6. GUI: von einer Fehlersuchseite zur Bodenstation
 
 Die Kernthese dieses Abschnitts: Die GUI muss nicht von Grund auf gebaut werden – sie existiert teilweise bereits und funktioniert. `WebDebugServer.h` heute:
@@ -157,6 +167,7 @@ Mit anderen Worten: Das Element der künftigen Bodenstation, das unter dem Gesic
 Damit die Roadmap nicht wie Marketing wirkt, halten wir gesondert fest, was noch nicht oder nur teilweise erledigt ist:
 
 - Der Autopilot wurde auf dem Prüfstand, mit 395 automatisierten Tests und mit geschlossenen Simulationen geprüft, aber nie im Flug erprobt – bisher ist nur die manuelle Steuerung geflogen (am ersten Prototyp). Das Flugzeugmodell in den Simulationen ist vereinfacht, die Koeffizienten sind Startwerte.
+- Die Multicopter-Firmware ist mit einem Simulator und auf Board-Fakes geprüft, nicht in der Luft. ESCs vorerst nur analog (PWM, OneShot, Multishot); DShot ist die nächste Stufe.
 - Die neuen Sensoren (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) wurden mit Registeremulatoren nach den Datenblättern geprüft; auf der Hardware noch nicht.
 - STM32H743: Die gesamte Firmware läuft auf einem PC über STM32duino-Fakes; ein physisches Board gibt es noch nicht.
 - Der Horizont für die Stabilisierung ist die Lage des Fluggeräts beim Einschalten (die IMU kalibriert sich bei jedem Start) oder die Einbaukalibrierung aus drei Lagen.

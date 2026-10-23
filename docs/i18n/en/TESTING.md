@@ -85,6 +85,8 @@ Added to the shared fakes for STM32: `TwoWire(sda, scl)`, `setSDA/SCL` and `fake
 |---|---|
 | `ChipEmulators.h` | LSM6DSV, ICM-42688-P, ICM-45686 (with IPREG indirect registers), QMC6309, SPL06-001, BMP581, u-blox NAV-PVT frames — register maps on I2C or SPI, with data from the `World` "world" (angles and rates, altitude, airspeed, heading, coordinates), in the chip's axes with `IMU_ROTATION_CW_DEG` taken into account |
 | `PlaneSim.h` | a ~1.2 kg airplane model: a point mass + rotation in roll/pitch, CL(α) with stall, drag, thrust, wind, thermals, ground; landing gear with a tail wheel or a nose wheel — the airplane rocks on its main wheels, the tail-wheel load, tail strikes and propeller strikes are counted, ground yaw with propeller torque and the steering wheel |
+| `QuadSim.h` | 6-DOF multicopter model: every motor is the same model as in `copter/Propulsion.h` (current through resistance and back-EMF, prop thrust and torque, rotor spin-up), but with distorted parameters (`QuadPerturb`: thrust, torque, resistance, inertias, mass, center of gravity, motor spread); the battery sags under current (the voltage is solved together with the motor currents), prop reaction torque, air drag, gusty wind, ESC delay, gyro and accelerometer with noise and motor vibration behind the chip filter, 50 Hz barometer, the ground, motor failure |
+| `QuadHarness.h` | the multicopter closed loop: the real `CopterController` (tune from `deriveTune()` for the build description) ↔ `QuadSim`; flight statistics (tilt, wobble, motor “jitter”, saturation, altitude), takeoff in ALT_HOLD |
 | `SimHarness.h` | a closed loop: transmitter → iBUS frame → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → surface deflections → `PlaneSim` → sensors (including a pitot tube on two noisy barometers). A CSV trajectory with `OPENPLANE_SIM_DIR`; with `realisticImu` the angles come from the real `AttitudeEstimator` fed with the specific force — it sees the runway acceleration exactly as on board |
 
 `test/native/helpers/TestSupport.h` is what the suites share: `resetWorld()` (called from `setUp()`), the stand-ins `FakeUart`/`FakeServo`/`FakeBoard` and for the sensors (`FakeImu`, `FakeBaro`, `FakeMag`, `FakeGps`), the frame builder `ibusFrame()`, the rigs `I2cRig`/`SpiRig` (a driver on top of the real `Esp32I2CBus`/`Esp32SpiBus` and `*RegisterDevice` with a simulated chip).
@@ -112,6 +114,8 @@ The board tests (`test_feedback`, `test_imu_orientation`) are portable: with `AR
 | `native/test_blackbox_scan` | 3 | A sampled ring check at power-up against the full one: 300 random ring histories × 5 probe steps (the head, the numbers and the flight list match, and when the picture does not add up — it falls back to the full scan) and the cost on a 64 MB SD area (≈530 reads instead of 32,000) |
 | `native/test_telemetry` | 35 | `LoopStats`, `LogSettings` (NVS, version), `DebugLogger` (all channels, NAV), `DebugConsole` (menu, hotkeys, bus probing `b`, forbidden during ARM, saving only without ARM), `WebDebugServer` (routes, JSON, mailbox), `OledDisplay` (bytes over I2C, frame, inversion on link loss); console calibration `c` and signal `e`, the takeoff stage in the `AP` log line, the calibration step and takeoff stage on the OLED, firmware identity on the PC command `id` (for OpenPlane Studio), live data for the app (`AppLink`: the `@live` frame with calibrations and the reason ARM is refused, a frame skipped when the port buffer is full), the `scan` and `act X` commands |
 | `native/test_sim` | 18 | Closed-loop flights of the whole firmware with the airplane model: recovery from a bank, CRUISE in a crosswind, LOITER, RTH, failsafe RTH/gliding, geofence, auto takeoff with a tail wheel (tail-wheel load never above the parking load, neither the propeller nor the tail touches the runway, an honest attitude filter; with and without a barometer), with a nose wheel, a takeoff aborted by the throttle, hand launch, auto landing, a thermal, RESCUE from a spiral, airspeed hold and stall protection, a real pitot tube in the loop, auto-trim of a “crooked” airplane, sensor failures in flight (IMU, barometer, pitot tube, GPS) |
+| `native/test_copter` | 41 | The multicopter block by block: frames (motor count, balance, normalization, Betaflight order, props out, coaxial pairs, motor description in words), mixer (airmode at zero throttle, yaw is cut first, roll and pitch together, thrust linearization), filters (PT1, PT2 −3 dB at the cutoff, notch, LPF), ESC protocols (pulses, DShot frame and CRC against the reference, bit timing), propulsion model against 5" bench data, tune of the whole catalog (loop margins, filters, TPA, warnings for bad builds, PWM narrows the loop, 4 kHz for the whoop), rate loop (P, I, I-relax, anti-gravity, anti-windup, D on measurement, FF), quaternion attitude (360° flip, when not to trust the accelerometer), altitude (barometer + accelerometer, bias, without a barometer), altitude hold, rpm notches, ARM and every refusal reason, motor test, link loss on the ground |
+| `native/test_copter_sim` | 16 | Closed-loop multicopter flights (`QuadHarness`): all 12 catalog builds — on their own tune, on “sluggish” and “twitchy” physics — hover in ALT_HOLD and learn the hover throttle, tilt and level by the stick in ANGLE, hold the rate in ACRO, land and stop the motors on link loss; on the 5" — airmode at zero throttle, yaw, gusty wind, failsafe without a barometer, PWM ESCs, a whoop on a 4 kHz loop, link dropout and return, a fall onto its back, motor failure, motor test, battery sag |
 | `native/test_takeoff` | 23 | Auto takeoff and ground calibration of the airplane: the horizon from the “tail up” pose and the parking attitude (`ImuOrientation`), the attitude filter without the accelerometer on the takeoff roll, the landing-gear calibration in flash of a real `ImuSensorBase` (horizon after powering on standing on the wheels, `o` erases the parking attitude, gyro zero refinement), `GroundCalibration` (two steps, angle checks, cancellation, switch gesture), `SignalPlayer`, `TakeoffController` stages for the tail and nose wheel, the control-surface laws, aborted takeoff (throttle, link, IMU failure, roll, heading, nose, tail, no liftoff), without a barometer — by time, the “gyro only” window |
 | `native/test_feedback_units` | 14 | The feedback modules one by one: speed sources, in the air/on the ground, the RLS estimate, the controller, stall indicators, takeoff/landing aborts |
 | `native/test_app` | 10 | `src/main.cpp` on the ESP32-S3 with the bench kit MPU6500/BMP581/QMC5883P/OLED: `loop()` period, transmitter → servos, ARM, modes, link loss, console, dashboard, display, black box (a task on core 0, recording on throttle, a flight after DISARM, `bb list`) |
@@ -122,10 +126,11 @@ The board tests (`test_feedback`, `test_imu_orientation`) are portable: with `AR
 | `native_stm32/test_blackbox_sd` | 29 | The black box on an SD card: FAT32 (with and without MBR, a directory spanning two clusters, noise entries, a foreign/fragmented/empty volume), `SdFileRegion` (partial blocks, cache, erase, boundaries, failures), the real `Stm32SdCard` driver on top of a fake `HAL_SD` (4 bits, fallback speeds, retry, busy card, unaligned buffers), the ring on the card (reboot, power loss, scan cost), the “ring is empty” marker, flight recording on a `FlightController`, a faulty reboot detected via `RCC->RSR`, the battery ADC, card errors in flight, a slow card, download through the console, the `D` key |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | `src/stm32/main.cpp` with a card: boot finds the card and the file, the `bbox` task writes the flight, the loop period does not stretch, `bb list` |
 | `native_stm32/test_app_stm32_no_sd` | 4 | `src/stm32/main.cpp` without a card: the black box is disabled and explains why, the airplane flies, the `k` menu does not break; output self-test on PD14 (workaround for the core’s `pulseIn()` bug), the `e` motor signal; SBUS on `Stm32UartPort` — 8E2 and RX inversion |
+| `native_stm32/test_app_stm32_copter` | 5 | `src/stm32/main_copter.cpp` on the **Matek H743-WING V3**: tune from the description at boot, OneShot125 “stop” pulses on S1–S4 before ARM, ARM waits for the IMU mounting calibration, idle after ARM, mode from the SwC switch, link loss on the ground — DISARM and ARM only with a new flick, the console (`t`, `s`, motor test with confirmation, one motor at a time, cancel by a key, refused while armed) |
 | `native_stm32/test_app_stm32_matek_h743` | 4 | `src/stm32/main.cpp` on the **Matek H743-WING V3**: sensors on the board (ICM-42688-P on SPI1, DPS310 on I2C2), a compass on the separate external I2C1 bus, `@scan` with the `ext` field, the `matek-h743` identity; ARM with stabilization waits for mounting calibration (MANUAL is allowed); the board sits backwards — after three poses the angles are right |
 | `test_feedback` | 10 | A closed-loop airplane simulation with a feedback loop (on the PC and on the board) |
 | `test_imu_orientation` | 5 | IMU mounting calibration on 300 random mountings (on the PC and on the board) |
-| **Total** | **460** | 407 in `native` + 53 in `native-stm32` (plus 9 on the board only — `test_blackbox_sd`) |
+| **Total** | **522** | 464 in `native` + 58 in `native-stm32` (plus 9 on the board only — `test_blackbox_sd`) |
 
 ### Tests on the STM32 board
 
@@ -174,22 +179,24 @@ It is computed by `gcovr` over `include/` and `src/` (everything that goes into 
 |---|---|---|
 | `autopilot` | 1328/1395 (95.2%) | 921/1039 (88.6%) |
 | `autopilot/feedback` | 682/713 (95.7%) | 502/571 (87.9%) |
-| `config` | 2/2 (100%) | 2/2 (100%) |
-| `control` | 561/584 (96.1%) | 438/469 (93.4%) |
-| `hal` | 238/301 (79.1%) | 130/168 (77.4%) |
-| `hal/esp32` | 117/148 (79.1%) | 32/38 (84.2%) |
-| `hal/stm32` | 241/288 (83.7%) | 115/144 (79.9%) |
-| `rc` | 93/100 (93.0%) | 44/46 (95.7%) |
-| `sensors` (all) | 1533/1625 (94.3%) | 835/994 (84.0%) |
+| `config` | 16/16 (100%) | 7/8 (87.5%) |
+| `control` | 568/591 (96.1%) | 447/479 (93.3%) |
+| `copter` | 1118/1132 (98.8%) | 608/670 (90.7%) |
+| `hal` | 239/306 (78.1%) | 130/170 (76.5%) |
+| `hal/esp32` | 121/152 (79.6%) | 34/40 (85.0%) |
+| `hal/stm32` | 303/364 (83.2%) | 148/197 (75.1%) |
+| `rc` | 201/211 (95.3%) | 126/134 (94.0%) |
+| `sensors` (all) | 1561/1655 (94.3%) | 851/1014 (83.9%) |
 | `storage` | 350/364 (96.2%) | 275/334 (82.3%) |
-| `telemetry` | 2775/2920 (95.0%) | 2082/2464 (84.5%) |
-| `src` (`main.cpp`, `stm32/main.cpp`) | 145/150 (96.7%) | 26/32 (81.2%) |
-| **Total** | **8065/8590 (93.9%)** | **5402/6301 (85.7%)**; functions 1204/1245 (96.7%) |
+| `telemetry` | 3093/3277 (94.4%) | 2310/2789 (82.8%) |
+| `src` (`main.cpp`, `stm32/main.cpp`, `stm32/main_copter.cpp`) | 240/261 (92.0%) | 62/93 (66.7%) |
+| **Total** | **9820/10437 (94.1%)** | **6421/7538 (85.2%)**; functions 1432/1487 (96.3%) |
 
 What remains uncovered, and why:
 
 - **Hand launch** (`TakeoffSequencer`: `WaitLaunch`, `launchDetected()`) — unreachable while `FeedbackConfig::TAKEOFF_HAND_LAUNCH = false`; it will appear in the tests once the constant becomes configurable (moving to `Config.h`).
 - **Board-dependent code:** an output without a pin (`PIN_RUDDER = -1` occurs only on the C3), a GPS without a TX pin (C3) — the native tests exercise the pinouts of the S3, the 38-pin and the STM32, but not the C3 (the C3 is checked by the build matrix).
+- **Copter on the STM32:** boot error branches (the build is not in the catalog, the frame has more motors than outputs, an output did not configure), `D`/`i`/`o` from the copter console — on the PC their branches repeat the ones checked in the airplane firmware.
 - **STM32:** the error branches of the core (no timer on the pin, the timer pool exhausted), the message `FreeRTOS не запустился` (“FreeRTOS did not start”) — on the PC `vTaskStartScheduler()` always returns.
 - **Defensive branches** that cannot be reached through the public API: `default`/`Count` in a `switch` over enumerations, `return "?"`.
 - **Destructors and default implementations in interfaces** (`IBoard`, `IUartPort`, `ImuSensor` and others) — every implementation overrides them, and with `-fkeep-inline-functions` gcov counts these lines too.

@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-460%20passing-3fb950?style=for-the-badge" alt="460 testes">
+  <img src="https://img.shields.io/badge/tests-522%20passing-3fb950?style=for-the-badge" alt="522 testes">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="cobertura de 94%">
   <img src="https://img.shields.io/badge/builds-33%2F33%20clean-3fb950?style=for-the-badge" alt="33 builds sem avisos">
   <br>
@@ -60,8 +60,9 @@
 |---|---|
 | **O que é** | Um controlador de voo e piloto automático abertos para aviões radiocontrolados. A placa principal é a STM32H743 (placa da classe Pixhawk): em uma placa DevEBox o firmware **já está rodando e é pilotado pelo rádio** — [há vídeo](#-a-stm32h743-ganhou-vida-na-placa), e os sensores estão sendo ligados agora. A base anterior é um ESP32-S3 de uns US$ 10, que passou pela bancada com todos os sensores. |
 | **O que faz** | 12 modos de voo — da estabilização ao retorno para casa, círculos por GPS, lançamento manual, pouso automático e **voo planado em térmicas**. Tubo de Pitot feito com dois barômetros baratos. Telemetria MAVLink para o QGroundControl e o Mission Planner. |
+| **Multicópteros** | O mesmo firmware para quads, hexas, octos, Y6 e X8: você descreve o frame, as hélices, os motores e a bateria, e o firmware deduz sozinho os PID e os filtros a partir de um modelo físico. Por enquanto, verificado em simulador — [COPTER.md](COPTER.md). |
 | **O grande trunfo** | Qualquer chave ou potenciômetro do rádio = qualquer função. **Uma linha** no `Controls.h` — e a SwD deixa de ser a reversão do motor e vira lançamento de carga. |
-| **Por que confiar** | 460 testes automatizados (mais 9 na própria placa, com um cartão SD de verdade), 94% do código coberto por testes, 33 builds "placa × sensores" sem um único aviso, simulações em malha fechada de cada modo. |
+| **Por que confiar** | 522 testes automatizados (mais 9 na própria placa, com um cartão SD de verdade), 94% do código coberto por testes, 33 builds "placa × sensores" sem um único aviso, simulações em malha fechada de cada modo. |
 | **Com honestidade** | Até agora só o modo manual voou (o primeiro protótipo). A STM32H743 foi testada apenas na bancada, sem sensores. O piloto automático foi verificado na bancada, em testes e em simulações, e aguarda os testes de voo — [status abaixo](#-situação-real). |
 
 ---
@@ -130,6 +131,25 @@ Não é "a função devolveu um número", e sim um **voo**: rádio → quadro iB
     <td>🌬️ Velocidade por um tubo feito de dois barômetros <b>ruidosos</b>, com 150 Pa de diferença entre os chips — o erro é menor que 0,5 m/s.</td>
   </tr>
 </table>
+
+---
+
+## 🚁 Multicópteros: descreva o cóptero — o ajuste está pronto
+
+Quad, hexa, octo, Y6, X8 — nas mesmas placas. **PID, filtros, marcha lenta e taxas não são ajustados à mão**: o `CopterConfig.h` traz o frame, a hélice, o motor, a bateria e a massa (ou uma montagem pronta do catálogo: de um whoop de 65 mm a um hexa com hélices de 15"), e o firmware deduz o resto a partir de um modelo do motor e da hélice — com uma margem que aguenta um cóptero cujo empuxo e inércia estão errados por um fator de dois. Em voo, ele aprende sozinho o acelerador de pairar e move os notches conforme a rotação dos motores.
+
+| | |
+|---|---|
+| **Modos** | ACRO (airmode), HORIZON, ANGLE, ALT_HOLD — pela chave SwC |
+| **Proteções** | ARM só quando todas as verificações passam (cada motivo de recusa por extenso), perda de sinal → nivelamento, descida e DISARM no chão, capotagem e falha de motor → motores param |
+| **Controladores** | PWM, OneShot125/42, Multishot; DShot é a próxima etapa |
+| **Verificado** | 12 montagens × 3 variantes de física “errada” num simulador de 6 graus de liberdade: pairar ±0,3 m, inclinação pelo stick em 0,14–0,35 s, pouso na perda de sinal. **Ainda não no ar** |
+
+```bash
+pio run -e matek-h743-quad -t upload    # depois, no console: t — ajuste, m — motores (sem hélices!)
+```
+
+Detalhes — [COPTER.md](COPTER.md).
 
 ---
 
@@ -208,9 +228,9 @@ O que isso prova: a cadeia "rádio → iBUS → firmware → PWM" funciona em ha
 
 | | |
 |---|---|
-| **460 testes automatizados** | módulos, drivers verificados no nível dos registradores do chip, voos em malha fechada, o firmware de ESP32 e STM32 **inteiro** no PC; além de 9 testes na própria placa STM32 com um cartão SD de verdade |
-| **93,9% das linhas, 85,7% dos ramos** | cobertura do `gcovr`, inclusive do código da STM32 |
-| **33/33 builds** | 4 placas × 7 kits de sensores + Matek H743, `-Wall -Wextra`, zero avisos |
+| **522 testes automatizados** | módulos, drivers verificados no nível dos registradores do chip, voos em malha fechada, o firmware de ESP32 e STM32 **inteiro** no PC; além de 9 testes na própria placa STM32 com um cartão SD de verdade |
+| **94,1% das linhas, 85,2% dos ramos** | cobertura do `gcovr`, inclusive do código da STM32 |
+| **33/33 builds** | 4 placas × 7 kits de sensores + Matek H743, `-Wall -Wextra`, zero avisos; mais 2 builds de cóptero |
 | **0 apontamentos** | cppcheck e clang-tidy em todo o código |
 | **Referências, e não cópias de código** | as fórmulas dos sensores seguem os datasheets (Bosch, ST, TDK, Goertek), e o MAVLink segue o pymavlink |
 
@@ -254,6 +274,7 @@ pio run -e stm32h743-devebox -t upload                    # DevEBox H743: USB DF
 pio run -e matek-h743 -t upload                           # Matek H743-WING V3: botão BOOT + USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
+pio run -e matek-h743-quad -t upload                      # multicóptero na Matek H743 (COPTER.md)
 ```
 
 DevEBox: a placa não tem botão BOOT0 — antes da primeira gravação, ligue o pino BT0 ao 3V3 e pressione RST; depois disso, a tecla `D` no console reinicia a placa no bootloader sozinha ([detalhes](DEVELOPER_GUIDE.md#stm32h743)).
@@ -279,6 +300,7 @@ No monitor serial: `h` — menu, `b` — quais chips aparecem nos barramentos, `
 | Receptores SBUS e CRSF (ExpressLRS) | 🧪 testes: análise de quadros, failsafe, UART invertida; ainda não testados com um receptor real |
 | Matek H743-WING V3: sensores na placa, barramento I2C externo, calibração de montagem da IMU | 🧪 todo o firmware no PC; ainda não testado numa placa real |
 | STM32H743: sensores (IMU, barômetro, bússola, GPS) e modos do piloto automático | 🧪 firmware inteiro no PC; ainda não há sensores ligados à placa |
+| Multicópteros: ajuste a partir da descrição, modos, failsafe, proteções | 🧪 simulador de 6 graus de liberdade (12 montagens × 3 variantes de física) e o firmware inteiro no PC; ainda não no ar |
 
 O modelo de avião nas simulações é simplificado, e os coeficientes são valores iniciais. Todo modo novo é testado primeiro em altitude, com o dedo na chave MANUAL.
 
@@ -299,7 +321,9 @@ O modelo de avião nas simulações é simplificado, e os coeficientes são valo
 - [x] Aplicativo [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio): configuração passo a passo, gravação com um botão, ajustes em solo
 - [x] Receptores SBUS e CRSF (ExpressLRS, TBS Crossfire) ao lado do iBUS — escolha no `Config.h` ou no OpenPlane Studio
 - [x] Controladora pronta Matek H743-WING V3: sensores na placa, gravação com um botão (ainda não testada no hardware)
+- [x] Multicópteros (quad, hexa, octo, Y6, X8): ajuste deduzido da descrição do cóptero, verificado em simulador
 - [ ] STM32H743: ligar os sensores e passar pela bancada como foi feito com a ESP32-S3
+- [ ] Cóptero: DShot, ciclo de 4 kHz, caixa-preta e MAVLink, testes de voo
 - [ ] Controladoras populares com STM32F405: SpeedyBee F405 WING, Matek F405-WTE
 - [ ] Testes de voo do piloto automático no novo avião
 - [ ] Uma controladora de voo própria ([FC_BOARD.md](FC_BOARD.md)) com a STM32H743
@@ -324,6 +348,7 @@ O que já foi feito com recursos próprios: uma arquitetura que se leva de uma p
 
 | Documento | Para quem |
 |---|---|
+| [COPTER.md](COPTER.md) | multicópteros: catálogo de montagens, seu próprio cóptero, primeira partida, modos, proteções, como foi verificado |
 | [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md) | o piloto: cada modo, função e potenciômetro, como colocá-los em uma chave, o tubo de Pitot, a estação de solo |
 | [PILOT_GUIDE.md](PILOT_GUIDE.md) | montagem, pinagem, rádio, failsafe, primeiro voo |
 | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | o desenvolvedor: arquivos, convenção de sinais, API, como adicionar um sensor, um modo ou uma placa |

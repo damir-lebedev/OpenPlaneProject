@@ -85,6 +85,8 @@ Tillagt i de gemensamma attrapperna för STM32: `TwoWire(sda, scl)`, `setSDA/SCL
 |---|---|
 | `ChipEmulators.h` | LSM6DSV, ICM-42688-P, ICM-45686 (med IPREG-indirekta register), QMC6309, SPL06-001, BMP581, u-blox NAV-PVT-ramar – registerkartor på I2C eller SPI, med data från ”världen” `World` (vinklar och hastigheter, höjd, lufthastighet, kurs, koordinater), i kretsens axlar med hänsyn till `IMU_ROTATION_CW_DEG` |
 | `PlaneSim.h` | en flygplansmodell på ~1,2 kg: en punktmassa + rotation i roll/tippning, CL(α) med överstegring, luftmotstånd, dragkraft, vind, termik, mark; landningsställ med sporrhjul eller noshjul – flygplanet vickar på huvudhjulen, lasten på sporrhjulet, stjärtslag och propellerberöringar räknas, girning på marken med propellermoment och styrhjul |
+| `QuadSim.h` | multikoptermodell med 6 frihetsgrader: varje motor är samma modell som i `copter/Propulsion.h` (ström genom resistans och mot-EMK, propellerns dragkraft och vridmoment, rotorns uppvarvning), men med förvrängda parametrar (`QuadPerturb`: dragkraft, vridmoment, resistans, trögheter, massa, tyngdpunkt, spridning mellan motorer); batteriet sjunker under ström (spänningen löses tillsammans med motorströmmarna), propellrarnas reaktionsmoment, luftmotstånd, byig vind, fartreglagets fördröjning, gyroskop och accelerometer med brus och motorvibrationer bakom kretsens filter, 50 Hz-barometer, marken, motorfel |
+| `QuadHarness.h` | multikopterns slutna slinga: den riktiga `CopterController` (inställning från `deriveTune()` efter byggets beskrivning) ↔ `QuadSim`; flygstatistik (lutning, pendling, motorernas ”darrning”, mättnad, höjd), start i ALT_HOLD |
 | `SimHarness.h` | en sluten slinga: sändare → iBUS-ram → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → roderutslag → `PlaneSim` → sensorer (inklusive ett pitotrör med två brusiga barometrar). En CSV-bana med `OPENPLANE_SIM_DIR`; med `realisticImu` räknar den riktiga `AttitudeEstimator` vinklarna ur den specifika kraften – den ser accelerationen på banan som ombord |
 
 `test/native/helpers/TestSupport.h` är det som sviterna delar: `resetWorld()` (anropas från `setUp()`), ersättarna `FakeUart`/`FakeServo`/`FakeBoard` och för sensorerna (`FakeImu`, `FakeBaro`, `FakeMag`, `FakeGps`), rambyggaren `ibusFrame()`, riggarna `I2cRig`/`SpiRig` (en drivrutin ovanpå de riktiga `Esp32I2CBus`/`Esp32SpiBus` och `*RegisterDevice` med en simulerad krets).
@@ -112,6 +114,8 @@ Korttesterna (`test_feedback`, `test_imu_orientation`) är portabla: med `ARDUIN
 | `native/test_blackbox_scan` | 3 | En stickprovskontroll av ringen vid start mot den fullständiga: 300 slumpmässiga ringhistoriker × 5 provsteg (huvudet, numren och flyglistan stämmer, och när bilden inte går ihop – faller den tillbaka på den fullständiga avsökningen) och kostnaden på ett SD-område på 64 MB (≈530 läsningar i stället för 32 000) |
 | `native/test_telemetry` | 35 | `LoopStats`, `LogSettings` (NVS, version), `DebugLogger` (alla kanaler, NAV), `DebugConsole` (meny, snabbtangenter, bussavsökning `b`, förbjudet under ARM, sparar bara utan ARM), `WebDebugServer` (rutter, JSON, brevlåda), `OledDisplay` (byte över I2C, ram, invertering vid förlorad förbindelse); kalibrering `c` och signal `e` i konsolen, startetappen i loggraden `AP`, kalibreringssteg och startetapp på OLED-skärmen, firmwarens identitet på datorkommandot `id` (för OpenPlane Studio), livedata för appen (`AppLink`: ramen `@live` med kalibreringar och skälet till att ARM vägras; en ram hoppas över när portens buffert är full), kommandona `scan` och `act X` |
 | `native/test_sim` | 18 | Flygningar i sluten slinga av hela firmwaren med flygplansmodellen: återhämtning från krängning, CRUISE i sidvind, LOITER, RTH, failsafe RTH/glidflykt, geofence, autostart med sporrhjul (lasten på sporrhjulet aldrig över vilolasten, varken propellern eller stjärten nuddar banan, ett ärligt vinkelfilter; med och utan barometer), med noshjul, en start avbruten med gasen, handstart, autolandning, termik, RESCUE ur en spiral, farthållning och överstegringsskydd, ett riktigt pitotrör i slingan, autotrimning av ett ”snett” flygplan, sensorfel under flygning (IMU, barometer, pitotrör, GPS) |
+| `native/test_copter` | 41 | Multikoptern block för block: ramar (antal motorer, balans, normering, Betaflights ordning, propellrar utåt, koaxiala par, motorbeskrivning i ord), mixer (airmode på noll gas, gir kapas först, roll och tippning tillsammans, linjärisering av dragkraften), filter (PT1, PT2 −3 dB vid brytfrekvensen, notch, lågpass), fartreglageprotokoll (pulser, DShot-ram och CRC mot referensen, bittider), drivlinans modell mot bänkdata för 5", inställning av hela katalogen (slingans marginaler, filter, TPA, varningar för dåliga byggen, PWM gör slingan smalare, 4 kHz för whoopen), vinkelhastighetsslinga (P, I, I-relax, anti-gravity, anti-windup, D på mätvärdet, FF), orientering som kvaternion (360°-flipp, när accelerometern inte ska litas på), höjd (barometer + accelerometer, bias, utan barometer), höjdhållning, varvtalsnotchar, ARM och varje avslagsorsak, motortest, förlorad förbindelse på marken |
+| `native/test_copter_sim` | 16 | Multikopterflygningar i sluten slinga (`QuadHarness`): alla 12 byggen i katalogen – på sin egen inställning, på ”trög” och ”kvick” fysik – hovrar i ALT_HOLD och lär sig hovringsgasen, lutar och planar ut efter spaken i ANGLE, håller raten i ACRO, landar och stänger av motorerna vid förlorad förbindelse; på 5":an – airmode på noll gas, gir, byig vind, failsafe utan barometer, PWM-fartreglage, en whoop med 4 kHz-cykel, avbrott och återkomst av förbindelsen, fall på rygg, motorfel, motortest, batteriets spänningsfall |
 | `native/test_takeoff` | 23 | Autostart och markkalibrering av flygplanet: horisont ur läget ”stjärten uppe” och markläge (`ImuOrientation`), vinkelfilter utan accelerometer under rullningen, kalibrering av landningsstället i flash hos en riktig `ImuSensorBase` (horisont efter start på hjulen, `o` raderar markläget, finjustering av gyroskopets nollpunkt), `GroundCalibration` (två steg, vinkelkontroll, avbrott, brytargest), `SignalPlayer`, etapperna i `TakeoffController` för sporrhjul och noshjul, roderlagar, avbruten start (gas, förbindelse, IMU-fel, roll, kurs, nos, stjärt, ingen lättning), utan barometer efter tid, fönstret ”bara gyroskop” |
 | `native/test_feedback_units` | 14 | Återkopplingsmodulerna en och en: hastighetskällor, i luften/på marken, RLS-skattningen, regulatorn, överstegringsindikatorer, avbrott av start/landning |
 | `native/test_app` | 10 | `src/main.cpp` på ESP32-S3 med bänksatsen MPU6500/BMP581/QMC5883P/OLED: `loop()`-perioden, sändare → servon, ARM, lägen, förlorad förbindelse, konsol, panel, skärm, svart låda (en uppgift på kärna 0, inspelning vid gas, en flygning efter DISARM, `bb list`) |
@@ -122,10 +126,11 @@ Korttesterna (`test_feedback`, `test_imu_orientation`) är portabla: med `ARDUIN
 | `native_stm32/test_blackbox_sd` | 29 | Den svarta lådan på ett SD-kort: FAT32 (med och utan MBR, en katalog som sträcker sig över två kluster, brusposter, en främmande/fragmenterad/tom volym), `SdFileRegion` (delblock, cache, radering, gränser, fel), den riktiga drivrutinen `Stm32SdCard` ovanpå en attrapp av `HAL_SD` (4 bitar, reservhastigheter, omförsök, upptaget kort, ojusterade buffertar), ringen på kortet (omstart, strömavbrott, avsökningskostnad), markören ”ringen är tom”, inspelning av en flygning på en `FlightController`, en felomstart upptäckt via `RCC->RSR`, batteriets ADC, kortfel under flygning, ett långsamt kort, hämtning via konsolen, tangenten `D` |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | `src/stm32/main.cpp` med ett SD-kort: uppstarten hittar kortet och filen, uppgiften `bbox` skriver flygningen, slingans period sträcks inte ut, `bb list` |
 | `native_stm32/test_app_stm32_no_sd` | 4 | `src/stm32/main.cpp` utan SD-kort: den svarta lådan är avstängd och förklarar varför, flygplanet flyger, menyn `k` går inte sönder; självtest av utgångar på PD14 (kringgår `pulseIn()`-felet i kärnan), motorsignal `e`; SBUS på `Stm32UartPort` – 8E2 och RX-invertering |
+| `native_stm32/test_app_stm32_copter` | 5 | `src/stm32/main_copter.cpp` på **Matek H743-WING V3**: inställning ur beskrivningen vid start, OneShot125-”stopp”-pulser på S1–S4 före ARM, ARM väntar på IMU:ns monteringskalibrering, tomgång efter ARM, läge från brytaren SwC, förlorad förbindelse på marken – DISARM och ARM bara med ett nytt slag på brytaren, konsolen (`t`, `s`, motortest med bekräftelse, en motor i taget, avbryt med en tangent, nekas när den är armerad) |
 | `native_stm32/test_app_stm32_matek_h743` | 4 | `src/stm32/main.cpp` på **Matek H743-WING V3**: sensorer på kortet (ICM-42688-P på SPI1, DPS310 på I2C2), kompass på den separata externa I2C1-bussen, `@scan` med fältet `ext`, identiteten `matek-h743`; ARM med stabilisering väntar på monteringskalibreringen (i MANUAL går det); kortet sitter baklänges – efter tre poser stämmer vinklarna |
 | `test_feedback` | 10 | En flygplanssimulering i sluten slinga med en återkopplingsslinga (på datorn och på kortet) |
 | `test_imu_orientation` | 5 | Kalibrering av IMU-monteringen på 300 slumpmässiga monteringar (på datorn och på kortet) |
-| **Totalt** | **460** | 407 i `native` + 53 i `native-stm32` (plus 9 bara på kortet – `test_blackbox_sd`) |
+| **Totalt** | **522** | 464 i `native` + 58 i `native-stm32` (plus 9 bara på kortet – `test_blackbox_sd`) |
 
 ### Tester på STM32-kortet
 
@@ -174,22 +179,24 @@ Den beräknas av `gcovr` över `include/` och `src/` (allt som går in i firmwar
 |---|---|---|
 | `autopilot` | 1328/1395 (95,2 %) | 921/1039 (88,6 %) |
 | `autopilot/feedback` | 682/713 (95,7 %) | 502/571 (87,9 %) |
-| `config` | 2/2 (100 %) | 2/2 (100 %) |
-| `control` | 561/584 (96,1 %) | 438/469 (93,4 %) |
-| `hal` | 238/301 (79,1 %) | 130/168 (77,4 %) |
-| `hal/esp32` | 117/148 (79,1 %) | 32/38 (84,2 %) |
-| `hal/stm32` | 241/288 (83,7 %) | 115/144 (79,9 %) |
-| `rc` | 93/100 (93,0 %) | 44/46 (95,7 %) |
-| `sensors` (alla) | 1533/1625 (94,3 %) | 835/994 (84,0 %) |
+| `config` | 16/16 (100 %) | 7/8 (87,5 %) |
+| `control` | 568/591 (96,1 %) | 447/479 (93,3 %) |
+| `copter` | 1118/1132 (98,8 %) | 608/670 (90,7 %) |
+| `hal` | 239/306 (78,1 %) | 130/170 (76,5 %) |
+| `hal/esp32` | 121/152 (79,6 %) | 34/40 (85,0 %) |
+| `hal/stm32` | 303/364 (83,2 %) | 148/197 (75,1 %) |
+| `rc` | 201/211 (95,3 %) | 126/134 (94,0 %) |
+| `sensors` (alla) | 1561/1655 (94,3 %) | 851/1014 (83,9 %) |
 | `storage` | 350/364 (96,2 %) | 275/334 (82,3 %) |
-| `telemetry` | 2775/2920 (95,0 %) | 2082/2464 (84,5 %) |
-| `src` (`main.cpp`, `stm32/main.cpp`) | 145/150 (96,7 %) | 26/32 (81,2 %) |
-| **Totalt** | **8065/8590 (93,9 %)** | **5402/6301 (85,7 %)**; funktioner 1204/1245 (96,7 %) |
+| `telemetry` | 3093/3277 (94,4 %) | 2310/2789 (82,8 %) |
+| `src` (`main.cpp`, `stm32/main.cpp`, `stm32/main_copter.cpp`) | 240/261 (92,0 %) | 62/93 (66,7 %) |
+| **Totalt** | **9820/10437 (94,1 %)** | **6421/7538 (85,2 %)**; funktioner 1432/1487 (96,3 %) |
 
 Vad som förblir otäckt, och varför:
 
 - **Handstart** (`TakeoffSequencer`: `WaitLaunch`, `launchDetected()`) – onåbar så länge `FeedbackConfig::TAKEOFF_HAND_LAUNCH = false`; den kommer med i testerna när konstanten blir konfigurerbar (flyttas till `Config.h`).
 - **Kortberoende kod:** en utgång utan stift (`PIN_RUDDER = -1` förekommer bara på C3), en GPS utan TX-stift (C3) – native-testerna kör stiftbeläggningarna för S3, 38-pin och STM32, men inte C3 (C3 kontrolleras av byggmatrisen).
+- **Kopter på STM32:** felgrenar vid start (bygget finns inte i katalogen, ramen har fler motorer än utgångar, en utgång gick inte att ställa in), `D`/`i`/`o` från kopterkonsolen – på datorn upprepar deras grenar de som redan kontrollerats i flygplansfirmwaren.
 - **STM32:** kärnans felgrenar (ingen timer på stiftet, timerpoolen uttömd), meddelandet `FreeRTOS не запустился` (”FreeRTOS startade inte”) – på datorn returnerar `vTaskStartScheduler()` alltid.
 - **Defensiva grenar** som inte kan nås via det publika API:t: `default`/`Count` i en `switch` över uppräkningar, `return "?"`.
 - **Destruktorer och standardimplementeringar i gränssnitt** (`IBoard`, `IUartPort`, `ImuSensor` m.fl.) – alla implementeringar skriver över dem, och med `-fkeep-inline-functions` räknar gcov även de raderna.

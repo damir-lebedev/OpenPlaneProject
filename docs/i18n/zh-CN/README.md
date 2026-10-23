@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-460%20passing-3fb950?style=for-the-badge" alt="460 项测试">
+  <img src="https://img.shields.io/badge/tests-522%20passing-3fb950?style=for-the-badge" alt="522 项测试">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94% 代码覆盖率">
   <img src="https://img.shields.io/badge/builds-33%2F33%20clean-3fb950?style=for-the-badge" alt="33 次构建零警告">
   <br>
@@ -60,8 +60,9 @@
 |---|---|
 | **这是什么** | 面向遥控飞机的开放式飞控与自动驾驶仪。主力板是 STM32H743（Pixhawk 级别的开发板）：固件在 DevEBox 板上**已经运行起来，可以用遥控器操控**——[有视频](#-stm32h743-在开发板上跑起来了)，现在正在接传感器。之前的基础是约 10 美元的 ESP32-S3，它已在装有全部传感器的台架上验证过。 |
 | **能做什么** | 12 种飞行模式——从自稳到返航、GPS 盘旋、手抛起飞、自动降落，还有**热气流翱翔**。用两个廉价气压计做成的空速管。通过 MAVLink 把遥测数据送到 QGroundControl 和 Mission Planner。 |
+| **多旋翼** | 同一套固件也支持四旋翼、六旋翼、八旋翼、Y6 和 X8：只需描述机架、螺旋桨、电机和电池，固件就会根据物理模型自行推导 PID 和滤波器。目前已在仿真器中验证——[COPTER.md](COPTER.md)。 |
 | **最大亮点** | 遥控器上的任何开关或旋钮 = 任何功能。在 `Controls.h` 里**改一行**，SwD 就不再是电机反转，而变成投放载荷。 |
-| **为什么可以信任** | 460 项自动化测试（另有 9 项在带真实 SD 卡的开发板上运行），94% 的代码有测试覆盖，33 种“开发板 × 传感器”组合构建零警告，每种模式都有闭环仿真。 |
+| **为什么可以信任** | 522 项自动化测试（另有 9 项在带真实 SD 卡的开发板上运行），94% 的代码有测试覆盖，33 种“开发板 × 传感器”组合构建零警告，每种模式都有闭环仿真。 |
 | **实话实说** | 目前飞过的只有手动模式（第一架原型机）。STM32H743 目前只在台架上、没有接传感器的情况下验证过。自动驾驶仪已通过台架测试、自动化测试和仿真验证，正等待试飞——[现状见下文](#-真实现状)。 |
 
 ---
@@ -130,6 +131,25 @@ constexpr Binding BINDINGS[] = {
     <td>🌬️ 用两个<b>有噪声</b>的气压计做成的空速管，两颗芯片之间还有 150 Pa 的偏差——误差小于 0.5 m/s。</td>
   </tr>
 </table>
+
+---
+
+## 🚁 多旋翼：描述飞行器，参数自动就绪
+
+四旋翼、六旋翼、八旋翼、Y6、X8——用的是同样的开发板。**PID、滤波器、怠速和速率都不需要手动调整**：在 `CopterConfig.h` 中填写机架、螺旋桨、电机、电池和质量（或从目录中选一个现成机型：从 65 mm 的 whoop 到装 15" 桨的六旋翼），其余的由固件根据电机和螺旋桨模型推导——留出的裕度足以应付推力和惯量偏差一倍的飞行器。飞行中它会自行学习悬停油门，并让陷波器跟随电机转速移动。
+
+| | |
+|---|---|
+| **模式** | ACRO（airmode）、HORIZON、ANGLE、ALT_HOLD——由 SwC 开关切换 |
+| **保护** | 只有所有检查都通过才能 ARM（每个拒绝原因都用文字说明），信号丢失 → 改平、下降并在地面 DISARM，翻覆和电机故障 → 电机停转 |
+| **电调** | PWM、OneShot125/42、Multishot；DShot 是下一步 |
+| **已验证** | 在 6 自由度仿真器中测试 12 种机型 × 3 种“不对”的物理参数：悬停 ±0.3 m，0.14–0.35 s 内按摇杆倾斜到位，信号丢失后降落。**尚未真机试飞** |
+
+```bash
+pio run -e matek-h743-quad -t upload    # 然后在控制台中：t — 参数，m — 电机（务必卸桨！）
+```
+
+详情——[COPTER.md](COPTER.md)。
 
 ---
 
@@ -208,9 +228,9 @@ STM32H743 的固件已在**没有任何传感器**的 DevEBox 板上运行，并
 
 | | |
 |---|---|
-| **460 项自动化测试** | 模块、按芯片寄存器层面验证的驱动、闭环飞行、在电脑上**完整运行**的 ESP32 和 STM32 固件；另外在 STM32 板上用真实 SD 卡跑 9 项测试 |
-| **93.9% 的代码行，85.7% 的分支** | `gcovr` 覆盖率，包括 STM32 代码 |
-| **33/33 次构建** | 4 种开发板 × 7 套传感器组合 + Matek H743，`-Wall -Wextra`，零警告 |
+| **522 项自动化测试** | 模块、按芯片寄存器层面验证的驱动、闭环飞行、在电脑上**完整运行**的 ESP32 和 STM32 固件；另外在 STM32 板上用真实 SD 卡跑 9 项测试 |
+| **94.1% 的代码行，85.2% 的分支** | `gcovr` 覆盖率，包括 STM32 代码 |
+| **33/33 次构建** | 4 种开发板 × 7 套传感器组合 + Matek H743，`-Wall -Wextra`，零警告；另有 2 个多旋翼构建 |
 | **0 条问题** | 对全部代码运行 cppcheck 和 clang-tidy |
 | **以标准为准，而非照搬代码** | 传感器公式依据数据手册（Bosch、ST、TDK、Goertek），MAVLink 依据 pymavlink |
 
@@ -254,6 +274,7 @@ pio run -e stm32h743-devebox -t upload                    # DevEBox H743：USB D
 pio run -e matek-h743 -t upload                           # Matek H743-WING V3：BOOT 键 + USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
+pio run -e matek-h743-quad -t upload                      # Matek H743 上的多旋翼（COPTER.md）
 ```
 
 DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚接到 3V3 并按一下 RST；之后在控制台按 `D` 键，板子就会自己重启进入引导程序（[详情](DEVELOPER_GUIDE.md#stm32h743)）。
@@ -279,6 +300,7 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 | SBUS 和 CRSF 接收机（ExpressLRS） | 🧪 测试：帧解析、failsafe、反相 UART；尚未用真实接收机验证 |
 | Matek H743-WING V3：板载传感器、外部 I2C 总线、IMU 安装校准 | 🧪 整套固件在电脑上；尚未在真实的板子上试过 |
 | STM32H743：传感器（IMU、气压计、罗盘、GPS）和自动驾驶仪模式 | 🧪 整套固件在电脑上运行；传感器尚未接到板子上 |
+| 多旋翼：由描述得出参数、模式、failsafe、保护 | 🧪 6 自由度仿真器（12 种机型 × 3 种物理参数）以及在电脑上运行的完整固件；尚未真机试飞 |
 
 仿真中的飞机模型是简化的，各项系数都是起始值。每个新模式都要先在高空试飞，手指放在 MANUAL 开关上。
 
@@ -299,7 +321,9 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 - [x] [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) 应用：分步配置、一键刷写、地面调试
 - [x] 在 iBUS 之外支持 SBUS 和 CRSF 接收机（ExpressLRS、TBS Crossfire）——在 `Config.h` 或 OpenPlane Studio 中选择
 - [x] 现成的飞控 Matek H743-WING V3：板载传感器，一键烧录（尚未在硬件上试过）
+- [x] 多旋翼（四旋翼、六旋翼、八旋翼、Y6、X8）：由飞行器描述推导参数，已在仿真器中验证
 - [ ] STM32H743：接上传感器，并像 ESP32-S3 一样走完台架测试
+- [ ] 多旋翼：DShot、4 kHz 控制周期、黑匣子和 MAVLink、试飞
 - [ ] 基于 STM32F405 的热门飞控：SpeedyBee F405 WING、Matek F405-WTE
 - [ ] 在新机体上对自动驾驶仪进行试飞
 - [ ] 基于 STM32H743 的自研飞控板（[FC_BOARD.md](FC_BOARD.md)）
@@ -324,6 +348,7 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 
 | 文档 | 适合谁 |
 |---|---|
+| [COPTER.md](COPTER.md) | 多旋翼：机型目录、自己的飞行器、首次启动、模式、保护、如何验证 |
 | [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md) | 飞手：每种模式、功能和旋钮，如何把它们挂到开关上，空速管，地面站 |
 | [PILOT_GUIDE.md](PILOT_GUIDE.md) | 组装、引脚定义、遥控器、failsafe、首飞 |
 | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | 开发者：文件、符号约定、API，如何添加传感器、模式、开发板 |

@@ -86,7 +86,7 @@ public:
 
         const bool ok =
             device.writeRegister(REG_CTRL3, CTRL3_BDU | CTRL3_IF_INC) &&
-            device.writeRegister(REG_CTRL6, FS_G_2000DPS | (GYRO_LPF1_BW << 4)) &&
+            device.writeRegister(REG_CTRL6, FS_G_2000DPS | ((Config::IMU_WIDE_BANDWIDTH ? GYRO_LPF1_BW_WIDE : GYRO_LPF1_BW) << 4)) &&
             device.writeRegister(REG_CTRL7, CTRL7_LPF1_G_EN) &&
             device.writeRegister(REG_CTRL8, fsXl | (ACCEL_LPF2_BW << 5)) &&
             device.writeRegister(REG_CTRL9, CTRL9_LPF2_XL_EN) &&
@@ -166,6 +166,7 @@ private:
     // срез — десятки Гц при ODR 960 Гц (таблица LPF1 в датащите).
     // LPF2 акселерометра — код 2 = ODR/20 ≈ 48 Гц.
     static constexpr uint8_t GYRO_LPF1_BW  = 0x04;
+    static constexpr uint8_t GYRO_LPF1_BW_WIDE = 0x00;   // самая широкая полоса LPF1 — коптер
     static constexpr uint8_t ACCEL_LPF2_BW = 0x02;
 
     static constexpr uint32_t BOOT_TIME_MS = 10;

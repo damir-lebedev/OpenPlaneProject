@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-460%20passing-3fb950?style=for-the-badge" alt="460 tests">
+  <img src="https://img.shields.io/badge/tests-522%20passing-3fb950?style=for-the-badge" alt="522 tests">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="94% coverage">
   <img src="https://img.shields.io/badge/builds-33%2F33%20clean-3fb950?style=for-the-badge" alt="33 builds without warnings">
   <br>
@@ -60,8 +60,9 @@
 |---|---|
 | **What it is** | An open flight controller and autopilot for radio-controlled airplanes. The main board is the STM32H743 (a Pixhawk-class board): on a DevEBox board the firmware is **already up and flown from the transmitter** — [there is a video](#-stm32h743-came-alive-on-the-board), and the sensors are being connected now. The former base is an ESP32-S3 at ~$10, which passed the bench with all the sensors. |
 | **What it can do** | 12 flight modes — from stabilization to return-home, GPS circles, hand launch, auto-landing and **thermal soaring**. A pitot tube made of two cheap barometers. MAVLink telemetry to QGroundControl and Mission Planner. |
+| **Multicopters** | The same firmware for quads, hexes, octos, Y6 and X8: you describe the frame, props, motors and battery, and the firmware derives the PID and filters itself from a physical model. Checked in a simulator so far — [COPTER.md](COPTER.md). |
 | **The main trick** | Any switch or knob on the transmitter = any function. **One line** in `Controls.h` — and SwD is no longer motor reverse but a payload drop. |
-| **Why you can trust it** | 460 automated tests (plus 9 on the board itself with a real SD card), 94% of the code under test, 33 "board × sensors" builds with not a single warning, closed-loop simulations of every mode. |
+| **Why you can trust it** | 522 automated tests (plus 9 on the board itself with a real SD card), 94% of the code under test, 33 "board × sensors" builds with not a single warning, closed-loop simulations of every mode. |
 | **Honestly** | So far only manual mode has flown (the first prototype). The STM32H743 has so far been checked only on the bench, without sensors. The autopilot has been verified on the bench, by tests and by simulations, and is waiting for flight trials — [status below](#-honest-status). |
 
 ---
@@ -130,6 +131,25 @@ Not "a function returned a number", but a **flight**: transmitter → iBUS frame
     <td>🌬️ Airspeed from a tube made of two <b>noisy</b> barometers with a 150 Pa offset between the chips — the error is below 0.5 m/s.</td>
   </tr>
 </table>
+
+---
+
+## 🚁 Multicopters: describe the copter — the tune is ready
+
+Quad, hex, octo, Y6, X8 — on the same boards. **PID, filters, idle and rates are not tuned by hand**: `CopterConfig.h` holds the frame, prop, motor, battery and mass (or a ready build from the catalog: from a 65 mm whoop to a hex with 15" props), and the firmware derives the rest from a model of the motor and prop — with a margin that holds a copter whose thrust and inertia are off by a factor of two. In flight it learns the hover throttle itself and moves its notch filters with the motor rpm.
+
+| | |
+|---|---|
+| **Modes** | ACRO (airmode), HORIZON, ANGLE, ALT_HOLD — from the SwC switch |
+| **Protections** | ARM only when every check passes (each refusal reason in words), link loss → level, descend and DISARM on the ground, flip-over and motor failure → motors stop |
+| **ESCs** | PWM, OneShot125/42, Multishot; DShot is the next stage |
+| **Checked** | 12 builds × 3 variants of “wrong” physics in a 6-DOF simulator: hover ±0.3 m, stick tilt in 0.14–0.35 s, landing on link loss. **Not in the air yet** |
+
+```bash
+pio run -e matek-h743-quad -t upload    # then in the console: t — tune, m — motors (props off!)
+```
+
+Details — [COPTER.md](COPTER.md).
 
 ---
 
@@ -208,9 +228,9 @@ What this proves: the "transmitter → iBUS → firmware → PWM" chain works on
 
 | | |
 |---|---|
-| **460 automated tests** | modules, chip drivers checked at the register level, closed-loop flights, the ESP32 and STM32 firmware **in full** on a PC; plus 9 tests on the STM32 board itself with a real SD card |
-| **93.9% of lines, 85.7% of branches** | `gcovr` coverage, including the STM32 code |
-| **33/33 builds** | 4 boards × 7 sensor kits + Matek H743, `-Wall -Wextra`, zero warnings |
+| **522 automated tests** | modules, chip drivers checked at the register level, closed-loop flights, the ESP32 and STM32 firmware **in full** on a PC; plus 9 tests on the STM32 board itself with a real SD card |
+| **94.1% of lines, 85.2% of branches** | `gcovr` coverage, including the STM32 code |
+| **33/33 builds** | 4 boards × 7 sensor kits + Matek H743, `-Wall -Wextra`, zero warnings; plus 2 copter builds |
 | **0 findings** | cppcheck and clang-tidy over all the code |
 | **References, not copies of code** | sensor formulas follow the datasheets (Bosch, ST, TDK, Goertek), MAVLink follows pymavlink |
 
@@ -254,6 +274,7 @@ pio run -e stm32h743-devebox -t upload                    # DevEBox H743: USB DF
 pio run -e matek-h743 -t upload                           # Matek H743-WING V3: BOOT button + USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
+pio run -e matek-h743-quad -t upload                      # multicopter on the Matek H743 (COPTER.md)
 ```
 
 DevEBox: the board has no BOOT0 button — before the first upload, connect pin BT0 to 3V3 and press RST; after that, the `D` key in the console reboots the board into the bootloader by itself ([details](DEVELOPER_GUIDE.md#stm32h743)).
@@ -279,6 +300,7 @@ In the serial monitor: `h` — menu, `b` — which chips are visible on the buse
 | SBUS and CRSF receivers (ExpressLRS) | 🧪 tests: frame parsing, failsafe, the inverted UART; not yet tried with a real receiver |
 | Matek H743-WING V3: sensors on the board, external I2C bus, IMU mounting calibration | 🧪 the whole firmware on a PC; not tried on a real board yet |
 | STM32H743: sensors (IMU, barometer, compass, GPS) and autopilot modes | 🧪 the whole firmware on a PC; no sensors connected to the board yet |
+| Multicopters: tune from the description, modes, failsafe, protections | 🧪 6-DOF simulator (12 builds × 3 physics variants) and the whole firmware on a PC; not in the air yet |
 
 The airplane model in the simulations is simplified, and the coefficients are starting values. Every new mode is first tried at altitude, with a finger on the MANUAL switch.
 
@@ -299,7 +321,9 @@ The airplane model in the simulations is simplified, and the coefficients are st
 - [x] The [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) app: step-by-step setup, one-button flashing, ground checks
 - [x] SBUS and CRSF receivers (ExpressLRS, TBS Crossfire) alongside iBUS — chosen in `Config.h` or in OpenPlane Studio
 - [x] Ready-made Matek H743-WING V3 flight controller: sensors on the board, one-button flashing (not tried on hardware yet)
+- [x] Multicopters (quad, hex, octo, Y6, X8): tune derived from the copter description, checked in a simulator
 - [ ] STM32H743: connect the sensors and go through the bench the same way as with the ESP32-S3
+- [ ] Copter: DShot, 4 kHz loop, black box and MAVLink, flight tests
 - [ ] Popular STM32F405 flight controllers: SpeedyBee F405 WING, Matek F405-WTE
 - [ ] Flight trials of the autopilot on the new airframe
 - [ ] A custom flight controller board ([FC_BOARD.md](FC_BOARD.md)) on the STM32H743
@@ -324,6 +348,7 @@ What has already been done with our own resources: an architecture that moves be
 
 | Document | For whom |
 |---|---|
+| [COPTER.md](COPTER.md) | multicopters: build catalog, your own copter, first start, modes, protections, how it was checked |
 | [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md) | the pilot: every mode, function and knob, how to put them on a switch, the pitot tube, the ground station |
 | [PILOT_GUIDE.md](PILOT_GUIDE.md) | assembly, pinout, transmitter, failsafe, first flight |
 | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | the developer: files, sign conventions, API, how to add a sensor, a mode or a board |

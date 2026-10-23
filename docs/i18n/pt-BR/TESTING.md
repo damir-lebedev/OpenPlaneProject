@@ -85,6 +85,8 @@ Nos fakes comuns foi adicionado, para a STM32: `TwoWire(sda, scl)`, `setSDA/SCL`
 |---|---|
 | `ChipEmulators.h` | LSM6DSV, ICM-42688-P, ICM-45686 (com registradores indiretos IPREG), QMC6309, SPL06-001, BMP581, quadros NAV-PVT da u-blox: mapas de registradores em I2C ou SPI, com dados do "mundo" `World` (ângulos e velocidades, altitude, velocidade do ar, rumo, coordenadas), nos eixos do chip, levando em conta o `IMU_ROTATION_CW_DEG` |
 | `PlaneSim.h` | um modelo de avião de ~1,2 kg: uma massa pontual + rotação em rolagem/arfagem, CL(α) com estol, arrasto, empuxo, vento, térmicas, solo; trem de pouso com bequilha ou roda de nariz: o avião balança sobre as rodas principais, contam-se a carga na bequilha, as batidas da cauda e os toques da hélice, a guinada no solo com o torque da hélice e a roda direcional |
+| `QuadSim.h` | modelo de multicóptero de 6 graus de liberdade: cada motor é o mesmo modelo de `copter/Propulsion.h` (corrente pela resistência e pela força contraeletromotriz, empuxo e torque da hélice, aceleração do rotor), mas com parâmetros distorcidos (`QuadPerturb`: empuxo, torque, resistência, inércias, massa, centro de gravidade, dispersão entre motores); a bateria cai sob corrente (a tensão é resolvida junto com as correntes dos motores), torque de reação das hélices, arrasto do ar, vento com rajadas, atraso do controlador, giroscópio e acelerômetro com ruído e vibração dos motores atrás do filtro do chip, barômetro de 50 Hz, o chão, falha de motor |
+| `QuadHarness.h` | a malha fechada do multicóptero: o `CopterController` real (ajuste de `deriveTune()` pela descrição da montagem) ↔ `QuadSim`; estatísticas de voo (inclinação, oscilação, “tremor” dos motores, saturação, altura), decolagem em ALT_HOLD |
 | `SimHarness.h` | um laço fechado: rádio → quadro iBUS → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → deflexões das superfícies → `PlaneSim` → sensores (inclusive um tubo de Pitot sobre dois barômetros ruidosos). Uma trajetória em CSV com `OPENPLANE_SIM_DIR`; com `realisticImu`, o `AttitudeEstimator` real calcula os ângulos a partir da força específica: vê a aceleração na pista como a bordo |
 
 O `test/native/helpers/TestSupport.h` é o que os conjuntos têm em comum: `resetWorld()` (chamado de `setUp()`), os substitutos `FakeUart`/`FakeServo`/`FakeBoard` e dos sensores (`FakeImu`, `FakeBaro`, `FakeMag`, `FakeGps`), o montador de quadros `ibusFrame()`, as bancadas `I2cRig`/`SpiRig` (um driver sobre os `Esp32I2CBus`/`Esp32SpiBus` reais e um `*RegisterDevice` com um chip simulado).
@@ -112,6 +114,8 @@ Os testes da placa (`test_feedback`, `test_imu_orientation`) são portáteis: co
 | `native/test_blackbox_scan` | 3 | A verificação por amostragem do anel na inicialização contra a completa: 300 históricos aleatórios do anel × 5 passos de sondagem (a cabeça, os números e a lista de voos coincidem, e quando o quadro não fecha, cede à verificação completa) e o custo em uma área de SD de 64 MB (≈530 leituras em vez de 32 mil) |
 | `native/test_telemetry` | 35 | `LoopStats`, `LogSettings` (NVS, versão), `DebugLogger` (todos os canais, NAV), `DebugConsole` (menu, teclas de atalho, sondagem dos barramentos `b`, proibida com ARM, salvamento só sem ARM), `WebDebugServer` (rotas, JSON, caixa de correio), `OledDisplay` (bytes por I2C, quadro, inversão na perda de sinal); calibração `c` e sinal `e` no console, etapa da decolagem na linha de log `AP`, passo da calibração e etapa da decolagem no OLED, identidade do firmware no comando do PC `id` (para o OpenPlane Studio), dados ao vivo para o app (`AppLink`: o quadro `@live` com as calibrações e o motivo da recusa do ARM; quadro pulado quando o buffer da porta está cheio), os comandos `scan` e `act X` |
 | `native/test_sim` | 18 | Voos em malha fechada de todo o firmware com o modelo do avião: recuperação de uma inclinação lateral, CRUISE com vento de través, LOITER, RTH, failsafe RTH/planeio, geofence, decolagem automática com bequilha (carga na bequilha nunca acima da carga parada, nem a hélice nem a cauda tocam a pista, um filtro de ângulos honesto; com e sem barômetro), com roda de nariz, uma decolagem abortada pelo acelerador, lançamento manual, pouso automático, uma térmica, RESCUE a partir de uma espiral, manutenção da velocidade e proteção contra estol, um tubo de Pitot real na malha, auto-trim de um avião “torto”, falhas de sensores em voo (IMU, barômetro, tubo de Pitot, GPS) |
+| `native/test_copter` | 41 | O multicóptero bloco a bloco: frames (número de motores, equilíbrio, normalização, ordem do Betaflight, hélices para fora, pares coaxiais, descrição do motor por extenso), mixer (airmode com acelerador zero, a guinada é cortada primeiro, rolagem e arfagem juntas, linearização do empuxo), filtros (PT1, PT2 −3 dB no corte, notch, passa-baixa), protocolos de controlador (pulsos, quadro DShot e CRC contra a referência, tempos de bit), modelo de propulsão contra dados de bancada do 5", ajuste de todo o catálogo (margens da malha, filtros, TPA, avisos para montagens ruins, PWM estreita a malha, 4 kHz para o whoop), malha de velocidade angular (P, I, I-relax, anti-gravity, anti-windup, D sobre a medida, FF), orientação em quatérnion (flip de 360°, quando não confiar no acelerômetro), altura (barômetro + acelerômetro, viés, sem barômetro), manutenção de altura, notches por rotação, ARM e cada motivo de recusa, teste dos motores, perda de sinal no chão |
+| `native/test_copter_sim` | 16 | Voos do multicóptero em malha fechada (`QuadHarness`): as 12 montagens do catálogo — com o próprio ajuste e com física “preguiçosa” e “nervosa” — pairam em ALT_HOLD e aprendem o acelerador de pairar, inclinam e nivelam pelo stick em ANGLE, mantêm a taxa em ACRO, pousam e param os motores na perda de sinal; no 5" — airmode com acelerador zero, guinada, vento com rajadas, failsafe sem barômetro, controladores PWM, um whoop com ciclo de 4 kHz, falha e retorno do enlace, queda de costas, falha de motor, teste dos motores, queda de tensão da bateria |
 | `native/test_takeoff` | 23 | Decolagem automática e calibração em solo do avião: horizonte a partir da posição “cauda levantada” e atitude em solo (`ImuOrientation`), filtro de ângulos sem acelerômetro na corrida, calibração do trem na flash de um `ImuSensorBase` real (horizonte depois de ligar sobre as rodas, `o` apaga a atitude em solo, refino do zero do giroscópio), `GroundCalibration` (dois passos, verificação dos ângulos, cancelamento, gesto na chave), `SignalPlayer`, etapas do `TakeoffController` para bequilha e roda de nariz, leis das superfícies, decolagem abortada (acelerador, link, falha do IMU, rolagem, rumo, nariz, cauda, sem decolar), sem barômetro por tempo, a janela “só giroscópio” |
 | `native/test_feedback_units` | 14 | Os módulos de realimentação um a um: fontes de velocidade, no ar/no solo, a estimativa RLS, o controlador, sinais de estol, cancelamentos da decolagem e do pouso |
 | `native/test_app` | 10 | `src/main.cpp` no ESP32-S3 com o kit de bancada MPU6500/BMP581/QMC5883P/OLED: período do `loop()`, rádio → servos, ARM, modos, perda de sinal, console, dashboard, tela, caixa-preta (uma tarefa no núcleo 0, gravação com o acelerador, voo após o DISARM, `bb list`) |
@@ -122,10 +126,11 @@ Os testes da placa (`test_feedback`, `test_imu_orientation`) são portáteis: co
 | `native_stm32/test_blackbox_sd` | 29 | A caixa-preta no cartão SD: FAT32 (com e sem MBR, um diretório em dois clusters, entradas de ruído, um volume alheio/fragmentado/vazio), `SdFileRegion` (blocos incompletos, cache, apagamento, limites, falhas), o driver real `Stm32SdCard` sobre um `HAL_SD` falso (4 bits, velocidades reserva, nova tentativa, cartão ocupado, buffers desalinhados), o anel no cartão (reinicialização, falta de energia, custo da verificação), a marca “anel vazio”, gravação do voo em um `FlightController`, uma reinicialização com falha detectada por `RCC->RSR`, o ADC da bateria, erros do cartão em voo, um cartão lento, download pelo console, a tecla `D` |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | `src/stm32/main.cpp` com cartão: a inicialização encontra o cartão e o arquivo, a tarefa `bbox` grava o voo, o período do ciclo não se alonga, `bb list` |
 | `native_stm32/test_app_stm32_no_sd` | 4 | `src/stm32/main.cpp` sem cartão: a caixa-preta fica desativada e explica o motivo, o avião voa, o menu `k` não quebra; autoverificação das saídas no PD14 (contorno do bug do `pulseIn()` do core), sinal do motor `e`; SBUS no `Stm32UartPort` — 8E2 e inversão de RX |
+| `native_stm32/test_app_stm32_copter` | 5 | `src/stm32/main_copter.cpp` na **Matek H743-WING V3**: ajuste a partir da descrição na partida, pulsos OneShot125 de “parada” em S1–S4 antes do ARM, ARM espera a calibração de montagem da IMU, marcha lenta após o ARM, modo pela chave SwC, perda de sinal no chão — DISARM e ARM só com um novo acionamento, o console (`t`, `s`, teste dos motores com confirmação, um motor por vez, cancelamento por tecla, recusado com ARM) |
 | `native_stm32/test_app_stm32_matek_h743` | 4 | `src/stm32/main.cpp` na **Matek H743-WING V3**: sensores na placa (ICM-42688-P no SPI1, DPS310 no I2C2), bússola no barramento I2C1 externo à parte, `@scan` com o campo `ext`, identidade `matek-h743`; o ARM com estabilização espera a calibração de montagem (em MANUAL pode); a placa fica de trás para a frente — após as três poses, os ângulos ficam certos |
 | `test_feedback` | 10 | Simulação do avião em malha fechada com o laço de realimentação (no PC e na placa) |
 | `test_imu_orientation` | 5 | Calibração da instalação da IMU em 300 instalações aleatórias (no PC e na placa) |
-| **Total** | **460** | 407 em `native` + 53 em `native-stm32` (mais 9 só na placa — `test_blackbox_sd`) |
+| **Total** | **522** | 464 em `native` + 58 em `native-stm32` (mais 9 só na placa — `test_blackbox_sd`) |
 
 ### Testes na placa STM32
 
@@ -174,22 +179,24 @@ Para gravar: `pio run -d test/bench/elevator_sweep -t upload`. Para voltar ao fi
 |---|---|---|
 | `autopilot` | 1328/1395 (95,2%) | 921/1039 (88,6%) |
 | `autopilot/feedback` | 682/713 (95,7%) | 502/571 (87,9%) |
-| `config` | 2/2 (100%) | 2/2 (100%) |
-| `control` | 561/584 (96,1%) | 438/469 (93,4%) |
-| `hal` | 238/301 (79,1%) | 130/168 (77,4%) |
-| `hal/esp32` | 117/148 (79,1%) | 32/38 (84,2%) |
-| `hal/stm32` | 241/288 (83,7%) | 115/144 (79,9%) |
-| `rc` | 93/100 (93,0%) | 44/46 (95,7%) |
-| `sensors` (todos) | 1533/1625 (94,3%) | 835/994 (84,0%) |
+| `config` | 16/16 (100%) | 7/8 (87,5%) |
+| `control` | 568/591 (96,1%) | 447/479 (93,3%) |
+| `copter` | 1118/1132 (98,8%) | 608/670 (90,7%) |
+| `hal` | 239/306 (78,1%) | 130/170 (76,5%) |
+| `hal/esp32` | 121/152 (79,6%) | 34/40 (85,0%) |
+| `hal/stm32` | 303/364 (83,2%) | 148/197 (75,1%) |
+| `rc` | 201/211 (95,3%) | 126/134 (94,0%) |
+| `sensors` (todos) | 1561/1655 (94,3%) | 851/1014 (83,9%) |
 | `storage` | 350/364 (96,2%) | 275/334 (82,3%) |
-| `telemetry` | 2775/2920 (95,0%) | 2082/2464 (84,5%) |
-| `src` (`main.cpp`, `stm32/main.cpp`) | 145/150 (96,7%) | 26/32 (81,2%) |
-| **Total** | **8065/8590 (93,9%)** | **5402/6301 (85,7%)**; funções 1204/1245 (96,7%) |
+| `telemetry` | 3093/3277 (94,4%) | 2310/2789 (82,8%) |
+| `src` (`main.cpp`, `stm32/main.cpp`, `stm32/main_copter.cpp`) | 240/261 (92,0%) | 62/93 (66,7%) |
+| **Total** | **9820/10437 (94,1%)** | **6421/7538 (85,2%)**; funções 1432/1487 (96,3%) |
 
 O que continua sem cobertura e por quê:
 
 - **Lançamento manual** (`TakeoffSequencer`: `WaitLaunch`, `launchDetected()`) — inalcançável com `FeedbackConfig::TAKEOFF_HAND_LAUNCH = false`; vai aparecer nos testes quando a constante se tornar configurável (a mudança para o `Config.h`).
 - **Dependente da placa:** uma saída sem pino (`PIN_RUDDER = -1` só ocorre na C3), GPS sem pino TX (C3) — os testes nativos exercitam a pinagem da S3, da de 38 pinos e da STM32, mas não a da C3 (a C3 é verificada pela matriz de builds).
+- **Cóptero na STM32:** ramos de erro na partida (montagem fora do catálogo, frame com mais motores que saídas, saída que não foi configurada), `D`/`i`/`o` pelo console do cóptero — no PC, seus ramos repetem os já verificados no firmware do avião.
 - **STM32:** os ramos de erro do núcleo (não há timer no pino, o conjunto de timers se esgotou), a mensagem `FreeRTOS не запустился` (“o FreeRTOS não iniciou”) — no PC o `vTaskStartScheduler()` sempre retorna.
 - **Ramos defensivos** que não dá para alcançar pela API pública: `default`/`Count` em um `switch` sobre enumerações, `return "?"`.
 - **Destrutores e implementações padrão das interfaces** (`IBoard`, `IUartPort`, `ImuSensor` etc.) — todas as implementações os sobrescrevem, e com `-fkeep-inline-functions` o gcov conta também essas linhas.

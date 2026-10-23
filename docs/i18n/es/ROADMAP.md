@@ -15,6 +15,8 @@ El montaje actual ha pasado al ESP32-S3 (N16R8) con un motor D3548 1100KV y un E
 
 Desde entonces el firmware ha ganado 12 modos de piloto automático (estabilización, mantenimiento de altitud, crucero, círculos y regreso a casa por GPS, lanzamiento a mano, aterrizaje automático, vuelo a vela en térmicas, «rescate»), geovalla, regreso a casa al perder la señal, lanzamiento de carga, un tubo de Pitot formado por dos barómetros, compatibilidad con sensores nuevos (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) y un firmware completo para el STM32H743 con telemetría MAVLink para QGroundControl. Todo esto está comprobado con 395 pruebas automáticas y simulaciones de vuelo en lazo cerrado (todo el firmware pilota un modelo de avión), pero **todavía no se ha probado en el aire**. Dicho de otro modo: hasta ahora solo ha volado el control manual; el piloto automático está escrito, comprobado con todo lo que se puede usar para comprobarlo sin volar, y espera las pruebas de vuelo.
 
+El mismo firmware ahora también vuela multicópteros — cuadricóptero, hexa, octo, Y6 y X8 en las mismas placas STM32H743: deduce por sí mismo los PID y los filtros a partir de la descripción del cóptero (chasis, hélices, motores, batería, masa). Esto está comprobado con un simulador de 6 grados de libertad en 12 montajes, desde un whoop hasta un hexa con hélices de 15" — incluida una física que a propósito no coincide con la descripción —, pero tampoco **ha volado todavía** ([COPTER.md](COPTER.md)).
+
 ## 2. Por qué importa
 
 La aviación pequeña autónoma con una barrera de entrada baja cubre tareas en las que lo decisivo no es la carga útil ni el alcance máximos, sino la rapidez de reacción y el bajo coste de operación:
@@ -135,6 +137,14 @@ Por ahora los datos del GPS y de la brújula están disponibles mediante `Autopi
 
 **Objetivo:** gestionar varias aeronaves a la vez: despacho de tareas, un panel de operaciones, historial de vuelos. Es el nivel en el que el proyecto deja de ser solo un prototipo de ingeniería a medio camino con la afición y se convierte en una herramienta operativa, interesante como problema de negocio: planificación de rutas para varias aeronaves, una cola de tareas, el estado de cada aeronave en tiempo real. Técnicamente es una superestructura sobre las Fases 3–6 (GPS, telemetría, GUI): en esencia, la misma API de `WebDebugServer`, pero ampliada a muchas fuentes de telemetría en lugar de una.
 
+### Multicópteros — el mismo firmware [en el firmware, comprobado con simulador]
+
+**Objetivo:** una sola base de código para aviones y cópteros, para que el reparto y la vigilancia elijan la aeronave según la tarea y no según el firmware.
+
+**Hecho:** chasis desde el cuadricóptero hasta el X8, un mezclador con airmode, un lazo de velocidad angular cuyos PID y filtros se deducen de un modelo del motor y la hélice (12 dB de margen de ganancia: aguanta un cóptero cuyo empuje e inercia están equivocados por un factor de dos), orientación con cuaternión, mantenimiento de altura con aprendizaje del gas de estacionario, notches por rpm, failsafe con aterrizaje, protección contra vuelco y fallo de motor, variadores PWM/OneShot/Multishot, una consola con prueba de motores. Comprobado con vuelos en lazo cerrado de 12 montajes × 3 variantes de física y con el firmware completo sobre los fakes de la Matek H743.
+
+**Siguiente:** DShot con DMA (y bidireccional: rpm exactas), un ciclo de 4 kHz para los whoops, caja negra y MAVLink para el cóptero, OpenPlane Studio, mantener posición y regresar por GPS, pruebas de vuelo.
+
 ## 6. GUI: de una página de depuración a una estación de tierra
 
 La tesis clave de esta sección: no hace falta construir la GUI desde cero, porque ya existe en parte y funciona. Hoy `WebDebugServer.h`:
@@ -157,6 +167,7 @@ Dicho de otro modo, el elemento de la futura estación de tierra que más riesgo
 Para que la hoja de ruta no parezca marketing, dejamos constancia aparte de lo que aún no está hecho o está hecho solo en parte:
 
 - El piloto automático se ha comprobado en el banco, con 395 pruebas automáticas y con simulaciones en lazo cerrado, pero nunca se ha probado en vuelo: hasta ahora solo ha volado el control manual (en el primer prototipo). El modelo del avión en las simulaciones es simplificado y los coeficientes son valores iniciales.
+- El firmware de multicóptero está comprobado con un simulador y sobre fakes de la placa, no en el aire. Por ahora los variadores solo son analógicos (PWM, OneShot, Multishot); DShot es la siguiente etapa.
 - Los sensores nuevos (LSM6DSV, ICM-45686, QMC6309, SPL06, BMP581) se han comprobado con emuladores de registros hechos a partir de las hojas de datos; en hardware, todavía no.
 - STM32H743: todo el firmware corre en un PC sobre fakes de STM32duino; todavía no hay una placa física.
 - El horizonte de la estabilización es la posición de la aeronave al encender (la IMU se calibra en cada arranque), o bien la calibración del montaje a partir de tres posiciones.

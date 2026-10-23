@@ -26,7 +26,12 @@
 // (env stm32h743-devebox — USB CDC; stm32h743 — LPUART1 115200, PA9/PA10),
 // 'b' — опрос шин I2C, 's' — датчики, 'p' — импульсы на выходах (пропеллер
 // снять!), 'D' — перезагрузка в загрузчик USB DFU.
+//
+// В сборке мультикоптера (VEHICLE_MULTIROTOR) этот файл выключен — точка
+// входа там src/stm32/main_copter.cpp.
 // ============================================================
+
+#if !defined(VEHICLE_MULTIROTOR)
 
 #include <Arduino.h>
 
@@ -332,3 +337,5 @@ void setup()
 void loop()
 {
 }
+
+#endif   // !VEHICLE_MULTIROTOR

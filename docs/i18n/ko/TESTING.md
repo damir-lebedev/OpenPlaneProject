@@ -85,6 +85,8 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 |---|---|
 | `ChipEmulators.h` | LSM6DSV, ICM-42688-P, ICM-45686(IPREG 간접 레지스터 포함), QMC6309, SPL06-001, BMP581, u-blox NAV-PVT 프레임. I2C 또는 SPI 위의 레지스터 맵이며, 데이터는 `World` "세계"(각도와 속도, 고도, 대기속도, 침로, 좌표)에서 가져와 `IMU_ROTATION_CW_DEG`를 반영한 칩의 축으로 돌려줍니다 |
 | `PlaneSim.h` | 약 1.2 kg 비행기 모델: 질점 + 롤/피치 회전, 실속을 포함한 CL(α), 항력, 추력, 바람, 서멀, 지면; 꼬리 바퀴 또는 앞바퀴 랜딩기어: 비행기는 주바퀴 위에서 앞뒤로 흔들리고, 꼬리 바퀴 하중, 꼬리 충돌, 프로펠러 접촉을 세며, 프로펠러 토크와 조향 바퀴에 의한 지상 요잉도 다룸 |
+| `QuadSim.h` | 6자유도 멀티콥터 모델: 각 모터는 `copter/Propulsion.h`와 같은 모델(저항과 역기전력을 거치는 전류, 프로펠러 추력과 토크, 로터 가속)이지만 매개변수를 일부러 비틀었습니다(`QuadPerturb`: 추력, 토크, 저항, 관성, 질량, 무게 중심, 모터 간 편차). 전류에 따른 배터리 전압 강하(전압을 모터 전류와 함께 풉니다), 프로펠러 반동 토크, 공기 저항, 돌풍, ESC 지연, 칩 필터를 거친 노이즈와 모터 진동이 실린 자이로와 가속도계, 50 Hz 기압계, 지면, 모터 고장 |
+| `QuadHarness.h` | 멀티콥터 폐루프: 실제 `CopterController`(구성 기술로 `deriveTune()`이 만든 설정) ↔ `QuadSim`. 비행 통계(기울기, 흔들림, 모터 “떨림”, 포화, 고도), ALT_HOLD 이륙 |
 | `SimHarness.h` | 폐루프: 조종기 → iBUS 프레임 → `RcReceiver` → `PilotSwitches` → `Autopilot` → `FlightController` → PWM → 조종면 꺾임 → `PlaneSim` → 센서(노이즈가 있는 기압계 두 개로 만든 피토관 포함). `OPENPLANE_SIM_DIR`를 지정하면 CSV 궤적을 만듭니다; `realisticImu`에서는 실제 `AttitudeEstimator`가 비력으로 각도를 계산: 활주로의 가속을 기체에서와 같이 받음 |
 
 `test/native/helpers/TestSupport.h`는 여러 세트가 함께 쓰는 부분입니다. `resetWorld()`(`setUp()`에서 호출), `FakeUart`/`FakeServo`/`FakeBoard`와 센서(`FakeImu`, `FakeBaro`, `FakeMag`, `FakeGps`)의 대역, 프레임 조립기 `ibusFrame()`, 진짜 `Esp32I2CBus`/`Esp32SpiBus`와 시뮬레이션된 칩이 붙은 `*RegisterDevice` 위에 드라이버를 얹는 시험대 `I2cRig`/`SpiRig`입니다.
@@ -112,6 +114,8 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native/test_blackbox_scan` | 3 | 전원을 켤 때 하는 링의 표본 검증과 전체 검증의 비교: 링의 무작위 이력 300개 × 탐색 5단계(머리 위치, 번호, 비행 목록이 일치하며, 맞지 않을 때는 전체 검증에 양보), 그리고 64 MB SD 영역에서의 비용(32,000번 대신 약 530번 읽기) |
 | `native/test_telemetry` | 35 | `LoopStats`, `LogSettings`(NVS, 버전), `DebugLogger`(모든 채널, NAV), `DebugConsole`(메뉴, 단축키, 버스 탐색 `b`, ARM 중 금지, ARM이 아닐 때만 저장), `WebDebugServer`(경로, JSON, 우편함), `OledDisplay`(I2C 바이트, 프레임, 신호 상실 시 반전); 콘솔의 캘리브레이션 `c`와 알림 `e`, 로그 줄 `AP`의 이륙 단계, OLED의 캘리브레이션 단계와 이륙 단계, PC 명령 `id`에 대한 펌웨어 식별 정보(OpenPlane Studio용), 앱을 위한 실시간 데이터(`AppLink`: 캘리브레이션과 ARM이 거부되는 이유가 담긴 `@live` 프레임, 포트 버퍼가 가득 차면 프레임을 건너뜀), 명령 `scan`과 `act X` |
 | `native/test_sim` | 18 | 비행기 모델로 하는 펌웨어 전체의 폐루프 비행: 뱅크에서의 회복, 옆바람 속 CRUISE, LOITER, RTH, failsafe RTH/활공, 지오펜스, 꼬리 바퀴 자동 이륙(꼬리 바퀴 하중은 주기 하중을 넘지 않고, 프로펠러도 꼬리도 활주로에 닿지 않으며, 실제 자세 필터 사용. 기압계 있음/없음), 앞바퀴 자동 이륙, 스로틀로 중단한 이륙, 손으로 던져 이륙, 자동 착륙, 서멀, 나선에서의 RESCUE, 속도 유지와 실속 방지, 루프 안의 실제 피토관, “삐뚤어진” 비행기의 오토 트림, 비행 중 센서 고장(IMU, 기압계, 피토관, GPS) |
+| `native/test_copter` | 41 | 멀티콥터를 블록별로: 프레임(모터 수, 균형, 정규화, Betaflight 순서, 바깥쪽 회전 프로펠러, 동축 쌍, 모터의 문장 설명), 믹서(스로틀 0에서 airmode, 요를 먼저 줄임, 롤과 피치를 함께 줄임, 추력 선형화), 필터(PT1, 차단 주파수에서 −3 dB인 PT2, 노치, 로우패스), ESC 프로토콜(펄스, 기준값과 대조한 DShot 프레임과 CRC, 비트 타이밍), 5" 시험대 데이터와 대조한 추진계 모델, 카탈로그 전체의 설정(루프 여유, 필터, TPA, 나쁜 구성에 대한 경고, PWM이면 루프가 좁아짐, whoop에는 4 kHz), 각속도 루프(P, I, I-relax, anti-gravity, anti-windup, 측정값 기준 D, FF), 쿼터니언 자세(360° 플립, 가속도계를 믿지 말아야 할 때), 고도(기압계 + 가속도계, 바이어스, 기압계 없음), 고도 유지, 회전수 노치, ARM과 모든 거부 이유, 모터 테스트, 지상 신호 상실 |
+| `native/test_copter_sim` | 16 | 멀티콥터 폐루프 비행(`QuadHarness`): 카탈로그의 12개 구성 모두 — 자기 설정으로, “둔한” 물리와 “예민한” 물리로 — ALT_HOLD에서 호버링하며 호버링 스로틀을 학습하고, ANGLE에서 스틱대로 기울었다가 수평으로 돌아오고, ACRO에서 레이트를 유지하고, 신호 상실 시 착륙해 모터를 멈춥니다. 5"에서는 — 스로틀 0 airmode, 요, 돌풍, 기압계 없는 failsafe, PWM ESC, 4 kHz 주기의 whoop, 링크 끊김과 복귀, 뒤집혀 추락, 모터 고장, 모터 테스트, 배터리 전압 강하 |
 | `native/test_takeoff` | 23 | 자동 이륙과 비행기 지상 캘리브레이션: “꼬리를 든” 자세로 얻는 수평 기준과 주기 자세(`ImuOrientation`), 활주 중 가속도계 없는 자세 필터, 실제 `ImuSensorBase` 플래시의 랜딩기어 캘리브레이션(바퀴로 선 채 전원을 켠 뒤의 수평 기준, `o`가 주기 자세를 지움, 자이로 영점 보정), `GroundCalibration`(두 단계, 각도 점검, 취소, 스위치 동작), `SignalPlayer`, 꼬리 바퀴와 앞바퀴의 `TakeoffController` 단계, 조종면 제어 법칙, 이륙 중단(스로틀, 통신, IMU 고장, 롤, 침로, 기수, 꼬리, 부양 없음), 기압계가 없으면 시간으로, “자이로만” 구간 |
 | `native/test_feedback_units` | 14 | 피드백 모듈을 하나씩: 속도 소스, 공중/지상 판정, RLS 추정, 제어기, 실속 징후, 이륙/착륙 중단 |
 | `native/test_app` | 10 | ESP32-S3의 `src/main.cpp`, 벤치용 구성 MPU6500/BMP581/QMC5883P/OLED: `loop()` 주기, 조종기 → 서보, ARM, 모드, 신호 상실, 콘솔, 대시보드, 화면, 블랙박스(코어 0의 태스크, 스로틀 시 기록, DISARM 뒤의 비행, `bb list`) |
@@ -122,10 +126,11 @@ STM32용으로 공통 페이크에 추가한 것: `TwoWire(sda, scl)`, `setSDA/S
 | `native_stm32/test_blackbox_sd` | 29 | SD 카드의 블랙박스: FAT32(MBR 있음/없음, 클러스터 두 개에 걸친 디렉터리, 노이즈 항목, 남의/흩어진/빈 볼륨), `SdFileRegion`(불완전한 블록, 캐시, 삭제, 경계, 고장), 가짜 `HAL_SD` 위에서 도는 실제 `Stm32SdCard` 드라이버(4비트, 예비 속도, 재시도, 사용 중인 카드, 정렬되지 않은 버퍼), 카드 위의 링(재부팅, 전원 차단, 검증 비용), “링이 비어 있음” 표시, `FlightController`에서의 비행 기록, `RCC->RSR`로 판별하는 비정상 재부팅, 배터리 ADC, 비행 중 카드 오류, 느린 카드, 콘솔을 통한 내려받기, `D` 키 |
 | `native_stm32/test_app_stm32_blackbox_sd` | 3 | 카드가 있는 `src/stm32/main.cpp`: 부팅 시 카드와 파일을 찾음, `bbox` 태스크가 비행을 기록, 루프 주기가 늘어나지 않음, `bb list` |
 | `native_stm32/test_app_stm32_no_sd` | 4 | 카드가 없는 `src/stm32/main.cpp`: 블랙박스는 비활성화되고 이유를 설명함, 비행기는 비행함, 메뉴 `k`는 망가지지 않음; PD14에서의 출력 자체 점검(코어 `pulseIn()` 결함 우회), 모터 알림 `e`; `Stm32UartPort`의 SBUS — 8E2와 RX 반전 |
+| `native_stm32/test_app_stm32_copter` | 5 | **Matek H743-WING V3**에서 `src/stm32/main_copter.cpp`: 부팅 시 기술로부터 설정, ARM 전에는 S1–S4에 OneShot125 “정지” 펄스, ARM은 IMU 장착 보정을 기다림, ARM 후 아이들, SwC 스위치로 모드, 지상 신호 상실 — DISARM이 되고 스위치를 다시 켜야만 ARM, 콘솔(`t`, `s`, 확인을 받는 모터 테스트, 한 번에 모터 하나, 키로 취소, ARM 중 거부) |
 | `native_stm32/test_app_stm32_matek_h743` | 4 | **Matek H743-WING V3**의 `src/stm32/main.cpp`: 보드의 센서(SPI1의 ICM-42688-P, I2C2의 DPS310), 별도의 외부 I2C1 버스에 있는 나침반, `ext` 필드가 있는 `@scan`, 식별자 `matek-h743`; 안정화가 있는 ARM은 장착 보정을 기다림(MANUAL은 가능); 보드가 거꾸로 앉아 있어도 세 자세 후 각도가 맞음 |
 | `test_feedback` | 10 | 피드백 루프가 있는 비행기의 폐루프 시뮬레이션(PC와 보드 모두) |
 | `test_imu_orientation` | 5 | 무작위 장착 300가지에서 하는 IMU 장착 보정(PC와 보드 모두) |
-| **합계** | **460** | `native`에 407개 + `native-stm32`에 53개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
+| **합계** | **522** | `native`에 464개 + `native-stm32`에 58개(그 밖에 보드에서만 도는 9개: `test_blackbox_sd`) |
 
 ### STM32 보드에서의 테스트
 
@@ -174,22 +179,24 @@ DevEBox H743 + 16 GB 카드에서의 결과(2026-10-02): `test_blackbox_sd`는 9
 |---|---|---|
 | `autopilot` | 1328/1395 (95.2%) | 921/1039 (88.6%) |
 | `autopilot/feedback` | 682/713 (95.7%) | 502/571 (87.9%) |
-| `config` | 2/2 (100%) | 2/2 (100%) |
-| `control` | 561/584 (96.1%) | 438/469 (93.4%) |
-| `hal` | 238/301 (79.1%) | 130/168 (77.4%) |
-| `hal/esp32` | 117/148 (79.1%) | 32/38 (84.2%) |
-| `hal/stm32` | 241/288 (83.7%) | 115/144 (79.9%) |
-| `rc` | 93/100 (93.0%) | 44/46 (95.7%) |
-| `sensors`(전체) | 1533/1625 (94.3%) | 835/994 (84.0%) |
+| `config` | 16/16 (100%) | 7/8 (87.5%) |
+| `control` | 568/591 (96.1%) | 447/479 (93.3%) |
+| `copter` | 1118/1132 (98.8%) | 608/670 (90.7%) |
+| `hal` | 239/306 (78.1%) | 130/170 (76.5%) |
+| `hal/esp32` | 121/152 (79.6%) | 34/40 (85.0%) |
+| `hal/stm32` | 303/364 (83.2%) | 148/197 (75.1%) |
+| `rc` | 201/211 (95.3%) | 126/134 (94.0%) |
+| `sensors`(전체) | 1561/1655 (94.3%) | 851/1014 (83.9%) |
 | `storage` | 350/364 (96.2%) | 275/334 (82.3%) |
-| `telemetry` | 2775/2920 (95.0%) | 2082/2464 (84.5%) |
-| `src`(`main.cpp`, `stm32/main.cpp`) | 145/150 (96.7%) | 26/32 (81.2%) |
-| **합계** | **8065/8590 (93.9%)** | **5402/6301 (85.7%)**, 함수 1204/1245 (96.7%) |
+| `telemetry` | 3093/3277 (94.4%) | 2310/2789 (82.8%) |
+| `src`(`main.cpp`, `stm32/main.cpp`, `stm32/main_copter.cpp`) | 240/261 (92.0%) | 62/93 (66.7%) |
+| **합계** | **9820/10437 (94.1%)** | **6421/7538 (85.2%)**, 함수 1432/1487 (96.3%) |
 
 아직 커버되지 않은 부분과 그 이유:
 
 - **손으로 던져 이륙**(`TakeoffSequencer`: `WaitLaunch`, `launchDetected()`): `FeedbackConfig::TAKEOFF_HAND_LAUNCH = false`인 동안에는 도달할 수 없습니다. 이 상수를 설정할 수 있게 되면(`Config.h`로 옮기면) 테스트에 들어옵니다.
 - **보드에 의존하는 부분**: 핀이 없는 출력(`PIN_RUDDER = -1`은 C3에서만 나옵니다), TX 핀이 없는 GPS(C3). 네이티브 테스트는 S3, 38핀, STM32의 핀 배치를 돌려 보지만 C3는 돌리지 않습니다(C3는 빌드 매트릭스로 확인합니다).
+- **STM32의 콥터:** 부팅 오류 분기(카탈로그에 없는 구성, 출력보다 모터가 많은 프레임, 설정되지 않은 출력), 콥터 콘솔의 `D`/`i`/`o` — PC에서는 이 분기들이 비행기 펌웨어에서 이미 확인한 분기와 같습니다.
 - **STM32**: 코어의 오류 분기(핀에 타이머가 없음, 타이머 풀이 바닥남), 메시지 `FreeRTOS не запустился`(“FreeRTOS가 시작되지 않았다”): PC에서는 `vTaskStartScheduler()`가 항상 반환됩니다.
 - **방어용 분기**로, 공개 API를 통해서는 도달할 수 없는 것: 열거형에 대한 `switch`의 `default`/`Count`, `return "?"`.
 - **인터페이스의 소멸자와 기본 구현**(`IBoard`, `IUartPort`, `ImuSensor` 등): 모든 구현이 이를 재정의하지만, `-fkeep-inline-functions`를 쓰면 gcov가 이 줄들도 셉니다.

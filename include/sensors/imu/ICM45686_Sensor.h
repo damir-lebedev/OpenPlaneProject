@@ -77,8 +77,8 @@ public:
         delay(1);
 
         ok = ok &&
-             setIndirectBits(IPREG_GYRO_LPF, LPF_MASK, LPF_ODR_DIV_32) &&
-             setIndirectBits(IPREG_ACCEL_LPF, LPF_MASK, LPF_ODR_DIV_32);
+             setIndirectBits(IPREG_GYRO_LPF, LPF_MASK, lpfCode()) &&
+             setIndirectBits(IPREG_ACCEL_LPF, LPF_MASK, lpfCode());
 
         if (!ok)
         {
@@ -143,7 +143,10 @@ private:
     static constexpr uint16_t IPREG_GYRO_LPF  = 0xA4AC;  // IPREG_SYS1_REG_172
     static constexpr uint16_t IPREG_ACCEL_LPF = 0xA583;  // IPREG_SYS2_REG_131
     static constexpr uint8_t LPF_MASK         = 0x07;
+    static constexpr uint8_t LPF_ODR_DIV_4    = 0x01;   // 400 Гц — коптер (Config::IMU_WIDE_BANDWIDTH)
     static constexpr uint8_t LPF_ODR_DIV_32   = 0x04;
+
+    static constexpr uint8_t lpfCode() { return Config::IMU_WIDE_BANDWIDTH ? LPF_ODR_DIV_4 : LPF_ODR_DIV_32; }
 
     static constexpr uint32_t GYRO_STARTUP_MS = 45;
 

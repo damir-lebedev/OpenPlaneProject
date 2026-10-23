@@ -259,9 +259,20 @@ def parse_platformio(text):
         if sec.get("platform", "").strip() == "native":
             continue
         flags = sec.get("build_flags", "")
-        # ${env:stm32h743.build_flags} — флаги родителя
-        for ref in re.findall(r"\$\{([^}]+)\.build_flags\}", flags):
-            flags += "\n" + resolve(ref if ref.startswith("env:") else ref).get("build_flags", "")
+        # ${env:stm32h743.build_flags} — флаги родителя; у родителя могут
+        # быть свои ссылки на деда — раскрываются, пока есть новые
+        expanded = set()
+        while True:
+            refs = [r for r in re.findall(r"\$\{([^}]+)\.build_flags\}", flags) if r not in expanded]
+            if not refs:
+                break
+            for ref in refs:
+                expanded.add(ref)
+                flags += "\n" + resolve(ref if ref.startswith("env:") else ref).get("build_flags", "")
+        # Мультикоптер (docs/COPTER.md) настраивается в CopterConfig.h — приложению
+        # его сборки пока не показываются.
+        if re.search(r"-D\s*VEHICLE_MULTIROTOR\b", flags):
+            continue
         macro = next(iter(re.findall(r"-D\s*(BOARD_[A-Z0-9_]+)", flags)), None)
         # Полётник с датчиками на плате задаёт их набор сам (-D SENSOR_KIT=…).
         kit = next(iter(re.findall(r"-D\s*SENSOR_KIT=(SENSOR_KIT_\w+)", flags)), None)

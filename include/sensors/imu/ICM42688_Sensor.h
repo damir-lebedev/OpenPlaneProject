@@ -72,8 +72,9 @@ public:
         ok &= device.writeRegister(REG_ACCEL_CONFIG0, 0x06);
 
         // Полоса UI-фильтров: 6 = ODR/20 = 50 Гц для accel и gyro —
-        // по смыслу как DLPF ~41 Гц у MPU6050.
-        ok &= device.writeRegister(REG_GYRO_ACCEL_CONFIG0, 0x66);
+        // по смыслу как DLPF ~41 Гц у MPU6050; у коптера
+        // (Config::IMU_WIDE_BANDWIDTH) 1 = ODR/4 = 250 Гц.
+        ok &= device.writeRegister(REG_GYRO_ACCEL_CONFIG0, Config::IMU_WIDE_BANDWIDTH ? 0x11 : 0x66);
 
         if (!ok)
         {

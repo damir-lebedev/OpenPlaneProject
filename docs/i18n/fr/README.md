@@ -35,7 +35,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-460%20passing-3fb950?style=for-the-badge" alt="460 tests">
+  <img src="https://img.shields.io/badge/tests-522%20passing-3fb950?style=for-the-badge" alt="522 tests">
   <img src="https://img.shields.io/badge/coverage-94%25-3fb950?style=for-the-badge" alt="couverture de 94 %">
   <img src="https://img.shields.io/badge/builds-33%2F33%20clean-3fb950?style=for-the-badge" alt="33 compilations sans avertissement">
   <br>
@@ -60,8 +60,9 @@
 |---|---|
 | **Ce que c’est** | Un contrôleur de vol et pilote automatique ouverts pour avions radiocommandés. La carte principale est la STM32H743 (une carte de la classe Pixhawk) : sur une carte DevEBox, le firmware **tourne déjà et se pilote avec la radio** — [il y a une vidéo](#-le-stm32h743sanime-sur-la-carte), et les capteurs sont en cours de branchement. L’ancienne base est un ESP32-S3 à environ 10 $, qui a passé le banc avec tous les capteurs. |
 | **Ce qu’il sait faire** | 12 modes de vol, de la stabilisation au retour à la maison, en passant par les cercles au GPS, le lancer à la main, l’atterrissage automatique et le **vol à voile en thermiques**. Un tube de Pitot fait de deux baromètres bon marché. Télémétrie MAVLink vers QGroundControl et Mission Planner. |
+| **Multicoptères** | Le même firmware pour quads, hexas, octos, Y6 et X8 : vous décrivez le châssis, les hélices, les moteurs et la batterie, et le firmware en déduit lui-même les PID et les filtres à partir d’un modèle physique. Vérifié en simulateur pour l’instant — [COPTER.md](COPTER.md). |
 | **L’atout principal** | N’importe quel interrupteur ou potentiomètre de la radio = n’importe quelle fonction. **Une seule ligne** dans `Controls.h`, et SwD n’est plus l’inversion du moteur mais un largage de charge. |
-| **Pourquoi lui faire confiance** | 460 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 94 % du code couvert par les tests, 33 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
+| **Pourquoi lui faire confiance** | 522 tests automatiques (plus 9 sur la carte elle-même, avec une vraie carte SD), 94 % du code couvert par les tests, 33 compilations « carte × capteurs » sans le moindre avertissement, des simulations en boucle fermée de chaque mode. |
 | **En toute franchise** | Pour l’instant, seul le mode manuel a volé (le premier prototype). Le STM32H743 n’a été vérifié que sur le banc, sans capteurs. Le pilote automatique a été vérifié sur le banc, par des tests et des simulations, et attend les essais en vol — [état des lieux plus bas](#-état-réel). |
 
 ---
@@ -130,6 +131,25 @@ Pas « une fonction a renvoyé un nombre », mais un **vol** : radio → tram
     <td>🌬️ Vitesse mesurée par un tube fait de deux baromètres <b>bruités</b>, avec un décalage de 150 Pa entre les puces — l’erreur reste inférieure à 0,5 m/s.</td>
   </tr>
 </table>
+
+---
+
+## 🚁 Multicoptères : décrivez le coptère — le réglage est prêt
+
+Quad, hexa, octo, Y6, X8 — sur les mêmes cartes. **Les PID, les filtres, le ralenti et les taux ne se règlent pas à la main** : `CopterConfig.h` contient le châssis, l’hélice, le moteur, la batterie et la masse (ou un montage tout prêt du catalogue : du whoop de 65 mm à l’hexa à hélices de 15"), et le firmware déduit le reste d’un modèle du moteur et de l’hélice — avec une marge qui tient un coptère dont la poussée et l’inertie sont fausses d’un facteur deux. En vol, il apprend lui-même les gaz de stationnaire et déplace ses notches avec le régime des moteurs.
+
+| | |
+|---|---|
+| **Modes** | ACRO (airmode), HORIZON, ANGLE, ALT_HOLD — depuis l’interrupteur SwC |
+| **Protections** | ARM seulement si toutes les vérifications passent (chaque raison de refus en toutes lettres), perte de signal → mise à plat, descente et DISARM au sol, retournement et panne de moteur → moteurs arrêtés |
+| **Contrôleurs** | PWM, OneShot125/42, Multishot ; DShot est l’étape suivante |
+| **Vérifié** | 12 montages × 3 variantes de physique « fausse » dans un simulateur à 6 degrés de liberté : stationnaire ±0,3 m, inclinaison au stick en 0,14–0,35 s, atterrissage sur perte de signal. **Pas encore en vol** |
+
+```bash
+pio run -e matek-h743-quad -t upload    # puis dans la console : t — réglage, m — moteurs (hélices retirées !)
+```
+
+En détail — [COPTER.md](COPTER.md).
 
 ---
 
@@ -208,9 +228,9 @@ Ce que cela prouve : la chaîne « radio → iBUS → firmware → PWM » fon
 
 | | |
 |---|---|
-| **460 tests automatiques** | modules, pilotes vérifiés au niveau des registres des puces, vols en boucle fermée, firmware ESP32 et STM32 **complet** sur PC ; plus 9 tests sur la carte STM32 elle-même avec une vraie carte SD |
-| **93,9 % des lignes, 85,7 % des branches** | couverture `gcovr`, code STM32 compris |
-| **33/33 compilations** | 4 cartes × 7 kits de capteurs + Matek H743, `-Wall -Wextra`, zéro avertissement |
+| **522 tests automatiques** | modules, pilotes vérifiés au niveau des registres des puces, vols en boucle fermée, firmware ESP32 et STM32 **complet** sur PC ; plus 9 tests sur la carte STM32 elle-même avec une vraie carte SD |
+| **94,1 % des lignes, 85,2 % des branches** | couverture `gcovr`, code STM32 compris |
+| **33/33 compilations** | 4 cartes × 7 kits de capteurs + Matek H743, `-Wall -Wextra`, zéro avertissement ; plus 2 compilations coptère |
 | **0 remarque** | cppcheck et clang-tidy sur tout le code |
 | **Des références, pas des copies de code** | formules des capteurs d’après les fiches techniques (Bosch, ST, TDK, Goertek), MAVLink d’après pymavlink |
 
@@ -254,6 +274,7 @@ pio run -e stm32h743-devebox -t upload                    # DevEBox H743 : USB D
 pio run -e matek-h743 -t upload                           # Matek H743-WING V3 : bouton BOOT + USB
 pio run -e esp32-s3 -t upload && pio device monitor     # ESP32-S3
 pio run -e stm32h743 -t upload                            # STM32H743 (ST-Link)
+pio run -e matek-h743-quad -t upload                      # multicoptère sur la Matek H743 (COPTER.md)
 ```
 
 DevEBox : la carte n’a pas de bouton BOOT0 — avant le premier téléversement, reliez la broche BT0 au 3V3 et appuyez sur RST ; ensuite, la touche `D` de la console redémarre la carte dans le chargeur d’amorçage toute seule ([détails](DEVELOPER_GUIDE.md#stm32h743)).
@@ -279,6 +300,7 @@ Dans le moniteur série : `h` — menu, `b` — quelles puces sont visibles sur
 | Récepteurs SBUS et CRSF (ExpressLRS) | 🧪 tests : analyse des trames, failsafe, UART inversé ; pas encore essayés avec un vrai récepteur |
 | Matek H743-WING V3 : capteurs sur la carte, bus I2C externe, calibration du montage de l’IMU | 🧪 tout le firmware sur PC ; pas encore essayé sur une vraie carte |
 | STM32H743 : capteurs (IMU, baromètre, boussole, GPS) et modes du pilote automatique | 🧪 firmware entier sur PC ; aucun capteur n’est encore branché sur la carte |
+| Multicoptères : réglage à partir de la description, modes, failsafe, protections | 🧪 simulateur à 6 degrés de liberté (12 montages × 3 variantes de physique) et le firmware entier sur PC ; pas encore en vol |
 
 Le modèle d’avion des simulations est simplifié, et les coefficients sont des valeurs de départ. Chaque nouveau mode est d’abord essayé en altitude, le doigt sur l’interrupteur MANUAL.
 
@@ -299,7 +321,9 @@ Le modèle d’avion des simulations est simplifié, et les coefficients sont de
 - [x] Application [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) : configuration étape par étape, flashage en un clic, réglages au sol
 - [x] Récepteurs SBUS et CRSF (ExpressLRS, TBS Crossfire) à côté de l’iBUS — choix dans `Config.h` ou dans OpenPlane Studio
 - [x] Contrôleur de vol prêt à l’emploi Matek H743-WING V3 : capteurs sur la carte, flashage en un clic (pas encore essayé sur le matériel)
+- [x] Multicoptères (quad, hexa, octo, Y6, X8) : réglage déduit de la description du coptère, vérifié en simulateur
 - [ ] STM32H743 : brancher les capteurs et passer le banc comme pour l’ESP32-S3
+- [ ] Coptère : DShot, cycle à 4 kHz, boîte noire et MAVLink, essais en vol
 - [ ] Contrôleurs de vol populaires sur STM32F405 : SpeedyBee F405 WING, Matek F405-WTE
 - [ ] Essais en vol du pilote automatique sur la nouvelle cellule
 - [ ] Une carte de contrôleur de vol maison ([FC_BOARD.md](FC_BOARD.md)) sur STM32H743
@@ -324,6 +348,7 @@ Ce qui a déjà été fait avec nos propres moyens : une architecture qui se tr
 
 | Document | Pour qui |
 |---|---|
+| [COPTER.md](COPTER.md) | multicoptères : catalogue de montages, votre propre coptère, premier démarrage, modes, protections, comment c’est vérifié |
 | [AUTOPILOT_GUIDE.md](AUTOPILOT_GUIDE.md) | le pilote : chaque mode, fonction et potentiomètre, comment les affecter à un interrupteur, le tube de Pitot, la station sol |
 | [PILOT_GUIDE.md](PILOT_GUIDE.md) | montage, brochage, radio, failsafe, premier vol |
 | [DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md) | le développeur : fichiers, conventions de signes, API, comment ajouter un capteur, un mode ou une carte |
