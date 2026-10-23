@@ -56,14 +56,16 @@ UART (и роли по `serial`), SPI/I2C, CS гироскопа/OSD/флеша,
 предупреждения; модель тяги — по химии (В/банку под нагрузкой).
 **Итог:** copter/Battery.h: напряжение, ток, мА·ч, OK/WARNING/CRITICAL; battery_chemistry с порогами Li-Po/Li-HV/Li-ion, vbat_*, ibata_*, current_meter; ARM — только если банка выше порога WARNING (коммит 6a2c35b)
 
-## [ ] Q4 · PINIO и режимы USER1–USER4
+## [x] Q4 · PINIO и режимы USER1–USER4
 BF-режимы 40–43 → ножки PINIO платы: камера CAM1/CAM2, 12 В.
+**Итог:** режимы USER1–USER4 (40–43) включают ножки PINIO платы с её инверсией; у GETFUN — камера CAM1/CAM2 и 12 В (коммит 28714c8)
 
-## [ ] Q5 · Видеопередатчик
+## [x] Q5 · Видеопередатчик
 SmartAudio 1/2/2.1 и Tramp, таблица VTX этого передатчика, `vtx_band`,
 `vtx_channel`, `vtx_freq`, `vtx_power`, потолок `vtx_power_max`, уровни с
 тумблера (`vtx` в CLI), PIT, `vtx_low_power_disarm`; в OSD и телеметрии —
 мощность. Без ответа передатчика — честно «не отвечает».
+**Итог:** copter/Vtx.h: SmartAudio 1/2/2.1 и Tramp с автоопределением, таблица 80 каналов этого VTX, мощности от передатчика, потолок vtx_max_power_mw (и против кнопки на VTX), мощность/полоса с тумблера (vtx), PIT, low_power_disarm; vtx_info, status, @live (коммит 28714c8)
 
 ## [ ] Q6 · GPS и компас на коптере
 M10 по UART6, QMC5883L/P — автоопределение; спутники, дом, расстояние и
