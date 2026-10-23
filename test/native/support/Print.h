@@ -122,6 +122,9 @@ public:
 
     virtual void flush() {}
 
+    // Как в ядре Arduino: 0 — порт не знает, сколько места.
+    virtual int availableForWrite() { return 0; }
+
 private:
     // Как Print::printNumber(): цифры старше 9 — заглавными.
     size_t printNumber(unsigned long n, uint8_t base)

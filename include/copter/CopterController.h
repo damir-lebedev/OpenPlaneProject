@@ -67,23 +67,37 @@ namespace copter
         return "?";
     }
 
-    // Почему не армится (битовая маска).
-    enum ArmBlock : uint16_t
+    // Почему не армится (битовая маска). Код — как флаг запрета ARM в
+    // Betaflight (`status`), где такой есть; у наших проверок — свой.
+    enum ArmBlock : uint32_t
     {
-        ARM_BLOCK_NO_LINK = 1 << 0,
-        ARM_BLOCK_THROTTLE = 1 << 1,
-        ARM_BLOCK_TILT = 1 << 2,
-        ARM_BLOCK_SWITCH = 1 << 3,
-        ARM_BLOCK_IMU = 1 << 4,
-        ARM_BLOCK_SETTLING = 1 << 5,
-        ARM_BLOCK_MOVING = 1 << 6,
-        ARM_BLOCK_BATTERY = 1 << 7,
-        ARM_BLOCK_MOTOR_TEST = 1 << 8,
-        ARM_BLOCK_CRASH = 1 << 9,
-        ARM_BLOCK_EXTERNAL = 1 << 10,   // снаружи: калибровка установки, настройки
+        ARM_BLOCK_NO_LINK = 1u << 0,
+        ARM_BLOCK_THROTTLE = 1u << 1,
+        ARM_BLOCK_TILT = 1u << 2,
+        ARM_BLOCK_SWITCH = 1u << 3,
+        ARM_BLOCK_IMU = 1u << 4,
+        ARM_BLOCK_SETTLING = 1u << 5,
+        ARM_BLOCK_MOVING = 1u << 6,
+        ARM_BLOCK_BATTERY = 1u << 7,
+        ARM_BLOCK_MOTOR_TEST = 1u << 8,
+        ARM_BLOCK_CRASH = 1u << 9,
+        ARM_BLOCK_FAILSAFE_SWITCH = 1u << 10,
+        ARM_BLOCK_NO_PREARM = 1u << 11,
+        ARM_BLOCK_NO_ARM_SWITCH = 1u << 12,
+        // снаружи (setExternalBlockers): плата, консоль, приложение
+        ARM_BLOCK_CLI = 1u << 13,
+        ARM_BLOCK_MSP = 1u << 14,
+        ARM_BLOCK_NO_ACC_CAL = 1u << 15,
+        ARM_BLOCK_REBOOT = 1u << 16,
+        ARM_BLOCK_CONFIG = 1u << 17,
+        ARM_BLOCK_LOAD = 1u << 18,
+        ARM_BLOCK_LAST = ARM_BLOCK_LOAD,
     };
 
-    inline const char* armBlockText(uint16_t bit)
+    constexpr uint32_t ARM_BLOCK_EXTERNAL_MASK =
+        ARM_BLOCK_CLI | ARM_BLOCK_MSP | ARM_BLOCK_NO_ACC_CAL | ARM_BLOCK_REBOOT | ARM_BLOCK_CONFIG | ARM_BLOCK_LOAD;
+
+    inline const char* armBlockText(uint32_t bit)
     {
         switch (bit)
         {
@@ -97,7 +111,43 @@ namespace copter
             case ARM_BLOCK_BATTERY: return "батарея разряжена";
             case ARM_BLOCK_MOTOR_TEST: return "идёт проверка моторов";
             case ARM_BLOCK_CRASH: return "был переворот — выключить ARM";
-            case ARM_BLOCK_EXTERNAL: return "нужна калибровка или настройка (см. консоль)";
+            case ARM_BLOCK_FAILSAFE_SWITCH: return "включён режим FAILSAFE (тумблер)";
+            case ARM_BLOCK_NO_PREARM: return "PREARM не включён";
+            case ARM_BLOCK_NO_ARM_SWITCH: return "ARM не назначен ни на один тумблер (aux)";
+            case ARM_BLOCK_CLI: return "открыт CLI";
+            case ARM_BLOCK_MSP: return "в приложении несохранённые настройки";
+            case ARM_BLOCK_NO_ACC_CAL: return "не откалибрована установка платы ('o' в консоли)";
+            case ARM_BLOCK_REBOOT: return "нужна перезагрузка (сменилась рама или выходы)";
+            case ARM_BLOCK_CONFIG: return "описание коптера не сходится с платой (см. консоль)";
+            case ARM_BLOCK_LOAD: return "цикл не успевает (загрузка больше 100 %)";
+        }
+        return "?";
+    }
+
+    // Код как в `status` Betaflight; наши проверки — своими словами.
+    inline const char* armBlockCode(uint32_t bit)
+    {
+        switch (bit)
+        {
+            case ARM_BLOCK_NO_LINK: return "RXLOSS";
+            case ARM_BLOCK_THROTTLE: return "THROTTLE";
+            case ARM_BLOCK_TILT: return "ANGLE";
+            case ARM_BLOCK_SWITCH: return "ARMSWITCH";
+            case ARM_BLOCK_IMU: return "NOGYRO";
+            case ARM_BLOCK_SETTLING: return "CALIB";
+            case ARM_BLOCK_MOVING: return "MOVING";
+            case ARM_BLOCK_BATTERY: return "BATTERY";
+            case ARM_BLOCK_MOTOR_TEST: return "MOTOR_TEST";
+            case ARM_BLOCK_CRASH: return "CRASH";
+            case ARM_BLOCK_FAILSAFE_SWITCH: return "BOXFAILSAFE";
+            case ARM_BLOCK_NO_PREARM: return "NOPREARM";
+            case ARM_BLOCK_NO_ARM_SWITCH: return "NO_ARM_AUX";
+            case ARM_BLOCK_CLI: return "CLI";
+            case ARM_BLOCK_MSP: return "MSP";
+            case ARM_BLOCK_NO_ACC_CAL: return "NO_ACC_CAL";
+            case ARM_BLOCK_REBOOT: return "REBOOT_REQD";
+            case ARM_BLOCK_CONFIG: return "CONFIG";
+            case ARM_BLOCK_LOAD: return "LOAD";
         }
         return "?";
     }
@@ -128,6 +178,10 @@ namespace copter
         float yaw = 0.0f;        // −1..1, + нос вправо
         bool armSwitch = false;
         CopterMode mode = CopterMode::ANGLE;
+        bool airmode = false;          // режим AIR MODE с тумблера (поверх настройки)
+        bool failsafeSwitch = false;   // режим FAILSAFE: как потеря связи
+        bool prearm = true;            // PREARM включён или его нет в таблице
+        bool armAssigned = true;       // ARM есть в таблице режимов
     };
 
     struct CopterOutputs
@@ -157,7 +211,7 @@ namespace copter
     {
         CopterState state = CopterState::DISARMED;
         CopterMode mode = CopterMode::ANGLE;
-        uint16_t armBlockers = 0;
+        uint32_t armBlockers = 0;
         float roll = 0, pitch = 0, yaw = 0;     // °
         float rates[3] = {};                    // °/с после фильтров
         float setpoint[3] = {};                 // °/с
@@ -219,8 +273,9 @@ namespace copter
             axes[2].setGains(t.yaw);
         }
 
-        // Внешняя причина не армить (калибровка установки платы, ошибка настроек).
-        void setExternalBlock(bool blocked) { externalBlock = blocked; }
+        // Внешние причины не армить (ARM_BLOCK_EXTERNAL_MASK): CLI, приложение,
+        // калибровка установки платы, ошибка описания, нужна перезагрузка.
+        void setExternalBlockers(uint32_t mask) { externalBlockers = mask & ARM_BLOCK_EXTERNAL_MASK; }
 
         // Проверка моторов (только DISARM): мотор index, доля тяги, сколько секунд.
         bool startMotorTest(uint8_t index, float thrust, float seconds)
@@ -395,6 +450,7 @@ namespace copter
                 for (auto& ax : axes) ax.resetIntegral();
             }
 
+            mixer.setAirmode(set.airmode || rc.airmode);
             const MixResult mr = mixer.mix(tune.frame, mi);
             status.saturated = mr.saturated;
             status.throttle = thrust;
@@ -464,7 +520,7 @@ namespace copter
         // Возвращает false, если ручкам пульта верить нельзя (связи нет).
         bool handleLink(CopterRc& rc)
         {
-            if (rc.linkOk)
+            if (rc.linkOk && !rc.failsafeSwitch)   // режим FAILSAFE — как потеря связи
             {
                 lostTimer = 0.0f;
                 lastGoodRc = rc;
@@ -510,9 +566,9 @@ namespace copter
             return false;
         }
 
-        uint16_t computeBlockers(const CopterRc& rc, const CopterSensors& sens) const
+        uint32_t computeBlockers(const CopterRc& rc, const CopterSensors& sens) const
         {
-            uint16_t b = 0;
+            uint32_t b = 0;
             if (!rc.linkOk) b |= ARM_BLOCK_NO_LINK;
             if (rc.throttle > 0.05f && rc.mode != CopterMode::ALT_HOLD) b |= ARM_BLOCK_THROTTLE;
             if (rc.mode == CopterMode::ALT_HOLD && rc.throttle > 0.42f) b |= ARM_BLOCK_THROTTLE;
@@ -527,7 +583,10 @@ namespace copter
             }
             if (testLeft > 0.0f) b |= ARM_BLOCK_MOTOR_TEST;
             if (status.crashed) b |= ARM_BLOCK_CRASH;
-            if (externalBlock) b |= ARM_BLOCK_EXTERNAL;
+            if (rc.failsafeSwitch) b |= ARM_BLOCK_FAILSAFE_SWITCH;
+            if (!rc.prearm) b |= ARM_BLOCK_NO_PREARM;
+            if (!rc.armAssigned) b |= ARM_BLOCK_NO_ARM_SWITCH;
+            b |= externalBlockers;
             if (!switchSeenOff) b |= ARM_BLOCK_SWITCH;
             return b;
         }
@@ -711,7 +770,7 @@ namespace copter
         float baroHome = 0.0f;
         bool switchSeenOff = false;
         bool prevSwitch = false;
-        bool externalBlock = false;
+        uint32_t externalBlockers = 0;
 
         uint8_t testMotor = 0;
         float testThrust = 0.0f;

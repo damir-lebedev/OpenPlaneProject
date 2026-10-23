@@ -15,7 +15,8 @@
 //
 // Кадры из UART -> RC_CHANNELS каналов (мкс) + признак «связи нет».
 // Ничего не знает про failsafe-поведение самолёта, Servo или ARM.
-// Протокол — Config::RX_PROTOCOL:
+// Протокол — Config::RX_PROTOCOL (коптер меняет его без пересборки:
+// setProtocol(), настройка serialrx_provider):
 //   iBUS — FlySky;  SBUS — FrSky, Futaba, RadioMaster, Jumper...;
 //   CRSF — ExpressLRS, TBS Crossfire.
 // Разбор кадров — IBusParser / SbusParser / CrsfParser; здесь общее:
@@ -28,7 +29,8 @@
 //     или по потере связи молчит (так ExpressLRS по умолчанию);
 //   • приёмник сам сообщает о failsafe: флаг в кадре SBUS, качество
 //     связи 0 % в статистике CRSF;
-//   • газ ниже RX_FAILSAFE_THROTTLE_US — так failsafe сообщает FS-iA6B
+//   • газ ниже RX_FAILSAFE_THROTTLE_US (канал газа — CH3, у коптера —
+//     по карте каналов, setThrottleChannel()) — так failsafe сообщает FS-iA6B
 //     (он кадры слать не перестаёт, см. комментарий у
 //     RX_FAILSAFE_THROTTLE_US в Config.h) и любой приёмник, у которого
 //     failsafe настроен «газ ниже минимума».
@@ -72,6 +74,23 @@ public:
         }
 
         lastFrameTime = micros();
+    }
+
+    // Другой протокол без перезагрузки: порт открывается заново, до
+    // первого кадра нового формата связь — «потеряна».
+    void setProtocol(Config::RxProtocol rxProtocol)
+    {
+        if (rxProtocol == protocol && portReady) return;
+        protocol = rxProtocol;
+        receivedAnyFrame = false;
+        failsafeReported = false;
+        begin();
+    }
+
+    // Канал газа (порог failsafe по газу) — у коптера по карте `map`.
+    void setThrottleChannel(uint8_t channel)
+    {
+        throttleChannel = channel < Config::RC_CHANNELS ? channel : Channels::THROTTLE;
     }
 
     // Вызывать каждый цикл: вычитывает всё, что накопилось в UART-буфере.
@@ -168,6 +187,7 @@ private:
     bool failsafeReported = false;
     bool portReady = false;
     uint32_t goodFrames = 0;
+    uint8_t throttleChannel = Channels::THROTTLE;
 
     void accept(const uint16_t* values, bool receiverFailsafe)
     {
@@ -176,7 +196,7 @@ private:
             const uint16_t value = values[channel];
 
             // Потеря связи по газу — по сырому значению, до реверса каналов.
-            if (channel == Channels::THROTTLE)
+            if (channel == throttleChannel)
             {
                 failsafeReported = receiverFailsafe || value < Config::RX_FAILSAFE_THROTTLE_US;
             }

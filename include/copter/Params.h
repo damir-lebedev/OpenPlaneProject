@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "copter/Presets.h"
+#include "copter/RcSetup.h"
 #include "storage/KeyValueStore.h"
 
 // ============================================================
@@ -29,13 +30,19 @@
 // он задал руками, остаётся. Задать значение, равное умолчанию, — то же,
 // что вернуть умолчание (в diff его нет, как в BF).
 //
+// Описание коптера (copter_build, масса, винт, мотор, батарея) — тоже
+// настройки: умолчание — сборка из каталога с поправками «своего
+// коптера» из CopterConfig.h, заданное в CLI — поверх. Сменили — модель
+// (PID, фильтры) пересчитывается при save (updateModel()).
+//
 // Во флеш (KeyValueStore, пространство "copter", ключ "params") пишутся
 // только заданные руками значения: [версия][профиль][профиль расходов],
 // затем записи [хеш имени u16][профиль u8][значение f32] — строки
 // [хеш][0x80|профиль][длина][символы]. Хеш, а не номер, — чтобы новые
 // настройки и перестановка таблицы не сдвигали сохранённые; настройку,
 // которой больше нет, загрузка пропускает, значение за границами —
-// прижимает к ним.
+// прижимает к ним. Таблицы пульта (map, rxrange, aux — RcSetup.h) — ключ
+// "rc".
 //
 // Код переносимый (без Arduino) — тестируется на ПК (test_copter).
 // ============================================================
@@ -94,6 +101,29 @@ namespace copter
         BETAFLIGHT,   // дефолты Betaflight 4.5
     };
 
+    // Откуда умолчание настройки.
+    enum class ParamDefault : uint8_t
+    {
+        TABLE,   // число из таблицы (прошивка может заменить: setTableDefault)
+        TUNE,    // вывод из модели коптера или дефолт BF 4.5 (tune_source)
+        BUILD,   // из сборки copter_build с поправками CopterConfig.h
+    };
+
+    // Сборки каталога по именам — варианты copter_build.
+    inline const char* const* buildIds(uint8_t& count)
+    {
+        static const char* ids[24] = {};
+        static uint8_t n = 0;
+        if (n == 0)
+        {
+            uint8_t total = 0;
+            const BuildSpec* c = buildCatalog(total);
+            for (uint8_t i = 0; i < total && i < 24; ++i) ids[n++] = c[i].id;
+        }
+        count = n;
+        return ids;
+    }
+
     // Порядок — как в таблице paramTable(): P, I, D, F по осям подряд.
     enum ParamId : uint8_t
     {
@@ -121,6 +151,21 @@ namespace copter
         PARAM_ROLL_SRATE,
         PARAM_PITCH_SRATE,
         PARAM_YAW_SRATE,
+        PARAM_SERIALRX_PROVIDER,
+        PARAM_RX_MIN_USEC,
+        PARAM_RX_MAX_USEC,
+        PARAM_COPTER_BUILD,
+        PARAM_COPTER_MASS_G,
+        PARAM_COPTER_WHEELBASE_MM,
+        PARAM_PROP_DIAMETER_IN,
+        PARAM_PROP_PITCH_IN,
+        PARAM_PROP_BLADES,
+        PARAM_MOTOR_STATOR_MM,
+        PARAM_MOTOR_HEIGHT_MM,
+        PARAM_MOTOR_KV,
+        PARAM_BATTERY_CELLS,
+        PARAM_BATTERY_MAH,
+        PARAM_PROPS_OUT,
         PARAM_COUNT
     };
 
@@ -131,8 +176,8 @@ namespace copter
         ParamScope scope;
         ParamGroup group;
         float min, max;              // STRING: max — наибольшая длина
-        float def;                   // умолчание, если не fromModel
-        bool fromModel;              // умолчание — из описания коптера / tune_source
+        float def;                   // умолчание для ParamDefault::TABLE
+        ParamDefault from;
         const char* units;
         const char* const* options;  // ENUM: имена значений 0, 1, …
         uint8_t optionCount;
@@ -142,35 +187,67 @@ namespace copter
     inline const ParamInfo* paramTable()
     {
         static const char* const TUNE_SOURCES[] = { "MODEL", "BETAFLIGHT" };
-        constexpr ParamType kInt = ParamType::INT, kEnum = ParamType::ENUM, kText = ParamType::STRING;
+        // порядок — как Config::RxProtocol (static_assert в main_copter.cpp)
+        static const char* const RX_PROVIDERS[] = { "IBUS", "SBUS", "CRSF" };
+        static const char* const OFF_ON[] = { "OFF", "ON" };
+        uint8_t buildCount = 0;
+        const char* const* builds = buildIds(buildCount);
+        constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
+                            kText = ParamType::STRING;
         constexpr ParamScope kMaster = ParamScope::MASTER, kPid = ParamScope::PID_PROFILE, kRate = ParamScope::RATE_PROFILE;
-        constexpr ParamGroup kGroupPid = ParamGroup::PID, kGroupRates = ParamGroup::RATES;
+        constexpr ParamGroup kGroupPid = ParamGroup::PID, kGroupRates = ParamGroup::RATES, kGroupRx = ParamGroup::RECEIVER,
+                             kGroupCopter = ParamGroup::COPTER;
+        constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD;
         static const ParamInfo table[] = {
-            { "tune_source", kEnum, kMaster, kGroupPid, 0, 1, 0, false, "", TUNE_SOURCES, 2,
+            { "tune_source", kEnum, kMaster, kGroupPid, 0, 1, 0, kTable, "", TUNE_SOURCES, 2,
               "откуда PID и фильтры: MODEL — из описания коптера, BETAFLIGHT — дефолты BF 4.5" },
-            { "profile_name", kText, kPid, kGroupPid, 0, 8, 0, false, "", nullptr, 0, "имя PID-профиля" },
-            { "p_roll", kInt, kPid, kGroupPid, 0, 250, 0, true, "BF", nullptr, 0, "P крена" },
-            { "i_roll", kInt, kPid, kGroupPid, 0, 250, 0, true, "BF", nullptr, 0, "I крена" },
-            { "d_roll", kInt, kPid, kGroupPid, 0, 250, 0, true, "BF", nullptr, 0, "D крена" },
-            { "f_roll", kInt, kPid, kGroupPid, 0, 1000, 0, true, "BF", nullptr, 0, "упреждение (feedforward) крена" },
-            { "p_pitch", kInt, kPid, kGroupPid, 0, 250, 0, true, "BF", nullptr, 0, "P тангажа" },
-            { "i_pitch", kInt, kPid, kGroupPid, 0, 250, 0, true, "BF", nullptr, 0, "I тангажа" },
-            { "d_pitch", kInt, kPid, kGroupPid, 0, 250, 0, true, "BF", nullptr, 0, "D тангажа" },
-            { "f_pitch", kInt, kPid, kGroupPid, 0, 1000, 0, true, "BF", nullptr, 0, "упреждение (feedforward) тангажа" },
-            { "p_yaw", kInt, kPid, kGroupPid, 0, 250, 0, true, "BF", nullptr, 0, "P рысканья" },
-            { "i_yaw", kInt, kPid, kGroupPid, 0, 250, 0, true, "BF", nullptr, 0, "I рысканья" },
-            { "d_yaw", kInt, kPid, kGroupPid, 0, 250, 0, true, "BF", nullptr, 0, "D рысканья" },
-            { "f_yaw", kInt, kPid, kGroupPid, 0, 1000, 0, true, "BF", nullptr, 0, "упреждение (feedforward) рысканья" },
-            { "rateprofile_name", kText, kRate, kGroupRates, 0, 8, 0, false, "", nullptr, 0, "имя профиля расходов" },
-            { "roll_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, true, "x10 °/с", nullptr, 0, "расход крена у центра стика" },
-            { "pitch_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, true, "x10 °/с", nullptr, 0, "расход тангажа у центра стика" },
-            { "yaw_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, true, "x10 °/с", nullptr, 0, "расход рысканья у центра стика" },
-            { "roll_expo", kInt, kRate, kGroupRates, 0, 100, 0, true, "%", nullptr, 0, "экспо крена: мягче у центра" },
-            { "pitch_expo", kInt, kRate, kGroupRates, 0, 100, 0, true, "%", nullptr, 0, "экспо тангажа: мягче у центра" },
-            { "yaw_expo", kInt, kRate, kGroupRates, 0, 100, 0, true, "%", nullptr, 0, "экспо рысканья: мягче у центра" },
-            { "roll_srate", kInt, kRate, kGroupRates, 0, 255, 0, true, "x10 °/с", nullptr, 0, "наибольший расход крена (стик до упора)" },
-            { "pitch_srate", kInt, kRate, kGroupRates, 0, 255, 0, true, "x10 °/с", nullptr, 0, "наибольший расход тангажа (стик до упора)" },
-            { "yaw_srate", kInt, kRate, kGroupRates, 0, 255, 0, true, "x10 °/с", nullptr, 0, "наибольший расход рысканья (стик до упора)" },
+            { "profile_name", kText, kPid, kGroupPid, 0, 8, 0, kTable, "", nullptr, 0, "имя PID-профиля" },
+            { "p_roll", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "P крена" },
+            { "i_roll", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "I крена" },
+            { "d_roll", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "D крена" },
+            { "f_roll", kInt, kPid, kGroupPid, 0, 1000, 0, kTune, "BF", nullptr, 0, "упреждение (feedforward) крена" },
+            { "p_pitch", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "P тангажа" },
+            { "i_pitch", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "I тангажа" },
+            { "d_pitch", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "D тангажа" },
+            { "f_pitch", kInt, kPid, kGroupPid, 0, 1000, 0, kTune, "BF", nullptr, 0, "упреждение (feedforward) тангажа" },
+            { "p_yaw", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "P рысканья" },
+            { "i_yaw", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "I рысканья" },
+            { "d_yaw", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "D рысканья" },
+            { "f_yaw", kInt, kPid, kGroupPid, 0, 1000, 0, kTune, "BF", nullptr, 0, "упреждение (feedforward) рысканья" },
+            { "rateprofile_name", kText, kRate, kGroupRates, 0, 8, 0, kTable, "", nullptr, 0, "имя профиля расходов" },
+            { "roll_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход крена у центра стика" },
+            { "pitch_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход тангажа у центра стика" },
+            { "yaw_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход рысканья у центра стика" },
+            { "roll_expo", kInt, kRate, kGroupRates, 0, 100, 0, kTune, "%", nullptr, 0, "экспо крена: мягче у центра" },
+            { "pitch_expo", kInt, kRate, kGroupRates, 0, 100, 0, kTune, "%", nullptr, 0, "экспо тангажа: мягче у центра" },
+            { "yaw_expo", kInt, kRate, kGroupRates, 0, 100, 0, kTune, "%", nullptr, 0, "экспо рысканья: мягче у центра" },
+            { "roll_srate", kInt, kRate, kGroupRates, 0, 255, 0, kTune, "x10 °/с", nullptr, 0, "наибольший расход крена (стик до упора)" },
+            { "pitch_srate", kInt, kRate, kGroupRates, 0, 255, 0, kTune, "x10 °/с", nullptr, 0, "наибольший расход тангажа (стик до упора)" },
+            { "yaw_srate", kInt, kRate, kGroupRates, 0, 255, 0, kTune, "x10 °/с", nullptr, 0, "наибольший расход рысканья (стик до упора)" },
+            { "serialrx_provider", kEnum, kMaster, kGroupRx, 0, 2, 0, kTable, "", RX_PROVIDERS, 3,
+              "протокол приёмника: IBUS — FlySky, SBUS — FrSky и др., CRSF — ExpressLRS, Crossfire" },
+            { "rx_min_usec", kInt, kMaster, kGroupRx, 750, 2250, 885, kTable, "мкс", nullptr, 0,
+              "импульс короче — ошибка канала (стик — потеря связи, AUX — держится прежнее)" },
+            { "rx_max_usec", kInt, kMaster, kGroupRx, 750, 2250, 2115, kTable, "мкс", nullptr, 0,
+              "импульс длиннее — ошибка канала (стик — потеря связи, AUX — держится прежнее)" },
+            { "copter_build", kEnum, kMaster, kGroupCopter, 0, static_cast<float>(buildCount - 1), 0, kTable, "", builds,
+              buildCount, "сборка из каталога — основа описания коптера" },
+            { "copter_mass_g", kInt, kMaster, kGroupCopter, 0, 30000, 0, kBuild, "г", nullptr, 0,
+              "взлётная масса с батареей (0 — оценка по размеру)" },
+            { "copter_wheelbase_mm", kInt, kMaster, kGroupCopter, 30, 2000, 0, kBuild, "мм", nullptr, 0,
+              "рама: между осями противоположных моторов" },
+            { "prop_diameter_in", kFloat, kMaster, kGroupCopter, 0.5f, 40, 0, kBuild, "дюйм", nullptr, 0, "диаметр винта" },
+            { "prop_pitch_in", kFloat, kMaster, kGroupCopter, 0.3f, 30, 0, kBuild, "дюйм", nullptr, 0, "шаг винта" },
+            { "prop_blades", kInt, kMaster, kGroupCopter, 2, 8, 0, kBuild, "", nullptr, 0, "лопастей у винта" },
+            { "motor_stator_mm", kFloat, kMaster, kGroupCopter, 3, 120, 0, kBuild, "мм", nullptr, 0,
+              "ширина статора мотора (2207 — 22)" },
+            { "motor_height_mm", kFloat, kMaster, kGroupCopter, 0.5f, 60, 0, kBuild, "мм", nullptr, 0,
+              "высота статора мотора (2207 — 7)" },
+            { "motor_kv", kInt, kMaster, kGroupCopter, 50, 80000, 0, kBuild, "об/мин/В", nullptr, 0, "KV мотора" },
+            { "battery_cells", kInt, kMaster, kGroupCopter, 1, 14, 0, kBuild, "S", nullptr, 0, "банок в батарее" },
+            { "battery_mah", kInt, kMaster, kGroupCopter, 50, 50000, 0, kBuild, "мА·ч", nullptr, 0, "ёмкость батареи" },
+            { "props_out", kEnum, kMaster, kGroupCopter, 0, 1, 0, kBuild, "", OFF_ON, 2,
+              "пропеллеры наружу: все моторы крутятся наоборот" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;
@@ -222,22 +299,94 @@ namespace copter
         static constexpr uint8_t STORE_VERSION = 1;
         static constexpr const char* STORE_SPACE = "copter";
         static constexpr const char* STORE_KEY = "params";
+        static constexpr const char* RC_KEY = "rc";
+
+        using BuildOverrides = void (*)(BuildSpec&);
 
         CopterParams()
         {
+            for (uint8_t i = 0; i < PARAM_COUNT; ++i) tableDefaults[i] = paramTable()[i].def;
+            uint8_t n = 0;
+            fileBuild = buildCatalog(n)[0];
             clearValues();
             refreshDefaults();
         }
 
-        // Описание коптера -> модельная настройка (перебор контура — долго,
-        // один раз) и умолчания. Заданное руками не трогается.
-        void begin(const BuildSpec& b, float loopHz, EscProtocol esc)
+        // Описание коптера из прошивки (сборка с поправками CopterConfig.h) ->
+        // модельная настройка (перебор контура — долго) и умолчания.
+        // Заданное руками не трогается. overrides — те же поправки для
+        // другой сборки, выбранной в CLI (copter_build).
+        void begin(const BuildSpec& b, float loop, EscProtocol escProtocol, BuildOverrides overrides = nullptr)
         {
-            model = deriveTune(b, loopHz, esc);
+            fileBuild = b;
+            fileOverrides = overrides;
+            loopHz = loop;
+            esc = escProtocol;
+            uint8_t n = 0;
+            const BuildSpec* c = buildCatalog(n);
+            fileIndex = 0;
+            for (uint8_t i = 0; i < n; ++i)
+            {
+                if (b.id && strcmp(c[i].id, b.id) == 0) fileIndex = i;
+            }
+            tableDefaults[PARAM_COPTER_BUILD] = fileIndex;
+            begun = true;
+            haveModel = false;
+            refreshDefaults();
+            updateModel();
+        }
+
+        // Умолчание из таблицы, которое знает только прошивка (протокол приёмника).
+        void setTableDefault(ParamId id, float v)
+        {
+            if (id >= PARAM_COUNT || paramInfo(id).from != ParamDefault::TABLE) return;
+            tableDefaults[id] = v;
             refreshDefaults();
         }
 
         const CopterTune& modelTune() const { return model; }
+
+        // Описание коптера: сборка copter_build (с поправками прошивки) и
+        // заданное в CLI поверх.
+        BuildSpec buildSpec() const
+        {
+            const BuildSpec base = baseBuild(static_cast<uint8_t>(value(PARAM_COPTER_BUILD)));
+            BuildSpec b = base;
+            b.massG = value(PARAM_COPTER_MASS_G);
+            b.wheelbaseMm = value(PARAM_COPTER_WHEELBASE_MM);
+            b.prop.diameterIn = value(PARAM_PROP_DIAMETER_IN);
+            b.prop.pitchIn = value(PARAM_PROP_PITCH_IN);
+            b.prop.blades = static_cast<uint8_t>(value(PARAM_PROP_BLADES));
+            b.motor.statorWidthMm = value(PARAM_MOTOR_STATOR_MM);
+            b.motor.statorHeightMm = value(PARAM_MOTOR_HEIGHT_MM);
+            b.motor.kv = value(PARAM_MOTOR_KV);
+            b.battery.cells = static_cast<uint8_t>(value(PARAM_BATTERY_CELLS));
+            b.battery.capacityMah = static_cast<uint16_t>(value(PARAM_BATTERY_MAH));
+            b.propsOut = value(PARAM_PROPS_OUT) > 0.5f;
+            // другой винт или мотор — масса заново по размеру
+            if (b.prop.diameterIn != base.prop.diameterIn || b.prop.blades != base.prop.blades) b.prop.massG = 0;
+            if (b.motor.statorWidthMm != base.motor.statorWidthMm || b.motor.statorHeightMm != base.motor.statorHeightMm)
+                b.motor.massG = 0;
+            return b;
+        }
+
+        // Описание поменялось — модель заново (долго; только без ARM).
+        // true — пересчитана.
+        bool updateModel()
+        {
+            if (!begun) return false;
+            const BuildSpec b = buildSpec();
+            if (haveModel && sameBuild(b, modelSpec)) return false;
+            model = deriveTune(b, loopHz, esc);
+            modelSpec = b;
+            haveModel = true;
+            refreshDefaults();
+            return true;
+        }
+
+        // Пульт: карта каналов, rxrange, таблица aux.
+        RcConfig& rc() { return rcConfig; }
+        const RcConfig& rc() const { return rcConfig; }
 
         // ---- профили ----
         uint8_t pidProfile() const { return pidIndex; }
@@ -299,7 +448,7 @@ namespace copter
                 values[id][slot] = v;
                 setMask[id] |= static_cast<uint8_t>(1u << slot);
             }
-            if (id == PARAM_TUNE_SOURCE) refreshDefaults();
+            if (id == PARAM_TUNE_SOURCE || id == PARAM_COPTER_BUILD) refreshDefaults();
             return true;
         }
 
@@ -316,13 +465,15 @@ namespace copter
             char* s = stringSlot(id, slot);
             if (s) s[0] = '\0';
             if (slot < PROFILES) setMask[id] &= static_cast<uint8_t>(~(1u << slot));
-            if (id == PARAM_TUNE_SOURCE) refreshDefaults();
+            if (id == PARAM_TUNE_SOURCE || id == PARAM_COPTER_BUILD) refreshDefaults();
         }
 
-        // Всё по умолчанию, профили 0 (как `defaults` в BF).
+        // Всё по умолчанию, профили 0, таблицы пульта пусты (как `defaults`
+        // в BF). Модель — при следующем updateModel().
         void resetAll()
         {
             clearValues();
+            rcConfig.reset();
             refreshDefaults();
         }
 
@@ -405,7 +556,15 @@ namespace copter
             }
             else if (info.type == ParamType::FLOAT)
             {
+                // 5.1, а не 5.100
                 snprintf(out, size, "%.3f", static_cast<double>(v));
+                char* dot = strchr(out, '.');
+                if (dot)
+                {
+                    char* end = out + strlen(out);
+                    while (end > dot + 1 && end[-1] == '0') *--end = '\0';
+                    if (end == dot + 1) *dot = '\0';
+                }
             }
             else
             {
@@ -484,17 +643,25 @@ namespace copter
                     }
                 }
             }
-            if (!any)
-            {
-                kv.remove(STORE_SPACE, STORE_KEY);
-                return true;
-            }
-            return kv.put(STORE_SPACE, STORE_KEY, blob, n);
+            bool ok = true;
+            if (!any) kv.remove(STORE_SPACE, STORE_KEY);
+            else ok = kv.put(STORE_SPACE, STORE_KEY, blob, n);
+
+            uint8_t rcBlob[RcConfig::STORE_MAX];
+            const size_t rcLength = rcConfig.serialize(rcBlob, sizeof(rcBlob));
+            if (rcConfig.isDefault()) kv.remove(STORE_SPACE, RC_KEY);
+            else ok = kv.put(STORE_SPACE, RC_KEY, rcBlob, rcLength) && ok;
+            return ok;
         }
 
-        // Прочитать из флеша. false — там ничего нет или не та версия: всё по умолчанию.
+        // Прочитать из флеша (и пересчитать модель, если описание коптера
+        // там другое). false — там ничего нет или не та версия: всё по умолчанию.
         bool load(KeyValueStore& kv)
         {
+            size_t rcLength = 0;
+            const uint8_t* rcData = kv.get(STORE_SPACE, RC_KEY, &rcLength);
+            const bool rcOk = rcConfig.deserialize(rcData, rcLength);
+
             clearValues();
             size_t length = 0;
             const uint8_t* data = kv.get(STORE_SPACE, STORE_KEY, &length);
@@ -541,7 +708,8 @@ namespace copter
                 }
             }
             refreshDefaults();
-            return ok;
+            updateModel();
+            return ok || rcOk;
         }
 
     private:
@@ -554,10 +722,24 @@ namespace copter
             rateIndex = 0;
         }
 
-        // Умолчания: из таблицы, PID и расходы — из модели или BF 4.5.
+        // Умолчания: из таблицы, PID и расходы — из модели или BF 4.5,
+        // описание — из сборки copter_build.
         void refreshDefaults()
         {
-            for (uint8_t i = 0; i < PARAM_COUNT; ++i) defaults[i] = paramTable()[i].def;
+            for (uint8_t i = 0; i < PARAM_COUNT; ++i) defaults[i] = tableDefaults[i];
+            const BuildSpec base = baseBuild(static_cast<uint8_t>(value(PARAM_COPTER_BUILD)));
+            defaults[PARAM_COPTER_MASS_G] = roundf(base.massG);
+            defaults[PARAM_COPTER_WHEELBASE_MM] = roundf(base.wheelbaseMm);
+            defaults[PARAM_PROP_DIAMETER_IN] = base.prop.diameterIn;
+            defaults[PARAM_PROP_PITCH_IN] = base.prop.pitchIn;
+            defaults[PARAM_PROP_BLADES] = base.prop.blades;
+            defaults[PARAM_MOTOR_STATOR_MM] = base.motor.statorWidthMm;
+            defaults[PARAM_MOTOR_HEIGHT_MM] = base.motor.statorHeightMm;
+            defaults[PARAM_MOTOR_KV] = roundf(base.motor.kv);
+            defaults[PARAM_BATTERY_CELLS] = base.battery.cells;
+            defaults[PARAM_BATTERY_MAH] = base.battery.capacityMah;
+            defaults[PARAM_PROPS_OUT] = base.propsOut ? 1.0f : 0.0f;
+
             const bool bf = source() == TuneSource::BETAFLIGHT;
             const AxisGains* gains[3] = { &model.roll, &model.pitch, &model.yaw };
             for (uint8_t axis = 0; axis < 3; ++axis)
@@ -575,6 +757,29 @@ namespace copter
                 defaults[PARAM_ROLL_SRATE + axis] = bf ? betaflight::DEFAULT_SRATE : fminf(255.0f, roundf(r.maxDps / 10.0f));
                 defaults[PARAM_ROLL_EXPO + axis] = bf ? betaflight::DEFAULT_EXPO : roundf(r.expo * 100.0f);
             }
+        }
+
+        // Сборка каталога с поправками прошивки (для сборки прошивки — она сама).
+        BuildSpec baseBuild(uint8_t index) const
+        {
+            if (index == fileIndex) return fileBuild;
+            uint8_t n = 0;
+            const BuildSpec* c = buildCatalog(n);
+            BuildSpec b = c[index < n ? index : 0];
+            if (fileOverrides) fileOverrides(b);
+            return b;
+        }
+
+        static bool sameBuild(const BuildSpec& a, const BuildSpec& b)
+        {
+            return a.id == b.id && a.frame == b.frame && a.wheelbaseMm == b.wheelbaseMm &&
+                   a.prop.diameterIn == b.prop.diameterIn && a.prop.pitchIn == b.prop.pitchIn &&
+                   a.prop.blades == b.prop.blades && a.prop.massG == b.prop.massG &&
+                   a.motor.statorWidthMm == b.motor.statorWidthMm && a.motor.statorHeightMm == b.motor.statorHeightMm &&
+                   a.motor.kv == b.motor.kv && a.motor.massG == b.motor.massG && a.battery.cells == b.battery.cells &&
+                   a.battery.capacityMah == b.battery.capacityMah &&
+                   a.battery.voltsPerCellLoaded == b.battery.voltsPerCellLoaded && a.massG == b.massG &&
+                   a.style == b.style && a.propsOut == b.propsOut;
         }
 
         int findHash(uint16_t h) const
@@ -620,6 +825,16 @@ namespace copter
         }
 
         CopterTune model;
+        BuildSpec modelSpec = {};
+        bool haveModel = false;
+        bool begun = false;
+        BuildSpec fileBuild = {};
+        uint8_t fileIndex = 0;
+        BuildOverrides fileOverrides = nullptr;
+        float loopHz = 1000.0f;
+        EscProtocol esc = EscProtocol::ONESHOT125;
+        RcConfig rcConfig;
+        float tableDefaults[PARAM_COUNT] = {};
         float defaults[PARAM_COUNT] = {};
         float values[PARAM_COUNT][PROFILES];
         uint8_t setMask[PARAM_COUNT];

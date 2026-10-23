@@ -30,6 +30,7 @@
 #include "copter/Presets.h"
 #include "copter/Propulsion.h"
 #include "copter/RateController.h"
+#include "copter/RcSetup.h"
 
 using namespace copter;
 
@@ -744,7 +745,7 @@ void test_arm_requires_settling_then_arms_with_switch()
     TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_SWITCH);
     b.rc.armSwitch = false;
     b.run(0.01f);
-    TEST_ASSERT_EQUAL_HEX16(0, b.ctl.getStatus().armBlockers);
+    TEST_ASSERT_EQUAL_HEX32(0, b.ctl.getStatus().armBlockers);
     b.rc.armSwitch = true;
     b.run(0.01f);
     TEST_ASSERT_TRUE(b.ctl.isArmed());
@@ -798,10 +799,37 @@ void test_arm_blockers()
         TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_IMU);
     }
     {
+        // снаружи — только свои биты: CLI, приложение, плата
         Bench b;
-        b.ctl.setExternalBlock(true);
+        b.ctl.setExternalBlockers(ARM_BLOCK_CLI | ARM_BLOCK_MSP | ARM_BLOCK_TILT);
         TEST_ASSERT_FALSE(b.armAfterBoot());
-        TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_EXTERNAL);
+        TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_CLI);
+        TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_MSP);
+        TEST_ASSERT_FALSE(b.ctl.getStatus().armBlockers & ARM_BLOCK_TILT);
+        b.ctl.setExternalBlockers(0);
+        b.rc.armSwitch = false;
+        b.run(0.1f);
+        TEST_ASSERT_TRUE(b.armAfterBoot());
+    }
+    {
+        // режим FAILSAFE с тумблера, PREARM, ARM не назначен
+        Bench b;
+        b.rc.failsafeSwitch = true;
+        TEST_ASSERT_FALSE(b.armAfterBoot());
+        TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_FAILSAFE_SWITCH);
+        TEST_ASSERT_FALSE(b.ctl.getStatus().armBlockers & ARM_BLOCK_NO_LINK);
+    }
+    {
+        Bench b;
+        b.rc.prearm = false;
+        TEST_ASSERT_FALSE(b.armAfterBoot());
+        TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_NO_PREARM);
+    }
+    {
+        Bench b;
+        b.rc.armAssigned = false;
+        TEST_ASSERT_FALSE(b.armAfterBoot());
+        TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_NO_ARM_SWITCH);
     }
     {
         Bench b;
@@ -809,11 +837,19 @@ void test_arm_blockers()
         TEST_ASSERT_FALSE(b.armAfterBoot());
         TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_NO_LINK);
     }
-    for (uint16_t bit = 1; bit <= ARM_BLOCK_EXTERNAL; bit <<= 1)
+    // у каждой причины — слова и код, коды как в status Betaflight
+    for (uint32_t bit = 1; bit <= ARM_BLOCK_LAST; bit <<= 1)
     {
         TEST_ASSERT_NOT_EQUAL(0, strcmp("?", armBlockText(bit)));
+        TEST_ASSERT_NOT_EQUAL(0, strcmp("?", armBlockCode(bit)));
     }
     TEST_ASSERT_EQUAL_STRING("?", armBlockText(0));
+    TEST_ASSERT_EQUAL_STRING("RXLOSS", armBlockCode(ARM_BLOCK_NO_LINK));
+    TEST_ASSERT_EQUAL_STRING("ANGLE", armBlockCode(ARM_BLOCK_TILT));
+    TEST_ASSERT_EQUAL_STRING("THROTTLE", armBlockCode(ARM_BLOCK_THROTTLE));
+    TEST_ASSERT_EQUAL_STRING("CLI", armBlockCode(ARM_BLOCK_CLI));
+    TEST_ASSERT_EQUAL_STRING("MSP", armBlockCode(ARM_BLOCK_MSP));
+    TEST_ASSERT_EQUAL_STRING("BOXFAILSAFE", armBlockCode(ARM_BLOCK_FAILSAFE_SWITCH));
 }
 
 void test_motor_test_only_disarmed_and_times_out()
@@ -1325,6 +1361,408 @@ void test_cli_set_get_diff_save_and_paste()
     TEST_ASSERT_TRUE(has(port.take(), "только без ARM"));
 }
 
+// ---- пульт: map, rxrange, aux (copter/RcSetup.h) ----
+
+void test_rc_map_and_rxrange()
+{
+    RcConfig c;
+    char err[96] = {}, m[9];
+    c.formatMap(m, sizeof(m));
+    TEST_ASSERT_EQUAL_STRING("AETR1234", m);
+    TEST_ASSERT_TRUE(c.mapIsDefault());
+    // по умолчанию: крен CH1, тангаж CH2, рысканье CH4, газ CH3, AUX1 — CH5
+    TEST_ASSERT_EQUAL_UINT8(0, c.channelFor(0));
+    TEST_ASSERT_EQUAL_UINT8(3, c.channelFor(2));
+    TEST_ASSERT_EQUAL_UINT8(2, c.channelFor(3));
+    TEST_ASSERT_EQUAL_UINT8(4, c.auxChannel(0));
+    TEST_ASSERT_EQUAL_UINT8(8, c.auxChannel(4));   // после восьмого — по порядку
+
+    TEST_ASSERT_TRUE(c.setMap("taer", err, sizeof(err)));   // 4 буквы, регистр не важен
+    c.formatMap(m, sizeof(m));
+    TEST_ASSERT_EQUAL_STRING("TAER1234", m);
+    TEST_ASSERT_EQUAL_UINT8(0, c.channelFor(3));   // газ — CH1
+    TEST_ASSERT_EQUAL_UINT8(1, c.channelFor(0));   // крен — CH2
+    TEST_ASSERT_TRUE(c.setMap("AETR4321", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT8(7, c.auxChannel(0));
+    TEST_ASSERT_FALSE(c.setMap("AATR1234", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("буква A дважды", err);
+    TEST_ASSERT_FALSE(c.setMap("AETX1234", err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.setMap("AET", err, sizeof(err)));
+    c.formatMap(m, sizeof(m));
+    TEST_ASSERT_EQUAL_STRING("AETR4321", m);   // ошибка не портит
+
+    TEST_ASSERT_TRUE(c.setRange(3, 1020, 1980, err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT16(1020, c.rangeLow(3));
+    TEST_ASSERT_FALSE(c.rangeIsDefault(3));
+    TEST_ASSERT_FALSE(c.setRange(4, 1000, 2000, err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.setRange(0, 2000, 1000, err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.setRange(0, 700, 2000, err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.isDefault());
+    c.reset();
+    TEST_ASSERT_TRUE(c.isDefault());
+}
+
+namespace
+{
+    // Каналы приёмника: стики в центре, газ внизу, AUX — 1000.
+    struct RxBench
+    {
+        uint16_t ch[10] = { 1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1000 };
+        RcConfig cfg;
+        RxInput in;
+        CopterRc read(bool link = true)
+        {
+            in.configure(cfg, 885, 2115);
+            return in.read(ch, 10, link);
+        }
+    };
+
+    void useDefaultSwitches(RcConfig& c)
+    {
+        AuxRange fb[RcConfig::AUX_SLOTS];
+        // как CopterConfig::defaultAux: ARM — CH5 1700..2100, CH7: ANGLE / ALTHOLD / ACRO
+        fb[0] = { BOX_ARM, 0, 1700, 2100, 0, 0 };
+        fb[1] = { BOX_ANGLE, 2, 900, 1300, 0, 0 };
+        fb[2] = { BOX_ALTHOLD, 2, 1300, 1700, 0, 0 };
+        c.setFallback(fb, 3);
+    }
+}
+
+void test_rx_input_modes_like_betaflight()
+{
+    RxBench b;
+    useDefaultSwitches(b.cfg);
+    char err[96];
+
+    // пустая таблица — тумблеры прошивки
+    CopterRc rc = b.read();
+    TEST_ASSERT_TRUE(rc.linkOk);
+    TEST_ASSERT_FALSE(rc.armSwitch);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ANGLE), static_cast<int>(rc.mode));
+    TEST_ASSERT_TRUE(rc.armAssigned);
+    b.ch[4] = 2000;
+    b.ch[6] = 1500;
+    rc = b.read();
+    TEST_ASSERT_TRUE(rc.armSwitch);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ALT_HOLD), static_cast<int>(rc.mode));
+    b.ch[6] = 2000;
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ACRO), static_cast<int>(b.read().mode));
+    b.ch[6] = 2150;   // выше 2100 — как 2099 (BF прижимает)
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ACRO), static_cast<int>(b.read().mode));
+
+    // своя строка заменяет всю таблицу: ARM на CH6, ANGLE на CH7 посередине
+    TEST_ASSERT_TRUE(b.cfg.parseAux("0 0 1 1700 2100 0 0", err, sizeof(err)));
+    TEST_ASSERT_TRUE(b.cfg.parseAux("1 1 2 1300 1700", err, sizeof(err)));
+    b.ch[4] = 2000;
+    b.ch[5] = 1000;
+    b.ch[6] = 1000;
+    rc = b.read();
+    TEST_ASSERT_FALSE(rc.armSwitch);   // CH5 больше не ARM
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ACRO), static_cast<int>(rc.mode));
+    b.ch[5] = 1900;
+    b.ch[6] = 1500;
+    rc = b.read();
+    TEST_ASSERT_TRUE(rc.armSwitch);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ANGLE), static_cast<int>(rc.mode));
+    TEST_ASSERT_TRUE(b.in.isActive(BOX_ANGLE));
+
+    // приоритет: ALTHOLD > ANGLE > HORIZON; HORIZON — когда ANGLE нет
+    TEST_ASSERT_TRUE(b.cfg.parseAux("2 2 2 900 2100", err, sizeof(err)));
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ANGLE), static_cast<int>(b.read().mode));
+    b.ch[6] = 1900;
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::HORIZON), static_cast<int>(b.read().mode));
+    TEST_ASSERT_TRUE(b.cfg.parseAux("3 3 3 1700 2100", err, sizeof(err)));
+    b.ch[7] = 2000;
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ALT_HOLD), static_cast<int>(b.read().mode));
+
+    // шаг 25 мкс вниз, как в BF; границы
+    TEST_ASSERT_TRUE(b.cfg.parseAux("4 28 4 1310 1999", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT16(1300, b.cfg.aux(4).startUs);
+    TEST_ASSERT_EQUAL_UINT16(1975, b.cfg.aux(4).endUs);
+    TEST_ASSERT_FALSE(b.cfg.parseAux("20 0 0 1700 2100", err, sizeof(err)));
+    TEST_ASSERT_FALSE(b.cfg.parseAux("0 64 0 1700 2100", err, sizeof(err)));
+    TEST_ASSERT_FALSE(b.cfg.parseAux("0 0 6 1700 2100", err, sizeof(err)));   // AUX7 — у приёмника 10 каналов
+    TEST_ASSERT_EQUAL_STRING("канал 0-5 (AUX1-AUX6, у приёмника 10 каналов)", err);
+    TEST_ASSERT_FALSE(b.cfg.parseAux("0 0 0 800 2100", err, sizeof(err)));
+    TEST_ASSERT_FALSE(b.cfg.parseAux("0 0 0 1700", err, sizeof(err)));
+    TEST_ASSERT_FALSE(b.cfg.parseAux("0 0 0 1700 2100 2", err, sizeof(err)));
+    TEST_ASSERT_FALSE(b.cfg.parseAux("0 0 0 1700 2100 0 0 9", err, sizeof(err)));
+    TEST_ASSERT_FALSE(b.cfg.parseAux("x", err, sizeof(err)));
+
+    // AIR MODE, FAILSAFE, PREARM
+    b.ch[8] = 1500;
+    rc = b.read();
+    TEST_ASSERT_TRUE(rc.airmode);
+    TEST_ASSERT_FALSE(rc.failsafeSwitch);
+    TEST_ASSERT_TRUE(b.cfg.parseAux("5 27 5 1700 2100", err, sizeof(err)));
+    b.ch[9] = 2000;
+    TEST_ASSERT_TRUE(b.read().failsafeSwitch);
+    TEST_ASSERT_TRUE(b.read().prearm);   // PREARM нет в таблице
+    TEST_ASSERT_TRUE(b.cfg.parseAux("6 36 5 900 1300", err, sizeof(err)));
+    TEST_ASSERT_FALSE(b.read().prearm);
+    b.ch[9] = 1000;
+    TEST_ASSERT_TRUE(b.read().prearm);
+
+    // ARM нет в таблице
+    TEST_ASSERT_TRUE(b.cfg.parseAux("0 0 0 900 900", err, sizeof(err)));
+    TEST_ASSERT_FALSE(b.read().armAssigned);
+
+    // импульс вне rx_min_usec..rx_max_usec: стик — связь потеряна, AUX — прежнее
+    b.ch[7] = 1000;
+    b.ch[6] = 1500;
+    TEST_ASSERT_TRUE(b.read().linkOk);
+    b.ch[6] = 600;
+    rc = b.read();
+    TEST_ASSERT_TRUE(rc.linkOk);
+    TEST_ASSERT_EQUAL_UINT16(1500, b.in.auxUs(2));
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ANGLE), static_cast<int>(rc.mode));
+    b.ch[0] = 2200;
+    TEST_ASSERT_FALSE(b.read().linkOk);
+    b.ch[0] = 1500;
+    TEST_ASSERT_FALSE(b.read(false).linkOk);
+}
+
+void test_rx_input_logic_linked_map_and_rxrange()
+{
+    // И: нужны обе строки; ИЛИ: хватит любой
+    AuxRange t[RcConfig::AUX_SLOTS];
+    t[0] = { BOX_ANGLE, 0, 1700, 2100, 1, 0 };
+    t[1] = { BOX_ANGLE, 1, 1700, 2100, 1, 0 };
+    t[2] = { BOX_HORIZON, 0, 1700, 2100, 0, 0 };
+    t[3] = { BOX_HORIZON, 1, 1700, 2100, 0, 0 };
+    t[4] = { BOX_AIRMODE, 0, 900, 900, 0, BOX_ANGLE };   // связан с ANGLE
+    t[4].endUs = 2100;
+    uint16_t aux[6] = { 2000, 1000, 1000, 1000, 1000, 1000 };
+    uint64_t m = RxInput::evaluate(t, aux, 6);
+    TEST_ASSERT_FALSE((m >> BOX_ANGLE) & 1u);
+    TEST_ASSERT_TRUE((m >> BOX_HORIZON) & 1u);
+    TEST_ASSERT_FALSE((m >> BOX_AIRMODE) & 1u);
+    aux[1] = 2000;
+    m = RxInput::evaluate(t, aux, 6);
+    TEST_ASSERT_TRUE((m >> BOX_ANGLE) & 1u);
+    TEST_ASSERT_TRUE((m >> BOX_AIRMODE) & 1u);
+
+    // map TAER: газ с CH1, крен с CH2; rxrange растягивает концы
+    RxBench b;
+    char err[96];
+    TEST_ASSERT_TRUE(b.cfg.setMap("TAER1234", err, sizeof(err)));
+    b.ch[0] = 2000;   // газ вверх
+    b.ch[1] = 2000;   // крен вправо
+    b.ch[2] = 1500;
+    CopterRc rc = b.read();
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, rc.throttle);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, rc.roll);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, rc.pitch);
+    TEST_ASSERT_EQUAL_UINT8(0, b.in.throttleChannel());
+    TEST_ASSERT_TRUE(b.cfg.setRange(3, 1100, 1900, err, sizeof(err)));   // газ 1100..1900
+    b.ch[0] = 1500;
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, b.read().throttle);
+    b.ch[0] = 1900;
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, b.read().throttle);
+    b.ch[0] = 1100;
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, b.read().throttle);
+    b.ch[1] = 1000;   // тангаж в BF-порядке — функция E, у TAER это CH3
+    b.ch[2] = 2000;
+    rc = b.read();
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, -1.0f, rc.pitch);   // от себя — нос вниз
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, -1.0f, rc.roll);
+}
+
+void test_rc_tables_survive_flash()
+{
+    RamFlash flash;
+    {
+        KeyValueStore kv(flash);
+        CopterParams& p = five5Params();
+        char err[96];
+        TEST_ASSERT_TRUE(p.rc().setMap("TAER1234", err, sizeof(err)));
+        TEST_ASSERT_TRUE(p.rc().setRange(1, 990, 2010, err, sizeof(err)));
+        TEST_ASSERT_TRUE(p.rc().parseAux("0 0 1 1700 2100 0 0", err, sizeof(err)));
+        TEST_ASSERT_TRUE(p.rc().parseAux("7 36 3 1300 1700 1 1", err, sizeof(err)));
+        TEST_ASSERT_TRUE(p.save(kv));
+        TEST_ASSERT_TRUE(kv.commit());
+        TEST_ASSERT_TRUE(kv.contains(CopterParams::STORE_SPACE, CopterParams::RC_KEY));
+        TEST_ASSERT_FALSE(kv.contains(CopterParams::STORE_SPACE, CopterParams::STORE_KEY));   // set не трогали
+    }
+    {
+        KeyValueStore kv(flash);
+        CopterParams p;
+        p.begin(*findBuild("freestyle5"), 1000.0f, EscProtocol::ONESHOT125);
+        TEST_ASSERT_TRUE(p.load(kv));
+        char m[9];
+        p.rc().formatMap(m, sizeof(m));
+        TEST_ASSERT_EQUAL_STRING("TAER1234", m);
+        TEST_ASSERT_EQUAL_UINT16(990, p.rc().rangeLow(1));
+        TEST_ASSERT_EQUAL_UINT16(2010, p.rc().rangeHigh(1));
+        TEST_ASSERT_EQUAL_UINT8(1, p.rc().aux(0).channel);
+        const AuxRange& a = p.rc().aux(7);
+        TEST_ASSERT_EQUAL_UINT8(BOX_PREARM, a.mode);
+        TEST_ASSERT_EQUAL_UINT16(1300, a.startUs);
+        TEST_ASSERT_EQUAL_UINT16(1700, a.endUs);
+        TEST_ASSERT_EQUAL_UINT8(1, a.logic);
+        TEST_ASSERT_EQUAL_UINT8(1, a.linked);
+        // всё по умолчанию — ключа нет
+        p.resetAll();
+        TEST_ASSERT_TRUE(p.save(kv));
+        TEST_ASSERT_FALSE(kv.contains(CopterParams::STORE_SPACE, CopterParams::RC_KEY));
+    }
+    // порченые данные — по умолчанию
+    RcConfig c;
+    uint8_t bad[1 + 8 + 16 + 1] = { RcConfig::STORE_VERSION, 0, 0, 3, 2, 4, 5, 6, 7 };   // CH1 дважды
+    TEST_ASSERT_FALSE(c.deserialize(bad, sizeof(bad)));
+    TEST_ASSERT_TRUE(c.isDefault());
+    TEST_ASSERT_FALSE(c.deserialize(nullptr, 0));
+}
+
+// ---- описание коптера — тоже настройки ----
+
+void test_copter_description_is_params()
+{
+    CopterParams& p = five5Params();
+    char err[96], out[48];
+    const CopterTune five = p.modelTune();
+    TEST_ASSERT_EQUAL_STRING("freestyle5", p.buildSpec().id);
+    TEST_ASSERT_EQUAL_FLOAT(680.0f, p.value(PARAM_COPTER_MASS_G));
+    TEST_ASSERT_EQUAL_FLOAT(5.1f, p.value(PARAM_PROP_DIAMETER_IN));
+    p.format(PARAM_PROP_DIAMETER_IN, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("5.1", out);   // не 5.100
+    p.format(PARAM_MOTOR_STATOR_MM, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("22", out);
+    TEST_ASSERT_EQUAL_STRING("copter", paramGroupName(paramInfo(PARAM_COPTER_BUILD).group));
+
+    // другая сборка: умолчания описания — из неё, заданное руками остаётся
+    TEST_ASSERT_TRUE(p.parse(PARAM_BATTERY_MAH, 0, "1500", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_COPTER_BUILD, 0, "race5", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(560.0f, p.value(PARAM_COPTER_MASS_G));
+    TEST_ASSERT_EQUAL_FLOAT(1500.0f, p.value(PARAM_BATTERY_MAH));
+    BuildSpec b = p.buildSpec();
+    TEST_ASSERT_EQUAL_STRING("race5", b.id);
+    TEST_ASSERT_EQUAL(static_cast<int>(FrameType::QUAD_X_STRETCHED), static_cast<int>(b.frame));
+    TEST_ASSERT_EQUAL_UINT16(1500, b.battery.capacityMah);
+    // модель — только по updateModel (save)
+    TEST_ASSERT_EQUAL_FLOAT(five.massKg, p.modelTune().massKg);
+    TEST_ASSERT_TRUE(p.updateModel());
+    TEST_ASSERT_FALSE(p.updateModel());   // уже
+    TEST_ASSERT_EQUAL(static_cast<int>(FrameType::QUAD_X_STRETCHED), static_cast<int>(p.modelTune().frame.type));
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 0.560f, p.modelTune().massKg);
+
+    // масса тяжелее — висение выше; другой винт — его масса заново по размеру
+    TEST_ASSERT_TRUE(p.parse(PARAM_COPTER_MASS_G, 0, "900", err, sizeof(err)));
+    const float hoverBefore = p.modelTune().hoverThrust;
+    TEST_ASSERT_TRUE(p.updateModel());
+    TEST_ASSERT_TRUE(p.modelTune().hoverThrust > hoverBefore);
+    TEST_ASSERT_TRUE(p.buildSpec().prop.massG > 0.0f);
+    TEST_ASSERT_TRUE(p.parse(PARAM_PROP_DIAMETER_IN, 0, "5.5", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.buildSpec().prop.massG);
+    TEST_ASSERT_FALSE(p.parse(PARAM_COPTER_BUILD, 0, "dji", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_BATTERY_CELLS, 0, "15", err, sizeof(err)));
+
+    // поправки прошивки (CopterConfig.h) — и к другой сборке
+    CopterParams q;
+    BuildSpec mine = *findBuild("freestyle5");
+    mine.massG = 742;
+    q.begin(mine, 1000.0f, EscProtocol::ONESHOT125, [](BuildSpec& s) { s.massG = 742; });
+    TEST_ASSERT_EQUAL_FLOAT(742.0f, q.value(PARAM_COPTER_MASS_G));
+    char g[64];
+    TEST_ASSERT_TRUE(q.parse(PARAM_COPTER_BUILD, 0, "longrange7", g, sizeof(g)));
+    TEST_ASSERT_EQUAL_FLOAT(742.0f, q.value(PARAM_COPTER_MASS_G));
+    TEST_ASSERT_EQUAL_FLOAT(7.0f, q.value(PARAM_PROP_DIAMETER_IN));
+
+    // описание из флеша — модель при загрузке
+    RamFlash flash;
+    KeyValueStore kv(flash);
+    TEST_ASSERT_TRUE(q.save(kv));
+    CopterParams r;
+    r.begin(*findBuild("freestyle5"), 1000.0f, EscProtocol::ONESHOT125);
+    TEST_ASSERT_TRUE(r.load(kv));
+    TEST_ASSERT_EQUAL_STRING("longrange7", r.buildSpec().id);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 7.0f, r.modelTune().prop.prop.diameterIn);
+
+    // протокол приёмника: умолчание — от прошивки
+    p.setTableDefault(PARAM_SERIALRX_PROVIDER, 2);
+    p.format(PARAM_SERIALRX_PROVIDER, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("CRSF", out);
+    p.setTableDefault(PARAM_SERIALRX_PROVIDER, 0);
+    TEST_ASSERT_EQUAL_FLOAT(885.0f, p.value(PARAM_RX_MIN_USEC));
+}
+
+void test_cli_aux_map_rxrange_and_diff()
+{
+    CopterParams& p = five5Params();
+    useDefaultSwitches(p.rc());
+    Bench b;
+    b.ctl.configure(p.tune());
+    CliCapture port;
+    CopterCli cli(p, b.ctl, port);
+    TEST_ASSERT_TRUE(cli.enter());
+    port.take();
+
+    // пустая таблица: подсказка с тумблерами прошивки строками aux
+    cli.execute("aux");
+    std::string out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# таблица aux пуста"), out.c_str());
+    TEST_ASSERT_TRUE(has(out, "# aux 0 0 0 1700 2100 0 0   — ARM"));
+    TEST_ASSERT_TRUE(has(out, "# aux 2 3 2 1300 1700 0 0   — ALTHOLD"));
+
+    cli.execute("aux 1 1 2 1300 1700 0 0");
+    out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "aux 1 1 2 1300 1700 0 0\r\n"), out.c_str());
+    TEST_ASSERT_TRUE(has(out, "# в таблице нет ARM — коптер не армится"));
+    TEST_ASSERT_TRUE(cli.hasUnsaved());
+    cli.execute("aux 0 0 1 1700 2100 0 0");
+    TEST_ASSERT_FALSE(has(port.take(), "нет ARM"));
+    cli.execute("aux 2 13 3 1700 2100 0 0");
+    TEST_ASSERT_TRUE(has(port.take(), "# режим 13 BEEPER у нас пока не действует — строка хранится"));
+    cli.execute("aux 3 0 9 1700 2100 0 0");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: канал 0-5"));
+    cli.execute("aux help");
+    TEST_ASSERT_TRUE(has(port.take(), "# 28 — AIR MODE\r\n"));
+    cli.execute("aux");
+    out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "aux 0 0 1 1700 2100 0 0   # ARM\r\n"), out.c_str());
+    TEST_ASSERT_FALSE(has(out, "пуста"));
+
+    cli.execute("map");
+    TEST_ASSERT_TRUE(has(port.take(), "map AETR1234\r\n"));
+    cli.execute("map TAER1234");
+    TEST_ASSERT_TRUE(has(port.take(), "map TAER1234\r\n"));
+    cli.execute("map TTER1234");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: буква T дважды###"));
+    cli.execute("rxrange 3 1050 1950");
+    TEST_ASSERT_TRUE(has(port.take(), "rxrange 3 1050 1950\r\n"));
+    cli.execute("rxrange 3 1050");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: rxrange 0-3 мин макс###"));
+    cli.execute("rxrange 5 1000 2000");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: rxrange 0-3"));
+    cli.execute("rxrange");
+    TEST_ASSERT_TRUE(has(port.take(), "rxrange 0 1000 2000\r\nrxrange 1 1000 2000\r\nrxrange 2 1000 2000\r\nrxrange 3 1050 1950\r\n"));
+
+    // diff — как в BF: map, aux, rxrange перед # master
+    cli.execute("set copter_mass_g = 742");
+    port.take();
+    cli.execute("diff");
+    out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "\r\n# map\r\nmap TAER1234\r\n\r\n# aux\r\naux 0 0 1 1700 2100 0 0\r\naux 1 1 2 1300 1700 0 0\r\n"
+                                      "aux 2 13 3 1700 2100 0 0\r\n\r\n# rxrange\r\nrxrange 3 1050 1950\r\n\r\n# master\r\n"
+                                      "set copter_mass_g = 742\r\n"),
+                             out.c_str());
+    cli.execute("dump");
+    out = port.take();
+    TEST_ASSERT_TRUE(has(out, "aux 19 0 0 900 900 0 0\r\n"));
+    TEST_ASSERT_TRUE(has(out, "rxrange 0 1000 2000\r\n"));
+    TEST_ASSERT_TRUE(has(out, "set copter_build = freestyle5\r\n"));
+    TEST_ASSERT_TRUE(has(out, "set serialrx_provider = IBUS\r\n"));
+    cli.execute("get copter_mass");
+    out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "По умолчанию: 680 (из сборки freestyle5)"), out.c_str());
+
+    // defaults nosave — таблицы пусты
+    cli.execute("defaults nosave");
+    TEST_ASSERT_TRUE(p.rc().isDefault());
+    cli.execute("exit");
+    port.take();
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -1376,5 +1814,11 @@ int main()
     RUN_TEST(test_betaflight_source_takes_bf_45_defaults);
     RUN_TEST(test_profiles_are_independent_and_switch_on_the_fly);
     RUN_TEST(test_cli_set_get_diff_save_and_paste);
+    RUN_TEST(test_rc_map_and_rxrange);
+    RUN_TEST(test_rx_input_modes_like_betaflight);
+    RUN_TEST(test_rx_input_logic_linked_map_and_rxrange);
+    RUN_TEST(test_rc_tables_survive_flash);
+    RUN_TEST(test_copter_description_is_params);
+    RUN_TEST(test_cli_aux_map_rxrange_and_diff);
     return UNITY_END();
 }

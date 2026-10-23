@@ -1,6 +1,5 @@
 #pragma once
 #include <Arduino.h>
-#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -14,6 +13,7 @@
 #include "rc/RcChannelState.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/airspeed/AirspeedSensor.h"
+#include "telemetry/JsonWriter.h"
 #include "telemetry/LoopStats.h"
 
 // ============================================================
@@ -109,7 +109,7 @@ public:
     // Строка "@live {...}\n" в buffer; 0 — не поместилась.
     size_t formatLive(char* buffer, size_t capacity, uint32_t nowMs) const
     {
-        Writer w(buffer, capacity);
+        JsonWriter w(buffer, capacity);
         const RcReceiver& receiver = controller.getReceiver();
         const RcChannelState& rc = controller.getRcState();
         const FlightOutputState& out = controller.getOutputState();
@@ -198,46 +198,6 @@ public:
     }
 
 private:
-
-    // Дописывает в буфер с проверкой границ; не влезло — overflow.
-    struct Writer
-    {
-        Writer(char* out, size_t size) : buffer(out), capacity(size) {}
-
-        char* buffer;
-        size_t capacity;
-        size_t length = 0;
-        bool overflow = false;
-
-        void add(const char* format, ...) __attribute__((format(printf, 2, 3)))
-        {
-            if (overflow) return;
-            va_list args;
-            va_start(args, format);
-            const int n = vsnprintf(buffer + length, capacity - length, format, args);
-            va_end(args);
-            if (n < 0 || static_cast<size_t>(n) >= capacity - length)
-            {
-                overflow = true;
-                return;
-            }
-            length += static_cast<size_t>(n);
-        }
-
-        // Строка JSON: " и \ экранируются, управляющие символы — пропуск,
-        // UTF-8 (причины ARM по-русски) — как есть.
-        void str(const char* text)
-        {
-            add("\"");
-            for (const char* p = text; *p && !overflow; ++p)
-            {
-                const char c = *p;
-                if (c == '"' || c == '\\') add("\\%c", c);
-                else if (static_cast<unsigned char>(c) >= 0x20) add("%c", c);
-            }
-            add("\"");
-        }
-    };
 
     template <typename SensorType>
     static const char* sensorState(const SensorType* sensor)

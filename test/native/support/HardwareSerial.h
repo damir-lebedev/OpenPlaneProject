@@ -159,7 +159,7 @@ public:
 
     // Свободное место в буфере передачи: тесты ограничивают его
     // (txRoom), чтобы проверить, что телеметрия не блокирует цикл.
-    int availableForWrite() { return txRoom; }
+    int availableForWrite() override { return txRoom; }
 
     explicit operator bool() const { return true; }
 

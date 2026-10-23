@@ -5,6 +5,7 @@
 #include "config/Config.h"
 #include "copter/CopterController.h"
 #include "copter/Presets.h"
+#include "copter/RcSetup.h"
 
 // ============================================================
 // НАСТРОЙКИ МУЛЬТИКОПТЕРА (прошивка VEHICLE_MULTIROTOR:
@@ -36,6 +37,8 @@
 // Поверх выведенного — настройки из CLI, как в Betaflight ('#' в консоли:
 // set p_roll = 50, profile 1, tune_source = BETAFLIGHT, save): они во
 // флеше и переживают перепрошивку; что не задано — из описания коптера.
+// Описание тоже можно сменить без пересборки: set copter_build = race5,
+// set copter_mass_g = 742 — тогда этот файл — только умолчание.
 // ============================================================
 
 #ifndef COPTER_BUILD
@@ -83,11 +86,14 @@ namespace CopterConfig
     // Пульт (каналы — config/Channels.h, Mode 2)
     // --------------------------------------------------------
     // CH1 крен, CH2 тангаж (стик от себя — нос вниз), CH3 газ, CH4 рысканье.
-    // ARM — SwA (CH5), как у самолёта. Режим — SwC (CH7), три положения:
+    // ARM — SwA (CH5), как у самолёта. Режим — SwC (CH7), три положения.
+    // Это умолчание: таблица режимов в CLI (`aux`, как в Betaflight) его
+    // заменяет целиком, другой порядок каналов — `map TAER1234`.
     constexpr uint8_t MODE_CHANNEL = Channels::SWC;
     constexpr copter::CopterMode MODE_UP = copter::CopterMode::ANGLE;       // CH7 ~1000
     constexpr copter::CopterMode MODE_MIDDLE = copter::CopterMode::ALT_HOLD; // ~1500
     constexpr copter::CopterMode MODE_DOWN = copter::CopterMode::ACRO;       // ~2000
+    static_assert(Channels::ARM >= 4 && MODE_CHANNEL >= 4, "ARM и режим — на AUX (CH5 и дальше), не на стиках");
 
     // --------------------------------------------------------
     // Выходы на моторы — по порядку номеров Betaflight (Frames.h):
@@ -105,12 +111,9 @@ namespace CopterConfig
 #endif
     constexpr uint8_t MOTOR_PIN_COUNT = sizeof(MOTOR_PINS) / sizeof(MOTOR_PINS[0]);
 
-    // Сборка с поправками «своего коптера». false — в каталоге нет такой.
-    inline bool build(copter::BuildSpec& out)
+    // Поправки «своего коптера» к сборке (и к выбранной в CLI copter_build).
+    inline void applyOverrides(copter::BuildSpec& out)
     {
-        const copter::BuildSpec* base = copter::findBuild(COPTER_BUILD);
-        if (base == nullptr) return false;
-        out = *base;
         if (MASS_G > 0) out.massG = MASS_G;
         if (WHEELBASE_MM > 0) out.wheelbaseMm = WHEELBASE_MM;
         if (PROP_DIAMETER_IN > 0) out.prop.diameterIn = PROP_DIAMETER_IN;
@@ -123,6 +126,15 @@ namespace CopterConfig
         if (BATTERY_CELLS > 0) out.battery.cells = BATTERY_CELLS;
         if (BATTERY_MAH > 0) out.battery.capacityMah = BATTERY_MAH;
         out.propsOut = PROPS_OUT;
+    }
+
+    // Сборка с поправками «своего коптера». false — в каталоге нет такой.
+    inline bool build(copter::BuildSpec& out)
+    {
+        const copter::BuildSpec* base = copter::findBuild(COPTER_BUILD);
+        if (base == nullptr) return false;
+        out = *base;
+        applyOverrides(out);
         return true;
     }
 
@@ -133,10 +145,23 @@ namespace CopterConfig
         return s;
     }
 
-    inline copter::CopterMode modeFromChannel(uint16_t us)
+    // Тумблеры выше в виде таблицы aux — работает, пока своя в CLI пуста.
+    // Возвращает число строк.
+    inline uint8_t defaultAux(copter::AuxRange* out, uint8_t capacity)
     {
-        if (us < 1300) return MODE_UP;
-        if (us > 1700) return MODE_DOWN;
-        return MODE_MIDDLE;
+        uint8_t n = 0;
+        auto add = [&](uint8_t box, uint8_t channel, uint16_t from, uint16_t to) {
+            if (n >= capacity || box >= copter::BOX_COUNT) return;
+            copter::AuxRange& a = out[n++];
+            a.mode = box;
+            a.channel = static_cast<uint8_t>(channel - 4);
+            a.startUs = from;
+            a.endUs = to;
+        };
+        add(copter::BOX_ARM, Channels::ARM, 1700, 2100);
+        add(copter::boxForMode(MODE_UP), MODE_CHANNEL, 900, 1300);
+        add(copter::boxForMode(MODE_MIDDLE), MODE_CHANNEL, 1300, 1700);
+        add(copter::boxForMode(MODE_DOWN), MODE_CHANNEL, 1700, 2100);
+        return n;
     }
 }

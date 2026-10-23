@@ -7,12 +7,13 @@
 // контур угловой скорости, режимы ACRO/HORIZON/ANGLE/ALT_HOLD,
 // failsafe с посадкой, защита от переворота. Настройка (PID, фильтры,
 // холостые, расходы) выводится из описания коптера — config/CopterConfig.h;
-// поверх неё — настройки из CLI (copter/Params.h, во флеше).
+// поверх неё — настройки из CLI (copter/Params.h, во флеше): и само
+// описание, и пульт — карта каналов, режимы на тумблерах (copter/RcSetup.h).
 //
 // Задачи FreeRTOS:
 //   flight  (приоритет 5) — цикл стабилизации каждые 1 мс: IMU,
 //           барометр (раз в 20 мс), батарея, пульт, контроллер, моторы,
-//           консоль;
+//           консоль; время каждой части — `tasks` в CLI;
 //   storage (1) — запись настроек (калибровка установки) во флеш.
 //
 // Проверено пока только в симуляторе (test/native/test_copter_sim) и
@@ -39,6 +40,11 @@
 #include "sensors/SensorSelection.h"
 #include "telemetry/CopterConsole.h"
 #include "telemetry/LoopStats.h"
+#include "telemetry/TaskStats.h"
+
+static_assert(static_cast<uint8_t>(Config::RxProtocol::IBUS) == 0 && static_cast<uint8_t>(Config::RxProtocol::SBUS) == 1 &&
+                  static_cast<uint8_t>(Config::RxProtocol::CRSF) == 2,
+              "serialrx_provider (copter/Params.h) — номер как в Config::RxProtocol");
 
 
 Stm32Board board;
@@ -58,27 +64,61 @@ Stm32MotorOutput motors;
 copter::CopterController copterController;
 copter::BuildSpec copterBuild;
 copter::CopterParams copterParams;
+copter::RxInput rxInput;
 LoopStats loopStats;
-CopterConsole copterConsole(Serial, copterController, copterParams, copterBuild, imuSensor, rcReceiver);
+TaskStats taskStats;
+CopterConsole copterConsole(Serial, copterController, copterParams, imuSensor, rcReceiver);
 
 static bool configOk = false;
+static bool rebootRequired = false;
+static uint8_t outputsAtBoot = 0;   // выходов на моторы настроено при включении
 static float batteryVolts = 0.0f;
 
+// Части цикла для `tasks` (TaskStats::add — по порядку).
+enum : uint8_t
+{
+    TASK_GYRO,
+    TASK_BARO,
+    TASK_BATTERY,
+    TASK_RX,
+    TASK_PID,
+    TASK_MOTORS,
+    TASK_CONSOLE,
+};
 
-// Пульт -> ручки контроллера (каналы Mode 2, config/Channels.h).
+
+// Пульт -> ручки контроллера: карта каналов, rxrange, режимы (copter/RcSetup.h).
 static copter::CopterRc readRc()
 {
-    copter::CopterRc rc;
-    const RcChannelState& st = rcReceiver.getState();
-    auto stick = [](uint16_t us) { return constrain((static_cast<int32_t>(us) - 1500) / 500.0f, -1.0f, 1.0f); };
-    rc.linkOk = !rcReceiver.isSignalLost();
-    rc.roll = stick(st.get(Channels::AILERON));
-    rc.pitch = -stick(st.get(Channels::ELEVATOR));   // от себя — нос вниз
-    rc.yaw = stick(st.get(Channels::RUDDER));
-    rc.throttle = constrain((static_cast<int32_t>(st.get(Channels::THROTTLE)) - 1000) / 1000.0f, 0.0f, 1.0f);
-    rc.armSwitch = st.get(Channels::ARM) > 1700;
-    rc.mode = CopterConfig::modeFromChannel(st.get(CopterConfig::MODE_CHANNEL));
-    return rc;
+    return rxInput.read(rcReceiver.getState().data(), Config::RC_CHANNELS, !rcReceiver.isSignalLost());
+}
+
+// Настройки пульта и описание коптера — в работу (при включении, после
+// save и отмены в CLI или приложении).
+static void applySettings()
+{
+    copterParams.rc().setChannelCount(Config::RC_CHANNELS);
+    rxInput.configure(copterParams.rc(), static_cast<uint16_t>(copterParams.value(copter::PARAM_RX_MIN_USEC)),
+                      static_cast<uint16_t>(copterParams.value(copter::PARAM_RX_MAX_USEC)));
+    rcReceiver.setThrottleChannel(rxInput.throttleChannel());
+    rcReceiver.setProtocol(static_cast<Config::RxProtocol>(static_cast<uint8_t>(copterParams.value(copter::PARAM_SERIALRX_PROVIDER))));
+    copterBuild = copterParams.buildSpec();
+    // другая рама — выходы на моторы настраиваются только при включении
+    const uint8_t motorCount = copterController.getTune().frame.count;
+    const bool reboot = outputsAtBoot && motorCount != outputsAtBoot;
+    if (reboot && !rebootRequired)
+    {
+        Serial.printf("У рамы теперь %u моторов (было %u) — перезагрузите плату, до того ARM запрещён.\n", motorCount,
+                      outputsAtBoot);
+    }
+    rebootRequired = reboot;
+}
+
+static uint32_t lap(uint8_t task, uint32_t sinceUs)
+{
+    const uint32_t now = micros();
+    taskStats.record(task, now - sinceUs);
+    return now;
 }
 
 // Батарея: делитель на плате, усреднение ~0.1 с (контроллер сглаживает дальше).
@@ -98,11 +138,23 @@ static void flightTask(void*)
     for (;;)
     {
         const uint32_t start = micros();
+        uint32_t t = start;
 
         imuSensor.update();
-        if (tick % 20 == 0) baroSensor.update();
-        if (tick % 10 == 0) readBattery();
+        t = lap(TASK_GYRO, t);
+        if (tick % 20 == 0)
+        {
+            baroSensor.update();
+            t = lap(TASK_BARO, t);
+        }
+        if (tick % 10 == 0)
+        {
+            readBattery();
+            t = lap(TASK_BATTERY, t);
+        }
         rcReceiver.update();
+        const copter::CopterRc rc = readRc();
+        t = lap(TASK_RX, t);
 
         copter::CopterSensors sens;
         const ImuData& imu = imuSensor.getImuData();
@@ -118,19 +170,31 @@ static void flightTask(void*)
         sens.batteryVolts = batteryVolts;
 
         // ARM запрещён, пока описание коптера не сошлось с платой,
-        // установка IMU не откалибрована (если плата этого требует) или
-        // открыт CLI
-        const bool mountMissing = Config::IMU_MOUNT_CALIBRATION_REQUIRED && !imuSensor.isMountCalibrated();
-        copterController.setExternalBlock(!configOk || mountMissing || copterConsole.cliActive());
+        // установка IMU не откалибрована (если плата этого требует),
+        // открыт CLI, в приложении несохранённое, нужна перезагрузка или
+        // цикл не успевает
+        uint32_t blockers = 0;
+        if (!configOk) blockers |= copter::ARM_BLOCK_CONFIG;
+        if (Config::IMU_MOUNT_CALIBRATION_REQUIRED && !imuSensor.isMountCalibrated()) blockers |= copter::ARM_BLOCK_NO_ACC_CAL;
+        if (copterConsole.cliActive()) blockers |= copter::ARM_BLOCK_CLI;
+        if (copterConsole.appUnsaved()) blockers |= copter::ARM_BLOCK_MSP;
+        if (rebootRequired) blockers |= copter::ARM_BLOCK_REBOOT;
+        if (copterConsole.cpuPercent() >= 100) blockers |= copter::ARM_BLOCK_LOAD;
+        copterController.setExternalBlockers(blockers);
 
-        const copter::CopterOutputs out = copterController.update(sens, readRc());
+        const copter::CopterOutputs out = copterController.update(sens, rc);
+        t = lap(TASK_PID, t);
         motors.write(out.motor, out.spinning);
+        t = lap(TASK_MOTORS, t);
 
+        copterConsole.setOutputs(out);
         copterConsole.update(millis());
+        lap(TASK_CONSOLE, t);
 
         const uint32_t workUs = micros() - start;
         loopStats.record(workUs);
-        copterConsole.setLoopLoad(loopStats.avgUs, loopStats.maxUs);
+        taskStats.publish(millis());
+        copterConsole.setLoopLoad(loopStats.avgUs, loopStats.maxUs, loopStats.hz);
         ++tick;
 
         // После долгой блокировки (калибровка из консоли) не догоняем такты пачкой.
@@ -159,11 +223,15 @@ static void setupCopter(KeyValueStore& store)
         copterBuild = copter::buildCatalog(n)[0];   // чтобы контроллер был настроен хоть как-то
     }
 
-    copterParams.begin(copterBuild, CopterConfig::LOOP_HZ, CopterConfig::ESC_PROTOCOL);
-    copterParams.load(store);
+    copterParams.setTableDefault(copter::PARAM_SERIALRX_PROVIDER, static_cast<uint8_t>(Config::RX_PROTOCOL));
+    copter::AuxRange fallback[copter::RcConfig::AUX_SLOTS];
+    copterParams.rc().setFallback(fallback, CopterConfig::defaultAux(fallback, copter::RcConfig::AUX_SLOTS));
+    copterParams.begin(copterBuild, CopterConfig::LOOP_HZ, CopterConfig::ESC_PROTOCOL, CopterConfig::applyOverrides);
+    copterParams.load(store);   // описание во флеше другое — модель заново
     copterConsole.setStore(&store);
     const copter::CopterTune tune = copterParams.tune();
     copterController.configure(tune, CopterConfig::settings());
+    copterBuild = copterParams.buildSpec();
 
     if (tune.frame.count > CopterConfig::MOTOR_PIN_COUNT)
     {
@@ -182,6 +250,7 @@ static void setupCopter(KeyValueStore& store)
         Serial.printf("ОШИБКА: настроено %u выходов из %u — ARM запрещён.\n", motors.attached(), tune.frame.count);
         configOk = false;
     }
+    outputsAtBoot = tune.frame.count;
 
     Serial.printf("Коптер: %s (%s), %s, регуляторы %s, цикл %.0f Гц.\n", copterBuild.id, copterBuild.title,
                   copter::frameName(tune.frame.type), copter::escProtocolName(CopterConfig::ESC_PROTOCOL), tune.loopHz);
@@ -198,6 +267,15 @@ static void setupCopter(KeyValueStore& store)
 // cppcheck-suppress unusedFunction
 void setup()
 {
+    // порядок — как номера TASK_*
+    taskStats.add("GYRO");
+    taskStats.add("BARO");
+    taskStats.add("BATTERY");
+    taskStats.add("RX");
+    taskStats.add("PID/MIXER");
+    taskStats.add("MOTORS");
+    taskStats.add("CONSOLE");
+
     Serial.begin(115200);
     delay(200);
 
@@ -220,13 +298,27 @@ void setup()
     if (baroSensor.begin()) baroSensor.calibrateAltitude();
 
     rcReceiver.begin();
-    Serial.printf("Приёмник %s%s. ARM — SwA (CH5) вниз при газе внизу; режим — SwC (CH7): %s / %s / %s.\n",
-                  rcReceiver.getProtocolName(), rcReceiver.isPortReady() ? "" : " (UART не умеет этот формат — связи не будет)",
-                  copter::copterModeName(CopterConfig::MODE_UP), copter::copterModeName(CopterConfig::MODE_MIDDLE),
-                  copter::copterModeName(CopterConfig::MODE_DOWN));
+    applySettings();   // протокол из настроек, карта каналов, режимы
+    char mapText[copter::RcConfig::MAPPABLE + 1];
+    copterParams.rc().formatMap(mapText, sizeof(mapText));
+    Serial.printf("Приёмник %s%s, каналы %s. Режимы на тумблерах (%s):", rcReceiver.getProtocolName(),
+                  rcReceiver.isPortReady() ? "" : " (UART не умеет этот формат — связи не будет)", mapText,
+                  copterParams.rc().anyAux() ? "aux из CLI" : "умолчание прошивки");
+    const copter::AuxRange* aux = copterParams.rc().effectiveAux();
+    for (uint8_t i = 0; i < copter::RcConfig::AUX_SLOTS; ++i)
+    {
+        if (!aux[i].used()) continue;
+        const copter::BoxInfo* box = copter::findBox(aux[i].mode);
+        Serial.printf(" %s — CH%u %u..%u;", box ? box->name : "?", copterParams.rc().auxChannel(aux[i].channel) + 1,
+                      aux[i].startUs, aux[i].endUs);
+    }
+    Serial.println(" иначе ACRO.");
 #if defined(ARDUINO_ARCH_STM32)
     copterConsole.setBootloaderHook(stm32RebootToBootloader);
 #endif
+    copterConsole.setApplyHook(applySettings);
+    copterConsole.setRxInput(&rxInput);
+    copterConsole.setTaskStats(&taskStats);
     copterConsole.printHint();
 
     Rtos::startTask(flightTask, "flight", 16384, nullptr, Rtos::PRIORITY_FLIGHT);
