@@ -1,0 +1,390 @@
+<title>Betaflight → OpenPlane</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: пульт конфигуратора — сводка и «следующий батч» сверху, ниже план по разделам / по вкладкам приложения / по настройкам BF */
+:root {
+  --bg: #eef2f0;
+  --surface: #ffffff;
+  --sunken: #e3e9e6;
+  --ink: #15201c;
+  --muted: #5b6965;
+  --line: #d3dbd7;
+  --accent: #c97f00;
+  --accent-soft: #fbefd9;
+  --todo: #8b9793;
+  --doing: #2a69cf;
+  --done: #1d8150;
+  --blocked: #c23a2e;
+  --bench: #7a4fc4;
+  --font-display: "Saira Semi Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, monospace;
+  --r: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1513; --surface: #171f1c; --sunken: #111816; --ink: #e4ebe8; --muted: #93a29d;
+    --line: #2a3531; --accent: #f0a63a; --accent-soft: #33281a; --todo: #6f7c78; --doing: #5b93f0;
+    --done: #3fb27a; --blocked: #ec6a5c; --bench: #a985ec; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1513; --surface: #171f1c; --sunken: #111816; --ink: #e4ebe8; --muted: #93a29d;
+  --line: #2a3531; --accent: #f0a63a; --accent-soft: #33281a; --todo: #6f7c78; --doing: #5b93f0;
+  --done: #3fb27a; --blocked: #ec6a5c; --bench: #a985ec; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 20px 48px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 22px; }
+h1, h2, h3 { font-family: var(--font-display); margin: 0; text-wrap: balance; letter-spacing: .01em; }
+h1 { font-size: clamp(26px, 4vw, 36px); font-weight: 700; }
+h2 { font-size: 20px; font-weight: 600; }
+.lede { color: var(--muted); max-width: 68ch; margin: 4px 0 0; }
+.mono { font-family: var(--font-mono); font-size: 12.5px; }
+.label { font-family: var(--font-display); font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+
+/* сводка */
+.summary { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 16px; }
+@media (max-width: 820px) { .summary { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px; min-width: 0; }
+.progress-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.big { font-family: var(--font-display); font-size: 44px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--sunken); margin-top: 12px; }
+.bar span { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; font-size: 13.5px; color: var(--muted); }
+.legend b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
+.fact { background: var(--sunken); border-radius: 6px; padding: 8px 10px; }
+.fact .n { font-family: var(--font-display); font-size: 22px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.fact .t { font-size: 12.5px; color: var(--muted); }
+
+.batch { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.batch ol { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.batch li { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 8px; align-items: baseline; }
+.batch li button { all: unset; cursor: pointer; text-align: left; }
+.batch li button:hover .bt, .batch li button:focus-visible .bt { text-decoration: underline; }
+.batch .bid { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); font-weight: 500; }
+.hint { margin-top: 12px; font-size: 13px; color: var(--muted); }
+.hint code { font-family: var(--font-mono); font-size: 12px; background: var(--surface); padding: 1px 5px; border-radius: 4px; }
+
+/* панель управления */
+.controls { display: grid; gap: 12px; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 10px; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.views { display: inline-flex; background: var(--sunken); border-radius: 8px; padding: 3px; gap: 2px; flex-wrap: wrap; }
+.views button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 6px; font-family: var(--font-display); font-weight: 600; font-size: 14px; color: var(--muted); }
+.views button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+.views button:focus-visible, .chip:focus-visible, .row-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.filter-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+#q { flex: 1 1 240px; min-width: 0; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit; }
+#q:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chip { all: unset; cursor: pointer; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; }
+.chip[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: var(--bg); }
+.count-note { font-size: 13px; color: var(--muted); }
+
+/* группы и пункты */
+.group { display: grid; gap: 8px; }
+.group-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.group-head h2 { flex: 0 1 auto; }
+.group-head .mini { flex: 1 1 160px; max-width: 320px; height: 6px; border-radius: 3px; overflow: hidden; background: var(--sunken); display: flex; }
+.group-head .mini span { height: 100%; }
+.group-head .gcount { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.list { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.row { border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+.row-head { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 14px; cursor: pointer; }
+.row-head:hover { background: color-mix(in srgb, var(--sunken) 60%, transparent); }
+.row.next .row-head { box-shadow: inset 3px 0 0 var(--accent); }
+.rid { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); }
+.rmain { min-width: 0; display: grid; gap: 4px; }
+.rtitle { font-weight: 600; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.set { font-family: var(--font-mono); font-size: 11.5px; padding: 1px 6px; border-radius: 4px; background: var(--sunken); color: var(--ink); overflow-wrap: anywhere; }
+.tag { font-size: 12px; padding: 1px 7px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.tag.bench { color: var(--bench); border-color: color-mix(in srgb, var(--bench) 45%, var(--line)); }
+.tag.app { color: var(--doing); border-color: color-mix(in srgb, var(--doing) 45%, var(--line)); }
+.tag.tab { color: var(--ink); }
+.pill { font-family: var(--font-display); font-size: 12.5px; font-weight: 600; letter-spacing: .03em; padding: 2px 9px; border-radius: 999px; white-space: nowrap; color: var(--surface); }
+.pill.todo { background: transparent; color: var(--todo); border: 1px solid var(--todo); }
+.pill.doing { background: var(--doing); }
+.pill.done { background: var(--done); }
+.pill.blocked { background: var(--blocked); }
+.detail { padding: 2px 14px 14px 78px; display: grid; gap: 8px; }
+@media (max-width: 600px) { .detail { padding-left: 14px; } .row-head { grid-template-columns: 40px minmax(0, 1fr); } .row-head .pill { grid-column: 2; justify-self: start; } }
+.field { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px; }
+@media (max-width: 600px) { .field { grid-template-columns: 1fr; gap: 0; } }
+.field .k { font-size: 12.5px; color: var(--muted); font-family: var(--font-display); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding-top: 2px; }
+.field .v { min-width: 0; overflow-wrap: anywhere; }
+.field .v code { font-family: var(--font-mono); font-size: 12.5px; background: var(--sunken); padding: 0 4px; border-radius: 3px; }
+.result { border-left: 3px solid var(--done); padding-left: 10px; }
+.result a { color: var(--doing); }
+
+/* таблица настроек */
+.settings-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.settings-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.settings-table th { text-align: left; font-family: var(--font-display); font-weight: 600; font-size: 12.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--sunken); position: sticky; top: 0; }
+.settings-table td { padding: 6px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.settings-table tr:last-child td { border-bottom: 0; }
+.settings-table button { all: unset; cursor: pointer; color: var(--doing); }
+.settings-table button:hover { text-decoration: underline; }
+.empty { padding: 28px; text-align: center; color: var(--muted); background: var(--surface); border: 1px dashed var(--line); border-radius: var(--r); }
+.foot { font-size: 13px; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .row-head, .chip, .views button { transition: background-color .12s ease; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="label">OpenPlane · мультикоптер</div>
+    <h1>Всё из Betaflight — по пунктам</h1>
+    <p class="lede">Каждая настройка Betaflight — пункт плана: что сделать, где в коде, как проверить и где она появится в приложении. Пять пунктов за раз; статусы обновляются после каждого батча.</p>
+  </header>
+
+  <section class="summary" aria-label="Сводка">
+    <div class="panel">
+      <div class="progress-head"><span class="big" id="pct">0%</span><span id="pct-note" class="count-note">готово</span></div>
+      <div class="bar" id="bar" aria-hidden="true"></div>
+      <div class="legend" id="legend"></div>
+      <div class="facts" id="facts"></div>
+    </div>
+    <div class="panel batch">
+      <div class="label">Следующий батч</div>
+      <ol id="batch"></ol>
+      <p class="hint">Почистить чат и написать <code>продолжай работу по плану</code> — выполнятся эти пять. Пункты со стендом ждут железа на столе.</p>
+    </div>
+  </section>
+
+  <section class="controls" aria-label="Фильтры">
+    <div class="views" role="group" aria-label="Вид">
+      <button id="v-sections" data-view="sections" aria-pressed="true">Разделы плана</button>
+      <button id="v-tabs" data-view="tabs" aria-pressed="false">Вкладки приложения</button>
+      <button id="v-settings" data-view="settings" aria-pressed="false">Настройки BF</button>
+    </div>
+    <div class="filter-row">
+      <input id="q" type="search" placeholder="Найти: rpm_filter_q, airmode, DShot…" autocomplete="off" aria-label="Поиск по плану">
+      <span id="status-chips" class="filter-row"></span>
+      <span id="flag-chips" class="filter-row"></span>
+    </div>
+    <div class="count-note" id="count"></div>
+  </section>
+
+  <main id="main"><div class="empty">Загружаю план…</div></main>
+  <p class="foot" id="foot"></p>
+</div>
+
+<script>
+(function () {
+  const STATUS = {
+    todo: { name: "не начат", color: "var(--todo)" },
+    doing: { name: "в работе", color: "var(--doing)" },
+    done: { name: "готов", color: "var(--done)" },
+    blocked: { name: "заблокирован", color: "var(--blocked)" },
+  };
+  const ORDER = ["done", "doing", "blocked", "todo"];
+  const REPO = "https://github.com/damir-lebedev/OpenPlaneProject/commit/";
+  let plan = { sections: [], items: [] };
+  let live = {};          // id -> {status, commit, result, date} из базы
+  let liveState = "file"; // file | live
+  const ui = load();
+
+  function load() {
+    const d = { view: "sections", status: [], flags: [], q: "", open: {} };
+    try { Object.assign(d, JSON.parse(localStorage.getItem("bf-plan-ui") || "{}")); } catch (e) {}
+    return d;
+  }
+  function save() {
+    try { localStorage.setItem("bf-plan-ui", JSON.stringify({ view: ui.view, status: ui.status, flags: ui.flags, q: ui.q, open: ui.open })); } catch (e) {}
+  }
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const md = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+  const statusOf = (it) => (live[it.id] && STATUS[live[it.id].status] ? live[it.id].status : it.fileStatus);
+
+  function counts(items) {
+    const c = { todo: 0, doing: 0, done: 0, blocked: 0 };
+    items.forEach((it) => c[statusOf(it)]++);
+    return c;
+  }
+  function segBar(c, total) {
+    return ORDER.map((s) => c[s] ? `<span style="width:${(c[s] / total) * 100}%;background:${STATUS[s].color}" title="${STATUS[s].name}: ${c[s]}"></span>` : "").join("");
+  }
+  function nextBatch() {
+    return plan.items.filter((it) => statusOf(it) === "todo" && !it.bench).slice(0, 5);
+  }
+
+  function matches(it) {
+    if (ui.status.length && !ui.status.includes(statusOf(it))) return false;
+    if (ui.flags.includes("bench") && !it.bench) return false;
+    if (ui.flags.includes("app") && it.repo !== "studio") return false;
+    if (ui.flags.includes("docs") && !it.docs) return false;
+    const q = ui.q.trim().toLowerCase();
+    if (!q) return true;
+    const hay = [it.id, it.title, it.bf, it.what, it.now, it.files, it.test, it.ui, it.tab, (live[it.id] || {}).result].join(" ").toLowerCase();
+    return q.split(/\s+/).every((w) => hay.includes(w));
+  }
+
+  function renderSummary() {
+    const total = plan.items.length;
+    const c = counts(plan.items);
+    const pct = total ? Math.round((c.done / total) * 100) : 0;
+    document.getElementById("pct").textContent = pct + "%";
+    document.getElementById("pct-note").textContent = `готово · ${c.done} из ${total} пунктов`;
+    document.getElementById("bar").innerHTML = segBar(c, total);
+    document.getElementById("legend").innerHTML = ORDER.map((s) => `<span><span class="dot" style="background:${STATUS[s].color}"></span>${STATUS[s].name} <b>${c[s]}</b></span>`).join("");
+    const settings = plan.items.reduce((n, it) => n + it.settings.length, 0);
+    const doneSettings = plan.items.filter((it) => statusOf(it) === "done").reduce((n, it) => n + it.settings.length, 0);
+    const bench = plan.items.filter((it) => it.bench).length;
+    const app = plan.items.filter((it) => it.repo === "studio").length;
+    const batches = Math.ceil(plan.items.filter((it) => statusOf(it) !== "done" && !it.bench).length / 5);
+    document.getElementById("facts").innerHTML = [
+      [`${doneSettings}/${settings}`, "настроек BF перенесено"],
+      [batches, "батчей по 5 осталось"],
+      [`${bench} · ${app}`, "на стенде · в приложении"],
+    ].map(([n, t]) => `<div class="fact"><div class="n">${n}</div><div class="t">${t}</div></div>`).join("");
+    const batch = nextBatch();
+    document.getElementById("batch").innerHTML = batch.length
+      ? batch.map((it) => `<li><span class="bid">${esc(it.id)}</span><button data-jump="${esc(it.id)}"><span class="bt">${esc(it.title)}</span></button></li>`).join("")
+      : `<li><span></span><span>Всё, что можно без стенда, сделано.</span></li>`;
+  }
+
+  function chips() {
+    document.getElementById("status-chips").innerHTML = Object.keys(STATUS).map((s) =>
+      `<button class="chip" data-status="${s}" aria-pressed="${ui.status.includes(s)}"><span class="dot" style="background:${STATUS[s].color}"></span>${STATUS[s].name}</button>`).join("");
+    const flags = [["bench", "стенд"], ["app", "приложение"], ["docs", "документация"]];
+    document.getElementById("flag-chips").innerHTML = flags.map(([f, n]) =>
+      `<button class="chip" data-flag="${f}" aria-pressed="${ui.flags.includes(f)}">${n}</button>`).join("");
+    document.querySelectorAll(".views button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === ui.view)));
+  }
+
+  function row(it, nextIds) {
+    const st = statusOf(it);
+    const open = !!ui.open[it.id];
+    const shown = it.settings.slice(0, 4).map((s) => `<span class="set">${esc(s)}</span>`).join("");
+    const more = it.settings.length > 4 ? `<span class="tag">+${it.settings.length - 4}</span>` : "";
+    const tags = [
+      it.tab ? `<span class="tag tab">${esc(it.tab)}</span>` : "",
+      it.bench ? `<span class="tag bench">стенд</span>` : "",
+      it.repo === "studio" ? `<span class="tag app">приложение</span>` : "",
+    ].join("");
+    let detail = "";
+    if (open) {
+      const l = live[it.id] || {};
+      const fields = [["Betaflight", it.bf], ["Что", it.what], ["Сейчас", it.now], ["Файлы", it.files], ["Проверка", it.test], ["В приложении", it.ui]]
+        .filter(([, v]) => v).map(([k, v]) => `<div class="field"><div class="k">${k}</div><div class="v">${md(v)}</div></div>`).join("");
+      const res = l.result || it.result;
+      const commit = l.commit ? ` · <a href="${REPO}${encodeURIComponent(l.commit)}" target="_blank" rel="noopener">${esc(l.commit)}</a>` : "";
+      const date = l.date ? ` · ${esc(l.date)}` : "";
+      detail = `<div class="detail" id="d-${esc(it.id)}">${fields}${res ? `<div class="field result"><div class="k">Итог</div><div class="v">${md(res)}${commit}${date}</div></div>` : ""}</div>`;
+    }
+    return `<div class="row${nextIds.has(it.id) ? " next" : ""}" id="i-${esc(it.id)}">
+      <div class="row-head" role="button" tabindex="0" aria-expanded="${open}" data-toggle="${esc(it.id)}">
+        <span class="rid">${esc(it.id)}</span>
+        <span class="rmain"><span class="rtitle">${esc(it.title)}</span><span class="tags">${shown}${more}${tags}</span></span>
+        <span class="pill ${st}">${STATUS[st].name}</span>
+      </div>${detail}</div>`;
+  }
+
+  function group(title, items, nextIds) {
+    const c = counts(items);
+    return `<section class="group"><div class="group-head"><h2>${esc(title)}</h2>
+      <span class="mini" aria-hidden="true">${segBar(c, items.length)}</span>
+      <span class="gcount">${c.done}/${items.length}</span></div>
+      <div class="list">${items.map((it) => row(it, nextIds)).join("")}</div></section>`;
+  }
+
+  function renderMain() {
+    const main = document.getElementById("main");
+    const nextIds = new Set(nextBatch().map((it) => it.id));
+    const items = plan.items.filter(matches);
+    document.getElementById("count").textContent = items.length === plan.items.length ? `${items.length} пунктов` : `показано ${items.length} из ${plan.items.length}`;
+    if (!items.length) { main.innerHTML = `<div class="empty">Ничего не нашлось — снимите фильтр или измените запрос.</div>`; return; }
+    if (ui.view === "settings") {
+      const rows = [];
+      items.forEach((it) => it.settings.forEach((s) => rows.push([s, it])));
+      const q = ui.q.trim().toLowerCase();
+      const list = rows.filter(([s, it]) => !q || s.includes(q) || matches(it)).sort((a, b) => a[0].localeCompare(b[0]));
+      main.innerHTML = `<div class="settings-wrap"><table class="settings-table"><thead><tr><th>Настройка BF</th><th>Пункт</th><th>Вкладка</th><th>Статус</th></tr></thead><tbody>${
+        list.map(([s, it]) => `<tr><td class="mono">${esc(s)}</td><td><button data-jump="${esc(it.id)}">${esc(it.id)} · ${esc(it.title)}</button></td><td>${esc(it.tab || "—")}</td><td><span class="pill ${statusOf(it)}">${STATUS[statusOf(it)].name}</span></td></tr>`).join("")
+      }</tbody></table></div>`;
+      return;
+    }
+    let html = "";
+    if (ui.view === "tabs") {
+      const byTab = new Map();
+      items.forEach((it) => { const t = it.tab || "Без вкладки"; if (!byTab.has(t)) byTab.set(t, []); byTab.get(t).push(it); });
+      [...byTab.entries()].sort((a, b) => b[1].length - a[1].length).forEach(([t, list]) => { html += group(t, list, nextIds); });
+    } else {
+      plan.sections.forEach((s) => {
+        const list = items.filter((it) => it.section === s.id);
+        if (list.length) html += group(`${s.id}. ${s.title}`, list, nextIds);
+      });
+    }
+    main.innerHTML = html;
+  }
+
+  function render() {
+    renderSummary();
+    chips();
+    renderMain();
+    document.getElementById("foot").textContent = liveState === "live"
+      ? "Статусы — живые: обновляются после каждого батча."
+      : "Статусы — из файла плана на момент публикации.";
+  }
+
+  function jump(id) {
+    if (ui.view === "settings") ui.view = "sections";
+    ui.open[id] = true;
+    ui.status = []; ui.flags = []; ui.q = "";
+    document.getElementById("q").value = "";
+    save(); render();
+    const el = document.getElementById("i-" + id);
+    if (el) el.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  }
+
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-toggle],[data-jump],[data-status],[data-flag],[data-view]");
+    if (!t) return;
+    if (t.dataset.toggle) { const id = t.dataset.toggle; ui.open[id] = !ui.open[id]; save(); renderMain(); return; }
+    if (t.dataset.jump) { jump(t.dataset.jump); return; }
+    if (t.dataset.status) { const s = t.dataset.status; ui.status = ui.status.includes(s) ? ui.status.filter((x) => x !== s) : [...ui.status, s]; }
+    if (t.dataset.flag) { const f = t.dataset.flag; ui.flags = ui.flags.includes(f) ? ui.flags.filter((x) => x !== f) : [...ui.flags, f]; }
+    if (t.dataset.view) ui.view = t.dataset.view;
+    save(); chips(); renderMain();
+  });
+  document.addEventListener("keydown", (e) => {
+    const t = e.target.closest && e.target.closest("[data-toggle]");
+    if (t && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); t.click(); }
+  });
+  let qTimer;
+  document.getElementById("q").addEventListener("input", (e) => {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => { ui.q = e.target.value; save(); renderMain(); }, 120);
+  });
+  document.getElementById("q").value = ui.q;
+
+  fetch("items.json").then((r) => r.json()).then((data) => {
+    plan = data;
+    render();
+    const hash = location.hash.replace("#", "");
+    if (hash && plan.items.some((it) => it.id === hash)) jump(hash);
+  }).catch(() => {
+    document.getElementById("main").innerHTML = `<div class="empty">Не удалось загрузить план (items.json). Обновите страницу.</div>`;
+  });
+
+  (async () => {
+    const db = window.claude ? await window.claude.use("db") : null;
+    if (!db) return;
+    db.collection("status").onSnapshot((snap) => {
+      const next = {};
+      snap.docs.forEach((d) => { if (d.exists) next[d.id] = d.data(); });
+      live = next; liveState = "live";
+      if (plan.items.length) render();
+    }, () => {});
+  })();
+})();
+</script>
