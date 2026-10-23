@@ -48,6 +48,7 @@ FILES = {
     "controls": "include/config/Controls.h",
     "sensors": "include/sensors/SensorSelection.h",
     "autopilot": "include/autopilot/AutopilotTypes.h",
+    "presets": "include/copter/Presets.h",
     "platformio": "platformio.ini",
 }
 PROJECT_HEADER = "include/config/Project.h"
@@ -233,7 +234,8 @@ def parse_ini(text):
     return sections
 
 
-def parse_platformio(text):
+def parse_platformio(text, copters=None):
+    """Сборки самолёта; сборки коптера (VEHICLE_MULTIROTOR) — в copters, если передан список."""
     sections = parse_ini(text)
 
     def resolve(name, seen=()):
@@ -269,9 +271,22 @@ def parse_platformio(text):
             for ref in refs:
                 expanded.add(ref)
                 flags += "\n" + resolve(ref if ref.startswith("env:") else ref).get("build_flags", "")
-        # Мультикоптер (docs/COPTER.md) настраивается в CopterConfig.h — приложению
-        # его сборки пока не показываются.
+        # Мультикоптер (docs/COPTER.md) настраивается в CopterConfig.h и CLI коптера —
+        # среди плат самолёта его сборок нет, они — отдельным списком.
         if re.search(r"-D\s*VEHICLE_MULTIROTOR\b", flags):
+            if copters is not None:
+                def flag(pattern):
+                    return next(iter(re.findall(pattern, flags)), None)
+                copters.append({
+                    "env": env,
+                    "title": titles.get(env, env),
+                    "macro": flag(r"-D\s*(BOARD_[A-Z0-9_]+)"),
+                    "boardFile": flag(r'-D\s*OP_BOARD_FILE=\\?"([^"\\]+)'),
+                    "build": flag(r'-D\s*COPTER_BUILD=\\?"([^"\\]+)'),
+                    "esc": flag(r"-D\s*COPTER_ESC_PROTOCOL=(\w+)") or "ONESHOT125",
+                    "board": sec.get("board", "").strip() or None,
+                    "uploadProtocol": sec.get("upload_protocol", "").strip() or None,
+                })
             continue
         macro = next(iter(re.findall(r"-D\s*(BOARD_[A-Z0-9_]+)", flags)), None)
         # Полётник с датчиками на плате задаёт их набор сам (-D SENSOR_KIT=…).
@@ -680,13 +695,30 @@ def public_param(p, enums):
     return out
 
 
+def parse_presets(tf):
+    """Каталог сборок коптера (copter/Presets.h): id, название, рама."""
+    builds = []
+    for m in re.finditer(r'\{\s*"(\w+)",\s*"((?:[^"\\]|\\.)*)",\s*FrameType::(\w+)', tf.text()):
+        builds.append({"id": m.group(1), "title": m.group(2).replace('\\"', '"'), "frame": m.group(3)})
+    return builds
+
+
 def describe(src):
     cfg_params, enums, board_tags = parse_declarations(src.files["config"])
     ch_params, _, _ = parse_declarations(src.files["channels"])
     autopilot = parse_autopilot(src.files["autopilot"])
     sensors = parse_sensors(src.files["sensors"])
     controls = parse_controls(src.files["controls"])
-    envs = parse_platformio(src.files["platformio"].text())
+    copter_envs = []
+    envs = parse_platformio(src.files["platformio"].text(), copter_envs)
+    for c in copter_envs:
+        # заголовок платы — заглушка с #error: распиновку надо снять с самой платы
+        header = os.path.join(src.root, "include", c["boardFile"]) if c["boardFile"] else None
+        text = ""
+        if header and os.path.isfile(header):
+            with open(header, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        c["needsBoardDump"] = bool(c["boardFile"]) and (not text or re.search(r"^\s*#error\b", text, re.M) is not None)
 
     fixed_channels = {"AILERON", "ELEVATOR", "THROTTLE", "RUDDER", "ARM"}
     fixed_indices = {p["value"] for p in ch_params if p["name"] in fixed_channels}
@@ -742,6 +774,7 @@ def describe(src):
         "current": {"sensorKit": sensors["currentKit"], "sensors": sensors["current"],
                     "bindings": controls["bindings"]},
         "suggestions": controls["suggestions"],
+        "copters": {"envs": copter_envs, "builds": parse_presets(src.files["presets"])},
     }
 
 

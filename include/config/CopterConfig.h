@@ -21,6 +21,7 @@
 //        micro3, cinewhoop3   — 3", 4S
 //        freestyle5, race5    — 5", 6S
 //        longrange7           — 7", 6S
+//        longrange7li         — 7" на Li-ion 6S (2810 1300KV, 7040, 4000 мА·ч)
 //        heavy10              — 10", 6S, грузовой
 //        cinelifter8          — X8 с 8" винтами
 //        hex13, hex15         — шестилучевые с 13" и 15"
@@ -73,7 +74,11 @@ namespace CopterConfig
     // PWM — любой регулятор (и самолётный); ONESHOT125/ONESHOT42/
     // MULTISHOT — BLHeli_S, BLHeli_32, AM32 (быстрее отклик — шире
     // контур). DShot — следующий этап (нужен драйвер с DMA).
-    constexpr copter::EscProtocol ESC_PROTOCOL = copter::EscProtocol::ONESHOT125;
+    // Плата может задать свой: -D COPTER_ESC_PROTOCOL=MULTISHOT в env.
+#ifndef COPTER_ESC_PROTOCOL
+#define COPTER_ESC_PROTOCOL ONESHOT125
+#endif
+    constexpr copter::EscProtocol ESC_PROTOCOL = copter::EscProtocol::COPTER_ESC_PROTOCOL;
 
     // Цикл стабилизации. 1000 Гц — частота тика FreeRTOS; вупам (вращение
     // выше 500 Гц) нужен цикл быстрее — следующий этап.

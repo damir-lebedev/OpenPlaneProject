@@ -95,6 +95,11 @@ namespace copter
               { 5.1f, 4.8f, 3, 4.2f }, { 23, 6, 2000, 0 }, { 6, 1100, 3.75f }, 560, FlyStyle::RACE },
             { "longrange7", "Дальний 7\", 6S", FrameType::QUAD_X, 315,
               { 7.0f, 4.0f, 3, 8.0f }, { 28, 6.5f, 1300, 0 }, { 6, 2200, 3.75f }, 1000, FlyStyle::LONG_RANGE },
+            // 7" на Li-ion: 2810 1300KV, двухлопастные 7040, 6S 4000 мА·ч (21700),
+            // аналоговый VTX на 4 Вт с вентилятором — тяжелее Li-Po-сборки.
+            { "longrange7li", "Дальний 7\" Li-ion, 6S", FrameType::QUAD_X, 315,
+              { 7.0f, 4.0f, 2, 7.0f }, { 28, 10, 1300, 0 }, { 6, 4000, 3.5f, BatteryChemistry::LIION }, 1050,
+              FlyStyle::LONG_RANGE },
             { "heavy10", "Тяжёлый 10\", 6S", FrameType::QUAD_X, 450,
               { 10.0f, 5.0f, 2, 15.0f }, { 31, 15, 900, 0 }, { 6, 5000, 3.75f }, 2200, FlyStyle::HEAVY_LIFT },
             { "cinelifter8", "Синелифтер X8 8\", 6S", FrameType::X8, 380,

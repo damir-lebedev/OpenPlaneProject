@@ -456,16 +456,28 @@ namespace Config
     // Провод управления видеопередатчиком (SmartAudio/Tramp — TX UART в
     // полудуплексе) и ножки PINIO (режимы USER1…USER4: камера, 12 В…) — у
     // полётников из Betaflight из заголовка платы, у остальных их нет.
+    // Чип OSD (AT7456E/MAX7456) — своя шина SPI и CS; пищалка: true — пищит
+    // высоким уровнем (beeper_inversion = ON в BF), false — низким.
 #if defined(BOARD_STM32F405)
     constexpr int16_t BOARD_VTX_PIN = BOARD_UART_TX[OPB_UART_VTX];  // @fixed
     constexpr int16_t BOARD_PINIO_PINS[4] = { OPB_PINIO_PINS };
     constexpr uint8_t BOARD_PINIO_BOX[4] = { OPB_PINIO_BOX };
     constexpr bool BOARD_PINIO_INVERTED[4] = { OPB_PINIO_INVERTED };
+    constexpr int16_t BOARD_OSD_SCK = BOARD_SPI_SCK[OPB_OSD_SPI];    // @fixed
+    constexpr int16_t BOARD_OSD_MISO = BOARD_SPI_MISO[OPB_OSD_SPI];  // @fixed
+    constexpr int16_t BOARD_OSD_MOSI = BOARD_SPI_MOSI[OPB_OSD_SPI];  // @fixed
+    constexpr int16_t BOARD_OSD_CS = OPB_OSD_CS;                     // @fixed
+    constexpr bool BOARD_BEEPER_ACTIVE_HIGH = OPB_BEEPER_INVERTED != 0;  // @fixed
 #else
     constexpr int16_t BOARD_VTX_PIN = -1;  // @fixed
     constexpr int16_t BOARD_PINIO_PINS[4] = { -1, -1, -1, -1 };
     constexpr uint8_t BOARD_PINIO_BOX[4] = { 255, 255, 255, 255 };
     constexpr bool BOARD_PINIO_INVERTED[4] = { false, false, false, false };
+    constexpr int16_t BOARD_OSD_SCK = -1;   // @fixed
+    constexpr int16_t BOARD_OSD_MISO = -1;  // @fixed
+    constexpr int16_t BOARD_OSD_MOSI = -1;  // @fixed
+    constexpr int16_t BOARD_OSD_CS = -1;    // @fixed
+    constexpr bool BOARD_BEEPER_ACTIVE_HIGH = true;  // @fixed
 #endif
 
 

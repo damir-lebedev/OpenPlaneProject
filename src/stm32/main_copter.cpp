@@ -30,15 +30,19 @@
 #include "config/Config.h"
 #include "config/CopterConfig.h"
 #include "copter/Battery.h"
+#include "copter/Beeper.h"
 #include "copter/CopterController.h"
 #include "copter/CrsfTelemetry.h"
 #include "copter/GpsHome.h"
+#include "copter/Osd.h"
 #include "copter/Params.h"
 #include "copter/Vtx.h"
+#include "hal/Max7456.h"
 #include "hal/Rtos.h"
 #include "hal/stm32/Stm32Board.h"
 #include "hal/stm32/Stm32FlashStorage.h"
 #include "hal/stm32/Stm32MotorOutput.h"
+#include "hal/stm32/Stm32SpiBus.h"
 #include "hal/stm32/Stm32VtxPort.h"
 #include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
@@ -101,6 +105,21 @@ static uint32_t lastGpsMs = 0, lastTelemetryMs = 0;
 copter::CrsfTelemetry crsfTelemetry;
 static bool crsfTelemetryOn = false;
 static copter::CopterMode switchMode = copter::CopterMode::ACRO;   // режим на тумблерах (без ARM — для пульта)
+
+// OSD (AT7456E/MAX7456 на своей шине SPI) — рисуется фоновой задачей.
+SPIClass osdSpi;
+Stm32SpiBus osdBus(osdSpi, static_cast<pin_size_t>(Config::BOARD_OSD_SCK < 0 ? 0 : Config::BOARD_OSD_SCK),
+                   static_cast<pin_size_t>(Config::BOARD_OSD_MISO < 0 ? 0 : Config::BOARD_OSD_MISO),
+                   static_cast<pin_size_t>(Config::BOARD_OSD_MOSI < 0 ? 0 : Config::BOARD_OSD_MOSI));
+Max7456 osdChip(osdBus, Config::BOARD_OSD_CS);
+copter::OsdScreen osdScreen;
+static uint32_t armedMs = 0;   // время в полёте (заармлен), для OSD
+
+// Пищалка — copter/Beeper.h.
+copter::Beeper beeper;
+static bool wasArmedForBeeper = false;
+static bool readyBeeped = false;
+static uint32_t lastBeeperMs = 0;
 
 // Части цикла для `tasks` (TaskStats::add — по порядку).
 enum : uint8_t
@@ -264,6 +283,92 @@ static void sendTelemetry()
     if (n) board.rcUart().write(frame, n);
 }
 
+// Пищалка раз в 10 мс: ARM/DISARM/готов, батарея, failsafe, режим BEEPER.
+static void updateBeeper()
+{
+    if (Config::PIN_BUZZER < 0) return;
+    const bool armed = copterController.isArmed();
+    if (armed != wasArmedForBeeper) beeper.event(armed ? copter::BeeperEvent::ARMED : copter::BeeperEvent::DISARMED);
+    wasArmedForBeeper = armed;
+    if (!readyBeeped && !armed && copterController.getStatus().armBlockers == 0)
+    {
+        readyBeeped = true;
+        beeper.event(copter::BeeperEvent::READY);
+    }
+    copter::BeeperInputs in;
+    in.batteryWarning = armed && battery.state() == copter::BatteryState::WARNING;
+    in.batteryCritical = armed && battery.state() == copter::BatteryState::CRITICAL;
+    in.failsafe = copterController.getStatus().state == copter::CopterState::FAILSAFE;
+    in.findMe = rxInput.isActive(copter::BOX_BEEPER);
+    in.muted = rxInput.isActive(copter::BOX_BEEPER_MUTE);
+    const bool on = beeper.tick(in);
+    digitalWrite(static_cast<uint32_t>(Config::PIN_BUZZER), on == Config::BOARD_BEEPER_ACTIVE_HIGH ? HIGH : LOW);
+}
+
+// Первый код BF причины, почему не армится (для OSD), или nullptr.
+static const char* firstArmBlock()
+{
+    const uint32_t b = copterController.getStatus().armBlockers;
+    for (uint32_t bit = 1; bit <= copter::ARM_BLOCK_LAST; bit <<= 1)
+    {
+        if (b & bit) return copter::armBlockCode(bit);
+    }
+    return nullptr;
+}
+
+// Экран OSD из того, что знает прошивка (copter/Osd.h).
+static void composeOsd()
+{
+    if (rxInput.isActive(copter::BOX_OSD))   // режим OSD DISABLE — пусто
+    {
+        osdScreen.clear();
+        return;
+    }
+    const copter::CopterStatus& s = copterController.getStatus();
+    copter::OsdData d;
+    d.armed = copterController.isArmed();
+    d.failsafe = s.state == copter::CopterState::FAILSAFE;
+    d.mode = crsfModeName(d.armed ? s.mode : switchMode);
+    d.linkQuality = rcReceiver.getLinkQuality();
+    d.linkLost = rcReceiver.isSignalLost();
+    d.volts = battery.volts();
+    d.cellVolts = battery.cellVolts();
+    d.hasCurrent = battery.hasCurrent();
+    d.amps = battery.amps();
+    d.mahDrawn = battery.mahDrawn();
+    d.batteryState = static_cast<uint8_t>(battery.state());
+    d.flightSeconds = armedMs / 1000;
+    d.altitudeM = s.altitude;
+    d.gpsPresent = gps.isAvailable();
+    d.satellites = gpsHome.fix().satellites;
+    d.home = gpsHome.hasHome();
+    d.homeDistanceM = gpsHome.distanceM();
+    d.homeRelativeDeg = gpsHome.relativeHomeDeg(headingDeg());
+    d.vtxMw = vtx.state().online ? vtx.state().powerMw : 0;
+    d.vtxPit = vtx.state().pit;
+    d.armBlock = d.armed ? nullptr : firstArmBlock();
+    osdScreen.setRows(osdChip.rows());
+    osdScreen.compose(d);
+}
+
+// Фоновая задача OSD: 20 раз в секунду экран — в чип (только изменения), раз
+// в секунду — проверить, не сменилась ли камера (PAL/NTSC).
+static void osdTask(void*)
+{
+    uint32_t lastCheckMs = 0;
+    for (;;)
+    {
+        composeOsd();
+        osdChip.flush(osdScreen, 60);
+        if (millis() - lastCheckMs >= 1000)
+        {
+            lastCheckMs = millis();
+            osdChip.check();
+        }
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
 static uint32_t lap(uint8_t task, uint32_t sinceUs)
 {
     const uint32_t now = micros();
@@ -348,7 +453,16 @@ static void flightTask(void*)
         motors.write(out.motor, out.spinning);
         t = lap(TASK_MOTORS, t);
 
-        if (copterController.isArmed()) everArmed = true;
+        if (copterController.isArmed())
+        {
+            everArmed = true;
+            ++armedMs;
+        }
+        if (millis() - lastBeeperMs >= 10)
+        {
+            lastBeeperMs = millis();
+            updateBeeper();
+        }
         updatePinio(false);
         vtx.request(vtxRequest());
         vtx.update(millis());
@@ -474,6 +588,10 @@ void setup()
     Serial.println("=================================");
 
     board.begin();
+    if (Config::PIN_BUZZER >= 0)   // молчать с первой миллисекунды (у платы может быть «пищит низким»)
+    {
+        digitalWrite(static_cast<uint32_t>(Config::PIN_BUZZER), Config::BOARD_BEEPER_ACTIVE_HIGH ? LOW : HIGH);
+    }
     analogReadResolution(12);
 
     KeyValueStore& settings = Stm32FlashStorage::store();
@@ -514,11 +632,18 @@ void setup()
     copterConsole.setVtx(&vtx);
     copterConsole.setGps(&gps, &gpsHome);
     copterConsole.setCompass(compass);
+    if (Config::BOARD_OSD_CS >= 0)
+    {
+        osdBus.begin();
+        Serial.printf("OSD: %s\n", osdChip.begin() ? (osdChip.isPal() ? "AT7456E/MAX7456, PAL" : "AT7456E/MAX7456, NTSC")
+                                                     : "чип не отвечает");
+    }
     copterConsole.setTaskStats(&taskStats);
     copterConsole.printHint();
 
     Rtos::startTask(flightTask, "flight", 16384, nullptr, Rtos::PRIORITY_FLIGHT);
     Rtos::startTask(storageTask, "storage", 2048, nullptr, Rtos::PRIORITY_BACKGROUND);
+    if (osdChip.isPresent()) Rtos::startTask(osdTask, "osd", 3072, nullptr, Rtos::PRIORITY_BACKGROUND);
     vTaskStartScheduler();   // не возвращается
 
     Serial.println("FreeRTOS не запустился (мало памяти?)");

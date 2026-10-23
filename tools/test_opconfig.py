@@ -330,5 +330,26 @@ class OpconfigTest(unittest.TestCase):
         self.assertIn("менять нельзя", result["errors"][0])
 
 
+
+class CopterManifestTest(unittest.TestCase):
+    """Сборки коптера — отдельным списком: среди плат самолёта их нет."""
+
+    def test_copter_envs_and_builds(self):
+        manifest = opconfig.describe(opconfig.Source(ROOT))
+        planes = {b["env"] for b in manifest["boards"]}
+        copters = {c["env"]: c for c in manifest["copters"]["envs"]}
+        self.assertNotIn("getfun-f405v3-quad", planes)
+        getfun = copters["getfun-f405v3-quad"]
+        self.assertEqual("longrange7li", getfun["build"])
+        self.assertEqual("MULTISHOT", getfun["esc"])
+        self.assertEqual("dfu", getfun["uploadProtocol"])
+        self.assertTrue(getfun["needsBoardDump"])   # заглушка с #error, пока нет дампа с платы
+        self.assertIn("GETFUN", getfun["title"])
+        self.assertFalse(copters["aocodarc-f405v3-quad"]["needsBoardDump"])
+        builds = {b["id"]: b for b in manifest["copters"]["builds"]}
+        self.assertEqual("QUAD_X", builds["longrange7li"]["frame"])
+        self.assertIn("Li-ion", builds["longrange7li"]["title"])
+        self.assertEqual('Фристайл 5", 6S', builds["freestyle5"]["title"])
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

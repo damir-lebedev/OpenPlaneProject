@@ -118,9 +118,11 @@ void test_mount_calibration_then_arm_spins_m1_to_m4()
     RcChannels rc;
     run(rc, 3.0);
     TEST_ASSERT_EQUAL_HEX32(0, copterController.getStatus().armBlockers);
+    TEST_ASSERT_EQUAL(LOW, digitalRead(PB8));   // пищалка молчит (у этой платы пищит высоким)
     rc.set(Channels::ARM, 2000);
     run(rc, 0.1);
     TEST_ASSERT_TRUE(copterController.isArmed());
+    TEST_ASSERT_EQUAL(HIGH, digitalRead(PB8));  // ARM — длинный писк
     for (int16_t pin : MOTORS)
     {
         TEST_ASSERT_GREATER_THAN(125, pulse(pin));   // холостые

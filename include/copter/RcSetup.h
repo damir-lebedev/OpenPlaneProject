@@ -38,7 +38,8 @@
 // выключенном в настройках; PREARM — есть в таблице: ARM только при
 // включённом PREARM. USER1…USER4 — ножки PINIO платы (камера CAM1/CAM2,
 // питание 12 В видеопередатчика…); VTX PIT MODE и VTX CONTROL DISABLE —
-// видеопередатчику (copter/Vtx.h).
+// видеопередатчику (copter/Vtx.h); OSD DISABLE прячет OSD; BEEPER — пищать
+// («поиск модели»), BEEPER MUTE — молчать.
 //
 //   vtx № канал полоса канал_VTX мощность от до — как `vtx` в BF: пока AUX
 //       «канал» в [от, до), у видеопередатчика эта полоса, канал и уровень
@@ -107,8 +108,8 @@ namespace copter
             { BOX_ANTIGRAVITY, "ANTI GRAVITY", false },
             { BOX_MAG, "MAG", false },
             { BOX_HEADFREE, "HEADFREE", false },
-            { BOX_BEEPER, "BEEPER", false },
-            { BOX_OSD, "OSD DISABLE", false },
+            { BOX_BEEPER, "BEEPER", true },
+            { BOX_OSD, "OSD DISABLE", true },
             { BOX_TELEMETRY, "TELEMETRY", false },
             { BOX_BLACKBOX, "BLACKBOX", false },
             { BOX_FLIP_OVER_AFTER_CRASH, "FLIP OVER AFTER CRASH", false },
@@ -116,7 +117,7 @@ namespace copter
             { BOX_GPS_RESCUE, "GPS RESCUE", false },
             { BOX_ACRO_TRAINER, "ACRO TRAINER", false },
             { BOX_LAUNCH_CONTROL, "LAUNCH CONTROL", false },
-            { BOX_BEEPER_MUTE, "BEEPER MUTE", false },
+            { BOX_BEEPER_MUTE, "BEEPER MUTE", true },
         };
         count = sizeof(table) / sizeof(table[0]);
         return table;

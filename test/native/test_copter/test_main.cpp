@@ -15,18 +15,23 @@
 #include <math.h>
 #include <string.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
+#include "hal/Max7456.h"
+#include "helpers/Osd7456Emulator.h"
 #include "helpers/VtxEmulator.h"
 
 #include "copter/AltitudeHold.h"
+#include "copter/Beeper.h"
 #include "copter/Battery.h"
 #include "copter/Attitude.h"
 #include "copter/CopterCli.h"
 #include "copter/CopterController.h"
 #include "copter/CrsfTelemetry.h"
 #include "copter/GpsHome.h"
+#include "copter/Osd.h"
 #include "copter/EscProtocol.h"
 #include "copter/Filters.h"
 #include "copter/Frames.h"
@@ -1718,8 +1723,8 @@ void test_cli_aux_map_rxrange_and_diff()
     TEST_ASSERT_TRUE(cli.hasUnsaved());
     cli.execute("aux 0 0 1 1700 2100 0 0");
     TEST_ASSERT_FALSE(has(port.take(), "нет ARM"));
-    cli.execute("aux 2 13 3 1700 2100 0 0");
-    TEST_ASSERT_TRUE(has(port.take(), "# режим 13 BEEPER у нас пока не действует — строка хранится"));
+    cli.execute("aux 2 46 3 1700 2100 0 0");
+    TEST_ASSERT_TRUE(has(port.take(), "# режим 46 GPS RESCUE у нас пока не действует — строка хранится"));
     cli.execute("aux 3 0 9 1700 2100 0 0");
     TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: канал 0-5"));
     cli.execute("aux help");
@@ -1750,7 +1755,7 @@ void test_cli_aux_map_rxrange_and_diff()
     cli.execute("diff");
     out = port.take();
     TEST_ASSERT_TRUE_MESSAGE(has(out, "\r\n# map\r\nmap TAER1234\r\n\r\n# aux\r\naux 0 0 1 1700 2100 0 0\r\naux 1 1 2 1300 1700 0 0\r\n"
-                                      "aux 2 13 3 1700 2100 0 0\r\n\r\n# rxrange\r\nrxrange 3 1050 1950\r\n\r\n# master\r\n"
+                                      "aux 2 46 3 1700 2100 0 0\r\n\r\n# rxrange\r\nrxrange 3 1050 1950\r\n\r\n# master\r\n"
                                       "set copter_mass_g = 742\r\n"),
                              out.c_str());
     cli.execute("dump");
@@ -2323,6 +2328,184 @@ void test_crsf_telemetry_frames()
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, types, 8);
 }
 
+// ---- OSD (copter/Osd.h, hal/Max7456.h) ----
+
+void test_osd_arrows_and_warnings()
+{
+    TEST_ASSERT_EQUAL_HEX8(0x68, osdArrow(0.0f));     // вперёд — «север» шрифта
+    TEST_ASSERT_EQUAL_HEX8(0x64, osdArrow(90.0f));    // направо
+    TEST_ASSERT_EQUAL_HEX8(0x60, osdArrow(180.0f));   // назад
+    TEST_ASSERT_EQUAL_HEX8(0x60, osdArrow(-180.0f));
+    TEST_ASSERT_EQUAL_HEX8(0x6C, osdArrow(-90.0f));   // налево
+    TEST_ASSERT_EQUAL_HEX8(0x67, osdArrow(20.0f));    // чуть правее — соседняя
+
+    OsdData d;
+    d.armed = true;
+    TEST_ASSERT_NULL(OsdScreen::warningText(d));
+    d.batteryState = 2;
+    TEST_ASSERT_EQUAL_STRING("LOW BATTERY", OsdScreen::warningText(d));
+    d.batteryState = 3;
+    TEST_ASSERT_EQUAL_STRING("BATT CRITICAL", OsdScreen::warningText(d));
+    d.linkLost = true;
+    TEST_ASSERT_EQUAL_STRING("RXLOSS", OsdScreen::warningText(d));
+    d.failsafe = true;
+    TEST_ASSERT_EQUAL_STRING("FAILSAFE", OsdScreen::warningText(d));
+    OsdData ground;
+    ground.armed = false;
+    TEST_ASSERT_EQUAL_STRING("DISARMED", OsdScreen::warningText(ground));
+    ground.armBlock = "THROTTLE";
+    TEST_ASSERT_EQUAL_STRING("THROTTLE", OsdScreen::warningText(ground));
+}
+
+void test_osd_screen_layout()
+{
+    OsdScreen s;
+    s.setRows(16);
+    OsdData d;
+    d.armed = true;
+    d.mode = "ANGL";
+    d.linkQuality = 100;
+    d.volts = 25.2f;
+    d.cellVolts = 4.2f;
+    d.hasCurrent = true;
+    d.amps = 12.3f;
+    d.mahDrawn = 1234;
+    d.flightSeconds = 133;
+    d.altitudeM = 12.4f;
+    d.gpsPresent = true;
+    d.satellites = 12;
+    d.home = true;
+    d.homeDistanceM = 1260;
+    d.homeRelativeDeg = 90;
+    d.vtxMw = 400;
+    s.compose(d);
+    auto row = [&s](uint8_t r) {
+        std::string t;
+        for (uint8_t c = 0; c < OsdScreen::COLS; ++c) t += static_cast<char>(s.at(r, c));
+        return t;
+    };
+    TEST_ASSERT_EQUAL_HEX8(osdsym::LINK_QUALITY, s.at(0, 1));
+    TEST_ASSERT_TRUE(has(row(0), "100"));
+    TEST_ASSERT_TRUE(has(row(0), "ANGL"));
+    TEST_ASSERT_EQUAL_HEX8(osdsym::SAT_L, s.at(0, 24));
+    TEST_ASSERT_TRUE(has(row(0), "12"));
+    TEST_ASSERT_TRUE(has(row(1), "400MW"));
+    TEST_ASSERT_EQUAL_HEX8(osdsym::CROSSHAIR, s.at(8, 14));
+    TEST_ASSERT_EQUAL_HEX8(osdArrow(90), s.at(13, 1));
+    TEST_ASSERT_TRUE(has(row(13), "1.3KM"));
+    TEST_ASSERT_TRUE(has(row(13), "12"));
+    TEST_ASSERT_TRUE_MESSAGE(has(row(14), "25.2"), row(14).c_str());
+    TEST_ASSERT_TRUE(has(row(14), "4.20"));
+    TEST_ASSERT_TRUE(has(row(14), "02:13"));
+    TEST_ASSERT_TRUE(has(row(15), "12.3"));
+    TEST_ASSERT_TRUE(has(row(15), "1234"));
+    // текст — заглавными (в шрифте только они; 0x60–0x6F — это стрелки)
+    OsdScreen t;
+    t.print(0, 0, "Angl");
+    TEST_ASSERT_EQUAL_HEX8('A', t.at(0, 0));
+    TEST_ASSERT_EQUAL_HEX8('N', t.at(0, 1));
+
+    // NTSC — 13 строк: низ экрана выше
+    s.setRows(13);
+    d.batteryState = 2;
+    s.compose(d);
+    TEST_ASSERT_TRUE(has(row(11), "25.2"));
+    TEST_ASSERT_TRUE(has(row(8), "LOW BATTERY"));
+}
+
+void test_osd_chip_driver()
+{
+    Osd7456Emulator chip;
+    Max7456 osd(chip, 10);
+    TEST_ASSERT_TRUE(osd.begin());
+    TEST_ASSERT_TRUE(osd.isPal());
+    TEST_ASSERT_EQUAL_UINT8(16, osd.rows());
+    TEST_ASSERT_EQUAL_HEX8(0x48, chip.vm0);         // PAL + OSD
+    TEST_ASSERT_EQUAL_HEX8(0x0F, chip.osdbl);       // уровень чёрного — автоматически
+    TEST_ASSERT_EQUAL(1, chip.resets);
+
+    OsdScreen s;
+    s.setRows(osd.rows());
+    s.print(0, 3, "ANGL");
+    uint16_t total = 0;
+    for (int i = 0; i < 20; ++i) total = static_cast<uint16_t>(total + osd.flush(s, 40));
+    TEST_ASSERT_EQUAL_UINT16(480, total);           // первый раз — весь экран (пробелы тоже)
+    TEST_ASSERT_EQUAL_STRING("   ANGL                       ", chip.row(0).c_str());
+    TEST_ASSERT_EQUAL_UINT16(0, osd.flush(s, 40));  // ничего не поменялось — ничего не пишем
+    s.print(0, 3, "ACRO");
+    const int before = chip.charWrites;
+    for (int i = 0; i < 20; ++i) osd.flush(s, 40);
+    TEST_ASSERT_EQUAL(3, chip.charWrites - before); // A остаётся, CRO — три символа
+    TEST_ASSERT_EQUAL_STRING("   ACRO                       ", chip.row(0).c_str());
+
+    // камера NTSC — заметит и перенастроит
+    chip.palSignal = false;
+    osd.check();
+    TEST_ASSERT_FALSE(osd.isPal());
+    TEST_ASSERT_EQUAL_UINT8(13, osd.rows());
+    TEST_ASSERT_EQUAL_HEX8(0x08, chip.vm0);
+
+    // чипа нет
+    Osd7456Emulator none;
+    none.connected = false;
+    Max7456 absent(none, 10);
+    TEST_ASSERT_FALSE(absent.begin());
+    TEST_ASSERT_EQUAL_UINT16(0, absent.flush(s, 40));
+    Max7456 noCs(chip, -1);
+    TEST_ASSERT_FALSE(noCs.begin());
+}
+
+// ---- пищалка (copter/Beeper.h) ----
+
+namespace
+{
+    // Сколько тиков по 10 мс пищит из n (и какой рисунок, строкой «#.»).
+    std::string listen(Beeper& b, const BeeperInputs& in, int ticks)
+    {
+        std::string s;
+        for (int i = 0; i < ticks; ++i) s += b.tick(in) ? '#' : '.';
+        return s;
+    }
+}
+
+void test_beeper_events_and_alarms()
+{
+    Beeper b;
+    BeeperInputs quiet;
+    TEST_ASSERT_EQUAL_STRING("....", listen(b, quiet, 4).c_str());
+
+    b.event(BeeperEvent::ARMED);   // один длинный — 0.5 с
+    const std::string arm = listen(b, quiet, 60);
+    TEST_ASSERT_EQUAL(50, static_cast<int>(std::count(arm.begin(), arm.end(), '#')));
+    TEST_ASSERT_FALSE(b.busy());
+
+    b.event(BeeperEvent::DISARMED);   // два коротких
+    TEST_ASSERT_EQUAL_STRING("############..........############......", listen(b, quiet, 40).c_str());
+
+    // батарея: WARNING — короткий раз в 2 с, CRITICAL — часто
+    BeeperInputs low;
+    low.batteryWarning = true;
+    const std::string warn = listen(b, low, 400);
+    TEST_ASSERT_EQUAL(20, static_cast<int>(std::count(warn.begin(), warn.end(), '#')));
+    low.batteryCritical = true;
+    const std::string crit = listen(b, low, 200);
+    TEST_ASSERT_TRUE(std::count(crit.begin(), crit.end(), '#') >= 90);
+    // всё хорошо — замолчал
+    TEST_ASSERT_EQUAL_STRING("..........", listen(b, quiet, 10).c_str());
+
+    // «поиск модели» главнее всего и не глушится; BEEPER MUTE глушит остальное
+    BeeperInputs findMe;
+    findMe.findMe = true;
+    findMe.muted = true;
+    findMe.batteryCritical = true;
+    const std::string loud = listen(b, findMe, 100);
+    TEST_ASSERT_TRUE(std::count(loud.begin(), loud.end(), '#') >= 40);
+    BeeperInputs muted;
+    muted.muted = true;
+    muted.batteryCritical = true;
+    TEST_ASSERT_EQUAL_STRING("..........", listen(b, muted, 10).c_str());
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -2391,5 +2574,9 @@ int main()
     RUN_TEST(test_cli_vtx_and_params);
     RUN_TEST(test_gps_home_distance_and_direction);
     RUN_TEST(test_crsf_telemetry_frames);
+    RUN_TEST(test_osd_arrows_and_warnings);
+    RUN_TEST(test_osd_screen_layout);
+    RUN_TEST(test_osd_chip_driver);
+    RUN_TEST(test_beeper_events_and_alarms);
     return UNITY_END();
 }
