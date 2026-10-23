@@ -150,6 +150,21 @@ namespace copter
         PARAM_I_YAW,
         PARAM_D_YAW,
         PARAM_F_YAW,
+        PARAM_D_MAX_ROLL,
+        PARAM_D_MAX_PITCH,
+        PARAM_D_MAX_YAW,
+        PARAM_D_MAX_GAIN,
+        PARAM_D_MAX_ADVANCE,
+        PARAM_D_MIN_ROLL,
+        PARAM_D_MIN_PITCH,
+        PARAM_D_MIN_YAW,
+        PARAM_ITERM_RELAX,
+        PARAM_ITERM_RELAX_TYPE,
+        PARAM_ITERM_RELAX_CUTOFF,
+        PARAM_ITERM_RELAX_ERROR,
+        PARAM_ITERM_ROTATION,
+        PARAM_ITERM_WINDUP,
+        PARAM_ITERM_LIMIT,
         PARAM_RATEPROFILE_NAME,
         PARAM_ROLL_RC_RATE,
         PARAM_PITCH_RC_RATE,
@@ -222,6 +237,9 @@ namespace copter
         // порядок — как VtxProtocol
         static const char* const VTX_PROTOCOLS[] = { "AUTO", "SMARTAUDIO", "TRAMP", "NONE" };
         static const char* const LOW_POWER_DISARM[] = { "OFF", "ON", "UNTIL_FIRST_ARM" };
+        // порядок — как ItermRelax и ItermRelaxType (Presets.h)
+        static const char* const ITERM_RELAX[] = { "OFF", "RP", "RPY", "RP_INC", "RPY_INC" };
+        static const char* const ITERM_RELAX_TYPES[] = { "GYRO", "SETPOINT" };
         uint8_t buildCount = 0;
         const char* const* builds = buildIds(buildCount);
         constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
@@ -248,6 +266,36 @@ namespace copter
             { "i_yaw", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "I рысканья" },
             { "d_yaw", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0, "D рысканья" },
             { "f_yaw", kInt, kPid, kGroupPid, 0, 1000, 0, kTune, "BF", nullptr, 0, "упреждение (feedforward) рысканья" },
+            { "d_max_roll", kInt, kPid, kGroupPid, 0, 250, 0, kTable, "BF", nullptr, 0,
+              "D крена на резком движении (тогда d_roll — в покое); 0 — D постоянный" },
+            { "d_max_pitch", kInt, kPid, kGroupPid, 0, 250, 0, kTable, "BF", nullptr, 0,
+              "D тангажа на резком движении (тогда d_pitch — в покое); 0 — D постоянный" },
+            { "d_max_yaw", kInt, kPid, kGroupPid, 0, 250, 0, kTable, "BF", nullptr, 0,
+              "D рысканья на резком движении (тогда d_yaw — в покое); 0 — D постоянный" },
+            { "d_max_gain", kInt, kPid, kGroupPid, 0, 100, 37, kTable, "", nullptr, 0,
+              "как легко D растёт от рывков гироскопа (пропвош, манёвр)" },
+            { "d_max_advance", kInt, kPid, kGroupPid, 0, 200, 20, kTable, "", nullptr, 0,
+              "как рано D растёт от движения стика" },
+            { "d_min_roll", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0,
+              "как в BF 4.5: D крена в покое, d_roll — на резком движении; 0 — нет" },
+            { "d_min_pitch", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0,
+              "как в BF 4.5: D тангажа в покое, d_pitch — на резком движении; 0 — нет" },
+            { "d_min_yaw", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0,
+              "как в BF 4.5: D рысканья в покое, d_yaw — на резком движении; 0 — нет" },
+            { "iterm_relax", kEnum, kPid, kGroupPid, 0, 4, 0, kTune, "", ITERM_RELAX, 5,
+              "оси, на которых I ждёт, пока уставка резко меняется (нет отскока после флипа); _INC — только рост" },
+            { "iterm_relax_type", kEnum, kPid, kGroupPid, 0, 1, 1, kTable, "", ITERM_RELAX_TYPES, 2,
+              "SETPOINT — I копится медленнее; GYRO — I к сглаженной уставке" },
+            { "iterm_relax_cutoff", kInt, kPid, kGroupPid, 1, 50, 0, kTune, "Гц", nullptr, 0,
+              "сглаживание уставки для relax: меньше — дольше ждёт" },
+            { "iterm_relax_error", kEnum, kPid, kGroupPid, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "наш: большая ошибка разгона (флип) не копится в I" },
+            { "iterm_rotation", kEnum, kPid, kGroupPid, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "I поворачивается вместе с рамой (пируэты: крен переходит в тангаж)" },
+            { "iterm_windup", kInt, kPid, kGroupPid, 30, 100, 0, kTune, "%", nullptr, 0,
+              "моторы разошлись больше — I копится слабее; 100 — выкл" },
+            { "iterm_limit", kInt, kPid, kGroupPid, 0, 500, 0, kTune, "BF", nullptr, 0,
+              "предел I (1000 — весь ход моторов)" },
             { "rateprofile_name", kText, kRate, kGroupRates, 0, 8, 0, kTable, "", nullptr, 0, "имя профиля расходов" },
             { "roll_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход крена у центра стика" },
             { "pitch_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход тангажа у центра стика" },
@@ -322,10 +370,32 @@ namespace copter
 
     inline const ParamInfo& paramInfo(ParamId id) { return paramTable()[id < PARAM_COUNT ? id : 0]; }
 
+    // Старые имена BF (4.5 и раньше) — те же настройки.
+    struct ParamAlias
+    {
+        const char* name;
+        int id;
+    };
+
     // Настройка по имени (без учёта регистра); -1 — нет такой.
     inline int findParam(const char* name)
     {
         if (!name) return -1;
+        static const ParamAlias aliases[] = {
+            { "d_min_gain", PARAM_D_MAX_GAIN },
+            { "d_min_advance", PARAM_D_MAX_ADVANCE },
+        };
+        for (const ParamAlias& alias : aliases)
+        {
+            const char* a = alias.name;
+            const char* b = name;
+            while (*a && tolower(static_cast<unsigned char>(*b)) == *a)
+            {
+                ++a;
+                ++b;
+            }
+            if (*a == '\0' && *b == '\0') return alias.id;
+        }
         for (int i = 0; i < PARAM_COUNT; ++i)
         {
             const char* a = paramTable()[i].name;
@@ -688,12 +758,36 @@ namespace copter
                         t.gainsFromModel = false;
                     }
                 }
+                // D на резком движении: d_max (BF 2025.12; D из таблицы — в покое)
+                // или d_min (BF 4.5; D из таблицы — на движении, d_min — в покое)
+                const float dMax = valueIn(static_cast<ParamId>(PARAM_D_MAX_ROLL + axis), pidIndex);
+                const float dMin = valueIn(static_cast<ParamId>(PARAM_D_MIN_ROLL + axis), pidIndex);
+                const float dBase = gainToBf(PidTerm::D, axis, gains[axis]->d);
+                t.pid.dMax[axis] = 0.0f;
+                if (dMax > 0.0f)
+                {
+                    t.pid.dMax[axis] = bfToGain(PidTerm::D, axis, dMax);
+                }
+                else if (dMin > 0.0f && dMin < dBase)
+                {
+                    t.pid.dMax[axis] = gains[axis]->d;
+                    gains[axis]->d = bfToGain(PidTerm::D, axis, dMin);
+                }
                 const float center = 10.0f * valueIn(static_cast<ParamId>(PARAM_ROLL_RC_RATE + axis), rateIndex);
                 const float top = 10.0f * valueIn(static_cast<ParamId>(PARAM_ROLL_SRATE + axis), rateIndex);
                 t.rates[axis].centerDps = center;
                 t.rates[axis].maxDps = fmaxf(center, top);
                 t.rates[axis].expo = valueIn(static_cast<ParamId>(PARAM_ROLL_EXPO + axis), rateIndex) / 100.0f;
             }
+            t.pid.dMaxGain = valueIn(PARAM_D_MAX_GAIN, pidIndex);
+            t.pid.dMaxAdvance = valueIn(PARAM_D_MAX_ADVANCE, pidIndex);
+            t.pid.relax = static_cast<ItermRelax>(static_cast<uint8_t>(valueIn(PARAM_ITERM_RELAX, pidIndex)));
+            t.pid.relaxType = static_cast<ItermRelaxType>(static_cast<uint8_t>(valueIn(PARAM_ITERM_RELAX_TYPE, pidIndex)));
+            t.pid.relaxCutoffHz = valueIn(PARAM_ITERM_RELAX_CUTOFF, pidIndex);
+            t.pid.relaxError = valueIn(PARAM_ITERM_RELAX_ERROR, pidIndex) > 0.5f;
+            t.pid.itermRotation = valueIn(PARAM_ITERM_ROTATION, pidIndex) > 0.5f;
+            t.pid.itermWindup = valueIn(PARAM_ITERM_WINDUP, pidIndex) / 100.0f;
+            t.iLimit = valueIn(PARAM_ITERM_LIMIT, pidIndex) / betaflight::MIXER_SCALING;
             return t;
         }
 
@@ -851,11 +945,18 @@ namespace copter
                     const float v = bf ? betaflight::DEFAULT_PID[axis][k] : roundf(gainToBf(term, axis, gainTerm(*gains[axis], term)));
                     defaults[id] = fminf(info.max, fmaxf(info.min, v));
                 }
+                defaults[PARAM_D_MIN_ROLL + axis] = bf ? betaflight::DEFAULT_D_MIN[axis] : 0.0f;
                 const RateCurve& r = model.rates[axis];
                 defaults[PARAM_ROLL_RC_RATE + axis] = bf ? betaflight::DEFAULT_RC_RATE : fmaxf(1.0f, roundf(r.centerDps / 10.0f));
                 defaults[PARAM_ROLL_SRATE + axis] = bf ? betaflight::DEFAULT_SRATE : fminf(255.0f, roundf(r.maxDps / 10.0f));
                 defaults[PARAM_ROLL_EXPO + axis] = bf ? betaflight::DEFAULT_EXPO : roundf(r.expo * 100.0f);
             }
+            CopterTune pidBase = model;
+            if (bf) applyBetaflightBase(pidBase);
+            defaults[PARAM_ITERM_RELAX] = static_cast<float>(pidBase.pid.relax);
+            defaults[PARAM_ITERM_RELAX_CUTOFF] = roundf(pidBase.pid.relaxCutoffHz);
+            defaults[PARAM_ITERM_WINDUP] = roundf(pidBase.pid.itermWindup * 100.0f);
+            defaults[PARAM_ITERM_LIMIT] = roundf(pidBase.iLimit * betaflight::MIXER_SCALING);
         }
 
         // Сборка каталога с поправками прошивки (для сборки прошивки — она сама).

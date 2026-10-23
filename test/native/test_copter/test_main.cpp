@@ -520,6 +520,227 @@ void test_rate_axis_relaxes_integral_on_large_error()
     TEST_ASSERT_TRUE(b.lastTerms().i > 0.0f && b.lastTerms().i < 0.1f * 50.0f * 1.0f);
 }
 
+namespace
+{
+    CopterParams& five5Params();   // ниже, у реестра настроек
+}
+
+// 011: D на резком движении растёт до d_max, в покое — базовый.
+void test_rate_axis_d_max_rises_on_fast_motion()
+{
+    PidExtras x;
+    x.dMax[0] = 0.002f;   // вдвое больше базового D
+    RateAxis a = makeAxis(0.0f, 0.0f, 0.001f, 0.0f);
+    a.setExtras(x, 0);
+    RateAxis base = makeAxis(0.0f, 0.0f, 0.001f, 0.0f);
+    for (int i = 0; i < 200; ++i)
+    {
+        a.update(0.0f, 0.0f, 1.0f, 1.0f, false, false);
+        base.update(0.0f, 0.0f, 1.0f, 1.0f, false, false);
+    }
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, a.dBoost());
+    // гироскоп разгоняется 10000 °/с² (пропвош, удар) — D почти вдвое
+    float m = 0.0f;
+    for (int i = 0; i < 50; ++i)
+    {
+        m += 10.0f;
+        a.update(0.0f, m, 1.0f, 1.0f, false, false);
+        base.update(0.0f, m, 1.0f, 1.0f, false, false);
+    }
+    TEST_ASSERT_TRUE(a.dBoost() > 0.95f);
+    TEST_ASSERT_TRUE(fabsf(a.lastTerms().d) > 1.9f * fabsf(base.lastTerms().d));
+    // движение успокоилось — D обратно к базовому
+    for (int i = 0; i < 300; ++i) a.update(0.0f, m, 1.0f, 1.0f, false, false);
+    TEST_ASSERT_TRUE(a.dBoost() < 0.01f);
+
+    // d_max_advance: стик рывком — D поднимается заранее, гироскоп ещё стоит
+    RateAxis s = makeAxis(0.0f, 0.0f, 0.001f, 0.0f);
+    s.setExtras(x, 0);
+    for (int i = 0; i < 50; ++i) s.update(20.0f * (i + 1), 0.0f, 1.0f, 1.0f, false, false);
+    TEST_ASSERT_TRUE(s.dBoost() > 0.9f);
+    x.dMaxAdvance = 0.0f;
+    RateAxis noAdvance = makeAxis(0.0f, 0.0f, 0.001f, 0.0f);
+    noAdvance.setExtras(x, 0);
+    for (int i = 0; i < 50; ++i) noAdvance.update(20.0f * (i + 1), 0.0f, 1.0f, 1.0f, false, false);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, noAdvance.dBoost());
+
+    // d_max не больше D — D постоянный
+    x.dMax[0] = 0.0005f;
+    RateAxis off = makeAxis(0.0f, 0.0f, 0.001f, 0.0f);
+    off.setExtras(x, 0);
+    off.update(0.0f, 0.0f, 1.0f, 1.0f, false, false);
+    off.update(0.0f, 10.0f, 1.0f, 1.0f, false, false);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, -10.0f, off.lastTerms().d);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, off.dBoost());
+}
+
+namespace
+{
+    // Ось с одним I (без нашего relax по ошибке) и заданным iterm_relax.
+    RateAxis relaxAxis(ItermRelax relax, ItermRelaxType type, uint8_t axis)
+    {
+        PidExtras x;
+        x.relax = relax;
+        x.relaxType = type;
+        x.relaxError = false;
+        RateAxis a = makeAxis(0.0f, 0.1f, 0.0f, 0.0f);
+        a.setExtras(x, axis);
+        a.update(0.0f, 0.0f, 1.0f, 1.0f, false, false);
+        return a;
+    }
+
+    // Уставка прыгает на value и держится ms миллисекунд, гироскоп стоит.
+    float stepIntegral(RateAxis& a, float value, int ms)
+    {
+        for (int i = 0; i < ms; ++i) a.update(value, 0.0f, 1.0f, 1.0f, false, false);
+        return a.integral();
+    }
+}
+
+// 012: iterm_relax — оси, SETPOINT/GYRO, *_INC.
+void test_iterm_relax_axes_types_and_inc()
+{
+    const ItermRelaxType sp = ItermRelaxType::SETPOINT;
+    // OFF: ступенька 100 °/с копится сразу: 0.1·100·0.005 = 0.05
+    RateAxis off = relaxAxis(ItermRelax::OFF, sp, 0);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.05f, stepIntegral(off, 100.0f, 5));
+    // RP: крен ждёт, рысканье — нет; RPY — ждут все
+    RateAxis roll = relaxAxis(ItermRelax::RP, sp, 0);
+    RateAxis yawRp = relaxAxis(ItermRelax::RP, sp, 2);
+    RateAxis yawRpy = relaxAxis(ItermRelax::RPY, sp, 2);
+    TEST_ASSERT_TRUE(stepIntegral(roll, 100.0f, 5) < 0.002f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.05f, stepIntegral(yawRp, 100.0f, 5));
+    TEST_ASSERT_TRUE(stepIntegral(yawRpy, 100.0f, 5) < 0.002f);
+    // уставка встала — relax отпускает, интеграл копится
+    TEST_ASSERT_TRUE(stepIntegral(roll, 100.0f, 500) > 0.2f);
+
+    // *_INC: накопленный интеграл уменьшается без задержки, рост — придерживается
+    RateAxis inc = relaxAxis(ItermRelax::RP_INC, sp, 0);
+    RateAxis plain = relaxAxis(ItermRelax::RP, sp, 0);
+    inc.setIntegral(0.2f);
+    plain.setIntegral(0.2f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 0.15f, stepIntegral(inc, -100.0f, 5));
+    TEST_ASSERT_TRUE(stepIntegral(plain, -100.0f, 5) > 0.198f);
+    RateAxis incUp = relaxAxis(ItermRelax::RP_INC, sp, 0);
+    TEST_ASSERT_TRUE(stepIntegral(incUp, 100.0f, 5) < 0.002f);
+
+    // GYRO: ошибка — к сглаженной уставке, в полосе «насколько убежала» — ноль
+    RateAxis gyro = relaxAxis(ItermRelax::RP, ItermRelaxType::GYRO, 0);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, stepIntegral(gyro, 100.0f, 5));
+    TEST_ASSERT_TRUE(stepIntegral(gyro, 100.0f, 500) > 0.2f);
+
+    // срез выше — ждёт меньше
+    PidExtras fast;
+    fast.relax = ItermRelax::RP;
+    fast.relaxError = false;
+    fast.relaxCutoffHz = 40.0f;
+    RateAxis quick = makeAxis(0.0f, 0.1f, 0.0f, 0.0f);
+    quick.setExtras(fast, 0);
+    quick.update(0.0f, 0.0f, 1.0f, 1.0f, false, false);
+    RateAxis slow = relaxAxis(ItermRelax::RP, sp, 0);
+    TEST_ASSERT_TRUE(stepIntegral(quick, 100.0f, 20) > 2.0f * stepIntegral(slow, 100.0f, 20));
+}
+
+// 013: iterm_rotation — пируэт: интеграл крена переходит в тангаж.
+void test_iterm_rotation_turns_with_the_frame()
+{
+    // рысканье +90° (нос вправо): то, что было «вперёд», стало «влево»
+    float v[3] = { 0.1f, 0.0f, 0.0f };
+    const float yaw[3] = { 0.0f, 0.0f, 90.0f };
+    for (int i = 0; i < 1000; ++i) rotateIterm(v, yaw, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(0.002f, 0.0f, v[0]);
+    TEST_ASSERT_FLOAT_WITHIN(0.002f, -0.1f, v[1]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, v[2]);
+    // крен +90°: тангаж уходит в рысканье
+    float w[3] = { 0.0f, 0.1f, 0.0f };
+    const float roll[3] = { 90.0f, 0.0f, 0.0f };
+    for (int i = 0; i < 1000; ++i) rotateIterm(w, roll, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(0.002f, 0.0f, w[1]);
+    TEST_ASSERT_FLOAT_WITHIN(0.002f, -0.1f, w[2]);
+    // без вращения — как был
+    float s[3] = { 0.1f, -0.05f, 0.02f };
+    const float still[3] = { 0.0f, 0.0f, 0.0f };
+    rotateIterm(s, still, 0.001f);
+    TEST_ASSERT_EQUAL_FLOAT(-0.05f, s[1]);
+
+    // в контроллере — только с настройкой: на земле интегралы нулевые, тут — сама функция
+    RateAxis a = makeAxis(0.0f, 0.1f, 0.0f, 0.0f);
+    a.setIntegral(1.0f);
+    TEST_ASSERT_EQUAL_FLOAT(0.3f, a.integral());   // предел соблюдается и при повороте
+}
+
+// 014: iterm_windup — моторы разошлись больше порога: I копится слабее, на упоре стоит.
+void test_iterm_windup_scales_integral()
+{
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, itermWindupScale(0.5f, 0.85f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.5f, itermWindupScale(0.925f, 0.85f));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, itermWindupScale(1.0f, 0.85f));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, itermWindupScale(1.0f, 1.0f));   // 100 % — выкл
+    RateAxis a = makeAxis(0.0f, 0.1f, 0.0f, 0.0f);
+    for (int i = 0; i < 100; ++i) a.update(10.0f, 0.0f, 1.0f, itermWindupScale(1.0f, 0.85f), false, false);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, a.integral());
+}
+
+// 015 и реестр: тонкости PID — настройки профиля; модель — как было, BF 4.5 — свои.
+void test_pid_extras_from_params()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    CopterTune t = p.tune();
+    // умолчания модели: поведение как до этих настроек
+    TEST_ASSERT_EQUAL(static_cast<int>(ItermRelax::RPY), static_cast<int>(t.pid.relax));
+    TEST_ASSERT_EQUAL_FLOAT(10.0f, t.pid.relaxCutoffHz);
+    TEST_ASSERT_TRUE(t.pid.relaxError);
+    TEST_ASSERT_FALSE(t.pid.itermRotation);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, t.pid.itermWindup);
+    TEST_ASSERT_EQUAL_FLOAT(p.modelTune().iLimit, t.iLimit);
+    TEST_ASSERT_EQUAL_FLOAT(roundf(p.modelTune().iLimit * 1000.0f), p.defaultValue(PARAM_ITERM_LIMIT));
+    for (uint8_t a = 0; a < 3; ++a) TEST_ASSERT_EQUAL_FLOAT(0.0f, t.pid.dMax[a]);
+
+    // iterm_limit в единицах BF: 200 — пятая часть хода моторов
+    TEST_ASSERT_TRUE(p.parse(PARAM_ITERM_LIMIT, 0, "200", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ITERM_RELAX, 0, "RP_INC", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ITERM_RELAX_TYPE, 0, "GYRO", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ITERM_WINDUP, 0, "85", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ITERM_ROTATION, 0, "ON", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_ITERM_WINDUP, 0, "20", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(0.2f, t.iLimit);
+    TEST_ASSERT_EQUAL(static_cast<int>(ItermRelax::RP_INC), static_cast<int>(t.pid.relax));
+    TEST_ASSERT_EQUAL(static_cast<int>(ItermRelaxType::GYRO), static_cast<int>(t.pid.relaxType));
+    TEST_ASSERT_EQUAL_FLOAT(0.85f, t.pid.itermWindup);
+    TEST_ASSERT_TRUE(t.pid.itermRotation);
+    // другой PID-профиль — свои значения
+    TEST_ASSERT_TRUE(p.selectPidProfile(1));
+    TEST_ASSERT_FALSE(p.tune().pid.itermRotation);
+    TEST_ASSERT_TRUE(p.selectPidProfile(0));
+
+    // d_max (BF 2025.12): D из таблицы — в покое
+    const float d = p.tune().roll.d;
+    const float dBf = roundf(gainToBf(PidTerm::D, 0, d));
+    char text[16];
+    snprintf(text, sizeof(text), "%d", static_cast<int>(dBf) + 10);
+    TEST_ASSERT_TRUE(p.parse(PARAM_D_MAX_ROLL, 0, text, err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, d, t.roll.d);
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(PidTerm::D, 0, dBf + 10.0f), t.pid.dMax[0]);
+    p.reset(PARAM_D_MAX_ROLL, 0);
+    // d_min (BF 4.5): в покое — d_min, D из таблицы — на движении
+    TEST_ASSERT_TRUE(p.parse(PARAM_P_ROLL, 0, "45", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_D_ROLL, 0, "40", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_D_MIN_ROLL, 0, "30", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(PidTerm::D, 0, 30.0f), t.roll.d);
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(PidTerm::D, 0, 40.0f), t.pid.dMax[0]);
+    // d_min не меньше D — D постоянный
+    TEST_ASSERT_TRUE(p.parse(PARAM_D_MIN_ROLL, 0, "45", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.tune().pid.dMax[0]);
+    // старые имена BF 4.5 — те же настройки
+    TEST_ASSERT_EQUAL(PARAM_D_MAX_GAIN, findParam("d_min_gain"));
+    TEST_ASSERT_EQUAL(PARAM_D_MAX_ADVANCE, findParam("D_MIN_ADVANCE"));
+    TEST_ASSERT_EQUAL(-1, findParam("d_min_gainx"));
+}
+
 void test_rate_axis_d_on_measurement_and_feedforward()
 {
     RateAxis a = makeAxis(0.0f, 0.0f, 0.001f, 0.0f);
@@ -1160,6 +1381,7 @@ void test_betaflight_source_takes_bf_45_defaults()
     char err[96];
     TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
     const uint16_t expect[3][4] = { { 45, 80, 40, 120 }, { 47, 84, 46, 125 }, { 45, 80, 0, 120 } };
+    const uint16_t dMin[3] = { 30, 34, 0 };
     const CopterTune t = p.tune();
     const AxisGains* g[3] = { &t.roll, &t.pitch, &t.yaw };
     for (uint8_t a = 0; a < 3; ++a)
@@ -1168,9 +1390,19 @@ void test_betaflight_source_takes_bf_45_defaults()
         {
             const PidTerm term = static_cast<PidTerm>(k);
             TEST_ASSERT_EQUAL_FLOAT(expect[a][k], p.defaultValue(pidParam(a, term)));
-            TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(term, a, expect[a][k]), gainTerm(*g[a], term));
+            // D из таблицы BF 4.5 — на резком движении, в покое — d_min
+            const float want = term == PidTerm::D && dMin[a] ? dMin[a] : expect[a][k];
+            TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(term, a, want), gainTerm(*g[a], term));
         }
+        TEST_ASSERT_EQUAL_FLOAT(dMin[a], p.defaultValue(static_cast<ParamId>(PARAM_D_MIN_ROLL + a)));
+        TEST_ASSERT_FLOAT_WITHIN(1e-9f, dMin[a] ? bfToGain(PidTerm::D, a, expect[a][2]) : 0.0f, t.pid.dMax[a]);
     }
+    // I: relax RP 15 Гц SETPOINT, windup 85 %, limit 400
+    TEST_ASSERT_EQUAL(static_cast<int>(ItermRelax::RP), static_cast<int>(t.pid.relax));
+    TEST_ASSERT_EQUAL(static_cast<int>(ItermRelaxType::SETPOINT), static_cast<int>(t.pid.relaxType));
+    TEST_ASSERT_EQUAL_FLOAT(15.0f, t.pid.relaxCutoffHz);
+    TEST_ASSERT_EQUAL_FLOAT(0.85f, t.pid.itermWindup);
+    TEST_ASSERT_EQUAL_FLOAT(400.0f, p.defaultValue(PARAM_ITERM_LIMIT));
     TEST_ASSERT_FALSE(t.gainsFromModel);
     TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::D), static_cast<int>(t.tpaMode));
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, t.tpaAt(0.3f));
@@ -1302,6 +1534,7 @@ void test_cli_set_get_diff_save_and_paste()
         "set profile_name = wind",
         "set d_pitch = 38",
         "set d_max_pitch = 50",
+        "set no_such_bf_setting = 1",
         "rateprofile 1",
         "set roll_srate = 80",
         "batch end",
@@ -1309,11 +1542,13 @@ void test_cli_set_get_diff_save_and_paste()
     for (const char* line : bfDiff) cli.execute(line);
     out = port.take();
     TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет команды feature"));
-    TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки d_max_pitch###"));
+    TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки no_such_bf_setting###"));
+    TEST_ASSERT_FALSE(has(out, "d_max_pitch###"));
     cli.execute("profile");
     TEST_ASSERT_TRUE(has(port.take(), "profile 1 # wind"));
     TEST_ASSERT_EQUAL_UINT8(1, p.pidProfile());
     TEST_ASSERT_EQUAL_FLOAT(38.0f, p.value(PARAM_D_PITCH));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, p.value(PARAM_D_MAX_PITCH));
     TEST_ASSERT_EQUAL_FLOAT(80.0f, p.value(PARAM_ROLL_SRATE));
     TEST_ASSERT_EQUAL_FLOAT(50.0f, p.valueIn(PARAM_P_ROLL, 0));
     // профиль переключился сразу (на дефолты BF профиля 1), set — заработает после save
@@ -2536,6 +2771,11 @@ int main()
     RUN_TEST(test_rate_axis_p_and_i);
     RUN_TEST(test_rate_axis_integral_holds_on_ground_and_in_saturation);
     RUN_TEST(test_rate_axis_relaxes_integral_on_large_error);
+    RUN_TEST(test_rate_axis_d_max_rises_on_fast_motion);
+    RUN_TEST(test_iterm_relax_axes_types_and_inc);
+    RUN_TEST(test_iterm_rotation_turns_with_the_frame);
+    RUN_TEST(test_iterm_windup_scales_integral);
+    RUN_TEST(test_pid_extras_from_params);
     RUN_TEST(test_rate_axis_d_on_measurement_and_feedforward);
     RUN_TEST(test_attitude_starts_from_accelerometer);
     RUN_TEST(test_attitude_integrates_full_flip_and_yaw);

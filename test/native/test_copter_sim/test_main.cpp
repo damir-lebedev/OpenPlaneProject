@@ -24,6 +24,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <string>
 
 #include "copter/Params.h"
 #include "helpers/QuadHarness.h"
@@ -432,6 +433,136 @@ void test_battery_sag_is_seen()
     TEST_ASSERT_TRUE(h.ctl.getStatus().volts < hoverVolts - 1.0f);
 }
 
+// ---------------- тонкости PID (PLAN_COPTER 011–015) ----------------
+
+namespace
+{
+    struct Flight
+    {
+        bool ok = false;
+        double noise = 0, rateRmsDps = 0;          // висение
+        double t90 = -1, overshoot = 0, err = 0;   // полный стик по крену в ACRO
+    };
+
+    // Висение 4 с на 5 м с настройкой t (nullptr — выведенная из описания).
+    Flight hoverWith(const BuildSpec& b, const QuadPerturb& p, const CopterTune* t, uint32_t seed, float loopHz = 1000.0f)
+    {
+        Flight r;
+        QuadHarness h(b, p, seed, EscProtocol::DSHOT600, loopHz);
+        if (t) h.useTune(*t);
+        if (!h.takeoffTo(5.0)) return r;
+        h.stats.reset();
+        h.run(4.0);
+        r.noise = h.stats.motorNoiseRms();
+        r.rateRmsDps = h.stats.rateRms() * 57.29578;
+        r.ok = h.ctl.isArmed() && h.stats.maxTilt < 3.0 && r.rateRmsDps < 3.0;
+        return r;
+    }
+
+    // Полный стик по крену в ACRO на 20 м: время до 90 %, перелёт, ошибка.
+    Flight acroWith(const BuildSpec& b, const QuadPerturb& p, const CopterTune* t, uint32_t seed, float loopHz = 1000.0f)
+    {
+        Flight r;
+        QuadHarness h(b, p, seed, EscProtocol::DSHOT600, loopHz);
+        if (t) h.useTune(*t);
+        if (!h.takeoffTo(20.0)) return r;
+        h.rc.mode = CopterMode::ACRO;
+        h.rc.throttle = h.ctl.getStatus().hoverLearned;
+        h.run(0.3);
+        h.rc.roll = 1.0f;
+        const double target = h.tune.rates[0].apply(1.0f);
+        double maxRate = 0, sumErr = 0;
+        int n = 0;
+        const double t0 = h.sim.now();
+        for (int i = 0; h.sim.now() - t0 < 0.4; ++i)
+        {
+            h.step();
+            const double w = h.sim.rates().x * 57.29578;
+            maxRate = std::fmax(maxRate, w);
+            if (r.t90 < 0 && w > 0.9 * target) r.t90 = h.sim.now() - t0;
+            if (h.sim.now() - t0 > 0.2)
+            {
+                sumErr += std::fabs(w - target);
+                ++n;
+            }
+        }
+        r.overshoot = maxRate / target - 1.0;
+        r.err = sumErr / n / target;
+        r.ok = h.ctl.isArmed() && r.t90 > 0 && r.t90 < 0.2 && r.err < 0.08;
+        return r;
+    }
+}
+
+namespace
+{
+    // D в покое на 30 % меньше выведенного, на резком движении — прежний.
+    CopterTune withDMax(CopterTune t)
+    {
+        AxisGains* g[3] = { &t.roll, &t.pitch, &t.yaw };
+        for (uint8_t a = 0; a < 3; ++a)
+        {
+            t.pid.dMax[a] = g[a]->d;
+            g[a]->d *= 0.7f;
+        }
+        return t;
+    }
+}
+
+// 011: D на резком движении (d_max) — в покое D на 30 % меньше, до прежнего
+// на манёвре: на висении моторы шумят не больше, чем с постоянным D, стик
+// по-прежнему держится.
+void test_d_max_keeps_hover_quiet()
+{
+    static int failed;
+    failed = 0;
+    forEachBuild([](const BuildSpec& b) {
+        // вуп, у которого моторы крутятся быстрее половины частоты цикла, на
+        // 1 кГц видит вибрацию в полосе контура (WARN_VIBRATION_ALIAS) — D рос
+        // бы от шума; ему и так нужен цикл быстрее — на нём и проверяем
+        // (акро — на 1 кГц у всех: манёвр, а не шум)
+        const bool alias = deriveTune(b, 1000.0f, EscProtocol::DSHOT600).warnings & WARN_VIBRATION_ALIAS;
+        const float loopHz = alias ? 4000.0f : 1000.0f;
+        const CopterTune dyn = withDMax(deriveTune(b, loopHz, EscProtocol::DSHOT600));
+        const CopterTune dyn1k = withDMax(deriveTune(b, 1000.0f, EscProtocol::DSHOT600));
+        const Flight flat = hoverWith(b, QuadPerturb(), nullptr, 21, loopHz);
+        const Flight boosted = hoverWith(b, QuadPerturb(), &dyn, 21, loopHz);
+        const Flight acro = acroWith(b, QuadPerturb(), &dyn1k, 22);
+        char line[200];
+        snprintf(line, sizeof(line), "d_max %-12s %4.0f Hz motor noise %.4f -> %.4f, rate rms %.2f -> %.2f dps | acro t90 %.3f s, overshoot %.0f%%",
+                 b.id, loopHz, flat.noise, boosted.noise, flat.rateRmsDps, boosted.rateRmsDps, acro.t90, acro.overshoot * 100.0);
+        const bool good = boosted.ok && boosted.noise <= flat.noise * 1.02 + 1e-4 && acro.ok && acro.overshoot < 0.15;
+        TEST_MESSAGE(good ? line : (std::string("BAD ") + line).c_str());
+        if (!good) ++failed;
+    });
+    TEST_ASSERT_EQUAL_INT(0, failed);
+}
+
+// 012: I-relax как в BF (RP, срез 15 Гц, SETPOINT и GYRO) на «вялой» гексе —
+// модель ошиблась, интеграл работает больше: перелёт по крену не больше 12 %.
+void test_bf_iterm_relax_on_sluggish_hexa()
+{
+    const char* ids[] = { "hex13", "hex15" };
+    const ItermRelaxType types[] = { ItermRelaxType::SETPOINT, ItermRelaxType::GYRO };
+    for (const char* id : ids)
+    {
+        const BuildSpec& b = *findBuild(id);
+        for (ItermRelaxType type : types)
+        {
+            CopterTune t = deriveTune(b, 1000.0f, EscProtocol::DSHOT600);
+            t.pid.relax = ItermRelax::RP;
+            t.pid.relaxType = type;
+            t.pid.relaxCutoffHz = 15.0f;
+            const Flight r = acroWith(b, sluggish(), &t, 13);
+            char line[160];
+            snprintf(line, sizeof(line), "relax RP %s %-6s t90 %.3f s, overshoot %.1f%%, err %.1f%%",
+                     type == ItermRelaxType::GYRO ? "GYRO" : "SETPOINT", id, r.t90, r.overshoot * 100.0, r.err * 100.0);
+            TEST_MESSAGE(line);
+            TEST_ASSERT_TRUE_MESSAGE(r.ok, line);
+            TEST_ASSERT_TRUE_MESSAGE(r.overshoot <= 0.12, line);
+        }
+    }
+}
+
 // ---------------- дефолты Betaflight 4.5 (tune_source = BETAFLIGHT) ----------------
 
 namespace
@@ -548,6 +679,8 @@ int main()
     RUN_TEST(test_motor_failure_in_angle_mode_disarms);
     RUN_TEST(test_motor_test_spins_one_motor);
     RUN_TEST(test_battery_sag_is_seen);
+    RUN_TEST(test_d_max_keeps_hover_quiet);
+    RUN_TEST(test_bf_iterm_relax_on_sluggish_hexa);
     RUN_TEST(test_betaflight_defaults_on_our_loop);
     return UNITY_END();
 }

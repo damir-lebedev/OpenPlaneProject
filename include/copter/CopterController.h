@@ -241,7 +241,11 @@ namespace copter
             axes[0].configure(t.roll, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[1].configure(t.pitch, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[2].configure(t.yaw, t.dtermLpfHz, t.yawLpfHz, t.iLimit, dt);
-            for (auto& ax : axes) ax.setTpaMode(t.tpaMode);
+            for (uint8_t a = 0; a < 3; ++a)
+            {
+                axes[a].setTpaMode(t.tpaMode);
+                axes[a].setExtras(t.pid, a);
+            }
             for (int a = 0; a < 4; ++a) stickLpf[a].configure(s.rcSmoothingHz, dt);
             throttleHpLpf.configure(15.0f, dt);
             for (auto& f : accelLpf) f.configure(20.0f, dt);
@@ -267,10 +271,17 @@ namespace copter
             tune.pitch = t.pitch;
             tune.yaw = t.yaw;
             tune.gainsFromModel = t.gainsFromModel;
+            tune.iLimit = t.iLimit;
+            tune.pid = t.pid;
             for (int a = 0; a < 3; ++a) tune.rates[a] = t.rates[a];
             axes[0].setGains(t.roll);
             axes[1].setGains(t.pitch);
             axes[2].setGains(t.yaw);
+            for (uint8_t a = 0; a < 3; ++a)
+            {
+                axes[a].setLimit(t.iLimit);
+                axes[a].setExtras(t.pid, a);
+            }
         }
 
         // Внешние причины не армить (ARM_BLOCK_EXTERNAL_MASK): CLI, приложение,
@@ -433,13 +444,20 @@ namespace copter
             }
             status.hoverLearned = hover;
 
-            // anti-gravity: рывок газом -> интеграл временно сильнее
+            // anti-gravity: рывок газом -> интеграл временно сильнее;
+            // iterm_windup: моторы разошлись (прошлый цикл) — слабее
             const float thrHp = fabsf(thrust - throttleHpLpf.apply(thrust));
-            const float iBoost = 1.0f + fminf(3.0f, thrHp * 30.0f);
+            const float iBoost = (1.0f + fminf(3.0f, thrHp * 30.0f)) * itermWindupScale(lastMixSpread, tune.pid.itermWindup);
 
             // ---- контур угловой скорости ----
             const float tpa = tune.tpaAt(lastMixThrottle);
             const bool holdI = !status.airborne;
+            if (tune.pid.itermRotation && !holdI)
+            {
+                float v[3] = { axes[0].integral(), axes[1].integral(), axes[2].integral() };
+                rotateIterm(v, rates, dt);
+                for (uint8_t a = 0; a < 3; ++a) axes[a].setIntegral(v[a]);
+            }
             MixInput mi;
             mi.throttle = thrust;
             mi.roll = axes[0].update(sp[0], rates[0], tpa, iBoost, holdI, status.saturated);
@@ -455,6 +473,13 @@ namespace copter
             status.saturated = mr.saturated;
             status.throttle = thrust;
             lastMixThrottle = mr.throttle;
+            float lo = 1.0f, hi = 0.0f;
+            for (uint8_t i = 0; i < tune.frame.count; ++i)
+            {
+                lo = fminf(lo, mr.motor[i]);
+                hi = fmaxf(hi, mr.motor[i]);
+            }
+            lastMixSpread = tune.frame.count ? hi - lo : 0.0f;
 
             // ---- моторы ----
             float vComp = 1.0f;
@@ -486,6 +511,8 @@ namespace copter
         const CopterTune& getTune() const { return tune; }
         const CopterSettings& getSettings() const { return set; }
         const AxisTerms& axisTerms(uint8_t a) const { return axes[a < 3 ? a : 0].lastTerms(); }
+        // Насколько D оси поднят к d_max: 0 — в покое, 1 — d_max.
+        float dBoost(uint8_t a) const { return axes[a < 3 ? a : 0].dBoost(); }
         const GyroFilter& getGyroFilter() const { return gyroFilter; }
         bool isArmed() const { return status.state != CopterState::DISARMED; }
 
@@ -507,6 +534,7 @@ namespace copter
             status.airborne = false;
             status.saturated = false;
             lastMixThrottle = 0.0f;
+            lastMixSpread = 0.0f;
             failsafeTimer = 0.0f;
             landingTimer = 0.0f;
             crashTimer = 0.0f;
@@ -758,6 +786,7 @@ namespace copter
         float avgThrust = 0.0f;
         float rotEstimate = 0.0f;
         float lastMixThrottle = 0.0f;
+        float lastMixSpread = 0.0f;      // разброс моторов прошлого цикла (iterm_windup)
         float uptime = 0.0f;
         float motionTimer = 0.0f;
         float lostTimer = 0.0f;

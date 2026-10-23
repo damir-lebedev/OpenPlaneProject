@@ -167,6 +167,42 @@ namespace copter
         D,
     };
 
+    // iterm_relax: на каких осях интеграл придерживается при резком движении
+    // уставки; *_INC — только пока интеграл растёт (уменьшаться может всегда).
+    enum class ItermRelax : uint8_t
+    {
+        OFF,
+        RP,
+        RPY,
+        RP_INC,
+        RPY_INC,
+    };
+
+    // iterm_relax_type: SETPOINT — интеграл копится медленнее, пока уставка
+    // быстро меняется; GYRO — интеграл считает ошибку к сглаженной уставке,
+    // а в полосе «насколько уставка убежала от сглаженной» — ноль.
+    enum class ItermRelaxType : uint8_t
+    {
+        GYRO,
+        SETPOINT,
+    };
+
+    // Тонкости PID, как в Betaflight (настройки PID-профиля, Params.h):
+    // D, растущий на резком движении, I-relax, поворот интеграла и windup.
+    // Здесь — умолчания модели: всё как было до этих настроек.
+    struct PidExtras
+    {
+        float dMax[3] = {};               // D на резком движении (наш коэффициент); не больше D — D постоянный
+        float dMaxGain = 37.0f;           // d_max_gain: чувствительность к угловому ускорению (гироскоп)
+        float dMaxAdvance = 20.0f;        // d_max_advance: то же по скорости изменения уставки (стик)
+        ItermRelax relax = ItermRelax::RPY;
+        ItermRelaxType relaxType = ItermRelaxType::SETPOINT;
+        float relaxCutoffHz = 10.0f;      // ФНЧ уставки для relax
+        bool relaxError = true;           // наш: большая ошибка разгона (флип) не копится
+        bool itermRotation = false;       // интеграл поворачивается вместе с рамой
+        float itermWindup = 1.0f;         // разброс моторов (доля хода), выше которого I копится слабее; 1 — выкл
+    };
+
     struct CopterTune
     {
         Frame frame;
@@ -179,6 +215,7 @@ namespace copter
         bool gainsFromModel = true;     // false — PID заданы руками: запасы ниже посчитаны не для них
         TpaMode tpaMode = TpaMode::PD;
         float iLimit = 0.3f;            // доля смесителя
+        PidExtras pid;
         float gyroLpfHz = 0, dtermLpfHz = 0, yawLpfHz = 0;
         float notchQ = 4.0f;
         float minNotchHz = 80.0f;       // ниже режекторы не опускаются (запас по фазе)
@@ -607,6 +644,12 @@ namespace copter
         constexpr uint16_t DEFAULT_PID[3][4] = { { 45, 80, 40, 120 }, { 47, 84, 46, 125 }, { 45, 80, 0, 120 } };
         // rates_type = ACTUAL: центр 70 °/с, максимум 670 °/с, экспо 0
         constexpr uint8_t DEFAULT_RC_RATE = 7, DEFAULT_SRATE = 67, DEFAULT_EXPO = 0;
+        // BF 4.5: d_min_roll/pitch/yaw — D в покое (D из таблицы — на резком
+        // движении), d_min_gain 37, d_min_advance 20; I: iterm_relax RP,
+        // SETPOINT, срез 15 Гц, iterm_windup 85 %, iterm_limit 400
+        constexpr uint8_t DEFAULT_D_MIN[3] = { 30, 34, 0 };
+        constexpr uint8_t DEFAULT_ITERM_RELAX_CUTOFF = 15, DEFAULT_ITERM_WINDUP = 85;
+        constexpr uint16_t DEFAULT_ITERM_LIMIT = 400;
     }
 
     inline float pidTermScale(PidTerm term, uint8_t axis)
@@ -659,7 +702,10 @@ namespace copter
     //     ослабление шума на 200 Гц (~0.28);
     //   • рысканье: yaw_lowpass_hz 100; TPA только на D, 65 % от газа 1350
     //     (35 % хода) до полного; iterm_limit 400; ANGLE: angle_p_gain 50
-    //     (5 °/с на градус), angle_limit 60°.
+    //     (5 °/с на градус), angle_limit 60°;
+    //   • D 30/34 в покое и до 40/46 на резком движении (d_min), I-relax RP
+    //     15 Гц, iterm_windup 85 %. PID и D в покое (d_min) — из реестра
+    //     настроек (Params.h), там же их дефолты BF.
     // Режекторы по оборотам остаются наши (у BF на их месте RPM-фильтр по
     // телеметрии DShot и динамический режектор по спектру).
     inline void applyBetaflightBase(CopterTune& t)
@@ -674,7 +720,11 @@ namespace copter
             const float x = i / float(TPA_POINTS - 1);
             t.tpa[i] = x <= breakpoint ? 1.0f : 1.0f - rate * (x - breakpoint) / (1.0f - breakpoint);
         }
-        t.iLimit = 0.4f;
+        t.iLimit = betaflight::DEFAULT_ITERM_LIMIT / betaflight::MIXER_SCALING;
+        t.pid.relax = ItermRelax::RP;
+        t.pid.relaxType = ItermRelaxType::SETPOINT;
+        t.pid.relaxCutoffHz = betaflight::DEFAULT_ITERM_RELAX_CUTOFF;
+        t.pid.itermWindup = betaflight::DEFAULT_ITERM_WINDUP / 100.0f;
         t.levelGain = 5.0f;
         t.maxAngleDeg = 60.0f;
         t.gainsFromModel = false;
