@@ -2,7 +2,8 @@
 // COPTER: блоки мультикоптера по отдельности — рамы, смеситель,
 // фильтры, протоколы регуляторов, модель винтомоторной группы,
 // настройка по описанию сборки, контур угловой скорости, ориентация,
-// высота, фильтр гироскопа, ARM и защиты контроллера.
+// высота, фильтр гироскопа, ARM и защиты контроллера, реестр настроек
+// (единицы и дефолты Betaflight, профили, флеш) и CLI.
 //
 // Полёты целиком (модель коптера + прошивка) — в test_copter_sim.
 //
@@ -14,14 +15,18 @@
 #include <math.h>
 #include <string.h>
 
+#include <string>
+
 #include "copter/AltitudeHold.h"
 #include "copter/Attitude.h"
+#include "copter/CopterCli.h"
 #include "copter/CopterController.h"
 #include "copter/EscProtocol.h"
 #include "copter/Filters.h"
 #include "copter/Frames.h"
 #include "copter/GyroFilter.h"
 #include "copter/Mixer.h"
+#include "copter/Params.h"
 #include "copter/Presets.h"
 #include "copter/Propulsion.h"
 #include "copter/RateController.h"
@@ -872,6 +877,454 @@ void test_mode_names_and_settings()
     TEST_ASSERT_EQUAL_FLOAT(0.0f, b.ctl.axisTerms(7).p);
 }
 
+// ---------------- реестр настроек, единицы BF, профили, CLI ----------------
+
+namespace
+{
+    class RamFlash : public IFlashStorage
+    {
+    public:
+        size_t capacity() const override { return KeyValueStore::CAPACITY; }
+        void read(uint8_t* destination, size_t size) override { memcpy(destination, bytes, size); }
+        bool write(const uint8_t* source, size_t size) override
+        {
+            memcpy(bytes, source, size);
+            return true;
+        }
+        uint8_t bytes[KeyValueStore::CAPACITY] = {};
+    };
+
+    struct CliCapture : public CliPort
+    {
+        std::string text;
+        int statusCalls = 0;
+        void write(const char* s) override { text += s; }
+        void printStatus() override { ++statusCalls; }
+        std::string take()
+        {
+            std::string t = text;
+            text.clear();
+            return t;
+        }
+    };
+
+    bool has(const std::string& text, const char* what) { return text.find(what) != std::string::npos; }
+
+    CopterParams& five5Params()
+    {
+        static CopterParams p;
+        p.resetAll();
+        p.begin(*findBuild("freestyle5"), 1000.0f, EscProtocol::ONESHOT125);
+        return p;
+    }
+}
+
+void test_params_table_is_consistent()
+{
+    for (int i = 0; i < PARAM_COUNT; ++i)
+    {
+        const ParamInfo& a = paramInfo(static_cast<ParamId>(i));
+        TEST_ASSERT_EQUAL_INT_MESSAGE(i, findParam(a.name), a.name);
+        TEST_ASSERT_TRUE_MESSAGE(strlen(a.text) > 0 && a.min <= a.max, a.name);
+        for (int j = i + 1; j < PARAM_COUNT; ++j)
+        {
+            const ParamInfo& b = paramInfo(static_cast<ParamId>(j));
+            TEST_ASSERT_TRUE_MESSAGE(strcmp(a.name, b.name) != 0, a.name);
+            TEST_ASSERT_TRUE_MESSAGE(paramNameHash(a.name) != paramNameHash(b.name), a.name);   // ключи во флеше
+        }
+    }
+    TEST_ASSERT_EQUAL_INT(PARAM_P_ROLL, findParam("P_Roll"));
+    TEST_ASSERT_EQUAL_INT(-1, findParam("p_rol"));
+    TEST_ASSERT_EQUAL_INT(-1, findParam("no_such_param"));
+    TEST_ASSERT_EQUAL_INT(PARAM_F_YAW, pidParam(2, PidTerm::F));
+    TEST_ASSERT_EQUAL_STRING("pid", paramGroupName(paramInfo(PARAM_P_ROLL).group));
+    TEST_ASSERT_EQUAL_STRING("rates", paramGroupName(paramInfo(PARAM_ROLL_SRATE).group));
+
+    // умолчания из модели — в границах для всего каталога
+    uint8_t n = 0;
+    const BuildSpec* cat = buildCatalog(n);
+    CopterParams p;
+    for (uint8_t b = 0; b < n; ++b)
+    {
+        p.begin(cat[b], 1000.0f, EscProtocol::DSHOT600);
+        for (int i = 0; i < PARAM_COUNT; ++i)
+        {
+            const ParamInfo& info = paramInfo(static_cast<ParamId>(i));
+            if (info.type == ParamType::STRING) continue;
+            const float d = p.defaultValue(static_cast<ParamId>(i));
+            TEST_ASSERT_TRUE_MESSAGE(d >= info.min && d <= info.max, info.name);
+        }
+    }
+}
+
+void test_params_set_get_bounds_and_enums()
+{
+    CopterParams& p = five5Params();
+    char err[96] = {}, out[48];
+    TEST_ASSERT_TRUE(p.parse(PARAM_P_ROLL, 0, " 50 ", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, p.value(PARAM_P_ROLL));
+    TEST_ASSERT_TRUE(p.isSet(PARAM_P_ROLL, 0));
+    p.format(PARAM_P_ROLL, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("50", out);
+
+    TEST_ASSERT_FALSE(p.parse(PARAM_P_ROLL, 0, "251", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("допустимо 0 - 250", err);
+    TEST_ASSERT_FALSE(p.parse(PARAM_P_ROLL, 0, "5x", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_ROLL_RC_RATE, 0, "0", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.setValue(PARAM_P_ROLL, CopterParams::PROFILES, 40.0f));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, p.value(PARAM_P_ROLL));
+
+    // равное умолчанию — снова умолчание
+    TEST_ASSERT_TRUE(p.setValue(PARAM_P_ROLL, 0, p.defaultValue(PARAM_P_ROLL)));
+    TEST_ASSERT_FALSE(p.isSet(PARAM_P_ROLL, 0));
+
+    // выбор из списка — по имени, без учёта регистра
+    TEST_ASSERT_EQUAL(static_cast<int>(TuneSource::MODEL), static_cast<int>(p.source()));
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "betaflight", err, sizeof(err)));
+    TEST_ASSERT_EQUAL(static_cast<int>(TuneSource::BETAFLIGHT), static_cast<int>(p.source()));
+    p.format(PARAM_TUNE_SOURCE, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("BETAFLIGHT", out);
+    TEST_ASSERT_FALSE(p.parse(PARAM_TUNE_SOURCE, 0, "KISS", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("допустимо: MODEL, BETAFLIGHT", err);
+
+    // строки: до 8 символов, «-» — пусто
+    TEST_ASSERT_TRUE(p.parse(PARAM_PROFILE_NAME, 1, "race", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("race", p.text(PARAM_PROFILE_NAME, 1));
+    TEST_ASSERT_EQUAL_STRING("", p.text(PARAM_PROFILE_NAME, 0));
+    TEST_ASSERT_FALSE(p.parse(PARAM_PROFILE_NAME, 1, "123456789", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_PROFILE_NAME, 1, "-", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.isSet(PARAM_PROFILE_NAME, 1));
+}
+
+void test_params_survive_flash_and_skip_unknown()
+{
+    RamFlash flash;
+    {
+        KeyValueStore kv(flash);
+        kv.put("imu", "mount", "x", 1);   // чужие ключи рядом не мешают
+        CopterParams& p = five5Params();
+        char err[96];
+        TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+        TEST_ASSERT_TRUE(p.parse(PARAM_P_ROLL, 0, "52", err, sizeof(err)));
+        TEST_ASSERT_TRUE(p.parse(PARAM_P_ROLL, 2, "61", err, sizeof(err)));
+        TEST_ASSERT_TRUE(p.parse(PARAM_PROFILE_NAME, 2, "wind", err, sizeof(err)));
+        TEST_ASSERT_TRUE(p.parse(PARAM_YAW_SRATE, 3, "50", err, sizeof(err)));
+        TEST_ASSERT_TRUE(p.selectPidProfile(2));
+        TEST_ASSERT_TRUE(p.selectRateProfile(3));
+        TEST_ASSERT_TRUE(p.save(kv));
+        TEST_ASSERT_TRUE(kv.commit());
+    }
+    {
+        KeyValueStore kv(flash);   // «перезагрузка»
+        CopterParams p;
+        p.begin(*findBuild("freestyle5"), 1000.0f, EscProtocol::ONESHOT125);
+        TEST_ASSERT_TRUE(p.load(kv));
+        TEST_ASSERT_EQUAL(static_cast<int>(TuneSource::BETAFLIGHT), static_cast<int>(p.source()));
+        TEST_ASSERT_EQUAL_UINT8(2, p.pidProfile());
+        TEST_ASSERT_EQUAL_UINT8(3, p.rateProfile());
+        TEST_ASSERT_EQUAL_FLOAT(52.0f, p.valueIn(PARAM_P_ROLL, 0));
+        TEST_ASSERT_EQUAL_FLOAT(61.0f, p.value(PARAM_P_ROLL));
+        TEST_ASSERT_EQUAL_FLOAT(45.0f, p.valueIn(PARAM_P_ROLL, 1));   // не задан — дефолт BF
+        TEST_ASSERT_EQUAL_STRING("wind", p.text(PARAM_PROFILE_NAME, 2));
+        TEST_ASSERT_EQUAL_FLOAT(50.0f, p.value(PARAM_YAW_SRATE));
+        TEST_ASSERT_TRUE(kv.contains("imu", "mount"));
+
+        // defaults — ключа во флеше больше нет
+        p.resetAll();
+        TEST_ASSERT_TRUE(p.save(kv));
+        TEST_ASSERT_FALSE(kv.contains(CopterParams::STORE_SPACE, CopterParams::STORE_KEY));
+    }
+    {
+        // настройка, которой больше нет, пропускается; за границей — прижимается
+        KeyValueStore kv(flash);
+        uint8_t blob[3 + 7 + 7] = { CopterParams::STORE_VERSION, 0, 0 };
+        const uint16_t gone = paramNameHash("no_such_param"), pr = paramNameHash("p_roll");
+        const float big = 999.0f, any = 7.0f;
+        blob[3] = static_cast<uint8_t>(gone);
+        blob[4] = static_cast<uint8_t>(gone >> 8);
+        blob[5] = 0;
+        memcpy(blob + 6, &any, 4);
+        blob[10] = static_cast<uint8_t>(pr);
+        blob[11] = static_cast<uint8_t>(pr >> 8);
+        blob[12] = 0;
+        memcpy(blob + 13, &big, 4);
+        TEST_ASSERT_TRUE(kv.put(CopterParams::STORE_SPACE, CopterParams::STORE_KEY, blob, sizeof(blob)));
+        CopterParams p;
+        p.begin(*findBuild("freestyle5"), 1000.0f, EscProtocol::ONESHOT125);
+        TEST_ASSERT_TRUE(p.load(kv));
+        TEST_ASSERT_EQUAL_FLOAT(250.0f, p.value(PARAM_P_ROLL));
+        // другая версия схемы — всё по умолчанию
+        blob[0] = CopterParams::STORE_VERSION + 1;
+        TEST_ASSERT_TRUE(kv.put(CopterParams::STORE_SPACE, CopterParams::STORE_KEY, blob, sizeof(blob)));
+        TEST_ASSERT_FALSE(p.load(kv));
+        TEST_ASSERT_FALSE(p.isSet(PARAM_P_ROLL, 0));
+    }
+}
+
+// 003: модельная настройка 5" в единицах Betaflight и обратно.
+void test_pid_in_betaflight_units()
+{
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, 45.0f * 0.032029f / 1000.0f, bfToGain(PidTerm::P, 0, 45.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, 80.0f * 0.244381f * 2.5f / 1000.0f, bfToGain(PidTerm::I, 2, 80.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-12f, 30.0f * 0.000529f / 1000.0f, bfToGain(PidTerm::D, 1, 30.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-12f, 120.0f * 0.013754f * 0.01f / 1000.0f, bfToGain(PidTerm::F, 0, 120.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 37.0f, gainToBf(PidTerm::D, 0, bfToGain(PidTerm::D, 0, 37.0f)));
+
+    CopterParams& p = five5Params();
+    const CopterTune& m = p.modelTune();
+    char msg[160];
+    snprintf(msg, sizeof(msg), "freestyle5 в BF: P %.0f I %.0f D %.0f F %.0f; рысканье P %.0f I %.0f", p.defaultValue(PARAM_P_ROLL),
+             p.defaultValue(PARAM_I_ROLL), p.defaultValue(PARAM_D_ROLL), p.defaultValue(PARAM_F_ROLL),
+             p.defaultValue(PARAM_P_YAW), p.defaultValue(PARAM_I_YAW));
+    TEST_MESSAGE(msg);
+    // модель и BF — числа одного порядка (BF 4.5: P 45, I 80, D 40, F 120)
+    TEST_ASSERT_TRUE_MESSAGE(p.defaultValue(PARAM_P_ROLL) >= 15.0f && p.defaultValue(PARAM_P_ROLL) <= 90.0f, msg);
+    TEST_ASSERT_TRUE_MESSAGE(p.defaultValue(PARAM_I_ROLL) >= 10.0f && p.defaultValue(PARAM_I_ROLL) <= 160.0f, msg);
+    TEST_ASSERT_TRUE_MESSAGE(p.defaultValue(PARAM_D_ROLL) >= 5.0f && p.defaultValue(PARAM_D_ROLL) <= 80.0f, msg);
+    TEST_ASSERT_TRUE_MESSAGE(p.defaultValue(PARAM_F_ROLL) >= 5.0f && p.defaultValue(PARAM_F_ROLL) <= 250.0f, msg);
+    TEST_ASSERT_EQUAL_FLOAT(roundf(gainToBf(PidTerm::P, 0, m.roll.p)), p.defaultValue(PARAM_P_ROLL));
+
+    // не задано — модель как есть (без округления до целых BF)
+    CopterTune t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(m.roll.p, t.roll.p);
+    TEST_ASSERT_TRUE(t.gainsFromModel);
+    // своё число — только этот член
+    char err[96];
+    TEST_ASSERT_TRUE(p.parse(PARAM_P_ROLL, 0, "50", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, 50.0f * 0.032029f / 1000.0f, t.roll.p);
+    TEST_ASSERT_EQUAL_FLOAT(m.roll.i, t.roll.i);
+    TEST_ASSERT_EQUAL_FLOAT(m.pitch.p, t.pitch.p);
+    TEST_ASSERT_FALSE(t.gainsFromModel);
+    // расходы по стилю «фристайл»: 180..720 °/с, экспо 0.5 — в единицах BF Actual
+    TEST_ASSERT_EQUAL_FLOAT(18.0f, p.value(PARAM_ROLL_RC_RATE));
+    TEST_ASSERT_EQUAL_FLOAT(72.0f, p.value(PARAM_ROLL_SRATE));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, p.value(PARAM_ROLL_EXPO));
+    TEST_ASSERT_EQUAL_FLOAT(m.rates[0].apply(0.7f), t.rates[0].apply(0.7f));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ROLL_SRATE, 0, "100", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(1000.0f, p.tune().rates[0].apply(1.0f));
+}
+
+// 004: tune_source = BETAFLIGHT — дефолты BF 4.5 целиком.
+void test_betaflight_source_takes_bf_45_defaults()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    const uint16_t expect[3][4] = { { 45, 80, 40, 120 }, { 47, 84, 46, 125 }, { 45, 80, 0, 120 } };
+    const CopterTune t = p.tune();
+    const AxisGains* g[3] = { &t.roll, &t.pitch, &t.yaw };
+    for (uint8_t a = 0; a < 3; ++a)
+    {
+        for (uint8_t k = 0; k < 4; ++k)
+        {
+            const PidTerm term = static_cast<PidTerm>(k);
+            TEST_ASSERT_EQUAL_FLOAT(expect[a][k], p.defaultValue(pidParam(a, term)));
+            TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(term, a, expect[a][k]), gainTerm(*g[a], term));
+        }
+    }
+    TEST_ASSERT_FALSE(t.gainsFromModel);
+    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::D), static_cast<int>(t.tpaMode));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, t.tpaAt(0.3f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.35f, t.tpaAt(1.0f));
+    TEST_ASSERT_EQUAL_FLOAT(250.0f, t.gyroLpfHz);
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, t.yawLpfHz);
+    TEST_ASSERT_EQUAL_FLOAT(0.4f, t.iLimit);
+    // расходы Actual 70/670/0
+    TEST_ASSERT_EQUAL_FLOAT(70.0f, t.rates[0].centerDps);
+    TEST_ASSERT_EQUAL_FLOAT(670.0f, t.rates[2].maxDps);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t.rates[1].expo);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 70.0f * 0.5f + 600.0f * 0.25f, t.rates[0].apply(0.5f));
+    // модель осталась на месте: физика та же, что без BF
+    TEST_ASSERT_EQUAL_FLOAT(p.modelTune().hoverThrust, t.hoverThrust);
+    TEST_ASSERT_EQUAL_FLOAT(p.modelTune().minNotchHz, t.minNotchHz);
+
+    // TPA только на D: P на полном газе не слабеет
+    RateAxis axis;
+    axis.configure(t.roll, 0.0f, 0.0f, 0.3f, 0.001f);
+    axis.setTpaMode(TpaMode::D);
+    axis.update(0.0f, 0.0f, 0.35f, 1.0f, true, false);
+    axis.update(100.0f, 0.0f, 0.35f, 1.0f, true, false);
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, t.roll.p * 100.0f, axis.lastTerms().p);
+
+    // обратно на модель
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "MODEL", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(p.modelTune().roll.d, p.tune().roll.d);
+    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::PD), static_cast<int>(p.tune().tpaMode));
+}
+
+// 005: профили независимы, переключаются на ходу — и в полёте.
+void test_profiles_are_independent_and_switch_on_the_fly()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_TRUE(p.parse(PARAM_P_ROLL, 1, "70", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ROLL_SRATE, 2, "90", err, sizeof(err)));
+    const CopterTune t0 = p.tune();
+    TEST_ASSERT_FALSE(p.isSet(PARAM_P_ROLL, 0));
+    TEST_ASSERT_EQUAL_FLOAT(p.modelTune().roll.p, t0.roll.p);
+    TEST_ASSERT_FALSE(p.selectPidProfile(4));
+
+    Bench b;
+    b.ctl.configure(t0);
+    TEST_ASSERT_TRUE(b.armAfterBoot());
+    b.rc.throttle = 0.5f;
+    b.run(0.5f);
+    const uint32_t loops = b.ctl.getStatus().loops;
+
+    TEST_ASSERT_TRUE(p.selectPidProfile(1));
+    TEST_ASSERT_TRUE(p.selectRateProfile(2));
+    b.ctl.applyProfile(p.tune());
+    TEST_ASSERT_TRUE(b.ctl.isArmed());                       // ARM, ориентация, счёт циклов — те же
+    TEST_ASSERT_EQUAL_UINT32(loops, b.ctl.getStatus().loops);
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(PidTerm::P, 0, 70.0f), b.ctl.getTune().roll.p);
+    TEST_ASSERT_EQUAL_FLOAT(900.0f, b.ctl.getTune().rates[0].maxDps);
+    TEST_ASSERT_EQUAL_FLOAT(t0.rates[1].maxDps, b.ctl.getTune().rates[1].maxDps);
+    b.run(0.01f);
+    TEST_ASSERT_TRUE(b.ctl.isArmed());
+
+    // профиль 0 не тронут
+    TEST_ASSERT_TRUE(p.selectPidProfile(0));
+    TEST_ASSERT_EQUAL_FLOAT(t0.roll.p, p.tune().roll.p);
+}
+
+void test_cli_set_get_diff_save_and_paste()
+{
+    RamFlash flash;
+    KeyValueStore kv(flash);
+    CopterParams& p = five5Params();
+    Bench b;
+    b.ctl.configure(p.tune());
+    CliCapture port;
+    CopterCli cli(p, b.ctl, port);
+    cli.setStore(&kv);
+    cli.setVersion("OpenPlane copter / test");
+
+    TEST_ASSERT_TRUE(cli.enter());
+    TEST_ASSERT_TRUE(has(port.take(), "help"));
+    for (const char c : std::string("set p_roll = 50\r\n")) cli.feed(c);
+    std::string out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "set p_roll = 50"), out.c_str());   // эхо
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "p_roll = 50\r\n# "), out.c_str());
+    TEST_ASSERT_TRUE(cli.hasUnsaved());
+    // до save контроллер работает на старом
+    TEST_ASSERT_EQUAL_FLOAT(p.modelTune().roll.p, b.ctl.getTune().roll.p);
+
+    cli.execute("get roll");
+    out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "p_roll = 50\r\nДопустимо: 0 - 250, BF\r\nПо умолчанию: "), out.c_str());
+    TEST_ASSERT_TRUE(has(out, "(из модели коптера)"));
+    TEST_ASSERT_TRUE(has(out, "roll_srate = 72"));
+    TEST_ASSERT_TRUE(has(out, "# P крена [PID-профиль]"));
+    TEST_ASSERT_FALSE(has(out, "pitch"));
+
+    cli.execute("set p_roll = 300");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: p_roll: допустимо 0 - 250###"));
+    cli.execute("set nonsense = 1");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: нет настройки nonsense###"));
+    cli.execute("set p_roll 5");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: set имя = значение###"));
+    cli.execute("frobnicate");
+    TEST_ASSERT_TRUE(has(port.take(), "нет команды frobnicate"));
+
+    cli.execute("diff");
+    out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# diff\r\n\r\n# version\r\n# OpenPlane copter / test"), out.c_str());
+    TEST_ASSERT_TRUE(has(out, "\r\nprofile 0\r\n\r\n# profile 0\r\nset p_roll = 50\r\n"));
+    TEST_ASSERT_TRUE(has(out, "rateprofile 0"));
+    TEST_ASSERT_FALSE(has(out, "i_roll"));
+    TEST_ASSERT_FALSE(has(out, "profile 1"));
+    cli.execute("dump all");
+    out = port.take();
+    TEST_ASSERT_TRUE(has(out, "set tune_source = MODEL"));
+    TEST_ASSERT_TRUE(has(out, "# profile 3\r\n"));
+    TEST_ASSERT_TRUE(has(out, "set i_roll = "));
+    TEST_ASSERT_TRUE(has(out, "# выбранные профили\r\nprofile 0\r\nrateprofile 0"));
+
+    // вставка diff из Betaflight: комментарии, batch, профили, чужие команды
+    const char* bfDiff[] = {
+        "# diff all",
+        "# version",
+        "# Betaflight / STM32F7X2 (S7X2) 4.5.1",
+        "batch start",
+        "feature -AIRMODE",
+        "set tune_source = BETAFLIGHT",
+        "profile 1",
+        "# profile 1",
+        "set profile_name = wind",
+        "set d_pitch = 38",
+        "set d_max_pitch = 50",
+        "rateprofile 1",
+        "set roll_srate = 80",
+        "batch end",
+    };
+    for (const char* line : bfDiff) cli.execute(line);
+    out = port.take();
+    TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет команды feature"));
+    TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки d_max_pitch###"));
+    cli.execute("profile");
+    TEST_ASSERT_TRUE(has(port.take(), "profile 1 # wind"));
+    TEST_ASSERT_EQUAL_UINT8(1, p.pidProfile());
+    TEST_ASSERT_EQUAL_FLOAT(38.0f, p.value(PARAM_D_PITCH));
+    TEST_ASSERT_EQUAL_FLOAT(80.0f, p.value(PARAM_ROLL_SRATE));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, p.valueIn(PARAM_P_ROLL, 0));
+    // профиль переключился сразу (на дефолты BF профиля 1), set — заработает после save
+    TEST_ASSERT_EQUAL_FLOAT(670.0f, b.ctl.getTune().rates[0].maxDps);
+
+    cli.execute("status");
+    TEST_ASSERT_EQUAL_INT(1, port.statusCalls);
+    cli.execute("version");
+    TEST_ASSERT_TRUE(has(port.take(), "# OpenPlane copter / test"));
+
+    // save: во флеш, настройка пересчитана, CLI закрыт
+    cli.execute("save");
+    out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "Сохранено"), out.c_str());
+    TEST_ASSERT_FALSE(cli.active());
+    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::D), static_cast<int>(b.ctl.getTune().tpaMode));
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(PidTerm::D, 1, 38.0f), b.ctl.getTune().pitch.d);
+    TEST_ASSERT_TRUE(kv.contains(CopterParams::STORE_SPACE, CopterParams::STORE_KEY));
+
+    // exit без save — отмена
+    TEST_ASSERT_TRUE(cli.enter());
+    cli.execute("set i_roll = 99");
+    cli.execute("profile 0");
+    cli.execute("exit");
+    TEST_ASSERT_TRUE(has(port.take(), "Несохранённые изменения отменены."));
+    TEST_ASSERT_EQUAL_UINT8(1, p.pidProfile());
+    TEST_ASSERT_FALSE(p.isSet(PARAM_I_ROLL, 1));
+    TEST_ASSERT_EQUAL_FLOAT(800.0f, b.ctl.getTune().rates[0].maxDps);
+
+    // defaults nosave — в ОЗУ; defaults — и во флеш
+    TEST_ASSERT_TRUE(cli.enter());
+    cli.execute("defaults nosave");
+    TEST_ASSERT_TRUE(cli.active());
+    TEST_ASSERT_EQUAL(static_cast<int>(TuneSource::MODEL), static_cast<int>(p.source()));
+    cli.execute("defaults");
+    TEST_ASSERT_FALSE(cli.active());
+    TEST_ASSERT_FALSE(kv.contains(CopterParams::STORE_SPACE, CopterParams::STORE_KEY));
+    TEST_ASSERT_EQUAL_FLOAT(p.modelTune().roll.p, b.ctl.getTune().roll.p);
+
+    // профиль за границей, длинная строка, заармленному — нельзя
+    TEST_ASSERT_TRUE(cli.enter());
+    cli.execute("profile 4");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: profile 0-3###"));
+    for (int i = 0; i < 200; ++i) cli.feed('x');
+    cli.feed('\n');
+    TEST_ASSERT_TRUE(has(port.take(), "строка длиннее"));
+    cli.feed('s');
+    cli.feed('x');
+    cli.feed('\b');
+    cli.feed('e');
+    cli.feed('t');
+    cli.feed('\r');
+    TEST_ASSERT_TRUE(has(port.take(), "tune_source = MODEL"));   // «set» после забоя
+    cli.execute("exit");
+    TEST_ASSERT_TRUE(b.armAfterBoot());
+    TEST_ASSERT_FALSE(cli.enter());
+    TEST_ASSERT_TRUE(has(port.take(), "только без ARM"));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -916,5 +1369,12 @@ int main()
     RUN_TEST(test_motor_test_only_disarmed_and_times_out);
     RUN_TEST(test_link_loss_on_ground_disarms_and_needs_switch_toggle);
     RUN_TEST(test_mode_names_and_settings);
+    RUN_TEST(test_params_table_is_consistent);
+    RUN_TEST(test_params_set_get_bounds_and_enums);
+    RUN_TEST(test_params_survive_flash_and_skip_unknown);
+    RUN_TEST(test_pid_in_betaflight_units);
+    RUN_TEST(test_betaflight_source_takes_bf_45_defaults);
+    RUN_TEST(test_profiles_are_independent_and_switch_on_the_fly);
+    RUN_TEST(test_cli_set_get_diff_save_and_paste);
     return UNITY_END();
 }

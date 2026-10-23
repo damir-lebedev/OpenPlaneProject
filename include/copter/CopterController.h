@@ -187,6 +187,7 @@ namespace copter
             axes[0].configure(t.roll, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[1].configure(t.pitch, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[2].configure(t.yaw, t.dtermLpfHz, t.yawLpfHz, t.iLimit, dt);
+            for (auto& ax : axes) ax.setTpaMode(t.tpaMode);
             for (int a = 0; a < 4; ++a) stickLpf[a].configure(s.rcSmoothingHz, dt);
             throttleHpLpf.configure(15.0f, dt);
             for (auto& f : accelLpf) f.configure(20.0f, dt);
@@ -201,6 +202,21 @@ namespace copter
             status = CopterStatus();
             uptime = 0.0f;
             motionTimer = 0.0f;
+        }
+
+        // Другой профиль PID и расходов — на ходу, и в полёте: интегралы,
+        // фильтры, ориентация, ARM не сбрасываются. Фильтры, TPA и всё
+        // остальное берутся из configure().
+        void applyProfile(const CopterTune& t)
+        {
+            tune.roll = t.roll;
+            tune.pitch = t.pitch;
+            tune.yaw = t.yaw;
+            tune.gainsFromModel = t.gainsFromModel;
+            for (int a = 0; a < 3; ++a) tune.rates[a] = t.rates[a];
+            axes[0].setGains(t.roll);
+            axes[1].setGains(t.pitch);
+            axes[2].setGains(t.yaw);
         }
 
         // Внешняя причина не армить (калибровка установки платы, ошибка настроек).

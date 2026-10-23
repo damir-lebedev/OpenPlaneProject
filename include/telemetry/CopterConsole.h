@@ -1,9 +1,12 @@
 #pragma once
 #include <Arduino.h>
 
+#include "copter/CopterCli.h"
 #include "copter/CopterController.h"
+#include "copter/Params.h"
 #include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
+#include "telemetry/FirmwareIdentity.h"
 
 // ============================================================
 // Консоль мультикоптера (USB / UART, 115200): клавиша — команда.
@@ -22,17 +25,28 @@
 //   i     — калибровка гироскопа (коптер неподвижен ~2 с)
 //   o     — калибровка установки платы (три позы)
 //   D     — перезагрузка в загрузчик USB DFU
+//   #     — CLI как в Betaflight: set/get/diff/dump/profile/save
+//           (copter/CopterCli.h); пока он открыт, ARM запрещён
 // Всё, что крутит моторы или останавливает цикл, — только без ARM.
 // ============================================================
 
-class CopterConsole
+class CopterConsole : public copter::CliPort
 {
 public:
-    CopterConsole(Stream& stream, copter::CopterController& controller, const copter::BuildSpec& spec, ImuSensor& imuSensor,
-                  RcReceiver& receiver)
-        : io(stream), ctl(controller), build(spec), imu(imuSensor), rc(receiver)
+    CopterConsole(Stream& stream, copter::CopterController& controller, copter::CopterParams& paramsRef,
+                  const copter::BuildSpec& spec, ImuSensor& imuSensor, RcReceiver& receiver)
+        : io(stream), ctl(controller), params(paramsRef), build(spec), imu(imuSensor), rc(receiver),
+          cli(paramsRef, controller, *this)
     {
+        cli.setVersion("OpenPlane copter / " OP_BOARD_ENV " / " OP_SOURCE_COMMIT);
     }
+
+    // Куда CLI сохраняет настройки (save); без него — только до перезагрузки.
+    void setStore(KeyValueStore* store) { cli.setStore(store); }
+    bool cliActive() const { return cli.active(); }
+
+    // CliPort: вывод CLI — в этот же порт.
+    void write(const char* text) override { io.print(text); }
 
     void setBootloaderHook(void (*hook)()) { bootloaderHook = hook; }
     void setLoopLoad(uint32_t avgUs, uint32_t maxUs)
@@ -41,11 +55,20 @@ public:
         loopMaxUs = maxUs;
     }
 
-    void printHint() { io.println("Консоль коптера: h — команды, s — состояние, t — настройка, m — проверка моторов."); }
+    void printHint()
+    {
+        io.println("Консоль коптера: h — команды, s — состояние, t — настройка, m — проверка моторов, # — CLI.");
+    }
 
     // Каждый цикл: одна клавиша за раз, проверка моторов идёт по шагам.
     void update(uint32_t nowMs)
     {
+        if (cli.active())
+        {
+            // строками, и вставка diff целиком: всё, что пришло, за один цикл
+            for (int n = 0; n < 512 && io.available() && cli.active(); ++n) cli.feed(static_cast<char>(io.read()));
+            return;
+        }
         stepMotorTest(nowMs);
         if (live && nowMs - lastLiveMs >= 200)
         {
@@ -109,6 +132,10 @@ private:
                 io.println("Калибровка установки: «нос вверх» — передние моторы вверх, «правое крыло вниз» — правые моторы вниз.");
                 imu.calibrateOrientation();
                 break;
+            case '#':
+                if (refuseArmed()) return;
+                cli.enter();
+                break;
             case 'D':
                 if (refuseArmed() || !bootloaderHook) return;
                 io.println("Перезагрузка в загрузчик USB DFU...");
@@ -133,10 +160,11 @@ private:
     {
         io.println("s — состояние, t — настройка, r — каналы пульта, l — живая строка,");
         io.println("m — проверка моторов (без пропеллеров!), i — калибровка гироскопа,");
-        io.println("o — калибровка установки платы, D — загрузчик DFU.");
+        io.println("o — калибровка установки платы, D — загрузчик DFU,");
+        io.println("# — CLI как в Betaflight (set, get, diff, profile, save; help — внутри).");
     }
 
-    void printStatus()
+    void printStatus() override
     {
         const copter::CopterStatus& s = ctl.getStatus();
         io.printf("Состояние: %s, режим %s%s\n", stateName(s.state), copter::copterModeName(s.mode),
@@ -181,20 +209,29 @@ private:
                   t.escDelayS * 1000.0f, t.loopHz);
         io.printf("Фильтры: гироскоп %.0f Гц, D %.0f Гц, рысканье %.0f Гц, режекторы от %.0f Гц (Q %.1f)\n", t.gyroLpfHz,
                   t.dtermLpfHz, t.yawLpfHz, t.minNotchHz, t.notchQ);
-        io.printf("Контур: срез %.1f Гц (рысканье %.1f), запас по фазе %.0f°, по усилению %.1f дБ\n", t.crossoverHzRP,
-                  t.crossoverHzYaw, t.phaseMarginDeg, t.gainMarginDb);
-        printGains("Крен   ", t.roll);
-        printGains("Тангаж ", t.pitch);
-        printGains("Рыск.  ", t.yaw);
+        io.printf("Контур: срез %.1f Гц (рысканье %.1f), запас по фазе %.0f°, по усилению %.1f дБ%s\n", t.crossoverHzRP,
+                  t.crossoverHzYaw, t.phaseMarginDeg, t.gainMarginDb,
+                  t.gainsFromModel ? "" : " — для PID из модели, а работают другие (запас не проверен)");
+        const char* pidName = params.text(copter::PARAM_PROFILE_NAME, params.pidProfile());
+        const char* rateName = params.text(copter::PARAM_RATEPROFILE_NAME, params.rateProfile());
+        io.printf("PID: %s, профиль %u%s%s; расходы — профиль %u%s%s\n",
+                  params.source() == copter::TuneSource::BETAFLIGHT ? "дефолты Betaflight 4.5" : "из модели",
+                  params.pidProfile(), *pidName ? " " : "", pidName, params.rateProfile(), *rateName ? " " : "", rateName);
+        printGains("Крен   ", t.roll, 0);
+        printGains("Тангаж ", t.pitch, 1);
+        printGains("Рыск.  ", t.yaw, 2);
         io.printf("Расходы: крен/тангаж %.0f..%.0f °/с, рысканье %.0f..%.0f °/с; наклон в ANGLE до %.0f°\n",
                   t.rates[0].centerDps, t.rates[0].maxDps, t.rates[2].centerDps, t.rates[2].maxDps, t.maxAngleDeg);
         io.printf("Холостые %.1f %%, линеаризация тяги %.2f\n", t.idle * 100.0f, t.thrustLinear);
         printWarnings(t.warnings);
     }
 
-    void printGains(const char* axis, const copter::AxisGains& g)
+    void printGains(const char* axis, const copter::AxisGains& g, uint8_t a)
     {
-        io.printf("  %s P %.5f  I %.4f  D %.6f  FF %.6f\n", axis, g.p, g.i, g.d, g.ff);
+        using copter::PidTerm;
+        io.printf("  %s P %.5f  I %.4f  D %.6f  FF %.6f  | BF: P %.0f I %.0f D %.0f F %.0f\n", axis, g.p, g.i, g.d, g.ff,
+                  copter::gainToBf(PidTerm::P, a, g.p), copter::gainToBf(PidTerm::I, a, g.i),
+                  copter::gainToBf(PidTerm::D, a, g.d), copter::gainToBf(PidTerm::F, a, g.ff));
     }
 
     void printWarnings(uint16_t w)
@@ -265,9 +302,11 @@ private:
 
     Stream& io;
     copter::CopterController& ctl;
+    copter::CopterParams& params;
     const copter::BuildSpec& build;
     ImuSensor& imu;
     RcReceiver& rc;
+    copter::CopterCli cli;
     void (*bootloaderHook)() = nullptr;
     uint32_t loopAvgUs = 0, loopMaxUs = 0;
     bool live = false;

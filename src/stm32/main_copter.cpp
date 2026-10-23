@@ -6,7 +6,8 @@
 // в такой сборке выключен), а управление — copter/CopterController.h:
 // контур угловой скорости, режимы ACRO/HORIZON/ANGLE/ALT_HOLD,
 // failsafe с посадкой, защита от переворота. Настройка (PID, фильтры,
-// холостые, расходы) выводится из описания коптера — config/CopterConfig.h.
+// холостые, расходы) выводится из описания коптера — config/CopterConfig.h;
+// поверх неё — настройки из CLI (copter/Params.h, во флеше).
 //
 // Задачи FreeRTOS:
 //   flight  (приоритет 5) — цикл стабилизации каждые 1 мс: IMU,
@@ -28,6 +29,7 @@
 #include "config/Config.h"
 #include "config/CopterConfig.h"
 #include "copter/CopterController.h"
+#include "copter/Params.h"
 #include "hal/Rtos.h"
 #include "hal/stm32/Stm32Board.h"
 #include "hal/stm32/Stm32FlashStorage.h"
@@ -55,8 +57,9 @@ RcReceiver rcReceiver(board.rcUart());
 Stm32MotorOutput motors;
 copter::CopterController copterController;
 copter::BuildSpec copterBuild;
+copter::CopterParams copterParams;
 LoopStats loopStats;
-CopterConsole copterConsole(Serial, copterController, copterBuild, imuSensor, rcReceiver);
+CopterConsole copterConsole(Serial, copterController, copterParams, copterBuild, imuSensor, rcReceiver);
 
 static bool configOk = false;
 static float batteryVolts = 0.0f;
@@ -114,10 +117,11 @@ static void flightTask(void*)
         sens.baroAltM = baroSensor.getBarometerData().altitude;
         sens.batteryVolts = batteryVolts;
 
-        // ARM запрещён, пока описание коптера не сошлось с платой или
-        // установка IMU не откалибрована (если плата этого требует)
+        // ARM запрещён, пока описание коптера не сошлось с платой,
+        // установка IMU не откалибрована (если плата этого требует) или
+        // открыт CLI
         const bool mountMissing = Config::IMU_MOUNT_CALIBRATION_REQUIRED && !imuSensor.isMountCalibrated();
-        copterController.setExternalBlock(!configOk || mountMissing);
+        copterController.setExternalBlock(!configOk || mountMissing || copterConsole.cliActive());
 
         const copter::CopterOutputs out = copterController.update(sens, readRc());
         motors.write(out.motor, out.spinning);
@@ -144,8 +148,8 @@ static void storageTask(void*)
     }
 }
 
-// Описание коптера -> настройка; что не так — в консоль и запрет ARM.
-static void setupCopter()
+// Описание коптера -> настройка (+ заданное в CLI); что не так — в консоль и запрет ARM.
+static void setupCopter(KeyValueStore& store)
 {
     configOk = CopterConfig::build(copterBuild);
     if (!configOk)
@@ -155,7 +159,10 @@ static void setupCopter()
         copterBuild = copter::buildCatalog(n)[0];   // чтобы контроллер был настроен хоть как-то
     }
 
-    const copter::CopterTune tune = copter::deriveTune(copterBuild, CopterConfig::LOOP_HZ, CopterConfig::ESC_PROTOCOL);
+    copterParams.begin(copterBuild, CopterConfig::LOOP_HZ, CopterConfig::ESC_PROTOCOL);
+    copterParams.load(store);
+    copterConsole.setStore(&store);
+    const copter::CopterTune tune = copterParams.tune();
     copterController.configure(tune, CopterConfig::settings());
 
     if (tune.frame.count > CopterConfig::MOTOR_PIN_COUNT)
@@ -180,6 +187,9 @@ static void setupCopter()
                   copter::frameName(tune.frame.type), copter::escProtocolName(CopterConfig::ESC_PROTOCOL), tune.loopHz);
     Serial.printf("Тяговооружённость %.1f, висение на %.0f %% тяги, полоса контура %.1f Гц ('t' — подробно).\n",
                   tune.thrustToWeight, tune.hoverThrust * 100.0f, tune.crossoverHzRP);
+    Serial.printf("PID %s, профиль %u, расходы — профиль %u ('#' — CLI как в Betaflight).\n",
+                  copterParams.source() == copter::TuneSource::BETAFLIGHT ? "— дефолты Betaflight 4.5" : "из модели",
+                  copterParams.pidProfile(), copterParams.rateProfile());
     if (tune.warnings) Serial.println("Есть ПРЕДУПРЕЖДЕНИЯ по сборке — 't' в консоли.");
 }
 
@@ -204,7 +214,7 @@ void setup()
     settings.mount();
     if (settings.wasCorrupt()) Serial.println("Настройки во флеше повреждены — значения по умолчанию.");
 
-    setupCopter();   // выходы на моторы — сразу «стоп»
+    setupCopter(settings);   // выходы на моторы — сразу «стоп»
 
     if (imuSensor.begin()) imuSensor.calibrate();
     if (baroSensor.begin()) baroSensor.calibrateAltitude();

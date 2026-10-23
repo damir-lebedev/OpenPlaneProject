@@ -155,6 +155,13 @@ namespace copter
 
     constexpr uint8_t TPA_POINTS = 11;   // газ 0, 0.1 … 1.0
 
+    // Что ослабляет поправка по газу: P и D (наша модель) или только D (как в BF 4.5).
+    enum class TpaMode : uint8_t
+    {
+        PD,
+        D,
+    };
+
     struct CopterTune
     {
         Frame frame;
@@ -163,6 +170,8 @@ namespace copter
         float volts = 0, massKg = 0, armM = 0, loopHz = 1000;
 
         AxisGains roll, pitch, yaw;
+        bool gainsFromModel = true;     // false — PID заданы руками: запасы ниже посчитаны не для них
+        TpaMode tpaMode = TpaMode::PD;
         float iLimit = 0.3f;            // доля смесителя
         float gyroLpfHz = 0, dtermLpfHz = 0, yawLpfHz = 0;
         float notchQ = 4.0f;
@@ -557,5 +566,110 @@ namespace copter
         }
         if (b.prop.diameterIn * 0.0254f > nearest) t.warnings |= WARN_PROP_OVERLAP;
         return t;
+    }
+
+    // ---------------- единицы и дефолты Betaflight ----------------
+    //
+    // Числа P/I/D/F в Betaflight — не «команда на °/с», а условные единицы:
+    // член PID = число × масштаб × ошибка, сумма делится на 1000 и идёт в
+    // смеситель (1 — весь ход мотора от холостых до полного, как и у нас).
+    // Масштабы и дефолты — из документации и исходников BF 4.5 (это числа,
+    // а не код): P 0.032029, I 0.244381 (у рысканья ещё ×2.5, если нет
+    // integrated yaw), D 0.000529 (на °/с²), F 0.013754 × 0.01 (на °/с²
+    // уставки).
+
+    enum class PidTerm : uint8_t
+    {
+        P,
+        I,
+        D,
+        F,
+    };
+
+    namespace betaflight
+    {
+        constexpr float P_SCALE = 0.032029f;
+        constexpr float I_SCALE = 0.244381f;
+        constexpr float D_SCALE = 0.000529f;
+        constexpr float F_SCALE = 0.013754f * 0.01f;
+        constexpr float YAW_I_FACTOR = 2.5f;
+        constexpr float MIXER_SCALING = 1000.0f;
+        constexpr uint8_t AXIS_YAW = 2;
+
+        // BF 4.5: pid_roll/pitch/yaw = P, I, D, F
+        constexpr uint16_t DEFAULT_PID[3][4] = { { 45, 80, 40, 120 }, { 47, 84, 46, 125 }, { 45, 80, 0, 120 } };
+        // rates_type = ACTUAL: центр 70 °/с, максимум 670 °/с, экспо 0
+        constexpr uint8_t DEFAULT_RC_RATE = 7, DEFAULT_SRATE = 67, DEFAULT_EXPO = 0;
+    }
+
+    inline float pidTermScale(PidTerm term, uint8_t axis)
+    {
+        float s = betaflight::P_SCALE;
+        switch (term)
+        {
+            case PidTerm::P: s = betaflight::P_SCALE; break;
+            case PidTerm::I: s = betaflight::I_SCALE * (axis == betaflight::AXIS_YAW ? betaflight::YAW_I_FACTOR : 1.0f); break;
+            case PidTerm::D: s = betaflight::D_SCALE; break;
+            case PidTerm::F: s = betaflight::F_SCALE; break;
+        }
+        return s / betaflight::MIXER_SCALING;
+    }
+
+    // Число BF -> наш коэффициент (ось 0 крен, 1 тангаж, 2 рысканье) и обратно.
+    inline float bfToGain(PidTerm term, uint8_t axis, float value) { return value * pidTermScale(term, axis); }
+    inline float gainToBf(PidTerm term, uint8_t axis, float gain) { return gain / pidTermScale(term, axis); }
+
+    inline float& gainTerm(AxisGains& g, PidTerm term)
+    {
+        switch (term)
+        {
+            case PidTerm::I: return g.i;
+            case PidTerm::D: return g.d;
+            case PidTerm::F: return g.ff;
+            case PidTerm::P:
+            default: return g.p;
+        }
+    }
+
+    inline float gainTerm(const AxisGains& g, PidTerm term)
+    {
+        switch (term)
+        {
+            case PidTerm::I: return g.i;
+            case PidTerm::D: return g.d;
+            case PidTerm::F: return g.ff;
+            case PidTerm::P:
+            default: return g.p;
+        }
+    }
+
+    // Всё, кроме PID и расходов, — как в BF 4.5 по умолчанию, в пересчёте на
+    // нашу цепочку фильтров:
+    //   • гироскоп: у BF два PT1 (динамический 250–500 Гц и 500 Гц) — у нас
+    //     PT2 250 Гц: то же запаздывание на 50 Гц (~15°);
+    //   • D: у BF два PT1 (динамический 75–150 Гц и 150 Гц) — у нас один PT1
+    //     60 Гц: то же запаздывание у полосы контура (~19° на 20 Гц) и то же
+    //     ослабление шума на 200 Гц (~0.28);
+    //   • рысканье: yaw_lowpass_hz 100; TPA только на D, 65 % от газа 1350
+    //     (35 % хода) до полного; iterm_limit 400; ANGLE: angle_p_gain 50
+    //     (5 °/с на градус), angle_limit 60°.
+    // Режекторы по оборотам остаются наши (у BF на их месте RPM-фильтр по
+    // телеметрии DShot и динамический режектор по спектру).
+    inline void applyBetaflightBase(CopterTune& t)
+    {
+        t.gyroLpfHz = fminf(0.4f * t.loopHz, 250.0f);
+        t.dtermLpfHz = fminf(0.3f * t.loopHz, 60.0f);
+        t.yawLpfHz = 100.0f;
+        t.tpaMode = TpaMode::D;
+        const float breakpoint = 0.35f, rate = 0.65f;
+        for (uint8_t i = 0; i < TPA_POINTS; ++i)
+        {
+            const float x = i / float(TPA_POINTS - 1);
+            t.tpa[i] = x <= breakpoint ? 1.0f : 1.0f - rate * (x - breakpoint) / (1.0f - breakpoint);
+        }
+        t.iLimit = 0.4f;
+        t.levelGain = 5.0f;
+        t.maxAngleDeg = 60.0f;
+        t.gainsFromModel = false;
     }
 }

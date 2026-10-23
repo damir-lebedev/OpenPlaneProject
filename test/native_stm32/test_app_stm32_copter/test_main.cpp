@@ -6,8 +6,8 @@
 //
 // Проверяется склейка с железом: что вывелось из описания коптера,
 // импульсы «стоп» до ARM, ARM только после калибровки установки IMU,
-// холостые после ARM, режимы с тумблера, потеря связи на земле, консоль
-// и проверка моторов с подтверждением.
+// холостые после ARM, режимы с тумблера, потеря связи на земле, консоль,
+// проверка моторов с подтверждением и CLI как в Betaflight (флеш).
 //
 // Запуск: pio test -e native-stm32 -f native_stm32/test_app_stm32_copter
 // ============================================================
@@ -222,6 +222,57 @@ void test_console_tune_report_and_motor_test()
     TEST_ASSERT_TRUE(contains(takeSerial(), "Неизвестная команда"));
 }
 
+// CLI как в Betaflight: ARM запрещён, пока CLI открыт; set → save — во флеш
+// и в контроллер; после «перезагрузки» (настройки заново из флеша) — то же.
+void test_cli_set_save_and_reboot()
+{
+    RcChannels rc;
+    Serial.pushRx("#");
+    run(rc, 0.01);
+    TEST_ASSERT_TRUE(copterConsole.cliActive());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "CLI коптера"));
+    rc.set(Channels::ARM, 2000);
+    run(rc, 0.1);
+    TEST_ASSERT_FALSE(copterController.isArmed());
+    TEST_ASSERT_TRUE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_EXTERNAL);
+    rc.set(Channels::ARM, 1000);
+    run(rc, 0.05);
+
+    // строки пачкой — как вставка diff
+    Serial.pushRx("get p_roll\r\nset p_roll = 50\r\nprofile 1\r\nset profile_name = acro\r\nprofile 0\r\nstatus\r\nsave\r\n");
+    run(rc, 0.05);
+    std::string log = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "(из модели коптера)"), log.c_str());
+    TEST_ASSERT_TRUE(contains(log, "p_roll = 50"));
+    TEST_ASSERT_TRUE(contains(log, "Состояние: DISARMED"));
+    TEST_ASSERT_TRUE(contains(log, "Сохранено, настройка пересчитана."));
+    TEST_ASSERT_FALSE(copterConsole.cliActive());
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, copter::bfToGain(copter::PidTerm::P, 0, 50.0f), copterController.getTune().roll.p);
+
+    // запись во флеш — фоновой задачей; «перезагрузка» — настройки заново из флеша
+    fake::runTask(*fake::findTask("storage"), 1);
+    class FlashView : public IFlashStorage
+    {
+    public:
+        size_t capacity() const override { return KeyValueStore::CAPACITY; }
+        void read(uint8_t* destination, size_t size) override { memcpy(destination, fake::eeprom().flash, size); }
+        bool write(const uint8_t*, size_t) override { return false; }
+    } view;
+    KeyValueStore reread(view);
+    copterParams.resetAll();
+    TEST_ASSERT_TRUE(copterParams.load(reread));
+    TEST_ASSERT_TRUE(reread.contains(copter::CopterParams::STORE_SPACE, copter::CopterParams::STORE_KEY));
+    Serial.pushRx("#get p_roll\r\nprofile 1\r\nexit\r\nt");
+    run(rc, 0.05);
+    log = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "p_roll = 50"), log.c_str());
+    TEST_ASSERT_TRUE(contains(log, "profile 1 # acro"));
+    TEST_ASSERT_TRUE(contains(log, "Несохранённые изменения отменены."));
+    TEST_ASSERT_TRUE(contains(log, "PID: из модели, профиль 0; расходы — профиль 0"));
+    TEST_ASSERT_TRUE(contains(log, "| BF: P 50 I "));
+    TEST_ASSERT_TRUE(contains(log, "запас не проверен"));
+}
+
 int main()
 {
     wireUpBoard();
@@ -231,5 +282,6 @@ int main()
     RUN_TEST(test_three_poses_then_arm_spins_motors_at_idle);
     RUN_TEST(test_link_loss_on_ground_disarms);
     RUN_TEST(test_console_tune_report_and_motor_test);
+    RUN_TEST(test_cli_set_save_and_reboot);
     return UNITY_END();
 }

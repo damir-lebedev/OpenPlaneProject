@@ -23,7 +23,9 @@
 
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 
+#include "copter/Params.h"
 #include "helpers/QuadHarness.h"
 
 using namespace copter;
@@ -430,6 +432,103 @@ void test_battery_sag_is_seen()
     TEST_ASSERT_TRUE(h.ctl.getStatus().volts < hoverVolts - 1.0f);
 }
 
+// ---------------- дефолты Betaflight 4.5 (tune_source = BETAFLIGHT) ----------------
+
+namespace
+{
+    struct BfFlight
+    {
+        bool tookOff = false, hovers = false, tracksRate = false;
+        double rateRmsDps = 0, motorNoise = 0, maxTilt = 0;
+        double t90 = -1, overshoot = 0, err = 0;
+    };
+
+    CopterTune betaflightTune(const BuildSpec& b, EscProtocol esc)
+    {
+        CopterParams p;
+        p.begin(b, 1000.0f, esc);
+        char error[96];
+        p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", error, sizeof(error));
+        return p.tune();
+    }
+
+    // Наш цикл 1 кГц и OneShot125, номинальная физика: висение 4 с в ALT_HOLD и
+    // полный стик в ACRO — те же мерки, что у настройки из модели.
+    BfFlight flyBetaflightDefaults(const BuildSpec& b)
+    {
+        BfFlight r;
+        const CopterTune bf = betaflightTune(b, EscProtocol::ONESHOT125);
+        {
+            QuadHarness h(b, QuadPerturb(), 41, EscProtocol::ONESHOT125);
+            h.useTune(bf);
+            r.tookOff = h.takeoffTo(5.0);
+            if (r.tookOff)
+            {
+                h.stats.reset();
+                h.run(4.0);
+                r.rateRmsDps = h.stats.rateRms() * 57.29578;
+                r.motorNoise = h.stats.motorNoiseRms();
+                r.maxTilt = h.stats.maxTilt;
+                r.hovers = h.ctl.isArmed() && std::fabs(h.stats.minHeight - 5.0) < 0.7 &&
+                           std::fabs(h.stats.maxHeight - 5.0) < 0.7 && r.maxTilt < 3.0 && r.rateRmsDps < 3.0 &&
+                           r.motorNoise < 0.15;
+            }
+        }
+        {
+            QuadHarness h(b, QuadPerturb(), 42, EscProtocol::ONESHOT125);
+            h.useTune(bf);
+            if (!h.takeoffTo(20.0)) return r;
+            h.rc.mode = CopterMode::ACRO;
+            h.rc.throttle = h.ctl.getStatus().hoverLearned;
+            h.run(0.3);
+            h.rc.roll = 1.0f;
+            const double target = h.tune.rates[0].apply(1.0f);
+            double maxRate = 0, sumErr = 0;
+            int n = 0;
+            const double t0 = h.sim.now();
+            for (int i = 0; i < 400; ++i)
+            {
+                h.step();
+                const double w = h.sim.rates().x * 57.29578;
+                maxRate = std::fmax(maxRate, w);
+                if (r.t90 < 0 && w > 0.9 * target) r.t90 = h.sim.now() - t0;
+                if (i > 200)
+                {
+                    sumErr += std::fabs(w - target);
+                    ++n;
+                }
+            }
+            r.overshoot = maxRate / target - 1.0;
+            r.err = sumErr / n / target;
+            r.tracksRate = h.ctl.isArmed() && r.t90 > 0 && r.t90 < 0.2 && r.overshoot < 0.15 && r.err < 0.08;
+        }
+        return r;
+    }
+}
+
+// 004: дефолты BF на нашем цикле 1 кГц и OneShot125. 5" обязан летать; по
+// остальным сборкам — отчёт (он же — таблица в docs/COPTER.md): дефолты BF
+// подобраны под 5", на вупах и гексах они не обязаны работать.
+void test_betaflight_defaults_on_our_loop()
+{
+    uint8_t count = 0;
+    const BuildSpec* cat = buildCatalog(count);
+    for (uint8_t i = 0; i < count; ++i)
+    {
+        const BfFlight r = flyBetaflightDefaults(cat[i]);
+        char line[200];
+        snprintf(line, sizeof(line), "BF45 %-12s hover %s (rate rms %.1f dps, motor noise %.3f, tilt %.1f) | acro %s (t90 %.3f s, overshoot %.0f%%, err %.1f%%)",
+                 cat[i].id, r.hovers ? "OK" : (r.tookOff ? "BAD" : "NO TAKEOFF"), r.rateRmsDps, r.motorNoise, r.maxTilt,
+                 r.tracksRate ? "OK" : "BAD", r.t90, r.overshoot * 100.0, r.err * 100.0);
+        TEST_MESSAGE(line);
+        if (strcmp(cat[i].id, "freestyle5") == 0)
+        {
+            TEST_ASSERT_TRUE_MESSAGE(r.hovers, line);
+            TEST_ASSERT_TRUE_MESSAGE(r.tracksRate, line);
+        }
+    }
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -449,5 +548,6 @@ int main()
     RUN_TEST(test_motor_failure_in_angle_mode_disarms);
     RUN_TEST(test_motor_test_spins_one_motor);
     RUN_TEST(test_battery_sag_is_seen);
+    RUN_TEST(test_betaflight_defaults_on_our_loop);
     return UNITY_END();
 }

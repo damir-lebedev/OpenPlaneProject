@@ -40,6 +40,13 @@ public:
         rc.mode = copter::CopterMode::ANGLE;
     }
 
+    // Другая настройка контроллера на той же физике (дефолты Betaflight, свои PID).
+    void useTune(const copter::CopterTune& t, const copter::CopterSettings& settings = copter::CopterSettings())
+    {
+        tune = t;
+        ctl.configure(t, settings);
+    }
+
     void step()
     {
         copter::CopterSensors s;

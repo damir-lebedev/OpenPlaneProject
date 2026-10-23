@@ -20,7 +20,7 @@
 //   FF — упреждение от скорости изменения уставки: стик начал движение —
 //        моторы уже отвечают, не дожидаясь ошибки.
 // P и D умножаются на поправку по газу (TPA из модели винтомоторной
-// группы, Presets.h).
+// группы, Presets.h); в режиме TpaMode::D — только D, как в Betaflight.
 // ============================================================
 
 namespace copter
@@ -60,7 +60,11 @@ namespace copter
 
         void resetIntegral() { iTerm = 0.0f; }
 
-        // setpoint, measured — °/с. tpa — множитель P и D; iBoost —
+        // Другие коэффициенты на ходу (смена профиля): интеграл и фильтры не сбрасываются.
+        void setGains(const AxisGains& g) { gains = g; }
+        void setTpaMode(TpaMode mode) { tpaOnP = mode == TpaMode::PD; }
+
+        // setpoint, measured — °/с. tpa — множитель D (и P в TpaMode::PD); iBoost —
         // множитель I (anti-gravity); holdI — интеграл не копить (земля);
         // saturated — смеситель упёрся: интеграл не растёт в сторону упора.
         float update(float setpoint, float measured, float tpa, float iBoost, bool holdI, bool saturated)
@@ -74,7 +78,7 @@ namespace copter
             }
             const float error = setpoint - measured;
 
-            terms.p = gains.p * error * tpa;
+            terms.p = gains.p * error * (tpaOnP ? tpa : 1.0f);
 
             // I-relax: уставка быстро меняется (флип, рывок стиком) или коптер
             // ещё разгоняется к ней (большая ошибка) — интеграл ждёт: ветер и
@@ -110,6 +114,7 @@ namespace copter
         AxisGains gains;
         float limit = 0.3f;
         float dt = 0.001f;
+        bool tpaOnP = true;
         Pt1 dLpf, outLpf, ffLpf, relaxLpf;
         AxisTerms terms;
         float iTerm = 0.0f;
