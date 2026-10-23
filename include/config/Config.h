@@ -453,6 +453,21 @@ namespace Config
     constexpr int16_t BOARD_IBATA_OFFSET_MV = 0;  // @fixed
 #endif
 
+    // Провод управления видеопередатчиком (SmartAudio/Tramp — TX UART в
+    // полудуплексе) и ножки PINIO (режимы USER1…USER4: камера, 12 В…) — у
+    // полётников из Betaflight из заголовка платы, у остальных их нет.
+#if defined(BOARD_STM32F405)
+    constexpr int16_t BOARD_VTX_PIN = BOARD_UART_TX[OPB_UART_VTX];  // @fixed
+    constexpr int16_t BOARD_PINIO_PINS[4] = { OPB_PINIO_PINS };
+    constexpr uint8_t BOARD_PINIO_BOX[4] = { OPB_PINIO_BOX };
+    constexpr bool BOARD_PINIO_INVERTED[4] = { OPB_PINIO_INVERTED };
+#else
+    constexpr int16_t BOARD_VTX_PIN = -1;  // @fixed
+    constexpr int16_t BOARD_PINIO_PINS[4] = { -1, -1, -1, -1 };
+    constexpr uint8_t BOARD_PINIO_BOX[4] = { 255, 255, 255, 255 };
+    constexpr bool BOARD_PINIO_INVERTED[4] = { false, false, false, false };
+#endif
+
 
     // --------------------------------------------------------
     // Приёмник пульта

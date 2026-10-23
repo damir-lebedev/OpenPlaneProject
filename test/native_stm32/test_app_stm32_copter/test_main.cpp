@@ -560,6 +560,12 @@ void test_app_protocol_params_set_save()
     const auto modes = linesWith(log, "@modes ");
     TEST_ASSERT_EQUAL(1, static_cast<int>(modes.size()));
     TEST_ASSERT_TRUE(isJson(modes[0]));
+    TEST_ASSERT_TRUE(contains(modes[0], "[40,\"USER1\",true]"));
+    // каждая строка влезает в очередь USB CDC целиком (у H743 — 16 × 64 байта),
+    // иначе она не уйдёт никогда
+    for (const std::string& l : lines) TEST_ASSERT_TRUE_MESSAGE(l.size() < 1000, l.c_str());
+    TEST_ASSERT_TRUE(rcLine[0].size() < 1000);
+    TEST_ASSERT_TRUE(modes[0].size() < 1000);
 
     // set: в ОЗУ, ARM запрещён (MSP), пока не save
     host("set p_pitch 47");

@@ -6,6 +6,7 @@
 #include "copter/CopterController.h"
 #include "copter/Params.h"
 #include "copter/RcSetup.h"
+#include "copter/Vtx.h"
 #include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "telemetry/CopterLink.h"
@@ -74,6 +75,11 @@ public:
     {
         battery = monitor;
         link.setBattery(monitor);
+    }
+    void setVtx(const copter::VtxController* controller)
+    {
+        vtx = controller;
+        link.setVtx(controller);
     }
     void setLoopLoad(uint32_t avgUs, uint32_t maxUs, uint32_t hz)
     {
@@ -196,6 +202,20 @@ public:
                   rc.isSignalLost() ? "НЕТ" : "есть", rc.getProtocolName(), static_cast<unsigned long>(loopAvgUs),
                   static_cast<unsigned long>(loopMaxUs), periodUs);
         io.printf("Газ висения %.3f (расчёт %.3f), обороты %.0f Гц\n", s.hoverLearned, ctl.getTune().hoverThrust, s.rotationHz);
+        printVtxLine();
+    }
+
+    // CliPort: vtx_info — что ответил видеопередатчик и его мощности.
+    void printVtxInfo() override
+    {
+        printVtxLine();
+        if (!vtx || !vtx->state().online) return;
+        io.print("Мощности:");
+        for (uint8_t l = 1; l <= vtx->levelCount(); ++l)
+        {
+            io.printf(" %u=%u мВт%s", l, vtx->levelMw(l), l > vtx->topAllowedLevel() ? " (выше потолка)" : "");
+        }
+        io.println();
     }
 
     // CliPort: tasks — части полётного цикла, как в Betaflight.
@@ -268,6 +288,27 @@ private:
             case ' ': break;
             default: io.println("Неизвестная команда. h — список."); break;
         }
+    }
+
+    void printVtxLine()
+    {
+        if (!vtx) return;
+        const copter::VtxState& v = vtx->state();
+        if (!v.online)
+        {
+            io.println("VTX: не отвечает (провод управления, vtx_protocol)");
+            return;
+        }
+        uint8_t band = 0, channel = 0;
+        char where[24] = "";
+        if (copter::vtxBandChannel(v.frequencyMhz, band, channel))
+        {
+            snprintf(where, sizeof(where), "%c%u, ", copter::vtxBandLetters()[band - 1], channel);
+        }
+        io.printf("VTX: %s%s, %s%u МГц, %u мВт (уровень %u из %u, потолок %u)%s\n", copter::vtxProtocolName(v.protocol),
+                  v.protocol == copter::VtxProtocol::SMARTAUDIO ? (v.version == 21 ? " 2.1" : v.version == 2 ? " 2.0" : " 1.0") : "",
+                  where, v.frequencyMhz, v.powerMw, vtx->effectiveLevel(), vtx->levelCount(),
+                  vtx->levelMw(vtx->topAllowedLevel()), v.pit ? ", PIT" : "");
     }
 
     void collectHostCommand(char key, uint32_t nowMs)
@@ -445,6 +486,7 @@ private:
     CopterLink link;
     const copter::RxInput* rxInput = nullptr;
     const copter::BatteryMonitor* battery = nullptr;
+    const copter::VtxController* vtx = nullptr;
     const TaskStats* tasks = nullptr;
     void (*bootloaderHook)() = nullptr;
     void (*applyHook)() = nullptr;

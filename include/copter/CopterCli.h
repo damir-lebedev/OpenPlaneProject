@@ -23,6 +23,8 @@
 //   aux [№ режим канал от до логика связь] — режимы на тумблерах
 //   map [AETR1234]         — порядок каналов; rxrange [0-3 мин макс] — концы стиков
 //                            (copter/RcSetup.h)
+//   vtx [№ канал полоса канал_VTX мощность от до] — видеопередатчик с тумблера;
+//   vtx_info               — что ответил видеопередатчик, его таблица мощностей
 //   save                   — во флеш, настройка пересчитана, выход из CLI
 //   defaults [nosave]      — всё по умолчанию (и сохранить)
 //   status, tasks, version, help, exit (несохранённое отменяется)
@@ -47,6 +49,7 @@ namespace copter
         virtual void printStatus() {}       // команда status
         virtual void printTasks() {}        // команда tasks
         virtual void settingsApplied() {}   // после save / отмены: приёмник, выходы — заново
+        virtual void printVtxInfo() {}      // команда vtx_info
     };
 
     class CopterCli
@@ -153,6 +156,8 @@ namespace copter
             else if (is(cmd, "aux")) cmdAux(args);
             else if (is(cmd, "map")) cmdMap(args);
             else if (is(cmd, "rxrange")) cmdRxrange(args);
+            else if (is(cmd, "vtx")) cmdVtx(args);
+            else if (is(cmd, "vtx_info")) port.printVtxInfo();
             else if (is(cmd, "save")) cmdSave();
             else if (is(cmd, "defaults")) cmdDefaults(args);
             else if (is(cmd, "exit")) cmdExit();
@@ -192,6 +197,7 @@ namespace copter
             print("profile [0-3] · rateprofile [0-3] — профиль PID · расходов\r\n");
             print("aux [№ режим канал от до логика связь] — режимы на тумблерах (режимы: aux help)\r\n");
             print("map [AETR1234] · rxrange [0-3 мин макс] — порядок каналов · концы стиков\r\n");
+            print("vtx [№ канал полоса канал_VTX мощность от до] · vtx_info — видеопередатчик с тумблера · что он ответил\r\n");
             print("save — сохранить и пересчитать настройку · defaults [nosave] — всё по умолчанию\r\n");
             print("status · tasks · version · exit (несохранённое отменяется)\r\n");
         }
@@ -313,7 +319,36 @@ namespace copter
             for (uint8_t i = 0; i < RcConfig::STICKS; ++i) print("rxrange %u %u %u\r\n", i, rc.rangeLow(i), rc.rangeHigh(i));
         }
 
-        // diff/dump: map, aux, rxrange — как в BF, перед # master.
+        void cmdVtx(const char* args)
+        {
+            RcConfig& rc = params.rc();
+            char row[48];
+            if (*args == '\0')
+            {
+                bool any = false;
+                for (uint8_t i = 0; i < RcConfig::VTX_SLOTS; ++i)
+                {
+                    if (!rc.vtx(i).used()) continue;
+                    RcConfig::formatVtx(i, rc.vtx(i), row, sizeof(row));
+                    print("%s\r\n", row);
+                    any = true;
+                }
+                if (!any) print("# строк vtx нет: полоса, канал и мощность — из vtx_band, vtx_channel, vtx_power\r\n");
+                return;
+            }
+            char error[96];
+            if (!rc.parseVtx(args, VTX_BANDS, VtxController::MAX_LEVELS, error, sizeof(error)))
+            {
+                printError("%s", error);
+                return;
+            }
+            dirty = true;
+            const long slot = strtol(args, nullptr, 10);
+            RcConfig::formatVtx(static_cast<uint8_t>(slot), rc.vtx(static_cast<uint8_t>(slot)), row, sizeof(row));
+            print("%s\r\n", row);
+        }
+
+        // diff/dump: map, aux, rxrange, vtx — как в BF, перед # master.
         void dumpTables(bool onlyChanged)
         {
             const RcConfig& rc = params.rc();
@@ -340,6 +375,15 @@ namespace copter
                 if (!header) print("\r\n# rxrange\r\n");
                 header = true;
                 print("rxrange %u %u %u\r\n", i, rc.rangeLow(i), rc.rangeHigh(i));
+            }
+            header = false;
+            for (uint8_t i = 0; i < RcConfig::VTX_SLOTS; ++i)
+            {
+                if (onlyChanged && !rc.vtx(i).used()) continue;
+                if (!header) print("\r\n# vtx\r\n");
+                header = true;
+                RcConfig::formatVtx(i, rc.vtx(i), row, sizeof(row));
+                print("%s\r\n", row);
             }
         }
 

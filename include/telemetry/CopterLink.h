@@ -8,6 +8,7 @@
 #include "copter/CopterController.h"
 #include "copter/Params.h"
 #include "copter/RcSetup.h"
+#include "copter/Vtx.h"
 #include "hal/Platform.h"
 #include "rc/RcReceiver.h"
 #include "telemetry/FirmwareIdentity.h"
@@ -25,8 +26,8 @@
 //                       настройку (имя, тип, группа = вкладка, границы,
 //                       умолчание и откуда оно, единицы, описание,
 //                       значение, у профильных — все 4), "@rc {...}" (map,
-//                       rxrange, таблица aux и тумблеры прошивки) и
-//                       "@modes [...]" (режимы BF: номер, имя, действует ли);
+//                       rxrange, таблица aux и тумблеры прошивки, строки vtx) и
+//                       "@modes [[номер, "имя", действует], …]" (режимы BF);
 //   set имя значение  — "@set {...}": ok или ошибка, новое значение;
 //   profile N · rateprofile N — "@profile {...}" (сразу, на ходу);
 //   aux … · map … · rxrange … — как в CLI; ответ — "@rc {...}";
@@ -50,7 +51,10 @@ public:
     static constexpr uint32_t FRAME_PERIOD_MS = 100;
 #endif
     static constexpr uint32_t LIVE_HOLD_MS = 3000;
-    static constexpr size_t LINE_CAPACITY = 1024;
+    // Строка уходит в порт, только если влезает в его очередь целиком (USB CDC у
+    // STM32 — CDC_TRANSMIT_QUEUE_BUFFER_PACKET_NUMBER × 64 байта): строки ответа
+    // короче килобайта, буфер — с запасом.
+    static constexpr size_t LINE_CAPACITY = 1536;
     static constexpr uint8_t LINES_PER_UPDATE = 4;
 
     CopterLink(Stream& stream, copter::CopterController& controller, copter::CopterParams& paramsRef,
@@ -61,6 +65,7 @@ public:
 
     void setRxInput(const copter::RxInput* input) { rxInput = input; }
     void setBattery(const copter::BatteryMonitor* monitor) { battery = monitor; }
+    void setVtx(const copter::VtxController* controller) { vtx = controller; }
     void setOutputs(const copter::CopterOutputs& out) { outputs = out; }
     void setLoop(uint32_t avgUs, uint32_t hz)
     {
@@ -220,7 +225,17 @@ public:
         auxList(w, [&c](uint8_t i) -> const AuxRange& { return c.aux(i); });
         w.add(",\"fallback\":");
         auxList(w, [&c](uint8_t i) -> const AuxRange& { return c.fallbackAux()[i]; });
-        w.add(",\"usingFallback\":%s}\n", c.anyAux() ? "false" : "true");
+        w.add(",\"usingFallback\":%s,\"vtx\":[", c.anyAux() ? "false" : "true");
+        bool first = true;
+        for (uint8_t i = 0; i < RcConfig::VTX_SLOTS; ++i)
+        {
+            const VtxRange& v = c.vtx(i);
+            if (!v.used()) continue;
+            w.add("%s[%u,%u,%u,%u,%u,%u,%u]", first ? "" : ",", i, v.channel, v.band, v.vtxChannel, v.power, v.startUs,
+                  v.endUs);
+            first = false;
+        }
+        w.add("]}\n");
         return w.overflow ? 0 : w.length;
     }
 
@@ -233,9 +248,9 @@ public:
         w.add("@modes [");
         for (uint8_t i = 0; i < n; ++i)
         {
-            w.add("%s{\"id\":%u,\"name\":", i ? "," : "", boxes[i].id);
+            w.add("%s[%u,", i ? "," : "", boxes[i].id);
             w.str(boxes[i].name);
-            w.add(",\"works\":%s}", boxes[i].works ? "true" : "false");
+            w.add(",%s]", boxes[i].works ? "true" : "false");
         }
         w.add("]\n");
         return w.overflow ? 0 : w.length;
@@ -258,6 +273,12 @@ public:
         {
             w.add(",\"bat\":\"%s\",\"cell\":%.2f", copter::batteryStateName(battery->state()), battery->cellVolts());
             if (battery->hasCurrent()) w.add(",\"amps\":%.1f,\"mah\":%.0f", battery->amps(), battery->mahDrawn());
+        }
+        if (vtx)
+        {
+            const copter::VtxState& v = vtx->state();
+            w.add(",\"vtx\":{\"on\":%s,\"mhz\":%u,\"mw\":%u,\"pit\":%s,\"cap\":%u}", v.online ? "true" : "false",
+                  v.frequencyMhz, v.powerMw, v.pit ? "true" : "false", vtx->levelMw(vtx->topAllowedLevel()));
         }
         w.add(",\"motors\":[");
         for (uint8_t i = 0; i < outputs.count && i < MAX_MOTORS; ++i) w.add(i ? ",%.3f" : "%.3f", outputs.motor[i]);
@@ -543,6 +564,7 @@ private:
     RcReceiver& rc;
     const copter::RxInput* rxInput = nullptr;
     const copter::BatteryMonitor* battery = nullptr;
+    const copter::VtxController* vtx = nullptr;
     copter::CopterOutputs outputs;
     uint32_t loopAvgUs = 0, loopHz = 0;
     bool dirty = false;

@@ -9,6 +9,7 @@
 #include "copter/Battery.h"
 #include "copter/Presets.h"
 #include "copter/RcSetup.h"
+#include "copter/Vtx.h"
 #include "storage/KeyValueStore.h"
 
 // ============================================================
@@ -77,6 +78,7 @@ namespace copter
         MODES,
         COPTER,
         POWER,
+        VTX,
         OTHER,
     };
 
@@ -93,6 +95,7 @@ namespace copter
             case ParamGroup::MODES: return "modes";
             case ParamGroup::COPTER: return "copter";
             case ParamGroup::POWER: return "power";
+            case ParamGroup::VTX: return "vtx";
             case ParamGroup::OTHER: return "other";
         }
         return "other";
@@ -178,6 +181,13 @@ namespace copter
         PARAM_CURRENT_METER,
         PARAM_IBATA_SCALE,
         PARAM_IBATA_OFFSET,
+        PARAM_VTX_PROTOCOL,
+        PARAM_VTX_BAND,
+        PARAM_VTX_CHANNEL,
+        PARAM_VTX_FREQ,
+        PARAM_VTX_POWER,
+        PARAM_VTX_MAX_POWER_MW,
+        PARAM_VTX_LOW_POWER_DISARM,
         PARAM_COUNT
     };
 
@@ -205,13 +215,17 @@ namespace copter
         // порядок — как BatteryChemistry
         static const char* const CHEMISTRIES[] = { "LIPO", "LIHV", "LIION" };
         static const char* const CURRENT_METERS[] = { "NONE", "ADC" };
+        // порядок — как VtxProtocol
+        static const char* const VTX_PROTOCOLS[] = { "AUTO", "SMARTAUDIO", "TRAMP", "NONE" };
+        static const char* const LOW_POWER_DISARM[] = { "OFF", "ON", "UNTIL_FIRST_ARM" };
         uint8_t buildCount = 0;
         const char* const* builds = buildIds(buildCount);
         constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
                             kText = ParamType::STRING;
         constexpr ParamScope kMaster = ParamScope::MASTER, kPid = ParamScope::PID_PROFILE, kRate = ParamScope::RATE_PROFILE;
         constexpr ParamGroup kGroupPid = ParamGroup::PID, kGroupRates = ParamGroup::RATES, kGroupRx = ParamGroup::RECEIVER,
-                             kGroupCopter = ParamGroup::COPTER, kGroupPower = ParamGroup::POWER;
+                             kGroupCopter = ParamGroup::COPTER, kGroupPower = ParamGroup::POWER,
+                             kGroupVtx = ParamGroup::VTX;
         constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD,
                                kBattery = ParamDefault::BATTERY;
         static const ParamInfo table[] = {
@@ -280,6 +294,19 @@ namespace copter
               "датчик тока: мВ на ампер x10 (у BLS 100A — 100)" },
             { "ibata_offset", kInt, kMaster, kGroupPower, -32000, 32000, 0, kTable, "мВ", nullptr, 0,
               "датчик тока: напряжение при нуле ампер" },
+            { "vtx_protocol", kEnum, kMaster, kGroupVtx, 0, 3, 3, kTable, "", VTX_PROTOCOLS, 4,
+              "провод управления видеопередатчиком: AUTO — найти SmartAudio или Tramp" },
+            { "vtx_band", kInt, kMaster, kGroupVtx, 0, VTX_BANDS, 5, kTable, "", nullptr, 0,
+              "полоса: 1 A, 2 B, 3 E, 4 F, 5 R, 6 L, 7 X, 8 V, 9 G, 10 S; 0 — частота числом (vtx_freq)" },
+            { "vtx_channel", kInt, kMaster, kGroupVtx, 1, VTX_CHANNELS, 1, kTable, "", nullptr, 0, "канал полосы 1-8" },
+            { "vtx_freq", kInt, kMaster, kGroupVtx, 0, 6200, 0, kTable, "МГц", nullptr, 0,
+              "частота при vtx_band = 0 (0 — не трогать)" },
+            { "vtx_power", kInt, kMaster, kGroupVtx, 1, VtxController::MAX_LEVELS, 1, kTable, "", nullptr, 0,
+              "уровень мощности: 1 — самый слабый (таблица — от передатчика, vtx_info)" },
+            { "vtx_max_power_mw", kInt, kMaster, kGroupVtx, 0, 10000, 0, kTable, "мВт", nullptr, 0,
+              "потолок мощности: выше не уйдёт ни с тумблера, ни кнопкой на передатчике (0 — без потолка)" },
+            { "vtx_low_power_disarm", kEnum, kMaster, kGroupVtx, 0, 2, 0, kTable, "", LOW_POWER_DISARM, 3,
+              "без ARM — самый слабый уровень: ON — всегда, UNTIL_FIRST_ARM — до первого ARM" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;

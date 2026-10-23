@@ -19,6 +19,7 @@
 
 #define SERIAL_8N1 0x800001c
 #define SERIAL_8E2 0x800003e
+#define SERIAL_8N2 0x800003c
 
 class HardwareSerial;
 
@@ -68,6 +69,14 @@ public:
         if (number >= 0 && number < fake::UART_COUNT) fake::uarts().port[number] = this;
     }
 
+    // STM32duino: Uart(pin) — один провод, полудуплекс (SmartAudio, Tramp).
+    // Тест находит его по этому пину: fake::uartByRx(pin).
+    explicit HardwareSerial(uint32_t rxtxPin)
+        : number(-1), pinRx(rxtxPin), rx(static_cast<int8_t>(rxtxPin)), tx(static_cast<int8_t>(rxtxPin)), halfDuplex(true)
+    {
+        fake::uartsByRx()[rxtxPin] = this;
+    }
+
     // STM32duino: Uart(rx, tx) — периферию ядро находит по пинам.
     HardwareSerial(uint32_t rxPin, uint32_t txPin)
         : number(-1), pinRx(rxPin), rx(static_cast<int8_t>(rxPin)), tx(static_cast<int8_t>(txPin))
@@ -109,6 +118,11 @@ public:
 
     // STM32duino: инверсия RX — до begin().
     void setRxInvert() { rxInverted = true; }
+
+    // STM32duino, полудуплекс: дождаться отправки и снова слушать линию.
+    void enableHalfDuplexRx() { halfDuplexRxCalls++; }
+    bool isHalfDuplex() const { return halfDuplex; }
+    unsigned halfDuplexRxCount() const { return halfDuplexRxCalls; }
 
     // Как в Arduino core ESP32 2.x: скорость на ходу (выгрузка чёрного ящика).
     uint32_t baudRate() { return static_cast<uint32_t>(baudValue); }
@@ -228,6 +242,8 @@ private:
     bool started = false;
     bool rxInverted = false;
     unsigned beginCalls = 0;
+    bool halfDuplex = false;
+    unsigned halfDuplexRxCalls = 0;
     size_t txBufferSize = 0;
 
     void compactRx()

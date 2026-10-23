@@ -32,10 +32,12 @@
 #include "copter/Battery.h"
 #include "copter/CopterController.h"
 #include "copter/Params.h"
+#include "copter/Vtx.h"
 #include "hal/Rtos.h"
 #include "hal/stm32/Stm32Board.h"
 #include "hal/stm32/Stm32FlashStorage.h"
 #include "hal/stm32/Stm32MotorOutput.h"
+#include "hal/stm32/Stm32VtxPort.h"
 #include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/SensorSelection.h"
@@ -74,6 +76,11 @@ static bool configOk = false;
 static bool rebootRequired = false;
 static uint8_t outputsAtBoot = 0;   // выходов на моторы настроено при включении
 copter::BatteryMonitor battery;
+Stm32VtxPort vtxPort(Config::BOARD_VTX_PIN);
+copter::VtxController vtx(vtxPort);
+static copter::VtxProtocol vtxProtocol = copter::VtxProtocol::NONE;
+static bool everArmed = false;
+static uint8_t pinioLevels = 0;
 
 // Части цикла для `tasks` (TaskStats::add — по порядку).
 enum : uint8_t
@@ -105,6 +112,13 @@ static void applySettings()
     rcReceiver.setProtocol(static_cast<Config::RxProtocol>(static_cast<uint8_t>(copterParams.value(copter::PARAM_SERIALRX_PROVIDER))));
     copterBuild = copterParams.buildSpec();
     battery.configure(copterParams.batteryConfig());
+    const auto protocol = static_cast<copter::VtxProtocol>(static_cast<uint8_t>(copterParams.value(copter::PARAM_VTX_PROTOCOL)));
+    if (protocol != vtxProtocol || !vtxPort.isConnected())
+    {
+        vtxProtocol = vtxPort.isConnected() ? protocol : copter::VtxProtocol::NONE;
+        vtx.setProtocol(vtxProtocol);
+    }
+    vtx.setMaxPowerMw(static_cast<uint16_t>(copterParams.value(copter::PARAM_VTX_MAX_POWER_MW)));
     // другая рама — выходы на моторы настраиваются только при включении
     const uint8_t motorCount = copterController.getTune().frame.count;
     const bool reboot = outputsAtBoot && motorCount != outputsAtBoot;
@@ -114,6 +128,43 @@ static void applySettings()
                       outputsAtBoot);
     }
     rebootRequired = reboot;
+}
+
+// Видеопередатчику — что нужно сейчас: настройки vtx_*, строки `vtx` с
+// тумблера, режимы VTX PIT MODE / VTX CONTROL DISABLE, без ARM — слабее
+// (vtx_low_power_disarm). Потолок мощности держит сам VtxController.
+static copter::VtxRequest vtxRequest()
+{
+    using namespace copter;
+    VtxRequest r;
+    const VtxSelection sel = rxInput.vtxSelection();
+    r.band = sel.band ? sel.band : static_cast<uint8_t>(copterParams.value(PARAM_VTX_BAND));
+    r.channel = sel.channel ? sel.channel : static_cast<uint8_t>(copterParams.value(PARAM_VTX_CHANNEL));
+    r.frequencyMhz = r.band ? vtxFrequency(r.band, r.channel) : static_cast<uint16_t>(copterParams.value(PARAM_VTX_FREQ));
+    r.powerLevel = sel.power ? sel.power : static_cast<uint8_t>(copterParams.value(PARAM_VTX_POWER));
+    const uint8_t lowPower = static_cast<uint8_t>(copterParams.value(PARAM_VTX_LOW_POWER_DISARM));
+    if (!copterController.isArmed() && (lowPower == 1 || (lowPower == 2 && !everArmed))) r.powerLevel = 1;
+    r.pit = rxInput.isActive(BOX_VTX_PIT_MODE);
+    r.control = !rxInput.isActive(BOX_VTX_CONTROL_DISABLE);
+    return r;
+}
+
+// PINIO: ножка в «включено», пока включён её режим USER1…USER4 (с инверсией
+// платы, как pinio_config в Betaflight).
+static void updatePinio(bool force)
+{
+    for (uint8_t i = 0; i < 4; ++i)
+    {
+        const int16_t pin = Config::BOARD_PINIO_PINS[i];
+        if (pin < 0) continue;
+        const uint8_t box = Config::BOARD_PINIO_BOX[i];
+        const bool on = box < copter::BOX_COUNT && rxInput.isActive(box);
+        const bool level = on != Config::BOARD_PINIO_INVERTED[i];
+        if (!force && level == static_cast<bool>((pinioLevels >> i) & 1u)) continue;
+        if (force) pinMode(static_cast<uint32_t>(pin), OUTPUT);
+        digitalWrite(static_cast<uint32_t>(pin), level ? HIGH : LOW);
+        pinioLevels = static_cast<uint8_t>(level ? (pinioLevels | (1u << i)) : (pinioLevels & ~(1u << i)));
+    }
 }
 
 static uint32_t lap(uint8_t task, uint32_t sinceUs)
@@ -191,6 +242,10 @@ static void flightTask(void*)
         motors.write(out.motor, out.spinning);
         t = lap(TASK_MOTORS, t);
 
+        if (copterController.isArmed()) everArmed = true;
+        updatePinio(false);
+        vtx.request(vtxRequest());
+        vtx.update(millis());
         copterConsole.setOutputs(out);
         copterConsole.update(millis());
         lap(TASK_CONSOLE, t);
@@ -238,6 +293,8 @@ static void setupCopter(KeyValueStore& store)
     copterParams.setTableDefault(copter::PARAM_CURRENT_METER, Config::PIN_CURRENT_ADC >= 0 ? 1.0f : 0.0f);
     copterParams.setTableDefault(copter::PARAM_IBATA_SCALE, Config::BOARD_IBATA_SCALE);
     copterParams.setTableDefault(copter::PARAM_IBATA_OFFSET, Config::BOARD_IBATA_OFFSET_MV);
+    copterParams.setTableDefault(copter::PARAM_VTX_PROTOCOL, static_cast<float>(Config::BOARD_VTX_PIN >= 0 ? copter::VtxProtocol::AUTO
+                                                                                                        : copter::VtxProtocol::NONE));
     copter::AuxRange fallback[copter::RcConfig::AUX_SLOTS];
     copterParams.rc().setFallback(fallback, CopterConfig::defaultAux(fallback, copter::RcConfig::AUX_SLOTS));
     copterParams.begin(copterBuild, CopterConfig::LOOP_HZ, CopterConfig::ESC_PROTOCOL, CopterConfig::applyOverrides);
@@ -315,6 +372,7 @@ void setup()
 
     rcReceiver.begin();
     applySettings();   // протокол из настроек, карта каналов, режимы
+    updatePinio(true);
     char mapText[copter::RcConfig::MAPPABLE + 1];
     copterParams.rc().formatMap(mapText, sizeof(mapText));
     Serial.printf("Приёмник %s%s, каналы %s. Режимы на тумблерах (%s):", rcReceiver.getProtocolName(),
@@ -335,6 +393,7 @@ void setup()
     copterConsole.setApplyHook(applySettings);
     copterConsole.setRxInput(&rxInput);
     copterConsole.setBattery(&battery);
+    copterConsole.setVtx(&vtx);
     copterConsole.setTaskStats(&taskStats);
     copterConsole.printHint();
 

@@ -16,6 +16,9 @@
 #include <string.h>
 
 #include <string>
+#include <vector>
+
+#include "helpers/VtxEmulator.h"
 
 #include "copter/AltitudeHold.h"
 #include "copter/Battery.h"
@@ -32,6 +35,7 @@
 #include "copter/Propulsion.h"
 #include "copter/RateController.h"
 #include "copter/RcSetup.h"
+#include "copter/Vtx.h"
 
 using namespace copter;
 
@@ -1897,6 +1901,298 @@ void test_battery_chemistry_params()
     p.setTableDefault(PARAM_CURRENT_METER, 0);
 }
 
+// ---- видеопередатчик (copter/Vtx.h) ----
+
+namespace
+{
+    // Провод управления с передатчиком-эмулятором (helpers/VtxEmulator.h).
+    struct FakeVtx : public VtxPort
+    {
+        VtxEmulator dev;
+        bool echo = false;   // линия возвращает наши же байты (полудуплекс без отключения приёма)
+        uint32_t baud = 0;
+        bool twoStop = false;
+        std::vector<uint8_t> toFc;
+        size_t readPos = 0;
+
+        void open(uint32_t b, bool two) override
+        {
+            baud = b;
+            twoStop = two;
+        }
+
+        void send(const uint8_t* data, uint8_t n) override
+        {
+            if (echo) toFc.insert(toFc.end(), data, data + n);
+            const std::vector<uint8_t> r = dev.receive(data, n, baud, twoStop);
+            toFc.insert(toFc.end(), r.begin(), r.end());
+        }
+
+        int read() override { return readPos < toFc.size() ? toFc[readPos++] : -1; }
+    };
+
+    void spin(VtxController& c, uint32_t& now, uint32_t ms)
+    {
+        for (uint32_t t = 0; t < ms; t += 10)
+        {
+            now += 10;
+            c.update(now);
+        }
+    }
+}
+
+void test_vtx_band_table_is_this_transmitter()
+{
+    TEST_ASSERT_EQUAL_UINT16(5865, vtxFrequency(1, 1));   // A1
+    TEST_ASSERT_EQUAL_UINT16(5945, vtxFrequency(3, 8));   // E8
+    TEST_ASSERT_EQUAL_UINT16(5917, vtxFrequency(5, 8));   // R8
+    TEST_ASSERT_EQUAL_UINT16(5362, vtxFrequency(6, 1));   // L1 (у продавца D)
+    TEST_ASSERT_EQUAL_UINT16(4990, vtxFrequency(7, 1));   // X1
+    TEST_ASSERT_EQUAL_UINT16(6100, vtxFrequency(9, 8));   // G8
+    TEST_ASSERT_EQUAL_UINT16(5613, vtxFrequency(10, 8));  // S8
+    TEST_ASSERT_EQUAL_UINT16(0, vtxFrequency(11, 1));
+    TEST_ASSERT_EQUAL_UINT16(0, vtxFrequency(1, 9));
+    uint8_t band = 0, ch = 0;
+    TEST_ASSERT_TRUE(vtxBandChannel(5658, band, ch));
+    TEST_ASSERT_EQUAL_UINT8(5, band);
+    TEST_ASSERT_EQUAL_UINT8(1, ch);
+    TEST_ASSERT_FALSE(vtxBandChannel(5999, band, ch));
+    TEST_ASSERT_TRUE(vtxBandCommonGoggles(6));    // L — Cobra X принимает
+    TEST_ASSERT_FALSE(vtxBandCommonGoggles(7));   // X — нет
+    TEST_ASSERT_EQUAL_UINT16(4000, dbmToMw(36));
+    TEST_ASSERT_EQUAL_UINT16(25, dbmToMw(14));
+}
+
+void test_vtx_smartaudio_21_power_cap_and_pit()
+{
+    FakeVtx vtx;
+    VtxController c(vtx);
+    c.setProtocol(VtxProtocol::AUTO);
+    uint32_t now = 0;
+    spin(c, now, 300);
+    TEST_ASSERT_TRUE(c.state().online);
+    TEST_ASSERT_EQUAL(static_cast<int>(VtxProtocol::SMARTAUDIO), static_cast<int>(c.state().protocol));
+    TEST_ASSERT_EQUAL_UINT8(21, c.state().version);
+    TEST_ASSERT_EQUAL_UINT8(6, c.levelCount());            // таблица — от самого VTX
+    TEST_ASSERT_EQUAL_UINT16(4000, c.levelMw(6));
+    TEST_ASSERT_EQUAL_UINT16(400, c.levelMw(3));
+
+    // R1 и самый сильный уровень, но потолок «в городе» 400 мВт
+    VtxRequest r;
+    r.band = 5;
+    r.channel = 1;
+    r.frequencyMhz = vtxFrequency(5, 1);
+    r.powerLevel = 6;
+    c.setMaxPowerMw(400);
+    c.request(r);
+    spin(c, now, 2000);
+    TEST_ASSERT_EQUAL_UINT16(5658, vtx.dev.freq);
+    TEST_ASSERT_FALSE(vtx.dev.userFreq);                       // A–R — номером канала
+    TEST_ASSERT_EQUAL_UINT8(26, vtx.dev.dbm);                  // 400 мВт, не 4 Вт
+    TEST_ASSERT_EQUAL_UINT16(400, c.state().powerMw);
+    TEST_ASSERT_EQUAL_UINT8(3, c.effectiveLevel());
+
+    // кнопкой на передатчике подняли до 4 Вт — прошивка опускает обратно
+    vtx.dev.dbm = 36;
+    spin(c, now, 2500);
+    TEST_ASSERT_EQUAL_UINT8(26, vtx.dev.dbm);
+
+    // за городом — без потолка
+    c.setMaxPowerMw(0);
+    spin(c, now, 2000);
+    TEST_ASSERT_EQUAL_UINT8(36, vtx.dev.dbm);
+
+    // PIT и обратно
+    r.pit = true;
+    c.request(r);
+    spin(c, now, 2000);
+    TEST_ASSERT_TRUE(vtx.dev.pit);
+    TEST_ASSERT_TRUE(c.state().pit);
+    r.pit = false;
+    c.request(r);
+    spin(c, now, 2000);
+    TEST_ASSERT_FALSE(vtx.dev.pit);
+
+    // X-полоса (4.9 ГГц) — номера канала у SmartAudio для неё нет: частотой
+    r.band = 7;
+    r.channel = 3;
+    r.frequencyMhz = vtxFrequency(7, 3);
+    c.request(r);
+    spin(c, now, 2000);
+    TEST_ASSERT_EQUAL_UINT16(5050, vtx.dev.freq);
+    TEST_ASSERT_TRUE(vtx.dev.userFreq);
+    TEST_ASSERT_EQUAL_UINT16(5050, c.state().frequencyMhz);
+
+    // VTX CONTROL DISABLE — ничего не шлём
+    const int framesBefore = vtx.dev.frames;
+    r.control = false;
+    r.powerLevel = 1;
+    c.request(r);
+    spin(c, now, 3000);
+    TEST_ASSERT_EQUAL(framesBefore, vtx.dev.frames);
+    TEST_ASSERT_EQUAL_UINT8(36, vtx.dev.dbm);
+}
+
+void test_vtx_smartaudio_v1_and_echo_on_the_wire()
+{
+    FakeVtx vtx;
+    vtx.dev.saVersion = 1;
+    vtx.echo = true;
+    VtxController c(vtx);
+    c.setProtocol(VtxProtocol::SMARTAUDIO);
+    uint32_t now = 0;
+    spin(c, now, 300);
+    TEST_ASSERT_TRUE(c.state().online);
+    TEST_ASSERT_EQUAL_UINT8(1, c.state().version);
+    TEST_ASSERT_EQUAL_UINT8(4, c.levelCount());   // 25, 200, 500, 800
+    VtxRequest r;
+    r.band = 1;
+    r.channel = 4;
+    r.frequencyMhz = vtxFrequency(1, 4);
+    r.powerLevel = 3;
+    c.request(r);
+    spin(c, now, 3000);
+    TEST_ASSERT_EQUAL_UINT16(5805, vtx.dev.freq);
+    TEST_ASSERT_EQUAL_UINT8(2, vtx.dev.powerIndex);   // 500 мВт — значение 25 у v1
+    TEST_ASSERT_EQUAL_UINT16(500, c.state().powerMw);
+}
+
+void test_vtx_auto_finds_tramp_and_offline_without_vtx()
+{
+    FakeVtx vtx;
+    vtx.dev.kind = VtxEmulator::TRAMP;
+    vtx.dev.trampMax = 1600;
+    VtxController c(vtx);
+    c.setProtocol(VtxProtocol::AUTO);
+    uint32_t now = 0;
+    spin(c, now, 300);
+    TEST_ASSERT_FALSE(c.state().online);   // сначала пробует SmartAudio
+    spin(c, now, 1500);
+    TEST_ASSERT_TRUE(c.state().online);
+    TEST_ASSERT_EQUAL(static_cast<int>(VtxProtocol::TRAMP), static_cast<int>(c.state().protocol));
+    TEST_ASSERT_EQUAL_UINT8(8, c.levelCount());   // 25 … 1600: не выше, чем умеет
+    TEST_ASSERT_EQUAL_UINT16(1600, c.levelMw(8));
+    VtxRequest r;
+    r.band = 4;
+    r.channel = 2;
+    r.frequencyMhz = vtxFrequency(4, 2);
+    r.powerLevel = 8;
+    c.setMaxPowerMw(600);
+    c.request(r);
+    spin(c, now, 4000);
+    TEST_ASSERT_EQUAL_UINT16(5760, vtx.dev.freq);
+    TEST_ASSERT_EQUAL_UINT16(600, vtx.dev.trampMw);
+    TEST_ASSERT_EQUAL_UINT16(600, c.state().powerMw);
+    r.pit = true;
+    c.request(r);
+    spin(c, now, 3000);
+    TEST_ASSERT_TRUE(vtx.dev.pit);
+
+    // передатчика нет — не в сети, но и не виснет, пробует дальше
+    FakeVtx none;
+    none.dev.kind = VtxEmulator::ABSENT;
+    VtxController d(none);
+    d.setProtocol(VtxProtocol::AUTO);
+    spin(d, now, 5000);
+    TEST_ASSERT_FALSE(d.state().online);
+    TEST_ASSERT_EQUAL_UINT8(0, d.levelCount());
+    // NONE — порт не трогается
+    FakeVtx untouched;
+    VtxController e(untouched);
+    e.setProtocol(VtxProtocol::NONE);
+    spin(e, now, 1000);
+    TEST_ASSERT_EQUAL_UINT32(0, untouched.baud);
+}
+
+void test_vtx_ranges_from_switches()
+{
+    RcConfig c;
+    char err[96];
+    // мощность с трёхпозиционного AUX3: вверх 2, вниз 6; полоса R — с AUX4
+    TEST_ASSERT_TRUE(c.parseVtx("0 2 0 0 2 900 1300", 10, 12, err, sizeof(err)));
+    TEST_ASSERT_TRUE(c.parseVtx("1 2 0 0 6 1700 2100", 10, 12, err, sizeof(err)));
+    TEST_ASSERT_TRUE(c.parseVtx("2 3 5 3 0 1500 2100", 10, 12, err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseVtx("10 2 0 0 2 900 1300", 10, 12, err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseVtx("0 9 0 0 2 900 1300", 10, 12, err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseVtx("0 2 11 0 2 900 1300", 10, 12, err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseVtx("0 2 0 9 2 900 1300", 10, 12, err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseVtx("0 2 0 0 13 900 1300", 10, 12, err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseVtx("0 2 0 0 2 900", 10, 12, err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.isDefault());
+    char row[48];
+    RcConfig::formatVtx(1, c.vtx(1), row, sizeof(row));
+    TEST_ASSERT_EQUAL_STRING("vtx 1 2 0 0 6 1700 2100", row);
+
+    RxInput in;
+    in.configure(c, 885, 2115);
+    uint16_t ch[10] = { 1500, 1500, 1000, 1500, 1000, 1000, 1000, 1000, 1000, 1000 };
+    in.read(ch, 10, true);
+    VtxSelection sel = in.vtxSelection();
+    TEST_ASSERT_EQUAL_UINT8(2, sel.power);
+    TEST_ASSERT_EQUAL_UINT8(0, sel.band);
+    ch[6] = 2000;   // AUX3 вниз
+    ch[7] = 1800;   // AUX4 — полоса R, канал 3
+    in.read(ch, 10, true);
+    sel = in.vtxSelection();
+    TEST_ASSERT_EQUAL_UINT8(6, sel.power);
+    TEST_ASSERT_EQUAL_UINT8(5, sel.band);
+    TEST_ASSERT_EQUAL_UINT8(3, sel.channel);
+    ch[6] = 1500;   // середина — ни одна строка мощности
+    in.read(ch, 10, true);
+    TEST_ASSERT_EQUAL_UINT8(0, in.vtxSelection().power);
+
+    // во флеш и обратно; старая запись (без строк vtx) читается
+    uint8_t blob[RcConfig::STORE_MAX];
+    const size_t n = c.serialize(blob, sizeof(blob));
+    RcConfig d;
+    TEST_ASSERT_TRUE(d.deserialize(blob, n));
+    TEST_ASSERT_EQUAL_UINT8(6, d.vtx(1).power);
+    TEST_ASSERT_EQUAL_UINT16(1500, d.vtx(2).startUs);
+    TEST_ASSERT_TRUE(d.deserialize(blob, n - (1 + 3 * 7)));   // обрезано до таблицы aux
+    TEST_ASSERT_FALSE(d.anyVtx());
+
+    // USER1–USER4, VTX PIT MODE и VTX CONTROL DISABLE — действуют
+    TEST_ASSERT_TRUE(findBox(BOX_USER1)->works);
+    TEST_ASSERT_TRUE(findBox(BOX_USER4)->works);
+    TEST_ASSERT_TRUE(findBox(BOX_VTX_PIT_MODE)->works);
+    TEST_ASSERT_TRUE(findBox(BOX_VTX_CONTROL_DISABLE)->works);
+}
+
+void test_cli_vtx_and_params()
+{
+    CopterParams& p = five5Params();
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, p.value(PARAM_VTX_BAND));   // R1, самый слабый, без потолка
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, p.value(PARAM_VTX_CHANNEL));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, p.value(PARAM_VTX_POWER));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.value(PARAM_VTX_MAX_POWER_MW));
+    TEST_ASSERT_EQUAL_STRING("vtx", paramGroupName(paramInfo(PARAM_VTX_POWER).group));
+    Bench b;
+    b.ctl.configure(p.tune());
+    CliCapture port;
+    CopterCli cli(p, b.ctl, port);
+    TEST_ASSERT_TRUE(cli.enter());
+    port.take();
+    cli.execute("vtx");
+    TEST_ASSERT_TRUE(has(port.take(), "# строк vtx нет"));
+    cli.execute("vtx 0 2 0 0 6 1700 2100");
+    TEST_ASSERT_TRUE(has(port.take(), "vtx 0 2 0 0 6 1700 2100\r\n"));
+    cli.execute("vtx 0 2 0 0 99 1700 2100");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: полоса 0-10, канал 0-8, мощность 0-12"));
+    cli.execute("set vtx_max_power_mw = 400");
+    port.take();
+    cli.execute("diff");
+    const std::string out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "\r\n# vtx\r\nvtx 0 2 0 0 6 1700 2100\r\n\r\n# master\r\nset vtx_max_power_mw = 400\r\n"),
+                             out.c_str());
+    char err[96];
+    TEST_ASSERT_TRUE(p.parse(PARAM_VTX_PROTOCOL, 0, "smartaudio", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_VTX_PROTOCOL, 0, "msp", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_VTX_LOW_POWER_DISARM, 0, "until_first_arm", err, sizeof(err)));
+    cli.execute("defaults nosave");
+    TEST_ASSERT_FALSE(p.rc().anyVtx());
+    cli.execute("exit");
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -1957,5 +2253,11 @@ int main()
     RUN_TEST(test_battery_voltage_current_and_mah);
     RUN_TEST(test_battery_warning_critical_hysteresis_and_sag);
     RUN_TEST(test_battery_chemistry_params);
+    RUN_TEST(test_vtx_band_table_is_this_transmitter);
+    RUN_TEST(test_vtx_smartaudio_21_power_cap_and_pit);
+    RUN_TEST(test_vtx_smartaudio_v1_and_echo_on_the_wire);
+    RUN_TEST(test_vtx_auto_finds_tramp_and_offline_without_vtx);
+    RUN_TEST(test_vtx_ranges_from_switches);
+    RUN_TEST(test_cli_vtx_and_params);
     return UNITY_END();
 }

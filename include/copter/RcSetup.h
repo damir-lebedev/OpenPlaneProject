@@ -36,7 +36,13 @@
 // Приоритет полётных режимов: ALTHOLD, затем ANGLE, затем HORIZON,
 // иначе ACRO. FAILSAFE — как потеря связи; AIRMODE — airmode и при
 // выключенном в настройках; PREARM — есть в таблице: ARM только при
-// включённом PREARM.
+// включённом PREARM. USER1…USER4 — ножки PINIO платы (камера CAM1/CAM2,
+// питание 12 В видеопередатчика…); VTX PIT MODE и VTX CONTROL DISABLE —
+// видеопередатчику (copter/Vtx.h).
+//
+//   vtx № канал полоса канал_VTX мощность от до — как `vtx` в BF: пока AUX
+//       «канал» в [от, до), у видеопередатчика эта полоса, канал и уровень
+//       мощности (0 — не трогать). Так мощность — с тумблера или крутилки.
 //
 // Без Arduino — тестируется на ПК (test_copter).
 // ============================================================
@@ -62,9 +68,14 @@ namespace copter
         BOX_FLIP_OVER_AFTER_CRASH = 35,
         BOX_PREARM = 36,
         BOX_VTX_PIT_MODE = 39,
+        BOX_USER1 = 40,
+        BOX_USER2 = 41,
+        BOX_USER3 = 42,
+        BOX_USER4 = 43,
         BOX_PARALYZE = 45,
         BOX_GPS_RESCUE = 46,
         BOX_ACRO_TRAINER = 47,
+        BOX_VTX_CONTROL_DISABLE = 48,
         BOX_LAUNCH_CONTROL = 49,
         BOX_BEEPER_MUTE = 52,
         BOX_COUNT = 64,   // номера 0..63
@@ -87,6 +98,12 @@ namespace copter
             { BOX_AIRMODE, "AIR MODE", true },
             { BOX_FAILSAFE, "FAILSAFE", true },
             { BOX_PREARM, "PREARM", true },
+            { BOX_USER1, "USER1", true },
+            { BOX_USER2, "USER2", true },
+            { BOX_USER3, "USER3", true },
+            { BOX_USER4, "USER4", true },
+            { BOX_VTX_PIT_MODE, "VTX PIT MODE", true },
+            { BOX_VTX_CONTROL_DISABLE, "VTX CONTROL DISABLE", true },
             { BOX_ANTIGRAVITY, "ANTI GRAVITY", false },
             { BOX_MAG, "MAG", false },
             { BOX_HEADFREE, "HEADFREE", false },
@@ -95,7 +112,6 @@ namespace copter
             { BOX_TELEMETRY, "TELEMETRY", false },
             { BOX_BLACKBOX, "BLACKBOX", false },
             { BOX_FLIP_OVER_AFTER_CRASH, "FLIP OVER AFTER CRASH", false },
-            { BOX_VTX_PIT_MODE, "VTX PIT MODE", false },
             { BOX_PARALYZE, "PARALYZE", false },
             { BOX_GPS_RESCUE, "GPS RESCUE", false },
             { BOX_ACRO_TRAINER, "ACRO TRAINER", false },
@@ -140,10 +156,29 @@ namespace copter
         bool used() const { return endUs > startUs; }
     };
 
+    // Строка `vtx`: AUX в диапазоне — видеопередатчику полоса, канал, мощность.
+    struct VtxRange
+    {
+        uint8_t channel = 0;     // 0 — AUX1
+        uint8_t band = 0;        // 0 — не трогать
+        uint8_t vtxChannel = 0;  // 0 — не трогать
+        uint8_t power = 0;       // уровень, 0 — не трогать
+        uint16_t startUs = 900;
+        uint16_t endUs = 900;
+        bool used() const { return endUs > startUs; }
+    };
+
+    // Что строки `vtx` выбрали сейчас (0 — ничего).
+    struct VtxSelection
+    {
+        uint8_t band = 0, channel = 0, power = 0;
+    };
+
     class RcConfig
     {
     public:
         static constexpr uint8_t AUX_SLOTS = 20;
+        static constexpr uint8_t VTX_SLOTS = 10;
         static constexpr uint8_t MAPPABLE = 8;            // AERT1234
         static constexpr uint8_t STICKS = 4;
         static constexpr uint16_t AUX_MIN_US = 900, AUX_MAX_US = 2100, AUX_STEP_US = 25;
@@ -164,6 +199,7 @@ namespace copter
                 rangeMax[i] = 2000;
             }
             for (auto& a : table) a = AuxRange();
+            for (auto& v : vtxTable) v = VtxRange();
         }
 
         // Сколько каналов у приёмника: AUX — все после четырёх стиков.
@@ -357,11 +393,81 @@ namespace copter
             snprintf(out, size, "aux %u %u %u %u %u %u %u", slot, a.mode, a.channel, a.startUs, a.endUs, a.logic, a.linked);
         }
 
+        // ---- vtx ----
+
+        const VtxRange& vtx(uint8_t slot) const { return vtxTable[slot < VTX_SLOTS ? slot : 0]; }
+
+        bool anyVtx() const
+        {
+            for (const auto& v : vtxTable)
+            {
+                if (v.used()) return true;
+            }
+            return false;
+        }
+
+        // «№ канал полоса канал_VTX мощность от до» (как `vtx` в BF).
+        bool parseVtx(const char* args, uint8_t bands, uint8_t levels, char* error, size_t errorSize)
+        {
+            long v[7] = {};
+            int n = 0;
+            const char* p = args ? args : "";
+            while (n < 7)
+            {
+                while (*p == ' ' || *p == '\t') ++p;
+                if (!*p) break;
+                char* end = nullptr;
+                v[n] = strtol(p, &end, 10);
+                if (end == p) break;
+                p = end;
+                ++n;
+            }
+            while (*p == ' ' || *p == '\t') ++p;
+            if (n != 7 || *p)
+            {
+                snprintf(error, errorSize, "vtx № канал полоса канал_VTX мощность от до");
+                return false;
+            }
+            if (v[0] < 0 || v[0] >= VTX_SLOTS)
+            {
+                snprintf(error, errorSize, "№ строки 0-%u", VTX_SLOTS - 1);
+                return false;
+            }
+            if (v[1] < 0 || v[1] >= auxCount())
+            {
+                snprintf(error, errorSize, "канал 0-%u (AUX1-AUX%u)", auxCount() - 1, auxCount());
+                return false;
+            }
+            if (v[2] < 0 || v[2] > bands || v[3] < 0 || v[3] > 8 || v[4] < 0 || v[4] > levels)
+            {
+                snprintf(error, errorSize, "полоса 0-%u, канал 0-8, мощность 0-%u (0 — не трогать)", bands, levels);
+                return false;
+            }
+            if (v[5] < AUX_MIN_US || v[5] > AUX_MAX_US || v[6] < AUX_MIN_US || v[6] > AUX_MAX_US)
+            {
+                snprintf(error, errorSize, "от и до — %u..%u мкс", AUX_MIN_US, AUX_MAX_US);
+                return false;
+            }
+            VtxRange& r = vtxTable[v[0]];
+            r.channel = static_cast<uint8_t>(v[1]);
+            r.band = static_cast<uint8_t>(v[2]);
+            r.vtxChannel = static_cast<uint8_t>(v[3]);
+            r.power = static_cast<uint8_t>(v[4]);
+            r.startUs = toStep(v[5]);
+            r.endUs = toStep(v[6]);
+            return true;
+        }
+
+        static void formatVtx(uint8_t slot, const VtxRange& r, char* out, size_t size)
+        {
+            snprintf(out, size, "vtx %u %u %u %u %u %u %u", slot, r.channel, r.band, r.vtxChannel, r.power, r.startUs, r.endUs);
+        }
+
         // ---- флеш ----
 
         bool isDefault() const
         {
-            if (!mapIsDefault() || anyAux()) return false;
+            if (!mapIsDefault() || anyAux() || anyVtx()) return false;
             for (uint8_t i = 0; i < STICKS; ++i)
             {
                 if (!rangeIsDefault(i)) return false;
@@ -370,8 +476,10 @@ namespace copter
         }
 
         // [версия][map 8][rxrange 4×(мин, макс u16)][число строк][строки: №, режим,
-        // канал, от, до (шаги 25 мкс от 900), логика, связь].
-        static constexpr size_t STORE_MAX = 1 + MAPPABLE + STICKS * 4 + 1 + AUX_SLOTS * 7;
+        // канал, от, до (шаги 25 мкс от 900), логика, связь][число строк vtx][строки:
+        // №, канал, полоса, канал VTX, мощность, от, до (шаги)]. Строк vtx в старой
+        // записи нет — их просто не будет.
+        static constexpr size_t STORE_MAX = 1 + MAPPABLE + STICKS * 4 + 1 + AUX_SLOTS * 7 + 1 + VTX_SLOTS * 7;
 
         size_t serialize(uint8_t* out, size_t capacity) const
         {
@@ -403,6 +511,22 @@ namespace copter
                 ++count;
             }
             out[countAt] = count;
+            const size_t vtxCountAt = n++;
+            uint8_t vtxCount = 0;
+            for (uint8_t slot = 0; slot < VTX_SLOTS; ++slot)
+            {
+                const VtxRange& r = vtxTable[slot];
+                if (!r.used()) continue;
+                out[n++] = slot;
+                out[n++] = r.channel;
+                out[n++] = r.band;
+                out[n++] = r.vtxChannel;
+                out[n++] = r.power;
+                out[n++] = static_cast<uint8_t>((r.startUs - AUX_MIN_US) / AUX_STEP_US);
+                out[n++] = static_cast<uint8_t>((r.endUs - AUX_MIN_US) / AUX_STEP_US);
+                ++vtxCount;
+            }
+            out[vtxCountAt] = vtxCount;
             return n;
         }
 
@@ -442,6 +566,22 @@ namespace copter
                 a.logic = data[at + 5] ? 1 : 0;
                 a.linked = data[at + 6] < BOX_COUNT ? data[at + 6] : 0;
             }
+            if (at < length)
+            {
+                const uint8_t vtxCount = data[at++];
+                for (uint8_t k = 0; k < vtxCount && at + 7 <= length; ++k, at += 7)
+                {
+                    const uint8_t slot = data[at];
+                    if (slot >= VTX_SLOTS || data[at + 6] > (AUX_MAX_US - AUX_MIN_US) / AUX_STEP_US) continue;
+                    VtxRange& r = vtxTable[slot];
+                    r.channel = data[at + 1];
+                    r.band = data[at + 2];
+                    r.vtxChannel = data[at + 3];
+                    r.power = data[at + 4];
+                    r.startUs = static_cast<uint16_t>(AUX_MIN_US + data[at + 5] * AUX_STEP_US);
+                    r.endUs = static_cast<uint16_t>(AUX_MIN_US + data[at + 6] * AUX_STEP_US);
+                }
+            }
             return true;
         }
 
@@ -453,6 +593,7 @@ namespace copter
         uint16_t rangeMin[STICKS], rangeMax[STICKS];
         AuxRange table[AUX_SLOTS];
         AuxRange fallback[AUX_SLOTS];
+        VtxRange vtxTable[VTX_SLOTS];
         uint8_t channels = 10;
     };
 
@@ -521,6 +662,27 @@ namespace copter
         }
 
         bool isActive(uint8_t box) const { return box < BOX_COUNT && ((active >> box) & 1u); }
+
+        // Строки `vtx`, чей диапазон сейчас включён: что они задают (позже — главнее).
+        VtxSelection vtxSelection() const
+        {
+            VtxSelection sel;
+            const uint8_t auxN = cfg.auxCount() < MAX_CHANNELS - RcConfig::STICKS ? cfg.auxCount()
+                                                                                    : MAX_CHANNELS - RcConfig::STICKS;
+            for (uint8_t i = 0; i < RcConfig::VTX_SLOTS; ++i)
+            {
+                const VtxRange& r = cfg.vtx(i);
+                if (!r.used() || r.channel >= auxN) continue;
+                uint16_t us = aux[r.channel];
+                if (us < RcConfig::AUX_MIN_US) us = RcConfig::AUX_MIN_US;
+                if (us >= RcConfig::AUX_MAX_US) us = RcConfig::AUX_MAX_US - 1;
+                if (us < r.startUs || us >= r.endUs) continue;
+                if (r.band) sel.band = r.band;
+                if (r.vtxChannel) sel.channel = r.vtxChannel;
+                if (r.power) sel.power = r.power;
+            }
+            return sel;
+        }
         uint64_t activeModes() const { return active; }
         uint16_t auxUs(uint8_t n) const { return n < MAX_CHANNELS - RcConfig::STICKS ? aux[n] : 0; }
 
