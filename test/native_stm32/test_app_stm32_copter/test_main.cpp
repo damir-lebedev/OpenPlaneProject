@@ -582,10 +582,12 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE(contains(log, "@set {\"name\":\"nonsense\",\"ok\":false,\"error\":\"нет такой настройки\"}"));
     host("aux 0 0 0 1700 2100 0 0");
     host("map TAER");
+    host("vtx 0 2 0 0 1 900 1300");   // мощность — тумблером AUX3
     run(rc, 0.1);
     log = takeSerial();
     TEST_ASSERT_TRUE_MESSAGE(contains(log, "@rc {\"map\":\"TAER1234\""), log.c_str());
     TEST_ASSERT_TRUE(contains(log, "\"aux\":[[0,0,0,1700,2100,0,0]]"));
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "\"vtx\":[[0,2,0,0,1,900,1300]]"), log.c_str());
     host("revert");
     run(rc, 0.05);
     TEST_ASSERT_TRUE(contains(takeSerial(), "@revert {\"ok\":true}"));
@@ -608,6 +610,7 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_EQUAL_MESSAGE(1, static_cast<int>(id.size()), log.c_str());
     TEST_ASSERT_TRUE(isJson(id[0]));
     TEST_ASSERT_TRUE(contains(id[0], "\"vehicle\":\"copter\""));
+    TEST_ASSERT_TRUE(contains(id[0], "\"config\":\"\",\"plane\":\"\""));   // без Project.h — пусто
     const auto live = linesWith(log, "@live ");
     TEST_ASSERT_TRUE(live.size() >= 2);
     TEST_ASSERT_TRUE_MESSAGE(isJson(live[0]), live[0].c_str());

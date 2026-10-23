@@ -31,7 +31,7 @@
 //                       "@modes [[номер, "имя", действует], …]" (режимы BF);
 //   set имя значение  — "@set {...}": ok или ошибка, новое значение;
 //   profile N · rateprofile N — "@profile {...}" (сразу, на ходу);
-//   aux … · map … · rxrange … — как в CLI; ответ — "@rc {...}";
+//   aux … · map … · rxrange … · vtx … — как в CLI; ответ — "@rc {...}";
 //   save              — во флеш и в работу: "@save {...}";
 //   revert            — отменить несохранённое: "@revert {...}";
 //   live · live 0     — "@live {...}" 20 раз в секунду ещё 3 с / хватит.
@@ -115,7 +115,7 @@ public:
         }
         const bool changes = strcmp(cmd, "set") == 0 || strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0 ||
                              strcmp(cmd, "aux") == 0 || strcmp(cmd, "map") == 0 || strcmp(cmd, "rxrange") == 0 ||
-                             strcmp(cmd, "save") == 0 || strcmp(cmd, "revert") == 0;
+                             strcmp(cmd, "vtx") == 0 || strcmp(cmd, "save") == 0 || strcmp(cmd, "revert") == 0;
         if (!changes) return false;
         if (ctl.isArmed() || cli.active())
         {
@@ -414,6 +414,10 @@ private:
         {
             ok = c.setMap(args, error, sizeof(error));
         }
+        else if (strcmp(cmd, "vtx") == 0)
+        {
+            ok = c.parseVtx(args, VTX_BANDS, VtxController::MAX_LEVELS, error, sizeof(error));
+        }
         else
         {
             char* end = nullptr;
@@ -462,7 +466,7 @@ private:
 
     void sendId()
     {
-        char line[320];
+        char line[448];   // имя модели из Project.h — до ~100 букв кириллицы
         JsonWriter w(line, sizeof(line));
         w.add("@id {\"fw\":\"openplane\",\"proto\":%d,\"vehicle\":\"copter\",\"board\":", FirmwareIdentity::PROTOCOL_VERSION);
         w.str(OP_BOARD_ENV);
@@ -471,6 +475,11 @@ private:
         w.add(",\"build\":");
         const copter::BuildSpec b = params.buildSpec();
         w.str(b.id ? b.id : "");
+        // config и plane вшивает приложение при сборке (config/Project.h)
+        w.add(",\"config\":");
+        w.str(OP_CONFIG_HASH);
+        w.add(",\"plane\":");
+        w.str(OP_PLANE_NAME);
         w.add(",\"rx\":");
         w.str(rc.getProtocolName());
         w.add(",\"armed\":%s}\n", ctl.isArmed() ? "true" : "false");

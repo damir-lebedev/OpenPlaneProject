@@ -1016,9 +1016,37 @@ def project_header(project):
     return "\n".join(out) + "\n"
 
 
+def write_project_header(src, header, changed):
+    path = os.path.join(src.root, PROJECT_HEADER)
+    old = None
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            old = f.read()
+    if old != header:
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(header)
+        changed.append(PROJECT_HEADER)
+
+
+def apply_copter(src, manifest, config, write):
+    """Коптер настраивается в CLI на самой плате — в исходники пишется только паспорт (Project.h)."""
+    env = next((c for c in manifest["copters"]["envs"] if c["env"] == config.get("board")), None)
+    if env is None:
+        raise ConfigError("Плата: нет сборки коптера {} в platformio.ini".format(config.get("board")))
+    unknown = sorted(set(config) - {"vehicle", "board", "project", "build"})
+    if unknown:
+        raise ConfigError("Коптер: в конфигурации лишнее — {} (настройки коптера — в CLI на плате)".format(", ".join(unknown)))
+    changed = []
+    if write and "project" in config:
+        write_project_header(src, project_header(dict(config["project"], boardEnv=config["project"].get("boardEnv", env["env"]))), changed)
+    return {"board": env["env"], "changed": changed}
+
+
 def apply(src, config, write=True):
     """Записать конфигурацию. Ошибки — ConfigError со списком; ничего не пишется."""
     manifest = describe(src)
+    if config.get("vehicle") == "copter":
+        return apply_copter(src, manifest, config, write)
     errors = []
     env = next((b for b in manifest["boards"] if b["env"] == config.get("board")), None)
     if env is None:
@@ -1049,15 +1077,7 @@ def apply(src, config, write=True):
             if tf.changed():
                 tf.save()
         if header is not None:
-            path = os.path.join(src.root, PROJECT_HEADER)
-            old = None
-            if os.path.exists(path):
-                with open(path, encoding="utf-8") as f:
-                    old = f.read()
-            if old != header:
-                with open(path, "w", encoding="utf-8", newline="\n") as f:
-                    f.write(header)
-                changed.append(PROJECT_HEADER)
+            write_project_header(src, header, changed)
     return {"board": env["env"], "changed": changed}
 
 
@@ -1132,6 +1152,7 @@ def default_root():
 
 def main(argv=None):
     if hasattr(sys.stdout, "reconfigure"):
+        sys.stdin.reconfigure(encoding="utf-8")
         sys.stdout.reconfigure(encoding="utf-8")
         sys.stderr.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="Описание и настройка прошивки OpenPlane для OpenPlane Studio")

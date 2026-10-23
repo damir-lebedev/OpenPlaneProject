@@ -303,6 +303,23 @@ class OpconfigTest(unittest.TestCase):
         self.assertIn('#define OP_CONFIG_HASH "abc123"', header)
         self.assertNotIn(opconfig.PROJECT_HEADER, self.apply(cfg)["changed"])   # то же — не перезаписывает
 
+    def test_apply_copter_writes_only_project_header(self):
+        before = {rel: read(self.tmp, rel) for rel in opconfig.FILES.values()}
+        cfg = {"vehicle": "copter", "board": "getfun-f405v3-quad",
+               "project": {"plane": "Квадрик 7", "configHash": "c0ffee", "commit": "fac1a0a"}}
+        result = self.apply(cfg)
+        self.assertEqual("getfun-f405v3-quad", result["board"])
+        self.assertEqual([opconfig.PROJECT_HEADER], result["changed"])
+        header = read(self.tmp, opconfig.PROJECT_HEADER)
+        self.assertIn('#define OP_BOARD_ENV "getfun-f405v3-quad"', header)
+        self.assertIn('#define OP_CONFIG_HASH "c0ffee"', header)
+        for rel, text in before.items():
+            self.assertEqual(text, read(self.tmp, rel), rel)
+        with self.assertRaises(opconfig.ConfigError):   # самолётная плата — не коптер
+            self.apply(dict(cfg, board="stm32h743-devebox"))
+        with self.assertRaises(opconfig.ConfigError):   # настройки коптера — в CLI, не здесь
+            self.apply(dict(cfg, params={"RTH_ALTITUDE_M": 77.0}))
+
     def test_apply_keeps_crlf_line_endings(self):
         path = os.path.join(self.tmp, opconfig.FILES["config"])
         text = read(self.tmp, opconfig.FILES["config"]).replace("\r\n", "\n").replace("\n", "\r\n")
