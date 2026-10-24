@@ -474,7 +474,7 @@ namespace
         double maxRate = 0, sumErr = 0;
         int n = 0;
         const double t0 = h.sim.now();
-        for (int i = 0; h.sim.now() - t0 < 0.4; ++i)
+        while (h.sim.now() - t0 < 0.4)
         {
             h.step();
             const double w = h.sim.rates().x * 57.29578;
@@ -560,6 +560,174 @@ void test_bf_iterm_relax_on_sluggish_hexa()
             TEST_ASSERT_TRUE_MESSAGE(r.ok, line);
             TEST_ASSERT_TRUE_MESSAGE(r.overshoot <= 0.12, line);
         }
+    }
+}
+
+// ---------------- газ и TPA (PLAN_COPTER 016–020) ----------------
+
+namespace
+{
+    CopterTune fiveTune() { return deriveTune(five(), 1000.0f, EscProtocol::DSHOT600); }
+
+    // 5" взлетел на height и висит в ACRO на выученном газе висения.
+    void hoverInAcro(QuadHarness& h, double height)
+    {
+        TEST_ASSERT_TRUE(h.takeoffTo(height));
+        h.rc.mode = CopterMode::ACRO;
+        h.rc.throttle = h.ctl.getStatus().hoverLearned;
+        h.run(1.0);
+    }
+
+    // Рывок газом с висения до полного на 0.4 с: на сколько градусов ушёл
+    // наклон (тангаж или крен — куда сдвинут центр тяжести).
+    double punchPitchDip(const QuadPerturb& p, const CopterTune& t, uint32_t seed)
+    {
+        QuadHarness h(five(), p, seed);
+        h.useTune(t);
+        hoverInAcro(h, 5.0);
+        const double pitch0 = h.sim.pitchDeg(), roll0 = h.sim.rollDeg();
+        h.rc.throttle = 1.0f;
+        double dip = 0;
+        for (int i = 0; i < 400; ++i)
+        {
+            h.step();
+            dip = std::fmax(dip, std::fmax(std::fabs(h.sim.pitchDeg() - pitch0), std::fabs(h.sim.rollDeg() - roll0)));
+        }
+        return dip;
+    }
+
+    // Газ с висения +0.3: прирост вертикальной скорости через after секунд.
+    double climbAfterStep(const CopterTune& t, double after, double* tilt = nullptr)
+    {
+        QuadHarness h(five(), QuadPerturb(), 32);
+        h.useTune(t);
+        hoverInAcro(h, 5.0);
+        const double v0 = h.sim.climbRate();
+        h.rc.throttle = h.ctl.getStatus().hoverLearned + 0.3f;
+        h.stats.reset();
+        h.run(after);
+        if (tilt) *tilt = h.stats.maxTilt;
+        return h.sim.climbRate() - v0;
+    }
+}
+
+// 016–017: anti-gravity — рывок газом с висения до полного в ACRO: перекос
+// тяги (центр тяжести не в центре, моторы разные) растёт с газом, I должен
+// его догнать. Умолчание модели (80, 5 Гц) и BF (то же с P +50 % и
+// пределами суммы PID 500/400) против выключенной и прежней (I до ×4 по
+// газу через 15 Гц): на 5" как в описании нос клюёт меньше 1°, у «вялого»
+// и «резвого» — меньше 4° и втрое меньше, чем без anti-gravity.
+void test_anti_gravity_holds_the_nose_on_punch()
+{
+    CopterTune off = fiveTune();
+    off.pid.antiGravityI = 0.0f;
+    CopterTune old = fiveTune();
+    old.pid.antiGravityI = 3.0f;
+    old.pid.antiGravityHz = 15.0f;
+    CopterTune bf = fiveTune();
+    bf.pid.antiGravityP = 1.0f;
+    bf.pid.pidSumLimit = 0.5f;
+    bf.pid.pidSumLimitYaw = 0.4f;
+    const QuadPerturb phys[] = { QuadPerturb(), sluggish(), twitchy() };
+    const char* names[] = { "nominal", "sluggish", "twitchy" };
+    for (uint8_t k = 0; k < 3; ++k)
+    {
+        const double dOff = punchPitchDip(phys[k], off, 31);
+        const double dOld = punchPitchDip(phys[k], old, 31);
+        const double dModel = punchPitchDip(phys[k], fiveTune(), 31);
+        const double dBf = punchPitchDip(phys[k], bf, 31);
+        char line[160];
+        snprintf(line, sizeof(line), "anti-gravity punch 5\" %-8s: tilt off %.2f, old %.2f, model %.2f, BF %.2f deg", names[k], dOff,
+                 dOld, dModel, dBf);
+        TEST_MESSAGE(line);
+        const double limit = k == 0 ? 1.0 : 4.0;
+        TEST_ASSERT_TRUE_MESSAGE(dModel < limit && dBf < limit, line);
+        if (k > 0) TEST_ASSERT_TRUE_MESSAGE(dModel < dOff / 3.0 && dModel < dOld, line);
+    }
+}
+
+// 018: throttle_boost — газ с висения +0.3: через 50 мс коптер набирает
+// высоту быстрее, наклон тот же.
+void test_throttle_boost_speeds_up_climb()
+{
+    CopterTune bf = fiveTune();
+    bf.pid.throttleBoost = 0.5f;   // BF: 5
+    CopterTune strong = fiveTune();
+    strong.pid.throttleBoost = 1.0f;
+    double tiltOff = 0, tiltBf = 0, tiltStrong = 0;
+    const double vOff = climbAfterStep(fiveTune(), 0.05, &tiltOff);
+    const double vBf = climbAfterStep(bf, 0.05, &tiltBf);
+    const double vStrong = climbAfterStep(strong, 0.05, &tiltStrong);
+    char line[200];
+    snprintf(line, sizeof(line), "throttle_boost: climb rate after 50 ms off %.3f, 5 %.3f, 10 %.3f m/s; tilt %.2f / %.2f / %.2f deg",
+             vOff, vBf, vStrong, tiltOff, tiltBf, tiltStrong);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(vBf > vOff * 1.05 && vStrong > vBf, line);
+    TEST_ASSERT_TRUE_MESSAGE(tiltBf < 3.0 && tiltStrong < 3.0, line);
+}
+
+// 019: полный газ 1 с в ACRO — без раскачки во всех режимах TPA (PD и D —
+// кривая BF 65 % от 1350, MODEL — из модели) на PID из модели.
+void test_full_throttle_without_oscillation_in_every_tpa_mode()
+{
+    const TpaMode modes[] = { TpaMode::MODEL, TpaMode::PD, TpaMode::D };
+    const char* names[] = { "MODEL", "PD", "D" };
+    for (uint8_t m = 0; m < 3; ++m)
+    {
+        CopterTune t = fiveTune();
+        t.pid.tpaMode = modes[m];
+        QuadHarness h(five(), QuadPerturb(), 33);
+        h.useTune(t);
+        hoverInAcro(h, 5.0);
+        h.rc.throttle = 1.0f;
+        h.run(0.3);
+        h.stats.reset();
+        h.run(0.7);
+        const double rms = h.stats.rateRms() * 57.29578;
+        char line[160];
+        snprintf(line, sizeof(line), "TPA %-5s full throttle: rate rms %.2f dps, motor noise %.4f, tilt %.1f deg", names[m], rms,
+                 h.stats.motorNoiseRms(), h.stats.maxTilt);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(h.ctl.isArmed() && rms < 3.0 && h.stats.motorNoiseRms() < 0.15, line);
+    }
+}
+
+// 020: tpa_low_always — на нулевом газе (airmode, спуск) PD слабее на 20 %
+// (как в BF) или сильнее на 50 %: коптер крутится по стику и, отпустив
+// стик, не раскачивается.
+void test_tpa_low_on_zero_throttle_airmode()
+{
+    const float lowRates[] = { 0.0f, 0.2f, -0.5f };
+    for (float low : lowRates)
+    {
+        CopterTune t = fiveTune();
+        t.pid.tpaLowRate = low;
+        t.pid.tpaLowAlways = true;
+        QuadHarness h(five(), QuadPerturb(), 21);
+        h.useTune(t);
+        TEST_ASSERT_TRUE(h.takeoffTo(30.0));
+        h.rc.mode = CopterMode::ACRO;
+        h.rc.throttle = 0.0f;
+        h.run(0.3);
+        h.rc.roll = 0.5f;
+        const double target = h.tune.rates[0].apply(0.5f);
+        double maxRate = 0;
+        for (int i = 0; i < 300; ++i)
+        {
+            h.step();
+            maxRate = std::fmax(maxRate, h.sim.rates().x * 57.29578);
+        }
+        h.rc.roll = 0.0f;
+        h.run(0.1);
+        h.stats.reset();
+        h.run(0.3);
+        const double rms = h.stats.rateRms() * 57.29578;
+        char line[160];
+        snprintf(line, sizeof(line), "tpa_low_rate %+3.0f%% always, zero throttle: max rate %.0f of %.0f dps, then rate rms %.2f dps",
+                 low * 100.0f, maxRate, target, rms);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.1 * target, target, maxRate, line);
+        TEST_ASSERT_TRUE_MESSAGE(rms < 3.0, line);
     }
 }
 
@@ -681,6 +849,10 @@ int main()
     RUN_TEST(test_battery_sag_is_seen);
     RUN_TEST(test_d_max_keeps_hover_quiet);
     RUN_TEST(test_bf_iterm_relax_on_sluggish_hexa);
+    RUN_TEST(test_anti_gravity_holds_the_nose_on_punch);
+    RUN_TEST(test_throttle_boost_speeds_up_climb);
+    RUN_TEST(test_full_throttle_without_oscillation_in_every_tpa_mode);
+    RUN_TEST(test_tpa_low_on_zero_throttle_airmode);
     RUN_TEST(test_betaflight_defaults_on_our_loop);
     return UNITY_END();
 }

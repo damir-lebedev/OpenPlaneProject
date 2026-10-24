@@ -41,8 +41,10 @@
 //     управление снова у пилота;
 //   • авария: в ANGLE/ALT_HOLD наклон больше 90° дольше 0.7 с или не тот,
 //     что просит стик, больше 30° дольше 2 с (отказал мотор, лежит на
-//     боку); в любом режиме лежит вверх ногами 1 с — моторы стоп (а не
-//     молотят винтами по земле), повторный ARM — после выключения тумблера.
+//     боку); в любом режиме лежит вверх ногами 1 с или рысканье разошлось
+//     с уставкой больше чем на 200 °/с дольше 1.5 с (волчок на трёх
+//     моторах) — моторы стоп (а не молотят винтами по земле), повторный
+//     ARM — после выключения тумблера.
 // ============================================================
 
 namespace copter
@@ -110,7 +112,7 @@ namespace copter
             case ARM_BLOCK_MOVING: return "коптер качают — поставить на землю";
             case ARM_BLOCK_BATTERY: return "батарея разряжена";
             case ARM_BLOCK_MOTOR_TEST: return "идёт проверка моторов";
-            case ARM_BLOCK_CRASH: return "был переворот — выключить ARM";
+            case ARM_BLOCK_CRASH: return "была авария (переворот, потеря управления) — выключить ARM";
             case ARM_BLOCK_FAILSAFE_SWITCH: return "включён режим FAILSAFE (тумблер)";
             case ARM_BLOCK_NO_PREARM: return "PREARM не включён";
             case ARM_BLOCK_NO_ARM_SWITCH: return "ARM не назначен ни на один тумблер (aux)";
@@ -241,13 +243,10 @@ namespace copter
             axes[0].configure(t.roll, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[1].configure(t.pitch, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[2].configure(t.yaw, t.dtermLpfHz, t.yawLpfHz, t.iLimit, dt);
-            for (uint8_t a = 0; a < 3; ++a)
-            {
-                axes[a].setTpaMode(t.tpaMode);
-                axes[a].setExtras(t.pid, a);
-            }
+            for (uint8_t a = 0; a < 3; ++a) axes[a].setExtras(t.pid, a);
             for (int a = 0; a < 4; ++a) stickLpf[a].configure(s.rcSmoothingHz, dt);
-            throttleHpLpf.configure(15.0f, dt);
+            throttleHpLpf.configure(t.pid.antiGravityHz, dt);
+            throttleBoostLpf.configure(t.pid.throttleBoostHz, dt);
             for (auto& f : accelLpf) f.configure(20.0f, dt);
             motionLpf.configure(3.0f, dt);
             voltLpf.configure(2.0f, dt);
@@ -263,7 +262,8 @@ namespace copter
         }
 
         // Другой профиль PID и расходов — на ходу, и в полёте: интегралы,
-        // фильтры, ориентация, ARM не сбрасываются. Фильтры, TPA и всё
+        // фильтры, ориентация, ARM не сбрасываются. TPA, anti-gravity,
+        // throttle boost — тоже из профиля; фильтры гироскопа и D и всё
         // остальное берутся из configure().
         void applyProfile(const CopterTune& t)
         {
@@ -282,6 +282,8 @@ namespace copter
                 axes[a].setLimit(t.iLimit);
                 axes[a].setExtras(t.pid, a);
             }
+            throttleHpLpf.configure(t.pid.antiGravityHz, dt);
+            throttleBoostLpf.configure(t.pid.throttleBoostHz, dt);
         }
 
         // Внешние причины не армить (ARM_BLOCK_EXTERNAL_MASK): CLI, приложение,
@@ -401,8 +403,9 @@ namespace copter
             for (int a = 0; a < 3; ++a) status.setpoint[a] = sp[a];
 
             // ---- газ ----
-            float thrust;
+            float thrust;   // что просит пилот (или удержание высоты), доля тяги
             const float cosTilt = attitude.cosTilt();
+            const float stickSlow = throttleBoostLpf.apply(sticks[3]);
             if (mode == CopterMode::ALT_HOLD)
             {
                 float climb = 0.0f;
@@ -444,13 +447,33 @@ namespace copter
             }
             status.hoverLearned = hover;
 
-            // anti-gravity: рывок газом -> интеграл временно сильнее;
-            // iterm_windup: моторы разошлись (прошлый цикл) — слабее
-            const float thrHp = fabsf(thrust - throttleHpLpf.apply(thrust));
-            const float iBoost = (1.0f + fminf(3.0f, thrHp * 30.0f)) * itermWindupScale(lastMixSpread, tune.pid.itermWindup);
+            // anti-gravity: рывок газом -> интеграл (и P крена и тангажа)
+            // временно сильнее: перекос тяги (центр тяжести не в центре,
+            // моторы разные) растёт вместе с газом, и I успевает за ним.
+            // Скорость газа — газ минус его ФНЧ, в ходах за секунду: для ФНЧ
+            // anti_gravity_cutoff_hz это скорость, сглаженная на той же частоте.
+            // iterm_windup: моторы разошлись (прошлый цикл) — I слабее
+            const float thrRate = fabsf(thrust - throttleHpLpf.apply(thrust)) * 2.0f * PI_F * tune.pid.antiGravityHz;
+            const float ag = fminf(1.0f, thrRate / ANTI_GRAVITY_FULL_RATE);
+            const float iBoost = (1.0f + tune.pid.antiGravityI * ag) * itermWindupScale(lastMixSpread, tune.pid.itermWindup);
+            const float pBoost = 1.0f + ANTI_GRAVITY_P_SHARE * tune.pid.antiGravityP * ag;
+
+            // throttle_boost: быстрая часть газа со стика (рывок) усиливается —
+            // моторы догоняют стик раньше, плавный газ не меняется. Удержанию
+            // высоты — нет: у него свой контур, рассчитанный без добавки
+            float mixThrust = thrust;
+            if (mode != CopterMode::ALT_HOLD && tune.pid.throttleBoost > 0.0f)
+            {
+                mixThrust = fminf(1.0f, fmaxf(0.0f, thrust + tune.pid.throttleBoost * (sticks[3] - stickSlow)));
+            }
 
             // ---- контур угловой скорости ----
-            const float tpa = tune.tpaAt(lastMixThrottle);
+            // TPA — по газу смесителя (прошлый цикл). tpa_low: по умолчанию —
+            // только пока после ARM газ не поднимали выше точки (на земле,
+            // перед взлётом), с tpa_low_always — всегда
+            if (thrust >= tune.pid.tpaLowBreakpoint) tpaLowDone = true;
+            float tpa = tune.tpaAt(lastMixThrottle);
+            if (tune.pid.tpaLowAlways || !tpaLowDone) tpa *= tune.tpaLowAt(lastMixThrottle);
             const bool holdI = !status.airborne;
             if (tune.pid.itermRotation && !holdI)
             {
@@ -459,9 +482,9 @@ namespace copter
                 for (uint8_t a = 0; a < 3; ++a) axes[a].setIntegral(v[a]);
             }
             MixInput mi;
-            mi.throttle = thrust;
-            mi.roll = axes[0].update(sp[0], rates[0], tpa, iBoost, holdI, status.saturated);
-            mi.pitch = axes[1].update(sp[1], rates[1], tpa, iBoost, holdI, status.saturated);
+            mi.throttle = mixThrust;
+            mi.roll = axes[0].update(sp[0], rates[0], tpa, iBoost, holdI, status.saturated, pBoost);
+            mi.pitch = axes[1].update(sp[1], rates[1], tpa, iBoost, holdI, status.saturated, pBoost);
             mi.yaw = axes[2].update(sp[2], rates[2], 1.0f, iBoost, holdI, status.saturated);
             if (holdI)
             {
@@ -531,6 +554,8 @@ namespace copter
             for (auto& ax : axes) ax.reset();
             for (auto& f : stickLpf) f.reset();
             throttleHpLpf.reset();
+            throttleBoostLpf.reset();
+            tpaLowDone = false;
             status.airborne = false;
             status.saturated = false;
             lastMixThrottle = 0.0f;
@@ -539,6 +564,7 @@ namespace copter
             landingTimer = 0.0f;
             crashTimer = 0.0f;
             lostControlTimer = 0.0f;
+            yawLostTimer = 0.0f;
             levelErrorDeg = 0.0f;
             if (sens.baroOk) baroHome = sens.baroAltM;
             vertical.reset(sens.baroOk ? sens.baroAltM - baroHome : 0.0f);
@@ -663,7 +689,11 @@ namespace copter
             // наклон не тот, что просит стик, больше 30° и дольше 2 с — коптер
             // не управляется (отказал мотор, слетел винт, лежит в траве на боку)
             lostControlTimer = (levelMode && levelErrorDeg > 30.0f) ? lostControlTimer + dt : 0.0f;
-            if (lostControlTimer > 2.0f)
+            // рысканье не слушается: уставка и гироскоп разошлись больше чем на
+            // 200 °/с дольше 1.5 с (любой режим) — отказал мотор, и коптер
+            // волчком крутится на трёх: наклон он при этом может и держать
+            yawLostTimer = fabsf(status.setpoint[2] - status.rates[2]) > 200.0f ? yawLostTimer + dt : 0.0f;
+            if (lostControlTimer > 2.0f || yawLostTimer > 1.5f)
             {
                 status.crashed = true;
                 switchSeenOff = false;
@@ -771,7 +801,8 @@ namespace copter
         GyroFilter gyroFilter;
         RateAxis axes[3];
         Pt1 stickLpf[4];
-        Pt1 throttleHpLpf;
+        Pt1 throttleHpLpf;               // anti-gravity
+        Pt1 throttleBoostLpf;            // throttle_boost
         Pt1 voltLpf;
         Pt2 accelLpf[3];
         float accelG[3] = { 0.0f, 0.0f, 1.0f };   // после ФНЧ
@@ -787,6 +818,7 @@ namespace copter
         float rotEstimate = 0.0f;
         float lastMixThrottle = 0.0f;
         float lastMixSpread = 0.0f;      // разброс моторов прошлого цикла (iterm_windup)
+        bool tpaLowDone = false;         // газ после ARM был выше tpa_low_breakpoint
         float uptime = 0.0f;
         float motionTimer = 0.0f;
         float lostTimer = 0.0f;
@@ -795,6 +827,7 @@ namespace copter
         float landingTimer = 0.0f;
         float crashTimer = 0.0f;
         float lostControlTimer = 0.0f;
+        float yawLostTimer = 0.0f;
         float levelErrorDeg = 0.0f;
         float baroHome = 0.0f;
         bool switchSeenOff = false;

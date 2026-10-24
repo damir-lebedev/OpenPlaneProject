@@ -160,12 +160,20 @@ namespace copter
 
     constexpr uint8_t TPA_POINTS = 11;   // газ 0, 0.1 … 1.0
 
-    // Что ослабляет поправка по газу: P и D (наша модель) или только D (как в BF 4.5).
+    // tpa_mode: PD и D — кривая BF (до tpa_breakpoint 1, дальше линейно до
+    // 1 − tpa_rate на полном газе) на P и D или только на D; MODEL — таблица
+    // из модели винтомоторной группы на P и D (наша).
     enum class TpaMode : uint8_t
     {
         PD,
         D,
+        MODEL,
     };
+
+    // anti-gravity: полный разгон — газ меняется со скоростью ~9.4 хода в
+    // секунду (весь ход за 0.1 с); P растёт на эту долю anti_gravity_p_gain.
+    constexpr float ANTI_GRAVITY_FULL_RATE = 3.0f * PI_F;
+    constexpr float ANTI_GRAVITY_P_SHARE = 0.5f;
 
     // iterm_relax: на каких осях интеграл придерживается при резком движении
     // уставки; *_INC — только пока интеграл растёт (уменьшаться может всегда).
@@ -188,8 +196,12 @@ namespace copter
     };
 
     // Тонкости PID, как в Betaflight (настройки PID-профиля, Params.h):
-    // D, растущий на резком движении, I-relax, поворот интеграла и windup.
-    // Здесь — умолчания модели: всё как было до этих настроек.
+    // D, растущий на резком движении, I-relax, поворот интеграла и windup,
+    // пределы суммы, anti-gravity, throttle boost, поправка по газу (TPA).
+    // Здесь — умолчания модели: всё как было до этих настроек, кроме
+    // anti-gravity — она как в BF 4.3+ (80, 5 Гц), но без добавки к P: прежняя
+    // (I до ×4 по газу через ФНЧ 15 Гц) на рывке газом с висения до полного
+    // у 5" с центром тяжести не в центре давала клевок 7–16° против 2–3.5°.
     struct PidExtras
     {
         float dMax[3] = {};               // D на резком движении (наш коэффициент); не больше D — D постоянный
@@ -201,6 +213,19 @@ namespace copter
         bool relaxError = true;           // наш: большая ошибка разгона (флип) не копится
         bool itermRotation = false;       // интеграл поворачивается вместе с рамой
         float itermWindup = 1.0f;         // разброс моторов (доля хода), выше которого I копится слабее; 1 — выкл
+        float pidSumLimit = 1.0f;         // предел суммы PID крена и тангажа (доля смесителя)
+        float pidSumLimitYaw = 1.0f;      // то же рысканья
+        float antiGravityI = 8.0f;        // на полном рывке газа I сильнее в 1 + столько раз
+        float antiGravityP = 0.0f;        // P крена и тангажа: + ANTI_GRAVITY_P_SHARE × столько на полном рывке
+        float antiGravityHz = 5.0f;       // ФНЧ скорости газа для anti-gravity
+        float throttleBoost = 0.0f;       // быстрая часть газа (рывок) усиливается в 1 + столько раз
+        float throttleBoostHz = 15.0f;    // быстрая часть — газ минус его ФНЧ на этой частоте
+        TpaMode tpaMode = TpaMode::MODEL;
+        float tpaRate = 0.65f;            // PD, D: на полном газе PD (D) слабее на эту долю
+        float tpaBreakpoint = 0.35f;      // газ, выше которого кривая BF начинает ослаблять
+        float tpaLowRate = 0.0f;          // на нуле газа PD (D) слабее на эту долю (< 0 — сильнее)
+        float tpaLowBreakpoint = 0.05f;   // газ, ниже которого работает tpaLowRate
+        bool tpaLowAlways = false;        // false — только до первого подъёма газа выше tpaLowBreakpoint после ARM
     };
 
     struct CopterTune
@@ -213,7 +238,6 @@ namespace copter
 
         AxisGains roll, pitch, yaw;
         bool gainsFromModel = true;     // false — PID заданы руками: запасы ниже посчитаны не для них
-        TpaMode tpaMode = TpaMode::PD;
         float iLimit = 0.3f;            // доля смесителя
         PidExtras pid;
         float gyroLpfHz = 0, dtermLpfHz = 0, yawLpfHz = 0;
@@ -225,7 +249,7 @@ namespace copter
         float idle = 0.055f;            // холостые: доля команды регулятору
         float thrustLinear = 0.25f;
         float hoverThrust = 0.4f;       // доля тяги (выход смесителя) на висении
-        float tpa[TPA_POINTS] = {};
+        float tpa[TPA_POINTS] = {};     // поправка PD по газу из модели (tpa_mode = MODEL)
 
         // для понимания и проверок
         float thrustToWeight = 0, motorTauS = 0, escDelayS = 0;
@@ -249,13 +273,29 @@ namespace copter
             return prop.steadyOmega(motorCommand(thrustShare), v) / (2.0f * PI_F);
         }
 
+        // Поправка PD по газу (tpa_mode). Малый газ (tpa_low) — отдельно:
+        // работает ли она, решает контроллер (был ли газ выше точки после ARM).
         float tpaAt(float throttle) const
         {
-            const float x = fminf(1.0f, fmaxf(0.0f, throttle)) * (TPA_POINTS - 1);
+            const float g = fminf(1.0f, fmaxf(0.0f, throttle));
+            if (pid.tpaMode != TpaMode::MODEL)
+            {
+                const float bp = pid.tpaBreakpoint;
+                return g <= bp || bp >= 1.0f ? 1.0f : 1.0f - pid.tpaRate * (g - bp) / (1.0f - bp);
+            }
+            const float x = g * (TPA_POINTS - 1);
             const uint8_t i = static_cast<uint8_t>(x);
             if (i >= TPA_POINTS - 1) return tpa[TPA_POINTS - 1];
             const float f = x - i;
             return tpa[i] * (1.0f - f) + tpa[i + 1] * f;
+        }
+
+        // tpa_low: ниже точки — от 1 у точки до 1 − tpa_low_rate на нуле газа.
+        float tpaLowAt(float throttle) const
+        {
+            const float bp = pid.tpaLowBreakpoint;
+            if (pid.tpaLowRate == 0.0f || bp <= 0.0f || throttle >= bp) return 1.0f;
+            return 1.0f - pid.tpaLowRate * (1.0f - fmaxf(0.0f, throttle) / bp);
         }
     };
 
@@ -650,6 +690,18 @@ namespace copter
         constexpr uint8_t DEFAULT_D_MIN[3] = { 30, 34, 0 };
         constexpr uint8_t DEFAULT_ITERM_RELAX_CUTOFF = 15, DEFAULT_ITERM_WINDUP = 85;
         constexpr uint16_t DEFAULT_ITERM_LIMIT = 400;
+        // pidsum_limit 500, pidsum_limit_yaw 400; anti_gravity_gain 80,
+        // cutoff 5 Гц, p_gain 100; throttle_boost 5, cutoff 15 Гц;
+        // TPA: D, 65 % от 1350; tpa_low 20 % ниже 1050, только до взлёта
+        constexpr uint16_t DEFAULT_PIDSUM_LIMIT = 500, DEFAULT_PIDSUM_LIMIT_YAW = 400;
+        constexpr uint8_t DEFAULT_ANTI_GRAVITY_GAIN = 80, DEFAULT_ANTI_GRAVITY_CUTOFF = 5, DEFAULT_ANTI_GRAVITY_P_GAIN = 100;
+        constexpr uint8_t DEFAULT_THROTTLE_BOOST = 5, DEFAULT_THROTTLE_BOOST_CUTOFF = 15;
+        constexpr uint8_t DEFAULT_TPA_RATE = 65, DEFAULT_TPA_LOW_RATE = 20;
+        constexpr uint16_t DEFAULT_TPA_BREAKPOINT = 1350, DEFAULT_TPA_LOW_BREAKPOINT = 1050;
+
+        // Газ в мкс (1000–2000) -> доля 0..1 и обратно.
+        inline float throttleFromUs(float us) { return fminf(1.0f, fmaxf(0.0f, (us - 1000.0f) / 1000.0f)); }
+        inline float usFromThrottle(float g) { return 1000.0f + 1000.0f * g; }
     }
 
     inline float pidTermScale(PidTerm term, uint8_t axis)
@@ -701,30 +753,39 @@ namespace copter
     //     60 Гц: то же запаздывание у полосы контура (~19° на 20 Гц) и то же
     //     ослабление шума на 200 Гц (~0.28);
     //   • рысканье: yaw_lowpass_hz 100; TPA только на D, 65 % от газа 1350
-    //     (35 % хода) до полного; iterm_limit 400; ANGLE: angle_p_gain 50
-    //     (5 °/с на градус), angle_limit 60°;
+    //     (35 % хода) до полного, на малом газе −20 % ниже 1050 до взлёта;
+    //     iterm_limit 400; ANGLE: angle_p_gain 50 (5 °/с на градус),
+    //     angle_limit 60°;
     //   • D 30/34 в покое и до 40/46 на резком движении (d_min), I-relax RP
-    //     15 Гц, iterm_windup 85 %. PID и D в покое (d_min) — из реестра
-    //     настроек (Params.h), там же их дефолты BF.
+    //     15 Гц, iterm_windup 85 %, сумма PID ±0.5 (рысканье ±0.4),
+    //     anti-gravity 80/5 Гц/100, throttle_boost 5. PID и D в покое
+    //     (d_min) — из реестра настроек (Params.h), там же их дефолты BF.
     // Режекторы по оборотам остаются наши (у BF на их месте RPM-фильтр по
     // телеметрии DShot и динамический режектор по спектру).
     inline void applyBetaflightBase(CopterTune& t)
     {
+        namespace bf = betaflight;
         t.gyroLpfHz = fminf(0.4f * t.loopHz, 250.0f);
         t.dtermLpfHz = fminf(0.3f * t.loopHz, 60.0f);
         t.yawLpfHz = 100.0f;
-        t.tpaMode = TpaMode::D;
-        const float breakpoint = 0.35f, rate = 0.65f;
-        for (uint8_t i = 0; i < TPA_POINTS; ++i)
-        {
-            const float x = i / float(TPA_POINTS - 1);
-            t.tpa[i] = x <= breakpoint ? 1.0f : 1.0f - rate * (x - breakpoint) / (1.0f - breakpoint);
-        }
-        t.iLimit = betaflight::DEFAULT_ITERM_LIMIT / betaflight::MIXER_SCALING;
+        t.iLimit = bf::DEFAULT_ITERM_LIMIT / bf::MIXER_SCALING;
         t.pid.relax = ItermRelax::RP;
         t.pid.relaxType = ItermRelaxType::SETPOINT;
-        t.pid.relaxCutoffHz = betaflight::DEFAULT_ITERM_RELAX_CUTOFF;
-        t.pid.itermWindup = betaflight::DEFAULT_ITERM_WINDUP / 100.0f;
+        t.pid.relaxCutoffHz = bf::DEFAULT_ITERM_RELAX_CUTOFF;
+        t.pid.itermWindup = bf::DEFAULT_ITERM_WINDUP / 100.0f;
+        t.pid.pidSumLimit = bf::DEFAULT_PIDSUM_LIMIT / bf::MIXER_SCALING;
+        t.pid.pidSumLimitYaw = bf::DEFAULT_PIDSUM_LIMIT_YAW / bf::MIXER_SCALING;
+        t.pid.antiGravityI = bf::DEFAULT_ANTI_GRAVITY_GAIN / 10.0f;
+        t.pid.antiGravityHz = bf::DEFAULT_ANTI_GRAVITY_CUTOFF;
+        t.pid.antiGravityP = bf::DEFAULT_ANTI_GRAVITY_P_GAIN / 100.0f;
+        t.pid.throttleBoost = bf::DEFAULT_THROTTLE_BOOST / 10.0f;
+        t.pid.throttleBoostHz = bf::DEFAULT_THROTTLE_BOOST_CUTOFF;
+        t.pid.tpaMode = TpaMode::D;
+        t.pid.tpaRate = bf::DEFAULT_TPA_RATE / 100.0f;
+        t.pid.tpaBreakpoint = bf::throttleFromUs(bf::DEFAULT_TPA_BREAKPOINT);
+        t.pid.tpaLowRate = bf::DEFAULT_TPA_LOW_RATE / 100.0f;
+        t.pid.tpaLowBreakpoint = bf::throttleFromUs(bf::DEFAULT_TPA_LOW_BREAKPOINT);
+        t.pid.tpaLowAlways = false;
         t.levelGain = 5.0f;
         t.maxAngleDeg = 60.0f;
         t.gainsFromModel = false;

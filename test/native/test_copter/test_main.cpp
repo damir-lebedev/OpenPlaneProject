@@ -510,14 +510,36 @@ void test_rate_axis_integral_holds_on_ground_and_in_saturation()
 }
 
 // I-relax: большая ошибка разгона (флип) не копится — нет «отскока».
+// Наш relax по ошибке: коптер догоняет новую уставку (флип) — большая
+// ошибка разгона в I не копится; та же ошибка без движения уставки (сбило,
+// перекос тяги на рывке газом) — копится как есть.
 void test_rate_axis_relaxes_integral_on_large_error()
 {
-    RateAxis a = makeAxis(0.0f, 0.1f, 0.0f, 0.0f);
-    for (int i = 0; i < 1000; ++i) a.update(500.0f, 0.0f, 1.0f, 1.0f, false, false);
-    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, a.lastTerms().i);
-    RateAxis b = makeAxis(0.0f, 0.1f, 0.0f, 0.0f);
-    for (int i = 0; i < 1000; ++i) b.update(50.0f, 0.0f, 1.0f, 1.0f, false, false);
-    TEST_ASSERT_TRUE(b.lastTerms().i > 0.0f && b.lastTerms().i < 0.1f * 50.0f * 1.0f);
+    PidExtras x;
+    x.relax = ItermRelax::OFF;   // только relax по ошибке
+    const auto flip = [&x](bool relaxError) {
+        x.relaxError = relaxError;
+        RateAxis a = makeAxis(0.0f, 0.01f, 0.0f, 0.0f);
+        a.setExtras(x, 0);
+        a.update(0.0f, 0.0f, 1.0f, 1.0f, false, false);
+        float w = 0.0f;
+        for (int i = 0; i < 300; ++i)
+        {
+            w += (500.0f - w) * 0.025f;   // коптер выходит на 500 °/с с постоянной 40 мс
+            a.update(500.0f, w, 1.0f, 1.0f, false, false);
+        }
+        return a.integral();
+    };
+    const float relaxed = flip(true), plain = flip(false);
+    TEST_ASSERT_TRUE(plain > 0.15f);           // ∫ошибки ≈ 20 (°/с)·с
+    TEST_ASSERT_TRUE(relaxed < 0.15f * plain);
+
+    // уставка стоит, коптер сбило на 100 °/с — копится сразу и целиком
+    x.relaxError = true;
+    RateAxis b = makeAxis(0.0f, 0.01f, 0.0f, 0.0f);
+    b.setExtras(x, 0);
+    for (int i = 0; i < 100; ++i) b.update(0.0f, -100.0f, 1.0f, 1.0f, false, false);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.01f * 100.0f * 0.1f, b.integral());
 }
 
 namespace
@@ -1404,7 +1426,7 @@ void test_betaflight_source_takes_bf_45_defaults()
     TEST_ASSERT_EQUAL_FLOAT(0.85f, t.pid.itermWindup);
     TEST_ASSERT_EQUAL_FLOAT(400.0f, p.defaultValue(PARAM_ITERM_LIMIT));
     TEST_ASSERT_FALSE(t.gainsFromModel);
-    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::D), static_cast<int>(t.tpaMode));
+    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::D), static_cast<int>(t.pid.tpaMode));
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, t.tpaAt(0.3f));
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.35f, t.tpaAt(1.0f));
     TEST_ASSERT_EQUAL_FLOAT(250.0f, t.gyroLpfHz);
@@ -1430,7 +1452,7 @@ void test_betaflight_source_takes_bf_45_defaults()
     // обратно на модель
     TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "MODEL", err, sizeof(err)));
     TEST_ASSERT_EQUAL_FLOAT(p.modelTune().roll.d, p.tune().roll.d);
-    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::PD), static_cast<int>(p.tune().tpaMode));
+    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::MODEL), static_cast<int>(p.tune().pid.tpaMode));
 }
 
 // 005: профили независимы, переключаются на ходу — и в полёте.
@@ -1466,6 +1488,311 @@ void test_profiles_are_independent_and_switch_on_the_fly()
     // профиль 0 не тронут
     TEST_ASSERT_TRUE(p.selectPidProfile(0));
     TEST_ASSERT_EQUAL_FLOAT(t0.roll.p, p.tune().roll.p);
+}
+
+// ---------------- газ: пределы суммы, anti-gravity, throttle boost, TPA (016–020) ----------------
+
+namespace
+{
+    // 5" из модели с заданными тонкостями PID-профиля.
+    CopterTune fiveWith(const PidExtras& x)
+    {
+        CopterTune t = deriveTune(*findBuild("freestyle5"), 1000.0f, EscProtocol::DSHOT600);
+        t.pid = x;
+        return t;
+    }
+
+    // ACRO, ARM, газ throttle 1 с — в воздухе.
+    void armInAcro(Bench& b, float throttle)
+    {
+        b.rc.mode = CopterMode::ACRO;
+        TEST_ASSERT_TRUE(b.armAfterBoot());
+        b.rc.throttle = throttle;
+        b.run(1.0f);
+        TEST_ASSERT_TRUE(b.ctl.getStatus().airborne);
+    }
+
+    float motorAverage(const CopterOutputs& out)
+    {
+        float s = 0.0f;
+        for (uint8_t i = 0; i < out.count; ++i) s += out.motor[i];
+        return out.count ? s / out.count : 0.0f;
+    }
+
+    // Без TPA (кривая BF с точкой на полном газе): P — только ошибка и множители.
+    PidExtras flatTpa()
+    {
+        PidExtras x;
+        x.tpaMode = TpaMode::PD;
+        x.tpaBreakpoint = 1.0f;
+        return x;
+    }
+}
+
+// 016: предел суммы PID — свой у крена и тангажа и у рысканья; в пределе I не копится.
+void test_pidsum_limit_per_axis()
+{
+    PidExtras x;
+    x.pidSumLimit = 0.5f;
+    x.pidSumLimitYaw = 0.4f;
+    RateAxis roll = makeAxis(0.01f, 0.0f, 0.0f, 0.0f);
+    RateAxis yaw = makeAxis(0.01f, 0.0f, 0.0f, 0.0f);
+    roll.setExtras(x, 0);
+    yaw.setExtras(x, 2);
+    // ошибка 100 °/с × P 0.01 = 1 — каждая ось упирается в свой предел
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, roll.update(100.0f, 0.0f, 1.0f, 1.0f, true, false));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, -0.4f, yaw.update(-100.0f, 0.0f, 1.0f, 1.0f, true, false));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.2f, roll.update(20.0f, 0.0f, 1.0f, 1.0f, true, false));
+    RateAxis plain = makeAxis(0.01f, 0.0f, 0.0f, 0.0f);   // без настроек — ±1, как было
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, plain.update(300.0f, 0.0f, 1.0f, 1.0f, true, false));
+
+    // P 0.3 + I дорастает до 0.2 — сумма в пределе, дальше I стоит; назад — сразу
+    PidExtras y;
+    y.relax = ItermRelax::OFF;
+    y.relaxError = false;
+    y.pidSumLimit = 0.5f;
+    RateAxis pi = makeAxis(0.01f, 0.1f, 0.0f, 0.0f);
+    pi.setExtras(y, 0);
+    for (int i = 0; i < 300; ++i) pi.update(30.0f, 0.0f, 1.0f, 1.0f, false, false);
+    TEST_ASSERT_FLOAT_WITHIN(0.005f, 0.2f, pi.integral());
+    const float held = pi.integral();
+    pi.update(-30.0f, 0.0f, 1.0f, 1.0f, false, false);
+    TEST_ASSERT_TRUE(pi.integral() < held - 0.002f);
+
+    // реестр: модель — ±1000 (как было), BF — 500 и 400
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_EQUAL_FLOAT(1000.0f, p.defaultValue(PARAM_PIDSUM_LIMIT));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, p.tune().pid.pidSumLimitYaw);
+    TEST_ASSERT_TRUE(p.parse(PARAM_PIDSUM_LIMIT_YAW, 0, "300", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_PIDSUM_LIMIT, 0, "50", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(0.3f, p.tune().pid.pidSumLimitYaw);
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(500.0f, p.defaultValue(PARAM_PIDSUM_LIMIT));
+    TEST_ASSERT_EQUAL_FLOAT(400.0f, p.defaultValue(PARAM_PIDSUM_LIMIT_YAW));
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, p.tune().pid.pidSumLimit);
+}
+
+// 017: anti-gravity — рывок газом: I сильнее до 1 + gain/10 раз, P крена и
+// тангажа — до +50 % при p_gain 100; газ ровный — всё как было.
+void test_anti_gravity_boosts_i_and_p_on_throttle_punch()
+{
+    struct Punch
+    {
+        float p0 = 0, pMax = 0, pAfter = 0, iSteady = 0, iPunch = 0;
+    };
+    const auto punch = [](const PidExtras& x) {
+        Punch r;
+        Bench b;
+        b.ctl.configure(fiveWith(x));
+        armInAcro(b, 0.25f);
+        b.sens.gyro[0] = -10.0f;   // ошибка крена +10 °/с
+        b.run(0.05f);
+        r.p0 = b.ctl.axisTerms(0).p;
+        float i0 = b.ctl.axisTerms(0).i;
+        b.run(0.01f);
+        r.iSteady = b.ctl.axisTerms(0).i - i0;
+        i0 = b.ctl.axisTerms(0).i;
+        b.rc.throttle = 0.75f;
+        for (int i = 0; i < 10; ++i)
+        {
+            b.run(0.001f);
+            r.pMax = fmaxf(r.pMax, b.ctl.axisTerms(0).p);
+        }
+        r.iPunch = b.ctl.axisTerms(0).i - i0;
+        b.run(1.5f);
+        r.pAfter = b.ctl.axisTerms(0).p;
+        return r;
+    };
+
+    PidExtras bf = flatTpa();   // дефолты BF 4.3+: 80, 5 Гц, 100 (у модели — то же без P)
+    bf.antiGravityP = 1.0f;
+    const Punch a = punch(bf);
+    TEST_ASSERT_TRUE(a.p0 > 0.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.02f * a.p0, 1.5f * a.p0, a.pMax);
+    TEST_ASSERT_TRUE(a.iPunch > 5.0f * a.iSteady);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f * a.p0, a.p0, a.pAfter);
+
+    PidExtras off = flatTpa();
+    off.antiGravityI = 0.0f;
+    const Punch o = punch(off);
+    // P не растёт (0.5 % — переходный процесс режекторов, газ сдвинул обороты)
+    TEST_ASSERT_FLOAT_WITHIN(0.005f * o.p0, o.p0, o.pMax);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f * o.iSteady, o.iSteady, o.iPunch);
+
+    // прежняя (I до ×4, ФНЧ 15 Гц) — рывок за 10 мс резче полного: сразу ×4, P не трогается
+    PidExtras old = flatTpa();
+    old.antiGravityI = 3.0f;
+    old.antiGravityHz = 15.0f;
+    const Punch m = punch(old);
+    TEST_ASSERT_FLOAT_WITHIN(0.005f * m.p0, m.p0, m.pMax);
+    char msg[160];
+    snprintf(msg, sizeof(msg), "anti-gravity I in 10 ms punch / steady: BF %.2f, off %.2f, old %.2f", a.iPunch / a.iSteady,
+             o.iPunch / o.iSteady, m.iPunch / m.iSteady);
+    TEST_MESSAGE(msg);
+    TEST_ASSERT_TRUE_MESSAGE(m.iPunch > 2.0f * m.iSteady && m.iPunch < 4.05f * m.iSteady, msg);
+
+    // реестр: модель 80 / 5 Гц / 0, BF 80 / 5 Гц / 100
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_EQUAL_FLOAT(80.0f, p.defaultValue(PARAM_ANTI_GRAVITY_GAIN));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.defaultValue(PARAM_ANTI_GRAVITY_P_GAIN));
+    CopterTune t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(8.0f, t.pid.antiGravityI);
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, t.pid.antiGravityHz);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t.pid.antiGravityP);
+    TEST_ASSERT_TRUE(p.parse(PARAM_ANTI_GRAVITY_P_GAIN, 0, "50", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_ANTI_GRAVITY_CUTOFF_HZ, 0, "1", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, p.tune().pid.antiGravityP);
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(8.0f, t.pid.antiGravityI);
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, t.pid.antiGravityHz);
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, t.pid.antiGravityP);   // задано руками — и в BF
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, p.defaultValue(PARAM_ANTI_GRAVITY_P_GAIN));
+}
+
+// 018: throttle_boost — к газу со стика добавляется его быстрая часть:
+// моторы догоняют рывок раньше, на ровном газе — как без добавки.
+void test_throttle_boost_adds_the_fast_part_of_the_stick()
+{
+    PidExtras x;
+    x.throttleBoost = 1.0f;   // throttle_boost 10
+    Bench plain, boosted;
+    boosted.ctl.configure(fiveWith(x));
+    armInAcro(plain, 0.3f);
+    armInAcro(boosted, 0.3f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, motorAverage(plain.out), motorAverage(boosted.out));
+    plain.rc.throttle = boosted.rc.throttle = 0.5f;
+    plain.run(0.01f);
+    boosted.run(0.01f);
+    TEST_ASSERT_TRUE(motorAverage(boosted.out) > motorAverage(plain.out) + 0.03f);
+    TEST_ASSERT_EQUAL_FLOAT(plain.ctl.getStatus().throttle, boosted.ctl.getStatus().throttle);   // сам газ — без добавки
+    plain.run(0.5f);
+    boosted.run(0.5f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, motorAverage(plain.out), motorAverage(boosted.out));
+    // вниз — так же быстрее
+    plain.rc.throttle = boosted.rc.throttle = 0.3f;
+    plain.run(0.01f);
+    boosted.run(0.01f);
+    TEST_ASSERT_TRUE(motorAverage(boosted.out) < motorAverage(plain.out) - 0.03f);
+
+    // реестр: модель 0, BF 5 (×0.1)
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.tune().pid.throttleBoost);
+    TEST_ASSERT_EQUAL_FLOAT(15.0f, p.tune().pid.throttleBoostHz);
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, p.tune().pid.throttleBoost);
+    TEST_ASSERT_TRUE(p.parse(PARAM_THROTTLE_BOOST_CUTOFF, 0, "25", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(25.0f, p.tune().pid.throttleBoostHz);
+}
+
+// 019: TPA как в BF — PD или только D выше точки излома; MODEL — таблица модели.
+void test_tpa_modes_like_betaflight()
+{
+    CopterTune t = deriveTune(*findBuild("freestyle5"), 1000.0f, EscProtocol::DSHOT600);
+    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::MODEL), static_cast<int>(t.pid.tpaMode));
+    TEST_ASSERT_EQUAL_FLOAT(t.tpa[5], t.tpaAt(0.5f));
+    t.pid.tpaMode = TpaMode::D;
+    t.pid.tpaRate = 0.5f;
+    t.pid.tpaBreakpoint = 0.5f;
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, t.tpaAt(0.4f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.75f, t.tpaAt(0.75f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, t.tpaAt(1.0f));
+
+    // P слабеет в PD и MODEL, в D — нет; D — во всех
+    const TpaMode modes[] = { TpaMode::PD, TpaMode::D, TpaMode::MODEL };
+    for (TpaMode mode : modes)
+    {
+        PidExtras x;
+        x.tpaMode = mode;
+        RateAxis a = makeAxis(0.001f, 0.0f, 0.001f, 0.0f);
+        a.setExtras(x, 0);
+        a.update(0.0f, 0.0f, 0.5f, 1.0f, true, false);
+        a.update(100.0f, 10.0f, 0.5f, 1.0f, true, false);
+        TEST_ASSERT_FLOAT_WITHIN(1e-6f, (mode == TpaMode::D ? 1.0f : 0.5f) * 0.09f, a.lastTerms().p);
+        TEST_ASSERT_FLOAT_WITHIN(1e-5f, -0.5f * 10.0f, a.lastTerms().d);
+    }
+
+    // реестр: модель — MODEL, BF — D 65 % от 1350; точка в мкс газа
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_EQUAL_FLOAT(static_cast<float>(TpaMode::MODEL), p.defaultValue(PARAM_TPA_MODE));
+    TEST_ASSERT_TRUE(p.parse(PARAM_TPA_MODE, 0, "PD", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_TPA_RATE, 0, "50", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_TPA_BREAKPOINT, 0, "1500", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_TPA_RATE, 0, "101", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::PD), static_cast<int>(t.pid.tpaMode));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, t.pid.tpaBreakpoint);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, t.tpaAt(1.0f));
+    p.reset(PARAM_TPA_MODE, 0);
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(static_cast<float>(TpaMode::D), p.defaultValue(PARAM_TPA_MODE));
+    TEST_ASSERT_TRUE(p.parse(PARAM_TPA_MODE, 0, "MODEL", err, sizeof(err)));   // модельная таблица и на BF
+    t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(p.modelTune().tpa[10], t.tpaAt(1.0f));
+}
+
+// 020: tpa_low — на малом газе PD (D) слабее на tpa_low_rate; по умолчанию
+// только до первого подъёма газа после ARM, с tpa_low_always — всегда.
+void test_tpa_low_until_takeoff_or_always()
+{
+    CopterTune t = deriveTune(*findBuild("freestyle5"), 1000.0f, EscProtocol::DSHOT600);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, t.tpaLowAt(0.0f));   // модель: выкл
+    t.pid.tpaLowRate = 0.2f;
+    t.pid.tpaLowBreakpoint = 0.05f;
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.8f, t.tpaLowAt(0.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.9f, t.tpaLowAt(0.025f));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, t.tpaLowAt(0.05f));
+    t.pid.tpaLowRate = -0.5f;   // меньше 0 — сильнее
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.5f, t.tpaLowAt(0.0f));
+
+    // в контроллере: P на нуле газа (ошибка постоянная) против P без поправки
+    const auto pAtZero = [](bool always, bool rearm) {
+        PidExtras x = flatTpa();
+        x.tpaLowRate = 0.2f;
+        x.tpaLowBreakpoint = 0.05f;
+        x.tpaLowAlways = always;
+        Bench b;
+        b.ctl.configure(fiveWith(x));
+        b.rc.mode = CopterMode::ACRO;
+        TEST_ASSERT_TRUE(b.armAfterBoot());
+        b.rc.throttle = 0.3f;   // взлёт
+        b.run(0.2f);
+        b.rc.throttle = 0.0f;
+        b.run(0.3f);
+        if (rearm)
+        {
+            b.rc.armSwitch = false;
+            b.run(0.01f);
+            b.rc.armSwitch = true;
+            b.run(0.01f);
+            TEST_ASSERT_TRUE(b.ctl.isArmed());
+        }
+        // ошибка маленькая: airmode поднимает газ смесителя на размах моторов
+        b.sens.gyro[0] = -2.0f;
+        b.run(0.05f);   // режекторы гироскопа отзвенели
+        return b.ctl.axisTerms(0).p / (b.ctl.getTune().roll.p * 2.0f);
+    };
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.0f, pAtZero(false, false));   // взлетели — выкл
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, 0.8f, pAtZero(false, true));    // заново ARM, газ не поднимали
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, 0.8f, pAtZero(true, false));    // always — и после взлёта
+
+    // реестр: модель — 0, BF — 20 % ниже 1050, OFF
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.tune().pid.tpaLowRate);
+    TEST_ASSERT_TRUE(p.parse(PARAM_TPA_LOW_RATE, 0, "-30", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_TPA_LOW_ALWAYS, 0, "ON", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, -0.3f, t.pid.tpaLowRate);
+    TEST_ASSERT_TRUE(t.pid.tpaLowAlways);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.05f, t.pid.tpaLowBreakpoint);
+    p.reset(PARAM_TPA_LOW_RATE, 0);
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.2f, p.tune().pid.tpaLowRate);
 }
 
 void test_cli_set_get_diff_save_and_paste()
@@ -1564,7 +1891,7 @@ void test_cli_set_get_diff_save_and_paste()
     out = port.take();
     TEST_ASSERT_TRUE_MESSAGE(has(out, "Сохранено"), out.c_str());
     TEST_ASSERT_FALSE(cli.active());
-    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::D), static_cast<int>(b.ctl.getTune().tpaMode));
+    TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::D), static_cast<int>(b.ctl.getTune().pid.tpaMode));
     TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(PidTerm::D, 1, 38.0f), b.ctl.getTune().pitch.d);
     TEST_ASSERT_TRUE(kv.contains(CopterParams::STORE_SPACE, CopterParams::STORE_KEY));
 
@@ -2796,6 +3123,11 @@ int main()
     RUN_TEST(test_pid_in_betaflight_units);
     RUN_TEST(test_betaflight_source_takes_bf_45_defaults);
     RUN_TEST(test_profiles_are_independent_and_switch_on_the_fly);
+    RUN_TEST(test_pidsum_limit_per_axis);
+    RUN_TEST(test_anti_gravity_boosts_i_and_p_on_throttle_punch);
+    RUN_TEST(test_throttle_boost_adds_the_fast_part_of_the_stick);
+    RUN_TEST(test_tpa_modes_like_betaflight);
+    RUN_TEST(test_tpa_low_until_takeoff_or_always);
     RUN_TEST(test_cli_set_get_diff_save_and_paste);
     RUN_TEST(test_rc_map_and_rxrange);
     RUN_TEST(test_rx_input_modes_like_betaflight);

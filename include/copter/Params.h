@@ -165,6 +165,19 @@ namespace copter
         PARAM_ITERM_ROTATION,
         PARAM_ITERM_WINDUP,
         PARAM_ITERM_LIMIT,
+        PARAM_PIDSUM_LIMIT,
+        PARAM_PIDSUM_LIMIT_YAW,
+        PARAM_ANTI_GRAVITY_GAIN,
+        PARAM_ANTI_GRAVITY_CUTOFF_HZ,
+        PARAM_ANTI_GRAVITY_P_GAIN,
+        PARAM_THROTTLE_BOOST,
+        PARAM_THROTTLE_BOOST_CUTOFF,
+        PARAM_TPA_MODE,
+        PARAM_TPA_RATE,
+        PARAM_TPA_BREAKPOINT,
+        PARAM_TPA_LOW_RATE,
+        PARAM_TPA_LOW_BREAKPOINT,
+        PARAM_TPA_LOW_ALWAYS,
         PARAM_RATEPROFILE_NAME,
         PARAM_ROLL_RC_RATE,
         PARAM_PITCH_RC_RATE,
@@ -240,6 +253,7 @@ namespace copter
         // порядок — как ItermRelax и ItermRelaxType (Presets.h)
         static const char* const ITERM_RELAX[] = { "OFF", "RP", "RPY", "RP_INC", "RPY_INC" };
         static const char* const ITERM_RELAX_TYPES[] = { "GYRO", "SETPOINT" };
+        static const char* const TPA_MODES[] = { "PD", "D", "MODEL" };   // как TpaMode
         uint8_t buildCount = 0;
         const char* const* builds = buildIds(buildCount);
         constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
@@ -289,13 +303,39 @@ namespace copter
             { "iterm_relax_cutoff", kInt, kPid, kGroupPid, 1, 50, 0, kTune, "Гц", nullptr, 0,
               "сглаживание уставки для relax: меньше — дольше ждёт" },
             { "iterm_relax_error", kEnum, kPid, kGroupPid, 0, 1, 1, kTable, "", OFF_ON, 2,
-              "наш: большая ошибка разгона (флип) не копится в I" },
+              "наш: большая ошибка разгона к новой уставке (флип) не копится в I; без движения стика — копится" },
             { "iterm_rotation", kEnum, kPid, kGroupPid, 0, 1, 0, kTable, "", OFF_ON, 2,
               "I поворачивается вместе с рамой (пируэты: крен переходит в тангаж)" },
             { "iterm_windup", kInt, kPid, kGroupPid, 30, 100, 0, kTune, "%", nullptr, 0,
               "моторы разошлись больше — I копится слабее; 100 — выкл" },
             { "iterm_limit", kInt, kPid, kGroupPid, 0, 500, 0, kTune, "BF", nullptr, 0,
               "предел I (1000 — весь ход моторов)" },
+            { "pidsum_limit", kInt, kPid, kGroupPid, 100, 1000, 0, kTune, "BF", nullptr, 0,
+              "предел суммы PID крена и тангажа (1000 — весь ход моторов)" },
+            { "pidsum_limit_yaw", kInt, kPid, kGroupPid, 100, 1000, 0, kTune, "BF", nullptr, 0,
+              "предел суммы PID рысканья (1000 — весь ход моторов)" },
+            { "anti_gravity_gain", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "", nullptr, 0,
+              "рывок газом — I сильнее, нос не клюёт: на полном рывке в 1 + gain/10 раз" },
+            { "anti_gravity_cutoff_hz", kInt, kPid, kGroupPid, 2, 50, 0, kTune, "Гц", nullptr, 0,
+              "сглаживание скорости газа для anti-gravity: меньше — пик ниже, но дольше" },
+            { "anti_gravity_p_gain", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "%", nullptr, 0,
+              "рывок газом — P крена и тангажа сильнее: при 100 — на 50 % на полном рывке" },
+            { "throttle_boost", kInt, kPid, kGroupPid, 0, 100, 0, kTune, "x0.1", nullptr, 0,
+              "рывок газа со стика усиливается в 1 + boost/10 раз: моторы догоняют стик раньше" },
+            { "throttle_boost_cutoff", kInt, kPid, kGroupPid, 5, 50, 15, kTable, "Гц", nullptr, 0,
+              "что считать рывком газа для throttle_boost: газ минус его ФНЧ на этой частоте" },
+            { "tpa_mode", kEnum, kPid, kGroupPid, 0, 2, 0, kTune, "", TPA_MODES, 3,
+              "поправка по газу: PD, D — как в BF (tpa_rate, tpa_breakpoint), MODEL — из модели на P и D" },
+            { "tpa_rate", kInt, kPid, kGroupPid, 0, 100, 65, kTable, "%", nullptr, 0,
+              "PD, D: насколько слабее на полном газе (выше tpa_breakpoint — линейно)" },
+            { "tpa_breakpoint", kInt, kPid, kGroupPid, 750, 2250, 1350, kTable, "мкс", nullptr, 0,
+              "PD, D: газ, выше которого работает TPA" },
+            { "tpa_low_rate", kInt, kPid, kGroupPid, -128, 100, 0, kTune, "%", nullptr, 0,
+              "насколько слабее PD (D) на нуле газа; меньше 0 — сильнее" },
+            { "tpa_low_breakpoint", kInt, kPid, kGroupPid, 750, 2250, 1050, kTable, "мкс", nullptr, 0,
+              "газ, ниже которого работает tpa_low_rate" },
+            { "tpa_low_always", kEnum, kPid, kGroupPid, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "OFF — tpa_low только до первого подъёма газа выше tpa_low_breakpoint после ARM; ON — всегда" },
             { "rateprofile_name", kText, kRate, kGroupRates, 0, 8, 0, kTable, "", nullptr, 0, "имя профиля расходов" },
             { "roll_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход крена у центра стика" },
             { "pitch_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход тангажа у центра стика" },
@@ -788,6 +828,19 @@ namespace copter
             t.pid.itermRotation = valueIn(PARAM_ITERM_ROTATION, pidIndex) > 0.5f;
             t.pid.itermWindup = valueIn(PARAM_ITERM_WINDUP, pidIndex) / 100.0f;
             t.iLimit = valueIn(PARAM_ITERM_LIMIT, pidIndex) / betaflight::MIXER_SCALING;
+            t.pid.pidSumLimit = valueIn(PARAM_PIDSUM_LIMIT, pidIndex) / betaflight::MIXER_SCALING;
+            t.pid.pidSumLimitYaw = valueIn(PARAM_PIDSUM_LIMIT_YAW, pidIndex) / betaflight::MIXER_SCALING;
+            t.pid.antiGravityI = valueIn(PARAM_ANTI_GRAVITY_GAIN, pidIndex) / 10.0f;
+            t.pid.antiGravityHz = valueIn(PARAM_ANTI_GRAVITY_CUTOFF_HZ, pidIndex);
+            t.pid.antiGravityP = valueIn(PARAM_ANTI_GRAVITY_P_GAIN, pidIndex) / 100.0f;
+            t.pid.throttleBoost = valueIn(PARAM_THROTTLE_BOOST, pidIndex) / 10.0f;
+            t.pid.throttleBoostHz = valueIn(PARAM_THROTTLE_BOOST_CUTOFF, pidIndex);
+            t.pid.tpaMode = static_cast<TpaMode>(static_cast<uint8_t>(valueIn(PARAM_TPA_MODE, pidIndex)));
+            t.pid.tpaRate = valueIn(PARAM_TPA_RATE, pidIndex) / 100.0f;
+            t.pid.tpaBreakpoint = betaflight::throttleFromUs(valueIn(PARAM_TPA_BREAKPOINT, pidIndex));
+            t.pid.tpaLowRate = valueIn(PARAM_TPA_LOW_RATE, pidIndex) / 100.0f;
+            t.pid.tpaLowBreakpoint = betaflight::throttleFromUs(valueIn(PARAM_TPA_LOW_BREAKPOINT, pidIndex));
+            t.pid.tpaLowAlways = valueIn(PARAM_TPA_LOW_ALWAYS, pidIndex) > 0.5f;
             return t;
         }
 
@@ -957,6 +1010,14 @@ namespace copter
             defaults[PARAM_ITERM_RELAX_CUTOFF] = roundf(pidBase.pid.relaxCutoffHz);
             defaults[PARAM_ITERM_WINDUP] = roundf(pidBase.pid.itermWindup * 100.0f);
             defaults[PARAM_ITERM_LIMIT] = roundf(pidBase.iLimit * betaflight::MIXER_SCALING);
+            defaults[PARAM_PIDSUM_LIMIT] = roundf(pidBase.pid.pidSumLimit * betaflight::MIXER_SCALING);
+            defaults[PARAM_PIDSUM_LIMIT_YAW] = roundf(pidBase.pid.pidSumLimitYaw * betaflight::MIXER_SCALING);
+            defaults[PARAM_ANTI_GRAVITY_GAIN] = roundf(pidBase.pid.antiGravityI * 10.0f);
+            defaults[PARAM_ANTI_GRAVITY_CUTOFF_HZ] = roundf(pidBase.pid.antiGravityHz);
+            defaults[PARAM_ANTI_GRAVITY_P_GAIN] = roundf(pidBase.pid.antiGravityP * 100.0f);
+            defaults[PARAM_THROTTLE_BOOST] = roundf(pidBase.pid.throttleBoost * 10.0f);
+            defaults[PARAM_TPA_MODE] = static_cast<float>(pidBase.pid.tpaMode);
+            defaults[PARAM_TPA_LOW_RATE] = roundf(pidBase.pid.tpaLowRate * 100.0f);
         }
 
         // Сборка каталога с поправками прошивки (для сборки прошивки — она сама).
