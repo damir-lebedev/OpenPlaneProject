@@ -10,7 +10,8 @@
 //     моторов полётников F405 (config/boards/*.h);
 //   - HardwareTimer: ширина импульса видна тесту (fake::timerPulseUs)
 //     и pulseIn() — как у настоящего таймера;
-//   - Uart (= HardwareSerial с пинами), noInterrupts()/interrupts().
+//   - Uart (= HardwareSerial с пинами), noInterrupts()/interrupts();
+//   - поток DMA для DShot (dshot_dma_fake.h).
 // ============================================================
 
 #include "../support/Arduino.h"
@@ -293,3 +294,6 @@ public:
     uint32_t channelPin[5] = {};
     uint32_t lastCompare[5] = {};
 };
+
+// Поток DMA для DShot (hal/stm32/Stm32Dshot.h).
+#include "dshot_dma_fake.h"

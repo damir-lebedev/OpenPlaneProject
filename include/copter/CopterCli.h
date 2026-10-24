@@ -23,6 +23,7 @@
 //   aux [№ режим канал от до логика связь] — режимы на тумблерах
 //   map [AETR1234]         — порядок каналов; rxrange [0-3 мин макс] — концы стиков
 //                            (copter/RcSetup.h)
+//   rxfail [канал a|h|s [значение]] — канал без связи: авто, держать, задать
 //   vtx [№ канал полоса канал_VTX мощность от до] — видеопередатчик с тумблера;
 //   vtx_info               — что ответил видеопередатчик, его таблица мощностей
 //   save                   — во флеш, настройка пересчитана, выход из CLI
@@ -156,6 +157,7 @@ namespace copter
             else if (is(cmd, "aux")) cmdAux(args);
             else if (is(cmd, "map")) cmdMap(args);
             else if (is(cmd, "rxrange")) cmdRxrange(args);
+            else if (is(cmd, "rxfail")) cmdRxfail(args);
             else if (is(cmd, "vtx")) cmdVtx(args);
             else if (is(cmd, "vtx_info")) port.printVtxInfo();
             else if (is(cmd, "save")) cmdSave();
@@ -197,6 +199,7 @@ namespace copter
             print("profile [0-3] · rateprofile [0-3] — профиль PID · расходов\r\n");
             print("aux [№ режим канал от до логика связь] — режимы на тумблерах (режимы: aux help)\r\n");
             print("map [AETR1234] · rxrange [0-3 мин макс] — порядок каналов · концы стиков\r\n");
+            print("rxfail [канал a|h|s [значение]] — канал без связи: a — авто, h — держать, s — задать (AUX)\r\n");
             print("vtx [№ канал полоса канал_VTX мощность от до] · vtx_info — видеопередатчик с тумблера · что он ответил\r\n");
             print("save — сохранить и пересчитать настройку · defaults [nosave] — всё по умолчанию\r\n");
             print("status · tasks · version · exit (несохранённое отменяется)\r\n");
@@ -319,6 +322,38 @@ namespace copter
             for (uint8_t i = 0; i < RcConfig::STICKS; ++i) print("rxrange %u %u %u\r\n", i, rc.rangeLow(i), rc.rangeHigh(i));
         }
 
+        void cmdRxfail(const char* args)
+        {
+            RcConfig& rc = params.rc();
+            char row[32];
+            if (*args == '\0')
+            {
+                for (uint8_t i = 0; i < RcConfig::RXFAIL_CHANNELS; ++i)
+                {
+                    rc.formatRxfail(i, row, sizeof(row));
+                    print("%s\r\n", row);
+                }
+                return;
+            }
+            char* end = nullptr;
+            const long i = strtol(args, &end, 10);
+            if (end != args && *skipSpaces(end) == '\0' && i >= 0 && i < RcConfig::RXFAIL_CHANNELS)
+            {
+                rc.formatRxfail(static_cast<uint8_t>(i), row, sizeof(row));   // «rxfail 4» — показать
+                print("%s\r\n", row);
+                return;
+            }
+            char error[96];
+            if (!rc.parseRxfail(args, error, sizeof(error)))
+            {
+                printError("%s", error);
+                return;
+            }
+            dirty = true;
+            rc.formatRxfail(static_cast<uint8_t>(i), row, sizeof(row));
+            print("%s\r\n", row);
+        }
+
         void cmdVtx(const char* args)
         {
             RcConfig& rc = params.rc();
@@ -348,7 +383,7 @@ namespace copter
             print("%s\r\n", row);
         }
 
-        // diff/dump: map, aux, rxrange, vtx — как в BF, перед # master.
+        // diff/dump: map, aux, rxrange, vtx, rxfail — как в BF, перед # master.
         void dumpTables(bool onlyChanged)
         {
             const RcConfig& rc = params.rc();
@@ -383,6 +418,15 @@ namespace copter
                 if (!header) print("\r\n# vtx\r\n");
                 header = true;
                 RcConfig::formatVtx(i, rc.vtx(i), row, sizeof(row));
+                print("%s\r\n", row);
+            }
+            header = false;
+            for (uint8_t i = 0; i < RcConfig::RXFAIL_CHANNELS; ++i)
+            {
+                if (onlyChanged && rc.rxfailIsDefault(i)) continue;
+                if (!header) print("\r\n# rxfail\r\n");
+                header = true;
+                rc.formatRxfail(i, row, sizeof(row));
                 print("%s\r\n", row);
             }
         }

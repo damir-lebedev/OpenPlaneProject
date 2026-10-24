@@ -155,7 +155,7 @@ enum : uint8_t
 // Пульт -> ручки контроллера: карта каналов, rxrange, режимы (copter/RcSetup.h).
 static copter::CopterRc readRc()
 {
-    copter::CopterRc rc = rxInput.read(rcReceiver.getState().data(), Config::RC_CHANNELS, !rcReceiver.isSignalLost());
+    copter::CopterRc rc = rxInput.read(rcReceiver.getState().data(), Config::RC_CHANNELS, !rcReceiver.isSignalLost(), millis());
     // кадры приёмника — для упреждения (feedforward_*); 0 до первого кадра
     rc.frame = rcReceiver.getGoodFrameCount();
     return rc;
@@ -320,8 +320,8 @@ static void updateBeeper()
         beeper.event(copter::BeeperEvent::READY);
     }
     copter::BeeperInputs in;
-    in.batteryWarning = armed && battery.state() == copter::BatteryState::WARNING;
-    in.batteryCritical = armed && battery.state() == copter::BatteryState::CRITICAL;
+    in.batteryWarning = armed && battery.alertState() == copter::BatteryState::WARNING;     // use_vbat_alerts
+    in.batteryCritical = armed && battery.alertState() == copter::BatteryState::CRITICAL;
     in.failsafe = copterController.getStatus().state == copter::CopterState::FAILSAFE;
     in.findMe = rxInput.isActive(copter::BOX_BEEPER);
     in.muted = rxInput.isActive(copter::BOX_BEEPER_MUTE);
@@ -360,7 +360,8 @@ static void composeOsd()
     d.hasCurrent = battery.hasCurrent();
     d.amps = battery.amps();
     d.mahDrawn = battery.mahDrawn();
-    d.batteryState = static_cast<uint8_t>(battery.state());
+    d.batteryState = static_cast<uint8_t>(battery.alertState());
+    d.batteryNotFull = battery.state() != copter::BatteryState::NOT_PRESENT && !battery.wasFullWhenPluggedIn();
     d.flightSeconds = armedMs / 1000;
     d.altitudeM = s.altitude;
     d.gpsPresent = gps.isAvailable();
@@ -457,7 +458,9 @@ static void flightTask(void*)
         sens.imuOk = imuSensor.isAvailable();
         sens.baroOk = baroSensor.isAvailable();
         sens.baroAltM = baroSensor.getBarometerData().altitude;
-        sens.batteryVolts = battery.state() == copter::BatteryState::NOT_PRESENT ? 0.0f : battery.volts();
+        // компенсации просадки — быстрый фильтр (vbat_sag_lpf_period), а не показ
+        sens.batteryVolts = battery.state() == copter::BatteryState::NOT_PRESENT ? 0.0f : battery.sagVolts();
+        copterController.setThrottleLimit(battery.throttleLimit());   // vbat_cutoff_percent
 
         // ARM запрещён, пока описание коптера не сошлось с платой,
         // установка IMU не откалибрована (если плата этого требует),
@@ -545,6 +548,12 @@ static void setupCopter(KeyValueStore& store)
     copterParams.setTableDefault(copter::PARAM_SERIALRX_PROVIDER, static_cast<uint8_t>(Config::RX_PROTOCOL));
     copterParams.setTableDefault(copter::PARAM_VBAT_SCALE, roundf(Config::BLACKBOX_VBAT_DIVIDER * 10.0f));
     copterParams.setTableDefault(copter::PARAM_CURRENT_METER, Config::PIN_CURRENT_ADC >= 0 ? 1.0f : 0.0f);
+    copterParams.setTableDefault(copter::PARAM_BATTERY_METER, Config::PIN_VBAT_ADC >= 0 ? 1.0f : 0.0f);
+#if defined(OPB_VBAT_DIVIDER)   // делитель из дампа BF (tools/bf_board.py)
+    copterParams.setTableDefault(copter::PARAM_VBAT_SCALE, OPB_VBAT_SCALE);
+    copterParams.setTableDefault(copter::PARAM_VBAT_DIVIDER, OPB_VBAT_DIVIDER);
+    copterParams.setTableDefault(copter::PARAM_VBAT_MULTIPLIER, OPB_VBAT_MULTIPLIER);
+#endif
     copterParams.setTableDefault(copter::PARAM_IBATA_SCALE, Config::BOARD_IBATA_SCALE);
     copterParams.setTableDefault(copter::PARAM_IBATA_OFFSET, Config::BOARD_IBATA_OFFSET_MV);
     copterParams.setTableDefault(copter::PARAM_VTX_PROTOCOL, static_cast<float>(Config::BOARD_VTX_PIN >= 0 ? copter::VtxProtocol::AUTO
@@ -575,6 +584,13 @@ static void setupCopter(KeyValueStore& store)
     else if (motors.attached() < tune.frame.count)
     {
         Serial.printf("ОШИБКА: настроено %u выходов из %u — ARM запрещён.\n", motors.attached(), tune.frame.count);
+        configOk = false;
+    }
+    if (copter::isDshot(CopterConfig::ESC_PROTOCOL) && tune.loopHz > copter::dshot::maxLoopHz(CopterConfig::ESC_PROTOCOL))
+    {
+        Serial.printf("ОШИБКА: %s не успевает за циклом %.0f Гц (до %lu) — ARM запрещён.\n",
+                      copter::escProtocolName(CopterConfig::ESC_PROTOCOL), tune.loopHz,
+                      static_cast<unsigned long>(copter::dshot::maxLoopHz(CopterConfig::ESC_PROTOCOL)));
         configOk = false;
     }
     outputsAtBoot = tune.frame.count;

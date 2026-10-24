@@ -347,9 +347,14 @@ namespace Config
     constexpr int16_t PIN_VBAT_ADC    = OPB_ADC_VBAT;  // @fixed
     constexpr int16_t PIN_CURRENT_ADC = OPB_ADC_CURR;  // @fixed
 
-    // Делитель батареи — vbat_scale Betaflight (110 — 1:11); ток считается
-    // по ibata_scale (Battery.h), делителя у него нет.
-    constexpr float BLACKBOX_VBAT_DIVIDER = OPB_VBAT_SCALE / 10.0f;  // @fixed
+    // Делитель батареи — vbat_scale / (vbat_divider × vbat_multiplier) Betaflight
+    // (110 / 10 / 1 — 1:11); ток считается по ibata_scale (Battery.h), делителя у
+    // него нет. Заголовок от старого bf_board.py — без делителя: как в BF, 10 и 1.
+#ifndef OPB_VBAT_DIVIDER
+#define OPB_VBAT_DIVIDER 10
+#define OPB_VBAT_MULTIPLIER 1
+#endif
+    constexpr float BLACKBOX_VBAT_DIVIDER = OPB_VBAT_SCALE / static_cast<float>(OPB_VBAT_DIVIDER * OPB_VBAT_MULTIPLIER);  // @fixed
     constexpr float BLACKBOX_CURRENT_DIVIDER = 1.0f;                  // @fixed
 
     // IMU распаян на плате, плату ставят как угодно: ARM со стабилизацией —

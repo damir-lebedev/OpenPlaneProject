@@ -67,6 +67,7 @@ namespace copter
         bool hasCurrent = false;
         float amps = 0.0f, mahDrawn = 0.0f;
         uint8_t batteryState = 1;           // BatteryState: 0 нет, 1 OK, 2 WARNING, 3 CRITICAL
+        bool batteryNotFull = false;        // подключили не полную (vbat_full_cell_voltage)
         uint32_t flightSeconds = 0;
         float altitudeM = 0.0f;
         bool gpsPresent = false;
@@ -187,6 +188,7 @@ namespace copter
             if (d.linkLost) return "RXLOSS";
             if (d.batteryState == 3) return "BATT CRITICAL";
             if (d.batteryState == 2) return "LOW BATTERY";
+            if (!d.armed && d.batteryNotFull) return "BATT < FULL";
             if (!d.armed && d.armBlock) return d.armBlock;
             if (!d.armed) return "DISARMED";
             return nullptr;

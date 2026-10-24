@@ -2,10 +2,12 @@
 #include <Arduino.h>
 
 #include "copter/EscProtocol.h"
+#include "hal/stm32/Stm32Dshot.h"
 
 // ============================================================
 // Выходы на регуляторы мультикоптера (STM32duino 3.x, HardwareTimer):
-// PWM 490 Гц, OneShot125, OneShot42, Multishot.
+// PWM 490 Гц, OneShot125, OneShot42, Multishot; DShot150/300/600 — через
+// Stm32Dshot.h (таймер + DMA), тем же begin()/write().
 //
 // Импульс формирует таймер сам, без прерываний. Аналоговые протоколы
 // здесь — непрерывные: таймер повторяет импульс с частотой протокола
@@ -32,13 +34,17 @@ class Stm32MotorOutput
 public:
     static constexpr uint8_t MAX_MOTORS = 8;
 
-    // false — протокол не аналоговый (DShot) или ни один пин не стал выходом.
+    // false — ни один пин не стал выходом.
     bool begin(const int16_t* pins, uint8_t count, copter::EscProtocol esc)
     {
         protocol = esc;
         motorCount = count > MAX_MOTORS ? MAX_MOTORS : count;
         attachedCount = 0;
-        if (copter::isDshot(esc)) return false;
+        if (copter::isDshot(esc))
+        {
+            attachedCount = dshot.begin(pins, motorCount, esc);
+            return attachedCount > 0;
+        }
 
         const copter::PulseRange range = copter::pulseRange(esc);
         const uint32_t hz = outputRateHz(esc);
@@ -67,6 +73,11 @@ public:
     // Команды 0..1 (CopterOutputs::motor); spinning = false — стоп на всех.
     void write(const float* commands, bool spinning)
     {
+        if (copter::isDshot(protocol))
+        {
+            dshot.write(commands, spinning);
+            return;
+        }
         for (uint8_t i = 0; i < motorCount; ++i)
         {
             const float us = copter::pulseUs(protocol, spinning ? commands[i] : 0.0f);
@@ -83,7 +94,12 @@ public:
     }
 
     uint8_t attached() const { return attachedCount; }
-    bool isAttached(uint8_t i) const { return i < motorCount && outputs[i].attached; }
+    bool isAttached(uint8_t i) const
+    {
+        return copter::isDshot(protocol) ? dshot.isAttached(i) : i < motorCount && outputs[i].attached;
+    }
+    Stm32Dshot& dshotOutput() { return dshot; }
+    const Stm32Dshot& dshotOutput() const { return dshot; }
     float pulseUs(uint8_t i) const { return i < motorCount ? lastUs[i] : 0.0f; }
     copter::EscProtocol getProtocol() const { return protocol; }
 
@@ -145,6 +161,7 @@ private:
     }
 
     Output outputs[MAX_MOTORS];
+    Stm32Dshot dshot;
     float lastUs[MAX_MOTORS] = {};
     uint8_t motorCount = 0;
     uint8_t attachedCount = 0;

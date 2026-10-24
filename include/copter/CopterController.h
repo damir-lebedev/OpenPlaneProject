@@ -42,7 +42,9 @@
 //     коптер полсекунды спокойно летит на газе;
 //   • потеря связи (или режим FAILSAFE с тумблера): первые 0.3 с —
 //     последние ручки; дальше на земле — сразу DISARM, в воздухе этап 1 —
-//     ровно и держит высоту до failsafe_delay, затем этап 2 по
+//     ровно и держит высоту до failsafe_delay (стик с `rxfail` HOLD —
+//     последнее его положение, газ HOLD — последний газ вместо высоты),
+//     затем этап 2 по
 //     failsafe_procedure: AUTO-LAND — ровно и снижение 0.7 м/с (с
 //     барометром — по нему, без — по акселерометру), касание земли —
 //     DISARM; DROP — моторы стоп. Связь вернулась: на этапе 1 — управление
@@ -256,6 +258,9 @@ namespace copter
         bool prearm = true;            // PREARM включён или его нет в таблице
         bool armAssigned = true;       // ARM есть в таблице режимов
         uint32_t frame = 0;            // счётчик кадров приёмника; 0 — неизвестно (кадр — раз в 1/FF_NOMINAL_FRAME_HZ)
+        // rxfail стиков = HOLD: на этапе 1 failsafe — последнее верное значение
+        // (биты: 0 — крен, 1 — тангаж, 2 — рысканье, 3 — газ); AUTO — автомат
+        uint8_t stickHold = 0;
     };
 
     // Кадров приёмника не видно (симулятор, тесты) — для feedforward_* они
@@ -395,6 +400,10 @@ namespace copter
         // калибровка установки платы, ошибка описания, нужна перезагрузка.
         void setExternalBlockers(uint32_t mask) { externalBlockers = mask & ARM_BLOCK_EXTERNAL_MASK; }
 
+        // vbat_cutoff_percent (copter/Battery.h): газ со стика × limit (0..1). Удержанию
+        // высоты и автомату failsafe — нет: им газ нужен целиком, чтобы сесть.
+        void setThrottleLimit(float limit) { throttleLimit = fminf(1.0f, fmaxf(0.0f, limit)); }
+
         // Проверка моторов (только DISARM): мотор index, доля тяги, сколько секунд.
         bool startMotorTest(uint8_t index, float thrust, float seconds)
         {
@@ -498,7 +507,8 @@ namespace copter
             const bool failsafe = status.state == CopterState::FAILSAFE;
             // этап 2 с failsafe_throttle — ровно на постоянном газе, как в BF
             const bool fixedThrottle = failsafe && status.failsafeStage >= 2 && set.failsafeThrottle > 0.0f;
-            const CopterMode mode = failsafe ? (fixedThrottle ? CopterMode::ANGLE : CopterMode::ALT_HOLD) : rc.mode;
+            // этап 1 с rxfail газа HOLD — ровно на последнем газе, как в BF
+            const CopterMode mode = failsafe ? (fixedThrottle || heldThrottle ? CopterMode::ANGLE : CopterMode::ALT_HOLD) : rc.mode;
             if (mode != status.mode && (mode == CopterMode::ALT_HOLD))
             {
                 altCtl.reset(vertical.altitude(), status.throttle);
@@ -555,7 +565,7 @@ namespace copter
             }
             else
             {
-                thrust = fixedThrottle ? set.failsafeThrottle : sticks[3];
+                thrust = fixedThrottle ? set.failsafeThrottle : sticks[3] * (failsafe ? 1.0f : throttleLimit);
                 status.altTarget = vertical.altitude();
             }
 
@@ -803,6 +813,7 @@ namespace copter
         // Возвращает false, если ручкам пульта верить нельзя (связи нет).
         bool handleLink(CopterRc& rc)
         {
+            heldThrottle = false;
             if (rc.linkOk && !rc.failsafeSwitch)   // режим FAILSAFE — как потеря связи
             {
                 lostTimer = 0.0f;
@@ -873,8 +884,14 @@ namespace copter
                     }
                 }
             }
-            rc.roll = rc.pitch = rc.yaw = 0.0f;
-            rc.throttle = 0.0f;
+            // этап 1: стики с rxfail HOLD — последние верные, прочие — автомат
+            const bool stage1 = status.state == CopterState::FAILSAFE && status.failsafeStage == 1;
+            const uint8_t hold = stage1 ? rc.stickHold : 0;
+            rc.roll = (hold & 1u) ? lastGoodRc.roll : 0.0f;
+            rc.pitch = (hold & 2u) ? lastGoodRc.pitch : 0.0f;
+            rc.yaw = (hold & 4u) ? lastGoodRc.yaw : 0.0f;
+            heldThrottle = (hold & 8u) != 0;
+            rc.throttle = heldThrottle ? lastGoodRc.throttle : 0.0f;
             return false;
         }
 
@@ -1107,6 +1124,8 @@ namespace copter
         Pt1 throttleHpLpf;               // anti-gravity
         Pt1 throttleBoostLpf;            // throttle_boost
         Pt1 voltLpf;
+        bool heldThrottle = false;   // этап 1 failsafe на последнем газе (rxfail 3 h)
+        float throttleLimit = 1.0f;   // vbat_cutoff_percent
         Pt2 accelLpf[3];
         float accelG[3] = { 0.0f, 0.0f, 1.0f };   // после ФНЧ
         Pt1 motionLpf;

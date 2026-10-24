@@ -163,5 +163,68 @@ namespace copter
             for (int i = 0; i < 16; ++i) out17[i] = (f & (0x8000 >> i)) ? t.one : t.zero;
             out17[16] = 0;
         }
+
+        // ---- буфер burst DMA (hal/stm32/Stm32Dshot.h) ----
+        //
+        // Один таймер ведёт до 4 моторов (каналы CH1..CH4). По каждому событию
+        // обновления таймера (раз в бит) DMA в режиме burst пишет подряд CCRn…
+        // CCRn+k−1 — ширины импульсов текущего бита всех каналов. Буфер —
+        // [слот бита][канал]: 16 бит кадра и 2 слота нулей (линия внизу, пока
+        // следующий кадр; CCR с предзагрузкой — новое значение работает со
+        // следующего бита, последний ноль гасит линию после кадра).
+        constexpr uint8_t FRAME_SLOTS = 18;
+        constexpr uint8_t BURST_MAX = 4;
+
+        // frames[k] — кадр канала firstChannel + k (used[k] = false — канал
+        // не мотор: всегда 0, линия внизу).
+        inline void burstBuffer(const uint16_t* frames, const bool* used, uint8_t burst, const BitTicks& t, uint32_t* out)
+        {
+            for (uint8_t slot = 0; slot < FRAME_SLOTS; ++slot)
+            {
+                for (uint8_t k = 0; k < burst; ++k)
+                {
+                    uint32_t w = 0;
+                    if (slot < 16 && used[k]) w = (frames[k] & (0x8000 >> slot)) ? t.one : t.zero;
+                    out[slot * burst + k] = w;
+                }
+            }
+        }
+
+        // Обратно: канал k буфера -> кадр (проверка в тестах). false — не DShot
+        // (ширина не «1» и не «0» с допуском в такт, или нет паузы в конце).
+        inline bool decodeBurst(const uint32_t* buffer, uint8_t burst, uint8_t k, const BitTicks& t, uint16_t& frame)
+        {
+            uint16_t f = 0;
+            for (uint8_t slot = 0; slot < 16; ++slot)
+            {
+                const uint32_t w = buffer[slot * burst + k];
+                const uint32_t dOne = w > t.one ? w - t.one : t.one - w;
+                const uint32_t dZero = w > t.zero ? w - t.zero : t.zero - w;
+                if (dOne <= 1) f = static_cast<uint16_t>(f | (0x8000 >> slot));
+                else if (dZero > 1) return false;
+            }
+            for (uint8_t slot = 16; slot < FRAME_SLOTS; ++slot)
+            {
+                if (buffer[slot * burst + k] != 0) return false;
+            }
+            frame = f;
+            return true;
+        }
+
+        // Длительность кадра (16 бит), мкс.
+        inline float frameUs(EscProtocol p)
+        {
+            const uint32_t rate = bitRate(p);
+            return rate ? 16.0e6f / static_cast<float>(rate) : 0.0f;
+        }
+
+        // Чаще цикл не поднимать: кадр и пауза не короче кадра (регулятору
+        // нужно время разобрать кадр; у BF так же: DShot150 — до 4 кГц,
+        // DShot300 — до 8, DShot600 — до 16). 0 — не DShot.
+        inline uint32_t maxLoopHz(EscProtocol p)
+        {
+            const float us = frameUs(p);
+            return us > 0.0f ? static_cast<uint32_t>(1.0e6f / (2.0f * us)) : 0;
+        }
     }
 }

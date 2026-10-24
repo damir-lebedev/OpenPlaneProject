@@ -3019,6 +3019,146 @@ void test_cli_aux_map_rxrange_and_diff()
     port.take();
 }
 
+// ---- 104: rxfail ----
+
+// Строки rxfail как в BF: стики a/h, AUX h/s; умолчания, ошибки, флеш.
+void test_rxfail_table_like_betaflight()
+{
+    RcConfig c;
+    char err[96], row[32];
+    TEST_ASSERT_EQUAL(static_cast<int>(RxfailMode::AUTO), static_cast<int>(c.rxfail(0).mode));
+    TEST_ASSERT_EQUAL(static_cast<int>(RxfailMode::AUTO), static_cast<int>(c.rxfail(3).mode));
+    TEST_ASSERT_EQUAL(static_cast<int>(RxfailMode::HOLD), static_cast<int>(c.rxfail(4).mode));
+    TEST_ASSERT_EQUAL(static_cast<int>(RxfailMode::HOLD), static_cast<int>(c.rxfail(17).mode));
+    c.formatRxfail(0, row, sizeof(row));
+    TEST_ASSERT_EQUAL_STRING("rxfail 0 a", row);
+    c.formatRxfail(5, row, sizeof(row));
+    TEST_ASSERT_EQUAL_STRING("rxfail 5 h", row);
+    TEST_ASSERT_FALSE(c.anyRxfail());
+    TEST_ASSERT_EQUAL_UINT8(0, c.stickHoldMask());
+
+    // стик — a или h; AUX — h или s значение (шаг 25 вниз)
+    TEST_ASSERT_TRUE(c.parseRxfail("3 h", err, sizeof(err)));
+    TEST_ASSERT_TRUE(c.parseRxfail("1 H", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT8(0x0A, c.stickHoldMask());
+    TEST_ASSERT_FALSE(c.parseRxfail("0 s 1500", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("у стиков режим a (авто) или h (держать)", err);
+    TEST_ASSERT_FALSE(c.parseRxfail("4 a", err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseRxfail("4 s", err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseRxfail("4 s 2300", err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseRxfail("18 h", err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseRxfail("4 s 1500 x", err, sizeof(err)));
+    TEST_ASSERT_FALSE(c.parseRxfail("x", err, sizeof(err)));
+    TEST_ASSERT_TRUE(c.parseRxfail("4 s 1990", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT16(1975, c.rxfail(4).us);
+    c.formatRxfail(4, row, sizeof(row));
+    TEST_ASSERT_EQUAL_STRING("rxfail 4 s 1975", row);
+    TEST_ASSERT_TRUE(c.anyRxfail());
+    TEST_ASSERT_FALSE(c.isDefault());
+
+    // во флеш и обратно; старая запись без rxfail — умолчания
+    uint8_t buf[RcConfig::STORE_MAX];
+    const size_t n = c.serialize(buf, sizeof(buf));
+    TEST_ASSERT_TRUE(n > 0);
+    RcConfig back;
+    TEST_ASSERT_TRUE(back.deserialize(buf, n));
+    TEST_ASSERT_EQUAL(static_cast<int>(RxfailMode::SET), static_cast<int>(back.rxfail(4).mode));
+    TEST_ASSERT_EQUAL_UINT16(1975, back.rxfail(4).us);
+    TEST_ASSERT_EQUAL_UINT8(0x0A, back.stickHoldMask());
+    TEST_ASSERT_TRUE(back.deserialize(buf, n - 1 - 3 * 3));   // без блока rxfail
+    TEST_ASSERT_FALSE(back.anyRxfail());
+    c.reset();
+    TEST_ASSERT_TRUE(c.isDefault());
+}
+
+// AUX без связи: 0.3 с — прежнее, затем rxfail (HOLD — прежнее, SET —
+// заданное); связь вернулась — снова с пульта. Испорченный импульс AUX при
+// живой связи — так же.
+void test_rx_input_rxfail_values()
+{
+    RxBench b;
+    useDefaultSwitches(b.cfg);
+    char err[96];
+    TEST_ASSERT_TRUE(b.cfg.parseRxfail("6 s 1500", err, sizeof(err)));   // AUX3 (CH7): ALTHOLD
+    TEST_ASSERT_TRUE(b.cfg.parseRxfail("2 h", err, sizeof(err)));
+    b.in.configure(b.cfg, 885, 2115);
+    b.ch[4] = 2000;   // ARM
+    b.ch[5] = 1800;   // AUX2
+    CopterRc rc = b.in.read(b.ch, 10, true, 1000);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ANGLE), static_cast<int>(rc.mode));
+    TEST_ASSERT_EQUAL_UINT8(0x04, rc.stickHold);
+
+    // приёмник без связи шлёт что попало — не верим
+    b.ch[5] = 1100;
+    b.ch[6] = 1000;
+    rc = b.in.read(b.ch, 10, false, 1100);
+    TEST_ASSERT_FALSE(rc.linkOk);
+    TEST_ASSERT_EQUAL_UINT16(1800, b.in.auxUs(1));
+    rc = b.in.read(b.ch, 10, false, 1399);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ANGLE), static_cast<int>(rc.mode));
+    rc = b.in.read(b.ch, 10, false, 1400);   // 0.3 с — значение rxfail
+    TEST_ASSERT_EQUAL_UINT16(1500, b.in.auxUs(2));
+    TEST_ASSERT_EQUAL_UINT16(1800, b.in.auxUs(1));   // HOLD
+    TEST_ASSERT_EQUAL_UINT16(2000, b.in.auxUs(0));   // ARM — держится
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ALT_HOLD), static_cast<int>(rc.mode));
+
+    // связь вернулась
+    rc = b.in.read(b.ch, 10, true, 1500);
+    TEST_ASSERT_TRUE(rc.linkOk);
+    TEST_ASSERT_EQUAL_UINT16(1100, b.in.auxUs(1));
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ANGLE), static_cast<int>(rc.mode));
+
+    // испорченный импульс AUX3 при живой связи: таймер — заново
+    b.ch[6] = 3000;
+    rc = b.in.read(b.ch, 10, true, 2000);
+    TEST_ASSERT_TRUE(rc.linkOk);
+    TEST_ASSERT_EQUAL_UINT16(1000, b.in.auxUs(2));
+    rc = b.in.read(b.ch, 10, true, 2300);
+    TEST_ASSERT_EQUAL_UINT16(1500, b.in.auxUs(2));
+
+    // без времени (nowMs = 0) — просто держится
+    RxBench plain;
+    TEST_ASSERT_TRUE(plain.cfg.parseRxfail("4 s 2000", err, sizeof(err)));
+    plain.read(true);
+    plain.ch[4] = 1700;
+    plain.read(false);
+    plain.read(false);
+    TEST_ASSERT_EQUAL_UINT16(1000, plain.in.auxUs(0));
+}
+
+void test_cli_rxfail_and_diff()
+{
+    CopterParams& p = five5Params();
+    Bench b;
+    b.ctl.configure(p.tune());
+    CliCapture port;
+    CopterCli cli(p, b.ctl, port);
+    TEST_ASSERT_TRUE(cli.enter());
+    port.take();
+    cli.execute("rxfail");
+    std::string out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "rxfail 0 a\r\nrxfail 1 a\r\nrxfail 2 a\r\nrxfail 3 a\r\nrxfail 4 h\r\n"), out.c_str());
+    TEST_ASSERT_TRUE(has(out, "rxfail 17 h\r\n"));
+    cli.execute("rxfail 7 s 1000");
+    TEST_ASSERT_TRUE(has(port.take(), "rxfail 7 s 1000\r\n"));
+    TEST_ASSERT_TRUE(cli.hasUnsaved());
+    cli.execute("rxfail 3 h");
+    port.take();
+    cli.execute("rxfail 7");
+    TEST_ASSERT_TRUE(has(port.take(), "rxfail 7 s 1000\r\n"));
+    cli.execute("rxfail 0 s 1500");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: у стиков режим a (авто) или h (держать)###"));
+    cli.execute("diff");
+    out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "\r\n# rxfail\r\nrxfail 3 h\r\nrxfail 7 s 1000\r\n"), out.c_str());
+    cli.execute("dump");
+    TEST_ASSERT_TRUE(has(port.take(), "rxfail 0 a\r\n"));
+    cli.execute("defaults nosave");
+    TEST_ASSERT_TRUE(p.rc().isDefault());
+    cli.execute("exit");
+    port.take();
+}
+
 // ---- батарея (copter/Battery.h) ----
 
 namespace
@@ -3066,7 +3206,7 @@ void test_battery_voltage_current_and_mah()
     b.configure(c);
     feed(b, 25.2f, 150.0f, 1.0f);
     TEST_ASSERT_FLOAT_WITHIN(0.05f, 10.0f, b.amps());
-    feed(b, 25.2f, 0.0f, 1.0f);
+    feed(b, 25.2f, 0.0f, 2.0f);   // ibat_lpf_period 10 — ФНЧ 1 Гц
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, b.amps());
 }
 
@@ -3077,7 +3217,8 @@ void test_battery_warning_critical_hysteresis_and_sag()
     feed(b, 22.0f, 0.0f, 1.0f);
     TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(b.state()));
 
-    // провал под газом на 0.3 с — не тревога: состояние — по среднему за ~2 с
+    // провал под газом на 0.3 с — не тревога: ниже порога нужно 2 с подряд
+    // (vbat_duration_for_warning 20)
     feed(b, 15.0f, 0.0f, 0.3f);
     TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(b.state()));
     feed(b, 22.0f, 0.0f, 3.0f);
@@ -3086,11 +3227,11 @@ void test_battery_warning_critical_hysteresis_and_sag()
     TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::WARNING), static_cast<int>(b.state()));
     feed(b, 16.2f, 0.0f, 6.0f);   // 2.70
     TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::CRITICAL), static_cast<int>(b.state()));
-    feed(b, 17.0f, 0.0f, 6.0f);   // 2.83 — у порога, но без запаса 0.05: всё ещё CRITICAL
+    feed(b, 16.79f, 0.0f, 6.0f);  // не выше минимума 16.8 — всё ещё CRITICAL
     TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::CRITICAL), static_cast<int>(b.state()));
-    feed(b, 18.0f, 0.0f, 6.0f);   // 3.00
+    feed(b, 18.0f, 0.0f, 6.0f);   // 3.00 — выше минимума: WARNING (как в BF)
     TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::WARNING), static_cast<int>(b.state()));
-    feed(b, 18.84f, 0.0f, 6.0f);  // 3.14 — без запаса
+    feed(b, 18.6f, 0.0f, 6.0f);   // 3.10 — ровно порог, не выше
     TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::WARNING), static_cast<int>(b.state()));
     feed(b, 19.5f, 0.0f, 6.0f);   // 3.25
     TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(b.state()));
@@ -3109,6 +3250,157 @@ void test_battery_warning_critical_hysteresis_and_sag()
     TEST_ASSERT_FALSE(b.hasCurrent());
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, b.amps());
     TEST_ASSERT_FLOAT_WITHIN(1.0f, 50.0f, b.percentLeft());
+}
+
+// 124–126: настройки батареи BF — делитель, батарея есть или USB, «не
+// полная», задержки и гистерезис, тревога по расходу, use_vbat_alerts,
+// vbat_cutoff_percent, калибровка по мультиметру.
+void test_battery_betaflight_settings()
+{
+    BatteryMonitor b;
+    BatteryConfig c = liion6s();
+    c.vbatDivider = 20;   // вдвое больший делитель — вдвое меньше вольт
+    b.configure(c);
+    feed(b, 25.2f, 0.0f, 1.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 12.6f, b.volts());
+    c.vbatDivider = 10;
+    c.vbatMultiplier = 2;
+    b.configure(c);
+    feed(b, 50.4f, 0.0f, 5.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, 25.2f, b.volts());
+
+    // battery_meter NONE — напряжения нет
+    c = liion6s();
+    c.voltageSensor = false;
+    b.configure(c);
+    feed(b, 25.2f, 0.0f, 1.0f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::NOT_PRESENT), static_cast<int>(b.state()));
+
+    // 1S: 4.2 В — батарея; 5 В USB через делитель — нет
+    BatteryMonitor one;
+    c = liion6s();
+    c.cells = 1;
+    one.configure(c);
+    feed(one, 4.2f, 0.0f, 0.5f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(one.state()));
+    feed(one, 5.0f, 0.0f, 0.5f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::NOT_PRESENT), static_cast<int>(one.state()));
+    TEST_ASSERT_EQUAL_UINT8(1, one.cells());
+
+    // полная ли при подключении (vbat_full_cell_voltage 4.10)
+    BatteryMonitor f;
+    f.configure(liion6s());
+    feed(f, 25.0f, 0.0f, 0.5f);
+    TEST_ASSERT_TRUE(f.wasFullWhenPluggedIn());
+    feed(f, 0.0f, 0.0f, 0.5f);
+    TEST_ASSERT_FALSE(f.wasFullWhenPluggedIn());
+    feed(f, 24.0f, 0.0f, 0.5f);
+    TEST_ASSERT_FALSE(f.wasFullWhenPluggedIn());
+
+    // без задержек (как у BF) — сразу, порог — минус vbat_hysteresis
+    BatteryMonitor d;
+    c = liion6s();
+    c.warningDelayS = c.criticalDelayS = 0.0f;
+    c.hysteresisVolts = 0.3f;
+    d.configure(c);
+    feed(d, 20.0f, 0.0f, 0.5f);
+    feed(d, 18.4f, 0.0f, 10.0f);   // ниже 18.6, но не ниже 18.3
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(d.state()));
+    feed(d, 18.2f, 0.0f, 10.0f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::WARNING), static_cast<int>(d.state()));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, d.throttleLimit());   // vbat_cutoff_percent 100 — нет
+
+    // по расходу: 100 мА·ч при 10 А; use_vbat_alerts OFF — молчит
+    BatteryMonitor m;
+    c = liion6s();
+    c.capacityMah = 100.0f;
+    c.useCbatAlerts = true;
+    c.useVbatAlerts = false;
+    m.configure(c);
+    feed(m, 25.2f, 100.0f, 31.0f);   // 86 мА·ч — осталось 14 %
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(m.state()));
+    feed(m, 25.2f, 100.0f, 2.0f);    // 92 — 8 %
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::WARNING), static_cast<int>(m.state()));
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::WARNING), static_cast<int>(m.stateByConsumption()));
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(m.stateByVoltage()));
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::OK), static_cast<int>(m.alertState()));
+    feed(m, 25.2f, 100.0f, 4.0f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::CRITICAL), static_cast<int>(m.state()));
+
+    // vbat_cutoff_percent 50: с первого CRITICAL газ за 10 с до половины
+    BatteryMonitor l;
+    c = liion6s();
+    c.lvcPercent = 50.0f;
+    l.configure(c);
+    feed(l, 20.0f, 0.0f, 0.5f);
+    feed(l, 16.0f, 0.0f, 3.0f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::WARNING), static_cast<int>(l.state()));
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 1.0f, l.throttleLimit());
+    feed(l, 16.0f, 0.0f, 3.0f);
+    TEST_ASSERT_EQUAL(static_cast<int>(BatteryState::CRITICAL), static_cast<int>(l.state()));
+    feed(l, 16.0f, 0.0f, 5.0f);
+    TEST_ASSERT_TRUE(l.throttleLimit() < 0.85f && l.throttleLimit() > 0.6f);
+    feed(l, 18.0f, 0.0f, 10.0f);   // поднялось — ограничение остаётся до новой батареи
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.5f, l.throttleLimit());
+
+    // калибровка: делитель на деле 1:10, а стоит 110 — мультиметр 22.9 В
+    BatteryMonitor k;
+    k.configure(liion6s());
+    for (int i = 0; i < 300; ++i) k.update(22.9f * 1000.0f / 10.0f, 50.0f, 0.01f);   // 5 А при 100
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 100.0f, k.vbatScaleFor(22.9f));
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 50.0f, k.ibataScaleFor(10.0f));   // на деле 10 А — 5 мВ/А
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, k.ibataScaleFor(0.0f));
+}
+
+// Реестр -> монитор: force_battery_cell_count, bat_capacity, делитель,
+// current_meter из BF (VIRTUAL принимается, тока не даёт), задержки.
+void test_battery_params_like_betaflight()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    BatteryConfig c = p.batteryConfig();
+    TEST_ASSERT_EQUAL_UINT8(p.buildSpec().battery.cells, c.cells);
+    TEST_ASSERT_EQUAL_FLOAT(p.value(PARAM_BATTERY_MAH), c.capacityMah);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 4.10f, c.fullCellVolts);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 2.0f, c.warningDelayS);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 3.0f, c.detectCellVolts);
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, c.displayLpfPeriod);
+    TEST_ASSERT_TRUE(c.voltageSensor);
+    TEST_ASSERT_TRUE(p.parse(PARAM_FORCE_BATTERY_CELL_COUNT, 0, "6", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_BAT_CAPACITY, 0, "2200", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_VBAT_DIVIDER, 0, "12", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_CURRENT_METER, 0, "VIRTUAL", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_BATTERY_METER, 0, "NONE", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_VBAT_DURATION_FOR_WARNING, 0, "0", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_VBAT_CUTOFF_PERCENT, 0, "60", err, sizeof(err)));
+    c = p.batteryConfig();
+    TEST_ASSERT_EQUAL_UINT8(6, c.cells);
+    TEST_ASSERT_EQUAL_FLOAT(2200.0f, c.capacityMah);
+    TEST_ASSERT_EQUAL_FLOAT(12.0f, c.vbatDivider);
+    TEST_ASSERT_FALSE(c.currentSensor);
+    TEST_ASSERT_FALSE(c.voltageSensor);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, c.warningDelayS);
+    TEST_ASSERT_EQUAL_FLOAT(60.0f, c.lvcPercent);
+    // полная банка — по химии
+    TEST_ASSERT_TRUE(p.parse(PARAM_BATTERY_CHEMISTRY, 0, "LIHV", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(425.0f, p.value(PARAM_VBAT_FULL_CELL_VOLTAGE));
+    p.resetAll();
+}
+
+// vbat_cutoff_percent в контроллере: газ со стика ×, в ALT_HOLD — нет.
+void test_throttle_limit_scales_stick_throttle()
+{
+    Bench b;
+    TEST_ASSERT_TRUE(b.armAfterBoot());
+    b.rc.throttle = 0.6f;
+    b.run(0.5f);
+    const float full = b.ctl.getStatus().throttle;
+    b.ctl.setThrottleLimit(0.5f);
+    b.run(0.5f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, full * 0.5f, b.ctl.getStatus().throttle);
+    b.ctl.setThrottleLimit(2.0f);   // прижимается к 1
+    b.run(0.5f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, full, b.ctl.getStatus().throttle);
 }
 
 void test_battery_chemistry_params()
@@ -3834,9 +4126,15 @@ int main()
     RUN_TEST(test_rc_tables_survive_flash);
     RUN_TEST(test_copter_description_is_params);
     RUN_TEST(test_cli_aux_map_rxrange_and_diff);
+    RUN_TEST(test_rxfail_table_like_betaflight);
+    RUN_TEST(test_rx_input_rxfail_values);
+    RUN_TEST(test_cli_rxfail_and_diff);
     RUN_TEST(test_battery_voltage_current_and_mah);
     RUN_TEST(test_battery_warning_critical_hysteresis_and_sag);
     RUN_TEST(test_battery_chemistry_params);
+    RUN_TEST(test_battery_betaflight_settings);
+    RUN_TEST(test_battery_params_like_betaflight);
+    RUN_TEST(test_throttle_limit_scales_stick_throttle);
     RUN_TEST(test_vtx_band_table_is_this_transmitter);
     RUN_TEST(test_vtx_smartaudio_21_power_cap_and_pit);
     RUN_TEST(test_vtx_smartaudio_v1_and_echo_on_the_wire);

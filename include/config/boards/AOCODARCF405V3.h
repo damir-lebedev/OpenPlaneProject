@@ -72,11 +72,14 @@
 #define OPB_I2C_SENSORS 1
 #define OPB_BARO_SPL06 1   // тип — по описанию платы (у BF драйвера SPL06 нет)
 
-// Батарея и ток: масштабы — как vbat_scale, ibata_scale, ibata_offset в BF.
+// Батарея и ток: масштабы — как vbat_scale, vbat_divider, vbat_multiplier,
+// ibata_scale, ibata_offset в BF.
 #define OPB_ADC_VBAT PC2
 #define OPB_ADC_CURR PC1
 #define OPB_ADC_RSSI PC3
 #define OPB_VBAT_SCALE 110
+#define OPB_VBAT_DIVIDER 10
+#define OPB_VBAT_MULTIPLIER 1
 #define OPB_IBATA_SCALE 206
 #define OPB_IBATA_OFFSET 0
 

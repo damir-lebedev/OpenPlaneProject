@@ -229,6 +229,23 @@ namespace copter
         PARAM_CURRENT_METER,
         PARAM_IBATA_SCALE,
         PARAM_IBATA_OFFSET,
+        PARAM_VBAT_FULL_CELL_VOLTAGE,
+        PARAM_VBAT_HYSTERESIS,
+        PARAM_VBAT_DETECT_CELL_VOLTAGE,
+        PARAM_FORCE_BATTERY_CELL_COUNT,
+        PARAM_VBAT_DIVIDER,
+        PARAM_VBAT_MULTIPLIER,
+        PARAM_BATTERY_METER,
+        PARAM_BAT_CAPACITY,
+        PARAM_USE_VBAT_ALERTS,
+        PARAM_USE_CBAT_ALERTS,
+        PARAM_CBAT_ALERT_PERCENT,
+        PARAM_VBAT_CUTOFF_PERCENT,
+        PARAM_VBAT_DISPLAY_LPF_PERIOD,
+        PARAM_VBAT_SAG_LPF_PERIOD,
+        PARAM_IBAT_LPF_PERIOD,
+        PARAM_VBAT_DURATION_FOR_WARNING,
+        PARAM_VBAT_DURATION_FOR_CRITICAL,
         PARAM_VTX_PROTOCOL,
         PARAM_VTX_BAND,
         PARAM_VTX_CHANNEL,
@@ -280,7 +297,9 @@ namespace copter
         static const char* const OFF_ON[] = { "OFF", "ON" };
         // порядок — как BatteryChemistry
         static const char* const CHEMISTRIES[] = { "LIPO", "LIHV", "LIION" };
-        static const char* const CURRENT_METERS[] = { "NONE", "ADC" };
+        // порядок — как CurrentMeter и VoltageMeter (Battery.h) и в BF
+        static const char* const CURRENT_METERS[] = { "NONE", "ADC", "VIRTUAL", "ESC", "MSP" };
+        static const char* const VOLTAGE_METERS[] = { "NONE", "ADC", "ESC" };
         // порядок — как VtxProtocol
         static const char* const VTX_PROTOCOLS[] = { "AUTO", "SMARTAUDIO", "TRAMP", "NONE" };
         static const char* const LOW_POWER_DISARM[] = { "OFF", "ON", "UNTIL_FIRST_ARM" };
@@ -453,12 +472,46 @@ namespace copter
               "полная банка (для остатка в процентах без датчика тока)" },
             { "vbat_scale", kInt, kMaster, kGroupPower, 0, 255, 110, kTable, "", nullptr, 0,
               "делитель батареи на плате x10 (110 — 1:11)" },
-            { "current_meter", kEnum, kMaster, kGroupPower, 0, 1, 0, kTable, "", CURRENT_METERS, 2,
-              "датчик тока: ADC — площадка CUR регулятора" },
+            { "current_meter", kEnum, kMaster, kGroupPower, 0, 4, 0, kTable, "", CURRENT_METERS, 5,
+              "датчик тока: ADC — площадка CUR регулятора (VIRTUAL, ESC, MSP пока не действуют)" },
             { "ibata_scale", kInt, kMaster, kGroupPower, -16000, 16000, 400, kTable, "x0.1 мВ/А", nullptr, 0,
               "датчик тока: мВ на ампер x10 (у BLS 100A — 100)" },
             { "ibata_offset", kInt, kMaster, kGroupPower, -32000, 32000, 0, kTable, "мВ", nullptr, 0,
               "датчик тока: напряжение при нуле ампер" },
+            { "vbat_full_cell_voltage", kInt, kMaster, kGroupPower, 100, 500, 0, kBattery, "x0.01 В", nullptr, 0,
+              "банка выше при подключении — батарея полная (иначе предупреждение «не полная»)" },
+            { "vbat_hysteresis", kInt, kMaster, kGroupPower, 0, 250, 1, kTable, "x0.01 В", nullptr, 0,
+              "тревога — когда напряжение ниже порога на столько (на всю батарею)" },
+            { "vbat_detect_cell_voltage", kInt, kMaster, kGroupPower, 0, 2000, 300, kTable, "x0.01 В", nullptr, 0,
+              "ниже (и не похоже на 2S и больше) — батареи нет, питание от USB" },
+            { "force_battery_cell_count", kInt, kMaster, kGroupPower, 0, 24, 0, kTable, "S", nullptr, 0,
+              "банок в батарее; 0 — из описания коптера (battery_cells), не угадывать" },
+            { "vbat_divider", kInt, kMaster, kGroupPower, 1, 255, 10, kTable, "", nullptr, 0,
+              "делитель напряжения: вольты = мВ пина x vbat_scale / (1000 x vbat_divider x vbat_multiplier)" },
+            { "vbat_multiplier", kInt, kMaster, kGroupPower, 1, 255, 1, kTable, "", nullptr, 0,
+              "второй делитель напряжения (см. vbat_divider)" },
+            { "battery_meter", kEnum, kMaster, kGroupPower, 0, 2, 1, kTable, "", VOLTAGE_METERS, 3,
+              "напряжение батареи: ADC — делитель платы (ESC пока не действует)" },
+            { "bat_capacity", kInt, kMaster, kGroupPower, 0, 20000, 0, kTable, "мА·ч", nullptr, 0,
+              "ёмкость для остатка и тревоги по расходу; 0 — из описания коптера (battery_mah)" },
+            { "use_vbat_alerts", kEnum, kMaster, kGroupPower, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "пищать и показывать тревогу батареи" },
+            { "use_cbat_alerts", kEnum, kMaster, kGroupPower, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "тревога и по израсходованным мА·ч (нужен датчик тока)" },
+            { "cbat_alert_percent", kInt, kMaster, kGroupPower, 0, 100, 10, kTable, "%", nullptr, 0,
+              "осталось столько ёмкости — WARNING, ноль — CRITICAL" },
+            { "vbat_cutoff_percent", kInt, kMaster, kGroupPower, 0, 100, 100, kTable, "%", nullptr, 0,
+              "с первого CRITICAL газ за 10 с ограничивается до этой доли; 100 — нет" },
+            { "vbat_display_lpf_period", kInt, kMaster, kGroupPower, 1, 255, 30, kTable, "x0.1 с", nullptr, 0,
+              "сглаживание показа и тревог напряжения (ФНЧ 10/период Гц)" },
+            { "vbat_sag_lpf_period", kInt, kMaster, kGroupPower, 1, 255, 2, kTable, "x0.1 с", nullptr, 0,
+              "сглаживание напряжения для компенсации просадки (ФНЧ 10/период Гц)" },
+            { "ibat_lpf_period", kInt, kMaster, kGroupPower, 1, 255, 10, kTable, "x0.1 с", nullptr, 0,
+              "сглаживание тока (ФНЧ 10/период Гц)" },
+            { "vbat_duration_for_warning", kInt, kMaster, kGroupPower, 0, 150, 20, kTable, "x0.1 с", nullptr, 0,
+              "столько ниже порога — WARNING (провал под газом — не тревога; у BF 0)" },
+            { "vbat_duration_for_critical", kInt, kMaster, kGroupPower, 0, 150, 20, kTable, "x0.1 с", nullptr, 0,
+              "столько ниже минимума — CRITICAL (у BF 0)" },
             { "vtx_protocol", kEnum, kMaster, kGroupVtx, 0, 3, 3, kTable, "", VTX_PROTOCOLS, 4,
               "провод управления видеопередатчиком: AUTO — найти SmartAudio или Tramp" },
             { "vtx_band", kInt, kMaster, kGroupVtx, 0, VTX_BANDS, 5, kTable, "", nullptr, 0,
@@ -678,14 +731,31 @@ namespace copter
         {
             BatteryConfig c;
             c.vbatScale = value(PARAM_VBAT_SCALE);
+            c.vbatDivider = value(PARAM_VBAT_DIVIDER);
+            c.vbatMultiplier = value(PARAM_VBAT_MULTIPLIER);
+            c.voltageSensor = static_cast<VoltageMeter>(static_cast<uint8_t>(value(PARAM_BATTERY_METER))) == VoltageMeter::ADC_PIN;
             c.ibataScale = value(PARAM_IBATA_SCALE);
             c.ibataOffsetMv = value(PARAM_IBATA_OFFSET);
-            c.currentSensor = value(PARAM_CURRENT_METER) > 0.5f;
-            c.cells = static_cast<uint8_t>(value(PARAM_BATTERY_CELLS));
-            c.capacityMah = value(PARAM_BATTERY_MAH);
+            c.currentSensor = static_cast<CurrentMeter>(static_cast<uint8_t>(value(PARAM_CURRENT_METER))) == CurrentMeter::ADC_PIN;
+            const float forced = value(PARAM_FORCE_BATTERY_CELL_COUNT);
+            c.cells = static_cast<uint8_t>(forced > 0.0f ? forced : value(PARAM_BATTERY_CELLS));
+            const float capacity = value(PARAM_BAT_CAPACITY);
+            c.capacityMah = capacity > 0.0f ? capacity : value(PARAM_BATTERY_MAH);
             c.minCellVolts = value(PARAM_VBAT_MIN_CELL_VOLTAGE) * 0.01f;
             c.warningCellVolts = value(PARAM_VBAT_WARNING_CELL_VOLTAGE) * 0.01f;
             c.maxCellVolts = value(PARAM_VBAT_MAX_CELL_VOLTAGE) * 0.01f;
+            c.fullCellVolts = value(PARAM_VBAT_FULL_CELL_VOLTAGE) * 0.01f;
+            c.detectCellVolts = value(PARAM_VBAT_DETECT_CELL_VOLTAGE) * 0.01f;
+            c.hysteresisVolts = value(PARAM_VBAT_HYSTERESIS) * 0.01f;
+            c.warningDelayS = value(PARAM_VBAT_DURATION_FOR_WARNING) * 0.1f;
+            c.criticalDelayS = value(PARAM_VBAT_DURATION_FOR_CRITICAL) * 0.1f;
+            c.useVbatAlerts = value(PARAM_USE_VBAT_ALERTS) > 0.5f;
+            c.useCbatAlerts = value(PARAM_USE_CBAT_ALERTS) > 0.5f;
+            c.cbatAlertPercent = value(PARAM_CBAT_ALERT_PERCENT);
+            c.lvcPercent = value(PARAM_VBAT_CUTOFF_PERCENT);
+            c.displayLpfPeriod = value(PARAM_VBAT_DISPLAY_LPF_PERIOD);
+            c.sagLpfPeriod = value(PARAM_VBAT_SAG_LPF_PERIOD);
+            c.ibatLpfPeriod = value(PARAM_IBAT_LPF_PERIOD);
             return c;
         }
 
@@ -1008,7 +1078,8 @@ namespace copter
         // Записать заданное руками (commit — за вызывающим).
         bool save(KeyValueStore& kv) const
         {
-            uint8_t blob[3 + PARAM_COUNT * PROFILES * (4 + NAME_LENGTH)];
+            // ~7 КБ: не на стеке полётной задачи (save — только из неё, по одному)
+            static uint8_t blob[3 + PARAM_COUNT * PROFILES * (4 + NAME_LENGTH)];
             size_t n = 0;
             blob[n++] = STORE_VERSION;
             blob[n++] = pidIndex;
@@ -1144,6 +1215,7 @@ namespace copter
             defaults[PARAM_VBAT_MIN_CELL_VOLTAGE] = roundf(cells.min * 100.0f);
             defaults[PARAM_VBAT_WARNING_CELL_VOLTAGE] = roundf(cells.warning * 100.0f);
             defaults[PARAM_VBAT_MAX_CELL_VOLTAGE] = roundf(cells.max * 100.0f);
+            defaults[PARAM_VBAT_FULL_CELL_VOLTAGE] = roundf(cells.full * 100.0f);
 
             const bool bf = source() == TuneSource::BETAFLIGHT;
             const AxisGains* gains[3] = { &model.roll, &model.pitch, &model.yaw };

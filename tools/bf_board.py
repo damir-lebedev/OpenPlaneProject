@@ -74,6 +74,8 @@ class Board:
         self.adc_curr = None
         self.adc_rssi = None
         self.vbat_scale = 110       # BF: делитель ×10
+        self.vbat_divider = 10      # BF: vbat_divider
+        self.vbat_multiplier = 1    # BF: vbat_multiplier
         self.ibata_scale = 400      # BF: 0.1 мВ на ампер
         self.ibata_offset = 0       # BF: мВ
         self.beeper = None
@@ -277,6 +279,10 @@ def parse_dump(text, board):
             board.mag_i2c = int(value)
         elif key == "vbat_scale":
             board.vbat_scale = int(value)
+        elif key == "vbat_divider":
+            board.vbat_divider = int(value)
+        elif key == "vbat_multiplier":
+            board.vbat_multiplier = int(value)
         elif key == "ibata_scale":
             board.ibata_scale = int(value)
         elif key == "ibata_offset":
@@ -396,11 +402,14 @@ def generate(board, baro="SPL06", source_note=""):
     w("#define OPB_I2C_SENSORS {}".format(i2c_bus))
     w("#define OPB_BARO_{} 1   // тип — по описанию платы (у BF драйвера SPL06 нет)".format(baro))
     w("")
-    w("// Батарея и ток: масштабы — как vbat_scale, ibata_scale, ibata_offset в BF.")
+    w("// Батарея и ток: масштабы — как vbat_scale, vbat_divider, vbat_multiplier,")
+    w("// ibata_scale, ibata_offset в BF.")
     w("#define OPB_ADC_VBAT {}".format(c_pin(board.adc_vbat)))
     w("#define OPB_ADC_CURR {}".format(c_pin(board.adc_curr)))
     w("#define OPB_ADC_RSSI {}".format(c_pin(board.adc_rssi)))
     w("#define OPB_VBAT_SCALE {}".format(board.vbat_scale))
+    w("#define OPB_VBAT_DIVIDER {}".format(board.vbat_divider))
+    w("#define OPB_VBAT_MULTIPLIER {}".format(board.vbat_multiplier))
     w("#define OPB_IBATA_SCALE {}".format(board.ibata_scale))
     w("#define OPB_IBATA_OFFSET {}".format(board.ibata_offset))
     w("")

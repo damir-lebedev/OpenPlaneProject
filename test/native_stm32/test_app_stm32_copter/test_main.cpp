@@ -634,6 +634,141 @@ void test_app_protocol_params_set_save()
     takeSerial();
 }
 
+// 080: DShot на таймере с DMA. Моторы Matek H743 S1–S4 (TIM1 CH2/CH3, TIM2
+// CH1/CH2) и S7/S8 (TIM4 CH1/CH2): три таймера, у каждого свой burst.
+// Буфер, что ушёл бы в TIMx_DMAR, расшифровывается обратно в кадры:
+// длительности «1»/«0», пауза в конце, CRC, значение газа.
+namespace
+{
+    const int16_t DSHOT_PINS[] = { PB0, PB1, PA0, PA1, PD12, PD13 };
+
+    // Кадр мотора на таймере timer, канал (от первого канала burst) k.
+    uint16_t sentFrame(const Stm32Dshot& d, int timer, uint8_t timerIndex, uint8_t k)
+    {
+        const fake::DshotDmaRecord* r = fake::dshotDma(timer);
+        TEST_ASSERT_NOT_NULL(r);
+        TEST_ASSERT_EQUAL_UINT32(copter::dshot::FRAME_SLOTS * r->burst, r->sent.size());
+        uint16_t f = 0;
+        TEST_ASSERT_TRUE_MESSAGE(copter::dshot::decodeBurst(r->sent.data(), r->burst, k, d.bitTicks(timerIndex), f),
+                                 "не кадр DShot");
+        return f;
+    }
+}
+
+void test_dshot_frames_on_timer_dma()
+{
+    fake::dshotDmaReset();
+    static Stm32Dshot d;
+    TEST_ASSERT_EQUAL_UINT8(6, d.begin(DSHOT_PINS, 6, copter::EscProtocol::DSHOT600));
+    TEST_ASSERT_EQUAL_UINT8(3, d.timerCount());
+    // 240 МГц, DShot600: бит 400 тактов, «1» — 300, «0» — 150
+    const copter::dshot::BitTicks t = d.bitTicks(0);
+    TEST_ASSERT_EQUAL_UINT32(400, t.period);
+    TEST_ASSERT_EQUAL_UINT32(300, t.one);
+    TEST_ASSERT_EQUAL_UINT32(150, t.zero);
+    const fake::DshotDmaRecord* tim1 = fake::dshotDma(1);
+    TEST_ASSERT_NOT_NULL(tim1);
+    TEST_ASSERT_EQUAL_UINT8(2, tim1->firstChannel);   // CH2..CH3
+    TEST_ASSERT_EQUAL_UINT8(2, tim1->burst);
+    TEST_ASSERT_EQUAL_UINT8(1, fake::dshotDma(2)->firstChannel);
+    TEST_ASSERT_EQUAL_UINT8(1, fake::dshotDma(4)->firstChannel);
+
+    // не заармлен — «стоп» (0) на всех
+    const float zero[6] = {};
+    d.write(zero, false);
+    TEST_ASSERT_EQUAL_UINT32(3, d.framesSent());
+    for (uint8_t k = 0; k < 2; ++k)
+    {
+        TEST_ASSERT_EQUAL_HEX16(copter::dshot::frame(0, false, false), sentFrame(d, 1, 0, k));
+        TEST_ASSERT_EQUAL_HEX16(copter::dshot::frame(0, false, false), sentFrame(d, 2, 1, k));
+    }
+
+    // газ: значение = 48 + доля x 1999, CRC верная, мотор — на своём канале
+    const float cmd[6] = { 0.0f, 1.0f, 0.5f, 0.25f, 0.75f, 0.1f };
+    d.write(cmd, true);
+    const uint16_t f0 = sentFrame(d, 1, 0, 0);
+    TEST_ASSERT_TRUE(copter::dshot::frameValid(f0, false));
+    TEST_ASSERT_EQUAL_UINT16(48, f0 >> 5);
+    TEST_ASSERT_EQUAL_UINT16(2047, sentFrame(d, 1, 0, 1) >> 5);
+    TEST_ASSERT_EQUAL_UINT16(1048, sentFrame(d, 2, 1, 0) >> 5);
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::throttleValue(0.25f, true), sentFrame(d, 2, 1, 1) >> 5);
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::throttleValue(0.75f, true), sentFrame(d, 4, 2, 0) >> 5);
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::throttleValue(0.1f, true), d.value(5));
+    TEST_ASSERT_EQUAL_UINT32(2, fake::dshotDma(4)->starts);
+
+    // DShot300 на том же таймере — бит вдвое длиннее; частота цикла — с запасом
+    static Stm32Dshot slow;
+    fake::dshotDmaReset();
+    TEST_ASSERT_EQUAL_UINT8(2, slow.begin(DSHOT_PINS + 2, 2, copter::EscProtocol::DSHOT300));
+    TEST_ASSERT_EQUAL_UINT32(800, slow.bitTicks(0).period);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 26.67f, copter::dshot::frameUs(copter::EscProtocol::DSHOT600));
+    TEST_ASSERT_EQUAL_UINT32(18750, copter::dshot::maxLoopHz(copter::EscProtocol::DSHOT600));
+    TEST_ASSERT_EQUAL_UINT32(9375, copter::dshot::maxLoopHz(copter::EscProtocol::DSHOT300));
+    TEST_ASSERT_EQUAL_UINT32(4687, copter::dshot::maxLoopHz(copter::EscProtocol::DSHOT150));
+    TEST_ASSERT_EQUAL_UINT32(0, copter::dshot::maxLoopHz(copter::EscProtocol::ONESHOT125));
+
+    // не DShot — ничего не настраивается; через Stm32MotorOutput — тот же драйвер
+    TEST_ASSERT_EQUAL_UINT8(0, slow.begin(DSHOT_PINS, 2, copter::EscProtocol::ONESHOT125));
+    static Stm32MotorOutput out;
+    fake::dshotDmaReset();
+    TEST_ASSERT_TRUE(out.begin(DSHOT_PINS, 4, copter::EscProtocol::DSHOT600));
+    TEST_ASSERT_EQUAL_UINT8(4, out.attached());
+    TEST_ASSERT_TRUE(out.isAttached(3));
+    out.write(cmd, true);
+    TEST_ASSERT_EQUAL_UINT16(2047, out.dshotOutput().value(1));
+}
+
+// Команды DShot — 10 кадров с битом телеметрии, только пока моторы стоят;
+// поток DMA занят (цикл короче кадра) — кадр пропускается; у таймера нет
+// потока DMA — его моторы не выходы.
+void test_dshot_commands_skips_and_missing_dma()
+{
+    fake::dshotDmaReset();
+    static Stm32Dshot d;
+    TEST_ASSERT_EQUAL_UINT8(4, d.begin(DSHOT_PINS, 4, copter::EscProtocol::DSHOT600));
+    const float zero[4] = {};
+    const float hover[4] = { 0.3f, 0.3f, 0.3f, 0.3f };
+
+    d.sendCommand(0xFF, copter::dshot::SPIN_DIRECTION_2);
+    d.sendCommand(0, 0);    // не команда — ничего
+    d.sendCommand(0, 60);   // это газ, не команда
+    TEST_ASSERT_TRUE(d.commandPending());
+    d.write(hover, true);   // крутятся — команда ждёт
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::throttleValue(0.3f, true), d.value(0));
+    for (int i = 0; i < Stm32Dshot::COMMAND_REPEATS; ++i)
+    {
+        d.write(zero, false);
+        const uint16_t f = sentFrame(d, 1, 0, 0);
+        TEST_ASSERT_EQUAL_UINT16(copter::dshot::SPIN_DIRECTION_2, f >> 5);
+        TEST_ASSERT_EQUAL_UINT16(1, (f >> 4) & 1);   // бит телеметрии
+        TEST_ASSERT_TRUE(copter::dshot::frameValid(f, false));
+    }
+    TEST_ASSERT_FALSE(d.commandPending());
+    d.write(zero, false);
+    TEST_ASSERT_EQUAL_HEX16(copter::dshot::frame(0, false, false), sentFrame(d, 2, 1, 1));
+
+    // поток занят прошлым кадром — новый пропускается, буфер не трогается
+    fake::dshotDmaSlow() = true;
+    d.write(hover, true);
+    const uint32_t starts = fake::dshotDma(2)->starts;
+    const uint32_t skipped = d.framesSkipped();
+    d.write(zero, false);
+    TEST_ASSERT_EQUAL_UINT32(starts, fake::dshotDma(2)->starts);
+    TEST_ASSERT_EQUAL_UINT32(skipped + 2, d.framesSkipped());
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::throttleValue(0.3f, true), sentFrame(d, 2, 1, 0) >> 5);
+    fake::dshotDmaFinish();
+    d.write(zero, false);
+    TEST_ASSERT_EQUAL_UINT32(starts + 1, fake::dshotDma(2)->starts);
+
+    // у TIM2 нет потока DMA — S3/S4 не выходы
+    fake::dshotDmaReset();
+    fake::dshotNoDma() = 2;
+    TEST_ASSERT_EQUAL_UINT8(2, d.begin(DSHOT_PINS, 4, copter::EscProtocol::DSHOT600));
+    TEST_ASSERT_TRUE(d.isAttached(1));
+    TEST_ASSERT_FALSE(d.isAttached(2));
+    fake::dshotDmaReset();
+}
+
 int main()
 {
     wireUpBoard();
@@ -649,5 +784,7 @@ int main()
     RUN_TEST(test_status_and_tasks_like_betaflight);
     RUN_TEST(test_copter_build_from_cli);
     RUN_TEST(test_app_protocol_params_set_save);
+    RUN_TEST(test_dshot_frames_on_timer_dma);
+    RUN_TEST(test_dshot_commands_skips_and_missing_dma);
     return UNITY_END();
 }

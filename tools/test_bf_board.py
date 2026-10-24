@@ -78,6 +78,7 @@ set baro_i2c_device = 1
 set mag_i2c_device = 1
 set vbat_scale = 110
 set ibata_scale = 100
+set vbat_divider = 12
 set beeper_inversion = ON
 set pinio_box = 40,41,255,255
 set pinio_config = 1,129,1,1
@@ -162,6 +163,7 @@ class BfBoardTest(unittest.TestCase):
         self.assertEqual((1, "PA4", "CW270"), (b.gyro_spi, b.gyro_cs, b.gyro_align))
         self.assertEqual((2, "PB12", 2, "PA15"), (b.osd_spi, b.osd_cs, b.flash_spi, b.flash_cs))
         self.assertEqual((110, 100, True), (b.vbat_scale, b.ibata_scale, b.beeper_inverted))
+        self.assertEqual((12, 1), (b.vbat_divider, b.vbat_multiplier))
         self.assertEqual({1: 40, 2: 41, 3: 255, 4: 255}, b.pinio_box)
         self.assertEqual("PB5", b.pinio[2])
         self.assertEqual([], bf_board.check(b))
@@ -199,6 +201,8 @@ class BfBoardTest(unittest.TestCase):
         self.assertIn("#define OPB_I2C_SENSORS 1", text)
         self.assertIn("#define OPB_BARO_SPL06 1", text)
         self.assertIn("#define OPB_IBATA_SCALE 100", text)
+        self.assertIn("#define OPB_VBAT_DIVIDER 12", text)
+        self.assertIn("#define OPB_VBAT_MULTIPLIER 1", text)
         self.assertIn("#define OPB_BEEPER_INVERTED 1", text)
         self.assertIn("#define OPB_PINIO_PINS PC5, PB5, -1, -1", text)
         self.assertIn("#define OPB_PINIO_BOX 40, 41, 255, 255", text)

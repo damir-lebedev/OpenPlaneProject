@@ -1116,6 +1116,30 @@ void test_failsafe_stage1_holds_altitude_then_stage2_descends()
     TEST_ASSERT_EQUAL_UINT8(0, h.ctl.getStatus().failsafeStage);
 }
 
+// 104: rxfail стиков HOLD — этап 1 летит на последних газе и крене (как в
+// BF), этап 2 — снова автомат: ровно и снижение.
+void test_failsafe_stage1_rxfail_hold()
+{
+    QuadHarness h(five(), QuadPerturb(), 43);
+    TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+    const double h0 = h.sim.height();
+    h.rc.stickHold = 0x01 | 0x08;   // rxfail 0 h, rxfail 3 h
+    h.rc.throttle = 0.8f;
+    h.rc.roll = 0.3f;
+    h.step();
+    h.rc.linkOk = false;
+    h.run(1.0);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterState::FAILSAFE), static_cast<int>(h.ctl.getStatus().state));
+    TEST_ASSERT_EQUAL_UINT8(1, h.ctl.getStatus().failsafeStage);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ANGLE), static_cast<int>(h.ctl.getStatus().mode));
+    TEST_ASSERT_TRUE_MESSAGE(h.sim.height() > h0 + 1.5, "газ HOLD: этап 1 — на последнем газе, а не на высоте");
+    TEST_ASSERT_TRUE_MESSAGE(h.ctl.getStatus().roll > 5.0f, "крен HOLD: последний наклон");
+    h.run(1.5);
+    TEST_ASSERT_EQUAL_UINT8(2, h.ctl.getStatus().failsafeStage);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ALT_HOLD), static_cast<int>(h.ctl.getStatus().mode));
+    TEST_ASSERT_FLOAT_WITHIN(3.0f, 0.0f, h.ctl.getStatus().roll);
+}
+
 // DROP: этап 2 — моторы стоп. ARM снова — только когда связь продержалась
 // failsafe_recovery_delay и тумблер выключили.
 void test_failsafe_drop_procedure()
@@ -1229,6 +1253,7 @@ int main()
     RUN_TEST(test_absolute_control_holds_attitude_against_torque);
     RUN_TEST(test_runaway_takeoff_disarms_on_wrong_motor_wiring);
     RUN_TEST(test_failsafe_stage1_holds_altitude_then_stage2_descends);
+    RUN_TEST(test_failsafe_stage1_rxfail_hold);
     RUN_TEST(test_failsafe_drop_procedure);
     RUN_TEST(test_failsafe_switch_modes);
     RUN_TEST(test_failsafe_rescue_returns_control_by_stick);

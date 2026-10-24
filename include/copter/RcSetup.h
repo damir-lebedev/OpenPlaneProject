@@ -169,6 +169,21 @@ namespace copter
         bool used() const { return endUs > startUs; }
     };
 
+    // Строка `rxfail`: что делать с каналом, когда его значению верить нельзя
+    // (связи нет или импульс вне rx_min_usec..rx_max_usec дольше 0.3 с).
+    enum class RxfailMode : uint8_t
+    {
+        AUTO,   // стики: автомат failsafe решает сам (ровно, высота)
+        HOLD,   // последнее верное значение
+        SET,    // заданное значение (только AUX)
+    };
+
+    struct RxfailEntry
+    {
+        RxfailMode mode = RxfailMode::HOLD;
+        uint16_t us = 1500;   // для SET, шаг 25 мкс
+    };
+
     // Что строки `vtx` выбрали сейчас (0 — ничего).
     struct VtxSelection
     {
@@ -185,6 +200,7 @@ namespace copter
         static constexpr uint16_t AUX_MIN_US = 900, AUX_MAX_US = 2100, AUX_STEP_US = 25;
         static constexpr uint16_t PULSE_MIN_US = 750, PULSE_MAX_US = 2250;
         static constexpr uint8_t STORE_VERSION = 1;
+        static constexpr uint8_t RXFAIL_CHANNELS = 18;    // как в BF: 4 стика + 14 AUX
         // Буквы функций в порядке BF (номер = функция): крен, тангаж, рысканье, газ, AUX1..4.
         static constexpr const char* LETTERS = "AERT1234";
 
@@ -201,6 +217,7 @@ namespace copter
             }
             for (auto& a : table) a = AuxRange();
             for (auto& v : vtxTable) v = VtxRange();
+            for (uint8_t i = 0; i < RXFAIL_CHANNELS; ++i) rxfailTable[i] = rxfailDefault(i);
         }
 
         // Сколько каналов у приёмника: AUX — все после четырёх стиков.
@@ -464,11 +481,129 @@ namespace copter
             snprintf(out, size, "vtx %u %u %u %u %u %u %u", slot, r.channel, r.band, r.vtxChannel, r.power, r.startUs, r.endUs);
         }
 
+        // ---- rxfail ----
+        //
+        // Как в BF: канал 0..17 в порядке крен, тангаж, рысканье, газ, AUX1…;
+        // стики — a (AUTO) или h (HOLD), AUX — h или s значение (750..2250,
+        // шаг 25 вниз). Умолчание: стики AUTO, AUX HOLD.
+
+        static RxfailEntry rxfailDefault(uint8_t i)
+        {
+            RxfailEntry e;
+            e.mode = i < STICKS ? RxfailMode::AUTO : RxfailMode::HOLD;
+            e.us = i == 3 ? 885 : 1500;   // BF: газ — rx_min_usec, прочие — середина
+            return e;
+        }
+
+        const RxfailEntry& rxfail(uint8_t i) const { return rxfailTable[i < RXFAIL_CHANNELS ? i : 0]; }
+
+        bool rxfailIsDefault(uint8_t i) const
+        {
+            const RxfailEntry d = rxfailDefault(i);
+            const RxfailEntry& e = rxfail(i);
+            return e.mode == d.mode && (e.mode != RxfailMode::SET || e.us == d.us);
+        }
+
+        bool anyRxfail() const
+        {
+            for (uint8_t i = 0; i < RXFAIL_CHANNELS; ++i)
+            {
+                if (!rxfailIsDefault(i)) return true;
+            }
+            return false;
+        }
+
+        // Стики, у которых HOLD: биты 0 — крен, 1 — тангаж, 2 — рысканье, 3 — газ.
+        uint8_t stickHoldMask() const
+        {
+            uint8_t m = 0;
+            for (uint8_t i = 0; i < STICKS; ++i)
+            {
+                if (rxfailTable[i].mode == RxfailMode::HOLD) m |= static_cast<uint8_t>(1u << i);
+            }
+            return m;
+        }
+
+        bool setRxfail(long i, char mode, long us, char* error, size_t errorSize)
+        {
+            if (i < 0 || i >= RXFAIL_CHANNELS)
+            {
+                snprintf(error, errorSize, "rxfail 0-%u режим [значение]", RXFAIL_CHANNELS - 1);
+                return false;
+            }
+            const bool stick = i < STICKS;
+            const char m = static_cast<char>(tolower(static_cast<unsigned char>(mode)));
+            RxfailEntry e = rxfailTable[i];
+            if (m == 'a' && stick) e.mode = RxfailMode::AUTO;
+            else if (m == 'h') e.mode = RxfailMode::HOLD;
+            else if (m == 's' && !stick)
+            {
+                if (us < PULSE_MIN_US || us > PULSE_MAX_US)
+                {
+                    snprintf(error, errorSize, "значение %u..%u мкс", PULSE_MIN_US, PULSE_MAX_US);
+                    return false;
+                }
+                e.mode = RxfailMode::SET;
+                e.us = static_cast<uint16_t>(PULSE_MIN_US + (us - PULSE_MIN_US) / AUX_STEP_US * AUX_STEP_US);
+            }
+            else
+            {
+                snprintf(error, errorSize, stick ? "у стиков режим a (авто) или h (держать)"
+                                                 : "у AUX режим h (держать) или s значение");
+                return false;
+            }
+            rxfailTable[i] = e;
+            return true;
+        }
+
+        // «канал режим [значение]».
+        bool parseRxfail(const char* args, char* error, size_t errorSize)
+        {
+            char* end = nullptr;
+            const long i = strtol(args ? args : "", &end, 10);
+            if (!args || end == args)
+            {
+                snprintf(error, errorSize, "rxfail 0-%u a|h|s [значение]", RXFAIL_CHANNELS - 1);
+                return false;
+            }
+            const char* p = end;
+            while (*p == ' ') ++p;
+            const char mode = *p;
+            if (mode) ++p;
+            long us = -1;
+            const char* rest = p;
+            while (*rest == ' ') ++rest;
+            if (*rest)
+            {
+                us = strtol(rest, &end, 10);
+                while (*end == ' ') ++end;
+                if (end == rest || *end)
+                {
+                    snprintf(error, errorSize, "rxfail 0-%u a|h|s [значение]", RXFAIL_CHANNELS - 1);
+                    return false;
+                }
+            }
+            if (tolower(static_cast<unsigned char>(mode)) == 's' && us < 0)
+            {
+                snprintf(error, errorSize, "s — нужно значение, например rxfail 4 s 1500");
+                return false;
+            }
+            return setRxfail(i, mode, us, error, errorSize);
+        }
+
+        // Как в BF: «rxfail 0 a», «rxfail 4 h», «rxfail 5 s 2000».
+        void formatRxfail(uint8_t i, char* out, size_t size) const
+        {
+            const RxfailEntry& e = rxfail(i);
+            if (e.mode == RxfailMode::SET) snprintf(out, size, "rxfail %u s %u", i, e.us);
+            else snprintf(out, size, "rxfail %u %c", i, e.mode == RxfailMode::AUTO ? 'a' : 'h');
+        }
+
         // ---- флеш ----
 
         bool isDefault() const
         {
-            if (!mapIsDefault() || anyAux() || anyVtx()) return false;
+            if (!mapIsDefault() || anyAux() || anyVtx() || anyRxfail()) return false;
             for (uint8_t i = 0; i < STICKS; ++i)
             {
                 if (!rangeIsDefault(i)) return false;
@@ -478,9 +613,11 @@ namespace copter
 
         // [версия][map 8][rxrange 4×(мин, макс u16)][число строк][строки: №, режим,
         // канал, от, до (шаги 25 мкс от 900), логика, связь][число строк vtx][строки:
-        // №, канал, полоса, канал VTX, мощность, от, до (шаги)]. Строк vtx в старой
-        // записи нет — их просто не будет.
-        static constexpr size_t STORE_MAX = 1 + MAPPABLE + STICKS * 4 + 1 + AUX_SLOTS * 7 + 1 + VTX_SLOTS * 7;
+        // №, канал, полоса, канал VTX, мощность, от, до (шаги)][число строк rxfail]
+        // [строки: канал, режим, значение (шаги 25 мкс от 750)]. Строк vtx и rxfail
+        // в старой записи нет — их просто не будет.
+        static constexpr size_t STORE_MAX =
+            1 + MAPPABLE + STICKS * 4 + 1 + AUX_SLOTS * 7 + 1 + VTX_SLOTS * 7 + 1 + RXFAIL_CHANNELS * 3;
 
         size_t serialize(uint8_t* out, size_t capacity) const
         {
@@ -528,6 +665,17 @@ namespace copter
                 ++vtxCount;
             }
             out[vtxCountAt] = vtxCount;
+            const size_t rxfailCountAt = n++;
+            uint8_t rxfailCount = 0;
+            for (uint8_t i = 0; i < RXFAIL_CHANNELS; ++i)
+            {
+                if (rxfailIsDefault(i)) continue;
+                out[n++] = i;
+                out[n++] = static_cast<uint8_t>(rxfailTable[i].mode);
+                out[n++] = static_cast<uint8_t>((rxfailTable[i].us - PULSE_MIN_US) / AUX_STEP_US);
+                ++rxfailCount;
+            }
+            out[rxfailCountAt] = rxfailCount;
             return n;
         }
 
@@ -583,6 +731,17 @@ namespace copter
                     r.endUs = static_cast<uint16_t>(AUX_MIN_US + data[at + 6] * AUX_STEP_US);
                 }
             }
+            if (at < length)
+            {
+                const uint8_t rxfailCount = data[at++];
+                for (uint8_t k = 0; k < rxfailCount && at + 3 <= length; ++k, at += 3)
+                {
+                    const uint8_t i = data[at];
+                    const uint8_t mode = data[at + 1];
+                    const char letter = mode == 0 ? 'a' : mode == 1 ? 'h' : mode == 2 ? 's' : '?';
+                    setRxfail(i, letter, PULSE_MIN_US + data[at + 2] * AUX_STEP_US, error, sizeof(error));
+                }
+            }
             return true;
         }
 
@@ -595,16 +754,21 @@ namespace copter
         AuxRange table[AUX_SLOTS];
         AuxRange fallback[AUX_SLOTS];
         VtxRange vtxTable[VTX_SLOTS];
+        RxfailEntry rxfailTable[RXFAIL_CHANNELS];
         uint8_t channels = 10;
     };
 
     // Каналы приёмника (мкс) -> ручки контроллера. Хранит последнее
-    // верное значение AUX: импульс вне rx_min_usec..rx_max_usec на AUX —
-    // держится прежнее (rxfail «hold» в BF), на стике — связь потеряна.
+    // верное значение AUX. Импульс вне rx_min_usec..rx_max_usec на стике —
+    // связь потеряна; на AUX (или связи нет совсем) — первые 0.3 с держится
+    // прежнее, затем — как велит `rxfail` (HOLD — прежнее, SET — заданное).
+    // Стики без связи ведёт автомат failsafe (CopterController): их
+    // `rxfail` (AUTO/HOLD) уходит ему маской CopterRc::stickHold.
     class RxInput
     {
     public:
         static constexpr uint8_t MAX_CHANNELS = 18;
+        static constexpr uint32_t RXFAIL_HOLD_MS = 300;   // как в BF
 
         void configure(const RcConfig& c, uint16_t minUs, uint16_t maxUs)
         {
@@ -618,7 +782,9 @@ namespace copter
         // Канал газа у приёмника (порог failsafe по газу — на нём).
         uint8_t throttleChannel() const { return cfg.channelFor(3); }
 
-        CopterRc read(const uint16_t* raw, uint8_t count, bool linkOk)
+        // nowMs — время (millis): по нему — 0.3 с до значений rxfail; всегда 0 —
+        // AUX просто держится прежним.
+        CopterRc read(const uint16_t* raw, uint8_t count, bool linkOk, uint32_t nowMs = 0)
         {
             CopterRc rc;
             bool sticksValid = true;
@@ -646,9 +812,22 @@ namespace copter
             {
                 const uint8_t ch = cfg.auxChannel(n);
                 const uint16_t us = ch < count ? raw[ch] : 0;
-                if (us >= rxMinUs && us <= rxMaxUs) aux[n] = us;
+                if (linkOk && us >= rxMinUs && us <= rxMaxUs)
+                {
+                    aux[n] = us;
+                    auxBad[n] = false;
+                    continue;
+                }
+                if (!auxBad[n])
+                {
+                    auxBad[n] = true;
+                    auxBadSinceMs[n] = nowMs;
+                }
+                const RxfailEntry& fail = cfg.rxfail(static_cast<uint8_t>(RcConfig::STICKS + n));
+                if (fail.mode == RxfailMode::SET && nowMs - auxBadSinceMs[n] >= RXFAIL_HOLD_MS) aux[n] = fail.us;
             }
             active = evaluate(cfg.effectiveAux(), aux, auxN);
+            rc.stickHold = cfg.stickHoldMask();
 
             rc.armSwitch = isActive(BOX_ARM);
             if (isActive(BOX_ALTHOLD)) rc.mode = CopterMode::ALT_HOLD;
@@ -739,5 +918,7 @@ namespace copter
         uint16_t aux[MAX_CHANNELS - RcConfig::STICKS] = { 1500, 1500, 1500, 1500, 1500, 1500, 1500,
                                                           1500, 1500, 1500, 1500, 1500, 1500, 1500 };
         uint64_t active = 0;
+        bool auxBad[MAX_CHANNELS - RcConfig::STICKS] = {};
+        uint32_t auxBadSinceMs[MAX_CHANNELS - RcConfig::STICKS] = {};
     };
 }

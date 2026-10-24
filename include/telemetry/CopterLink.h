@@ -27,11 +27,14 @@
 //                       настройку (имя, тип, группа = вкладка, границы,
 //                       умолчание и откуда оно, единицы, описание,
 //                       значение, у профильных — все 4), "@rc {...}" (map,
-//                       rxrange, таблица aux и тумблеры прошивки, строки vtx) и
+//                       rxrange, таблица aux и тумблеры прошивки, строки vtx,
+//                       изменённые rxfail [канал, "a|h|s", мкс]) и
 //                       "@modes [[номер, "имя", действует], …]" (режимы BF);
 //   set имя значение  — "@set {...}": ok или ошибка, новое значение;
 //   profile N · rateprofile N — "@profile {...}" (сразу, на ходу);
-//   aux … · map … · rxrange … · vtx … — как в CLI; ответ — "@rc {...}";
+//   aux … · map … · rxrange … · vtx … · rxfail … — как в CLI; ответ — "@rc {...}";
+//   calibrate vbat В · calibrate ibat А — по мультиметру: vbat_scale /
+//                       ibata_scale, ответ — как на set;
 //   save              — во флеш и в работу: "@save {...}";
 //   revert            — отменить несохранённое: "@revert {...}";
 //   live · live 0     — "@live {...}" 20 раз в секунду ещё 3 с / хватит.
@@ -115,7 +118,9 @@ public:
         }
         const bool changes = strcmp(cmd, "set") == 0 || strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0 ||
                              strcmp(cmd, "aux") == 0 || strcmp(cmd, "map") == 0 || strcmp(cmd, "rxrange") == 0 ||
-                             strcmp(cmd, "vtx") == 0 || strcmp(cmd, "save") == 0 || strcmp(cmd, "revert") == 0;
+                             strcmp(cmd, "vtx") == 0 || strcmp(cmd, "rxfail") == 0 || strcmp(cmd, "calibrate") == 0 ||
+                             strcmp(cmd, "save") == 0 ||
+                             strcmp(cmd, "revert") == 0;
         if (!changes) return false;
         if (ctl.isArmed() || cli.active())
         {
@@ -123,6 +128,7 @@ public:
             return true;
         }
         if (strcmp(cmd, "set") == 0) doSet(args);
+        else if (strcmp(cmd, "calibrate") == 0) doCalibrate(args);
         else if (strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0) doProfile(cmd, args);
         else if (strcmp(cmd, "save") == 0) doSave();
         else if (strcmp(cmd, "revert") == 0) doRevert();
@@ -242,6 +248,16 @@ public:
                   v.endUs);
             first = false;
         }
+        w.add("],\"rxfail\":[");
+        first = true;
+        for (uint8_t i = 0; i < RcConfig::RXFAIL_CHANNELS; ++i)
+        {
+            if (c.rxfailIsDefault(i)) continue;
+            const RxfailEntry& e = c.rxfail(i);
+            const char* letter = e.mode == RxfailMode::AUTO ? "a" : e.mode == RxfailMode::HOLD ? "h" : "s";
+            w.add("%s[%u,\"%s\",%u]", first ? "" : ",", i, letter, e.us);
+            first = false;
+        }
         w.add("]}\n");
         return w.overflow ? 0 : w.length;
     }
@@ -343,6 +359,32 @@ private:
         return formatModes(buffer, capacity);
     }
 
+    // «calibrate vbat 16.80» / «calibrate ibat 12.5» — по мультиметру: новый
+    // vbat_scale / ibata_scale, ответ — как на set (сохранить — save).
+    void doCalibrate(char* args)
+    {
+        char* what = args;
+        char* value = args;
+        while (*value && *value != ' ') ++value;
+        if (*value) *value++ = '\0';
+        const float measured = strtof(value, nullptr);
+        const bool vbat = strcmp(what, "vbat") == 0;
+        if (!battery || (!vbat && strcmp(what, "ibat") != 0))
+        {
+            sendError("calibrate", battery ? "calibrate vbat вольты | ibat амперы" : "батарея не измеряется");
+            return;
+        }
+        const float scale = vbat ? battery->vbatScaleFor(measured) : battery->ibataScaleFor(measured);
+        if (scale == 0.0f)
+        {
+            sendError("calibrate", vbat ? "нет напряжения батареи" : "нет тока (нужен датчик и хотя бы 0.5 А)");
+            return;
+        }
+        char line[48];
+        snprintf(line, sizeof(line), "%s %ld", vbat ? "vbat_scale" : "ibata_scale", lroundf(scale));
+        doSet(line);
+    }
+
     void doSet(char* args)
     {
         using namespace copter;
@@ -417,6 +459,10 @@ private:
         else if (strcmp(cmd, "vtx") == 0)
         {
             ok = c.parseVtx(args, VTX_BANDS, VtxController::MAX_LEVELS, error, sizeof(error));
+        }
+        else if (strcmp(cmd, "rxfail") == 0)
+        {
+            ok = c.parseRxfail(args, error, sizeof(error));
         }
         else
         {
