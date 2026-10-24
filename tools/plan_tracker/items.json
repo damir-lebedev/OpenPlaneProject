@@ -502,7 +502,7 @@
    "id": "081",
    "section": 1,
    "title": "DShot: несколько таймеров и пины F405 / H743",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -511,6 +511,7 @@
    "files": "hal/stm32/Stm32Dshot.h",
    "test": "test_app_stm32_copter",
    "ui": "—",
+   "result": "до 4 таймеров, буферы всех собираются, потом потоки запускаются подряд; таймер пина — по AF из дампа BF (bf_board.py: строки timer -> OPB_MOTOR_AF), иначе первый вариант пина с потоком DMA и свободным каналом (ALT1…); таблица потоков dshot_dma::f405/h743 без пересечений (тест), прочие драйверы DMA не берут (коммит d85e00a)",
    "settings": [],
    "tab": ""
   },
@@ -518,7 +519,7 @@
    "id": "087",
    "section": 1,
    "title": "Двунаправленный DShot: приём ответа (GCR)",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -527,6 +528,7 @@
    "files": "hal/stm32/Stm32Dshot.h, copter/EscProtocol.h",
    "test": "test_copter: декодер на эталонных кадрах; test_app_stm32_copter на фейке захвата",
    "ui": "«Моторы»: обороты каждого мотора живьём",
+   "result": "кадры bidir (инверсная линия, CRC), ответ: GCR 4->5, NRZI, CRC, период e/m -> eRPM; разбор по отсчётам линии (дробный шаг, иголки, обрыв); все одиночные помехи ловятся; драйвер собирает ответы через Stm32DshotCapture (фейк в тестах), предел цикла с ответом; захвата ножки на железе нет — перенесён в стендовый 089 (коммит d85e00a)",
    "settings": [
     "dshot_bidir"
    ],
@@ -536,7 +538,7 @@
    "id": "088",
    "section": 1,
    "title": "Обороты: число полюсов и проверка",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -544,6 +546,7 @@
    "files": "copter/Params.h",
    "test": "test_copter",
    "ui": "«Моторы»: % ошибок телеметрии",
+   "result": "motor_poles (14) и dshot_bidir (OFF; смена — REBOOT_REQD), доля кадров без ответа за окно 1000 кадров, CLI dshot_telemetry_info как в BF (eRPM, RPM, Гц, Invalid), copter::IMotorTelemetry для консоли и приложения (коммит d85e00a)",
    "settings": [
     "motor_poles",
     "dshot_bidir"
@@ -554,7 +557,7 @@
    "id": "177",
    "section": 1,
    "title": "Чёрный ящик на SPI-флеше (F405, 16 МБ)",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -564,6 +567,7 @@
    "files": "новый hal/stm32/Stm32SpiFlash.h, telemetry/CopterBlackBox.h, src/stm32/main_copter.cpp, config/boards/*.h",
    "test": "test_app_stm32_copter на фейке флеша: полёт пишется, стирание, заполнение, чтение через `bb get`",
    "ui": "«Ящик» в Studio (уже умеет, 144): объём флеша, кнопка «стереть»",
+   "result": "hal/SpiNorFlash.h (JEDEC ID, страницы с переходом границы, сектор/блок/вся одной командой, ожидание «занята», до 16 МБ) поверх ISpiBus, общая с OSD шина — LockedSpiBus; ящик на F405 (очередь 60 КБ в CCM, запас стёртого — половина флеша, blackbox_sample_rate 1/2), blackbox_device NONE/SPIFLASH/SDCARD/SERIAL как в BF, flash_info, flash_erase; вместо «полный — стоп» как в BF — кольцо со стиранием старых полётов на земле (коммит d85e00a)",
    "settings": [
     "blackbox_device",
     "flash_info",
@@ -575,7 +579,7 @@
    "id": "139",
    "section": 1,
    "title": "Формат журнала Betaflight (.BFL)",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -584,6 +588,7 @@
    "files": "новый telemetry/BflEncoder.h",
    "test": "разбор нашим декодером + проверка заголовка; отдельно — открыть в Blackbox Explorer (пользователь)",
    "ui": "«Чёрный ящик»: «открыть в Blackbox Explorer»",
+   "result": "BflEncoder.h: заголовок H, кадры I (каждые 32)/P (разность с прошлым), S, E «End of log», числа переменной длины и zigzag; перевод наших QGYRO/QCTRL/QMOT8/QSTATE в поля BF; плата отдаёт полёт в .BFL сама (bb bfl N, blackbox.py download --bfl); полёт симулятора — 45979 кадров, 1.6 МБ (вдвое меньше нашего), пример в Documents/OpenPlane/Blackbox/sim_freestyle5_flips.bfl — открыть в Blackbox Explorer должен пользователь (коммит d85e00a)",
    "settings": [],
    "tab": "Чёрный ящик"
   },
@@ -719,6 +724,7 @@
    "bench": true,
    "repo": "firmware",
    "docs": false,
+   "what": "захват ответа регулятора на железе — Stm32DshotCapture (087 сделал всё, кроме него): у F405 читать порт по таймеру умеет только DMA2, его потоки TIMx_UP заняты TIM1/TIM8 — вариант BF (bitbang: моторы как GPIO через BSRR и чтение IDR одним DMA2 на порт) или захват фронтов таймером с DMA по каналу; ошибки телеметрии < 1 % на Bluejay (180).",
    "settings": [],
    "tab": ""
   },
