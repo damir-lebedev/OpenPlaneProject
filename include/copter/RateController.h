@@ -23,7 +23,12 @@
 //   FF — упреждение от скорости изменения уставки: стик начал движение —
 //        моторы уже отвечают, не дожидаясь ошибки. Часть от стика — с
 //        настройками BF по кадрам приёмника (feedforward_transition,
-//        _averaging, _smooth_factor, _jitter_factor, _boost).
+//        _averaging, _smooth_factor, _jitter_factor, _boost); у предела
+//        расхода гаснет (feedforward_max_rate_limit).
+// Рысканье может идти через интеграл суммы PID (use_integrated_yaw): у
+// больших винтов рысканье даёт разгон винта, момент ~ скорости изменения
+// команды. Absolute control (AbsoluteControl ниже) возвращает в ACRO угол,
+// потерянный, пока I догонял возмущение.
 // P и D умножаются на поправку по газу (TPA, Presets.h); в режиме
 // TpaMode::D — только D, как в Betaflight. Сумма — не больше своего
 // предела (pidsum_limit, у рысканья — pidsum_limit_yaw).
@@ -54,6 +59,27 @@ namespace copter
     constexpr float FF_BOOST_LEAD_S = 0.0002f;
     constexpr float FF_STICK_UNITS = 500.0f;   // BF: полстика — 500 (jitter_factor)
     constexpr uint8_t FF_HISTORY = 5;          // отметок кадров для feedforward_averaging (до 4 кадров)
+    // integrated yaw: сумма PID рысканья копится со скоростью 100 1/с (на
+    // частоте контура рысканья ~16 Гц — тот же масштаб, что без интеграла);
+    // integrated_yaw_relax — утечка: 200 — 16 1/с (срез ~2.5 Гц)
+    constexpr float INTEGRATED_YAW_GAIN = 100.0f;
+    constexpr float INTEGRATED_YAW_LEAK = 0.08f;
+
+    // Коэффициенты для интеграла суммы PID рысканья, с которыми контур тот
+    // же, что у g без интеграла (интеграл с утечкой λ — K/(s+λ), значит
+    // PID надо умножить на (s+λ)/K): P' = (I + λP)/K, I' = λI/K,
+    // D' = (P + λD)/K, F' = (P + λF)/K. Пропадают только D·s² и F·s² — у
+    // рысканья из модели D нет, упреждение остаётся по уставке.
+    inline AxisGains integratedYawGains(const AxisGains& g, float relax)
+    {
+        const float k = INTEGRATED_YAW_GAIN, l = relax * INTEGRATED_YAW_LEAK;
+        AxisGains r = g;
+        r.p = (g.i + l * g.p) / k;
+        r.i = l * g.i / k;
+        r.d = (g.p + l * g.d) / k;
+        r.ff = (g.p + l * g.ff) / k;
+        return r;
+    }
 
     // Упреждение с пульта (feedforward_*). Что из уставки задал стик и когда
     // пришёл кадр приёмника — настройки BF работают на этой части; остальное
@@ -108,7 +134,18 @@ namespace copter
             ffJitter = x.ffJitterFactor;
             ffBoost = x.ffBoost;
             ffShaping = ffTransition > 0.0f || ffAveraging > 1 || ffSmooth > 0.0f || ffJitter > 0.0f || ffBoost > 0.0f;
+            ffLimit = x.ffMaxRateLimit;
+            const bool wasIntegrated = integrated;
+            integrated = yaw && x.integratedYaw;
+            integratedLeak = x.integratedYawRelax * INTEGRATED_YAW_LEAK;
+            if (integrated && !wasIntegrated) integratedSum = terms.sum;   // включили на ходу — без рывка
         }
+
+        // Расход при полном стике, °/с (feedforward_max_rate_limit).
+        void setMaxRate(float dps) { maxRate = fabsf(dps); }
+
+        // ФНЧ выхода (yaw_lowpass_hz) на ходу: 0 — без фильтра.
+        void setOutputLpf(float hz) { outLpf.configure(hz, dt); }
 
         // Стик и кадр приёмника для упреждения — перед update(), каждый цикл.
         // Не задано — вся уставка от стика, кадр — каждый цикл, без
@@ -133,6 +170,7 @@ namespace copter
             ffLpf.reset();
             ffShapedLpf.reset();
             ffFirst = true;
+            integratedSum = 0.0f;
             boostLpf.reset();
             relaxLpf.reset();
             spTrack.reset();
@@ -208,11 +246,20 @@ namespace copter
             }
             terms.d = -d * rate * tpa;
 
-            terms.ff = gains.ff * ffRate;
+            terms.ff = limitFeedforward(gains.ff * ffRate, setpoint);
 
             const float sum = terms.p + terms.i + terms.d + terms.ff;
             sumClamped = fabsf(sum) > sumLimit;
-            terms.sum = outLpf.apply(fminf(sumLimit, fmaxf(-sumLimit, sum)));
+            float out = fminf(sumLimit, fmaxf(-sumLimit, sum));
+            if (integrated)
+            {
+                // выход — интеграл суммы с утечкой, в пределе суммы
+                integratedSum += (INTEGRATED_YAW_GAIN * sum - integratedLeak * integratedSum) * dt;
+                integratedSum = fminf(sumLimit, fmaxf(-sumLimit, integratedSum));
+                if (fabsf(integratedSum) >= sumLimit) sumClamped = true;
+                out = integratedSum;
+            }
+            terms.sum = outLpf.apply(out);
             return terms.sum;
         }
 
@@ -222,6 +269,18 @@ namespace copter
         float dBoost() const { return boost; }
 
     private:
+        // feedforward_max_rate_limit: уставка у края расхода — упреждение
+        // наружу не больше того, что дал бы P на оставшийся до края запас;
+        // за краем — ноль. Иначе на флипе полным стиком FF разгоняет раму
+        // мимо расхода. К центру (стик отпускают) — как есть.
+        float limitFeedforward(float ff, float setpoint) const
+        {
+            if (ffLimit <= 0.0f || maxRate <= 0.0f || ff * setpoint <= 0.0f) return ff;
+            const float room = ffLimit * maxRate - fabsf(setpoint);
+            if (room <= 0.0f) return 0.0f;
+            return copysignf(fminf(fabsf(ff), gains.p * room), ff);
+        }
+
         // Скорость уставки для упреждения (°/с²) с настройками feedforward_*.
         // Они действуют на часть уставки от стика: transition — у центра
         // стика FF слабее; averaging — скорость стика средняя за N кадров
@@ -362,11 +421,75 @@ namespace copter
         uint8_t ffHistCount = 0;
         float ffSmoothed = 0.0f, prevFfSmoothed = 0.0f, smoothAlpha = 1.0f;
         float prevStickSp = 0.0f, prevRawStick = 0.0f, prevStickDelta = 0.0f, jitterAtt = 1.0f;
+        float ffLimit = 0.0f, maxRate = 0.0f;
+        bool integrated = false;
+        float integratedLeak = 0.0f, integratedSum = 0.0f;
         AxisTerms terms;
         float iTerm = 0.0f;
         float boost = 0.0f;
         float prevMeasured = 0.0f;
         float prevSetpoint = 0.0f;
+        bool first = true;
+    };
+
+    // Absolute control (abs_control_*): угол, который рама потеряла против
+    // уставки (порыв, перекос тяги на рывке газом — пока I догонял), в ACRO
+    // не пропадает: ошибка угловой скорости копится в ошибку угла, и к
+    // уставке добавляется поправка gain × ошибка угла (не больше limit),
+    // пока рама не вернётся. Пока стик быстро движется, отставание рамы —
+    // не потеря: в полосе ±2·|уставка − её ФНЧ| вокруг ФНЧ уставки ошибка не
+    // копится, а тает к нулю (не дальше нуля). Накопленное — не больше
+    // error_limit градусов.
+    class AbsoluteControl
+    {
+    public:
+        void configure(float cutoffHz, float dtS)
+        {
+            dt = dtS;
+            spLpf.configure(cutoffHz, dtS);
+            reset();
+        }
+
+        void setCutoff(float cutoffHz) { spLpf.configure(cutoffHz, dt); }
+
+        void reset()
+        {
+            angleError = 0.0f;
+            first = true;
+        }
+
+        // setpoint, gyro — °/с; поправка уставки, °/с.
+        float update(float setpoint, float gyro, float gain, float limit, float errorLimit)
+        {
+            if (first)
+            {
+                spLpf.reset(setpoint);
+                first = false;
+            }
+            const float smooth = spLpf.apply(setpoint);
+            const float band = 2.0f * fabsf(setpoint - smooth);
+            const float hi = smooth + band, lo = smooth - band;
+            float rateError;
+            if (gyro > hi || gyro < lo)
+            {
+                rateError = (gyro > hi ? hi : lo) - gyro;
+            }
+            else
+            {
+                // в полосе: к нулю — со скоростью до края полосы, не дальше нуля
+                rateError = angleError > 0.0f ? lo - gyro : hi - gyro;
+                if (fabsf(rateError * dt) > fabsf(angleError)) rateError = -angleError / dt;
+            }
+            angleError = fminf(errorLimit, fmaxf(-errorLimit, angleError + rateError * dt));
+            return fminf(limit, fmaxf(-limit, gain * angleError));
+        }
+
+        float error() const { return angleError; }
+
+    private:
+        Pt1 spLpf;
+        float dt = 0.001f;
+        float angleError = 0.0f;   // °
         bool first = true;
     };
 

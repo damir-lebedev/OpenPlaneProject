@@ -894,6 +894,154 @@ void test_feedforward_settings_on_a_real_flick()
     }
 }
 
+// 026: feedforward_max_rate_limit — флип полным стиком за 20 мс (кадры
+// 250 Гц) на дефолтах BF: перелёт расхода меньше 5 %; у «резвого» 5" без
+// предела FF разгоняет раму мимо расхода. У «вялого» перелёт от I, а не от
+// FF — предел его не ухудшает.
+void test_feedforward_max_rate_limit_on_a_full_stick_flip()
+{
+    const CopterTune bf = betaflightTune(five(), EscProtocol::DSHOT600);
+    CopterTune off = bf;
+    off.pid.ffMaxRateLimit = 0.0f;
+    const QuadPerturb ps[] = { QuadPerturb(), sluggish(), twitchy() };
+    const char* names[] = { "nominal", "sluggish", "twitchy" };
+    for (uint8_t k = 0; k < 3; ++k)
+    {
+        const Flick on = flickOnFrames(bf, ps[k], 0.02, 250.0, 1.0f);
+        const Flick no = flickOnFrames(off, ps[k], 0.02, 250.0, 1.0f);
+        char line[200];
+        snprintf(line, sizeof(line), "ff max rate limit 90%% full flick %-8s: overshoot %.1f%% / %.1f%%, t90 %.0f / %.0f ms (with / without)",
+                 names[k], on.overshoot * 100.0, no.overshoot * 100.0, on.t90 * 1000.0, no.t90 * 1000.0);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(on.t90 > 0 && on.t90 < 0.1, line);
+        TEST_ASSERT_TRUE_MESSAGE(on.overshoot < no.overshoot + 0.005, line);
+        if (k != 1) TEST_ASSERT_TRUE_MESSAGE(on.overshoot < 0.05, line);
+        if (k == 2) TEST_ASSERT_TRUE_MESSAGE(no.overshoot > 2.0 * on.overshoot, line);
+    }
+}
+
+namespace
+{
+    struct YawHold
+    {
+        bool ok = false;
+        double target = 0, mean = 0, rmsErr = 0, overshoot = 0;
+    };
+
+    // ANGLE на 5 м, стик рысканья stick 1.5 с: средний расход после 0.5 с,
+    // СКЗ ошибки, перелёт.
+    YawHold holdYaw(const BuildSpec& b, const CopterTune& t, const QuadPerturb& p, float stick)
+    {
+        YawHold r;
+        QuadHarness h(b, p, 22);
+        h.useTune(t);
+        if (!h.takeoffTo(5.0)) return r;
+        h.rc.yaw = stick;
+        r.target = h.tune.rates[2].apply(stick);
+        double sum = 0, sq = 0, maxW = 0;
+        int n = 0;
+        for (int i = 0; i < 1500; ++i)
+        {
+            h.step();
+            const double w = h.sim.rates().z * 57.29578;
+            maxW = std::fmax(maxW, w);
+            if (i > 500)
+            {
+                sum += w;
+                sq += (w - r.target) * (w - r.target);
+                ++n;
+            }
+        }
+        r.mean = sum / n;
+        r.rmsErr = std::sqrt(sq / n);
+        r.overshoot = maxW / r.target - 1.0;
+        r.ok = h.ctl.isArmed() && h.sim.tiltDeg() < 10.0;
+        return r;
+    }
+}
+
+// 028: integrated yaw на гексе 15" — у больших винтов рысканье даёт разгон
+// винта (в модели QuadSim он есть). С числами BF рысканье держит расход
+// ровнее и с меньшим перелётом, чем без интеграла; с PID из модели
+// (пересчитанными) — держит расход на всех трёх физиках.
+void test_integrated_yaw_on_big_hexa()
+{
+    const BuildSpec& hex = *findBuild("hex15");
+    CopterParams bfp;
+    bfp.begin(hex, 1000.0f, EscProtocol::DSHOT600);
+    char err[96];
+    bfp.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err));
+    const CopterTune bfOff = bfp.tune();
+    bfp.parse(PARAM_USE_INTEGRATED_YAW, 0, "ON", err, sizeof(err));
+    const CopterTune bfOn = bfp.tune();
+    const YawHold off = holdYaw(hex, bfOff, QuadPerturb(), 0.5f);
+    const YawHold on = holdYaw(hex, bfOn, QuadPerturb(), 0.5f);
+    char line[200];
+    snprintf(line, sizeof(line), "integrated yaw hex15 BF: mean %.1f / %.1f of %.0f dps, err rms %.1f / %.1f, overshoot %.1f%% / %.1f%% (on / off)",
+             on.mean, off.mean, on.target, on.rmsErr, off.rmsErr, on.overshoot * 100.0, off.overshoot * 100.0);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(on.ok && off.ok, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.03 * on.target, on.target, on.mean, line);
+    TEST_ASSERT_TRUE_MESSAGE(on.rmsErr < 3.0 && on.rmsErr < 0.5 * off.rmsErr, line);
+    TEST_ASSERT_TRUE_MESSAGE(on.overshoot < 0.08 && on.overshoot < off.overshoot, line);
+
+    const QuadPerturb ps[] = { QuadPerturb(), sluggish(), twitchy() };
+    const char* names[] = { "nominal", "sluggish", "twitchy" };
+    for (uint8_t k = 0; k < 3; ++k)
+    {
+        CopterParams p;
+        p.begin(hex, 1000.0f, EscProtocol::DSHOT600);
+        p.parse(PARAM_USE_INTEGRATED_YAW, 0, "ON", err, sizeof(err));
+        const YawHold m = holdYaw(hex, p.tune(), ps[k], 0.5f);
+        snprintf(line, sizeof(line), "integrated yaw hex15 MODEL %-8s: mean %.1f of %.0f dps, err rms %.1f, overshoot %.1f%%", names[k],
+                 m.mean, m.target, m.rmsErr, m.overshoot * 100.0);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(m.ok, line);
+        TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.04 * m.target, m.target, m.mean, line);
+        TEST_ASSERT_TRUE_MESSAGE(m.rmsErr < 2.0, line);
+    }
+}
+
+// 029: absolute control — ACRO, стики в центре, на раму 2 с давит момент
+// (5 % управляемости по крену и рысканью: порыв на несимметричную раму,
+// перекос тяги). Без absolute control угол и курс уходят, пока I догоняет,
+// и не возвращаются; с abs_control_gain 10 — остаются на месте.
+void test_absolute_control_holds_attitude_against_torque()
+{
+    const QuadPerturb ps[] = { QuadPerturb(), sluggish(), twitchy() };
+    const char* names[] = { "nominal", "sluggish", "twitchy" };
+    for (uint8_t k = 0; k < 3; ++k)
+    {
+        double roll[2], yaw[2], yawPeak[2];
+        for (uint8_t on = 0; on < 2; ++on)
+        {
+            CopterTune t = fiveTune();
+            t.pid.absGain = on ? 10.0f : 0.0f;
+            QuadHarness h(five(), ps[k], 31);
+            h.useTune(t);
+            hoverInAcro(h, 10.0);
+            const double r0 = h.sim.rollDeg(), y0 = h.sim.yawDeg();
+            h.sim.setDisturbance(0.05 * t.kRoll, 0.0, 0.05 * t.kYaw);
+            yawPeak[on] = 0;
+            for (int i = 0; i < 2000; ++i)
+            {
+                h.step();
+                yawPeak[on] = std::fmax(yawPeak[on], std::fabs(h.sim.yawDeg() - y0));
+            }
+            roll[on] = std::fabs(h.sim.rollDeg() - r0);
+            yaw[on] = std::fabs(h.sim.yawDeg() - y0);
+            TEST_ASSERT_TRUE(h.ctl.isArmed());
+        }
+        char line[200];
+        snprintf(line, sizeof(line), "abs control 5\" %-8s: roll off by %.2f / %.2f deg, heading %.2f / %.2f deg (peak %.1f / %.1f) (gain 10 / off)",
+                 names[k], roll[1], roll[0], yaw[1], yaw[0], yawPeak[1], yawPeak[0]);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(roll[1] < 0.5 && yaw[1] < 1.0, line);
+        TEST_ASSERT_TRUE_MESSAGE(roll[0] > 1.0 && yaw[0] > 10.0, line);
+        TEST_ASSERT_TRUE_MESSAGE(yawPeak[1] < yawPeak[0] / 3.0, line);
+    }
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -921,5 +1069,8 @@ int main()
     RUN_TEST(test_tpa_low_on_zero_throttle_airmode);
     RUN_TEST(test_betaflight_defaults_on_our_loop);
     RUN_TEST(test_feedforward_settings_on_a_real_flick);
+    RUN_TEST(test_feedforward_max_rate_limit_on_a_full_stick_flip);
+    RUN_TEST(test_integrated_yaw_on_big_hexa);
+    RUN_TEST(test_absolute_control_holds_attitude_against_torque);
     return UNITY_END();
 }

@@ -2007,9 +2007,9 @@ void test_feedforward_touches_only_the_stick_part()
     TEST_ASSERT_FLOAT_WITHIN(fabsf(plain) * 1e-3f, plain, jitter);
 
     // ACRO: стик стоит на месте между кадрами (дрожь пальца ±1 %) — с jitter FF почти нет
-    const auto trembleFf = [](float jitter) {
+    const auto trembleFf = [](float factor) {
         PidExtras x = flatTpa();
-        x.ffJitterFactor = jitter;
+        x.ffJitterFactor = factor;
         Bench b;
         b.ctl.configure(fiveWith(x));
         b.rc.mode = CopterMode::ACRO;
@@ -2068,6 +2068,259 @@ void test_feedforward_params()
     TEST_ASSERT_EQUAL_FLOAT(15.0f, t.pid.ffBoost);
     TEST_ASSERT_EQUAL(1, t.pid.ffAveraging);
     TEST_ASSERT_EQUAL_FLOAT(0.0f, t.pid.ffTransition);
+}
+
+// 026: feedforward_max_rate_limit — у края расхода упреждение наружу не
+// больше P на оставшийся запас, за краем — ноль; к центру — как есть.
+void test_feedforward_max_rate_limit()
+{
+    const auto ffAt = [](float limit, float from, float to) {
+        RateAxis a = makeAxis(0.001f, 0.0f, 0.0f, 0.0001f);
+        PidExtras x;
+        x.ffMaxRateLimit = limit;
+        a.setExtras(x, 0);
+        a.setMaxRate(600.0f);
+        a.update(from, from, 1.0f, 1.0f, true, false);
+        a.update(to, from, 1.0f, 1.0f, true, false);
+        return a.lastTerms().ff;
+    };
+    // без предела: FF = 0.0001 × (10 °/с за 1 мс) × доля ФНЧ 25 Гц
+    const float free = ffAt(0.0f, 500.0f, 510.0f);
+    TEST_ASSERT_TRUE(free > 0.1f);
+    // предел 90 % — 540 °/с: запас 30 °/с, P 0.001 -> не больше 0.03
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.03f, ffAt(0.9f, 500.0f, 510.0f));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, ffAt(0.9f, 545.0f, 555.0f));       // за краем
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, -0.03f, ffAt(0.9f, -500.0f, -510.0f));
+    // далеко от края и к центру — не трогается
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, ffAt(0.0f, 100.0f, 110.0f), ffAt(0.9f, 100.0f, 110.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, ffAt(0.0f, 560.0f, 550.0f), ffAt(0.9f, 560.0f, 550.0f));
+
+    // реестр: модель — 0 (перелёта нет и так), BF — 90; расход — из профиля расходов
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.tune().pid.ffMaxRateLimit);
+    TEST_ASSERT_TRUE(p.parse(PARAM_FEEDFORWARD_MAX_RATE_LIMIT, 0, "100", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_FEEDFORWARD_MAX_RATE_LIMIT, 0, "151", err, sizeof(err)));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, p.tune().pid.ffMaxRateLimit);
+    CopterParams& q = five5Params();
+    TEST_ASSERT_TRUE(q.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(90.0f, q.defaultValue(PARAM_FEEDFORWARD_MAX_RATE_LIMIT));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.9f, q.tune().pid.ffMaxRateLimit);
+}
+
+// 027: yaw_lowpass_hz — ФНЧ выхода рысканья настройкой; не задан — частота
+// модели (BF — 100 Гц); 0 — без фильтра; меняется со сменой профиля.
+void test_yaw_lowpass_hz()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    const float model = p.modelTune().yawLpfHz;
+    TEST_ASSERT_EQUAL_FLOAT(model, p.tune().yawLpfHz);
+    TEST_ASSERT_EQUAL_FLOAT(roundf(model), p.defaultValue(PARAM_YAW_LOWPASS_HZ));
+    TEST_ASSERT_TRUE(p.parse(PARAM_YAW_LOWPASS_HZ, 1, "0", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_YAW_LOWPASS_HZ, 0, "501", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.selectPidProfile(1));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.tune().yawLpfHz);
+    CopterParams& q = five5Params();
+    TEST_ASSERT_TRUE(q.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, q.tune().yawLpfHz);
+
+    // выход рысканья через ФНЧ: 10 Гц — первый цикл ступеньки P — 6 %, 0 — весь
+    const auto firstStep = [](float hz) {
+        CopterTune t = deriveTune(*findBuild("freestyle5"), 1000.0f, EscProtocol::DSHOT600);
+        t.yawLpfHz = 100.0f;
+        CopterController ctl;
+        ctl.configure(t);
+        t.yawLpfHz = hz;
+        ctl.applyProfile(t);   // на ходу, как смена профиля
+        RateAxis a;
+        a.configure(t.yaw, 0.0f, ctl.getTune().yawLpfHz, 0.3f, 0.001f);
+        a.update(0.0f, 0.0f, 1.0f, 1.0f, true, false);
+        a.update(0.0f, -10.0f, 1.0f, 1.0f, true, false);
+        return a.lastTerms().sum / a.lastTerms().p;
+    };
+    TEST_ASSERT_FLOAT_WITHIN(0.005f, 1.0f - expf(-2.0f * 3.14159265f * 10.0f * 0.001f), firstStep(10.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.0f, firstStep(0.0f));
+}
+
+// 028: integrated yaw — выход рысканья = интеграл суммы PID с утечкой;
+// PID из модели пересчитаны (тот же контур), числа BF — как в BF (I без ×2.5).
+void test_integrated_yaw()
+{
+    PidExtras x;
+    x.integratedYaw = true;
+    x.integratedYawRelax = 0.0f;
+    RateAxis yaw = makeAxis(0.001f, 0.0f, 0.0f, 0.0f);
+    yaw.setExtras(x, 2);
+    // постоянная ошибка 10 °/с: P 0.01 -> выход растёт на 100 × 0.01 за секунду
+    for (int i = 0; i < 100; ++i) yaw.update(10.0f, 0.0f, 1.0f, 1.0f, true, false);
+    TEST_ASSERT_FLOAT_WITHIN(0.002f, 0.1f, yaw.lastTerms().sum);
+    for (int i = 0; i < 2000; ++i) yaw.update(10.0f, 0.0f, 1.0f, 1.0f, true, false);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.0f, yaw.lastTerms().sum);   // предел суммы
+    // утечка 200 (16 1/с): выход встаёт на 100/16 × сумма
+    x.integratedYawRelax = 200.0f;
+    RateAxis leak = makeAxis(0.0001f, 0.0f, 0.0f, 0.0f);
+    leak.setExtras(x, 2);
+    for (int i = 0; i < 1000; ++i) leak.update(10.0f, 0.0f, 1.0f, 1.0f, true, false);
+    TEST_ASSERT_FLOAT_WITHIN(0.001f, 0.001f * 100.0f / 16.0f, leak.lastTerms().sum);
+    // крен и тангаж — без интеграла
+    RateAxis roll = makeAxis(0.001f, 0.0f, 0.0f, 0.0f);
+    roll.setExtras(x, 0);
+    roll.update(10.0f, 0.0f, 1.0f, 1.0f, true, false);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.01f, roll.lastTerms().sum);
+
+    // реестр
+    CopterParams& p = five5Params();
+    char err[96];
+    const AxisGains model = p.modelTune().yaw;
+    TEST_ASSERT_FALSE(p.tune().pid.integratedYaw);
+    TEST_ASSERT_TRUE(p.parse(PARAM_USE_INTEGRATED_YAW, 0, "ON", err, sizeof(err)));
+    CopterTune t = p.tune();
+    TEST_ASSERT_TRUE(t.pid.integratedYaw);
+    TEST_ASSERT_EQUAL_FLOAT(200.0f, t.pid.integratedYawRelax);
+    const AxisGains conv = integratedYawGains(model, 200.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, (model.i + 16.0f * model.p) / 100.0f, conv.p);
+    TEST_ASSERT_EQUAL_FLOAT(conv.p, t.yaw.p);
+    TEST_ASSERT_EQUAL_FLOAT(conv.i, t.yaw.i);
+    TEST_ASSERT_EQUAL_FLOAT(conv.d, t.yaw.d);
+    TEST_ASSERT_EQUAL_FLOAT(conv.ff, t.yaw.ff);
+    TEST_ASSERT_EQUAL_FLOAT(p.modelTune().roll.p, t.roll.p);   // крен не трогается
+    // своё число — как в BF: i_yaw без множителя 2.5
+    TEST_ASSERT_TRUE(p.parse(PARAM_I_YAW, 0, "80", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_P_YAW, 0, "45", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, 80.0f * betaflight::I_SCALE / 1000.0f, t.yaw.i);
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, bfToGain(PidTerm::P, 2, 45.0f), t.yaw.p);
+    TEST_ASSERT_EQUAL_FLOAT(conv.d, t.yaw.d);   // незаданные — из модели, пересчитанные
+    TEST_ASSERT_TRUE(p.parse(PARAM_INTEGRATED_YAW_RELAX, 0, "100", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_INTEGRATED_YAW_RELAX, 0, "256", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, p.tune().pid.integratedYawRelax);
+    TEST_ASSERT_EQUAL_FLOAT(integratedYawGains(model, 100.0f).d, p.tune().yaw.d);
+    TEST_ASSERT_TRUE(p.parse(PARAM_USE_INTEGRATED_YAW, 0, "OFF", err, sizeof(err)));
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, bfToGain(PidTerm::I, 2, 80.0f), p.tune().yaw.i);
+
+    // включили на ходу (смена профиля) — выход без рывка
+    RateAxis live = makeAxis(0.001f, 0.0f, 0.0f, 0.0f);
+    live.setExtras(PidExtras(), 2);
+    live.update(10.0f, 0.0f, 1.0f, 1.0f, true, false);
+    x.integratedYawRelax = 200.0f;
+    live.setExtras(x, 2);
+    live.update(10.0f, 0.0f, 1.0f, 1.0f, true, false);
+    TEST_ASSERT_FLOAT_WITHIN(0.002f, 0.01f, live.lastTerms().sum);
+}
+
+// 029: absolute control — потерянный угол копится и возвращается поправкой
+// уставки; пока стик быстро движется, отставание рамы не копится.
+void test_absolute_control()
+{
+    AbsoluteControl ac;
+    ac.configure(11.0f, 0.001f);
+    // уставка 0, рама 0.1 с крутится 10 °/с — потеряно 1°: поправка −gain × 1
+    float corr = 0.0f;
+    for (int i = 0; i < 100; ++i) corr = ac.update(0.0f, 10.0f, 10.0f, 90.0f, 20.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, -1.0f, ac.error());
+    TEST_ASSERT_FLOAT_WITHIN(0.2f, -10.0f, corr);
+    // пределы: ошибка — error_limit, поправка — limit
+    for (int i = 0; i < 5000; ++i) corr = ac.update(0.0f, 10.0f, 10.0f, 90.0f, 20.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, -20.0f, ac.error());
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, -90.0f, corr);
+    // рама вернулась (уставка стоит, рама на месте) — ошибка та же: угол ещё не вернули
+    ac.update(0.0f, 0.0f, 10.0f, 90.0f, 20.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, -20.0f, ac.error());
+
+    // быстрый стик: уставка 0 -> 500 °/с за 50 мс, рама отстаёт на 5 мс — не копится
+    AbsoluteControl fast;
+    fast.configure(11.0f, 0.001f);
+    float peak = 0.0f;
+    for (int i = 0; i < 50; ++i)
+    {
+        const float sp = 10.0f * i, gyro = i >= 5 ? 10.0f * (i - 5) : 0.0f;
+        fast.update(sp, gyro, 10.0f, 90.0f, 20.0f);
+        peak = fmaxf(peak, fabsf(fast.error()));
+    }
+    TEST_ASSERT_TRUE(peak < 0.05f);   // без полосы было бы ~2°
+
+    // в контроллере: только в воздухе, крен — в ACRO; реестр
+    CopterParams& p = five5Params();
+    char err[96];
+    CopterTune t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t.pid.absGain);
+    TEST_ASSERT_EQUAL_FLOAT(90.0f, t.pid.absLimit);
+    TEST_ASSERT_EQUAL_FLOAT(20.0f, t.pid.absErrorLimit);
+    TEST_ASSERT_EQUAL_FLOAT(11.0f, t.pid.absCutoffHz);
+    TEST_ASSERT_TRUE(p.parse(PARAM_ABS_CONTROL_GAIN, 0, "10", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ABS_CONTROL_LIMIT, 0, "120", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ABS_CONTROL_ERROR_LIMIT, 0, "30", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ABS_CONTROL_CUTOFF, 0, "6", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_ABS_CONTROL_GAIN, 0, "21", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(10.0f, t.pid.absGain);
+    TEST_ASSERT_EQUAL_FLOAT(120.0f, t.pid.absLimit);
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, t.pid.absErrorLimit);
+    TEST_ASSERT_EQUAL_FLOAT(6.0f, t.pid.absCutoffHz);
+
+    // в воздухе: рама 0.2 с крутится по крену 10 °/с при стике в центре —
+    // в ACRO потеряно 2°, уставка тянет назад на 20 °/с (P втрое больше);
+    // в ANGLE угол держит горизонт — поправки нет
+    const auto pWith = [](CopterMode mode, float gain) {
+        PidExtras x;
+        x.absGain = gain;
+        Bench b;
+        b.ctl.configure(fiveWith(x));
+        armInAcro(b, 0.5f);
+        b.rc.mode = mode;
+        b.run(0.05f);
+        b.sens.gyro[0] = 10.0f;
+        b.run(0.2f);
+        return b.ctl.axisTerms(0).p;
+    };
+    const float acroOff = pWith(CopterMode::ACRO, 0.0f), acroOn = pWith(CopterMode::ACRO, 10.0f);
+    TEST_ASSERT_TRUE(acroOff < 0.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.15f * fabsf(acroOff), 3.0f * acroOff, acroOn);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, pWith(CopterMode::ANGLE, 0.0f), pWith(CopterMode::ANGLE, 10.0f));
+}
+
+// 030: thrust_linear и motor_output_limit — настройкой; предел 80 % —
+// команда регулятору не выше холостых + 80 % хода.
+void test_thrust_linear_and_motor_output_limit()
+{
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.05f + 0.95f * 0.8f, Mixer::withIdle(1.0f, 0.05f, 0.8f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.05f, Mixer::withIdle(0.0f, 0.05f, 0.8f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, Mixer::withIdle(1.0f, 0.05f));
+
+    CopterParams& p = five5Params();
+    char err[96];
+    const float model = p.modelTune().thrustLinear;
+    TEST_ASSERT_EQUAL_FLOAT(roundf(model * 100.0f), p.defaultValue(PARAM_THRUST_LINEAR));
+    TEST_ASSERT_EQUAL_FLOAT(model, p.tune().thrustLinear);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, p.tune().motorOutputLimit);
+    TEST_ASSERT_TRUE(p.parse(PARAM_THRUST_LINEAR, 0, "40", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_MOTOR_OUTPUT_LIMIT, 0, "80", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_MOTOR_OUTPUT_LIMIT, 0, "0", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_THRUST_LINEAR, 0, "151", err, sizeof(err)));
+    CopterTune t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.4f, t.thrustLinear);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.8f, t.motorOutputLimit);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, t.idle + (1.0f - t.idle) * 0.8f, t.motorCommand(1.0f));
+    CopterParams& q = five5Params();
+    TEST_ASSERT_TRUE(q.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, q.defaultValue(PARAM_THRUST_LINEAR));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, q.tune().thrustLinear);
+
+    // в полёте: полный газ и рывок стиком — ни один мотор не выше предела
+    Bench b;
+    b.ctl.configure(t);
+    armInAcro(b, 1.0f);
+    b.rc.roll = 1.0f;
+    const float top = t.idle + (1.0f - t.idle) * 0.8f;
+    float highest = 0.0f;
+    for (int i = 0; i < 300; ++i)
+    {
+        b.run(0.001f);
+        for (uint8_t m = 0; m < b.out.count; ++m) highest = fmaxf(highest, b.out.motor[m]);
+    }
+    TEST_ASSERT_TRUE(highest <= top + 1e-6f);
+    TEST_ASSERT_TRUE(highest > top - 0.01f);
 }
 
 void test_cli_set_get_diff_save_and_paste()
@@ -3410,6 +3663,11 @@ int main()
     RUN_TEST(test_feedforward_boost);
     RUN_TEST(test_feedforward_touches_only_the_stick_part);
     RUN_TEST(test_feedforward_params);
+    RUN_TEST(test_feedforward_max_rate_limit);
+    RUN_TEST(test_yaw_lowpass_hz);
+    RUN_TEST(test_integrated_yaw);
+    RUN_TEST(test_absolute_control);
+    RUN_TEST(test_thrust_linear_and_motor_output_limit);
     RUN_TEST(test_cli_set_get_diff_save_and_paste);
     RUN_TEST(test_rc_map_and_rxrange);
     RUN_TEST(test_rx_input_modes_like_betaflight);

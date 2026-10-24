@@ -188,6 +188,10 @@ public:
         if (index >= 0 && index < par.frame.count) failed[index] = true;
     }
 
+    // Внешний момент на раму (порыв на несимметричную раму, удар), в
+    // угловом ускорении по осям рамы, рад/с² — крен, тангаж, рысканье.
+    void setDisturbance(double roll, double pitch, double yaw) { disturb = { roll, pitch, yaw }; }
+
     void setWind(double north, double east, double gustiness)
     {
         windBase = { north, east, 0 };
@@ -315,6 +319,9 @@ private:
 
         // вращение: J·ω̇ = τ − ω × Jω − демпфирование
         const double damp = 0.02 * par.massKg * par.armM * par.armM;
+        tx += disturb.x * par.jx;
+        ty += disturb.y * par.jy;
+        tz += disturb.z * par.jz;
         tx -= damp * omega.x;
         ty -= damp * omega.y;
         tz -= damp * omega.z;
@@ -448,7 +455,7 @@ private:
     Vec aaf1, aaf2, aafA1, aafA2;
     Vec vibDir[copter::MAX_MOTORS][3];
     double vibPhase[copter::MAX_MOTORS][3] = {};
-    Vec windBase, gust;
+    Vec windBase, gust, disturb;
     double gustLevel = 0;
     double baroHeld = 0, baroTimer = 0;
     double volts = 0, current = 0;

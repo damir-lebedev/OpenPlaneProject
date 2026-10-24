@@ -469,7 +469,8 @@ private:
         printGains("Рыск.  ", t.yaw, 2);
         io.printf("Расходы: крен/тангаж %.0f..%.0f °/с, рысканье %.0f..%.0f °/с; наклон в ANGLE до %.0f°\n",
                   t.rates[0].centerDps, t.rates[0].maxDps, t.rates[2].centerDps, t.rates[2].maxDps, t.maxAngleDeg);
-        io.printf("Холостые %.1f %%, линеаризация тяги %.2f\n", t.idle * 100.0f, t.thrustLinear);
+        io.printf("Холостые %.1f %%, линеаризация тяги %.2f, предел моторов %.0f %%\n", t.idle * 100.0f, t.thrustLinear,
+                  t.motorOutputLimit * 100.0f);
         printWarnings(t.warnings);
     }
 

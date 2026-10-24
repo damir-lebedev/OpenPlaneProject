@@ -125,10 +125,12 @@ namespace copter
         }
 
         // Сигнал 0..1 -> команда регулятору 0..1 с холостыми оборотами
-        // idle: armed-моторы не останавливаются.
-        static float withIdle(float signal, float idle)
+        // idle: armed-моторы не останавливаются. limit (motor_output_limit) —
+        // какая доля хода выше холостых доступна: батарея 6S на моторах под
+        // 4S — 0.66, полный газ тогда и есть предел.
+        static float withIdle(float signal, float idle, float limit = 1.0f)
         {
-            return idle + (1.0f - idle) * fminf(1.0f, fmaxf(0.0f, signal));
+            return idle + (1.0f - idle) * limit * fminf(1.0f, fmaxf(0.0f, signal));
         }
 
     private:

@@ -248,7 +248,12 @@ namespace copter
             axes[0].configure(t.roll, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[1].configure(t.pitch, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[2].configure(t.yaw, t.dtermLpfHz, t.yawLpfHz, t.iLimit, dt);
-            for (uint8_t a = 0; a < 3; ++a) axes[a].setExtras(t.pid, a);
+            for (uint8_t a = 0; a < 3; ++a)
+            {
+                axes[a].setExtras(t.pid, a);
+                axes[a].setMaxRate(t.rates[a].apply(1.0f));
+                absCtl[a].configure(t.pid.absCutoffHz, dt);
+            }
             for (int a = 0; a < 4; ++a) stickLpf[a].configure(s.rcSmoothingHz, dt);
             throttleHpLpf.configure(t.pid.antiGravityHz, dt);
             throttleBoostLpf.configure(t.pid.throttleBoostHz, dt);
@@ -268,8 +273,9 @@ namespace copter
 
         // Другой профиль PID и расходов — на ходу, и в полёте: интегралы,
         // фильтры, ориентация, ARM не сбрасываются. TPA, anti-gravity,
-        // throttle boost — тоже из профиля; фильтры гироскопа и D и всё
-        // остальное берутся из configure().
+        // throttle boost, ФНЧ рысканья, линеаризация и предел моторов — тоже
+        // из профиля (как в BF); фильтры гироскопа и D и всё остальное
+        // берутся из configure().
         void applyProfile(const CopterTune& t)
         {
             tune.roll = t.roll;
@@ -278,14 +284,20 @@ namespace copter
             tune.gainsFromModel = t.gainsFromModel;
             tune.iLimit = t.iLimit;
             tune.pid = t.pid;
+            tune.yawLpfHz = t.yawLpfHz;
+            tune.thrustLinear = t.thrustLinear;
+            tune.motorOutputLimit = t.motorOutputLimit;
             for (int a = 0; a < 3; ++a) tune.rates[a] = t.rates[a];
             axes[0].setGains(t.roll);
             axes[1].setGains(t.pitch);
             axes[2].setGains(t.yaw);
+            axes[2].setOutputLpf(t.yawLpfHz);
             for (uint8_t a = 0; a < 3; ++a)
             {
                 axes[a].setLimit(t.iLimit);
                 axes[a].setExtras(t.pid, a);
+                axes[a].setMaxRate(t.rates[a].apply(1.0f));
+                absCtl[a].setCutoff(t.pid.absCutoffHz);
             }
             throttleHpLpf.configure(t.pid.antiGravityHz, dt);
             throttleBoostLpf.configure(t.pid.throttleBoostHz, dt);
@@ -418,6 +430,15 @@ namespace copter
                 ff.framePeriodS = framePeriod;
                 axes[a].setFeedforwardInput(ff);
             }
+            // absolute control: в воздухе; крен и тангаж — в ACRO (в ANGLE и
+            // HORIZON угол держит горизонт), рысканье — в любом режиме
+            for (uint8_t a = 0; a < 3; ++a)
+            {
+                if (tune.pid.absGain > 0.0f && status.airborne && (a == 2 || mode == CopterMode::ACRO))
+                    sp[a] += absCtl[a].update(sp[a], rates[a], tune.pid.absGain, tune.pid.absLimit, tune.pid.absErrorLimit);
+                else
+                    absCtl[a].reset();
+            }
 
             // ---- газ ----
             float thrust;   // что просит пилот (или удержание высоты), доля тяги
@@ -532,7 +553,7 @@ namespace copter
             {
                 sum += mr.motor[i];
                 const float signal = Mixer::linearize(mr.motor[i], tune.thrustLinear) * vComp;
-                out.motor[i] = Mixer::withIdle(signal, tune.idle);
+                out.motor[i] = Mixer::withIdle(signal, tune.idle, tune.motorOutputLimit);
             }
             avgThrust = out.count ? sum / out.count : 0.0f;
             out.spinning = true;
@@ -851,6 +872,7 @@ namespace copter
         Mixer mixer;
         GyroFilter gyroFilter;
         RateAxis axes[3];
+        AbsoluteControl absCtl[3];
         Pt1 stickLpf[4];
         Pt1 throttleHpLpf;               // anti-gravity
         Pt1 throttleBoostLpf;            // throttle_boost

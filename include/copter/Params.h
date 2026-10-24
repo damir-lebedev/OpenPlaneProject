@@ -8,6 +8,7 @@
 
 #include "copter/Battery.h"
 #include "copter/Presets.h"
+#include "copter/RateController.h"
 #include "copter/RcSetup.h"
 #include "copter/Vtx.h"
 #include "storage/KeyValueStore.h"
@@ -185,6 +186,16 @@ namespace copter
         PARAM_FEEDFORWARD_SMOOTH_FACTOR,
         PARAM_FEEDFORWARD_JITTER_FACTOR,
         PARAM_FEEDFORWARD_BOOST,
+        PARAM_FEEDFORWARD_MAX_RATE_LIMIT,
+        PARAM_YAW_LOWPASS_HZ,
+        PARAM_USE_INTEGRATED_YAW,
+        PARAM_INTEGRATED_YAW_RELAX,
+        PARAM_ABS_CONTROL_GAIN,
+        PARAM_ABS_CONTROL_LIMIT,
+        PARAM_ABS_CONTROL_ERROR_LIMIT,
+        PARAM_ABS_CONTROL_CUTOFF,
+        PARAM_THRUST_LINEAR,
+        PARAM_MOTOR_OUTPUT_LIMIT,
         PARAM_RATEPROFILE_NAME,
         PARAM_ROLL_RC_RATE,
         PARAM_PITCH_RC_RATE,
@@ -275,7 +286,8 @@ namespace copter
         constexpr ParamScope kMaster = ParamScope::MASTER, kPid = ParamScope::PID_PROFILE, kRate = ParamScope::RATE_PROFILE;
         constexpr ParamGroup kGroupPid = ParamGroup::PID, kGroupRates = ParamGroup::RATES, kGroupRx = ParamGroup::RECEIVER,
                              kGroupCopter = ParamGroup::COPTER, kGroupPower = ParamGroup::POWER,
-                             kGroupVtx = ParamGroup::VTX, kGroupGps = ParamGroup::GPS, kGroupBlackbox = ParamGroup::BLACKBOX;
+                             kGroupVtx = ParamGroup::VTX, kGroupGps = ParamGroup::GPS, kGroupBlackbox = ParamGroup::BLACKBOX,
+                             kGroupFilters = ParamGroup::FILTERS, kGroupMotors = ParamGroup::MOTORS;
         constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD,
                                kBattery = ParamDefault::BATTERY;
         static const ParamInfo table[] = {
@@ -360,6 +372,26 @@ namespace copter
               "стик за кадр сдвинулся меньше (500 — полстика) — упреждение слабее: нет дрожи от пальца" },
             { "feedforward_boost", kInt, kPid, kGroupPid, 0, 50, 0, kTune, "", nullptr, 0,
               "добавка по ускорению стика: на рывке стиком моторы раньше берут разгон" },
+            { "feedforward_max_rate_limit", kInt, kPid, kGroupPid, 0, 150, 0, kTune, "%", nullptr, 0,
+              "уставка у такой доли наибольшего расхода — упреждение гаснет: нет перелёта на флипе; 0 — выкл" },
+            { "yaw_lowpass_hz", kInt, kPid, kGroupFilters, 0, 500, 0, kTune, "Гц", nullptr, 0,
+              "ФНЧ выхода PID рысканья: меньше — тише моторы, но рысканье мягче; 0 — без фильтра" },
+            { "use_integrated_yaw", kEnum, kPid, kGroupPid, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "рысканье через интеграл суммы PID — для больших винтов; PID рысканья из модели пересчитываются" },
+            { "integrated_yaw_relax", kInt, kPid, kGroupPid, 0, 255, 200, kTable, "", nullptr, 0,
+              "утечка интеграла рысканья (use_integrated_yaw): больше — меньше «отскок» после пируэта" },
+            { "abs_control_gain", kInt, kPid, kGroupPid, 0, 20, 0, kTable, "°/с на °", nullptr, 0,
+              "ACRO: угол, потерянный от порыва, возвращается (не «уплывает»); 0 — выкл" },
+            { "abs_control_limit", kInt, kPid, kGroupPid, 10, 255, 90, kTable, "°/с", nullptr, 0,
+              "предел поправки absolute control" },
+            { "abs_control_error_limit", kInt, kPid, kGroupPid, 1, 45, 20, kTable, "°", nullptr, 0,
+              "предел накопленной ошибки угла absolute control" },
+            { "abs_control_cutoff", kInt, kPid, kGroupPid, 1, 45, 11, kTable, "Гц", nullptr, 0,
+              "absolute control: ФНЧ уставки — отставание рамы от быстрого стика не копится" },
+            { "thrust_linear", kInt, kPid, kGroupMotors, 0, 150, 0, kTune, "%", nullptr, 0,
+              "линеаризация тяги: малый газ отвечает так же резко, как большой (у мелких винтов больше)" },
+            { "motor_output_limit", kInt, kPid, kGroupMotors, 1, 100, 100, kTable, "%", nullptr, 0,
+              "предел хода моторов выше холостых: батарея 6S на моторах под 4S — 66" },
             { "rateprofile_name", kText, kRate, kGroupRates, 0, 8, 0, kTable, "", nullptr, 0, "имя профиля расходов" },
             { "roll_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход крена у центра стика" },
             { "pitch_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход тангажа у центра стика" },
@@ -813,6 +845,9 @@ namespace copter
         {
             CopterTune t = model;
             const bool bf = source() == TuneSource::BETAFLIGHT;
+            const bool integrated = valueIn(PARAM_USE_INTEGRATED_YAW, pidIndex) > 0.5f;
+            t.pid.integratedYaw = integrated;
+            t.pid.integratedYawRelax = valueIn(PARAM_INTEGRATED_YAW_RELAX, pidIndex);
             if (bf) applyBetaflightBase(t);
             AxisGains* gains[3] = { &t.roll, &t.pitch, &t.yaw };
             for (uint8_t axis = 0; axis < 3; ++axis)
@@ -828,6 +863,7 @@ namespace copter
                         t.gainsFromModel = false;
                     }
                 }
+                if (axis == betaflight::AXIS_YAW && integrated) integratedYawTerms(t.yaw, model.yaw, bf);
                 // D на резком движении: d_max (BF 2025.12; D из таблицы — в покое)
                 // или d_min (BF 4.5; D из таблицы — на движении, d_min — в покое)
                 const float dMax = valueIn(static_cast<ParamId>(PARAM_D_MAX_ROLL + axis), pidIndex);
@@ -876,7 +912,36 @@ namespace copter
             t.pid.ffSmoothFactor = valueIn(PARAM_FEEDFORWARD_SMOOTH_FACTOR, pidIndex) / 100.0f;
             t.pid.ffJitterFactor = valueIn(PARAM_FEEDFORWARD_JITTER_FACTOR, pidIndex);
             t.pid.ffBoost = valueIn(PARAM_FEEDFORWARD_BOOST, pidIndex);
+            t.pid.ffMaxRateLimit = valueIn(PARAM_FEEDFORWARD_MAX_RATE_LIMIT, pidIndex) / 100.0f;
+            t.pid.absGain = valueIn(PARAM_ABS_CONTROL_GAIN, pidIndex);
+            t.pid.absLimit = valueIn(PARAM_ABS_CONTROL_LIMIT, pidIndex);
+            t.pid.absErrorLimit = valueIn(PARAM_ABS_CONTROL_ERROR_LIMIT, pidIndex);
+            t.pid.absCutoffHz = valueIn(PARAM_ABS_CONTROL_CUTOFF, pidIndex);
+            // ФНЧ рысканья и линеаризация: не заданы — точное значение модели (BF — его)
+            if (isSet(PARAM_YAW_LOWPASS_HZ, pidIndex)) t.yawLpfHz = valueIn(PARAM_YAW_LOWPASS_HZ, pidIndex);
+            if (isSet(PARAM_THRUST_LINEAR, pidIndex)) t.thrustLinear = valueIn(PARAM_THRUST_LINEAR, pidIndex) / 100.0f;
+            t.motorOutputLimit = valueIn(PARAM_MOTOR_OUTPUT_LIMIT, pidIndex) / 100.0f;
             return t;
+        }
+
+        // use_integrated_yaw: числа BF (заданные или tune_source = BETAFLIGHT) —
+        // как в BF: I рысканья без множителя 2.5; незаданные из модели —
+        // пересчитаны так, чтобы контур остался тем же (integratedYawGains).
+        void integratedYawTerms(AxisGains& yaw, const AxisGains& modelYaw, bool bf) const
+        {
+            const AxisGains conv = integratedYawGains(modelYaw, valueIn(PARAM_INTEGRATED_YAW_RELAX, pidIndex));
+            for (uint8_t k = 0; k < 4; ++k)
+            {
+                const PidTerm term = static_cast<PidTerm>(k);
+                if (bf || isSet(pidParam(betaflight::AXIS_YAW, term), pidIndex))
+                {
+                    if (term == PidTerm::I) yaw.i /= betaflight::YAW_I_FACTOR;
+                }
+                else
+                {
+                    gainTerm(yaw, term) = gainTerm(conv, term);
+                }
+            }
         }
 
         // ---- флеш ----
@@ -1056,6 +1121,9 @@ namespace copter
             defaults[PARAM_FEEDFORWARD_SMOOTH_FACTOR] = roundf(pidBase.pid.ffSmoothFactor * 100.0f);
             defaults[PARAM_FEEDFORWARD_JITTER_FACTOR] = roundf(pidBase.pid.ffJitterFactor);
             defaults[PARAM_FEEDFORWARD_BOOST] = roundf(pidBase.pid.ffBoost);
+            defaults[PARAM_FEEDFORWARD_MAX_RATE_LIMIT] = roundf(pidBase.pid.ffMaxRateLimit * 100.0f);
+            defaults[PARAM_YAW_LOWPASS_HZ] = roundf(pidBase.yawLpfHz);
+            defaults[PARAM_THRUST_LINEAR] = roundf(pidBase.thrustLinear * 100.0f);
         }
 
         // Сборка каталога с поправками прошивки (для сборки прошивки — она сама).

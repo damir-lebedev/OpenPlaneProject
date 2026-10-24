@@ -232,6 +232,15 @@ namespace copter
         float ffSmoothFactor = 0.0f;      // сглаживание скорости стика между кадрами: доля старого за кадр
         float ffJitterFactor = 0.0f;      // стик сдвинулся меньше (BF-единицы за кадр, 500 — полстика) — FF слабее
         float ffBoost = 0.0f;             // добавка по ускорению стика: FF_BOOST_LEAD_S × столько упреждения
+        float ffMaxRateLimit = 0.0f;      // у такой доли наибольшего расхода FF гаснет (нет перелёта на краю); 0 — выкл
+        // рысканье через интеграл суммы PID (большие винты: рысканье — разгоном винтов)
+        bool integratedYaw = false;
+        float integratedYawRelax = 200.0f;   // утечка интеграла, единицы BF (200 — 16 1/с)
+        // absolute control: накопленная ошибка угла в ACRO возвращается
+        float absGain = 0.0f;             // (°/с) на градус накопленной ошибки; 0 — выкл
+        float absLimit = 90.0f;           // предел поправки, °/с
+        float absErrorLimit = 20.0f;      // предел накопленной ошибки, °
+        float absCutoffHz = 11.0f;        // ФНЧ уставки: что считать быстрым движением стика
     };
 
     struct CopterTune
@@ -254,6 +263,7 @@ namespace copter
         RateCurve rates[3];
         float idle = 0.055f;            // холостые: доля команды регулятору
         float thrustLinear = 0.25f;
+        float motorOutputLimit = 1.0f;  // motor_output_limit: доля хода от холостых до полного
         float hoverThrust = 0.4f;       // доля тяги (выход смесителя) на висении
         float tpa[TPA_POINTS] = {};     // поправка PD по газу из модели (tpa_mode = MODEL)
 
@@ -269,7 +279,7 @@ namespace copter
         // Команда смесителя (доля тяги) -> скважность регулятора 0..1.
         float motorCommand(float thrustShare) const
         {
-            return Mixer::withIdle(Mixer::linearize(thrustShare, thrustLinear), idle);
+            return Mixer::withIdle(Mixer::linearize(thrustShare, thrustLinear), idle, motorOutputLimit);
         }
 
         // Частота вращения мотора, Гц, при доле тяги и напряжении (0 — номинальное).
@@ -707,6 +717,8 @@ namespace copter
         // feedforward: averaging OFF, smooth_factor 25, jitter_factor 7,
         // boost 15, transition 0
         constexpr uint8_t DEFAULT_FF_SMOOTH_FACTOR = 25, DEFAULT_FF_JITTER_FACTOR = 7, DEFAULT_FF_BOOST = 15;
+        // feedforward_max_rate_limit 90 %, yaw_lowpass_hz 100, thrust_linear 0
+        constexpr uint8_t DEFAULT_FF_MAX_RATE_LIMIT = 90, DEFAULT_YAW_LOWPASS_HZ = 100, DEFAULT_THRUST_LINEAR = 0;
 
         // Газ в мкс (1000–2000) -> доля 0..1 и обратно.
         inline float throttleFromUs(float us) { return fminf(1.0f, fmaxf(0.0f, (us - 1000.0f) / 1000.0f)); }
@@ -761,6 +773,7 @@ namespace copter
     //   • D: у BF два PT1 (динамический 75–150 Гц и 150 Гц) — у нас один PT1
     //     60 Гц: то же запаздывание у полосы контура (~19° на 20 Гц) и то же
     //     ослабление шума на 200 Гц (~0.28);
+    //   • thrust_linear 0 (линеаризации тяги нет), feedforward_max_rate_limit 90 %;
     //   • рысканье: yaw_lowpass_hz 100; TPA только на D, 65 % от газа 1350
     //     (35 % хода) до полного, на малом газе −20 % ниже 1050 до взлёта;
     //     iterm_limit 400; ANGLE: angle_p_gain 50 (5 °/с на градус),
@@ -777,7 +790,8 @@ namespace copter
         namespace bf = betaflight;
         t.gyroLpfHz = fminf(0.4f * t.loopHz, 250.0f);
         t.dtermLpfHz = fminf(0.3f * t.loopHz, 60.0f);
-        t.yawLpfHz = 100.0f;
+        t.yawLpfHz = bf::DEFAULT_YAW_LOWPASS_HZ;
+        t.thrustLinear = bf::DEFAULT_THRUST_LINEAR / 100.0f;
         t.iLimit = bf::DEFAULT_ITERM_LIMIT / bf::MIXER_SCALING;
         t.pid.relax = ItermRelax::RP;
         t.pid.relaxType = ItermRelaxType::SETPOINT;
@@ -799,6 +813,7 @@ namespace copter
         t.pid.ffSmoothFactor = bf::DEFAULT_FF_SMOOTH_FACTOR / 100.0f;
         t.pid.ffJitterFactor = bf::DEFAULT_FF_JITTER_FACTOR;
         t.pid.ffBoost = bf::DEFAULT_FF_BOOST;
+        t.pid.ffMaxRateLimit = bf::DEFAULT_FF_MAX_RATE_LIMIT / 100.0f;
         t.levelGain = 5.0f;
         t.maxAngleDeg = 60.0f;
         t.gainsFromModel = false;
