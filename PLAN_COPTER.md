@@ -183,42 +183,47 @@
 - **UI:** «PID → дополнительно»
 - **Итог:** iterm_limit в единицах BF (1000 — весь ход): модель 300, BF 400; все тонкости — настройки PID-профиля, переключаются на ходу (коммит c95be05)
 
-### [ ] 016 · pidsum_limit, pidsum_limit_yaw
+### [x] 016 · pidsum_limit, pidsum_limit_yaw
 - **BF:** `pidsum_limit`, `pidsum_limit_yaw`
 - **Что:** ограничение суммы PID по осям (сейчас ±1 одно на все).
 - **Файлы:** copter/RateController.h
 - **Тест:** test_copter: рысканье ограничено своим пределом
 - **UI:** «PID → дополнительно»
+- **Итог:** pidsum_limit / pidsum_limit_yaw — свой предел суммы у крена и тангажа и у рысканья (модель 1000 — как было, BF 500/400); в пределе I не копится (коммит 5752876)
 
-### [ ] 017 · anti_gravity — как в BF 4.3+
+### [x] 017 · anti_gravity — как в BF 4.3+
 - **BF:** `anti_gravity_gain`, `anti_gravity_cutoff_hz`, `anti_gravity_p_gain`
 - **Что:** усиление I (и P) по ФВЧ газа с настраиваемой частотой.
 - **Сейчас:** iBoost = 1 + min(3, |Δгаз|·30), ФНЧ 15 Гц.
 - **Файлы:** copter/CopterController.h, copter/RateController.h
 - **Тест:** test_copter_sim: рывок газом — нос не клюёт (тангаж < 3°)
 - **UI:** вкладка «PID»: ползунок Anti Gravity
+- **Итог:** anti_gravity_gain/cutoff_hz/p_gain как в BF 4.3+ (I и P по сглаженной скорости газа); модель 80/5 Гц без P, BF 80/5/100. Симулятор нашёл: наш relax по ошибке держал I на любой большой ошибке — на рывке газом «вялый»/«резвый» 5" клевал на 44–83°; теперь он придерживает только ошибку от движения стика — 3.1°/2.4° (как в описании 0.05°). Детектор аварии ловит волчок на трёх моторах (рысканье > 200 °/с мимо уставки 1.5 с) (коммит 5752876)
 
-### [ ] 018 · throttle_boost
+### [x] 018 · throttle_boost
 - **BF:** `throttle_boost`, `throttle_boost_cutoff`
 - **Что:** добавка к газу по его ФВЧ — быстрее отклик на рывок газа.
 - **Файлы:** copter/CopterController.h
 - **Тест:** test_copter_sim: вертикальное ускорение после рывка быстрее
 - **UI:** «PID → дополнительно»
+- **Итог:** throttle_boost / throttle_boost_cutoff: быстрая часть газа со стика ×(1 + boost/10), в ALT_HOLD — нет; модель 0, BF 5 — через 50 мс после рывка скорость набора +12 % (10 — +24 %) (коммит 5752876)
 
-### [ ] 019 · TPA как в BF
+### [x] 019 · TPA как в BF
 - **BF:** `tpa_mode` (PD/D), `tpa_rate`, `tpa_breakpoint`
 - **Что:** классическое ослабление PD выше точки излома; наш TPA из модели — режим `tpa_mode = MODEL` (наш, дефолт).
 - **Сейчас:** таблица tpa[11] из модели, множитель P и D.
 - **Файлы:** copter/Presets.h, copter/CopterController.h, copter/Params.h
 - **Тест:** test_copter: кривая TPA; test_copter_sim: полный газ без раскачки
 - **UI:** вкладка «PID»: график коэффициента от газа
+- **Итог:** tpa_mode PD/D/MODEL, tpa_rate, tpa_breakpoint (мкс) — кривая BF или таблица модели, всё в PID-профиле и на ходу; полный газ 1 с — без раскачки во всех трёх режимах (коммит 5752876)
 
-### [ ] 020 · tpa_low — TPA на малом газе
+### [x] 020 · tpa_low — TPA на малом газе
 - **BF:** `tpa_low_rate`, `tpa_low_breakpoint`, `tpa_low_always`
 - **Что:** изменение PD на малом газе (спуски, флипы на нуле).
 - **Файлы:** copter/CopterController.h
 - **Тест:** test_copter: кривая; test_copter_sim: airmode на нуле газа не раскачивается
 - **UI:** тот же график TPA
+- **Итог:** tpa_low_rate (−128…100 %, < 0 — сильнее), tpa_low_breakpoint, tpa_low_always: до первого подъёма газа после ARM или всегда; модель 0, BF 20 % ниже 1050; нулевой газ в airmode — без раскачки и при −20 %, и при +50 % (коммит 5752876)
 
 ### [ ] 021 · feedforward_transition
 - **BF:** `feedforward_transition`
@@ -345,7 +350,7 @@
 ### [ ] 038 · Crash recovery
 - **BF:** `crash_recovery` (OFF/ON/BEEP/DISARM), `crash_dthreshold`, `crash_gthreshold`, `crash_setpoint_threshold`, `crash_time`, `crash_delay`, `crash_recovery_angle`, `crash_recovery_rate`, `crash_limit_yaw`
 - **Что:** удар в воздухе → выравнивание; DISARM — как наша защита (оставить и нашу).
-- **Сейчас:** переворот > 90° 0.7 с, на спине 1 с, потеря управления 30° 2 с → DISARM.
+- **Сейчас:** переворот > 90° 0.7 с, на спине 1 с, потеря управления 30° 2 с, рысканье мимо уставки > 200 °/с 1.5 с (волчок на трёх моторах, с 017) → DISARM.
 - **Файлы:** copter/CopterController.h
 - **Тест:** test_copter_sim: удар (импульс момента) — выровнялся
 - **UI:** вкладка «Безопасность»
