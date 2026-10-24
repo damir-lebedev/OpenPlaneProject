@@ -226,6 +226,12 @@ namespace copter
         float tpaLowRate = 0.0f;          // на нуле газа PD (D) слабее на эту долю (< 0 — сильнее)
         float tpaLowBreakpoint = 0.05f;   // газ, ниже которого работает tpaLowRate
         bool tpaLowAlways = false;        // false — только до первого подъёма газа выше tpaLowBreakpoint после ARM
+        // упреждение (feedforward) — что делать с частью уставки от стика
+        float ffTransition = 0.0f;        // ниже такого отклонения стика FF слабее (линейно к центру); 0 — выкл
+        uint8_t ffAveraging = 1;          // скорость стика — средняя за столько кадров приёмника; 1 — выкл
+        float ffSmoothFactor = 0.0f;      // сглаживание скорости стика между кадрами: доля старого за кадр
+        float ffJitterFactor = 0.0f;      // стик сдвинулся меньше (BF-единицы за кадр, 500 — полстика) — FF слабее
+        float ffBoost = 0.0f;             // добавка по ускорению стика: FF_BOOST_LEAD_S × столько упреждения
     };
 
     struct CopterTune
@@ -698,6 +704,9 @@ namespace copter
         constexpr uint8_t DEFAULT_THROTTLE_BOOST = 5, DEFAULT_THROTTLE_BOOST_CUTOFF = 15;
         constexpr uint8_t DEFAULT_TPA_RATE = 65, DEFAULT_TPA_LOW_RATE = 20;
         constexpr uint16_t DEFAULT_TPA_BREAKPOINT = 1350, DEFAULT_TPA_LOW_BREAKPOINT = 1050;
+        // feedforward: averaging OFF, smooth_factor 25, jitter_factor 7,
+        // boost 15, transition 0
+        constexpr uint8_t DEFAULT_FF_SMOOTH_FACTOR = 25, DEFAULT_FF_JITTER_FACTOR = 7, DEFAULT_FF_BOOST = 15;
 
         // Газ в мкс (1000–2000) -> доля 0..1 и обратно.
         inline float throttleFromUs(float us) { return fminf(1.0f, fmaxf(0.0f, (us - 1000.0f) / 1000.0f)); }
@@ -758,7 +767,8 @@ namespace copter
     //     angle_limit 60°;
     //   • D 30/34 в покое и до 40/46 на резком движении (d_min), I-relax RP
     //     15 Гц, iterm_windup 85 %, сумма PID ±0.5 (рысканье ±0.4),
-    //     anti-gravity 80/5 Гц/100, throttle_boost 5. PID и D в покое
+    //     anti-gravity 80/5 Гц/100, throttle_boost 5; feedforward:
+    //     smooth_factor 25, jitter_factor 7, boost 15. PID и D в покое
     //     (d_min) — из реестра настроек (Params.h), там же их дефолты BF.
     // Режекторы по оборотам остаются наши (у BF на их месте RPM-фильтр по
     // телеметрии DShot и динамический режектор по спектру).
@@ -786,6 +796,9 @@ namespace copter
         t.pid.tpaLowRate = bf::DEFAULT_TPA_LOW_RATE / 100.0f;
         t.pid.tpaLowBreakpoint = bf::throttleFromUs(bf::DEFAULT_TPA_LOW_BREAKPOINT);
         t.pid.tpaLowAlways = false;
+        t.pid.ffSmoothFactor = bf::DEFAULT_FF_SMOOTH_FACTOR / 100.0f;
+        t.pid.ffJitterFactor = bf::DEFAULT_FF_JITTER_FACTOR;
+        t.pid.ffBoost = bf::DEFAULT_FF_BOOST;
         t.levelGain = 5.0f;
         t.maxAngleDeg = 60.0f;
         t.gainsFromModel = false;

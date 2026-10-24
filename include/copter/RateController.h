@@ -21,7 +21,9 @@
 //        (пропвош, флип) растёт до d_max — в покое меньше, и моторы не
 //        греются от шума;
 //   FF — упреждение от скорости изменения уставки: стик начал движение —
-//        моторы уже отвечают, не дожидаясь ошибки.
+//        моторы уже отвечают, не дожидаясь ошибки. Часть от стика — с
+//        настройками BF по кадрам приёмника (feedforward_transition,
+//        _averaging, _smooth_factor, _jitter_factor, _boost).
 // P и D умножаются на поправку по газу (TPA, Presets.h); в режиме
 // TpaMode::D — только D, как в Betaflight. Сумма — не больше своего
 // предела (pidsum_limit, у рысканья — pidsum_limit_yaw).
@@ -47,6 +49,23 @@ namespace copter
     // гексы выходит на расход за 0.13–0.15 с — память длиннее, иначе
     // перелёт растёт с 11.7 до 12–18 %)
     constexpr float RELAX_ERROR_TRACK_HZ = 0.7f;
+    // feedforward_boost: 1 — упреждение по ускорению стика на столько секунд
+    // (15 — 3 мс: на коротком рывке стиком моторы раньше берут разгон)
+    constexpr float FF_BOOST_LEAD_S = 0.0002f;
+    constexpr float FF_STICK_UNITS = 500.0f;   // BF: полстика — 500 (jitter_factor)
+    constexpr uint8_t FF_HISTORY = 5;          // отметок кадров для feedforward_averaging (до 4 кадров)
+
+    // Упреждение с пульта (feedforward_*). Что из уставки задал стик и когда
+    // пришёл кадр приёмника — настройки BF работают на этой части; остальное
+    // (уставка от горизонта в ANGLE) идёт в FF как есть.
+    struct FeedforwardInput
+    {
+        float stickSetpoint = 0.0f;   // °/с: часть уставки, которую задаёт стик
+        float deflection = 1.0f;      // |стик| после сглаживания, 0..1 (feedforward_transition)
+        float rawStick = 0.0f;        // стик как пришёл с пульта, −1..1 (feedforward_jitter_factor)
+        bool newFrame = true;         // в этом цикле пришёл кадр приёмника
+        float framePeriodS = 0.0f;    // период кадров, с (0 — каждый цикл)
+    };
 
     class RateAxis
     {
@@ -59,6 +78,7 @@ namespace copter
             dLpf.configure(dtermLpfHz, dtS);
             outLpf.configure(outLpfHz, dtS);
             ffLpf.configure(25.0f, dtS);
+            ffShapedLpf.configure(25.0f, dtS);
             boostLpf.configure(D_MAX_BOOST_HZ, dtS);
             relaxLpf.configure(relaxCutoffHz, dtS);
             spTrack.configure(RELAX_ERROR_TRACK_HZ, dtS);
@@ -82,6 +102,21 @@ namespace copter
             relaxLpf.configure(relaxCutoffHz, dt);
             sumLimit = yaw ? x.pidSumLimitYaw : x.pidSumLimit;
             tpaOnP = x.tpaMode != TpaMode::D;
+            ffTransition = x.ffTransition;
+            ffAveraging = x.ffAveraging < 1 ? 1 : (x.ffAveraging > FF_HISTORY - 1 ? FF_HISTORY - 1 : x.ffAveraging);
+            ffSmooth = fminf(0.95f, fmaxf(0.0f, x.ffSmoothFactor));
+            ffJitter = x.ffJitterFactor;
+            ffBoost = x.ffBoost;
+            ffShaping = ffTransition > 0.0f || ffAveraging > 1 || ffSmooth > 0.0f || ffJitter > 0.0f || ffBoost > 0.0f;
+        }
+
+        // Стик и кадр приёмника для упреждения — перед update(), каждый цикл.
+        // Не задано — вся уставка от стика, кадр — каждый цикл, без
+        // transition и jitter.
+        void setFeedforwardInput(const FeedforwardInput& in)
+        {
+            ffIn = in;
+            ffInKnown = true;
         }
 
         void reset()
@@ -96,6 +131,8 @@ namespace copter
             dLpf.reset();
             outLpf.reset();
             ffLpf.reset();
+            ffShapedLpf.reset();
+            ffFirst = true;
             boostLpf.reset();
             relaxLpf.reset();
             spTrack.reset();
@@ -144,8 +181,16 @@ namespace copter
             }
             terms.i = iTerm;
 
-            const float spRate = ffLpf.apply((setpoint - prevSetpoint) / dt);   // °/с² уставки
+            const float spSpeed = (setpoint - prevSetpoint) / dt;   // °/с² уставки
+            const float spRate = ffLpf.apply(spSpeed);
             prevSetpoint = setpoint;
+            // упреждение: без настроек feedforward_* — та же скорость уставки
+            const float ffSpeed = feedforwardSpeed(setpoint, spSpeed);
+            float ffRate = spRate;
+            if (ffShaping)
+                ffRate = ffShapedLpf.apply(ffSpeed);
+            else
+                ffShapedLpf.reset(spRate);
 
             const float rate = dLpf.apply((measured - prevMeasured) / dt);       // °/с² гироскопа
             prevMeasured = measured;
@@ -163,7 +208,7 @@ namespace copter
             }
             terms.d = -d * rate * tpa;
 
-            terms.ff = gains.ff * spRate;
+            terms.ff = gains.ff * ffRate;
 
             const float sum = terms.p + terms.i + terms.d + terms.ff;
             sumClamped = fabsf(sum) > sumLimit;
@@ -177,6 +222,90 @@ namespace copter
         float dBoost() const { return boost; }
 
     private:
+        // Скорость уставки для упреждения (°/с²) с настройками feedforward_*.
+        // Они действуют на часть уставки от стика: transition — у центра
+        // стика FF слабее; averaging — скорость стика средняя за N кадров
+        // приёмника (кадр, в котором стоим, — тоже); smooth_factor — сглаживание от кадра к кадру (доля
+        // старого за кадр, в пересчёте на циклы); jitter_factor — стик за
+        // кадр (в среднем за два) сдвинулся меньше порога — FF слабее,
+        // плавно до нуля (дрожь пальца, медленный стик); boost — добавка по
+        // ускорению стика. Уставка не от стика (горизонт) — как есть.
+        float feedforwardSpeed(float setpoint, float spSpeed)
+        {
+            const float stickSp = ffInKnown ? ffIn.stickSetpoint : setpoint;
+            if (ffFirst)
+            {
+                prevStickSp = stickSp;
+                for (uint8_t k = 0; k < FF_HISTORY; ++k)
+                {
+                    ffHist[k] = stickSp;
+                    ffHistAge[k] = 0.0f;
+                }
+                ffHistCount = 0;
+                ffSmoothed = 0.0f;
+                prevFfSmoothed = 0.0f;
+                prevRawStick = ffIn.rawStick;
+                prevStickDelta = FF_STICK_UNITS;
+                jitterAtt = 1.0f;
+                ffFirst = false;
+            }
+            const float stickSpeed = (stickSp - prevStickSp) / dt;
+            prevStickSp = stickSp;
+            if (!ffShaping) return spSpeed;
+            for (uint8_t k = 0; k < FF_HISTORY; ++k) ffHistAge[k] += dt;
+
+            const bool frame = !ffInKnown || ffIn.newFrame;
+            if (frame)
+            {
+                for (uint8_t k = FF_HISTORY - 1; k > 0; --k)
+                {
+                    ffHist[k] = ffHist[k - 1];
+                    ffHistAge[k] = ffHistAge[k - 1];
+                }
+                ffHist[0] = stickSp;
+                ffHistAge[0] = 0.0f;
+                if (ffHistCount < FF_HISTORY) ++ffHistCount;
+                const float period = ffInKnown && ffIn.framePeriodS > dt ? ffIn.framePeriodS : dt;
+                smoothAlpha = ffSmooth > 0.0f ? 1.0f - powf(ffSmooth, dt / period) : 1.0f;
+                jitterAtt = 1.0f;
+                if (ffInKnown)
+                {
+                    const float delta = fabsf(ffIn.rawStick - prevRawStick) * FF_STICK_UNITS;
+                    const float moved = 0.5f * (delta + prevStickDelta);
+                    prevRawStick = ffIn.rawStick;
+                    prevStickDelta = delta;
+                    if (ffJitter > 0.0f && moved < ffJitter)
+                    {
+                        const float q = 1.0f - moved / ffJitter;
+                        jitterAtt = 1.0f - q * q;
+                    }
+                }
+            }
+
+            float speed = stickSpeed;
+            if (ffAveraging > 1 && ffHistCount > ffAveraging)
+            {
+                // сдвиг за N кадров на время между их отметками: на «лесенке»
+                // кадров — ровно средняя скорость, без пульсаций
+                const uint8_t k = ffAveraging;
+                const float span = ffHistAge[k] - ffHistAge[0];
+                if (span > 0.5f * dt) speed = (stickSp - ffHist[k]) / span;
+            }
+            ffSmoothed += smoothAlpha * (speed - ffSmoothed);
+            float out = ffSmoothed;
+            if (ffBoost > 0.0f)
+            {
+                // не больше самой скорости стика: на ступеньке (стик — рывком
+                // за кадр) ускорение огромно, и без предела перелёт растёт
+                const float lim = fabsf(ffSmoothed);
+                out += fminf(lim, fmaxf(-lim, ffBoost * FF_BOOST_LEAD_S * (ffSmoothed - prevFfSmoothed) / dt));
+            }
+            prevFfSmoothed = ffSmoothed;
+            float k = jitterAtt;
+            if (ffInKnown && ffTransition > 0.0f) k *= fminf(1.0f, ffIn.deflection / ffTransition);
+            return out * k + (spSpeed - stickSpeed);
+        }
+
         // Ошибка, по которой копится интеграл, с I-relax. smooth — уставка через
         // ФНЧ relax, moved — насколько уставка сдвинулась за последние ~0.2 с.
         float relaxedError(float setpoint, float measured, float error, float smooth, float moved) const
@@ -221,7 +350,18 @@ namespace copter
         float dMax = 0.0f, dMaxGain = 37.0f, dMaxAdvance = 20.0f;
         bool relaxOn = true, relaxIncOnly = false, relaxGyro = false, relaxError = true;
         float relaxCutoffHz = 10.0f;
-        Pt1 dLpf, outLpf, ffLpf, boostLpf, relaxLpf, spTrack;
+        Pt1 dLpf, outLpf, ffLpf, ffShapedLpf, boostLpf, relaxLpf, spTrack;
+        // feedforward_*
+        float ffTransition = 0.0f, ffSmooth = 0.0f, ffJitter = 0.0f, ffBoost = 0.0f;
+        uint8_t ffAveraging = 1;
+        bool ffShaping = false;
+        FeedforwardInput ffIn;
+        bool ffInKnown = false;
+        bool ffFirst = true;
+        float ffHist[FF_HISTORY] = {}, ffHistAge[FF_HISTORY] = {};   // уставка от стика в кадрах и сколько с тех пор, с
+        uint8_t ffHistCount = 0;
+        float ffSmoothed = 0.0f, prevFfSmoothed = 0.0f, smoothAlpha = 1.0f;
+        float prevStickSp = 0.0f, prevRawStick = 0.0f, prevStickDelta = 0.0f, jitterAtt = 1.0f;
         AxisTerms terms;
         float iTerm = 0.0f;
         float boost = 0.0f;

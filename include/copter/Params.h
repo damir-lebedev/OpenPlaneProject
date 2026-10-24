@@ -178,6 +178,11 @@ namespace copter
         PARAM_TPA_LOW_RATE,
         PARAM_TPA_LOW_BREAKPOINT,
         PARAM_TPA_LOW_ALWAYS,
+        PARAM_FEEDFORWARD_TRANSITION,
+        PARAM_FEEDFORWARD_AVERAGING,
+        PARAM_FEEDFORWARD_SMOOTH_FACTOR,
+        PARAM_FEEDFORWARD_JITTER_FACTOR,
+        PARAM_FEEDFORWARD_BOOST,
         PARAM_RATEPROFILE_NAME,
         PARAM_ROLL_RC_RATE,
         PARAM_PITCH_RC_RATE,
@@ -254,6 +259,7 @@ namespace copter
         static const char* const ITERM_RELAX[] = { "OFF", "RP", "RPY", "RP_INC", "RPY_INC" };
         static const char* const ITERM_RELAX_TYPES[] = { "GYRO", "SETPOINT" };
         static const char* const TPA_MODES[] = { "PD", "D", "MODEL" };   // как TpaMode
+        static const char* const FF_AVERAGING[] = { "OFF", "2_POINT", "3_POINT", "4_POINT" };
         uint8_t buildCount = 0;
         const char* const* builds = buildIds(buildCount);
         constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
@@ -336,6 +342,16 @@ namespace copter
               "газ, ниже которого работает tpa_low_rate" },
             { "tpa_low_always", kEnum, kPid, kGroupPid, 0, 1, 0, kTable, "", OFF_ON, 2,
               "OFF — tpa_low только до первого подъёма газа выше tpa_low_breakpoint после ARM; ON — всегда" },
+            { "feedforward_transition", kInt, kPid, kGroupPid, 0, 100, 0, kTable, "%", nullptr, 0,
+              "ближе к центру стика, чем столько, упреждение слабее (плавнее у центра); 0 — выкл" },
+            { "feedforward_averaging", kEnum, kPid, kGroupPid, 0, 3, 0, kTable, "", FF_AVERAGING, 4,
+              "скорость стика для упреждения — средняя за 2–4 кадра приёмника (ровнее, но позже)" },
+            { "feedforward_smooth_factor", kInt, kPid, kGroupPid, 0, 95, 0, kTune, "%", nullptr, 0,
+              "сглаживание упреждения от кадра к кадру: больше — ровнее, но позже" },
+            { "feedforward_jitter_factor", kInt, kPid, kGroupPid, 0, 20, 0, kTune, "", nullptr, 0,
+              "стик за кадр сдвинулся меньше (500 — полстика) — упреждение слабее: нет дрожи от пальца" },
+            { "feedforward_boost", kInt, kPid, kGroupPid, 0, 50, 0, kTune, "", nullptr, 0,
+              "добавка по ускорению стика: на рывке стиком моторы раньше берут разгон" },
             { "rateprofile_name", kText, kRate, kGroupRates, 0, 8, 0, kTable, "", nullptr, 0, "имя профиля расходов" },
             { "roll_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход крена у центра стика" },
             { "pitch_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход тангажа у центра стика" },
@@ -841,6 +857,11 @@ namespace copter
             t.pid.tpaLowRate = valueIn(PARAM_TPA_LOW_RATE, pidIndex) / 100.0f;
             t.pid.tpaLowBreakpoint = betaflight::throttleFromUs(valueIn(PARAM_TPA_LOW_BREAKPOINT, pidIndex));
             t.pid.tpaLowAlways = valueIn(PARAM_TPA_LOW_ALWAYS, pidIndex) > 0.5f;
+            t.pid.ffTransition = valueIn(PARAM_FEEDFORWARD_TRANSITION, pidIndex) / 100.0f;
+            t.pid.ffAveraging = static_cast<uint8_t>(valueIn(PARAM_FEEDFORWARD_AVERAGING, pidIndex)) + 1;
+            t.pid.ffSmoothFactor = valueIn(PARAM_FEEDFORWARD_SMOOTH_FACTOR, pidIndex) / 100.0f;
+            t.pid.ffJitterFactor = valueIn(PARAM_FEEDFORWARD_JITTER_FACTOR, pidIndex);
+            t.pid.ffBoost = valueIn(PARAM_FEEDFORWARD_BOOST, pidIndex);
             return t;
         }
 
@@ -1018,6 +1039,9 @@ namespace copter
             defaults[PARAM_THROTTLE_BOOST] = roundf(pidBase.pid.throttleBoost * 10.0f);
             defaults[PARAM_TPA_MODE] = static_cast<float>(pidBase.pid.tpaMode);
             defaults[PARAM_TPA_LOW_RATE] = roundf(pidBase.pid.tpaLowRate * 100.0f);
+            defaults[PARAM_FEEDFORWARD_SMOOTH_FACTOR] = roundf(pidBase.pid.ffSmoothFactor * 100.0f);
+            defaults[PARAM_FEEDFORWARD_JITTER_FACTOR] = roundf(pidBase.pid.ffJitterFactor);
+            defaults[PARAM_FEEDFORWARD_BOOST] = roundf(pidBase.pid.ffBoost);
         }
 
         // Сборка каталога с поправками прошивки (для сборки прошивки — она сама).

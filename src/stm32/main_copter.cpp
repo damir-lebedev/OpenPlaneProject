@@ -139,7 +139,10 @@ enum : uint8_t
 // Пульт -> ручки контроллера: карта каналов, rxrange, режимы (copter/RcSetup.h).
 static copter::CopterRc readRc()
 {
-    return rxInput.read(rcReceiver.getState().data(), Config::RC_CHANNELS, !rcReceiver.isSignalLost());
+    copter::CopterRc rc = rxInput.read(rcReceiver.getState().data(), Config::RC_CHANNELS, !rcReceiver.isSignalLost());
+    // кадры приёмника — для упреждения (feedforward_*); 0 до первого кадра
+    rc.frame = rcReceiver.getGoodFrameCount();
+    return rc;
 }
 
 // Настройки пульта и описание коптера — в работу (при включении, после

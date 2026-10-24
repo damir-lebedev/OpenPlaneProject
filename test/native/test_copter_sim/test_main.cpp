@@ -828,6 +828,72 @@ void test_betaflight_defaults_on_our_loop()
     }
 }
 
+namespace
+{
+    struct Flick
+    {
+        double t90 = -1, overshoot = 0;
+    };
+
+    // ACRO, стик по крену 0 -> target за rampS, кадры приёмника frameHz (стик
+    // меняется только с кадром, rc.frame считает кадры, как в прошивке).
+    Flick flickOnFrames(const CopterTune& t, const QuadPerturb& p, double rampS, double frameHz, float target)
+    {
+        QuadHarness h(five(), p, 12);
+        h.useTune(t);
+        Flick r;
+        if (!h.takeoffTo(20.0)) return r;
+        h.rc.mode = CopterMode::ACRO;
+        h.rc.throttle = h.ctl.getStatus().hoverLearned;
+        h.run(0.3);
+        const double goal = h.tune.rates[0].apply(target);
+        const double t0 = h.sim.now();
+        double next = t0, maxW = 0;
+        for (int i = 0; i < 500; ++i)
+        {
+            const double now = h.sim.now();
+            if (now >= next)
+            {
+                next += 1.0 / frameHz;
+                ++h.rc.frame;
+                h.rc.roll = static_cast<float>(std::fmin(1.0, (now - t0) / rampS) * target);
+            }
+            h.step();
+            const double w = h.sim.rates().x * 57.29578;
+            maxW = std::fmax(maxW, w);
+            if (r.t90 < 0 && w > 0.9 * goal) r.t90 = h.sim.now() - t0;
+        }
+        r.overshoot = maxW / goal - 1.0;
+        return r;
+    }
+}
+
+// 021–025: дефолты BF (smooth_factor 25, jitter_factor 7, boost 15) на
+// флике полстика за 20 мс с кадрами 250 Гц — перелёт не больше, чем со
+// старым FF без этих настроек, выход на расход не позже.
+void test_feedforward_settings_on_a_real_flick()
+{
+    const CopterTune bf = betaflightTune(five(), EscProtocol::DSHOT600);
+    CopterTune plain = bf;
+    plain.pid.ffSmoothFactor = 0.0f;
+    plain.pid.ffJitterFactor = 0.0f;
+    plain.pid.ffBoost = 0.0f;
+    const QuadPerturb ps[] = { QuadPerturb(), sluggish(), twitchy() };
+    const char* names[] = { "nominal", "sluggish", "twitchy" };
+    for (uint8_t k = 0; k < 3; ++k)
+    {
+        const Flick on = flickOnFrames(bf, ps[k], 0.02, 250.0, 0.5f);
+        const Flick off = flickOnFrames(plain, ps[k], 0.02, 250.0, 0.5f);
+        char line[200];
+        snprintf(line, sizeof(line), "feedforward BF flick %-8s: t90 %.0f ms / %.0f ms, overshoot %.1f%% / %.1f%% (with / without ff settings)",
+                 names[k], on.t90 * 1000.0, off.t90 * 1000.0, on.overshoot * 100.0, off.overshoot * 100.0);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(on.t90 > 0 && off.t90 > 0, line);
+        TEST_ASSERT_TRUE_MESSAGE(on.t90 < off.t90 + 0.003, line);
+        TEST_ASSERT_TRUE_MESSAGE(on.overshoot < off.overshoot + 0.01, line);
+    }
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -854,5 +920,6 @@ int main()
     RUN_TEST(test_full_throttle_without_oscillation_in_every_tpa_mode);
     RUN_TEST(test_tpa_low_on_zero_throttle_airmode);
     RUN_TEST(test_betaflight_defaults_on_our_loop);
+    RUN_TEST(test_feedforward_settings_on_a_real_flick);
     return UNITY_END();
 }

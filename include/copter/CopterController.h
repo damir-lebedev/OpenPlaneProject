@@ -184,7 +184,12 @@ namespace copter
         bool failsafeSwitch = false;   // режим FAILSAFE: как потеря связи
         bool prearm = true;            // PREARM включён или его нет в таблице
         bool armAssigned = true;       // ARM есть в таблице режимов
+        uint32_t frame = 0;            // счётчик кадров приёмника; 0 — неизвестно (кадр — раз в 1/FF_NOMINAL_FRAME_HZ)
     };
+
+    // Кадров приёмника не видно (симулятор, тесты) — для feedforward_* они
+    // приходят с такой частотой (CRSF 250 Гц).
+    constexpr float FF_NOMINAL_FRAME_HZ = 250.0f;
 
     struct CopterOutputs
     {
@@ -369,6 +374,7 @@ namespace copter
 
             // ---- связь, ARM, failsafe ----
             CopterRc rc = rcIn;
+            trackFrames(rc.frame);
             const bool rcValid = handleLink(rc);
             handleArming(rc, sens, rcValid);
             if (status.state != CopterState::DISARMED) detectCrash();
@@ -398,9 +404,20 @@ namespace copter
 
             const float sticks[4] = { stickLpf[0].apply(rc.roll), stickLpf[1].apply(rc.pitch),
                                       stickLpf[2].apply(rc.yaw), stickLpf[3].apply(rc.throttle) };
-            float sp[3];
-            rateSetpoints(mode, sticks, sp);
-            for (int a = 0; a < 3; ++a) status.setpoint[a] = sp[a];
+            float sp[3], stickSp[3];
+            rateSetpoints(mode, sticks, sp, stickSp);
+            const float raw[3] = { rc.roll, rc.pitch, rc.yaw };
+            for (uint8_t a = 0; a < 3; ++a)
+            {
+                status.setpoint[a] = sp[a];
+                FeedforwardInput ff;
+                ff.stickSetpoint = stickSp[a];
+                ff.deflection = fabsf(sticks[a]);
+                ff.rawStick = raw[a];
+                ff.newFrame = frameNow;
+                ff.framePeriodS = framePeriod;
+                axes[a].setFeedforwardInput(ff);
+            }
 
             // ---- газ ----
             float thrust;   // что просит пилот (или удержание высоты), доля тяги
@@ -548,6 +565,26 @@ namespace copter
 
     private:
         bool spinning() const { return status.state != CopterState::DISARMED; }
+
+        // Кадры приёмника: пришёл ли новый в этом цикле и их период
+        // (сглаженный — кадры приходят неровно, иногда два за цикл).
+        void trackFrames(uint32_t frame)
+        {
+            ++loopsSinceFrame;
+            if (frame)
+            {
+                frameNow = frame != lastRcFrame;
+                lastRcFrame = frame;
+            }
+            else
+            {
+                frameNow = static_cast<float>(loopsSinceFrame) * dt >= 1.0f / FF_NOMINAL_FRAME_HZ - 0.5f * dt;
+            }
+            if (!frameNow) return;
+            const float p = fminf(0.1f, fmaxf(dt, static_cast<float>(loopsSinceFrame) * dt));
+            framePeriod = framePeriod > 0.0f ? framePeriod + 0.1f * (p - framePeriod) : p;
+            loopsSinceFrame = 0;
+        }
 
         void resetFlight(const CopterSensors& sens)
         {
@@ -749,13 +786,15 @@ namespace copter
             }
         }
 
-        void rateSetpoints(CopterMode mode, const float sticks[4], float sp[3])
+        // Уставки угловой скорости; stick — их часть от стика (для упреждения:
+        // в ANGLE — наклон стиком, без поправки горизонта).
+        void rateSetpoints(CopterMode mode, const float sticks[4], float sp[3], float stick[3])
         {
             float acro[3];
             for (int a = 0; a < 3; ++a) acro[a] = tune.rates[a].apply(sticks[a]);
             if (mode == CopterMode::ACRO)
             {
-                for (int a = 0; a < 3; ++a) sp[a] = acro[a];
+                for (int a = 0; a < 3; ++a) sp[a] = stick[a] = acro[a];
                 return;
             }
 
@@ -782,16 +821,28 @@ namespace copter
             float angleSp[3] = { level[0] + yawRate * down.x, level[1] + yawRate * down.y, level[2] + yawRate * down.z };
             const float cap = 0.9f * tune.rates[0].maxDps;
             for (int a = 0; a < 2; ++a) angleSp[a] = fminf(cap, fmaxf(-cap, angleSp[a]));
+            // наклон стиком: у ровного коптера — levelGain × угол стика
+            float angleStick[3] = { tune.levelGain * tune.maxAngleDeg * sticks[0], tune.levelGain * tune.maxAngleDeg * sticks[1],
+                                    acro[2] };
+            for (int a = 0; a < 2; ++a) angleStick[a] = fminf(cap, fmaxf(-cap, angleStick[a]));
 
             if (mode == CopterMode::HORIZON)
             {
                 const float deflection = fmaxf(fabsf(sticks[0]), fabsf(sticks[1]));
                 const float h = fminf(1.0f, deflection / fmaxf(0.05f, set.horizonTransition));
                 const float blend = h * h;
-                for (int a = 0; a < 3; ++a) sp[a] = (1.0f - blend) * angleSp[a] + blend * acro[a];
+                for (int a = 0; a < 3; ++a)
+                {
+                    sp[a] = (1.0f - blend) * angleSp[a] + blend * acro[a];
+                    stick[a] = (1.0f - blend) * angleStick[a] + blend * acro[a];
+                }
                 return;
             }
-            for (int a = 0; a < 3; ++a) sp[a] = angleSp[a];
+            for (int a = 0; a < 3; ++a)
+            {
+                sp[a] = angleSp[a];
+                stick[a] = angleStick[a];
+            }
         }
 
         CopterTune tune;
@@ -819,6 +870,10 @@ namespace copter
         float lastMixThrottle = 0.0f;
         float lastMixSpread = 0.0f;      // разброс моторов прошлого цикла (iterm_windup)
         bool tpaLowDone = false;         // газ после ARM был выше tpa_low_breakpoint
+        uint32_t lastRcFrame = 0;        // кадры приёмника (feedforward_*)
+        uint32_t loopsSinceFrame = 0;
+        bool frameNow = true;
+        float framePeriod = 0.0f;
         float uptime = 0.0f;
         float motionTimer = 0.0f;
         float lostTimer = 0.0f;

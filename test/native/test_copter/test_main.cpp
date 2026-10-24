@@ -1795,6 +1795,281 @@ void test_tpa_low_until_takeoff_or_always()
     TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.2f, p.tune().pid.tpaLowRate);
 }
 
+// ---------------- feedforward (021–025) ----------------
+
+namespace
+{
+    // Одна ось, только FF: 1e-4 на °/с², I стоит (земля). Возвращает FF в °/с².
+    RateAxis ffAxis(const PidExtras& x)
+    {
+        RateAxis a = makeAxis(0.0f, 0.0f, 0.0f, 1e-4f);
+        a.setExtras(x, 0);
+        return a;
+    }
+
+    float ffStep(RateAxis& a, float stickSp, float deflection, float raw, bool frame, float period)
+    {
+        FeedforwardInput in;
+        in.stickSetpoint = stickSp;
+        in.deflection = deflection;
+        in.rawStick = raw;
+        in.newFrame = frame;
+        in.framePeriodS = period;
+        a.setFeedforwardInput(in);
+        a.update(stickSp, 0.0f, 1.0f, 1.0f, true, false);
+        return a.lastTerms().ff / 1e-4f;
+    }
+
+    // «Лесенка» кадров 50 Гц: стик меняется только с кадром, за кадр +step
+    // °/с (у alternate — то 0.5, то 1.5 шага: кадры приходят неровно).
+    // Размах FF относительно среднего и среднее за последние 0.1 с из 0.4 с.
+    void ffStairs(const PidExtras& x, bool alternate, float& ripple, float& mean)
+    {
+        RateAxis a = ffAxis(x);
+        float lo = 1e9f, hi = -1e9f, sum = 0.0f, sp = 0.0f;
+        int n = 0;
+        for (int i = 0; i < 400; ++i)
+        {
+            const bool frame = i % 20 == 0;
+            if (frame) sp += alternate ? ((i / 20) % 2 ? 15.0f : 5.0f) : 10.0f;
+            const float f = ffStep(a, sp, 0.5f, sp / 670.0f, frame, 0.02f);
+            if (i >= 300)
+            {
+                lo = fminf(lo, f);
+                hi = fmaxf(hi, f);
+                sum += f;
+                ++n;
+            }
+        }
+        mean = sum / n;
+        ripple = (hi - lo) / mean;
+    }
+}
+
+// 021: feedforward_transition — у центра стика FF слабее, линейно к нулю;
+// дальше точки — как без неё.
+void test_feedforward_transition_softens_center()
+{
+    PidExtras on;
+    on.ffTransition = 0.5f;
+    PidExtras off;
+    RateAxis a = ffAxis(on), b = ffAxis(off);
+    float at01 = 0, at01off = 0, at07 = 0, at07off = 0;
+    for (int i = 0; i <= 200; ++i)
+    {
+        const float s = i / 200.0f;   // стик 0 -> 1 за 0.2 с
+        const float fa = ffStep(a, 670.0f * s, s, s, true, 0.0f);
+        const float fb = ffStep(b, 670.0f * s, s, s, true, 0.0f);
+        if (i == 20) { at01 = fa; at01off = fb; }
+        if (i == 140) { at07 = fa; at07off = fb; }
+    }
+    // на 0.1 — около 0.1/0.5 = 0.2 (ФНЧ помнит ещё меньшее отклонение)
+    TEST_ASSERT_TRUE(at01off > 1000.0f);
+    TEST_ASSERT_TRUE(at01 / at01off > 0.1f && at01 / at01off < 0.2f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 1.0f, at07 / at07off);
+}
+
+// 022: feedforward_averaging — скорость стика средняя за N кадров: «лесенка»
+// кадров 50 Гц без пульсаций, и неровные кадры — тоже; среднее то же.
+void test_feedforward_averaging_smooths_frame_steps()
+{
+    float rOff, mOff, r2, m2, r4, m4, rAlt2, mAlt2, rAltOff, mAltOff;
+    PidExtras off;
+    ffStairs(off, false, rOff, mOff);
+    PidExtras two;
+    two.ffAveraging = 2;
+    ffStairs(two, false, r2, m2);
+    PidExtras four;
+    four.ffAveraging = 4;
+    ffStairs(four, false, r4, m4);
+    ffStairs(two, true, rAlt2, mAlt2);
+    ffStairs(off, true, rAltOff, mAltOff);
+    char line[200];
+    snprintf(line, sizeof(line), "ripple off %.2f, 2pt %.3f, 4pt %.3f, uneven off %.2f, uneven 2pt %.3f; mean %.0f %.0f %.0f",
+             rOff, r2, r4, rAltOff, rAlt2, mOff, m2, m4);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(rOff > 2.0f && rAltOff > 2.0f, line);
+    TEST_ASSERT_TRUE_MESSAGE(r2 < 0.05f && r4 < 0.05f && rAlt2 < 0.05f, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(25.0f, 500.0f, mOff, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(25.0f, 500.0f, m2, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(25.0f, 500.0f, m4, line);
+}
+
+// 023: feedforward_smooth_factor — сглаживание между кадрами: пульсации
+// «лесенки» меньше, среднее то же.
+void test_feedforward_smooth_factor()
+{
+    float rOff, mOff, rS, mS, rStrong, mStrong;
+    PidExtras off;
+    ffStairs(off, false, rOff, mOff);
+    PidExtras s;
+    s.ffSmoothFactor = 0.25f;   // BF
+    ffStairs(s, false, rS, mS);
+    PidExtras strong;
+    strong.ffSmoothFactor = 0.65f;
+    ffStairs(strong, false, rStrong, mStrong);
+    char line[160];
+    snprintf(line, sizeof(line), "ripple off %.2f, 25 %.2f, 65 %.2f; mean %.0f %.0f %.0f", rOff, rS, rStrong, mOff, mS, mStrong);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(rS < rOff * 0.9f && rStrong < rS * 0.6f, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(25.0f, 500.0f, mS, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(25.0f, 500.0f, mStrong, line);
+}
+
+// 024: feedforward_jitter_factor — медленное дрожание стика ±2 % (кадры
+// 250 Гц) почти не даёт FF; резкий флик — как без него.
+void test_feedforward_jitter_factor()
+{
+    const auto run = [](float jitter, bool flick) {
+        PidExtras x;
+        x.ffJitterFactor = jitter;
+        RateAxis a = ffAxis(x);
+        float raw = 0.0f, sum2 = 0.0f, peak = 0.0f;
+        for (int i = 0; i < 1000; ++i)
+        {
+            const bool frame = i % 4 == 0;
+            if (frame) raw = flick ? fminf(1.0f, i / 40.0f) : 0.02f * sinf(2.0f * PI_F * 2.0f * i / 1000.0f);
+            const float f = ffStep(a, 670.0f * raw, fabsf(raw), raw, frame, 0.004f);
+            sum2 += f * f;
+            peak = fmaxf(peak, f);
+        }
+        return flick ? peak : sqrtf(sum2 / 1000.0f);
+    };
+    const float tremble = run(7.0f, false), trembleOff = run(0.0f, false);
+    const float flick = run(7.0f, true), flickOff = run(0.0f, true);
+    char line[160];
+    snprintf(line, sizeof(line), "tremble rms %.1f vs %.1f; flick peak %.0f vs %.0f", tremble, trembleOff, flick, flickOff);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(trembleOff > 50.0f && tremble < 0.25f * trembleOff, line);
+    TEST_ASSERT_TRUE_MESSAGE(flick > 0.97f * flickOff, line);
+}
+
+// 025: feedforward_boost — добавка по ускорению стика: пока стик разгоняется,
+// FF больше; на ровном движении — как без неё. Не больше самой скорости.
+void test_feedforward_boost()
+{
+    PidExtras x;
+    x.ffBoost = 15.0f;
+    PidExtras off;
+    RateAxis a = ffAxis(x), b = ffAxis(off);
+    float sp = 0.0f, speed = 0.0f, accelRatio = 0, cruiseRatio = 0;
+    for (int i = 0; i < 150; ++i)
+    {
+        if (i < 30) speed += 20.0f;   // разгон 20000 °/с³ 30 мс, дальше ровно
+        sp += speed * 0.001f;
+        const float fa = ffStep(a, sp, 0.5f, sp / 670.0f, true, 0.0f);
+        const float fb = ffStep(b, sp, 0.5f, sp / 670.0f, true, 0.0f);
+        if (i == 29) accelRatio = fa / fb;
+        if (i == 149) cruiseRatio = fa / fb;
+    }
+    char line[120];
+    snprintf(line, sizeof(line), "boost: accel x%.3f, cruise x%.4f", accelRatio, cruiseRatio);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(accelRatio > 1.05f && accelRatio < 1.25f, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.01f, 1.0f, cruiseRatio, line);
+
+    // ступенька стика: добавка не больше самой скорости — FF не больше чем вдвое
+    RateAxis c = ffAxis(x), d = ffAxis(off);
+    ffStep(c, 0.0f, 0.0f, 0.0f, true, 0.0f);
+    ffStep(d, 0.0f, 0.0f, 0.0f, true, 0.0f);
+    const float fc = ffStep(c, 300.0f, 0.5f, 0.5f, true, 0.0f);
+    const float fd = ffStep(d, 300.0f, 0.5f, 0.5f, true, 0.0f);
+    TEST_ASSERT_TRUE(fc > fd && fc <= 2.0f * fd * 1.0001f);
+}
+
+// 021–025 в контроллере: jitter и прочее — только на часть уставки от
+// стика; в ANGLE поправка горизонта идёт в FF как была. Кадры — по
+// счётчику rc.frame.
+void test_feedforward_touches_only_the_stick_part()
+{
+    const auto ffWhileTilting = [](float jitter) {
+        PidExtras x = flatTpa();
+        x.ffJitterFactor = jitter;
+        x.ffSmoothFactor = 0.25f;
+        Bench b;
+        b.ctl.configure(fiveWith(x));
+        TEST_ASSERT_TRUE(b.armAfterBoot());
+        b.rc.throttle = 0.4f;
+        b.run(0.3f);
+        // стик неподвижен, коптер наклоняет — горизонт гонит уставку
+        b.sens.gyro[0] = 40.0f;
+        float sumFf = 0.0f;
+        for (int i = 0; i < 100; ++i)
+        {
+            if (i % 4 == 0) ++b.rc.frame;
+            b.out = b.ctl.update(b.sens, b.rc);
+            sumFf += b.ctl.axisTerms(0).ff;
+        }
+        return sumFf;
+    };
+    const float plain = ffWhileTilting(0.0f), jitter = ffWhileTilting(7.0f);
+    TEST_ASSERT_TRUE(fabsf(plain) > 1e-4f);
+    TEST_ASSERT_FLOAT_WITHIN(fabsf(plain) * 1e-3f, plain, jitter);
+
+    // ACRO: стик стоит на месте между кадрами (дрожь пальца ±1 %) — с jitter FF почти нет
+    const auto trembleFf = [](float jitter) {
+        PidExtras x = flatTpa();
+        x.ffJitterFactor = jitter;
+        Bench b;
+        b.ctl.configure(fiveWith(x));
+        b.rc.mode = CopterMode::ACRO;
+        TEST_ASSERT_TRUE(b.armAfterBoot());
+        b.rc.throttle = 0.4f;
+        b.run(0.3f);
+        float sum2 = 0.0f;
+        for (int i = 0; i < 1000; ++i)
+        {
+            if (i % 4 == 0)
+            {
+                ++b.rc.frame;
+                b.rc.roll = 0.01f * sinf(2.0f * PI_F * 1.5f * i / 1000.0f);
+            }
+            b.out = b.ctl.update(b.sens, b.rc);
+            sum2 += b.ctl.axisTerms(0).ff * b.ctl.axisTerms(0).ff;
+        }
+        return sqrtf(sum2 / 1000.0f);
+    };
+    const float tremble = trembleFf(7.0f), trembleOff = trembleFf(0.0f);
+    TEST_ASSERT_TRUE(trembleOff > 0.0f && tremble < 0.25f * trembleOff);
+}
+
+// 021–025 в реестре: имена BF, модель — всё выкл, BETAFLIGHT — 25 / 7 / 15.
+void test_feedforward_params()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    CopterTune t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t.pid.ffTransition);
+    TEST_ASSERT_EQUAL(1, t.pid.ffAveraging);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t.pid.ffSmoothFactor);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t.pid.ffJitterFactor);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t.pid.ffBoost);
+    TEST_ASSERT_TRUE(p.parse(static_cast<ParamId>(findParam("feedforward_transition")), 0, "40", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(static_cast<ParamId>(findParam("feedforward_averaging")), 0, "3_POINT", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(static_cast<ParamId>(findParam("feedforward_smooth_factor")), 0, "65", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(static_cast<ParamId>(findParam("feedforward_jitter_factor")), 0, "10", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(static_cast<ParamId>(findParam("feedforward_boost")), 0, "20", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(static_cast<ParamId>(findParam("feedforward_smooth_factor")), 0, "96", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(static_cast<ParamId>(findParam("feedforward_averaging")), 0, "5_POINT", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.4f, t.pid.ffTransition);
+    TEST_ASSERT_EQUAL(3, t.pid.ffAveraging);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.65f, t.pid.ffSmoothFactor);
+    TEST_ASSERT_EQUAL_FLOAT(10.0f, t.pid.ffJitterFactor);
+    TEST_ASSERT_EQUAL_FLOAT(20.0f, t.pid.ffBoost);
+    // во втором профиле — свои
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.valueIn(PARAM_FEEDFORWARD_BOOST, 1));
+
+    CopterParams& q = five5Params();
+    TEST_ASSERT_TRUE(q.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    t = q.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.25f, t.pid.ffSmoothFactor);
+    TEST_ASSERT_EQUAL_FLOAT(7.0f, t.pid.ffJitterFactor);
+    TEST_ASSERT_EQUAL_FLOAT(15.0f, t.pid.ffBoost);
+    TEST_ASSERT_EQUAL(1, t.pid.ffAveraging);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t.pid.ffTransition);
+}
+
 void test_cli_set_get_diff_save_and_paste()
 {
     RamFlash flash;
@@ -3128,6 +3403,13 @@ int main()
     RUN_TEST(test_throttle_boost_adds_the_fast_part_of_the_stick);
     RUN_TEST(test_tpa_modes_like_betaflight);
     RUN_TEST(test_tpa_low_until_takeoff_or_always);
+    RUN_TEST(test_feedforward_transition_softens_center);
+    RUN_TEST(test_feedforward_averaging_smooths_frame_steps);
+    RUN_TEST(test_feedforward_smooth_factor);
+    RUN_TEST(test_feedforward_jitter_factor);
+    RUN_TEST(test_feedforward_boost);
+    RUN_TEST(test_feedforward_touches_only_the_stick_part);
+    RUN_TEST(test_feedforward_params);
     RUN_TEST(test_cli_set_get_diff_save_and_paste);
     RUN_TEST(test_rc_map_and_rxrange);
     RUN_TEST(test_rx_input_modes_like_betaflight);
