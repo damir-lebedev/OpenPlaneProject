@@ -14,6 +14,8 @@
 // Выходы M1…M8 — номера Betaflight (у квадро 1 — задний правый).
 #define OPB_MOTOR_COUNT 8
 #define OPB_MOTOR_PINS PC6, PC7, PC8, PC9, PA15, PA8, PB10, PB11
+// AF таймера каждого выхода, как у BF (−1 — неизвестно: первый таймер пина).
+#define OPB_MOTOR_AF -1, -1, -1, -1, -1, -1, -1, -1
 
 // UART1…UART6: TX, RX и инвертор (SBUS у F4 — через внешний инвертор).
 #define OPB_UART1_TX PA9

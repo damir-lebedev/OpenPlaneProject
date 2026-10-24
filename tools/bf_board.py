@@ -55,6 +55,7 @@ class Board:
         self.mcu = None
         self.hse_mhz = 8
         self.motors = {}          # номер BF -> пин
+        self.timer_af = {}        # пин -> AF таймера (строки timer из dump hardware)
         self.uart_tx = {}
         self.uart_rx = {}
         self.inverter = {}        # UART -> пин инвертора
@@ -252,6 +253,11 @@ def parse_dump(text, board):
         if m and m.group(3) != "FREE":
             apply_resource(board, m.group(3), int(m.group(4) or 1), pin_name(m.group(1) + m.group(2)))
             continue
+        # timer B06 AF2 — какой таймер BF взял для пина (AF выбирает TIMx)
+        m = re.match(r"timer\s+([A-I]\d{2})\s+AF(\d+)", line, re.I)
+        if m:
+            board.timer_af[pin_name(m.group(1))] = int(m.group(2))
+            continue
         # serial 1 64 115200 57600 0 115200 — порт 1 = UART2 (0 — UART1, 20 — USB)
         m = re.match(r"serial\s+(\d+)\s+(\d+)\s", line)
         if m:
@@ -366,6 +372,8 @@ def generate(board, baro="SPL06", source_note=""):
     w("// Выходы M1…M{} — номера Betaflight (у квадро 1 — задний правый).".format(len(motors)))
     w("#define OPB_MOTOR_COUNT {}".format(len(motors)))
     w("#define OPB_MOTOR_PINS {}".format(", ".join(c_pin(p) for p in motors) if motors else "-1"))
+    w("// AF таймера каждого выхода, как у BF (−1 — неизвестно: первый таймер пина).")
+    w("#define OPB_MOTOR_AF {}".format(", ".join(str(board.timer_af.get(p, -1)) for p in motors) if motors else "-1"))
     w("")
     w("// UART1…UART6: TX, RX и инвертор (SBUS у F4 — через внешний инвертор).")
     for n in range(1, UARTS + 1):

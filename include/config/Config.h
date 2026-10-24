@@ -472,6 +472,14 @@ namespace Config
     constexpr int16_t BOARD_OSD_MISO = BOARD_SPI_MISO[OPB_OSD_SPI];  // @fixed
     constexpr int16_t BOARD_OSD_MOSI = BOARD_SPI_MOSI[OPB_OSD_SPI];  // @fixed
     constexpr int16_t BOARD_OSD_CS = OPB_OSD_CS;                     // @fixed
+    // SPI-флеш чёрного ящика (W25Q128 и т. п.): шина 1–3 и CS; шина 0 — флеша нет.
+    constexpr uint8_t BOARD_FLASH_SPI = OPB_FLASH_SPI;                          // @fixed
+    constexpr int16_t BOARD_FLASH_SCK = BOARD_SPI_SCK[OPB_FLASH_SPI];           // @fixed
+    constexpr int16_t BOARD_FLASH_MISO = BOARD_SPI_MISO[OPB_FLASH_SPI];         // @fixed
+    constexpr int16_t BOARD_FLASH_MOSI = BOARD_SPI_MOSI[OPB_FLASH_SPI];         // @fixed
+    constexpr int16_t BOARD_FLASH_CS = OPB_FLASH_SPI ? OPB_FLASH_CS : -1;       // @fixed
+    constexpr bool BOARD_FLASH_SHARES_OSD = OPB_FLASH_SPI == OPB_OSD_SPI;       // @fixed
+    constexpr bool BOARD_FLASH_SHARES_GYRO = OPB_FLASH_SPI == OPB_GYRO_SPI;     // @fixed
     constexpr bool BOARD_BEEPER_ACTIVE_HIGH = OPB_BEEPER_INVERTED != 0;  // @fixed
 #else
     constexpr int16_t BOARD_VTX_PIN = -1;  // @fixed
@@ -482,6 +490,13 @@ namespace Config
     constexpr int16_t BOARD_OSD_MISO = -1;  // @fixed
     constexpr int16_t BOARD_OSD_MOSI = -1;  // @fixed
     constexpr int16_t BOARD_OSD_CS = -1;    // @fixed
+    constexpr uint8_t BOARD_FLASH_SPI = 0;     // @fixed
+    constexpr int16_t BOARD_FLASH_SCK = -1;    // @fixed
+    constexpr int16_t BOARD_FLASH_MISO = -1;   // @fixed
+    constexpr int16_t BOARD_FLASH_MOSI = -1;   // @fixed
+    constexpr int16_t BOARD_FLASH_CS = -1;     // @fixed
+    constexpr bool BOARD_FLASH_SHARES_OSD = false;   // @fixed
+    constexpr bool BOARD_FLASH_SHARES_GYRO = false;  // @fixed
     constexpr bool BOARD_BEEPER_ACTIVE_HIGH = true;  // @fixed
 #endif
 
@@ -1246,6 +1261,10 @@ namespace Config
     // 20 КБ/с: 10 с предзаписи и запас на задержки карты (запись блока
     // иногда длится десятки мс, при чистке внутри карты — до сотни).
     constexpr uint32_t BLACKBOX_RING_STM32_BYTES = 384UL * 1024;
+
+    // STM32F405: очередь — в CCM RAM (64 КБ, main_copter.cpp): ~1 с потока
+    // коптера при 1/1 — флеш пишет страницу за доли мс, запаса хватает.
+    constexpr uint32_t BLACKBOX_RING_F405_BYTES = 60UL * 1024;
 
     // STM32H743: файл на карте и потолок его используемой части. Время
     // сверки секторов при включении растёт вместе с областью (~0.15 мс

@@ -769,6 +769,168 @@ void test_dshot_commands_skips_and_missing_dma()
     fake::dshotDmaReset();
 }
 
+// 081: M1–M8 полётника F405 (AocodaRC: PC6–PC9, PA15, PA8, PB10, PB11) —
+// три таймера, у TIM2 каналы 1, 3, 4 (CH2 в burst — всегда 0); все таймеры
+// запускаются одним write. AF из заголовка платы выбирает таймер, как у BF
+// (PC6–PC9 на AF2 — TIM3); канал занят — следующий вариант пина. Потоки DMA
+// разных таймеров не совпадают.
+void test_dshot_eight_motors_timers_and_af()
+{
+    fake::dshotDmaReset();
+    const int16_t pins[8] = { PC6, PC7, PC8, PC9, PA15, PA8, PB10, PB11 };
+    static Stm32Dshot d;
+    TEST_ASSERT_EQUAL_UINT8(8, d.begin(pins, 8, copter::EscProtocol::DSHOT300));
+    TEST_ASSERT_EQUAL_UINT8(3, d.timerCount());
+    TEST_ASSERT_EQUAL_UINT8(8, d.timerOf(0));
+    TEST_ASSERT_EQUAL_UINT8(2, d.timerOf(4));
+    TEST_ASSERT_EQUAL_UINT8(1, d.timerOf(5));
+    TEST_ASSERT_EQUAL_UINT8(3, d.channelOf(6));
+    const fake::DshotDmaRecord* tim2 = fake::dshotDma(2);
+    TEST_ASSERT_EQUAL_UINT8(1, tim2->firstChannel);
+    TEST_ASSERT_EQUAL_UINT8(4, tim2->burst);
+    const float cmd[8] = { 0.1f, 0.2f, 0.3f, 0.4f, 0.5f, 0.6f, 0.7f, 0.8f };
+    d.write(cmd, true);
+    TEST_ASSERT_EQUAL_UINT32(3, d.framesSent());
+    for (int t : { 1, 2, 8 }) TEST_ASSERT_EQUAL_UINT32(1, fake::dshotDma(t)->starts);
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::throttleValue(0.5f, true), sentFrame(d, 2, 1, 0) >> 5);   // M5 — CH1
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::throttleValue(0.7f, true), sentFrame(d, 2, 1, 2) >> 5);   // M7 — CH3
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::throttleValue(0.8f, true), sentFrame(d, 2, 1, 3) >> 5);   // M8 — CH4
+    for (uint8_t slot = 0; slot < copter::dshot::FRAME_SLOTS; ++slot) TEST_ASSERT_EQUAL_UINT32(0, tim2->sent[slot * 4 + 1]);
+
+    // AF2 у PC6–PC9 (как в дампе BF: timer C06 AF2) — TIM3, а не TIM8
+    fake::dshotDmaReset();
+    const int8_t af[8] = { 2, 2, 2, 2, -1, -1, -1, -1 };
+    TEST_ASSERT_EQUAL_UINT8(8, d.begin(pins, 8, copter::EscProtocol::DSHOT300, af, 8));
+    TEST_ASSERT_EQUAL_UINT8(3, d.timerOf(0));
+    TEST_ASSERT_EQUAL_UINT8(4, d.channelOf(3));
+    TEST_ASSERT_NULL(fake::dshotDma(8));
+    // такого AF у пина нет — мотор не выход (а не чужой таймер)
+    const int8_t wrong[8] = { 9, -1, -1, -1, -1, -1, -1, -1 };
+    TEST_ASSERT_EQUAL_UINT8(7, d.begin(pins, 8, copter::EscProtocol::DSHOT300, wrong, 8));
+    TEST_ASSERT_FALSE(d.isAttached(0));
+
+    // PA0 и PA5 — оба TIM2 CH1: второй уходит на свой запасной вариант (TIM8 CH1N)
+    fake::dshotDmaReset();
+    const int16_t clash[2] = { PA0, PA5 };
+    TEST_ASSERT_EQUAL_UINT8(2, d.begin(clash, 2, copter::EscProtocol::DSHOT600));
+    TEST_ASSERT_EQUAL_UINT8(2, d.timerOf(0));
+    TEST_ASSERT_EQUAL_UINT8(8, d.timerOf(1));
+
+    // потоки DMA разных таймеров не совпадают — ни у F405, ни у H743
+    const uint8_t timers[6] = { 1, 2, 3, 4, 5, 8 };
+    for (int chip = 0; chip < 2; ++chip)
+    {
+        for (int a = 0; a < 6; ++a)
+        {
+            dshot_dma::Route ra;
+            TEST_ASSERT_TRUE(chip ? dshot_dma::h743(timers[a], ra) : dshot_dma::f405(timers[a], ra));
+            for (int b = a + 1; b < 6; ++b)
+            {
+                dshot_dma::Route rb;
+                TEST_ASSERT_TRUE(chip ? dshot_dma::h743(timers[b], rb) : dshot_dma::f405(timers[b], rb));
+                TEST_ASSERT_FALSE(ra.dma == rb.dma && ra.stream == rb.stream);
+            }
+        }
+    }
+    dshot_dma::Route none;
+    TEST_ASSERT_FALSE(dshot_dma::f405(6, none));   // TIM6 — без выходов
+    fake::dshotDmaReset();
+}
+
+// 087–088: двунаправленный DShot. Линия инвертирована, CRC кадра — тоже;
+// ответ регулятора после кадра -> eRPM; ответа нет или он испорчен —
+// ошибка; доля ошибок за окно 1000 кадров; dshot_telemetry_info в CLI.
+namespace
+{
+    std::vector<uint8_t> escReply(uint32_t periodUs, float spb)
+    {
+        std::vector<uint8_t> out(9, 1);
+        const uint32_t line = copter::dshot::telemetryLine(copter::dshot::periodToTelemetry(periodUs));
+        for (int b = 20; b >= 0; --b)
+        {
+            for (int k = 0; k < static_cast<int>(spb); ++k) out.push_back(static_cast<uint8_t>((line >> b) & 1u));
+        }
+        out.insert(out.end(), 12, 1);
+        return out;
+    }
+}
+
+void test_dshot_bidirectional_telemetry()
+{
+    fake::dshotDmaReset();
+    static Stm32Dshot d;
+    d.setBidirectional(true);
+    TEST_ASSERT_EQUAL_UINT8(4, d.begin(DSHOT_PINS, 4, copter::EscProtocol::DSHOT600));
+    TEST_ASSERT_TRUE(d.telemetryEnabled());
+    TEST_ASSERT_TRUE(fake::dshotDma(1)->inverted);
+    const float zero[4] = {};
+    d.write(zero, false);   // первый кадр — ответов ещё ждать не от чего
+    TEST_ASSERT_TRUE(copter::dshot::frameValid(sentFrame(d, 1, 0, 0), true));   // CRC инверсна
+    TEST_ASSERT_FALSE(copter::dshot::frameValid(sentFrame(d, 1, 0, 0), false));
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, d.telemetryErrorPercent(0));   // ещё ничего не было
+
+    // S1 (TIM1 CH2) отвечает 500 мкс (120000 eRPM), S3 (TIM2 CH1) — «стоит», S2 и S4 молчат
+    fake::DshotReply& s1 = fake::dshotReply(1, 2);
+    s1.samples = escReply(500, 3.0f);
+    s1.samplesPerBit = 3.0f;
+    fake::DshotReply& s3 = fake::dshotReply(2, 1);
+    s3.samples = escReply(0, 3.0f);
+    s3.samplesPerBit = 3.0f;
+    for (int i = 0; i < 999; ++i) d.write(zero, false);
+    TEST_ASSERT_TRUE(d.hasTelemetry(0));
+    TEST_ASSERT_EQUAL_UINT32(120000, d.erpm(0));
+    TEST_ASSERT_TRUE(d.hasTelemetry(2));
+    TEST_ASSERT_EQUAL_UINT32(0, d.erpm(2));
+    TEST_ASSERT_FALSE(d.hasTelemetry(1));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, d.telemetryErrorPercent(0));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 100.0f, d.telemetryErrorPercent(1));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, d.telemetryErrorPercent(2));
+
+    // половина ответов S1 испорчена: за следующее окно — 50 %
+    std::vector<uint8_t> good = s1.samples, bad = s1.samples;
+    bad[19] ^= 1u;   // середина 4-го бита (отсчёты 18-20)
+    for (int i = 0; i < 1001; ++i)   // первый кадр закрывает прошлое окно
+    {
+        s1.samples = (i & 1) ? bad : good;
+        d.write(zero, false);
+    }
+    TEST_ASSERT_FLOAT_WITHIN(0.2f, 50.0f, d.telemetryErrorPercent(0));
+    TEST_ASSERT_EQUAL_UINT32(120000, d.erpm(0));   // последнее верное
+
+    // без bidir — телеметрии нет
+    static Stm32Dshot plain;
+    fake::dshotDmaReset();
+    plain.begin(DSHOT_PINS, 4, copter::EscProtocol::DSHOT600);
+    TEST_ASSERT_FALSE(plain.telemetryEnabled());
+    TEST_ASSERT_FALSE(fake::dshotDma(1)->inverted);
+
+    // CLI: dshot_telemetry_info (у этой сборки OneShot125 — «не включено»),
+    // motor_poles и dshot_bidir в реестре; смена dshot_bidir — нужна перезагрузка
+    Serial.pushRx("#dshot_telemetry_info\r\nget motor_poles\r\nset dshot_bidir = ON\r\nsave\r\n");
+    RcChannels rc;
+    run(rc, 0.1);
+    const std::string log = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "Dshot telemetry not enabled"), log.c_str());
+    TEST_ASSERT_TRUE(contains(log, "motor_poles = 14"));
+    TEST_ASSERT_TRUE(contains(log, "dshot_bidir изменён — перезагрузите плату"));
+    TEST_ASSERT_TRUE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_REBOOT);
+    Serial.pushRx("#set dshot_bidir = OFF\r\nsave\r\n");
+    run(rc, 0.1);
+    takeSerial();
+    TEST_ASSERT_FALSE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_REBOOT);
+
+    // консоль с телеметрией: строка на мотор
+    copterConsole.setMotorTelemetry(&d);
+    Serial.pushRx("#dshot_telemetry_info\r\nexit\r\n");
+    run(rc, 0.05);
+    const std::string table = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(table, "Motor    eRPM    RPM     Hz Invalid"), table.c_str());
+    TEST_ASSERT_TRUE(contains(table, "    0  120000  17143    286"));
+    TEST_ASSERT_TRUE(contains(table, "(ответа не было)"));
+    copterConsole.setMotorTelemetry(&motors.dshotOutput());
+    fake::dshotDmaReset();
+}
+
 int main()
 {
     wireUpBoard();
@@ -786,5 +948,7 @@ int main()
     RUN_TEST(test_app_protocol_params_set_save);
     RUN_TEST(test_dshot_frames_on_timer_dma);
     RUN_TEST(test_dshot_commands_skips_and_missing_dma);
+    RUN_TEST(test_dshot_eight_motors_timers_and_af);
+    RUN_TEST(test_dshot_bidirectional_telemetry);
     return UNITY_END();
 }

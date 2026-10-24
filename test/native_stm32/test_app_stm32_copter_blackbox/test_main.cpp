@@ -19,6 +19,7 @@
 #include <string>
 #include <vector>
 
+#include "helpers/BflParse.h"
 #include "helpers/BlackBoxParse.h"
 #include "helpers/ChipEmulators.h"
 #include "helpers/FatImage.h"
@@ -259,6 +260,39 @@ void test_console_lists_and_downloads_the_flight()
     }
     TEST_ASSERT_TRUE(countType(recs, REC_QGYRO) > 8500);
     TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "vehicle=copter"));
+
+    // 139: тот же полёт в формате Betaflight — плата переводит сама (bb bfl):
+    // кадры A5 5B + номер + длина + данные + CRC-32, кадр длины 0 — конец
+    Serial.pushRx(std::string("\x02") + "bb bfl 1\n");
+    Serial.pushRx("G");
+    run(rc, 0.01);
+    const std::string bout = takeSerial();
+    const size_t bat = bout.find("BB:BFL n=1 sectors=");
+    TEST_ASSERT_TRUE_MESSAGE(bat != std::string::npos, bout.substr(0, 200).c_str());
+    size_t bpos = bout.find('\n', bat) + 1;
+    std::vector<uint8_t> bfl;
+    for (uint16_t k = 0;; ++k)
+    {
+        TEST_ASSERT_TRUE(bpos + 10 <= bout.size());
+        TEST_ASSERT_EQUAL_HEX8(0xA5, static_cast<uint8_t>(bout[bpos]));
+        TEST_ASSERT_EQUAL_HEX8(0x5B, static_cast<uint8_t>(bout[bpos + 1]));
+        const uint16_t index = static_cast<uint8_t>(bout[bpos + 2]) | static_cast<uint8_t>(bout[bpos + 3]) << 8;
+        const uint16_t length = static_cast<uint8_t>(bout[bpos + 4]) | static_cast<uint8_t>(bout[bpos + 5]) << 8;
+        TEST_ASSERT_EQUAL_UINT16(k, index);
+        const uint8_t* chunk = reinterpret_cast<const uint8_t*>(bout.data() + bpos + 6);
+        uint32_t crc;
+        memcpy(&crc, bout.data() + bpos + 6 + length, 4);
+        if (length) TEST_ASSERT_EQUAL_HEX32(BlackBoxFormat::crc32(chunk, length), crc);
+        bfl.insert(bfl.end(), chunk, chunk + length);
+        bpos += 6 + length + 4;
+        if (length == 0) break;
+    }
+    TEST_ASSERT_TRUE(contains(bout.substr(bpos), "BB:DONE n=1 bytes="));
+    const bflparse::Log log = bflparse::parse(bfl);
+    TEST_ASSERT_TRUE_MESSAGE(log.error.empty(), log.error.c_str());
+    TEST_ASSERT_TRUE(log.ended);
+    TEST_ASSERT_UINT32_WITHIN(1, countType(recs, REC_QGYRO), log.frames.size());
+    TEST_ASSERT_EQUAL_STRING("freestyle5", log.headers.at("Craft name").c_str());
 }
 
 void test_blackbox_settings_from_cli()

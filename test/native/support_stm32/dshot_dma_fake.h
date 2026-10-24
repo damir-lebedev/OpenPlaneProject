@@ -8,7 +8,9 @@
 //                           сколько раз отправляли, первый канал, burst;
 //   fake::dshotDmaSlow()  — true: поток «занят», пока тест не вызовет
 //                           fake::dshotDmaFinish() (кадр длиннее цикла);
-//   fake::dshotNoDma()    — номер таймера без потока DMA (attach -> false).
+//   fake::dshotNoDma()    — номер таймера без потока DMA (attach -> false);
+//   fake::dshotReply(timer, channel) — отсчёты линии, которые «ответит»
+//                           регулятор этого канала (bidir), и отсчётов на бит.
 // ============================================================
 
 #include <stdint.h>
@@ -24,6 +26,7 @@ namespace fake
         uint8_t burst = 0;
         uint32_t starts = 0;
         bool busy = false;
+        bool inverted = false;
         std::vector<uint32_t> sent;   // буфер на момент запуска
     };
 
@@ -51,6 +54,20 @@ namespace fake
         return timer;
     }
 
+    struct DshotReply
+    {
+        std::vector<uint8_t> samples;
+        float samplesPerBit = 0.0f;
+    };
+
+    inline std::map<int, DshotReply>& dshotReplies()
+    {
+        static std::map<int, DshotReply> replies;
+        return replies;
+    }
+
+    inline DshotReply& dshotReply(int timer, int channel) { return dshotReplies()[timer * 10 + channel]; }
+
     inline void dshotDmaFinish()
     {
         for (auto& r : dshotDmaRecords()) r.second.busy = false;
@@ -59,6 +76,7 @@ namespace fake
     inline void dshotDmaReset()
     {
         dshotDmaRecords().clear();
+        dshotReplies().clear();
         dshotDmaSlow() = false;
         dshotNoDma() = -1;
     }
@@ -67,7 +85,8 @@ namespace fake
 class Stm32DshotDma
 {
 public:
-    bool attach(TIM_TypeDef* tim, uint8_t firstChannel, uint8_t burst, const uint32_t* buf, uint16_t words)
+    bool attach(TIM_TypeDef* tim, uint8_t firstChannel, uint8_t burst, const uint32_t* buf, uint16_t words,
+                bool inverted = false)
     {
         if (!tim || tim->number == fake::dshotNoDma() || firstChannel < 1 || firstChannel + burst > 5) return false;
         timer = tim->number;
@@ -77,6 +96,7 @@ public:
         r = fake::DshotDmaRecord();
         r.firstChannel = firstChannel;
         r.burst = burst;
+        r.inverted = inverted;
         return true;
     }
 
@@ -100,4 +120,31 @@ private:
     int timer = -1;
     const uint32_t* buffer = nullptr;
     uint16_t count = 0;
+};
+
+// Захват ответа регулятора: отдаёт то, что тест положил в fake::dshotReply.
+class Stm32DshotCapture
+{
+public:
+    bool attach(TIM_TypeDef* tim, const PinName*, float spb)
+    {
+        timer = tim ? tim->number : -1;
+        nominalSpb = spb;
+        return timer >= 0;
+    }
+    void start() { ++starts; }
+    bool samples(uint8_t channel, const uint8_t*& data, uint16_t& count, float& spb)
+    {
+        fake::DshotReply& r = fake::dshotReply(timer, channel);
+        if (r.samples.empty()) return false;
+        data = r.samples.data();
+        count = static_cast<uint16_t>(r.samples.size());
+        spb = r.samplesPerBit > 0.0f ? r.samplesPerBit : nominalSpb;
+        return true;
+    }
+    uint32_t starts = 0;
+
+private:
+    int timer = -1;
+    float nominalSpb = 0.0f;
 };

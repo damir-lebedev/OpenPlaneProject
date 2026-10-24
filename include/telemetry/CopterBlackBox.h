@@ -10,12 +10,14 @@
 #include "hal/ResetCause.h"
 #include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
+#include "telemetry/BflEncoder.h"
 #include "telemetry/BlackBoxCore.h"
 #include "telemetry/FirmwareIdentity.h"
 #include "telemetry/LoopStats.h"
 
 // ============================================================
-// ЧЁРНЫЙ ЯЩИК МУЛЬТИКОПТЕРА — на SD-карту (STM32H743), тем же форматом и
+// ЧЁРНЫЙ ЯЩИК МУЛЬТИКОПТЕРА — на SD-карту (STM32H743) или SPI-флеш платы
+// (STM32F405, hal/SpiNorFlash.h), тем же форматом и
 // той же выгрузкой, что у самолёта (BlackBoxCore.h, BlackBoxFormat.h):
 // tools/blackbox.py и вкладка «Ящик» в OpenPlane Studio читают оба.
 //
@@ -36,6 +38,11 @@
 // MOTOR_TEST — пока крутятся моторы (и проверка моторов на столе), ALWAYS —
 // с включения. С предзаписью PREROLL_MS и дописью POSTROLL_MS. После
 // перезагрузки из-за сбоя — сразу. blackbox_device = NONE — не пишет.
+//
+// Выгрузка в формате Betaflight (Blackbox Explorer, PIDtoolbox): команда
+// ПК «bb bfl N [бод]» — полёт переводится на лету (telemetry/BflEncoder.h)
+// и уходит кадрами A5 5B, u16 номер, u16 длина, данные, u32 CRC-32; кадр
+// длины 0 — конец, затем BB:DONE n bytes crc. tools/blackbox.py download --bfl.
 // ============================================================
 
 class CopterBlackBox : public BlackBoxCore
@@ -74,14 +81,14 @@ public:
         divider = sampleDivider ? sampleDivider : 1;
     }
 
-    // Носитель, очередь, задача записи. false — места нет (карты или файла
-    // BLACKBOX.BIN нет): ящик выключен, полёту это не мешает.
-    bool begin(bool startTask = true)
+    // Носитель, очередь, задача записи. false — места нет (карты, файла
+    // BLACKBOX.BIN или флеша нет): ящик выключен, полёту это не мешает.
+    // ringMemory — своя память под очередь (F405: CCM), иначе — из кучи.
+    bool begin(bool startTask = true, uint8_t* ringMemory = nullptr, uint32_t ringBytes = Config::BLACKBOX_RING_STM32_BYTES)
     {
         resetReason = readResetCause();
         resetStartPending = isCrashReset(resetReason);
-        const uint32_t size = Config::BLACKBOX_RING_STM32_BYTES;
-        if (!beginCore(size, static_cast<uint8_t*>(malloc(size)))) return false;
+        if (!beginCore(ringBytes, ringMemory ? ringMemory : static_cast<uint8_t*>(malloc(ringBytes)))) return false;
         printStatus(Serial);
         if (resetStartPending)
         {
@@ -115,7 +122,124 @@ public:
     Mode getMode() const { return mode; }
     bool isEnabled() const { return enabled; }
 
+    // «bb bfl N [бод]» — полёт в формате BF; остальное — как у ящика.
+    void handleHostCommand(const char* line) override
+    {
+        unsigned flight = 0;
+        unsigned long baud = 0;
+        if (sscanf(line, "bb bfl %u %lu", &flight, &baud) >= 1)
+        {
+            sendBfl(static_cast<uint16_t>(flight), baud ? baud : consoleBaud());
+            return;
+        }
+        BlackBoxCore::handleHostCommand(line);
+    }
+
 private:
+    static constexpr uint8_t BFL_MAGIC_1 = 0x5B;
+
+    // Выход кодировщика -> кадры в Serial (буфер — вторая половина header).
+    class FrameSink : public bfl::Sink
+    {
+    public:
+        FrameSink(uint8_t* buffer, uint32_t size) : buf(buffer), cap(size) {}
+        void put(const uint8_t* d, size_t n) override
+        {
+            while (n > 0)
+            {
+                const size_t room = cap - fill;
+                const size_t k = n < room ? n : room;
+                memcpy(buf + fill, d, k);
+                fill += static_cast<uint32_t>(k);
+                d += k;
+                n -= k;
+                if (fill == cap) flush();
+            }
+        }
+        void flush()
+        {
+            if (fill == 0) return;
+            frame(buf, fill);
+            fill = 0;
+        }
+        void end() { frame(nullptr, 0); }
+        uint32_t bytes = 0, crcAll = 0;
+
+    private:
+        void frame(const uint8_t* data, uint32_t length)
+        {
+            const uint8_t head[6] = { 0xA5, BFL_MAGIC_1, static_cast<uint8_t>(index), static_cast<uint8_t>(index >> 8),
+                                      static_cast<uint8_t>(length), static_cast<uint8_t>(length >> 8) };
+            const uint32_t crc = length ? BlackBoxFormat::crc32(data, length) : 0;
+            if (length) crcAll = BlackBoxFormat::crc32(data, length, crcAll);
+            Serial.write(head, sizeof(head));
+            if (length) Serial.write(data, length);
+            Serial.write(reinterpret_cast<const uint8_t*>(&crc), sizeof(crc));
+            bytes += length;
+            ++index;
+        }
+        uint8_t* buf;
+        uint32_t cap;
+        uint32_t fill = 0;
+        uint16_t index = 0;
+    };
+
+    // Как sendFlight, только сектора идут через кодировщик BF.
+    void sendBfl(uint16_t number, unsigned long baud)
+    {
+        if (isRecording() || vehicleArmed())
+        {
+            Serial.println("BB:ERR занято: идёт запись или заармлено");
+            return;
+        }
+        takeLock(portMAX_DELAY);
+        const BlackBoxStorage::Flight* found = storage.findFlight(number);
+        if (!found)
+        {
+            giveLock();
+            Serial.printf("BB:ERR нет полёта %u\n", number);
+            return;
+        }
+        const BlackBoxStorage::Flight f = *found;
+        Serial.printf("BB:BFL n=%u sectors=%lu baud=%lu\n", f.number, static_cast<unsigned long>(f.sectors), baud);
+        Serial.flush();
+        const unsigned long oldBaud = consoleBaud();
+        if (baud != oldBaud) setSerialBaud(baud);
+        bool go = false;
+        for (const uint32_t waitStart = millis(); millis() - waitStart < 3000 && !go;)
+        {
+            while (Serial.available()) go = go || Serial.read() == 'G';
+            if (!go) delay(1);
+        }
+        FrameSink sink(header + BlackBoxFormat::SECTOR_SIZE, HEADER_BUFFER - BlackBoxFormat::SECTOR_SIZE);
+        if (go)
+        {
+            bfl::Writer writer(sink);
+            bfl::CopterBflConverter conv(writer);
+            for (uint32_t k = 0; k < f.sectors; ++k)
+            {
+                if (storage.readSector(storage.sectorOf(f, k), header)) conv.sector(header);
+            }
+            conv.finish();
+            sink.flush();
+            sink.end();
+            Serial.flush();
+        }
+        delay(150);
+        if (baud != oldBaud) setSerialBaud(oldBaud);
+        delay(50);
+        giveLock();
+        if (go)
+        {
+            Serial.printf("BB:DONE n=%u bytes=%lu crc=%08lx\n", f.number, static_cast<unsigned long>(sink.bytes),
+                          static_cast<unsigned long>(sink.crcAll));
+        }
+        else
+        {
+            Serial.println("BB:ERR ПК не ответил на новой скорости");
+        }
+    }
+
     copter::CopterController& ctl;
     copter::CopterParams& params;
     LoopStats& loopStats;

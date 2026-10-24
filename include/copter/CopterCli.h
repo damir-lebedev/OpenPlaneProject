@@ -51,6 +51,9 @@ namespace copter
         virtual void printTasks() {}        // команда tasks
         virtual void settingsApplied() {}   // после save / отмены: приёмник, выходы — заново
         virtual void printVtxInfo() {}      // команда vtx_info
+        virtual void printDshotTelemetry() {}   // команда dshot_telemetry_info
+        virtual void printFlashInfo() {}        // команда flash_info
+        virtual void flashErase() {}            // команда flash_erase
     };
 
     class CopterCli
@@ -160,6 +163,9 @@ namespace copter
             else if (is(cmd, "rxfail")) cmdRxfail(args);
             else if (is(cmd, "vtx")) cmdVtx(args);
             else if (is(cmd, "vtx_info")) port.printVtxInfo();
+            else if (is(cmd, "dshot_telemetry_info")) port.printDshotTelemetry();
+            else if (is(cmd, "flash_info")) port.printFlashInfo();
+            else if (is(cmd, "flash_erase")) port.flashErase();
             else if (is(cmd, "save")) cmdSave();
             else if (is(cmd, "defaults")) cmdDefaults(args);
             else if (is(cmd, "exit")) cmdExit();
@@ -200,6 +206,8 @@ namespace copter
             print("aux [№ режим канал от до логика связь] — режимы на тумблерах (режимы: aux help)\r\n");
             print("map [AETR1234] · rxrange [0-3 мин макс] — порядок каналов · концы стиков\r\n");
             print("rxfail [канал a|h|s [значение]] — канал без связи: a — авто, h — держать, s — задать (AUX)\r\n");
+            print("dshot_telemetry_info — обороты моторов и ошибки ответа (dshot_bidir)\r\n");
+            print("flash_info · flash_erase — флеш чёрного ящика: что за микросхема и полёты · стереть всё\r\n");
             print("vtx [№ канал полоса канал_VTX мощность от до] · vtx_info — видеопередатчик с тумблера · что он ответил\r\n");
             print("save — сохранить и пересчитать настройку · defaults [nosave] — всё по умолчанию\r\n");
             print("status · tasks · version · exit (несохранённое отменяется)\r\n");

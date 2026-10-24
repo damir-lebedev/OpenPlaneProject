@@ -121,6 +121,9 @@ namespace copter
         BATTERY, // по химии батареи (battery_chemistry)
     };
 
+    // blackbox_device: номера — как в BF.
+    constexpr uint8_t BLACKBOX_NONE = 0, BLACKBOX_SPIFLASH = 1, BLACKBOX_SDCARD = 2;
+
     // Сборки каталога по именам — варианты copter_build.
     inline const char* const* buildIds(uint8_t& count)
     {
@@ -271,6 +274,8 @@ namespace copter
         PARAM_FAILSAFE_STICK_THRESHOLD,
         PARAM_FAILSAFE_PROCEDURE,
         PARAM_FAILSAFE_SWITCH_MODE,
+        PARAM_MOTOR_POLES,
+        PARAM_DSHOT_BIDIR,
         PARAM_COUNT
     };
 
@@ -308,7 +313,8 @@ namespace copter
         static const char* const ITERM_RELAX_TYPES[] = { "GYRO", "SETPOINT" };
         static const char* const TPA_MODES[] = { "PD", "D", "MODEL" };   // как TpaMode
         static const char* const FF_AVERAGING[] = { "OFF", "2_POINT", "3_POINT", "4_POINT" };
-        static const char* const BLACKBOX_DEVICES[] = { "NONE", "SDCARD" };
+        // порядок — как в BF (SERIAL у нас нет — пишет только на свой носитель)
+        static const char* const BLACKBOX_DEVICES[] = { "NONE", "SPIFLASH", "SDCARD", "SERIAL" };
         static const char* const BLACKBOX_MODES[] = { "NORMAL", "MOTOR_TEST", "ALWAYS" };
         static const char* const BLACKBOX_RATES[] = { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" };
         // порядок — как FailsafeProcedure и FailsafeSwitchMode (CopterController.h) и в BF
@@ -529,8 +535,8 @@ namespace copter
               "дом ставится при ARM, если спутников не меньше" },
             { "crsf_telemetry", kEnum, kMaster, kGroupRx, 0, 1, 1, kTable, "", OFF_ON, 2,
               "телеметрия в пульт по CRSF: батарея, GPS, ориентация, режим" },
-            { "blackbox_device", kEnum, kMaster, kGroupBlackbox, 0, 1, 1, kTable, "", BLACKBOX_DEVICES, 2,
-              "куда писать чёрный ящик: SDCARD — файл BLACKBOX.BIN на карте, NONE — не писать" },
+            { "blackbox_device", kEnum, kMaster, kGroupBlackbox, 0, 3, 2, kTable, "", BLACKBOX_DEVICES, 4,
+              "куда писать чёрный ящик: SPIFLASH — флеш платы (F405), SDCARD — файл BLACKBOX.BIN на карте (H743), NONE — не писать" },
             { "blackbox_mode", kEnum, kMaster, kGroupBlackbox, 0, 2, 0, kTable, "", BLACKBOX_MODES, 3,
               "когда писать: NORMAL — пока ARM, MOTOR_TEST — пока крутятся моторы, ALWAYS — всегда" },
             { "blackbox_sample_rate", kEnum, kMaster, kGroupBlackbox, 0, 5, 0, kTable, "", BLACKBOX_RATES, 6,
@@ -561,6 +567,10 @@ namespace copter
               "этап 2: AUTO-LAND — ровно и снижение, DROP — моторы стоп, GPS-RESCUE — пока как AUTO-LAND" },
             { "failsafe_switch_mode", kEnum, kMaster, kGroupSafety, 0, 2, 0, kTable, "", FS_SWITCH_MODES, 3,
               "режим FAILSAFE с тумблера: STAGE1 — как потеря связи, STAGE2 — сразу процедура, KILL — моторы стоп" },
+            { "motor_poles", kInt, kMaster, kGroupMotors, 4, 255, 14, kTable, "", nullptr, 0,
+              "магнитов в роторе мотора (у 2207 — 14): обороты = eRPM x 2 / motor_poles" },
+            { "dshot_bidir", kEnum, kMaster, kGroupMotors, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "двунаправленный DShot: регулятор отвечает оборотами (Bluejay, BLHeli_32, AM32); меняется после перезагрузки" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;

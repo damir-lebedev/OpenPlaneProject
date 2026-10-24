@@ -327,6 +327,106 @@ void test_analog_esc_pulses()
 }
 
 // Кадр DShot: значение 1046 без телеметрии — 0x82C6 (пример из описания протокола).
+// 087: ответ двунаправленного DShot — GCR, CRC, период -> eRPM, разбор
+// по отсчётам линии (с дробным шагом и дрожанием), испорченный ответ.
+namespace
+{
+    // Отсчёты линии: покой (высокий) idle отсчётов, 21 бит ответа по spb
+    // (дробный — накопленным округлением), покой после.
+    std::vector<uint8_t> replySamples(uint16_t value12, float spb, int idle = 10, int after = 12)
+    {
+        std::vector<uint8_t> out(static_cast<size_t>(idle), 1);
+        const uint32_t line = dshot::telemetryLine(value12);
+        float pos = 0.0f;
+        size_t written = 0;
+        for (int b = 20; b >= 0; --b)
+        {
+            pos += spb;
+            const size_t until = static_cast<size_t>(pos + 0.5f);
+            for (; written < until; ++written) out.push_back(static_cast<uint8_t>((line >> b) & 1u));
+        }
+        for (int i = 0; i < after; ++i) out.push_back(1);
+        return out;
+    }
+}
+
+void test_dshot_telemetry_decoding()
+{
+    // GCR: 16 разных кодов, обратно — те же полубайты, чужой код — нет
+    for (uint8_t n = 0; n < 16; ++n) TEST_ASSERT_EQUAL_UINT8(n, dshot::gcrDecode(dshot::gcrEncode(n)));
+    TEST_ASSERT_EQUAL_HEX8(0xFF, dshot::gcrDecode(0x00));
+    TEST_ASSERT_EQUAL_HEX8(0xFF, dshot::gcrDecode(0x1F));
+
+    // период -> 12 бит -> eRPM: 1000 мкс — 60000 eRPM, 100 мкс — 600000
+    TEST_ASSERT_EQUAL_UINT16(1000 >> 1 | (1 << 9), dshot::periodToTelemetry(1000));
+    TEST_ASSERT_EQUAL_UINT32(60000, dshot::telemetryToErpm(dshot::periodToTelemetry(1000)));
+    TEST_ASSERT_EQUAL_UINT32(600000, dshot::telemetryToErpm(dshot::periodToTelemetry(100)));
+    TEST_ASSERT_EQUAL_UINT32(12019, dshot::telemetryToErpm(dshot::periodToTelemetry(5000)));   // 4992 мкс: шаг 16
+    TEST_ASSERT_EQUAL_UINT32(0, dshot::telemetryToErpm(dshot::TELEMETRY_STOPPED));
+    TEST_ASSERT_EQUAL_UINT16(dshot::TELEMETRY_STOPPED, dshot::periodToTelemetry(0));
+    TEST_ASSERT_EQUAL_UINT16(dshot::TELEMETRY_STOPPED, dshot::periodToTelemetry(70000));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 10000.0f, dshot::erpmToRpm(70000, 14));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, dshot::erpmToRpm(70000, 1));
+
+    // каждое значение: уровни линии -> обратно; стартовый бит — низкий
+    int detected = 0, flips = 0;
+    for (uint16_t v = 0; v < 4096; ++v)
+    {
+        const uint32_t line = dshot::telemetryLine(v);
+        TEST_ASSERT_EQUAL_UINT32(0, line >> 20);
+        uint16_t back = 0;
+        TEST_ASSERT_TRUE(dshot::decodeTelemetryLine(line, back));
+        TEST_ASSERT_EQUAL_UINT16(v, back);
+        // помеха на одном бите — GCR и CRC почти всегда её ловят
+        for (int b = 0; b < 20; ++b, ++flips)
+        {
+            uint16_t bad = 0;
+            if (!dshot::decodeTelemetryLine(line ^ (1u << b), bad) || bad != v) ++detected;
+        }
+    }
+    TEST_ASSERT_EQUAL_INT(flips, detected);   // и значение не подменяется никогда
+
+    // по отсчётам: 3 на бит, дробные 2.6 и 4.3; инверсия линии не важна
+    const uint16_t value = dshot::periodToTelemetry(500);
+    for (float spb : { 3.0f, 2.6f, 4.3f })
+    {
+        const std::vector<uint8_t> smp = replySamples(value, spb);
+        uint32_t line = 0;
+        uint16_t got = 0;
+        TEST_ASSERT_TRUE_MESSAGE(dshot::samplesToLine(smp.data(), static_cast<uint16_t>(smp.size()), spb, line), "отсчёты");
+        TEST_ASSERT_TRUE(dshot::decodeTelemetryLine(line, got));
+        TEST_ASSERT_EQUAL_UINT16(value, got);
+        TEST_ASSERT_TRUE(dshot::decodeTelemetryLine(~line & 0x1FFFFFu, got));   // xor соседних уровней
+        TEST_ASSERT_EQUAL_UINT16(value, got);
+    }
+    // окно читалось чуть быстрее (3 отсчёта, а считаем 3.2) — всё равно верно
+    std::vector<uint8_t> smp = replySamples(value, 3.0f);
+    uint32_t line = 0;
+    uint16_t got = 0;
+    TEST_ASSERT_TRUE(dshot::samplesToLine(smp.data(), static_cast<uint16_t>(smp.size()), 3.2f, line));
+    TEST_ASSERT_TRUE(dshot::decodeTelemetryLine(line, got));
+    TEST_ASSERT_EQUAL_UINT16(value, got);
+
+    // нет ответа (всё время покой), обрыв на низком уровне, иголка — ошибка
+    const std::vector<uint8_t> idle(80, 1);
+    TEST_ASSERT_FALSE(dshot::samplesToLine(idle.data(), static_cast<uint16_t>(idle.size()), 3.0f, line));
+    std::vector<uint8_t> cut = replySamples(dshot::periodToTelemetry(800), 3.0f, 10, 0);
+    while (!cut.empty() && cut.back()) cut.pop_back();
+    cut.resize(cut.size() - 2);
+    TEST_ASSERT_FALSE(dshot::samplesToLine(cut.data(), static_cast<uint16_t>(cut.size()), 3.0f, line) &&
+                      dshot::decodeTelemetryLine(line, got));
+    std::vector<uint8_t> spike = replySamples(value, 3.0f);
+    spike[20] ^= 1u;   // середина 4-го бита (отсчёты 19-21): участок в 1 отсчёт — шум
+    TEST_ASSERT_FALSE(dshot::samplesToLine(spike.data(), static_cast<uint16_t>(spike.size()), 3.0f, line));
+    TEST_ASSERT_FALSE(dshot::samplesToLine(smp.data(), static_cast<uint16_t>(smp.size()), 1.0f, line));
+
+    // предел цикла с ответом: кадр + 30 мкс + 21 бит на 5/4 скорости
+    TEST_ASSERT_EQUAL_UINT32(750000, dshot::telemetryBitRate(EscProtocol::DSHOT600));
+    TEST_ASSERT_EQUAL_UINT32(11811, dshot::maxLoopHz(EscProtocol::DSHOT600, true));
+    TEST_ASSERT_EQUAL_UINT32(7177, dshot::maxLoopHz(EscProtocol::DSHOT300, true));
+    TEST_ASSERT_EQUAL_UINT32(4021, dshot::maxLoopHz(EscProtocol::DSHOT150, true));
+}
+
 void test_dshot_frame_and_crc()
 {
     TEST_ASSERT_EQUAL_HEX16(0x82C6, dshot::frame(1046, false, false));
@@ -4062,6 +4162,7 @@ int main()
     RUN_TEST(test_biquad_lowpass);
     RUN_TEST(test_analog_esc_pulses);
     RUN_TEST(test_dshot_frame_and_crc);
+    RUN_TEST(test_dshot_telemetry_decoding);
     RUN_TEST(test_dshot_bit_timing);
     RUN_TEST(test_propulsion_matches_bench_data_for_5_inch);
     RUN_TEST(test_every_catalog_build_gets_a_sane_tune);

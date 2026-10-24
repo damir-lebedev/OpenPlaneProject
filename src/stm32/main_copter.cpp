@@ -55,11 +55,21 @@
 #include "telemetry/LoopStats.h"
 #include "telemetry/TaskStats.h"
 
-// Чёрный ящик — на SD-карту по SDMMC: есть у H743 (Matek H743, DevEBox), у F405 — нет.
-#if defined(BOARD_STM32H743)
+// Чёрный ящик: H743 — на SD-карту по SDMMC (Matek H743, DevEBox); F405 — на
+// SPI-флеш платы (W25Q128 и т. п., как blackbox_device = SPIFLASH у BF).
+// (F405 — первым: тесты на ПК собираются с BOARD_STM32H743 и добавляют F405.)
+#if defined(BOARD_STM32F405)
 #define COPTER_BLACKBOX 1
+#define COPTER_BLACKBOX_FLASH 1
+#include "hal/LockedSpiBus.h"
+#include "hal/SpiNorFlash.h"
+#elif defined(BOARD_STM32H743)
+#define COPTER_BLACKBOX 1
+#define COPTER_BLACKBOX_SD 1
 #include "hal/SdFileRegion.h"
 #include "hal/stm32/Stm32SdCard.h"
+#endif
+#if defined(COPTER_BLACKBOX)
 #include "telemetry/BlackBoxStorage.h"
 #include "telemetry/CopterBlackBox.h"
 #endif
@@ -99,7 +109,7 @@ copter::RxInput rxInput;
 LoopStats loopStats;
 TaskStats taskStats;
 CopterConsole copterConsole(Serial, copterController, copterParams, imuSensor, rcReceiver);
-#if defined(COPTER_BLACKBOX)
+#if defined(COPTER_BLACKBOX_SD)
 Stm32SdCard sdCard;
 SdFileRegion blackBoxFile(sdCard, Config::BLACKBOX_SD_FILE, Config::BLACKBOX_SD_MAX_BYTES);
 BlackBoxStorage blackBoxStorage(blackBoxFile);
@@ -108,6 +118,7 @@ CopterBlackBox copterBlackBox(copterController, copterParams, blackBoxStorage, l
 
 static bool configOk = false;
 static bool rebootRequired = false;
+static bool bidirAtBoot = false;   // dshot_bidir при включении (меняется после перезагрузки)
 static uint8_t outputsAtBoot = 0;   // выходов на моторы настроено при включении
 copter::BatteryMonitor battery;
 Stm32VtxPort vtxPort(Config::BOARD_VTX_PIN);
@@ -127,7 +138,27 @@ SPIClass osdSpi;
 Stm32SpiBus osdBus(osdSpi, static_cast<pin_size_t>(Config::BOARD_OSD_SCK < 0 ? 0 : Config::BOARD_OSD_SCK),
                    static_cast<pin_size_t>(Config::BOARD_OSD_MISO < 0 ? 0 : Config::BOARD_OSD_MISO),
                    static_cast<pin_size_t>(Config::BOARD_OSD_MOSI < 0 ? 0 : Config::BOARD_OSD_MOSI));
-Max7456 osdChip(osdBus, Config::BOARD_OSD_CS);
+#if defined(COPTER_BLACKBOX_FLASH)
+// флеш ящика бывает на одной SPI с OSD: тогда каждая транзакция — под мьютексом
+LockedSpiBus osdLockedBus(osdBus);
+ISpiBus& osdAccess = osdLockedBus;
+#else
+ISpiBus& osdAccess = osdBus;
+#endif
+Max7456 osdChip(osdAccess, Config::BOARD_OSD_CS);
+
+#if defined(COPTER_BLACKBOX_FLASH)
+// SPI-флеш ящика: своя шина или общая с OSD; на шине гироскопа — не берём
+// (страница флеша держала бы шину ~0.1 мс посреди чтения гироскопа).
+SPIClass flashSpi;
+Stm32SpiBus flashOwnBus(flashSpi, static_cast<pin_size_t>(Config::BOARD_FLASH_SCK < 0 ? 0 : Config::BOARD_FLASH_SCK),
+                        static_cast<pin_size_t>(Config::BOARD_FLASH_MISO < 0 ? 0 : Config::BOARD_FLASH_MISO),
+                        static_cast<pin_size_t>(Config::BOARD_FLASH_MOSI < 0 ? 0 : Config::BOARD_FLASH_MOSI));
+SpiNorFlash blackBoxFlash(Config::BOARD_FLASH_SHARES_OSD ? osdAccess : static_cast<ISpiBus&>(flashOwnBus),
+                          Config::BOARD_FLASH_SHARES_GYRO ? -1 : Config::BOARD_FLASH_CS);
+BlackBoxStorage blackBoxStorage(blackBoxFlash);
+CopterBlackBox copterBlackBox(copterController, copterParams, blackBoxStorage, loopStats, rcReceiver);
+#endif
 copter::OsdScreen osdScreen;
 static uint32_t armedMs = 0;   // время в полёте (заармлен), для OSD
 
@@ -184,15 +215,24 @@ static void applySettings()
                       rcReceiver.getProtocol() == Config::RxProtocol::CRSF;
     // другая рама — выходы на моторы настраиваются только при включении
     const uint8_t motorCount = copterController.getTune().frame.count;
-    const bool reboot = outputsAtBoot && motorCount != outputsAtBoot;
-    if (reboot && !rebootRequired)
+    const bool bidirChanged = outputsAtBoot && (copterParams.value(copter::PARAM_DSHOT_BIDIR) > 0.5f) != bidirAtBoot;
+    if (bidirChanged && !rebootRequired) Serial.println("dshot_bidir изменён — перезагрузите плату, до того ARM запрещён.");
+    const bool frameChanged = outputsAtBoot && motorCount != outputsAtBoot;
+    const bool reboot = frameChanged || bidirChanged;
+    if (frameChanged && !rebootRequired)
     {
         Serial.printf("У рамы теперь %u моторов (было %u) — перезагрузите плату, до того ARM запрещён.\n", motorCount,
                       outputsAtBoot);
     }
     rebootRequired = reboot;
 #if defined(COPTER_BLACKBOX)
-    copterBlackBox.configure(copterParams.value(copter::PARAM_BLACKBOX_DEVICE) > 0.5f,
+    // ящик пишет, если выбран носитель этой платы (diff из BF с SPIFLASH на H743 — выключен)
+#if defined(COPTER_BLACKBOX_FLASH)
+    const uint8_t boardDevice = copter::BLACKBOX_SPIFLASH;
+#else
+    const uint8_t boardDevice = copter::BLACKBOX_SDCARD;
+#endif
+    copterBlackBox.configure(static_cast<uint8_t>(copterParams.value(copter::PARAM_BLACKBOX_DEVICE)) == boardDevice,
                              static_cast<CopterBlackBox::Mode>(static_cast<uint8_t>(copterParams.value(copter::PARAM_BLACKBOX_MODE))),
                              static_cast<uint8_t>(1u << static_cast<uint8_t>(copterParams.value(copter::PARAM_BLACKBOX_SAMPLE_RATE))));
 #endif
@@ -555,6 +595,12 @@ static void setupCopter(KeyValueStore& store)
     copterParams.setTableDefault(copter::PARAM_VBAT_MULTIPLIER, OPB_VBAT_MULTIPLIER);
 #endif
     copterParams.setTableDefault(copter::PARAM_IBATA_SCALE, Config::BOARD_IBATA_SCALE);
+#if defined(COPTER_BLACKBOX_FLASH)
+    copterParams.setTableDefault(copter::PARAM_BLACKBOX_DEVICE, copter::BLACKBOX_SPIFLASH);
+    copterParams.setTableDefault(copter::PARAM_BLACKBOX_SAMPLE_RATE, 1);   // 1/2: 16 МБ флеша — ~8 минут
+#else
+    copterParams.setTableDefault(copter::PARAM_BLACKBOX_DEVICE, copter::BLACKBOX_SDCARD);
+#endif
     copterParams.setTableDefault(copter::PARAM_IBATA_OFFSET, Config::BOARD_IBATA_OFFSET_MV);
     copterParams.setTableDefault(copter::PARAM_VTX_PROTOCOL, static_cast<float>(Config::BOARD_VTX_PIN >= 0 ? copter::VtxProtocol::AUTO
                                                                                                         : copter::VtxProtocol::NONE));
@@ -575,7 +621,11 @@ static void setupCopter(KeyValueStore& store)
                       copter::frameName(tune.frame.type), tune.frame.count, CopterConfig::MOTOR_PIN_COUNT);
         configOk = false;
     }
-    if (!motors.begin(CopterConfig::MOTOR_PINS, tune.frame.count, CopterConfig::ESC_PROTOCOL))
+    const bool bidir = copterParams.value(copter::PARAM_DSHOT_BIDIR) > 0.5f;
+    motors.dshotOutput().setBidirectional(bidir && copter::isDshot(CopterConfig::ESC_PROTOCOL));
+    bidirAtBoot = bidir;
+    if (!motors.begin(CopterConfig::MOTOR_PINS, tune.frame.count, CopterConfig::ESC_PROTOCOL, CopterConfig::MOTOR_AF,
+                      CopterConfig::MOTOR_AF_COUNT))
     {
         Serial.printf("ОШИБКА: выходы на моторы не настроились (%s) — ARM запрещён.\n",
                       copter::escProtocolName(CopterConfig::ESC_PROTOCOL));
@@ -586,13 +636,14 @@ static void setupCopter(KeyValueStore& store)
         Serial.printf("ОШИБКА: настроено %u выходов из %u — ARM запрещён.\n", motors.attached(), tune.frame.count);
         configOk = false;
     }
-    if (copter::isDshot(CopterConfig::ESC_PROTOCOL) && tune.loopHz > copter::dshot::maxLoopHz(CopterConfig::ESC_PROTOCOL))
+    if (copter::isDshot(CopterConfig::ESC_PROTOCOL) && tune.loopHz > copter::dshot::maxLoopHz(CopterConfig::ESC_PROTOCOL, bidir))
     {
-        Serial.printf("ОШИБКА: %s не успевает за циклом %.0f Гц (до %lu) — ARM запрещён.\n",
-                      copter::escProtocolName(CopterConfig::ESC_PROTOCOL), tune.loopHz,
-                      static_cast<unsigned long>(copter::dshot::maxLoopHz(CopterConfig::ESC_PROTOCOL)));
+        Serial.printf("ОШИБКА: %s%s не успевает за циклом %.0f Гц (до %lu) — ARM запрещён.\n",
+                      copter::escProtocolName(CopterConfig::ESC_PROTOCOL), bidir ? " с dshot_bidir" : "", tune.loopHz,
+                      static_cast<unsigned long>(copter::dshot::maxLoopHz(CopterConfig::ESC_PROTOCOL, bidir)));
         configOk = false;
     }
+    copterConsole.setMotorTelemetry(&motors.dshotOutput());
     outputsAtBoot = tune.frame.count;
 
     Serial.printf("Коптер: %s (%s), %s, регуляторы %s, цикл %.0f Гц.\n", copterBuild.id, copterBuild.title,
@@ -606,7 +657,7 @@ static void setupCopter(KeyValueStore& store)
 }
 
 
-#if defined(COPTER_BLACKBOX)
+#if defined(COPTER_BLACKBOX_SD)
 // SD-карта и файл чёрного ящика (BLACKBOX.BIN, tools/blackbox.py sd-prepare):
 // что нашлось — в консоль; места нет — ящик выключен, полёту это не мешает.
 static void setupBlackBox()
@@ -627,6 +678,50 @@ static void setupBlackBox()
     copterBlackBox.setSensors(&imuSensor, &baroSensor);
     copterBlackBox.begin();
     copterConsole.setRecorder(&copterBlackBox);   // и без карты: "bb list" ответит state=off
+}
+#endif
+
+#if defined(COPTER_BLACKBOX_FLASH)
+// SPI-флеш ящика (F405): опознать по JEDEC ID; нет — ящик выключен, полёту
+// это не мешает. Очередь записей — в CCM RAM (64 КБ, ядро STM32duino её не
+// берёт; DMA туда не ходит, а очереди и не нужно), запас стёртого — половина
+// флеша (на 16 МБ это ~4 минуты при 1/1, ~8 при 1/2).
+static void setupBlackBox()
+{
+    Serial.print("SPI-флеш ящика: ");
+    if (Config::BOARD_FLASH_CS < 0)
+    {
+        Serial.println("нет на плате");
+    }
+    else if (Config::BOARD_FLASH_SHARES_GYRO)
+    {
+        Serial.println("на одной шине с гироскопом — ящик выключен");
+    }
+    else
+    {
+        if (Config::BOARD_FLASH_SHARES_OSD) osdAccess.begin();
+        else flashOwnBus.begin();
+        if (blackBoxFlash.begin())
+        {
+            Serial.printf("%s, JEDEC 0x%06lX, %lu МБ%s\n", blackBoxFlash.vendor(), static_cast<unsigned long>(blackBoxFlash.jedecId()),
+                          static_cast<unsigned long>(blackBoxFlash.size() >> 20), Config::BOARD_FLASH_SHARES_OSD ? " (шина — с OSD)" : "");
+        }
+        else
+        {
+            Serial.printf("не отвечает (JEDEC 0x%06lX)\n", static_cast<unsigned long>(blackBoxFlash.jedecId()));
+        }
+    }
+    copterBlackBox.setMinFreeBytes(blackBoxFlash.size() / 2);
+    copterBlackBox.setBattery(&battery);
+    copterBlackBox.setGps(&gps, &gpsHome);
+    copterBlackBox.setSensors(&imuSensor, &baroSensor);
+#if defined(ARDUINO_ARCH_STM32)
+    copterBlackBox.begin(true, reinterpret_cast<uint8_t*>(0x10000000u), Config::BLACKBOX_RING_F405_BYTES);   // CCM
+#else
+    copterBlackBox.begin(true, nullptr, Config::BLACKBOX_RING_F405_BYTES);
+#endif
+    copterConsole.setRecorder(&copterBlackBox);
+    copterConsole.setFlashChip(&blackBoxFlash);
 }
 #endif
 
@@ -701,7 +796,7 @@ void setup()
     copterConsole.setCompass(compass);
     if (Config::BOARD_OSD_CS >= 0)
     {
-        osdBus.begin();
+        osdAccess.begin();
         Serial.printf("OSD: %s\n", osdChip.begin() ? (osdChip.isPal() ? "AT7456E/MAX7456, PAL" : "AT7456E/MAX7456, NTSC")
                                                      : "чип не отвечает");
     }

@@ -199,21 +199,32 @@ struct PinMap
     PinName pin;
     int timer;
     int channel;
+    int af = 0;   // номер AF (STM_PIN_AFNUM), как в PeripheralPins.c
 };
+
+// Варианты пина с другим таймером — как PinNames.h STM32duino (PC_6_ALT1…).
+#define ALT1 0x100
+#define ALT2 0x200
+#define ALT3 0x300
 
 // Пины сервовыходов Config.h — как в PeripheralPins вариантов WeAct и
 // DevEBox H743: TIM2 CH1..4, TIM4 CH3/CH4, TIM1 CH1; у Matek H743 ещё
 // PB0/PB1 (TIM1 CH2N/CH3N — N-канал фейку не важен) и PD12/PD13 (TIM4
 // CH1/CH2). Моторы F405 (AocodaRC F405 V3): PC6–PC9 — TIM8 CH1–4 (у
 // варианта STM32duino первым идёт TIM3, фейку всё равно), PA15 — TIM2 CH1,
-// PA8 — TIM1 CH1, PB10/PB11 — TIM2 CH3/CH4.
+// PA8 — TIM1 CH1, PB10/PB11 — TIM2 CH3/CH4. AF — как у STM32F4/H7 (TIM1/2 —
+// 1, TIM3/4/5 — 2, TIM8 — 3); ALT-варианты — для выбора таймера DShot: PC6–PC9
+// ещё TIM3 (ALT1), PB0/PB1 — TIM3 CH3/CH4 (ALT1), PA5 — TIM2 CH1 и TIM8 CH1N (ALT1).
 inline const PinMap PinMap_TIM[] = {
-    { PA0, 2, 1 }, { PA1, 2, 2 }, { PA2, 2, 3 }, { PA3, 2, 4 },
-    { PD14, 4, 3 }, { PD15, 4, 4 }, { PE9, 1, 1 },
-    { PB0, 1, 2 }, { PB1, 1, 3 }, { PD12, 4, 1 }, { PD13, 4, 2 },
-    { PC6, 8, 1 }, { PC7, 8, 2 }, { PC8, 8, 3 }, { PC9, 8, 4 },
-    { PA15, 2, 1 }, { PA8, 1, 1 }, { PB10, 2, 3 }, { PB11, 2, 4 },
-    { 0xFFFFFFFFu, 0, 0 },
+    { PA0, 2, 1, 1 }, { PA1, 2, 2, 1 }, { PA2, 2, 3, 1 }, { PA3, 2, 4, 1 },
+    { PD14, 4, 3, 2 }, { PD15, 4, 4, 2 }, { PE9, 1, 1, 1 },
+    { PB0, 1, 2, 1 }, { PB1, 1, 3, 1 }, { PD12, 4, 1, 2 }, { PD13, 4, 2, 2 },
+    { PC6, 8, 1, 3 }, { PC7, 8, 2, 3 }, { PC8, 8, 3, 3 }, { PC9, 8, 4, 3 },
+    { PA15, 2, 1, 1 }, { PA8, 1, 1, 1 }, { PB10, 2, 3, 1 }, { PB11, 2, 4, 1 },
+    { PC6 | ALT1, 3, 1, 2 }, { PC7 | ALT1, 3, 2, 2 }, { PC8 | ALT1, 3, 3, 2 }, { PC9 | ALT1, 3, 4, 2 },
+    { PB0 | ALT1, 3, 3, 2 }, { PB1 | ALT1, 3, 4, 2 },
+    { PA5, 2, 1, 1 }, { PA5 | ALT1, 8, 1, 3 },
+    { 0xFFFFFFFFu, 0, 0, 0 },
 };
 
 inline PinName digitalPinToPinName(pin_size_t pin) { return pin; }
@@ -231,12 +242,13 @@ inline int pinmap_function(PinName pin, const PinMap* map)
 {
     for (; map->pin != 0xFFFFFFFFu; ++map)
     {
-        if (map->pin == pin) return map->channel;
+        if (map->pin == pin) return map->channel | (map->af << 8);
     }
     return 0;
 }
 
-#define STM_PIN_CHANNEL(function) (static_cast<uint32_t>(function))
+#define STM_PIN_CHANNEL(function) (static_cast<uint32_t>(function) & 0xFFu)
+#define STM_PIN_AFNUM(function) ((static_cast<uint32_t>(function) >> 8) & 0x7Fu)
 
 enum TimerModes_t { TIMER_OUTPUT_COMPARE_PWM1 = 6 };
 enum TimerFormat_t { MICROSEC_FORMAT, MICROSEC_COMPARE_FORMAT, TICK_FORMAT, TICK_COMPARE_FORMAT };

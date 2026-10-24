@@ -141,9 +141,14 @@ public:
         }
     }
 
+    // Сколько стёртого держать наготове (по умолчанию BLACKBOX_MIN_FREE_BYTES;
+    // маленькому носителю — меньше, иначе стирались бы все полёты).
+    void setMinFreeBytes(uint32_t bytes) { minFreeBytes = bytes; }
+    uint32_t minFree() const { return minFreeBytes; }
+
 protected:
 
-#if defined(BOARD_STM32H743)
+#if defined(BOARD_STM32H743) || defined(BOARD_STM32F405)
     static constexpr uint32_t WRITER_STACK_BYTES = 8192;   // printf с float и заголовок полёта
 #else
     static constexpr uint32_t WRITER_STACK_BYTES = 6144;
@@ -168,7 +173,8 @@ protected:
         if (!storage.begin())
         {
             Serial.println("BlackBox: нет места для записи — выключен (ESP32: раздел blackbox, "
-                           "partitions_blackbox.csv; STM32: файл на SD-карте, tools/blackbox.py sd-prepare)");
+                           "partitions_blackbox.csv; H743: файл на SD-карте, tools/blackbox.py sd-prepare; "
+                           "F405: SPI-флеш платы)");
             return false;
         }
         if (!ringMemory)
@@ -215,6 +221,7 @@ protected:
     BlackBoxStorage& storage;
     BlackBoxRing ring;
     SemaphoreHandle_t lock = nullptr;
+    uint32_t minFreeBytes = Config::BLACKBOX_MIN_FREE_BYTES;
     TaskHandle_t writerHandle = nullptr;
 
     volatile State state = State::Off;
@@ -508,7 +515,7 @@ protected:
         if (armedFlag || ms - lastEraseMs < Config::BLACKBOX_ERASE_PAUSE_MS) return;
 
         const BlackBoxStorage::Flight* newest = storage.newestFlight();
-        const uint32_t target = Config::BLACKBOX_MIN_FREE_BYTES / BlackBoxFormat::SECTOR_PAYLOAD + 1;
+        const uint32_t target = minFreeBytes / BlackBoxFormat::SECTOR_PAYLOAD + 1;
         const uint32_t opsBefore = storage.eraseOps;
         const bool worked = storage.eraseStep(target, newest ? newest->number : 0);
 
@@ -643,7 +650,7 @@ protected:
         giveLock();
     }
 
-#if defined(BOARD_STM32H743)
+#if defined(BOARD_STM32H743) || defined(BOARD_STM32F405)
     // Скорость консоли. STM32duino не умеет её спрашивать — помним сами.
     static unsigned long& consoleBaudStore()
     {
@@ -654,7 +661,7 @@ protected:
 
     static unsigned long consoleBaud()
     {
-#if defined(BOARD_STM32H743)
+#if defined(BOARD_STM32H743) || defined(BOARD_STM32F405)
         return consoleBaudStore();
 #else
         return Serial.baudRate();
@@ -663,7 +670,7 @@ protected:
 
     static void setSerialBaud(unsigned long baud)
     {
-#if defined(BOARD_STM32H743)
+#if defined(BOARD_STM32H743) || defined(BOARD_STM32F405)
 #if defined(USBCON) && defined(USBD_USE_CDC)
         (void)baud;   // Serial — USB CDC: скорость ни на что не влияет
 #else

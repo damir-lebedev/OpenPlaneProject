@@ -83,6 +83,19 @@ namespace copter
         return r.stopUs + (r.fullUs - r.stopUs) * command;
     }
 
+    // Обороты от регуляторов (двунаправленный DShot) — для консоли и
+    // приложения; реализация — hal/stm32/Stm32Dshot.h.
+    class IMotorTelemetry
+    {
+    public:
+        virtual ~IMotorTelemetry() = default;
+        virtual bool telemetryEnabled() const = 0;
+        virtual uint8_t telemetryMotors() const = 0;
+        virtual bool hasTelemetry(uint8_t i) const = 0;
+        virtual uint32_t erpm(uint8_t i) const = 0;
+        virtual float telemetryErrorPercent(uint8_t i) const = 0;
+    };
+
     // ---------------- DShot ----------------
 
     namespace dshot
@@ -218,13 +231,155 @@ namespace copter
             return rate ? 16.0e6f / static_cast<float>(rate) : 0.0f;
         }
 
+        // ---- двунаправленный DShot: ответ регулятора (dshot_bidir) ----
+        //
+        // С dshot_bidir линия инвертирована (покой — высокий уровень, CRC
+        // кадра инвертирован), и через ~30 мкс после кадра регулятор сам
+        // отвечает по тому же проводу. Ответ — 16 бит: 12 бит периода
+        // электрического оборота (3 бита сдвига e и 9 бит m: период = m << e
+        // мкс; 0xFFF — мотор стоит) и 4 бита CRC (инверсный xor полубайтов).
+        // 16 бит -> GCR 4->5 = 20 бит -> NRZI (единица — смена уровня) после
+        // стартового бита (уровень вниз) = 21 бит, со скоростью 5/4 скорости
+        // DShot. Смежные уровни xor-ом дают обратно GCR — неважно, какой
+        // уровень у линии считать единицей.
+
+        constexpr uint16_t TELEMETRY_STOPPED = 0x0FFF;
+        constexpr uint8_t TELEMETRY_BITS = 21;
+
+        inline uint8_t gcrEncode(uint8_t nibble)
+        {
+            static const uint8_t T[16] = { 0x19, 0x1B, 0x12, 0x13, 0x1D, 0x15, 0x16, 0x17,
+                                           0x1A, 0x09, 0x0A, 0x0B, 0x1E, 0x0D, 0x0E, 0x0F };
+            return T[nibble & 0x0F];
+        }
+
+        // 5 бит GCR -> полубайт; 0xFF — такого кода нет.
+        inline uint8_t gcrDecode(uint8_t code)
+        {
+            for (uint8_t n = 0; n < 16; ++n)
+            {
+                if (gcrEncode(n) == (code & 0x1F)) return n;
+            }
+            return 0xFF;
+        }
+
+        inline uint16_t telemetryCrcFrame(uint16_t value12)
+        {
+            const uint16_t v = value12 & 0x0FFF;
+            const uint16_t crc = static_cast<uint16_t>(~(v ^ (v >> 4) ^ (v >> 8)) & 0x0F);
+            return static_cast<uint16_t>((v << 4) | crc);
+        }
+
+        // Период оборота, мкс -> 12 бит (e, m); 0 и больше 65 мс — «стоит».
+        inline uint16_t periodToTelemetry(uint32_t periodUs)
+        {
+            if (periodUs == 0 || periodUs > (0x1FFu << 7)) return TELEMETRY_STOPPED;
+            uint8_t e = 0;
+            while ((periodUs >> e) > 0x1FF) ++e;
+            return static_cast<uint16_t>((e << 9) | (periodUs >> e));
+        }
+
+        // 12 бит -> электрические обороты в минуту (eRPM); стоит — 0.
+        inline uint32_t telemetryToErpm(uint16_t value12)
+        {
+            if ((value12 & 0x0FFF) == TELEMETRY_STOPPED) return 0;
+            const uint32_t period = static_cast<uint32_t>(value12 & 0x1FF) << ((value12 >> 9) & 0x07);
+            return period ? (60000000u + period / 2) / period : 0;
+        }
+
+        // Механические обороты в минуту: motor_poles — магнитов ротора (14 у 2207).
+        inline float erpmToRpm(uint32_t erpm, uint8_t poles)
+        {
+            return poles >= 2 ? static_cast<float>(erpm) * 2.0f / poles : 0.0f;
+        }
+
+        // Ответ -> уровни линии (21 бит, старший — стартовый, 0 = низкий).
+        inline uint32_t telemetryLine(uint16_t value12)
+        {
+            const uint16_t f = telemetryCrcFrame(value12);
+            uint32_t gcr = 0;
+            for (int n = 3; n >= 0; --n) gcr = (gcr << 5) | gcrEncode(static_cast<uint8_t>(f >> (4 * n)));
+            uint32_t line = 0, level = 0;   // стартовый бит — вниз
+            for (int b = 19; b >= 0; --b)
+            {
+                level ^= (gcr >> b) & 1u;
+                line = (line << 1) | level;
+            }
+            return line;   // 21 бит: стартовый 0 + 20 уровней
+        }
+
+        // Уровни линии -> 12 бит. false — код не GCR или CRC не сошлась.
+        inline bool decodeTelemetryLine(uint32_t line21, uint16_t& value12)
+        {
+            const uint32_t gcr = (line21 ^ (line21 >> 1)) & 0xFFFFFu;
+            uint16_t f = 0;
+            for (int n = 3; n >= 0; --n)
+            {
+                const uint8_t nib = gcrDecode(static_cast<uint8_t>(gcr >> (5 * n)));
+                if (nib == 0xFF) return false;
+                f = static_cast<uint16_t>((f << 4) | nib);
+            }
+            uint16_t x = static_cast<uint16_t>(f ^ (f >> 8));
+            x = static_cast<uint16_t>(x ^ (x >> 4));
+            if ((x & 0x0F) != 0x0F) return false;
+            value12 = static_cast<uint16_t>(f >> 4);
+            return true;
+        }
+
+        // Отсчёты уровня линии (1 — высокий) с частотой samplesPerBit × скорость
+        // ответа -> 21 бит уровней: от первого спада (стартовый бит) длины
+        // участков одного уровня — в битах с округлением; хвост после
+        // последнего фронта — высокий уровень покоя. false — спада нет или
+        // бит не 21.
+        inline bool samplesToLine(const uint8_t* samples, uint16_t count, float samplesPerBit, uint32_t& line21)
+        {
+            if (samplesPerBit < 1.5f) return false;
+            uint16_t i = 1;
+            while (i < count && !(samples[i - 1] && !samples[i])) ++i;   // спад: старт
+            if (i >= count) return false;
+            uint32_t line = 0;
+            uint8_t bits = 0;
+            uint32_t level = 0;
+            uint16_t runStart = i;
+            for (uint16_t k = static_cast<uint16_t>(i + 1); k < count && bits < TELEMETRY_BITS; ++k)
+            {
+                if ((samples[k] ? 1u : 0u) == level) continue;
+                const uint32_t n = static_cast<uint32_t>((k - runStart) / samplesPerBit + 0.5f);
+                if (n == 0) return false;   // иголка короче полбита — шум
+                for (uint32_t b = 0; b < n && bits < TELEMETRY_BITS; ++b, ++bits) line = (line << 1) | level;
+                level ^= 1u;
+                runStart = k;
+            }
+            if (bits < TELEMETRY_BITS)
+            {
+                // последний участок до конца окна: высокий — это покой после ответа
+                if (!level) return false;   // оборвалось на низком уровне
+                while (bits < TELEMETRY_BITS)
+                {
+                    line = (line << 1) | 1u;
+                    ++bits;
+                }
+            }
+            line21 = line;
+            return true;
+        }
+
+        // Скорость ответа регулятора: 5/4 скорости DShot.
+        inline uint32_t telemetryBitRate(EscProtocol p) { return bitRate(p) * 5 / 4; }
+
         // Чаще цикл не поднимать: кадр и пауза не короче кадра (регулятору
         // нужно время разобрать кадр; у BF так же: DShot150 — до 4 кГц,
         // DShot300 — до 8, DShot600 — до 16). 0 — не DShot.
-        inline uint32_t maxLoopHz(EscProtocol p)
+        // С dshot_bidir — ещё пауза ~30 мкс до ответа и сам ответ (21 бит на
+        // 5/4 скорости): DShot600 — до 11.8 кГц, 300 — 7.2, 150 — 4.0.
+        constexpr float TELEMETRY_GAP_US = 30.0f;
+        inline uint32_t maxLoopHz(EscProtocol p, bool bidirectional = false)
         {
             const float us = frameUs(p);
-            return us > 0.0f ? static_cast<uint32_t>(1.0e6f / (2.0f * us)) : 0;
+            if (us <= 0.0f) return 0;
+            if (!bidirectional) return static_cast<uint32_t>(1.0e6f / (2.0f * us));
+            const float reply = TELEMETRY_BITS * 1.0e6f / static_cast<float>(telemetryBitRate(p));
+            return static_cast<uint32_t>(1.0e6f / (us + TELEMETRY_GAP_US + reply));
         }
     }
 }

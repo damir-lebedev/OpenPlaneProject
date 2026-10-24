@@ -119,6 +119,15 @@ namespace CopterConfig
 #endif
     constexpr uint8_t MOTOR_PIN_COUNT = sizeof(MOTOR_PINS) / sizeof(MOTOR_PINS[0]);
 
+    // AF таймера каждого выхода (DShot берёт тот же таймер, что Betaflight на
+    // этой плате, — по строкам timer дампа); −1 — первый таймер пина.
+#if defined(BOARD_STM32F405) && defined(OPB_MOTOR_AF)
+    constexpr int8_t MOTOR_AF[] = { OPB_MOTOR_AF };
+#else
+    constexpr int8_t MOTOR_AF[] = { -1 };
+#endif
+    constexpr uint8_t MOTOR_AF_COUNT = sizeof(MOTOR_AF) / sizeof(MOTOR_AF[0]);
+
     // Поправки «своего коптера» к сборке (и к выбранной в CLI copter_build).
     inline void applyOverrides(copter::BuildSpec& out)
     {

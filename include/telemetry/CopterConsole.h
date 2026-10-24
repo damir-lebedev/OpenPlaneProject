@@ -3,6 +3,7 @@
 
 #include "copter/CopterCli.h"
 #include "copter/Battery.h"
+#include "hal/SpiNorFlash.h"
 #include "copter/CopterController.h"
 #include "copter/GpsHome.h"
 #include "copter/Params.h"
@@ -70,6 +71,9 @@ public:
     // выходы — по новым настройкам (main_copter.cpp).
     void setApplyHook(void (*hook)()) { applyHook = hook; }
     void setTaskStats(const TaskStats* stats) { tasks = stats; }
+    void setMotorTelemetry(const copter::IMotorTelemetry* t) { motorTelemetry = t; }
+    // SPI-флеш ящика (F405) — для flash_info.
+    void setFlashChip(const SpiNorFlash* f) { flashChip = f; }
     // Чёрный ящик: 'k' и команды ПК "bb …" (telemetry/CopterBlackBox.h).
     void setRecorder(IFlightRecorder* r) { recorder = r; }
     void setRxInput(const copter::RxInput* input)
@@ -237,6 +241,67 @@ public:
             io.printf(" %u=%u мВт%s", l, vtx->levelMw(l), l > vtx->topAllowedLevel() ? " (выше потолка)" : "");
         }
         io.println();
+    }
+
+    // CliPort: dshot_telemetry_info — как в BF: eRPM, обороты, Гц и ошибки по моторам.
+    void printDshotTelemetry() override
+    {
+        if (!motorTelemetry || !motorTelemetry->telemetryEnabled())
+        {
+            io.println("Dshot telemetry not enabled (dshot_bidir = OFF или регуляторы не DShot)");
+            return;
+        }
+        const uint8_t poles = static_cast<uint8_t>(params.value(copter::PARAM_MOTOR_POLES));
+        io.println("Motor    eRPM    RPM     Hz Invalid");
+        io.println("=====   =====  =====  ===== =======");
+        for (uint8_t i = 0; i < motorTelemetry->telemetryMotors(); ++i)
+        {
+            const uint32_t e = motorTelemetry->erpm(i);
+            const float rpm = copter::dshot::erpmToRpm(e, poles);
+            io.printf("%5u %7lu %6.0f %6.0f %6.2f%%%s\n", i, static_cast<unsigned long>(e), rpm, rpm / 60.0f,
+                      motorTelemetry->telemetryErrorPercent(i), motorTelemetry->hasTelemetry(i) ? "" : "  (ответа не было)");
+        }
+    }
+
+    // CliPort: flash_info — как в BF: микросхема и объём, затем состояние ящика и полёты.
+    void printFlashInfo() override
+    {
+        if (flashChip)
+        {
+            if (flashChip->present())
+            {
+                io.printf("Flash sectors=%lu, sectorSize=%lu, pageSize=%lu, totalSize=%lu JEDEC ID=0x%06lx (%s)\n",
+                          static_cast<unsigned long>(flashChip->size() / SpiNorFlash::SECTOR),
+                          static_cast<unsigned long>(SpiNorFlash::SECTOR), static_cast<unsigned long>(SpiNorFlash::PAGE),
+                          static_cast<unsigned long>(flashChip->size()), static_cast<unsigned long>(flashChip->jedecId()),
+                          flashChip->vendor());
+            }
+            else
+            {
+                io.printf("Flash not present (JEDEC ID=0x%06lx)\n", static_cast<unsigned long>(flashChip->jedecId()));
+            }
+        }
+        if (recorder)
+        {
+            recorder->printStatus(io);
+            recorder->printFlights(io);
+        }
+        else if (!flashChip)
+        {
+            io.println("Flash not present");
+        }
+    }
+
+    // CliPort: flash_erase — стереть все полёты (ждёт, как в BF: W25Q128 — до минуты).
+    void flashErase() override
+    {
+        if (!recorder)
+        {
+            io.println("###ОШИБКА: чёрного ящика нет###");
+            return;
+        }
+        io.println("Erasing, please wait ... ");
+        io.println(recorder->eraseAll() ? "Done." : "###ОШИБКА: идёт запись или заармлен — не стёрто###");
     }
 
     // CliPort: tasks — части полётного цикла, как в Betaflight.
@@ -569,6 +634,8 @@ private:
     CopterLink link;
     const copter::RxInput* rxInput = nullptr;
     const copter::BatteryMonitor* battery = nullptr;
+    const copter::IMotorTelemetry* motorTelemetry = nullptr;
+    const SpiNorFlash* flashChip = nullptr;
     const copter::VtxController* vtx = nullptr;
     const GpsSensor* gps = nullptr;
     const copter::GpsHome* gpsHome = nullptr;

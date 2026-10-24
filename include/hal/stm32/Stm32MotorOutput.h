@@ -34,15 +34,16 @@ class Stm32MotorOutput
 public:
     static constexpr uint8_t MAX_MOTORS = 8;
 
-    // false — ни один пин не стал выходом.
-    bool begin(const int16_t* pins, uint8_t count, copter::EscProtocol esc)
+    // false — ни один пин не стал выходом. af — AF таймеров (DShot, заголовок платы).
+    bool begin(const int16_t* pins, uint8_t count, copter::EscProtocol esc, const int8_t* af = nullptr,
+               uint8_t afCount = 0)
     {
         protocol = esc;
         motorCount = count > MAX_MOTORS ? MAX_MOTORS : count;
         attachedCount = 0;
         if (copter::isDshot(esc))
         {
-            attachedCount = dshot.begin(pins, motorCount, esc);
+            attachedCount = dshot.begin(pins, motorCount, esc, af, afCount);
             return attachedCount > 0;
         }
 

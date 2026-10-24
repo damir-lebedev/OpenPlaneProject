@@ -6,6 +6,7 @@
     python tools/blackbox.py download --all           # все полёты
     python tools/blackbox.py download --flight 3
     python tools/blackbox.py decode blackbox/flight_003_....bbl
+    python tools/blackbox.py download --bfl           # коптер: в формате Betaflight (.bfl) — Blackbox Explorer, PIDtoolbox
 
 SD-карта (STM32H743):
     python tools/blackbox.py sd-prepare E:            # создать файл BLACKBOX.BIN на пустой FAT32-карте
@@ -485,6 +486,70 @@ def download(s, number, baud, out_dir):
     return path
 
 
+def download_bfl(s, number, baud, out_dir):
+    """Коптер: полёт в формате Betaflight — плата переводит его сама
+    (bb bfl): кадры A5 5B, номер, длина, данные, CRC-32; длина 0 — конец."""
+    command(s, f"bb bfl {number} {baud}")
+    read_reply(s, ["BB:BFL"])
+    s.baudrate = baud
+    time.sleep(0.05)
+    s.reset_input_buffer()
+    s.write(b"G")
+    out = bytearray()
+    buf = bytearray()
+    k = 0
+    last_data = time.time()
+    while True:
+        chunk = s.read(s.in_waiting or 1)
+        if chunk:
+            buf += chunk
+            last_data = time.time()
+        elif time.time() - last_data > 5:
+            raise RuntimeError(f"поток оборвался на кадре {k}")
+        at = buf.find(b"\xA5\x5B")
+        if at < 0:
+            del buf[:-1]
+            continue
+        del buf[:at]
+        if len(buf) < 6:
+            continue
+        index = buf[2] | buf[3] << 8
+        length = buf[4] | buf[5] << 8
+        need = 6 + length + 4
+        while len(buf) < need:
+            more = s.read(need - len(buf))
+            if not more and time.time() - last_data > 5:
+                raise RuntimeError(f"кадр {k} оборвался")
+            if more:
+                buf += more
+                last_data = time.time()
+        data = bytes(buf[6:6 + length])
+        crc = struct.unpack_from("<I", buf, 6 + length)[0]
+        del buf[:need]
+        if index != k or (length and zlib.crc32(data) != crc):
+            raise RuntimeError(f"кадр {k}: битые данные (попробуйте --baud 921600)")
+        k += 1
+        if length == 0:
+            break
+        out += data
+        print(f"\r  полёт #{number} -> BFL: {len(out) // 1024} КБ", end="", flush=True)
+    print()
+    s.baudrate = 115200
+    try:
+        done = read_reply(s, ["BB:DONE"], timeout=2.0)[-1]
+        if int(fields(done)["crc"], 16) != zlib.crc32(bytes(out)):
+            raise RuntimeError("общая CRC не совпала")
+    except RuntimeError as e:
+        if "CRC" in str(e):
+            raise
+    os.makedirs(out_dir, exist_ok=True)
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    path = os.path.join(out_dir, f"flight_{number:03d}_{stamp}.bfl")
+    with open(path, "wb") as f:
+        f.write(out)
+    return path
+
+
 # ----------------------------------------------------------------
 # SD-карта
 # ----------------------------------------------------------------
@@ -600,6 +665,7 @@ def main():
     p.add_argument("--baud", type=int, default=2000000)
     p.add_argument("-o", "--out", default="blackbox", help="папка (по умолчанию ./blackbox)")
     p.add_argument("--no-decode", action="store_true")
+    p.add_argument("--bfl", action="store_true", help="коптер: в формате Betaflight (.bfl) для Blackbox Explorer")
 
     p = sub.add_parser("sd-prepare", help="создать файл чёрного ящика на SD-карте (STM32)")
     p.add_argument("target", help="диск или папка карты, например E: или /media/sd")
@@ -659,6 +725,9 @@ def main():
             wanted = [numbers[-1]]
 
         for n in wanted:
+            if args.bfl:
+                print(f"  -> {download_bfl(s, n, args.baud, args.out)}")
+                continue
             path = download(s, n, args.baud, args.out)
             print(f"  -> {path}")
             if not args.no_decode:
