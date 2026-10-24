@@ -285,7 +285,7 @@
    "id": "097",
    "section": 1,
    "title": "Угол для ARM и автодисарм",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -294,6 +294,7 @@
    "files": "copter/CopterController.h",
    "test": "test_copter",
    "ui": "«Безопасность»",
+   "result": "small_angle (25, 180 — без проверки) и auto_disarm_delay (5 с: на земле с газом внизу — DISARM, и с тумблером тоже; ARM — после щелчка, NOT_DISARMED) в реестре, группа safety (коммит d7850ee)",
    "settings": [
     "small_angle",
     "auto_disarm_delay"
@@ -304,7 +305,7 @@
    "id": "099",
    "section": 1,
    "title": "Runaway takeoff prevention",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -313,6 +314,7 @@
    "files": "copter/CopterController.h",
    "test": "test_copter_sim: перепутанные моторы → DISARM за 1 с",
    "ui": "«Безопасность»",
+   "result": "сумма PID оси > 60 % и вращение > 15 °/с (рысканье 50) 75 мс → DISARM, RUNAWAY до выключения тумблера; гаснет после 0.5 с спокойного полёта (газ > 20 % или выше 1 м); 5\" с перепутанными моторами — DISARM за 0.26 с, на всех 36 взлётах не срабатывает (коммит d7850ee)",
    "settings": [
     "runaway_takeoff_prevention",
     "runaway_takeoff_deactivate_delay",
@@ -324,7 +326,7 @@
    "id": "101",
    "section": 1,
    "title": "Флаги запрета ARM как в BF",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -333,6 +335,7 @@
    "files": "copter/CopterController.h",
    "test": "test_copter",
    "ui": "строка состояния: значки причин",
+   "result": "биты 0–25 = номера флагов BF 4.5 (для MSP_STATUS_EX), коды как в status; новые FAILSAFE, NOT_DISARMED, RUNAWAY, остальные BF зарезервированы (setExternalBlockers), наши — с бита 26; легенда в ящике — двумя записями; значки в Studio — с вкладками после 1.0 (коммит d7850ee)",
    "settings": [],
    "tab": "Состояние"
   },
@@ -340,7 +343,7 @@
    "id": "102",
    "section": 1,
    "title": "Failsafe: этапы и задержки",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -349,6 +352,7 @@
    "files": "copter/CopterController.h",
    "test": "test_copter_sim",
    "ui": "вкладка «Failsafe»: шкала времени этапов",
+   "result": "0.3 с — последние ручки; этап 1 до failsafe_delay (15) — ровно и держит высоту; этап 2; failsafe_landing_time 120 с (BF 60), failsafe_throttle (1000 — снижение по высоте, иначе постоянный газ), throttle_low_delay 100, recovery_delay 5 (и блок ARM после DISARM), stick_threshold 30 (коммит d7850ee)",
    "settings": [
     "failsafe_delay",
     "failsafe_off_delay",
@@ -364,7 +368,7 @@
    "id": "103",
    "section": 1,
    "title": "Failsafe: процедура",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -372,6 +376,7 @@
    "files": "copter/CopterController.h",
    "test": "test_copter_sim: каждая процедура",
    "ui": "«Failsafe»",
+   "result": "failsafe_procedure AUTO-LAND (наш дефолт; BF — DROP) / DROP / GPS-RESCUE (пока снижение, управление обратно — стиком); failsafe_switch_mode STAGE1 / STAGE2 / KILL (ARM через 1 с), тумблер назад — управление сразу (коммит d7850ee)",
    "settings": [
     "failsafe_procedure",
     "failsafe_switch_mode"

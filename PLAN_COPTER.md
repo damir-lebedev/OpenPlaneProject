@@ -159,29 +159,34 @@
 
 Всё проверяется в симуляторе и на фейках, железа нет. Порядок: безопасность и батарея → DShot под F405 → чёрный ящик на флеше и журнал BF → MSP под конфигуратор BF.
 
-### [ ] 097 · Угол для ARM и автодисарм
+### [x] 097 · Угол для ARM и автодисарм
 - **BF:** `small_angle`, `auto_disarm_delay`
 - **Сейчас:** 25° зашит; автодисарма нет.
 - **Файлы:** copter/CopterController.h · **Тест:** test_copter · **UI:** «Безопасность»
+- **Итог:** small_angle (25, 180 — без проверки) и auto_disarm_delay (5 с: на земле с газом внизу — DISARM, и с тумблером тоже; ARM — после щелчка, NOT_DISARMED) в реестре, группа safety (коммит d7850ee)
 
-### [ ] 099 · Runaway takeoff prevention
+### [x] 099 · Runaway takeoff prevention
 - **BF:** `runaway_takeoff_prevention`, `runaway_takeoff_deactivate_delay`, `runaway_takeoff_deactivate_throttle_percent`
 - **Что:** не та сторона мотора/неверная плата → коптер «убегает» на взлёте → DISARM.
 - **Файлы:** copter/CopterController.h · **Тест:** test_copter_sim: перепутанные моторы → DISARM за 1 с · **UI:** «Безопасность»
+- **Итог:** сумма PID оси > 60 % и вращение > 15 °/с (рысканье 50) 75 мс → DISARM, RUNAWAY до выключения тумблера; гаснет после 0.5 с спокойного полёта (газ > 20 % или выше 1 м); 5" с перепутанными моторами — DISARM за 0.26 с, на всех 36 взлётах не срабатывает (коммит d7850ee)
 
-### [ ] 101 · Флаги запрета ARM как в BF
+### [x] 101 · Флаги запрета ARM как в BF
 - **BF:** arming disable flags (RXLOSS, FAILSAFE, ANGLE, CALIB, CLI, CMS, BOXFAILSAFE, RUNAWAY, CRASH, THROTTLE, MSP, PARALYZE, GPS, RESC, RPMFILTER, REBOOT_REQD, DSHOT_BBANG, NO_ACC_CAL, MOTOR_PROTO, ARMSWITCH)
 - **Сейчас:** наши ArmBlock с текстом.
 - **Файлы:** copter/CopterController.h · **Тест:** test_copter · **UI:** строка состояния: значки причин
+- **Итог:** биты 0–25 = номера флагов BF 4.5 (для MSP_STATUS_EX), коды как в status; новые FAILSAFE, NOT_DISARMED, RUNAWAY, остальные BF зарезервированы (setExternalBlockers), наши — с бита 26; легенда в ящике — двумя записями; значки в Studio — с вкладками после 1.0 (коммит d7850ee)
 
-### [ ] 102 · Failsafe: этапы и задержки
+### [x] 102 · Failsafe: этапы и задержки
 - **BF:** `failsafe_delay`, `failsafe_off_delay` / `failsafe_landing_time`, `failsafe_throttle`, `failsafe_throttle_low_delay`, `failsafe_recovery_delay`, `failsafe_stick_threshold`
 - **Сейчас:** охрана 0.3 с, снижение 0.7 м/с, возврат через 1 с, максимум 120 с.
 - **Файлы:** copter/CopterController.h · **Тест:** test_copter_sim · **UI:** вкладка «Failsafe»: шкала времени этапов
+- **Итог:** 0.3 с — последние ручки; этап 1 до failsafe_delay (15) — ровно и держит высоту; этап 2; failsafe_landing_time 120 с (BF 60), failsafe_throttle (1000 — снижение по высоте, иначе постоянный газ), throttle_low_delay 100, recovery_delay 5 (и блок ARM после DISARM), stick_threshold 30 (коммит d7850ee)
 
-### [ ] 103 · Failsafe: процедура
+### [x] 103 · Failsafe: процедура
 - **BF:** `failsafe_procedure` (AUTO-LAND / DROP / GPS-RESCUE), `failsafe_switch_mode` (STAGE1/STAGE2/KILL), режим FAILSAFE
 - **Файлы:** copter/CopterController.h · **Тест:** test_copter_sim: каждая процедура · **UI:** «Failsafe»
+- **Итог:** failsafe_procedure AUTO-LAND (наш дефолт; BF — DROP) / DROP / GPS-RESCUE (пока снижение, управление обратно — стиком); failsafe_switch_mode STAGE1 / STAGE2 / KILL (ARM через 1 с), тумблер назад — управление сразу (коммит d7850ee)
 
 ### [ ] 104 · Значения каналов при потере связи
 - **BF:** `rxfail <канал> <режим> <значение>`
