@@ -55,6 +55,10 @@
   {
    "id": 13,
    "title": "Итог"
+  },
+  {
+   "id": 14,
+   "title": "Сверх Betaflight — просьбы пользователя (после итога)"
   }
  ],
  "items": [
@@ -483,7 +487,7 @@
    "id": "021",
    "section": 1,
    "title": "feedforward_transition",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -493,6 +497,7 @@
    "files": "copter/RateController.h, copter/CopterController.h",
    "test": "test_copter: FF у центра меньше",
    "ui": "«PID → Feedforward»",
+   "result": "feedforward_transition: у центра стика FF слабее линейно (0.1 стика при 50 — ×0.2); все feedforward_* — только на часть уставки от стика, горизонт ANGLE — как был; кадры — счётчик rc.frame (без него 250 Гц) (коммит 5021fb0)",
    "settings": [
     "feedforward_transition"
    ],
@@ -502,7 +507,7 @@
    "id": "022",
    "section": 1,
    "title": "feedforward_averaging",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -511,6 +516,7 @@
    "files": "copter/RateController.h",
    "test": "test_copter: ступени кадров 50 Гц сглажены",
    "ui": "«PID → Feedforward»",
+   "result": "feedforward_averaging OFF/2/3/4_POINT: сдвиг стика за N кадров на время между их отметками — «лесенка» кадров 50 Гц, и неровная тоже, без пульсаций (2.9 → 0), среднее то же (коммит 5021fb0)",
    "settings": [
     "feedforward_averaging"
    ],
@@ -520,7 +526,7 @@
    "id": "023",
    "section": 1,
    "title": "feedforward_smooth_factor",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -529,6 +535,7 @@
    "files": "copter/RateController.h",
    "test": "test_copter",
    "ui": "«PID → Feedforward»",
+   "result": "feedforward_smooth_factor: доля старого за кадр в пересчёте на циклы; лесенка 50 Гц — пульсации 2.9 → 0.46 (25) → 0.15 (65), среднее то же; модель 0, BF 25 (коммит 5021fb0)",
    "settings": [
     "feedforward_smooth_factor"
    ],
@@ -538,7 +545,7 @@
    "id": "024",
    "section": 1,
    "title": "feedforward_jitter_factor",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -547,6 +554,7 @@
    "files": "copter/RateController.h",
    "test": "test_copter: дрожание ±2 % — FF почти ноль",
    "ui": "«PID → Feedforward»",
+   "result": "feedforward_jitter_factor: стик за кадр (в среднем за два) сдвинулся меньше порога — FF плавно к нулю; дрожь ±2 % — FF в 8 раз меньше, флик — без изменений; модель 0, BF 7 (коммит 5021fb0)",
    "settings": [
     "feedforward_jitter_factor"
    ],
@@ -556,7 +564,7 @@
    "id": "025",
    "section": 1,
    "title": "feedforward_boost",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -565,6 +573,7 @@
    "files": "copter/RateController.h",
    "test": "test_copter",
    "ui": "«PID → Feedforward»",
+   "result": "feedforward_boost: добавка по ускорению стика, 15 — 3 мс упреждения, не больше самой скорости стика; разгон стика — FF +12 %; BF 25/7/15 на флике 20 мс с кадрами 250 Гц: перелёт 10.3 % против 13.4 %; модель 0, BF 15 (коммит 5021fb0)",
    "settings": [
     "feedforward_boost"
    ],
@@ -3329,6 +3338,71 @@
    "docs": true,
    "settings": [],
    "tab": ""
+  },
+  {
+   "id": "173",
+   "section": 14,
+   "title": "Телеметрия на телефон и в браузер",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "нет (BF шлёт телеметрию только на пульт; у ExpressLRS есть TX Backpack с Wi-Fi и MAVLink)",
+   "what": "коптер → пульт (CRSF-телеметрия, 118) → телефон: через ELRS TX Backpack (Wi-Fi, MAVLink по UDP) или свой мост на ESP32 у пульта — читает телеметрию с модуля и раздаёт веб-страницу (WebSocket): батарея, режим, высота, скорость, GPS и карта, LQ/RSSI, предупреждения. FS-i6 телеметрию наружу не отдаёт — первым делом спросить пользователя про пульт/модуль и выбрать связку, решение — в «Итог». Мост — отдельный репо (как прошивка RC-джойстика).",
+   "now": "CRSF-телеметрия на пульт (copter/CrsfTelemetry.h), протокол приложения telemetry/CopterLink.h; на телефон — ничего.",
+   "files": "отдельный репо моста, telemetry/CopterLink.h",
+   "test": "test_telemetry: кадры CRSF → данные страницы; страница — на записанных кадрах; на железе — с пользователем",
+   "ui": "веб-страница (PWA) на телефоне; тот же экран в Studio",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "174",
+   "section": 14,
+   "title": "Режимы и настройки с телефона",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "настройки по MSP через ELRS (MSP-over-CRSF) — механизм; смены режимов с телефона в BF нет",
+   "what": "через мост 173: смена режима и профиля, запуск GPS Rescue, чтение/запись настроек (реестр 001). Безопасность: ARM с телефона — никогда; команды режима принимаются, только пока включён режим-разрешение на тумблере (новый aux «PHONE»); мост пропал — всё как по тумблерам.",
+   "files": "telemetry/CopterLink.h, copter/RcSetup.h, src/stm32/main_copter.cpp",
+   "test": "test_app_stm32_copter: команда моста меняет режим только при разрешающем тумблере; ARM — отказ; пропал мост — режим с тумблеров",
+   "ui": "кнопки режимов на веб-странице 173",
+   "settings": [],
+   "tab": "Режимы"
+  },
+  {
+   "id": "175",
+   "section": 14,
+   "title": "Follow Me — коптер летит за пилотом",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "нет (в BF — только GPS Rescue и удержание позиции; Follow Me есть в INAV и ArduPilot)",
+   "what": "цель — координаты телефона пилота → мост 173 → коптер. Держит дистанцию, высоту и сторону, нос на пилота; включается тумблером (aux «FOLLOW ME»). Защиты: свежих координат цели нет > 2 с — висит на месте, > 10 с — GPS Rescue; предел скорости, минимальная высота, геозабор от точки ARM. iPhone: Safari отдаёт GPS странице только по HTTPS — нужен сертификат на мосту или приложение; выбрать в пункте. Нужны 129–132 (GPS, оценка положения, удержание позиции) и 173.",
+   "files": "новый copter/FollowMe.h, copter/CopterController.h, copter/RcSetup.h",
+   "test": "test_copter_sim: цель идёт 5 м/с по кругу — дистанция 10 ± 3 м, нос на цель ± 15°; цель пропала — зависает, потом домой; полёт в поле — с пользователем",
+   "ui": "«Автопилот → Follow Me»: дистанция, высота, сторона, предел скорости",
+   "settings": [],
+   "tab": "Автопилот"
+  },
+  {
+   "id": "176",
+   "section": 14,
+   "title": "Мелодия моторами по тумблеру и свой звук при включении",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "нет; ближайшее — DShot-маяк (109, пять фиксированных тонов) и стартовая мелодия регуляторов Bluejay (пишется в регулятор через passthrough, 094)",
+   "what": "самый последний пункт, по желанию пользователя (может и не делаться). Загрузить мелодию (RTTTL) через CLI/Studio и играть по тумблеру — только в DISARM: пищалкой полётника (любые ноты) и/или моторами (DShot-тоны — грубо, 5 нот). Свой звук при включении — записать стартовую мелодию Bluejay в регуляторы через passthrough.",
+   "files": "новый copter/Melody.h, copter/Beeper.h, hal/stm32/Stm32EscPassthrough.h",
+   "test": "test_copter: разбор RTTTL; test_app_stm32_copter: тумблер в DISARM — играет, в ARM — нет",
+   "ui": "«Пищалка»: загрузить мелодию, «послушать»",
+   "settings": [],
+   "tab": "Пищалка"
   }
  ]
 }
