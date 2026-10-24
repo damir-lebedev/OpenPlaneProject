@@ -6,59 +6,67 @@
   },
   {
    "id": 1,
-   "title": "Регулятор (PID-профиль)"
+   "title": "До 22 ноября: первый полёт в коде"
   },
   {
    "id": 2,
-   "title": "Расходы (rate profile)"
+   "title": "С 22 ноября: железо, эталон BF, первый полёт"
   },
   {
    "id": 3,
-   "title": "Фильтры"
+   "title": "Регулятор (PID-профиль)"
   },
   {
    "id": 4,
-   "title": "Моторы, регуляторы, DShot"
+   "title": "Расходы (rate profile)"
   },
   {
    "id": 5,
-   "title": "ARM, failsafe, безопасность, пищалка"
+   "title": "Фильтры"
   },
   {
    "id": 6,
-   "title": "Пульт: сглаживание, приёмники, телеметрия, крутилки"
+   "title": "Моторы, регуляторы, DShot"
   },
   {
    "id": 7,
-   "title": "Батарея и ток"
+   "title": "ARM, failsafe, безопасность, пищалка"
   },
   {
    "id": 8,
-   "title": "Высота, GPS, возврат"
+   "title": "Пульт: сглаживание, приёмники, телеметрия, крутилки"
   },
   {
    "id": 9,
-   "title": "Чёрный ящик, отладка, цикл"
+   "title": "Высота, GPS, возврат"
   },
   {
    "id": 10,
-   "title": "OSD, VTX, LED, камера"
+   "title": "Чёрный ящик, отладка, цикл"
   },
   {
    "id": 11,
-   "title": "MSP и совместимость"
+   "title": "OSD, VTX, LED, камера"
   },
   {
    "id": 12,
-   "title": "Режимы и мелочи BF"
+   "title": "MSP и совместимость"
   },
   {
    "id": 13,
-   "title": "Итог"
+   "title": "Итог — релиз 1.0"
   },
   {
    "id": 14,
-   "title": "Сверх Betaflight — просьбы пользователя (после итога)"
+   "title": "После 1.0: режимы и мелочи BF"
+  },
+  {
+   "id": 15,
+   "title": "После 1.0: приложение и телеметрия регуляторов"
+  },
+  {
+   "id": 16,
+   "title": "После 1.0: сверх Betaflight — просьбы пользователя"
   }
  ],
  "items": [
@@ -274,8 +282,503 @@
    "tab": ""
   },
   {
-   "id": "011",
+   "id": "097",
    "section": 1,
+   "title": "Угол для ARM и автодисарм",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`small_angle`, `auto_disarm_delay`",
+   "now": "25° зашит; автодисарма нет.",
+   "files": "copter/CopterController.h",
+   "test": "test_copter",
+   "ui": "«Безопасность»",
+   "settings": [
+    "small_angle",
+    "auto_disarm_delay"
+   ],
+   "tab": "Безопасность"
+  },
+  {
+   "id": "099",
+   "section": 1,
+   "title": "Runaway takeoff prevention",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`runaway_takeoff_prevention`, `runaway_takeoff_deactivate_delay`, `runaway_takeoff_deactivate_throttle_percent`",
+   "what": "не та сторона мотора/неверная плата → коптер «убегает» на взлёте → DISARM.",
+   "files": "copter/CopterController.h",
+   "test": "test_copter_sim: перепутанные моторы → DISARM за 1 с",
+   "ui": "«Безопасность»",
+   "settings": [
+    "runaway_takeoff_prevention",
+    "runaway_takeoff_deactivate_delay",
+    "runaway_takeoff_deactivate_throttle_percent"
+   ],
+   "tab": "Безопасность"
+  },
+  {
+   "id": "101",
+   "section": 1,
+   "title": "Флаги запрета ARM как в BF",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "arming disable flags (RXLOSS, FAILSAFE, ANGLE, CALIB, CLI, CMS, BOXFAILSAFE, RUNAWAY, CRASH, THROTTLE, MSP, PARALYZE, GPS, RESC, RPMFILTER, REBOOT_REQD, DSHOT_BBANG, NO_ACC_CAL, MOTOR_PROTO, ARMSWITCH)",
+   "now": "наши ArmBlock с текстом.",
+   "files": "copter/CopterController.h",
+   "test": "test_copter",
+   "ui": "строка состояния: значки причин",
+   "settings": [],
+   "tab": "Состояние"
+  },
+  {
+   "id": "102",
+   "section": 1,
+   "title": "Failsafe: этапы и задержки",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`failsafe_delay`, `failsafe_off_delay` / `failsafe_landing_time`, `failsafe_throttle`, `failsafe_throttle_low_delay`, `failsafe_recovery_delay`, `failsafe_stick_threshold`",
+   "now": "охрана 0.3 с, снижение 0.7 м/с, возврат через 1 с, максимум 120 с.",
+   "files": "copter/CopterController.h",
+   "test": "test_copter_sim",
+   "ui": "вкладка «Failsafe»: шкала времени этапов",
+   "settings": [
+    "failsafe_delay",
+    "failsafe_off_delay",
+    "failsafe_landing_time",
+    "failsafe_throttle",
+    "failsafe_throttle_low_delay",
+    "failsafe_recovery_delay",
+    "failsafe_stick_threshold"
+   ],
+   "tab": "Failsafe"
+  },
+  {
+   "id": "103",
+   "section": 1,
+   "title": "Failsafe: процедура",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`failsafe_procedure` (AUTO-LAND / DROP / GPS-RESCUE), `failsafe_switch_mode` (STAGE1/STAGE2/KILL), режим FAILSAFE",
+   "files": "copter/CopterController.h",
+   "test": "test_copter_sim: каждая процедура",
+   "ui": "«Failsafe»",
+   "settings": [
+    "failsafe_procedure",
+    "failsafe_switch_mode"
+   ],
+   "tab": "Failsafe"
+  },
+  {
+   "id": "104",
+   "section": 1,
+   "title": "Значения каналов при потере связи",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`rxfail <канал> <режим> <значение>`",
+   "files": "rc/RcReceiver.h, src/stm32/main_copter.cpp",
+   "test": "test_app_stm32_copter",
+   "ui": "«Failsafe»",
+   "settings": [
+    "rxfail"
+   ],
+   "tab": "Failsafe"
+  },
+  {
+   "id": "124",
+   "section": 1,
+   "title": "Напряжения банки",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "what": "пороги по химии: Li-ion 6S (пресет longrange7li) — полная 4.2, предупреждение ~3.0, минимум ~2.8 В на банку; LiPo — дефолты BF.",
+   "bf": "`vbat_max_cell_voltage`, `vbat_full_cell_voltage`, `vbat_min_cell_voltage`, `vbat_warning_cell_voltage`, `vbat_hysteresis`, `vbat_detect_cell_voltage`, `force_battery_cell_count`",
+   "now": "minCellVolts 3.3 для ARM; число банок — из описания.",
+   "files": "copter/CopterController.h, src/stm32/main_copter.cpp",
+   "test": "test_app_stm32_copter",
+   "ui": "вкладка «Питание»",
+   "settings": [
+    "vbat_max_cell_voltage",
+    "vbat_full_cell_voltage",
+    "vbat_min_cell_voltage",
+    "vbat_warning_cell_voltage",
+    "vbat_hysteresis",
+    "vbat_detect_cell_voltage",
+    "force_battery_cell_count"
+   ],
+   "tab": "Питание"
+  },
+  {
+   "id": "125",
+   "section": 1,
+   "title": "Делитель и датчик тока",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "what": "GETFUN F405V3 — `ibata_scale` 100 и делитель из BF-дампа (178).",
+   "bf": "`vbat_scale`, `vbat_divider`, `vbat_multiplier`, `ibata_scale`, `ibata_offset`, `current_meter`, `battery_meter`",
+   "now": "BLACKBOX_VBAT_DIVIDER зашит, ток не меряется.",
+   "files": "src/stm32/main_copter.cpp",
+   "test": "test_app_stm32_copter",
+   "ui": "«Питание»: калибровка по мультиметру",
+   "settings": [
+    "vbat_scale",
+    "vbat_divider",
+    "vbat_multiplier",
+    "ibata_scale",
+    "ibata_offset",
+    "current_meter",
+    "battery_meter"
+   ],
+   "tab": "Питание"
+  },
+  {
+   "id": "126",
+   "section": 1,
+   "title": "Ёмкость и предупреждения",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`bat_capacity`, `use_vbat_alerts`, `use_cbat_alerts`, `cbat_alert_percent`, `vbat_cutoff_percent`, `vbat_duration_for_warning`, `vbat_duration_for_critical`, `vbat_lpf_period`, `ibat_lpf_period`",
+   "files": "новый copter/Battery.h",
+   "test": "test_copter",
+   "ui": "«Питание»",
+   "settings": [
+    "bat_capacity",
+    "use_vbat_alerts",
+    "use_cbat_alerts",
+    "cbat_alert_percent",
+    "vbat_cutoff_percent",
+    "vbat_duration_for_warning",
+    "vbat_duration_for_critical",
+    "vbat_lpf_period",
+    "ibat_lpf_period"
+   ],
+   "tab": "Питание"
+  },
+  {
+   "id": "080",
+   "section": 1,
+   "title": "DShot: кадры на таймере с DMA (F405 и H743)",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`motor_pwm_protocol = DSHOT150/300/600`",
+   "what": "драйвер DShot: таймер в режиме burst DMA, буфер длительностей (EscProtocol::frameToPulses уже есть), отправка раз в цикл. Сначала F405 (GETFUN, AOCODARC), затем H743 тем же кодом.",
+   "files": "новый hal/stm32/Stm32Dshot.h",
+   "test": "test_app_stm32_copter на фейке DMA: длительности бит, CRC, частота",
+   "ui": "«Моторы»",
+   "settings": [
+    "motor_pwm_protocol"
+   ],
+   "tab": "Моторы"
+  },
+  {
+   "id": "081",
+   "section": 1,
+   "title": "DShot: несколько таймеров и пины F405 / H743",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "—",
+   "what": "M1–M8 по заголовку платы (F405: потоки DMA1/DMA2 без конфликтов с SPI гироскопа, OSD и флеша; H743: TIM1/TIM2/TIM4) — одновременный запуск.",
+   "files": "hal/stm32/Stm32Dshot.h",
+   "test": "test_app_stm32_copter",
+   "ui": "—",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "087",
+   "section": 1,
+   "title": "Двунаправленный DShot: приём ответа (GCR)",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`dshot_bidir`",
+   "what": "переключение пина на вход, захват таймером/DMA, декодирование GCR → eRPM.",
+   "files": "hal/stm32/Stm32Dshot.h, copter/EscProtocol.h",
+   "test": "test_copter: декодер на эталонных кадрах; test_app_stm32_copter на фейке захвата",
+   "ui": "«Моторы»: обороты каждого мотора живьём",
+   "settings": [
+    "dshot_bidir"
+   ],
+   "tab": "Моторы"
+  },
+  {
+   "id": "088",
+   "section": 1,
+   "title": "Обороты: число полюсов и проверка",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`motor_poles`, `dshot_bidir` ошибки (%)",
+   "files": "copter/Params.h",
+   "test": "test_copter",
+   "ui": "«Моторы»: % ошибок телеметрии",
+   "settings": [
+    "motor_poles",
+    "dshot_bidir"
+   ],
+   "tab": "Моторы"
+  },
+  {
+   "id": "177",
+   "section": 1,
+   "title": "Чёрный ящик на SPI-флеше (F405, 16 МБ)",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`blackbox_device = SPIFLASH`, `flash_info`, `flash_erase`",
+   "what": "драйвер SPI-NOR (W25Q128, M25P16 и совместимые — по JEDEC ID) как IFlashRegion для CopterBlackBox; стирание командой и поведение при заполнении — как в BF; COPTER_BLACKBOX на F405 (GETFUN, AOCODARC — CS флеша из заголовка платы); скачивание тем же `bb list/get`.",
+   "now": "ящик пишется только на SD у H743; драйвера SPI-флеша нет.",
+   "files": "новый hal/stm32/Stm32SpiFlash.h, telemetry/CopterBlackBox.h, src/stm32/main_copter.cpp, config/boards/*.h",
+   "test": "test_app_stm32_copter на фейке флеша: полёт пишется, стирание, заполнение, чтение через `bb get`",
+   "ui": "«Ящик» в Studio (уже умеет, 144): объём флеша, кнопка «стереть»",
+   "settings": [
+    "blackbox_device",
+    "flash_info",
+    "flash_erase"
+   ],
+   "tab": "Ящик"
+  },
+  {
+   "id": "139",
+   "section": 1,
+   "title": "Формат журнала Betaflight (.BFL)",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "формат blackbox (заголовок H, кадры I/P, кодирование знаков переменной длины)",
+   "what": "писать в формате BF — открывается в Blackbox Explorer и PIDtoolbox; своя реализация по описанию формата.",
+   "files": "новый telemetry/BflEncoder.h",
+   "test": "разбор нашим декодером + проверка заголовка; отдельно — открыть в Blackbox Explorer (пользователь)",
+   "ui": "«Чёрный ящик»: «открыть в Blackbox Explorer»",
+   "settings": [],
+   "tab": "Чёрный ящик"
+  },
+  {
+   "id": "158",
+   "section": 1,
+   "title": "MSP: транспорт и базовые сообщения",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "MSP v1/v2 (API_VERSION, FC_VARIANT, FC_VERSION, BOARD_INFO, STATUS, RAW_IMU, ATTITUDE, ALTITUDE, ANALOG, RC, MOTOR)",
+   "what": "своя реализация по открытому описанию протокола. Представляемся как BF 4.5: FC_VARIANT «BTFL», MSP API 1.46, FC_VERSION 4.5.x — чтобы работал конфигуратор BF; в BOARD_INFO и BUILD_INFO честно «OpenPlane …» (как он это покажет — неважно, главное, что работает).",
+   "files": "новый telemetry/Msp.h",
+   "test": "test_telemetry: кадры с CRC (v1 xor, v2 crc8 dvb-s2)",
+   "ui": "—",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "159",
+   "section": 1,
+   "title": "MSP: чтение и запись настроек",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "MSP_PID / SET_PID, RC_TUNING, FILTER_CONFIG, ADVANCED_CONFIG, MODE_RANGES, MOTOR_CONFIG, FAILSAFE_CONFIG, EEPROM_WRITE",
+   "files": "telemetry/Msp.h, copter/Params.h",
+   "test": "test_telemetry",
+   "ui": "—",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "160",
+   "section": 1,
+   "title": "Подключение конфигуратора Betaflight",
+   "fileStatus": "todo",
+   "bench": true,
+   "repo": "firmware",
+   "docs": false,
+   "what": "конфигуратор BF подключается к нам как к BF 4.5 (158) и настраивает PID, Rates, приёмник, режимы, моторы, CLI; что отображается странно — записать, что не работает — чинить в 159. Можно на DevEBox, коптер не нужен.",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "163",
+   "section": 1,
+   "title": "Импорт diff из Betaflight",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "вывод `diff all`",
+   "what": "вставить diff BF в нашу CLI — понятное применяется, непонятное перечисляется списком.",
+   "files": "telemetry/CopterConsole.h",
+   "test": "test_app_stm32_copter: настоящий diff 4.5",
+   "ui": "«CLI»: кнопка «вставить diff из BF»",
+   "settings": [
+    "diff",
+    "all"
+   ],
+   "tab": "CLI"
+  },
+  {
+   "id": "D13",
+   "section": 1,
+   "title": "Переводы: до первого полёта (11 языков)",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": true,
+   "what": "всё, что поменялось в русских COPTER.md и README с прошлых переводов, — в docs/i18n/<lang>/ на 11 языков.",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "178",
+   "section": 2,
+   "title": "GETFUN F405: дамп BF, бэкап родной прошивки, заголовок платы",
+   "fileStatus": "todo",
+   "bench": true,
+   "repo": "firmware",
+   "docs": false,
+   "what": "шаг 1 из Q12 PLAN_QUAD7.md: `tools/bf_board.py read`, `backup`, `header` → include/config/boards/GETFUNF405V3.h без заглушки; сборка getfun-f405v3-quad. Родная прошивка BF — запасная (летаем на ней в 179–181).",
+   "files": "tools/bf_board.py, include/config/boards/GETFUNF405V3.h, stack/",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "179",
+   "section": 2,
+   "title": "Первые полёты на родном Betaflight (BLHeli_S)",
+   "fileStatus": "todo",
+   "bench": true,
+   "repo": "firmware",
+   "docs": false,
+   "what": "3–5 аккумуляторов на родном BF: проверка сборки (направления моторов, приёмник, VTX, вибрации) и полёты пилота на настоящем коптере; журнал BF включён.",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "082",
+   "section": 2,
+   "title": "DShot: проверка на стенде",
+   "fileStatus": "todo",
+   "bench": true,
+   "repo": "firmware",
+   "docs": false,
+   "what": "логический анализатор или ESC: кадры, взвод ESC, газ.",
+   "ui": "—",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "180",
+   "section": 2,
+   "title": "Bluejay на регулятор",
+   "fileStatus": "todo",
+   "bench": true,
+   "repo": "firmware",
+   "docs": false,
+   "what": "после 179: через passthrough BF в ESC-Configurator сохранить родную BLHeli_S (`E_X_40`), прошить Bluejay `E_X_40_48_v0.21.1-RC1` (BB51 с разводкой E есть только с 0.21.1-RC1); в BF — `dshot_bidir = ON`, `motor_poles` по мотору (2810 — обычно 14, проверить), RPM-фильтр; ошибки телеметрии оборотов < 1 %. Телеметрия регулятора (EDT, UART: 091, 092) не нужна — после 1.0.",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "089",
+   "section": 2,
+   "title": "Двунаправленный DShot: стенд",
+   "fileStatus": "todo",
+   "bench": true,
+   "repo": "firmware",
+   "docs": false,
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "181",
+   "section": 2,
+   "title": "Эталонные журналы BF с RPM-фильтром",
+   "fileStatus": "todo",
+   "bench": true,
+   "repo": "firmware",
+   "docs": false,
+   "what": "один коптер, винты 7040, одна батарея; манёвры: висение 3 мин, ступеньки по крену/тангажу/рысканию, резкий газ, флипы и роллы, пропвош на сбросе газа. Журналы — в Documents/OpenPlane/Blackbox/bf_ref/. Эталон для 182 и 183.",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "182",
+   "section": 2,
+   "title": "Модель симулятора по журналу BF",
+   "fileStatus": "blocked",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "what": "по журналам 181 восстановить K и τ осей, газ висения, шум по оборотам; обновить сборку longrange7li и QuadSim; пересчитать настройку и прогнать test_copter_sim. Обязательно до первого висения на нашей прошивке (172).",
+   "files": "copter/Presets.h, test/native/helpers/QuadSim.h, новый tools/bf_log_fit.py",
+   "test": "test_copter_sim: модель из журнала повторяет ступеньку BF ±15 %",
+   "result": "ждёт журналы 181 (железо — после 22 ноября 2026)",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "172",
+   "section": 2,
+   "title": "Первый полёт на нашей прошивке",
+   "fileStatus": "todo",
+   "bench": true,
+   "repo": "firmware",
+   "docs": false,
+   "what": "только после 181 и 182 (модель подогнана по журналу BF): без пропеллеров (`t`, `m`, `s`, пульт, OSD, failsafe) → на привязи → висение в ANGLE низко в открытом поле → ALT_HOLD → ACRO — только когда журнал совпал с BF по 183. Журнал включён всегда.",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "183",
+   "section": 2,
+   "title": "«Не хуже BF»: сравнение по журналам",
+   "fileStatus": "todo",
+   "bench": true,
+   "repo": "firmware",
+   "docs": false,
+   "what": "манёвры 181 на нашей прошивке. Критерии: ступенька (время нарастания и перелёт) ±15 % от BF; шум гироскопа после фильтров (СКЗ 50–500 Гц) не больше BF; моторы после 3 мин висения не горячее; газ висения ±3 %; пропвош не хуже; failsafe, дизарм при крэше и runaway проверены вживую. Хуже — сначала модель (182), потом настройка. Таблица — в COPTER.md.",
+   "files": "tools/bf_log_fit.py, docs/COPTER.md",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "D14",
+   "section": 2,
+   "title": "Переводы: после первого полёта (11 языков)",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": true,
+   "what": "то же после 183: таблица «мы против BF», что поменялось по журналам.",
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "011",
+   "section": 3,
    "title": "d_max (d_min) — D растёт при резких движениях",
    "fileStatus": "done",
    "bench": false,
@@ -300,7 +803,7 @@
   },
   {
    "id": "012",
-   "section": 1,
+   "section": 3,
    "title": "iterm_relax — тип и частота",
    "fileStatus": "done",
    "bench": false,
@@ -322,7 +825,7 @@
   },
   {
    "id": "013",
-   "section": 1,
+   "section": 3,
    "title": "iterm_rotation",
    "fileStatus": "done",
    "bench": false,
@@ -341,7 +844,7 @@
   },
   {
    "id": "014",
-   "section": 1,
+   "section": 3,
    "title": "iterm_windup",
    "fileStatus": "done",
    "bench": false,
@@ -361,7 +864,7 @@
   },
   {
    "id": "015",
-   "section": 1,
+   "section": 3,
    "title": "iterm_limit",
    "fileStatus": "done",
    "bench": false,
@@ -380,7 +883,7 @@
   },
   {
    "id": "016",
-   "section": 1,
+   "section": 3,
    "title": "pidsum_limit, pidsum_limit_yaw",
    "fileStatus": "done",
    "bench": false,
@@ -400,7 +903,7 @@
   },
   {
    "id": "017",
-   "section": 1,
+   "section": 3,
    "title": "anti_gravity — как в BF 4.3+",
    "fileStatus": "done",
    "bench": false,
@@ -422,7 +925,7 @@
   },
   {
    "id": "018",
-   "section": 1,
+   "section": 3,
    "title": "throttle_boost",
    "fileStatus": "done",
    "bench": false,
@@ -442,7 +945,7 @@
   },
   {
    "id": "019",
-   "section": 1,
+   "section": 3,
    "title": "TPA как в BF",
    "fileStatus": "done",
    "bench": false,
@@ -464,7 +967,7 @@
   },
   {
    "id": "020",
-   "section": 1,
+   "section": 3,
    "title": "tpa_low — TPA на малом газе",
    "fileStatus": "done",
    "bench": false,
@@ -485,7 +988,7 @@
   },
   {
    "id": "021",
-   "section": 1,
+   "section": 3,
    "title": "feedforward_transition",
    "fileStatus": "done",
    "bench": false,
@@ -505,7 +1008,7 @@
   },
   {
    "id": "022",
-   "section": 1,
+   "section": 3,
    "title": "feedforward_averaging",
    "fileStatus": "done",
    "bench": false,
@@ -524,7 +1027,7 @@
   },
   {
    "id": "023",
-   "section": 1,
+   "section": 3,
    "title": "feedforward_smooth_factor",
    "fileStatus": "done",
    "bench": false,
@@ -543,7 +1046,7 @@
   },
   {
    "id": "024",
-   "section": 1,
+   "section": 3,
    "title": "feedforward_jitter_factor",
    "fileStatus": "done",
    "bench": false,
@@ -562,7 +1065,7 @@
   },
   {
    "id": "025",
-   "section": 1,
+   "section": 3,
    "title": "feedforward_boost",
    "fileStatus": "done",
    "bench": false,
@@ -581,7 +1084,7 @@
   },
   {
    "id": "026",
-   "section": 1,
+   "section": 3,
    "title": "feedforward_max_rate_limit",
    "fileStatus": "done",
    "bench": false,
@@ -600,7 +1103,7 @@
   },
   {
    "id": "027",
-   "section": 1,
+   "section": 3,
    "title": "yaw_lowpass_hz",
    "fileStatus": "done",
    "bench": false,
@@ -619,7 +1122,7 @@
   },
   {
    "id": "028",
-   "section": 1,
+   "section": 3,
    "title": "integrated yaw",
    "fileStatus": "done",
    "bench": false,
@@ -639,7 +1142,7 @@
   },
   {
    "id": "029",
-   "section": 1,
+   "section": 3,
    "title": "absolute control",
    "fileStatus": "done",
    "bench": false,
@@ -661,7 +1164,7 @@
   },
   {
    "id": "030",
-   "section": 1,
+   "section": 3,
    "title": "thrust_linear, motor_output_limit",
    "fileStatus": "done",
    "bench": false,
@@ -681,7 +1184,7 @@
   },
   {
    "id": "031",
-   "section": 1,
+   "section": 3,
    "title": "vbat_sag_compensation (%)",
    "fileStatus": "todo",
    "bench": false,
@@ -699,7 +1202,7 @@
   },
   {
    "id": "032",
-   "section": 1,
+   "section": 3,
    "title": "Упрощённая настройка — ползунки",
    "fileStatus": "todo",
    "bench": false,
@@ -725,7 +1228,7 @@
   },
   {
    "id": "033",
-   "section": 1,
+   "section": 3,
    "title": "auto_profile_cell_count",
    "fileStatus": "todo",
    "bench": false,
@@ -743,7 +1246,7 @@
   },
   {
    "id": "034",
-   "section": 1,
+   "section": 3,
    "title": "Режим ANGLE как в BF 4.5",
    "fileStatus": "todo",
    "bench": false,
@@ -766,7 +1269,7 @@
   },
   {
    "id": "035",
-   "section": 1,
+   "section": 3,
    "title": "Режим HORIZON как в BF 4.5",
    "fileStatus": "todo",
    "bench": false,
@@ -788,7 +1291,7 @@
   },
   {
    "id": "036",
-   "section": 1,
+   "section": 3,
    "title": "Acro trainer",
    "fileStatus": "todo",
    "bench": false,
@@ -808,7 +1311,7 @@
   },
   {
    "id": "037",
-   "section": 1,
+   "section": 3,
    "title": "Launch control",
    "fileStatus": "todo",
    "bench": false,
@@ -830,7 +1333,7 @@
   },
   {
    "id": "038",
-   "section": 1,
+   "section": 3,
    "title": "Crash recovery",
    "fileStatus": "todo",
    "bench": false,
@@ -857,7 +1360,7 @@
   },
   {
    "id": "039",
-   "section": 1,
+   "section": 3,
    "title": "EZ landing",
    "fileStatus": "todo",
    "bench": false,
@@ -878,7 +1381,7 @@
   },
   {
    "id": "040",
-   "section": 1,
+   "section": 3,
    "title": "mixer_type LEGACY / LINEAR / DYNAMIC",
    "fileStatus": "todo",
    "bench": false,
@@ -896,7 +1399,7 @@
   },
   {
    "id": "041",
-   "section": 1,
+   "section": 3,
    "title": "Dynamic idle",
    "fileStatus": "todo",
    "bench": false,
@@ -919,7 +1422,7 @@
   },
   {
    "id": "042",
-   "section": 1,
+   "section": 3,
    "title": "Проверка BF-функций регулятора в симуляции",
    "fileStatus": "todo",
    "bench": false,
@@ -934,53 +1437,8 @@
    "tab": ""
   },
   {
-   "id": "043",
-   "section": 1,
-   "title": "Studio: вкладка «PID»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "bf": "вкладка PID Tuning конфигуратора",
-   "what": "таблица P/I/D/Dmax/F по осям, ползунки упрощённой настройки, профили, график TPA, переключатель источника (модель/BF), полоса запаса устойчивости, «применить/сохранить».",
-   "files": "../openplane-studio/src (новая вкладка Copter/PID)",
-   "test": "тест компонентов приложения + живая плата на фейке (протокол 010)",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "044",
-   "section": 1,
-   "title": "Studio: график отклика",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "bf": "аналога нет (BF — только по blackbox)",
-   "what": "переходный процесс угловой скорости из модели при текущих PID (и запасы) — меняешь ползунок, видишь ступеньку.",
-   "files": "../openplane-studio/src, расчёт — в прошивке (`@stepresponse`) или копия модели",
-   "test": "ступенька совпадает с test_copter_sim",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "D01",
-   "section": 1,
-   "title": "Документация: PID-профиль (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
-   "what": "раздел «Настройки регулятора» в COPTER.md и переводы; README — строка в разделе коптера.",
-   "files": "docs/COPTER.md, docs/i18n/*/COPTER.md",
-   "settings": [],
-   "tab": ""
-  },
-  {
    "id": "045",
-   "section": 2,
+   "section": 4,
    "title": "rates_type BETAFLIGHT",
    "fileStatus": "todo",
    "bench": false,
@@ -1002,7 +1460,7 @@
   },
   {
    "id": "046",
-   "section": 2,
+   "section": 4,
    "title": "rates_type ACTUAL",
    "fileStatus": "todo",
    "bench": false,
@@ -1020,7 +1478,7 @@
   },
   {
    "id": "047",
-   "section": 2,
+   "section": 4,
    "title": "rates_type KISS",
    "fileStatus": "todo",
    "bench": false,
@@ -1037,7 +1495,7 @@
   },
   {
    "id": "048",
-   "section": 2,
+   "section": 4,
    "title": "rates_type RACEFLIGHT",
    "fileStatus": "todo",
    "bench": false,
@@ -1054,7 +1512,7 @@
   },
   {
    "id": "049",
-   "section": 2,
+   "section": 4,
    "title": "rates_type QUICK",
    "fileStatus": "todo",
    "bench": false,
@@ -1072,7 +1530,7 @@
   },
   {
    "id": "050",
-   "section": 2,
+   "section": 4,
    "title": "Пределы расхода",
    "fileStatus": "todo",
    "bench": false,
@@ -1091,7 +1549,7 @@
   },
   {
    "id": "051",
-   "section": 2,
+   "section": 4,
    "title": "Кривая газа",
    "fileStatus": "todo",
    "bench": false,
@@ -1110,7 +1568,7 @@
   },
   {
    "id": "052",
-   "section": 2,
+   "section": 4,
    "title": "Ограничение газа",
    "fileStatus": "todo",
    "bench": false,
@@ -1127,23 +1585,8 @@
    "tab": "Rates"
   },
   {
-   "id": "053",
-   "section": 2,
-   "title": "Studio: вкладка «Rates»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "bf": "вкладка Rates конфигуратора",
-   "what": "график кривой по осям, выбор типа, профили, живая точка стика, 3D-модель коптера крутится с расходом.",
-   "files": "../openplane-studio/src",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
    "id": "054",
-   "section": 3,
+   "section": 5,
    "title": "Типы ФНЧ гироскопа",
    "fileStatus": "todo",
    "bench": false,
@@ -1165,7 +1608,7 @@
   },
   {
    "id": "055",
-   "section": 3,
+   "section": 5,
    "title": "Динамический ФНЧ гироскопа",
    "fileStatus": "todo",
    "bench": false,
@@ -1185,7 +1628,7 @@
   },
   {
    "id": "056",
-   "section": 3,
+   "section": 5,
    "title": "Статические режекторы гироскопа",
    "fileStatus": "todo",
    "bench": false,
@@ -1205,7 +1648,7 @@
   },
   {
    "id": "057",
-   "section": 3,
+   "section": 5,
    "title": "Типы ФНЧ D",
    "fileStatus": "todo",
    "bench": false,
@@ -1226,7 +1669,7 @@
   },
   {
    "id": "058",
-   "section": 3,
+   "section": 5,
    "title": "Динамический ФНЧ D",
    "fileStatus": "todo",
    "bench": false,
@@ -1245,7 +1688,7 @@
   },
   {
    "id": "059",
-   "section": 3,
+   "section": 5,
    "title": "Режектор D",
    "fileStatus": "todo",
    "bench": false,
@@ -1263,7 +1706,7 @@
   },
   {
    "id": "060",
-   "section": 3,
+   "section": 5,
    "title": "Динамический режектор: анализ спектра (SDFT)",
    "fileStatus": "todo",
    "bench": false,
@@ -1282,7 +1725,7 @@
   },
   {
    "id": "061",
-   "section": 3,
+   "section": 5,
    "title": "Динамический режектор: фильтры по пикам",
    "fileStatus": "todo",
    "bench": false,
@@ -1301,7 +1744,7 @@
   },
   {
    "id": "062",
-   "section": 3,
+   "section": 5,
    "title": "Настройки RPM-фильтра",
    "fileStatus": "todo",
    "bench": false,
@@ -1325,7 +1768,7 @@
   },
   {
    "id": "063",
-   "section": 3,
+   "section": 5,
    "title": "Режекторы по каждому мотору",
    "fileStatus": "todo",
    "bench": false,
@@ -1341,7 +1784,7 @@
   },
   {
    "id": "064",
-   "section": 3,
+   "section": 5,
    "title": "Упрощённые ползунки фильтров",
    "fileStatus": "todo",
    "bench": false,
@@ -1361,7 +1804,7 @@
   },
   {
    "id": "065",
-   "section": 3,
+   "section": 5,
    "title": "Фильтр в чипе гироскопа",
    "fileStatus": "todo",
    "bench": false,
@@ -1379,7 +1822,7 @@
   },
   {
    "id": "066",
-   "section": 3,
+   "section": 5,
    "title": "ФНЧ акселерометра, калибровка, триммеры",
    "fileStatus": "todo",
    "bench": false,
@@ -1400,7 +1843,7 @@
   },
   {
    "id": "067",
-   "section": 3,
+   "section": 5,
    "title": "Фильтр ориентации",
    "fileStatus": "todo",
    "bench": false,
@@ -1419,7 +1862,7 @@
   },
   {
    "id": "068",
-   "section": 3,
+   "section": 5,
    "title": "Калибровка гироскопа",
    "fileStatus": "todo",
    "bench": false,
@@ -1438,7 +1881,7 @@
   },
   {
    "id": "069",
-   "section": 3,
+   "section": 5,
    "title": "Yaw spin recovery",
    "fileStatus": "todo",
    "bench": false,
@@ -1458,7 +1901,7 @@
   },
   {
    "id": "070",
-   "section": 3,
+   "section": 5,
    "title": "Ручной поворот платы",
    "fileStatus": "todo",
    "bench": false,
@@ -1478,47 +1921,8 @@
    "tab": "Настройка платы"
   },
   {
-   "id": "071",
-   "section": 3,
-   "title": "Studio: вкладка «Фильтры»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "what": "АЧХ/ФЧХ цепочки (ФНЧ, режекторы, задержки) из модели, живой спектр гироскопа (060), ползунки, запас контура.",
-   "files": "../openplane-studio/src",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "072",
-   "section": 3,
-   "title": "Studio: вкладка «Настройка платы»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "what": "3D-коптер по живой ориентации, калибровки (гироскоп, акселерометр, 3 позы), поворот платы.",
-   "files": "../openplane-studio/src",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "D02",
-   "section": 3,
-   "title": "Документация: расходы и фильтры (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
-   "settings": [],
-   "tab": ""
-  },
-  {
    "id": "073",
-   "section": 4,
+   "section": 6,
    "title": "Протокол регуляторов без пересборки",
    "fileStatus": "todo",
    "bench": false,
@@ -1538,7 +1942,7 @@
   },
   {
    "id": "074",
-   "section": 4,
+   "section": 6,
    "title": "Коллекторные моторы (BRUSHED)",
    "fileStatus": "todo",
    "bench": false,
@@ -1557,7 +1961,7 @@
   },
   {
    "id": "075",
-   "section": 4,
+   "section": 6,
    "title": "Холостые и минимальная команда",
    "fileStatus": "todo",
    "bench": false,
@@ -1577,7 +1981,7 @@
   },
   {
    "id": "076",
-   "section": 4,
+   "section": 6,
    "title": "Пропеллеры наружу и порядок выходов",
    "fileStatus": "todo",
    "bench": false,
@@ -1597,7 +2001,7 @@
   },
   {
    "id": "077",
-   "section": 4,
+   "section": 6,
    "title": "Своя рама: mmix",
    "fileStatus": "todo",
    "bench": false,
@@ -1616,7 +2020,7 @@
   },
   {
    "id": "078",
-   "section": 4,
+   "section": 6,
    "title": "Трикоптер (мотор + серво рысканья)",
    "fileStatus": "todo",
    "bench": false,
@@ -1635,7 +2039,7 @@
   },
   {
    "id": "079",
-   "section": 4,
+   "section": 6,
    "title": "Проверка моторов из CLI",
    "fileStatus": "todo",
    "bench": false,
@@ -1653,55 +2057,8 @@
    "tab": "Моторы"
   },
   {
-   "id": "080",
-   "section": 4,
-   "title": "DShot: кадры на таймере с DMA (STM32H7)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`motor_pwm_protocol = DSHOT150/300/600`",
-   "what": "драйвер DShot: таймер в режиме burst DMA, буфер длительностей (EscProtocol::frameToPulses уже есть), отправка раз в цикл.",
-   "files": "новый hal/stm32/Stm32Dshot.h",
-   "test": "test_app_stm32_copter на фейке DMA: длительности бит, CRC, частота",
-   "ui": "«Моторы»",
-   "settings": [
-    "motor_pwm_protocol"
-   ],
-   "tab": "Моторы"
-  },
-  {
-   "id": "081",
-   "section": 4,
-   "title": "DShot: несколько таймеров и пины Matek/DevEBox",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "—",
-   "what": "S1–S8 на TIM1/TIM2/TIM4 — одновременный запуск, без конфликтов DMA-потоков.",
-   "files": "hal/stm32/Stm32Dshot.h",
-   "test": "test_app_stm32_copter",
-   "ui": "—",
-   "settings": [],
-   "tab": ""
-  },
-  {
-   "id": "082",
-   "section": 4,
-   "title": "DShot: проверка на стенде",
-   "fileStatus": "todo",
-   "bench": true,
-   "repo": "firmware",
-   "docs": false,
-   "what": "логический анализатор или ESC: кадры, взвод ESC, газ.",
-   "ui": "—",
-   "settings": [],
-   "tab": ""
-  },
-  {
    "id": "083",
-   "section": 4,
+   "section": 6,
    "title": "DShot: команды",
    "fileStatus": "todo",
    "bench": false,
@@ -1719,7 +2076,7 @@
   },
   {
    "id": "084",
-   "section": 4,
+   "section": 6,
    "title": "Направление моторов командой DShot",
    "fileStatus": "todo",
    "bench": false,
@@ -1735,7 +2092,7 @@
   },
   {
    "id": "085",
-   "section": 4,
+   "section": 6,
    "title": "3D-режим (реверс)",
    "fileStatus": "todo",
    "bench": false,
@@ -1750,7 +2107,7 @@
   },
   {
    "id": "086",
-   "section": 4,
+   "section": 6,
    "title": "Turtle mode (переворот после падения)",
    "fileStatus": "todo",
    "bench": false,
@@ -1768,55 +2125,8 @@
    "tab": "Режимы"
   },
   {
-   "id": "087",
-   "section": 4,
-   "title": "Двунаправленный DShot: приём ответа (GCR)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`dshot_bidir`",
-   "what": "переключение пина на вход, захват таймером/DMA, декодирование GCR → eRPM.",
-   "files": "hal/stm32/Stm32Dshot.h, copter/EscProtocol.h",
-   "test": "test_copter: декодер на эталонных кадрах; test_app_stm32_copter на фейке захвата",
-   "ui": "«Моторы»: обороты каждого мотора живьём",
-   "settings": [
-    "dshot_bidir"
-   ],
-   "tab": "Моторы"
-  },
-  {
-   "id": "088",
-   "section": 4,
-   "title": "Обороты: число полюсов и проверка",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`motor_poles`, `dshot_bidir` ошибки (%)",
-   "files": "copter/Params.h",
-   "test": "test_copter",
-   "ui": "«Моторы»: % ошибок телеметрии",
-   "settings": [
-    "motor_poles",
-    "dshot_bidir"
-   ],
-   "tab": "Моторы"
-  },
-  {
-   "id": "089",
-   "section": 4,
-   "title": "Двунаправленный DShot: стенд",
-   "fileStatus": "todo",
-   "bench": true,
-   "repo": "firmware",
-   "docs": false,
-   "settings": [],
-   "tab": ""
-  },
-  {
    "id": "090",
-   "section": 4,
+   "section": 6,
    "title": "Обороты из DShot — в режекторы и модель",
    "fileStatus": "todo",
    "bench": false,
@@ -1831,43 +2141,8 @@
    "tab": "Фильтры"
   },
   {
-   "id": "091",
-   "section": 4,
-   "title": "Extended DShot telemetry",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`dshot_edt`",
-   "what": "температура, напряжение, ток ESC.",
-   "files": "hal/stm32/Stm32Dshot.h",
-   "test": "test_copter (декодер)",
-   "ui": "«Моторы»",
-   "settings": [
-    "dshot_edt"
-   ],
-   "tab": "Моторы"
-  },
-  {
-   "id": "092",
-   "section": 4,
-   "title": "ESC-телеметрия по UART (KISS/BLHeli32)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`esc_sensor` (feature ESC_SENSOR)",
-   "files": "новый sensors/EscSensor.h",
-   "test": "test_app_stm32_copter",
-   "ui": "«Моторы»",
-   "settings": [
-    "esc_sensor"
-   ],
-   "tab": "Моторы"
-  },
-  {
    "id": "093",
-   "section": 4,
+   "section": 6,
    "title": "Dynamic idle на реальных оборотах",
    "fileStatus": "todo",
    "bench": false,
@@ -1883,7 +2158,7 @@
   },
   {
    "id": "094",
-   "section": 4,
+   "section": 6,
    "title": "ESC passthrough (BLHeli 4-way)",
    "fileStatus": "todo",
    "bench": false,
@@ -1899,7 +2174,7 @@
   },
   {
    "id": "095",
-   "section": 4,
+   "section": 6,
    "title": "ESC passthrough: стенд",
    "fileStatus": "todo",
    "bench": true,
@@ -1909,52 +2184,8 @@
    "tab": ""
   },
   {
-   "id": "096",
-   "section": 4,
-   "title": "Studio: вкладка «Моторы»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "what": "схема рамы, протокол, холостые, ползунки моторов с защитой, обороты/температура, направление кликом.",
-   "files": "../openplane-studio/src",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "D03",
-   "section": 4,
-   "title": "Документация: моторы и DShot (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
-   "settings": [],
-   "tab": ""
-  },
-  {
-   "id": "097",
-   "section": 5,
-   "title": "Угол для ARM и автодисарм",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`small_angle`, `auto_disarm_delay`",
-   "now": "25° зашит; автодисарма нет.",
-   "files": "copter/CopterController.h",
-   "test": "test_copter",
-   "ui": "«Безопасность»",
-   "settings": [
-    "small_angle",
-    "auto_disarm_delay"
-   ],
-   "tab": "Безопасность"
-  },
-  {
    "id": "098",
-   "section": 5,
+   "section": 7,
    "title": "Airmode с порогом газа",
    "fileStatus": "todo",
    "bench": false,
@@ -1971,28 +2202,8 @@
    "tab": "Безопасность"
   },
   {
-   "id": "099",
-   "section": 5,
-   "title": "Runaway takeoff prevention",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`runaway_takeoff_prevention`, `runaway_takeoff_deactivate_delay`, `runaway_takeoff_deactivate_throttle_percent`",
-   "what": "не та сторона мотора/неверная плата → коптер «убегает» на взлёте → DISARM.",
-   "files": "copter/CopterController.h",
-   "test": "test_copter_sim: перепутанные моторы → DISARM за 1 с",
-   "ui": "«Безопасность»",
-   "settings": [
-    "runaway_takeoff_prevention",
-    "runaway_takeoff_deactivate_delay",
-    "runaway_takeoff_deactivate_throttle_percent"
-   ],
-   "tab": "Безопасность"
-  },
-  {
    "id": "100",
-   "section": 5,
+   "section": 7,
    "title": "PREARM",
    "fileStatus": "todo",
    "bench": false,
@@ -2006,83 +2217,8 @@
    "tab": "Режимы"
   },
   {
-   "id": "101",
-   "section": 5,
-   "title": "Флаги запрета ARM как в BF",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "arming disable flags (RXLOSS, FAILSAFE, ANGLE, CALIB, CLI, CMS, BOXFAILSAFE, RUNAWAY, CRASH, THROTTLE, MSP, PARALYZE, GPS, RESC, RPMFILTER, REBOOT_REQD, DSHOT_BBANG, NO_ACC_CAL, MOTOR_PROTO, ARMSWITCH)",
-   "now": "наши ArmBlock с текстом.",
-   "files": "copter/CopterController.h",
-   "test": "test_copter",
-   "ui": "строка состояния: значки причин",
-   "settings": [],
-   "tab": "Состояние"
-  },
-  {
-   "id": "102",
-   "section": 5,
-   "title": "Failsafe: этапы и задержки",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`failsafe_delay`, `failsafe_off_delay` / `failsafe_landing_time`, `failsafe_throttle`, `failsafe_throttle_low_delay`, `failsafe_recovery_delay`, `failsafe_stick_threshold`",
-   "now": "охрана 0.3 с, снижение 0.7 м/с, возврат через 1 с, максимум 120 с.",
-   "files": "copter/CopterController.h",
-   "test": "test_copter_sim",
-   "ui": "вкладка «Failsafe»: шкала времени этапов",
-   "settings": [
-    "failsafe_delay",
-    "failsafe_off_delay",
-    "failsafe_landing_time",
-    "failsafe_throttle",
-    "failsafe_throttle_low_delay",
-    "failsafe_recovery_delay",
-    "failsafe_stick_threshold"
-   ],
-   "tab": "Failsafe"
-  },
-  {
-   "id": "103",
-   "section": 5,
-   "title": "Failsafe: процедура",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`failsafe_procedure` (AUTO-LAND / DROP / GPS-RESCUE), `failsafe_switch_mode` (STAGE1/STAGE2/KILL), режим FAILSAFE",
-   "files": "copter/CopterController.h",
-   "test": "test_copter_sim: каждая процедура",
-   "ui": "«Failsafe»",
-   "settings": [
-    "failsafe_procedure",
-    "failsafe_switch_mode"
-   ],
-   "tab": "Failsafe"
-  },
-  {
-   "id": "104",
-   "section": 5,
-   "title": "Значения каналов при потере связи",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`rxfail <канал> <режим> <значение>`",
-   "files": "rc/RcReceiver.h, src/stm32/main_copter.cpp",
-   "test": "test_app_stm32_copter",
-   "ui": "«Failsafe»",
-   "settings": [
-    "rxfail"
-   ],
-   "tab": "Failsafe"
-  },
-  {
    "id": "105",
-   "section": 5,
+   "section": 7,
    "title": "Команды стиками",
    "fileStatus": "todo",
    "bench": false,
@@ -2097,7 +2233,7 @@
   },
   {
    "id": "106",
-   "section": 5,
+   "section": 7,
    "title": "PARALYZE",
    "fileStatus": "todo",
    "bench": false,
@@ -2112,7 +2248,7 @@
   },
   {
    "id": "107",
-   "section": 5,
+   "section": 7,
    "title": "Пищалка: события",
    "fileStatus": "todo",
    "bench": false,
@@ -2133,7 +2269,7 @@
   },
   {
    "id": "108",
-   "section": 5,
+   "section": 7,
    "title": "Пищалка: режимы",
    "fileStatus": "todo",
    "bench": false,
@@ -2148,7 +2284,7 @@
   },
   {
    "id": "109",
-   "section": 5,
+   "section": 7,
    "title": "DShot-маяк",
    "fileStatus": "todo",
    "bench": false,
@@ -2166,32 +2302,8 @@
    "tab": "Пищалка"
   },
   {
-   "id": "110",
-   "section": 5,
-   "title": "Studio: вкладки «Безопасность», «Failsafe», «Режимы», «Пищалка»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "files": "../openplane-studio/src",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "D04",
-   "section": 5,
-   "title": "Документация: безопасность (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
-   "settings": [],
-   "tab": ""
-  },
-  {
    "id": "111",
-   "section": 6,
+   "section": 8,
    "title": "RC smoothing как в BF",
    "fileStatus": "todo",
    "bench": false,
@@ -2215,7 +2327,7 @@
   },
   {
    "id": "112",
-   "section": 6,
+   "section": 8,
    "title": "Мёртвые зоны",
    "fileStatus": "todo",
    "bench": false,
@@ -2233,7 +2345,7 @@
   },
   {
    "id": "113",
-   "section": 6,
+   "section": 8,
    "title": "RSSI и качество связи",
    "fileStatus": "todo",
    "bench": false,
@@ -2253,7 +2365,7 @@
   },
   {
    "id": "114",
-   "section": 6,
+   "section": 8,
    "title": "Приёмник GHST",
    "fileStatus": "todo",
    "bench": false,
@@ -2270,7 +2382,7 @@
   },
   {
    "id": "115",
-   "section": 6,
+   "section": 8,
    "title": "Приёмник Spektrum / SRXL2",
    "fileStatus": "todo",
    "bench": false,
@@ -2287,7 +2399,7 @@
   },
   {
    "id": "116",
-   "section": 6,
+   "section": 8,
    "title": "Приёмник FPort",
    "fileStatus": "todo",
    "bench": false,
@@ -2304,7 +2416,7 @@
   },
   {
    "id": "117",
-   "section": 6,
+   "section": 8,
    "title": "Инверсия и полудуплекс UART приёмника",
    "fileStatus": "todo",
    "bench": false,
@@ -2322,7 +2434,7 @@
   },
   {
    "id": "118",
-   "section": 6,
+   "section": 8,
    "title": "Телеметрия CRSF (ExpressLRS)",
    "fileStatus": "todo",
    "bench": false,
@@ -2337,7 +2449,7 @@
   },
   {
    "id": "119",
-   "section": 6,
+   "section": 8,
    "title": "Телеметрия iBUS (FlySky, iBUS-SENS)",
    "fileStatus": "todo",
    "bench": false,
@@ -2353,7 +2465,7 @@
   },
   {
    "id": "120",
-   "section": 6,
+   "section": 8,
    "title": "Телеметрия SmartPort (FrSky)",
    "fileStatus": "todo",
    "bench": false,
@@ -2368,7 +2480,7 @@
   },
   {
    "id": "121",
-   "section": 6,
+   "section": 8,
    "title": "Подстройки в полёте крутилками",
    "fileStatus": "todo",
    "bench": false,
@@ -2386,7 +2498,7 @@
   },
   {
    "id": "122",
-   "section": 6,
+   "section": 8,
    "title": "Профиль крутилкой/тумблером",
    "fileStatus": "todo",
    "bench": false,
@@ -2402,127 +2514,8 @@
    "tab": "Подстройки"
   },
   {
-   "id": "123",
-   "section": 6,
-   "title": "Studio: вкладки «Приёмник» и «Подстройки»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "files": "../openplane-studio/src",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "D05",
-   "section": 6,
-   "title": "Документация: пульт и телеметрия (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
-   "settings": [],
-   "tab": ""
-  },
-  {
-   "id": "124",
-   "section": 7,
-   "title": "Напряжения банки",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`vbat_max_cell_voltage`, `vbat_full_cell_voltage`, `vbat_min_cell_voltage`, `vbat_warning_cell_voltage`, `vbat_hysteresis`, `vbat_detect_cell_voltage`, `force_battery_cell_count`",
-   "now": "minCellVolts 3.3 для ARM; число банок — из описания.",
-   "files": "copter/CopterController.h, src/stm32/main_copter.cpp",
-   "test": "test_app_stm32_copter",
-   "ui": "вкладка «Питание»",
-   "settings": [
-    "vbat_max_cell_voltage",
-    "vbat_full_cell_voltage",
-    "vbat_min_cell_voltage",
-    "vbat_warning_cell_voltage",
-    "vbat_hysteresis",
-    "vbat_detect_cell_voltage",
-    "force_battery_cell_count"
-   ],
-   "tab": "Питание"
-  },
-  {
-   "id": "125",
-   "section": 7,
-   "title": "Делитель и датчик тока",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`vbat_scale`, `vbat_divider`, `vbat_multiplier`, `ibata_scale`, `ibata_offset`, `current_meter`, `battery_meter`",
-   "now": "BLACKBOX_VBAT_DIVIDER зашит, ток не меряется.",
-   "files": "src/stm32/main_copter.cpp",
-   "test": "test_app_stm32_copter",
-   "ui": "«Питание»: калибровка по мультиметру",
-   "settings": [
-    "vbat_scale",
-    "vbat_divider",
-    "vbat_multiplier",
-    "ibata_scale",
-    "ibata_offset",
-    "current_meter",
-    "battery_meter"
-   ],
-   "tab": "Питание"
-  },
-  {
-   "id": "126",
-   "section": 7,
-   "title": "Ёмкость и предупреждения",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`bat_capacity`, `use_vbat_alerts`, `use_cbat_alerts`, `cbat_alert_percent`, `vbat_cutoff_percent`, `vbat_duration_for_warning`, `vbat_duration_for_critical`, `vbat_lpf_period`, `ibat_lpf_period`",
-   "files": "новый copter/Battery.h",
-   "test": "test_copter",
-   "ui": "«Питание»",
-   "settings": [
-    "bat_capacity",
-    "use_vbat_alerts",
-    "use_cbat_alerts",
-    "cbat_alert_percent",
-    "vbat_cutoff_percent",
-    "vbat_duration_for_warning",
-    "vbat_duration_for_critical",
-    "vbat_lpf_period",
-    "ibat_lpf_period"
-   ],
-   "tab": "Питание"
-  },
-  {
-   "id": "127",
-   "section": 7,
-   "title": "Studio: вкладка «Питание»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "D06",
-   "section": 7,
-   "title": "Документация: питание (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
-   "settings": [],
-   "tab": ""
-  },
-  {
    "id": "128",
-   "section": 8,
+   "section": 9,
    "title": "Удержание высоты как в BF 2025",
    "fileStatus": "todo",
    "bench": false,
@@ -2541,7 +2534,7 @@
   },
   {
    "id": "129",
-   "section": 8,
+   "section": 9,
    "title": "GPS для коптера",
    "fileStatus": "todo",
    "bench": false,
@@ -2563,7 +2556,7 @@
   },
   {
    "id": "130",
-   "section": 8,
+   "section": 9,
    "title": "Оценка положения и скорости (GPS + акселерометр)",
    "fileStatus": "todo",
    "bench": false,
@@ -2578,7 +2571,7 @@
   },
   {
    "id": "131",
-   "section": 8,
+   "section": 9,
    "title": "Компас для коптера",
    "fileStatus": "todo",
    "bench": false,
@@ -2597,7 +2590,7 @@
   },
   {
    "id": "132",
-   "section": 8,
+   "section": 9,
    "title": "Удержание позиции",
    "fileStatus": "todo",
    "bench": false,
@@ -2616,7 +2609,7 @@
   },
   {
    "id": "133",
-   "section": 8,
+   "section": 9,
    "title": "GPS Rescue: набор высоты и разворот",
    "fileStatus": "todo",
    "bench": false,
@@ -2637,7 +2630,7 @@
   },
   {
    "id": "134",
-   "section": 8,
+   "section": 9,
    "title": "GPS Rescue: полёт домой",
    "fileStatus": "todo",
    "bench": false,
@@ -2659,7 +2652,7 @@
   },
   {
    "id": "135",
-   "section": 8,
+   "section": 9,
    "title": "GPS Rescue: снижение и посадка",
    "fileStatus": "todo",
    "bench": false,
@@ -2679,7 +2672,7 @@
   },
   {
    "id": "136",
-   "section": 8,
+   "section": 9,
    "title": "GPS Rescue: проверки",
    "fileStatus": "todo",
    "bench": false,
@@ -2697,32 +2690,8 @@
    "tab": "Возврат"
   },
   {
-   "id": "137",
-   "section": 8,
-   "title": "Studio: вкладки «Автопилот», «GPS», «Возврат»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "what": "карта с домом и траекторией, профиль высоты возврата.",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "D07",
-   "section": 8,
-   "title": "Документация: высота и GPS (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
-   "settings": [],
-   "tab": ""
-  },
-  {
    "id": "138",
-   "section": 9,
+   "section": 10,
    "title": "Чёрный ящик коптера",
    "fileStatus": "done",
    "bench": false,
@@ -2742,24 +2711,8 @@
    "tab": "Чёрный ящик"
   },
   {
-   "id": "139",
-   "section": 9,
-   "title": "Формат журнала Betaflight (.BFL)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "формат blackbox (заголовок H, кадры I/P, кодирование знаков переменной длины)",
-   "what": "писать в формате BF — открывается в Blackbox Explorer и PIDtoolbox; своя реализация по описанию формата.",
-   "files": "новый telemetry/BflEncoder.h",
-   "test": "разбор нашим декодером + проверка заголовка; отдельно — открыть в Blackbox Explorer (пользователь)",
-   "ui": "«Чёрный ящик»: «открыть в Blackbox Explorer»",
-   "settings": [],
-   "tab": "Чёрный ящик"
-  },
-  {
    "id": "140",
-   "section": 9,
+   "section": 10,
    "title": "Выбор полей и debug_mode",
    "fileStatus": "todo",
    "bench": false,
@@ -2777,7 +2730,7 @@
   },
   {
    "id": "141",
-   "section": 9,
+   "section": 10,
    "title": "Быстрый цикл: IMU 8 кГц по DRDY",
    "fileStatus": "todo",
    "bench": false,
@@ -2795,7 +2748,7 @@
   },
   {
    "id": "142",
-   "section": 9,
+   "section": 10,
    "title": "Быстрый цикл: PID 2–4 кГц вне тика FreeRTOS",
    "fileStatus": "todo",
    "bench": false,
@@ -2813,19 +2766,19 @@
   },
   {
    "id": "143",
-   "section": 9,
+   "section": 10,
    "title": "Быстрый цикл: стенд",
    "fileStatus": "todo",
    "bench": true,
    "repo": "firmware",
    "docs": false,
-   "what": "время цикла и джиттер на Matek H743 (`status`, `tasks`).",
+   "what": "время цикла и джиттер на F405 (GETFUN) и Matek H743 (`status`, `tasks`).",
    "settings": [],
    "tab": ""
   },
   {
    "id": "144",
-   "section": 9,
+   "section": 10,
    "title": "Studio: вкладка «Чёрный ящик»",
    "fileStatus": "done",
    "bench": false,
@@ -2838,24 +2791,14 @@
    "tab": "Приложение"
   },
   {
-   "id": "D08",
-   "section": 9,
-   "title": "Документация: чёрный ящик и цикл (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
-   "settings": [],
-   "tab": ""
-  },
-  {
    "id": "145",
-   "section": 10,
+   "section": 11,
    "title": "OSD: драйвер AT7456E (MAX7456) на Matek H743",
    "fileStatus": "todo",
    "bench": false,
    "repo": "firmware",
    "docs": false,
+   "now": "драйвер и элементы уже есть с квадрика (PLAN_QUAD7 Q8: copter/Osd.h, hal/Max7456.h, F405); осталось — H743 и пины по заголовку платы.",
    "bf": "`osd_*`, `max7456_*`",
    "what": "SPI-драйвер, видеостандарт, вывод символов, загрузка шрифта.",
    "files": "новый hal/stm32/Max7456.h",
@@ -2866,7 +2809,7 @@
   },
   {
    "id": "146",
-   "section": 10,
+   "section": 11,
    "title": "OSD: шрифт и загрузка",
    "fileStatus": "todo",
    "bench": false,
@@ -2883,7 +2826,7 @@
   },
   {
    "id": "147",
-   "section": 10,
+   "section": 11,
    "title": "OSD: элементы полёта",
    "fileStatus": "todo",
    "bench": false,
@@ -2909,7 +2852,7 @@
   },
   {
    "id": "148",
-   "section": 10,
+   "section": 11,
    "title": "OSD: элементы навигации",
    "fileStatus": "todo",
    "bench": false,
@@ -2934,7 +2877,7 @@
   },
   {
    "id": "149",
-   "section": 10,
+   "section": 11,
    "title": "OSD: питание и моторы",
    "fileStatus": "todo",
    "bench": false,
@@ -2956,7 +2899,7 @@
   },
   {
    "id": "150",
-   "section": 10,
+   "section": 11,
    "title": "OSD: предупреждения и статистика после полёта",
    "fileStatus": "todo",
    "bench": false,
@@ -2974,7 +2917,7 @@
   },
   {
    "id": "151",
-   "section": 10,
+   "section": 11,
    "title": "OSD: меню настроек стиками (CMS)",
    "fileStatus": "todo",
    "bench": false,
@@ -2990,7 +2933,7 @@
   },
   {
    "id": "152",
-   "section": 10,
+   "section": 11,
    "title": "OSD: стенд",
    "fileStatus": "todo",
    "bench": true,
@@ -3001,7 +2944,7 @@
   },
   {
    "id": "153",
-   "section": 10,
+   "section": 11,
    "title": "VTX: SmartAudio и Tramp",
    "fileStatus": "todo",
    "bench": false,
@@ -3022,7 +2965,7 @@
   },
   {
    "id": "154",
-   "section": 10,
+   "section": 11,
    "title": "Цифровое видео (DJI/Walksnail/HDZero) — MSP DisplayPort",
    "fileStatus": "todo",
    "bench": false,
@@ -3038,7 +2981,7 @@
   },
   {
    "id": "155",
-   "section": 10,
+   "section": 11,
    "title": "LED-лента WS2812",
    "fileStatus": "todo",
    "bench": false,
@@ -3057,7 +3000,7 @@
   },
   {
    "id": "156",
-   "section": 10,
+   "section": 11,
    "title": "Управление камерой RunCam",
    "fileStatus": "todo",
    "bench": false,
@@ -3071,75 +3014,8 @@
    "tab": "Видео"
   },
   {
-   "id": "157",
-   "section": 10,
-   "title": "Studio: вкладки «OSD», «Видео», «LED»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "what": "редактор OSD перетаскиванием, предпросмотр шрифта.",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "D09",
-   "section": 10,
-   "title": "Документация: OSD и видео (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
-   "settings": [],
-   "tab": ""
-  },
-  {
-   "id": "158",
-   "section": 11,
-   "title": "MSP: транспорт и базовые сообщения",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "MSP v1/v2 (API_VERSION, FC_VARIANT, FC_VERSION, BOARD_INFO, STATUS, RAW_IMU, ATTITUDE, ALTITUDE, ANALOG, RC, MOTOR)",
-   "what": "своя реализация по открытому описанию протокола.",
-   "files": "новый telemetry/Msp.h",
-   "test": "test_telemetry: кадры с CRC (v1 xor, v2 crc8 dvb-s2)",
-   "ui": "—",
-   "settings": [],
-   "tab": ""
-  },
-  {
-   "id": "159",
-   "section": 11,
-   "title": "MSP: чтение и запись настроек",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "MSP_PID / SET_PID, RC_TUNING, FILTER_CONFIG, ADVANCED_CONFIG, MODE_RANGES, MOTOR_CONFIG, FAILSAFE_CONFIG, EEPROM_WRITE",
-   "files": "telemetry/Msp.h, copter/Params.h",
-   "test": "test_telemetry",
-   "ui": "—",
-   "settings": [],
-   "tab": ""
-  },
-  {
-   "id": "160",
-   "section": 11,
-   "title": "Подключение конфигуратора Betaflight",
-   "fileStatus": "todo",
-   "bench": true,
-   "repo": "firmware",
-   "docs": false,
-   "what": "проверить, какие вкладки конфигуратора BF работают поверх 158–159; честно записать ограничения.",
-   "settings": [],
-   "tab": ""
-  },
-  {
    "id": "161",
-   "section": 11,
+   "section": 12,
    "title": "MSP для ELRS Backpack и очков",
    "fileStatus": "todo",
    "bench": false,
@@ -3154,7 +3030,7 @@
   },
   {
    "id": "162",
-   "section": 11,
+   "section": 12,
    "title": "MAVLink для коптера",
    "fileStatus": "todo",
    "bench": false,
@@ -3165,149 +3041,6 @@
    "files": "telemetry/MavlinkTelemetry.h (образец)",
    "test": "test_mavlink",
    "ui": "—",
-   "settings": [],
-   "tab": ""
-  },
-  {
-   "id": "163",
-   "section": 11,
-   "title": "Импорт diff из Betaflight",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "вывод `diff all`",
-   "what": "вставить diff BF в нашу CLI — понятное применяется, непонятное перечисляется списком.",
-   "files": "telemetry/CopterConsole.h",
-   "test": "test_app_stm32_copter: настоящий diff 4.5",
-   "ui": "«CLI»: кнопка «вставить diff из BF»",
-   "settings": [
-    "diff",
-    "all"
-   ],
-   "tab": "CLI"
-  },
-  {
-   "id": "D10",
-   "section": 11,
-   "title": "Документация: совместимость (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
-   "settings": [],
-   "tab": ""
-  },
-  {
-   "id": "164",
-   "section": 12,
-   "title": "HEADFREE и HEADADJ",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "режимы HEADFREE, HEADADJ",
-   "files": "copter/CopterController.h",
-   "test": "test_copter_sim",
-   "ui": "режимы",
-   "settings": [],
-   "tab": "Режимы"
-  },
-  {
-   "id": "165",
-   "section": 12,
-   "title": "FPV angle mix",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`fpv_mix_degrees`, режим FPV ANGLE MIX",
-   "files": "copter/CopterController.h",
-   "test": "test_copter",
-   "ui": "«Rates»",
-   "settings": [
-    "fpv_mix_degrees"
-   ],
-   "tab": "Rates"
-  },
-  {
-   "id": "166",
-   "section": 12,
-   "title": "Стабилизация камеры сервами",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "режим CAMSTAB, `gimbal_*`, сервы",
-   "files": "copter/CopterController.h, hal/stm32/Stm32ServoOutput.h",
-   "test": "test_app_stm32_copter",
-   "ui": "вкладка «Сервы»",
-   "settings": [],
-   "tab": "Сервы"
-  },
-  {
-   "id": "167",
-   "section": 12,
-   "title": "USER1–USER4 (пины по тумблеру)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "режимы USER1–4, `pinio_box`",
-   "files": "src/stm32/main_copter.cpp",
-   "test": "test_app_stm32_copter",
-   "ui": "«Режимы»",
-   "settings": [
-    "pinio_box"
-   ],
-   "tab": "Режимы"
-  },
-  {
-   "id": "168",
-   "section": 12,
-   "title": "Chirp — измерение коптера в полёте",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "режим CHIRP (BF 2025), `chirp_*`",
-   "what": "качание частот по оси → настоящие K и τ → уточнение модели и пересчёт настройки (наше: автонастройка по измерению).",
-   "files": "новый copter/Chirp.h, copter/Presets.h",
-   "test": "test_copter_sim: по chirp «вялой» физики восстановлены K и τ ±15 %",
-   "ui": "вкладка «Автонастройка»: кнопка, график Боде",
-   "settings": [],
-   "tab": "Автонастройка"
-  },
-  {
-   "id": "169",
-   "section": 12,
-   "title": "Автонастройка по chirp: стенд/полёт",
-   "fileStatus": "todo",
-   "bench": true,
-   "repo": "firmware",
-   "docs": false,
-   "settings": [],
-   "tab": ""
-  },
-  {
-   "id": "170",
-   "section": 12,
-   "title": "Studio: вкладки «Сервы» и «Автонастройка»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
-   "id": "D11",
-   "section": 12,
-   "title": "Документация: режимы и автонастройка (ru + 11 языков)",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": true,
    "settings": [],
    "tab": ""
   },
@@ -3324,31 +3057,309 @@
    "tab": ""
   },
   {
-   "id": "172",
+   "id": "D15",
    "section": 13,
-   "title": "Первый полёт",
-   "fileStatus": "todo",
-   "bench": true,
-   "repo": "firmware",
-   "docs": false,
-   "what": "без пропеллеров → привязанный → висение в ANGLE → ALT_HOLD → ACRO; журнал в BF-формате (139) → сравнение с симуляцией.",
-   "settings": [],
-   "tab": ""
-  },
-  {
-   "id": "D12",
-   "section": 13,
-   "title": "Документация: итог, README, дорожная карта (ru + 11 языков)",
+   "title": "Переводы: релиз 1.0 (11 языков)",
    "fileStatus": "todo",
    "bench": false,
    "repo": "firmware",
    "docs": true,
+   "what": "COPTER.md, README, дорожная карта — к релизу 1.0.",
    "settings": [],
    "tab": ""
   },
   {
-   "id": "173",
+   "id": "164",
    "section": 14,
+   "title": "HEADFREE и HEADADJ",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "режимы HEADFREE, HEADADJ",
+   "files": "copter/CopterController.h",
+   "test": "test_copter_sim",
+   "ui": "режимы",
+   "settings": [],
+   "tab": "Режимы"
+  },
+  {
+   "id": "165",
+   "section": 14,
+   "title": "FPV angle mix",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`fpv_mix_degrees`, режим FPV ANGLE MIX",
+   "files": "copter/CopterController.h",
+   "test": "test_copter",
+   "ui": "«Rates»",
+   "settings": [
+    "fpv_mix_degrees"
+   ],
+   "tab": "Rates"
+  },
+  {
+   "id": "166",
+   "section": 14,
+   "title": "Стабилизация камеры сервами",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "режим CAMSTAB, `gimbal_*`, сервы",
+   "files": "copter/CopterController.h, hal/stm32/Stm32ServoOutput.h",
+   "test": "test_app_stm32_copter",
+   "ui": "вкладка «Сервы»",
+   "settings": [],
+   "tab": "Сервы"
+  },
+  {
+   "id": "167",
+   "section": 14,
+   "title": "USER1–USER4 (пины по тумблеру)",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "режимы USER1–4, `pinio_box`",
+   "files": "src/stm32/main_copter.cpp",
+   "test": "test_app_stm32_copter",
+   "ui": "«Режимы»",
+   "settings": [
+    "pinio_box"
+   ],
+   "tab": "Режимы"
+  },
+  {
+   "id": "168",
+   "section": 14,
+   "title": "Chirp — измерение коптера в полёте",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "режим CHIRP (BF 2025), `chirp_*`",
+   "what": "качание частот по оси → настоящие K и τ → уточнение модели и пересчёт настройки (наше: автонастройка по измерению).",
+   "files": "новый copter/Chirp.h, copter/Presets.h",
+   "test": "test_copter_sim: по chirp «вялой» физики восстановлены K и τ ±15 %",
+   "ui": "вкладка «Автонастройка»: кнопка, график Боде",
+   "settings": [],
+   "tab": "Автонастройка"
+  },
+  {
+   "id": "169",
+   "section": 14,
+   "title": "Автонастройка по chirp: стенд/полёт",
+   "fileStatus": "todo",
+   "bench": true,
+   "repo": "firmware",
+   "docs": false,
+   "settings": [],
+   "tab": ""
+  },
+  {
+   "id": "043",
+   "section": 15,
+   "title": "Studio: вкладка «PID»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "bf": "вкладка PID Tuning конфигуратора",
+   "what": "таблица P/I/D/Dmax/F по осям, ползунки упрощённой настройки, профили, график TPA, переключатель источника (модель/BF), полоса запаса устойчивости, «применить/сохранить».",
+   "files": "../openplane-studio/src (новая вкладка Copter/PID)",
+   "test": "тест компонентов приложения + живая плата на фейке (протокол 010)",
+   "ui": "сам пункт",
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "044",
+   "section": 15,
+   "title": "Studio: график отклика",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "bf": "аналога нет (BF — только по blackbox)",
+   "what": "переходный процесс угловой скорости из модели при текущих PID (и запасы) — меняешь ползунок, видишь ступеньку.",
+   "files": "../openplane-studio/src, расчёт — в прошивке (`@stepresponse`) или копия модели",
+   "test": "ступенька совпадает с test_copter_sim",
+   "ui": "сам пункт",
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "053",
+   "section": 15,
+   "title": "Studio: вкладка «Rates»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "bf": "вкладка Rates конфигуратора",
+   "what": "график кривой по осям, выбор типа, профили, живая точка стика, 3D-модель коптера крутится с расходом.",
+   "files": "../openplane-studio/src",
+   "ui": "сам пункт",
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "071",
+   "section": 15,
+   "title": "Studio: вкладка «Фильтры»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "what": "АЧХ/ФЧХ цепочки (ФНЧ, режекторы, задержки) из модели, живой спектр гироскопа (060), ползунки, запас контура.",
+   "files": "../openplane-studio/src",
+   "ui": "сам пункт",
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "072",
+   "section": 15,
+   "title": "Studio: вкладка «Настройка платы»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "what": "3D-коптер по живой ориентации, калибровки (гироскоп, акселерометр, 3 позы), поворот платы.",
+   "files": "../openplane-studio/src",
+   "ui": "сам пункт",
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "096",
+   "section": 15,
+   "title": "Studio: вкладка «Моторы»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "what": "схема рамы, протокол, холостые, ползунки моторов с защитой, обороты/температура, направление кликом.",
+   "files": "../openplane-studio/src",
+   "ui": "сам пункт",
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "110",
+   "section": 15,
+   "title": "Studio: вкладки «Безопасность», «Failsafe», «Режимы», «Пищалка»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "files": "../openplane-studio/src",
+   "ui": "сам пункт",
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "123",
+   "section": 15,
+   "title": "Studio: вкладки «Приёмник» и «Подстройки»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "files": "../openplane-studio/src",
+   "ui": "сам пункт",
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "127",
+   "section": 15,
+   "title": "Studio: вкладка «Питание»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "137",
+   "section": 15,
+   "title": "Studio: вкладки «Автопилот», «GPS», «Возврат»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "what": "карта с домом и траекторией, профиль высоты возврата.",
+   "ui": "сам пункт",
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "157",
+   "section": 15,
+   "title": "Studio: вкладки «OSD», «Видео», «LED»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "what": "редактор OSD перетаскиванием, предпросмотр шрифта.",
+   "ui": "сам пункт",
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "170",
+   "section": 15,
+   "title": "Studio: вкладки «Сервы» и «Автонастройка»",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "studio",
+   "docs": false,
+   "settings": [],
+   "tab": "Приложение"
+  },
+  {
+   "id": "091",
+   "section": 15,
+   "title": "Extended DShot telemetry",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`dshot_edt`",
+   "what": "температура, напряжение, ток ESC.",
+   "files": "hal/stm32/Stm32Dshot.h",
+   "test": "test_copter (декодер)",
+   "ui": "«Моторы»",
+   "settings": [
+    "dshot_edt"
+   ],
+   "tab": "Моторы"
+  },
+  {
+   "id": "092",
+   "section": 15,
+   "title": "ESC-телеметрия по UART (KISS/BLHeli32)",
+   "fileStatus": "todo",
+   "bench": false,
+   "repo": "firmware",
+   "docs": false,
+   "bf": "`esc_sensor` (feature ESC_SENSOR)",
+   "files": "новый sensors/EscSensor.h",
+   "test": "test_app_stm32_copter",
+   "ui": "«Моторы»",
+   "settings": [
+    "esc_sensor"
+   ],
+   "tab": "Моторы"
+  },
+  {
+   "id": "173",
+   "section": 16,
    "title": "Телеметрия на телефон и в браузер",
    "fileStatus": "todo",
    "bench": false,
@@ -3365,7 +3376,7 @@
   },
   {
    "id": "174",
-   "section": 14,
+   "section": 16,
    "title": "Режимы и настройки с телефона",
    "fileStatus": "todo",
    "bench": false,
@@ -3381,7 +3392,7 @@
   },
   {
    "id": "175",
-   "section": 14,
+   "section": 16,
    "title": "Follow Me — коптер летит за пилотом",
    "fileStatus": "todo",
    "bench": false,
@@ -3397,7 +3408,7 @@
   },
   {
    "id": "176",
-   "section": 14,
+   "section": 16,
    "title": "Мелодия моторами по тумблеру и свой звук при включении",
    "fileStatus": "todo",
    "bench": false,
