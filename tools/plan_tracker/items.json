@@ -387,7 +387,7 @@
    "id": "104",
    "section": 1,
    "title": "Значения каналов при потере связи",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -395,6 +395,7 @@
    "files": "rc/RcReceiver.h, src/stm32/main_copter.cpp",
    "test": "test_app_stm32_copter",
    "ui": "«Failsafe»",
+   "result": "rxfail 0–17 как в BF (стики a/h, AUX h/s 750–2250 шагом 25) в RcConfig: CLI, diff/dump, флеш, приложение; AUX без связи или с битым импульсом — 0.3 с прежнее, затем rxfail; стик h — этап 1 failsafe на последнем положении (газ h — на последнем газе в ANGLE вместо высоты), этап 2 — автомат (коммит 9352ec3)",
    "settings": [
     "rxfail"
    ],
@@ -404,7 +405,7 @@
    "id": "124",
    "section": 1,
    "title": "Напряжения банки",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -414,6 +415,7 @@
    "files": "copter/CopterController.h, src/stm32/main_copter.cpp",
    "test": "test_app_stm32_copter",
    "ui": "вкладка «Питание»",
+   "result": "vbat_full_cell_voltage (по химии, OSD «BATT < FULL»), vbat_hysteresis 1 и логика порогов как в BF (вниз — порог − гистерезис, обратно — выше порога), vbat_detect_cell_voltage 300 (USB — не батарея), force_battery_cell_count (0 — из описания, не угадывать: Li-ion 6S); пороги Li-ion 280/310/425 уже были (коммит 9352ec3)",
    "settings": [
     "vbat_max_cell_voltage",
     "vbat_full_cell_voltage",
@@ -429,7 +431,7 @@
    "id": "125",
    "section": 1,
    "title": "Делитель и датчик тока",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -439,6 +441,7 @@
    "files": "src/stm32/main_copter.cpp",
    "test": "test_app_stm32_copter",
    "ui": "«Питание»: калибровка по мультиметру",
+   "result": "vbat_divider/vbat_multiplier (формула BF), battery_meter, current_meter со всеми значениями BF (действует ADC), масштабы — из дампа платы через bf_board.py (OPB_VBAT_DIVIDER/MULTIPLIER); калибровка: BatteryMonitor::vbatScaleFor/ibataScaleFor и команда приложения calibrate vbat|ibat. ibata_scale 100 у GETFUN — после дампа (178) (коммит 9352ec3)",
    "settings": [
     "vbat_scale",
     "vbat_divider",
@@ -454,7 +457,7 @@
    "id": "126",
    "section": 1,
    "title": "Ёмкость и предупреждения",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -462,6 +465,7 @@
    "files": "новый copter/Battery.h",
    "test": "test_copter",
    "ui": "«Питание»",
+   "result": "bat_capacity (0 — battery_mah), use_vbat_alerts, use_cbat_alerts + cbat_alert_percent (состояние — худшее из напряжения и расхода), vbat_cutoff_percent (LVC: газ стика за 10 с до доли), vbat_display/sag_lpf_period и ibat_lpf_period (ФНЧ 10/период Гц), vbat_duration_for_warning/critical — у нас 20 (BF 0): провал на панче не пищит (коммит 9352ec3)",
    "settings": [
     "bat_capacity",
     "use_vbat_alerts",
@@ -479,7 +483,7 @@
    "id": "080",
    "section": 1,
    "title": "DShot: кадры на таймере с DMA (F405 и H743)",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -488,6 +492,7 @@
    "files": "новый hal/stm32/Stm32Dshot.h",
    "test": "test_app_stm32_copter на фейке DMA: длительности бит, CRC, частота",
    "ui": "«Моторы»",
+   "result": "hal/stm32/Stm32Dshot.h: группы по таймерам, burst DMA в TIMx_DMAR на событие обновления (18 слотов: 16 бит + 2 нуля), без прерываний; потоки F405 по RM0090, H743 — DMA2 через DMAMUX; занятый поток — кадр пропускается; команды DShot ×10 с битом телеметрии; Stm32MotorOutput сам выбирает DShot; цикл быстрее maxLoopHz — ARM запрещён. Сборки F405/H743 с DSHOT600 компилируются, на железе не проверено (коммит 9352ec3)",
    "settings": [
     "motor_pwm_protocol"
    ],

@@ -188,32 +188,37 @@
 - **Файлы:** copter/CopterController.h · **Тест:** test_copter_sim: каждая процедура · **UI:** «Failsafe»
 - **Итог:** failsafe_procedure AUTO-LAND (наш дефолт; BF — DROP) / DROP / GPS-RESCUE (пока снижение, управление обратно — стиком); failsafe_switch_mode STAGE1 / STAGE2 / KILL (ARM через 1 с), тумблер назад — управление сразу (коммит d7850ee)
 
-### [ ] 104 · Значения каналов при потере связи
+### [x] 104 · Значения каналов при потере связи
 - **BF:** `rxfail <канал> <режим> <значение>`
 - **Файлы:** rc/RcReceiver.h, src/stm32/main_copter.cpp · **Тест:** test_app_stm32_copter · **UI:** «Failsafe»
+- **Итог:** rxfail 0–17 как в BF (стики a/h, AUX h/s 750–2250 шагом 25) в RcConfig: CLI, diff/dump, флеш, приложение; AUX без связи или с битым импульсом — 0.3 с прежнее, затем rxfail; стик h — этап 1 failsafe на последнем положении (газ h — на последнем газе в ANGLE вместо высоты), этап 2 — автомат (коммит 9352ec3)
 
-### [ ] 124 · Напряжения банки
+### [x] 124 · Напряжения банки
 - **Что:** пороги по химии: Li-ion 6S (пресет longrange7li) — полная 4.2, предупреждение ~3.0, минимум ~2.8 В на банку; LiPo — дефолты BF.
 - **BF:** `vbat_max_cell_voltage`, `vbat_full_cell_voltage`, `vbat_min_cell_voltage`, `vbat_warning_cell_voltage`, `vbat_hysteresis`, `vbat_detect_cell_voltage`, `force_battery_cell_count`
 - **Сейчас:** minCellVolts 3.3 для ARM; число банок — из описания.
 - **Файлы:** copter/CopterController.h, src/stm32/main_copter.cpp · **Тест:** test_app_stm32_copter · **UI:** вкладка «Питание»
+- **Итог:** vbat_full_cell_voltage (по химии, OSD «BATT < FULL»), vbat_hysteresis 1 и логика порогов как в BF (вниз — порог − гистерезис, обратно — выше порога), vbat_detect_cell_voltage 300 (USB — не батарея), force_battery_cell_count (0 — из описания, не угадывать: Li-ion 6S); пороги Li-ion 280/310/425 уже были (коммит 9352ec3)
 
-### [ ] 125 · Делитель и датчик тока
+### [x] 125 · Делитель и датчик тока
 - **Что:** GETFUN F405V3 — `ibata_scale` 100 и делитель из BF-дампа (178).
 - **BF:** `vbat_scale`, `vbat_divider`, `vbat_multiplier`, `ibata_scale`, `ibata_offset`, `current_meter`, `battery_meter`
 - **Сейчас:** BLACKBOX_VBAT_DIVIDER зашит, ток не меряется.
 - **Файлы:** src/stm32/main_copter.cpp · **Тест:** test_app_stm32_copter · **UI:** «Питание»: калибровка по мультиметру
+- **Итог:** vbat_divider/vbat_multiplier (формула BF), battery_meter, current_meter со всеми значениями BF (действует ADC), масштабы — из дампа платы через bf_board.py (OPB_VBAT_DIVIDER/MULTIPLIER); калибровка: BatteryMonitor::vbatScaleFor/ibataScaleFor и команда приложения calibrate vbat|ibat. ibata_scale 100 у GETFUN — после дампа (178) (коммит 9352ec3)
 
-### [ ] 126 · Ёмкость и предупреждения
+### [x] 126 · Ёмкость и предупреждения
 - **BF:** `bat_capacity`, `use_vbat_alerts`, `use_cbat_alerts`, `cbat_alert_percent`, `vbat_cutoff_percent`, `vbat_duration_for_warning`, `vbat_duration_for_critical`, `vbat_lpf_period`, `ibat_lpf_period`
 - **Файлы:** новый copter/Battery.h · **Тест:** test_copter · **UI:** «Питание»
+- **Итог:** bat_capacity (0 — battery_mah), use_vbat_alerts, use_cbat_alerts + cbat_alert_percent (состояние — худшее из напряжения и расхода), vbat_cutoff_percent (LVC: газ стика за 10 с до доли), vbat_display/sag_lpf_period и ibat_lpf_period (ФНЧ 10/период Гц), vbat_duration_for_warning/critical — у нас 20 (BF 0): провал на панче не пищит (коммит 9352ec3)
 
-### [ ] 080 · DShot: кадры на таймере с DMA (F405 и H743)
+### [x] 080 · DShot: кадры на таймере с DMA (F405 и H743)
 - **BF:** `motor_pwm_protocol = DSHOT150/300/600`
 - **Что:** драйвер DShot: таймер в режиме burst DMA, буфер длительностей (EscProtocol::frameToPulses уже есть), отправка раз в цикл. Сначала F405 (GETFUN, AOCODARC), затем H743 тем же кодом.
 - **Файлы:** новый hal/stm32/Stm32Dshot.h
 - **Тест:** test_app_stm32_copter на фейке DMA: длительности бит, CRC, частота
 - **UI:** «Моторы»
+- **Итог:** hal/stm32/Stm32Dshot.h: группы по таймерам, burst DMA в TIMx_DMAR на событие обновления (18 слотов: 16 бит + 2 нуля), без прерываний; потоки F405 по RM0090, H743 — DMA2 через DMAMUX; занятый поток — кадр пропускается; команды DShot ×10 с битом телеметрии; Stm32MotorOutput сам выбирает DShot; цикл быстрее maxLoopHz — ARM запрещён. Сборки F405/H743 с DSHOT600 компилируются, на железе не проверено (коммит 9352ec3)
 
 ### [ ] 081 · DShot: несколько таймеров и пины F405 / H743
 - **BF:** —
