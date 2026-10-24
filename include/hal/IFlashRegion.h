@@ -36,6 +36,9 @@ public:
     // полная сверка ничего не нашла), и снимает перед первой записью в кольцо.
     // По умолчанию области метки не умеют: метка не ставится и не читается.
     virtual bool ringMarkedEmpty() { return false; }
+    // Сколько байт писать за раз (BlackBoxStorage копит столько и пишет
+    // одним write): у NOR-флеша — страница 256, у SD-карты — блок 512.
+    virtual uint32_t writeUnit() const { return 256; }
     virtual void markRingEmpty() {}
     virtual void clearRingMark() {}
 };

@@ -93,6 +93,9 @@ public:
         return inRing(offset, length) && rawErase(offset + RESERVED_BYTES, length);
     }
 
+    // Блок карты целиком: без чтения-дополнения и без второй записи того же блока.
+    uint32_t writeUnit() const override { return 512; }
+
     bool ringMarkedEmpty() override
     {
         uint8_t mark[2 * MARK_LENGTH];

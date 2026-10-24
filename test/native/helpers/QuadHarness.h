@@ -8,6 +8,7 @@
 // ============================================================
 
 #include <cmath>
+#include <functional>
 
 #include "copter/CopterController.h"
 #include "helpers/QuadSim.h"
@@ -56,6 +57,7 @@ public:
         s.baroAltM = baroOk ? sim.readBaro() + 120.0f : 0.0f;   // над уровнем моря — не ноль
         s.batteryVolts = sim.readVolts();
         out = ctl.update(s, rc);
+        lastSens = s;
         sim.step(out.motor, out.spinning);
 
         // статистика
@@ -75,6 +77,7 @@ public:
         stats.minHeight = std::fmin(stats.minHeight, sim.height());
         stats.maxHeight = std::fmax(stats.maxHeight, sim.height());
         ++steps;
+        if (afterStep) afterStep();
     }
 
     void run(double seconds)
@@ -112,6 +115,8 @@ public:
     copter::CopterRc rc;
     copter::CopterOutputs out;
     QuadStats stats;
+    copter::CopterSensors lastSens;          // что видел контроллер в последнем шаге
+    std::function<void()> afterStep;         // после каждого шага (чёрный ящик в тестах)
     bool baroOk = true;
     bool imuOk = true;
     long steps = 0;

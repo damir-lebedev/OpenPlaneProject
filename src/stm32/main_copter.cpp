@@ -14,7 +14,8 @@
 //   flight  (приоритет 5) — цикл стабилизации каждые 1 мс: IMU,
 //           барометр (раз в 20 мс), батарея, пульт, контроллер, моторы,
 //           консоль; время каждой части — `tasks` в CLI;
-//   storage (1) — запись настроек (калибровка установки) во флеш.
+//   storage (1) — запись настроек (калибровка установки) во флеш;
+//   bbox    (2) — чёрный ящик на SD-карту (только H743: telemetry/CopterBlackBox.h).
 //
 // Проверено пока только в симуляторе (test/native/test_copter_sim) и
 // сборкой; на железе — нет. Первый запуск: БЕЗ ПРОПЕЛЛЕРОВ, консоль 't'
@@ -54,6 +55,15 @@
 #include "telemetry/LoopStats.h"
 #include "telemetry/TaskStats.h"
 
+// Чёрный ящик — на SD-карту по SDMMC: есть у H743 (Matek H743, DevEBox), у F405 — нет.
+#if defined(BOARD_STM32H743)
+#define COPTER_BLACKBOX 1
+#include "hal/SdFileRegion.h"
+#include "hal/stm32/Stm32SdCard.h"
+#include "telemetry/BlackBoxStorage.h"
+#include "telemetry/CopterBlackBox.h"
+#endif
+
 static_assert(static_cast<uint8_t>(Config::RxProtocol::IBUS) == 0 && static_cast<uint8_t>(Config::RxProtocol::SBUS) == 1 &&
                   static_cast<uint8_t>(Config::RxProtocol::CRSF) == 2,
               "serialrx_provider (copter/Params.h) — номер как в Config::RxProtocol");
@@ -89,6 +99,12 @@ copter::RxInput rxInput;
 LoopStats loopStats;
 TaskStats taskStats;
 CopterConsole copterConsole(Serial, copterController, copterParams, imuSensor, rcReceiver);
+#if defined(COPTER_BLACKBOX)
+Stm32SdCard sdCard;
+SdFileRegion blackBoxFile(sdCard, Config::BLACKBOX_SD_FILE, Config::BLACKBOX_SD_MAX_BYTES);
+BlackBoxStorage blackBoxStorage(blackBoxFile);
+CopterBlackBox copterBlackBox(copterController, copterParams, blackBoxStorage, loopStats, rcReceiver);
+#endif
 
 static bool configOk = false;
 static bool rebootRequired = false;
@@ -175,6 +191,11 @@ static void applySettings()
                       outputsAtBoot);
     }
     rebootRequired = reboot;
+#if defined(COPTER_BLACKBOX)
+    copterBlackBox.configure(copterParams.value(copter::PARAM_BLACKBOX_DEVICE) > 0.5f,
+                             static_cast<CopterBlackBox::Mode>(static_cast<uint8_t>(copterParams.value(copter::PARAM_BLACKBOX_MODE))),
+                             static_cast<uint8_t>(1u << static_cast<uint8_t>(copterParams.value(copter::PARAM_BLACKBOX_SAMPLE_RATE))));
+#endif
 }
 
 // Видеопередатчику — что нужно сейчас: настройки vtx_*, строки `vtx` с
@@ -482,6 +503,9 @@ static void flightTask(void*)
 
         const uint32_t workUs = micros() - start;
         loopStats.record(workUs);
+#if defined(COPTER_BLACKBOX)
+        copterBlackBox.update(sens, rc, out, workUs);   // снимок в очередь; на карту пишет задача bbox
+#endif
         taskStats.publish(millis());
         copterConsole.setLoopLoad(loopStats.avgUs, loopStats.maxUs, loopStats.hz);
         ++tick;
@@ -566,6 +590,30 @@ static void setupCopter(KeyValueStore& store)
 }
 
 
+#if defined(COPTER_BLACKBOX)
+// SD-карта и файл чёрного ящика (BLACKBOX.BIN, tools/blackbox.py sd-prepare):
+// что нашлось — в консоль; места нет — ящик выключен, полёту это не мешает.
+static void setupBlackBox()
+{
+    Serial.print("SD-карта: ");
+    if (!sdCard.begin())
+    {
+        Serial.printf("нет ответа (код %lu) — карта не вставлена или не опознана\n",
+                      static_cast<unsigned long>(sdCard.initError()));
+    }
+    else
+    {
+        Serial.printf("%lu МБ, файл %s: %s\n", static_cast<unsigned long>(sdCard.blockCount() / 2048), Config::BLACKBOX_SD_FILE,
+                      Fat32::describe(blackBoxFile.begin()));
+    }
+    copterBlackBox.setBattery(&battery);
+    copterBlackBox.setGps(&gps, &gpsHome);
+    copterBlackBox.setSensors(&imuSensor, &baroSensor);
+    copterBlackBox.begin();
+    copterConsole.setRecorder(&copterBlackBox);   // и без карты: "bb list" ответит state=off
+}
+#endif
+
 // Вызывается ядром Arduino, а не из кода проекта.
 // cppcheck-suppress unusedFunction
 void setup()
@@ -642,6 +690,9 @@ void setup()
                                                      : "чип не отвечает");
     }
     copterConsole.setTaskStats(&taskStats);
+#if defined(COPTER_BLACKBOX)
+    setupBlackBox();   // последним: задача записи начинает готовить место
+#endif
     copterConsole.printHint();
 
     Rtos::startTask(flightTask, "flight", 16384, nullptr, Rtos::PRIORITY_FLIGHT);

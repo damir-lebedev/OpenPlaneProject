@@ -114,6 +114,11 @@ namespace BlackBoxFormat
         REC_NAV    = 0x17,   // 10 Гц: дом, курс, навигация, автотриммер
         REC_SYS    = 0x18,   // 1 Гц: цикл, память, приёмник, сам ящик
         REC_POWER  = 0x19,   // 10 Гц: батарея и датчик тока (АЦП платы полётника)
+        // мультикоптер (telemetry/CopterBlackBox.h)
+        REC_QGYRO  = 0x20,   // каждый цикл (blackbox_sample_rate): гироскоп сырой и после фильтров, уставки
+        REC_QCTRL  = 0x21,   // каждый цикл: P I D F по осям, моторы 1–4, газ
+        REC_QMOT8  = 0x22,   // каждый цикл, если моторов больше 4: моторы 5–8
+        REC_QSTATE = 0x23,   // 50 Гц: углы, высота, стики, батарея, режим, флаги, запреты ARM
         REC_ERASED = 0xFF,   // стёртый флеш: дальше в секторе записей нет
     };
 
@@ -259,6 +264,75 @@ namespace BlackBoxFormat
         uint16_t currentMv;     // выход датчика тока (делитель пересчитан)
     };
 
+    // Биты CopterStateRecord::flags (имена — в INFO "bits.flags").
+    namespace CopterFlag
+    {
+        constexpr uint16_t ARMED      = 1u << 0;
+        constexpr uint16_t AIRBORNE   = 1u << 1;
+        constexpr uint16_t SATURATED  = 1u << 2;   // смеситель упёрся
+        constexpr uint16_t CRASHED    = 1u << 3;
+        constexpr uint16_t FAILSAFE   = 1u << 4;
+        constexpr uint16_t RX_LOST    = 1u << 5;
+        constexpr uint16_t AIRMODE    = 1u << 6;
+        constexpr uint16_t IMU_OK     = 1u << 7;
+        constexpr uint16_t BARO_OK    = 1u << 8;
+        constexpr uint16_t GPS_FIX    = 1u << 9;
+        constexpr uint16_t HOME       = 1u << 10;
+        constexpr uint16_t BAT_WARN   = 1u << 11;
+        constexpr uint16_t BAT_CRIT   = 1u << 12;
+        constexpr uint16_t MOTOR_TEST = 1u << 13;
+        constexpr uint16_t MANUAL     = 1u << 14;   // запись включена вручную
+        constexpr const char* NAMES =
+            "armed airborne saturated crashed failsafe rx_lost airmode imu_ok baro_ok gps_fix home "
+            "bat_warn bat_crit motor_test manual";
+    }
+
+    struct CopterGyroRecord
+    {
+        uint32_t tUs;
+        int16_t gyro[3];        // 0.1 °/с, до фильтров: крен, тангаж, рысканье
+        int16_t gyroF[3];       // 0.1 °/с, после фильтров (то, что видит PID)
+        int16_t setpoint[3];    // 0.1 °/с
+        uint16_t workUs;        // сколько длилась работа этого такта
+    };
+
+    struct CopterCtrlRecord
+    {
+        uint32_t tUs;
+        int16_t pid[3][4];      // 1e-4 хода моторов: P I D F крена, тангажа, рысканья
+        uint16_t motor[4];      // 1e-3: команда регулятору 0..1
+        uint16_t thrust;        // 1e-3: газ на входе смесителя
+    };
+
+    struct CopterMotor8Record
+    {
+        uint32_t tUs;
+        uint16_t motor[4];      // моторы 5–8
+    };
+
+    struct CopterStateRecord
+    {
+        uint32_t tUs;
+        int16_t roll, pitch;    // 0.01°
+        uint16_t yaw;           // 0.01°, 0..360
+        int16_t altDm;          // высота от точки ARM, дм
+        int16_t climbCms;       // см/с
+        int16_t altTargetDm;
+        int16_t rc[3];          // 1e-3: стики крена, тангажа, рысканья (−1..1)
+        uint16_t rcThrottle;    // 1e-3
+        uint16_t hover;         // 1e-3: газ висения (выучен)
+        uint16_t vbatMv;
+        uint16_t ampsCa;        // 0.01 А
+        uint16_t mah;
+        uint16_t rotHz;         // оценка оборотов мотора, Гц
+        int16_t linkQuality;    // %, −1 — неизвестно
+        uint8_t mode;           // CopterMode
+        uint8_t state;          // CopterState
+        uint8_t profiles;       // PID-профиль << 4 | профиль расходов
+        uint16_t flags;         // CopterFlag::*
+        uint32_t armBlockers;   // copter::ArmBlock
+    };
+
 #pragma pack(pop)
 
     // --------------------------------------------------------
@@ -328,6 +402,25 @@ namespace BlackBoxFormat
         "t_us:I vbat_v:H/1000 current_sensor_v:H/1000";
 
     static_assert(schemaSize(SYS_FIELDS) == sizeof(SysRecord), "SYS: схема != struct");
+
+    constexpr const char* QGYRO_FIELDS =
+        "t_us:I gyro_roll:h/10 gyro_pitch:h/10 gyro_yaw:h/10 gyrof_roll:h/10 gyrof_pitch:h/10 gyrof_yaw:h/10 "
+        "sp_roll:h/10 sp_pitch:h/10 sp_yaw:h/10 work_us:H";
+    constexpr const char* QCTRL_FIELDS =
+        "t_us:I p_roll:h/10000 i_roll:h/10000 d_roll:h/10000 f_roll:h/10000 "
+        "p_pitch:h/10000 i_pitch:h/10000 d_pitch:h/10000 f_pitch:h/10000 "
+        "p_yaw:h/10000 i_yaw:h/10000 d_yaw:h/10000 f_yaw:h/10000 "
+        "motor1:H/1000 motor2:H/1000 motor3:H/1000 motor4:H/1000 thrust:H/1000";
+    constexpr const char* QMOT8_FIELDS = "t_us:I motor5:H/1000 motor6:H/1000 motor7:H/1000 motor8:H/1000";
+    constexpr const char* QSTATE_FIELDS =
+        "t_us:I roll:h/100 pitch:h/100 yaw:H/100 alt_m:h/10 climb_ms:h/100 alt_target_m:h/10 "
+        "rc_roll:h/1000 rc_pitch:h/1000 rc_yaw:h/1000 rc_throttle:H/1000 hover:H/1000 "
+        "vbat_v:H/1000 amps:H/100 mah:H rot_hz:H lq:h mode:B state:B profiles:B flags:H arm_blockers:I";
+
+    static_assert(schemaSize(QGYRO_FIELDS) == sizeof(CopterGyroRecord), "QGYRO: схема != struct");
+    static_assert(schemaSize(QCTRL_FIELDS) == sizeof(CopterCtrlRecord), "QCTRL: схема != struct");
+    static_assert(schemaSize(QMOT8_FIELDS) == sizeof(CopterMotor8Record), "QMOT8: схема != struct");
+    static_assert(schemaSize(QSTATE_FIELDS) == sizeof(CopterStateRecord), "QSTATE: схема != struct");
     static_assert(schemaSize(POWER_FIELDS) == sizeof(PowerRecord), "POWER: схема != struct");
 
     constexpr Schema SCHEMAS[] = {
@@ -345,6 +438,10 @@ namespace BlackBoxFormat
         { REC_NAV,    "NAV",    NAV_FIELDS,  sizeof(NavRecord) },
         { REC_SYS,    "SYS",    SYS_FIELDS,  sizeof(SysRecord) },
         { REC_POWER,  "POWER",  POWER_FIELDS, sizeof(PowerRecord) },
+        { REC_QGYRO,  "QGYRO",  QGYRO_FIELDS, sizeof(CopterGyroRecord) },
+        { REC_QCTRL,  "QCTRL",  QCTRL_FIELDS, sizeof(CopterCtrlRecord) },
+        { REC_QMOT8,  "QMOT8",  QMOT8_FIELDS, sizeof(CopterMotor8Record) },
+        { REC_QSTATE, "QSTATE", QSTATE_FIELDS, sizeof(CopterStateRecord) },
     };
 
     inline const Schema* findSchema(uint8_t type)

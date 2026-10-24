@@ -80,6 +80,7 @@ namespace copter
         POWER,
         VTX,
         GPS,
+        BLACKBOX,
         OTHER,
     };
 
@@ -98,6 +99,7 @@ namespace copter
             case ParamGroup::POWER: return "power";
             case ParamGroup::VTX: return "vtx";
             case ParamGroup::GPS: return "gps";
+            case ParamGroup::BLACKBOX: return "blackbox";
             case ParamGroup::OTHER: return "other";
         }
         return "other";
@@ -225,6 +227,9 @@ namespace copter
         PARAM_VTX_LOW_POWER_DISARM,
         PARAM_GPS_MINIMUM_SATS,
         PARAM_CRSF_TELEMETRY,
+        PARAM_BLACKBOX_DEVICE,
+        PARAM_BLACKBOX_MODE,
+        PARAM_BLACKBOX_SAMPLE_RATE,
         PARAM_COUNT
     };
 
@@ -260,6 +265,9 @@ namespace copter
         static const char* const ITERM_RELAX_TYPES[] = { "GYRO", "SETPOINT" };
         static const char* const TPA_MODES[] = { "PD", "D", "MODEL" };   // как TpaMode
         static const char* const FF_AVERAGING[] = { "OFF", "2_POINT", "3_POINT", "4_POINT" };
+        static const char* const BLACKBOX_DEVICES[] = { "NONE", "SDCARD" };
+        static const char* const BLACKBOX_MODES[] = { "NORMAL", "MOTOR_TEST", "ALWAYS" };
+        static const char* const BLACKBOX_RATES[] = { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" };
         uint8_t buildCount = 0;
         const char* const* builds = buildIds(buildCount);
         constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
@@ -267,7 +275,7 @@ namespace copter
         constexpr ParamScope kMaster = ParamScope::MASTER, kPid = ParamScope::PID_PROFILE, kRate = ParamScope::RATE_PROFILE;
         constexpr ParamGroup kGroupPid = ParamGroup::PID, kGroupRates = ParamGroup::RATES, kGroupRx = ParamGroup::RECEIVER,
                              kGroupCopter = ParamGroup::COPTER, kGroupPower = ParamGroup::POWER,
-                             kGroupVtx = ParamGroup::VTX, kGroupGps = ParamGroup::GPS;
+                             kGroupVtx = ParamGroup::VTX, kGroupGps = ParamGroup::GPS, kGroupBlackbox = ParamGroup::BLACKBOX;
         constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD,
                                kBattery = ParamDefault::BATTERY;
         static const ParamInfo table[] = {
@@ -419,6 +427,12 @@ namespace copter
               "дом ставится при ARM, если спутников не меньше" },
             { "crsf_telemetry", kEnum, kMaster, kGroupRx, 0, 1, 1, kTable, "", OFF_ON, 2,
               "телеметрия в пульт по CRSF: батарея, GPS, ориентация, режим" },
+            { "blackbox_device", kEnum, kMaster, kGroupBlackbox, 0, 1, 1, kTable, "", BLACKBOX_DEVICES, 2,
+              "куда писать чёрный ящик: SDCARD — файл BLACKBOX.BIN на карте, NONE — не писать" },
+            { "blackbox_mode", kEnum, kMaster, kGroupBlackbox, 0, 2, 0, kTable, "", BLACKBOX_MODES, 3,
+              "когда писать: NORMAL — пока ARM, MOTOR_TEST — пока крутятся моторы, ALWAYS — всегда" },
+            { "blackbox_sample_rate", kEnum, kMaster, kGroupBlackbox, 0, 5, 0, kTable, "", BLACKBOX_RATES, 6,
+              "гироскоп, PID и моторы — каждый какой цикл (1/1 — каждый: шум виден до половины частоты цикла)" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;

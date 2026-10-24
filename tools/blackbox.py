@@ -546,7 +546,8 @@ def ring_flights(path):
     sectors.sort()
     flights = []
     for seq, flight, index in sectors:
-        if flights and flights[-1][0] == flight and flights[-1][2] + 1 == seq:
+        # тот же полёт — и через сектора без заголовка (сбой записи), до 8 подряд
+        if flights and flights[-1][0] == flight and 0 < seq - flights[-1][2] <= 9:
             flights[-1][1].append(index)
             flights[-1][2] = seq
         else:

@@ -39,7 +39,7 @@
 // старого, пока впереди не наберётся нужный запас; полёт protect
 // (последний записанный) не стирается никогда.
 //
-// Запись страницами: байты копятся в буфере страницы (256 байт) и
+// Запись страницами: байты копятся в буфере страницы (256 байт, у SD — блок 512) и
 // уходят во флеш, когда страница заполнилась, — одна запись флеша на
 // страницу. flush() дописывает неполную страницу; дальше запись
 // продолжается в неё же (NOR: стёртые байты можно дописать).
@@ -58,7 +58,12 @@ public:
         uint32_t startMs = 0;       // millis() при открытии первого сектора
         uint32_t lastMs = 0;        // ...и последнего
         bool hasStart = false;      // первый сектор (схема, параметры) на месте
+        uint32_t lastSeq = 0;       // сквозной номер последнего сектора
     };
+
+    // Столько секторов подряд без заголовка (запись не удалась — карта
+    // моргнула) полёт может пропустить и остаться одним полётом.
+    static constexpr uint32_t MAX_GAP_SECTORS = 8;
 
     static constexpr size_t MAX_FLIGHTS = 32;
 
@@ -84,6 +89,8 @@ public:
     bool begin()
     {
         sectorCount = flash.size() / BlackBoxFormat::SECTOR_SIZE;
+        const uint32_t unit = flash.writeUnit();
+        pageSize = (unit == 256 || unit == 512) ? unit : BlackBoxFormat::PAGE_SIZE;
         flightTotal = 0;
         freeCount = 0;
         evicting = 0;
@@ -205,7 +212,9 @@ public:
         size_t length = size + BlackBoxFormat::RECORD_CHECK;
 
         int writes = 0;
-        if (!sectorOpen || position + length > BlackBoxFormat::SECTOR_SIZE)
+        // Запись в сектор не удалась: дальше в нём — дыра, и разбор сектора на ней
+        // остановится. Следующие записи — с нового сектора.
+        if (!sectorOpen || sectorBroken || position + length > BlackBoxFormat::SECTOR_SIZE)
         {
             writes += flush();
             sectorOpen = false;
@@ -214,13 +223,13 @@ public:
 
         while (length > 0)
         {
-            const uint32_t offset = position % BlackBoxFormat::PAGE_SIZE;
-            const size_t chunk = min32(static_cast<uint32_t>(length), BlackBoxFormat::PAGE_SIZE - offset);
+            const uint32_t offset = position % pageSize;
+            const size_t chunk = min32(static_cast<uint32_t>(length), pageSize - offset);
             memcpy(page + offset, record, chunk);
             record += chunk;
             length -= chunk;
             position += static_cast<uint32_t>(chunk);
-            if (position % BlackBoxFormat::PAGE_SIZE == 0) writes += flush();
+            if (position % pageSize == 0) writes += flush();
         }
         return writes;
     }
@@ -230,14 +239,18 @@ public:
     {
         if (!sectorOpen || written >= position) return 0;
 
-        const uint32_t pageStart = written - written % BlackBoxFormat::PAGE_SIZE;
+        const uint32_t pageStart = written - written % pageSize;
         const uint32_t from = written - pageStart;
-        const uint32_t to = position - pageStart;   // <= PAGE_SIZE
+        const uint32_t to = position - pageStart;   // <= pageSize
         const bool ok = flash.write(sector * BlackBoxFormat::SECTOR_SIZE + written, page + from, to - from);
-        if (!ok) writeErrors++;
+        if (!ok)
+        {
+            writeErrors++;
+            sectorBroken = true;
+        }
         pageWrites++;
         written = position;
-        if (position % BlackBoxFormat::PAGE_SIZE == 0) memset(page, 0xFF, sizeof(page));
+        if (position % pageSize == 0) memset(page, 0xFF, sizeof(page));
         return 1;
     }
 
@@ -373,7 +386,10 @@ private:
     uint32_t sector = 0;
     uint32_t position = 0;   // байт в секторе занято (в буфере или во флеше)
     uint32_t written = 0;    // ...из них уже во флеше
-    uint8_t page[BlackBoxFormat::PAGE_SIZE] = {};
+    static constexpr uint32_t MAX_PAGE = 512;
+    uint8_t page[MAX_PAGE] = {};
+    uint32_t pageSize = BlackBoxFormat::PAGE_SIZE;   // единица записи области (writeUnit)
+    bool sectorBroken = false;                        // запись в открытый сектор не удалась
 
     uint8_t scratch[BlackBoxFormat::SECTOR_SIZE] = {};
     std::vector<uint8_t> validMap;   // бит на сектор: заголовок настоящий (только внутри begin())
@@ -592,6 +608,7 @@ private:
         position = sizeof(h);
         written = 0;
         sectorOpen = true;
+        sectorBroken = false;
         noteSector(sector, h, false);
         return true;
     }
@@ -600,11 +617,18 @@ private:
     void noteSector(uint32_t index, const BlackBoxFormat::SectorHeader& h, bool fromScan)
     {
         Flight* last = flightTotal ? &flights[flightTotal - 1] : nullptr;
-        if (last && last->number == h.flight && sectorOf(*last, last->sectors) == index)
+        if (last && last->number == h.flight)
         {
-            last->sectors++;
-            last->lastMs = h.startMs;
-            return;
+            // следующий сектор — или через дыру из секторов без заголовка, если
+            // сквозной номер перескочил ровно на столько же
+            const uint32_t gap = (index + sectorCount - sectorOf(*last, last->sectors)) % sectorCount;
+            if (gap <= MAX_GAP_SECTORS && h.seq == last->lastSeq + gap + 1)
+            {
+                last->sectors += gap + 1;
+                last->lastMs = h.startMs;
+                last->lastSeq = h.seq;
+                return;
+            }
         }
 
         if (flightTotal == MAX_FLIGHTS)
@@ -619,6 +643,7 @@ private:
         f.sectors = 1;
         f.startMs = h.startMs;
         f.lastMs = h.startMs;
+        f.lastSeq = h.seq;
         // При включении начало полёта неизвестно, пока не видно
         // соседа: сектор без предшественника того же полёта — начало.
         f.hasStart = fromScan ? !sameFlightBefore(index, h) : true;

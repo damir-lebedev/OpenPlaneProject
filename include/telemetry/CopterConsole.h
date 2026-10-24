@@ -12,6 +12,7 @@
 #include "sensors/SensorInterface.h"
 #include "telemetry/CopterLink.h"
 #include "telemetry/FirmwareIdentity.h"
+#include "telemetry/IFlightRecorder.h"
 #include "telemetry/TaskStats.h"
 
 // ============================================================
@@ -33,6 +34,8 @@
 //   o     — калибровка установки платы (три позы)
 //   c     — калибровка компаса (15 с вращать коптер по всем осям)
 //   D     — перезагрузка в загрузчик USB DFU
+//   k     — чёрный ящик: состояние и полёты на карте; ПК выгружает их
+//           командами "bb list", "bb get N" (STX), как у самолёта
 //   #     — CLI как в Betaflight: set/get/diff/dump/aux/map/profile/
 //           status/tasks/save (copter/CopterCli.h); пока он открыт, ARM
 //           запрещён
@@ -67,6 +70,8 @@ public:
     // выходы — по новым настройкам (main_copter.cpp).
     void setApplyHook(void (*hook)()) { applyHook = hook; }
     void setTaskStats(const TaskStats* stats) { tasks = stats; }
+    // Чёрный ящик: 'k' и команды ПК "bb …" (telemetry/CopterBlackBox.h).
+    void setRecorder(IFlightRecorder* r) { recorder = r; }
     void setRxInput(const copter::RxInput* input)
     {
         rxInput = input;
@@ -302,6 +307,15 @@ private:
                 if (refuseArmed()) return;
                 cli.enter();
                 break;
+            case 'k':
+                if (!recorder)
+                {
+                    io.println("Чёрного ящика на этой плате нет.");
+                    return;
+                }
+                recorder->printStatus(io);
+                recorder->printFlights(io);
+                return;
             case 'D':
                 if (refuseArmed() || !bootloaderHook) return;
                 io.println("Перезагрузка в загрузчик USB DFU...");
@@ -388,6 +402,12 @@ private:
         }
         hostLine = false;
         hostBuffer[hostLength] = '\0';
+        if (strncmp(hostBuffer, "bb ", 3) == 0)
+        {
+            if (recorder) recorder->handleHostCommand(hostBuffer);
+            else io.println("BB:ERR чёрного ящика на этой плате нет");
+            return;
+        }
         if (!link.handle(hostBuffer, nowMs)) io.printf("@error {\"cmd\":\"?\",\"error\":\"нет команды\"}\n");
     }
 
@@ -413,7 +433,8 @@ private:
         io.println("s — состояние, t — настройка, r — каналы пульта, l — живая строка,");
         io.println("m — проверка моторов (без пропеллеров!), i — калибровка гироскопа,");
         io.println("o — калибровка установки платы, c — калибровка компаса, D — загрузчик DFU,");
-        io.println("# — CLI как в Betaflight (set, get, diff, aux, map, profile, save; help — внутри).");
+        io.println("# — CLI как в Betaflight (set, get, diff, aux, map, profile, save; help — внутри),");
+        io.println("k — чёрный ящик (состояние и полёты на карте).");
     }
 
     void printTune()
@@ -553,6 +574,7 @@ private:
     MagnetometerSensor* compass = nullptr;
     float headingDeg = 0.0f;
     const TaskStats* tasks = nullptr;
+    IFlightRecorder* recorder = nullptr;
     void (*bootloaderHook)() = nullptr;
     void (*applyHook)() = nullptr;
     uint32_t loopAvgUs = 0, loopMaxUs = 0, loopHz = 0;

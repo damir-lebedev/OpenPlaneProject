@@ -655,7 +655,7 @@ void test_garbage_in_the_service_sector_is_not_an_empty_mark()
     missing.clearRingMark();
 }
 
-void test_storage_write_cost_is_one_card_write_per_256_byte_page()
+void test_storage_write_cost_is_one_card_write_per_512_byte_block()
 {
     prepareCard();
     Reopened card;
@@ -665,9 +665,10 @@ void test_storage_write_cost_is_one_card_write_per_256_byte_page()
     const std::vector<uint8_t> r = record(REC_SYS, 0, 58, 0xAB);
     int pages = 0;
     for (int i = 0; i < 60; ++i) pages += card.storage.append(r.data(), r.size(), 1);
-    // 60 записей по 61 байту ≈ 3.6 КБ = 14 страниц по 256 байт.
+    // 60 записей по 61 байту ≈ 3.6 КБ = 7 блоков карты по 512 байт: каждый пишется
+    // один раз целиком, без чтения-дополнения.
     TEST_ASSERT_UINT32_WITHIN(1, static_cast<uint32_t>(pages), fake::sdCard().writeCalls);
-    TEST_ASSERT_TRUE(pages >= 13 && pages <= 15);
+    TEST_ASSERT_TRUE(pages >= 6 && pages <= 8);
 }
 
 void test_storage_erases_old_flights_on_the_card_to_make_room()
@@ -831,7 +832,9 @@ void test_card_errors_in_flight_do_not_stop_the_box_and_are_logged()
     Reopened card;
     const std::vector<Rec> recs = readFlight(card.storage, 1);
     // Потерянная страница оставляет дыру 0xFF — разбор сектора на ней останавливается
-    // (так же, как tools/blackbox.py), но остальные сектора целы, а событие записано.
+    // (так же, как tools/blackbox.py), дальше запись идёт с нового сектора; сектор, у
+    // которого не записался заголовок, не разрывает полёт на два; событие записано.
+    TEST_ASSERT_EQUAL_UINT32(1, card.storage.flightCount());
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "носитель: ошибок записи"));
     TEST_ASSERT_EQUAL(REC_END, recs.back().type);
     TEST_ASSERT_TRUE(countType(recs, REC_IMU) > 2500);
@@ -1026,7 +1029,7 @@ int main()
     RUN_TEST(test_storage_keeps_flights_across_reboot_and_scans_one_block_per_sector);
     RUN_TEST(test_empty_ring_mark_makes_the_next_boot_instant_and_goes_before_the_first_data);
     RUN_TEST(test_garbage_in_the_service_sector_is_not_an_empty_mark);
-    RUN_TEST(test_storage_write_cost_is_one_card_write_per_256_byte_page);
+    RUN_TEST(test_storage_write_cost_is_one_card_write_per_512_byte_block);
     RUN_TEST(test_storage_erases_old_flights_on_the_card_to_make_room);
     RUN_TEST(test_storage_power_loss_keeps_everything_written_before_it);
     RUN_TEST(test_flight_is_recorded_to_the_card_with_stm32_specifics);
