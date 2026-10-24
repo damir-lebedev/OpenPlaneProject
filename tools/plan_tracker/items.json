@@ -583,7 +583,7 @@
    "id": "026",
    "section": 1,
    "title": "feedforward_max_rate_limit",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -592,6 +592,7 @@
    "files": "copter/RateController.h",
    "test": "test_copter_sim: флип полным стиком — перелёт расхода < 5 %",
    "ui": "«PID → Feedforward»",
+   "result": "feedforward_max_rate_limit: у края расхода FF наружу не больше P на оставшийся запас, за краем — ноль; модель 0 (перелёта и так нет), BF 90: «резвый» 5\" на флипе полным стиком — перелёт 1.3 % вместо 7.9 %, до 90 % расхода на ~6 мс дольше (коммит f00f5d9)",
    "settings": [
     "feedforward_max_rate_limit"
    ],
@@ -601,7 +602,7 @@
    "id": "027",
    "section": 1,
    "title": "yaw_lowpass_hz",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -610,6 +611,7 @@
    "files": "copter/Params.h, copter/CopterController.h",
    "test": "test_copter",
    "ui": "вкладка «Фильтры»",
+   "result": "yaw_lowpass_hz в PID-профиле (0 — без фильтра): не задан — частота модели, BF 100; меняется и со сменой профиля (коммит f00f5d9)",
    "settings": [
     "yaw_lowpass_hz"
    ],
@@ -619,7 +621,7 @@
    "id": "028",
    "section": 1,
    "title": "integrated yaw",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -628,6 +630,7 @@
    "files": "copter/RateController.h",
    "test": "test_copter_sim: hex15 — рысканье держит расход",
    "ui": "«PID → дополнительно»",
+   "result": "use_integrated_yaw, integrated_yaw_relax: выход рысканья — интеграл суммы PID (×100 1/с, утечка relax×0.08); числа BF — как в BF (I без ×2.5), PID из модели пересчитаны (тот же контур); hex15 на числах BF: ошибка 1.3 °/с вместо 11.9, перелёт 3.9 % вместо 14.7 % (коммит f00f5d9)",
    "settings": [
     "use_integrated_yaw",
     "integrated_yaw_relax"
@@ -638,7 +641,7 @@
    "id": "029",
    "section": 1,
    "title": "absolute control",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -647,6 +650,7 @@
    "files": "copter/RateController.h",
    "test": "test_copter_sim: ветер — в ACRO курс уплывает меньше",
    "ui": "«PID → дополнительно»",
+   "result": "abs_control_gain/limit/error_limit/cutoff: потерянный угол копится (быстрое движение стика — нет) и возвращается поправкой уставки; крен и тангаж в ACRO, рысканье всегда; 5\" под постоянным моментом: крен 0.03° и курс 0.3° вместо 2–5° и 16–49°; в QuadSim — внешний момент (коммит f00f5d9)",
    "settings": [
     "abs_control_gain",
     "abs_control_limit",
@@ -659,7 +663,7 @@
    "id": "030",
    "section": 1,
    "title": "thrust_linear, motor_output_limit",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -668,6 +672,7 @@
    "files": "copter/Mixer.h, copter/Params.h",
    "test": "test_copter: предел 80 % — команда не выше",
    "ui": "вкладка «Моторы»",
+   "result": "thrust_linear (модель 15–30, BF 0) и motor_output_limit в PID-профиле; предел режет ход выше холостых, как в BF: полный газ и стик — не выше холостых + 80 % хода; «t» печатает предел (коммит f00f5d9)",
    "settings": [
     "thrust_linear",
     "motor_output_limit"

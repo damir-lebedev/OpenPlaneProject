@@ -266,40 +266,45 @@
 - **UI:** «PID → Feedforward»
 - **Итог:** feedforward_boost: добавка по ускорению стика, 15 — 3 мс упреждения, не больше самой скорости стика; разгон стика — FF +12 %; BF 25/7/15 на флике 20 мс с кадрами 250 Гц: перелёт 10.3 % против 13.4 %; модель 0, BF 15 (коммит 5021fb0)
 
-### [ ] 026 · feedforward_max_rate_limit
+### [x] 026 · feedforward_max_rate_limit
 - **BF:** `feedforward_max_rate_limit`
 - **Что:** FF гаснет у предела расхода — нет перелёта на краю.
 - **Файлы:** copter/RateController.h
 - **Тест:** test_copter_sim: флип полным стиком — перелёт расхода < 5 %
 - **UI:** «PID → Feedforward»
+- **Итог:** feedforward_max_rate_limit: у края расхода FF наружу не больше P на оставшийся запас, за краем — ноль; модель 0 (перелёта и так нет), BF 90: «резвый» 5" на флипе полным стиком — перелёт 1.3 % вместо 7.9 %, до 90 % расхода на ~6 мс дольше (коммит f00f5d9)
 
-### [ ] 027 · yaw_lowpass_hz
+### [x] 027 · yaw_lowpass_hz
 - **BF:** `yaw_lowpass_hz`
 - **Что:** ФНЧ выхода рысканья настройкой (сейчас yawLpfHz из модели).
 - **Файлы:** copter/Params.h, copter/CopterController.h
 - **Тест:** test_copter
 - **UI:** вкладка «Фильтры»
+- **Итог:** yaw_lowpass_hz в PID-профиле (0 — без фильтра): не задан — частота модели, BF 100; меняется и со сменой профиля (коммит f00f5d9)
 
-### [ ] 028 · integrated yaw
+### [x] 028 · integrated yaw
 - **BF:** `use_integrated_yaw`, `integrated_yaw_relax`
 - **Что:** рысканье через интеграл суммы PID — для коптеров со слабым рысканьем (большие винты).
 - **Файлы:** copter/RateController.h
 - **Тест:** test_copter_sim: hex15 — рысканье держит расход
 - **UI:** «PID → дополнительно»
+- **Итог:** use_integrated_yaw, integrated_yaw_relax: выход рысканья — интеграл суммы PID (×100 1/с, утечка relax×0.08); числа BF — как в BF (I без ×2.5), PID из модели пересчитаны (тот же контур); hex15 на числах BF: ошибка 1.3 °/с вместо 11.9, перелёт 3.9 % вместо 14.7 % (коммит f00f5d9)
 
-### [ ] 029 · absolute control
+### [x] 029 · absolute control
 - **BF:** `abs_control_gain`, `abs_control_limit`, `abs_control_error_limit`, `abs_control_cutoff`
 - **Что:** коррекция накопленной ошибки угла (против «уплывания» в акро на ветру).
 - **Файлы:** copter/RateController.h
 - **Тест:** test_copter_sim: ветер — в ACRO курс уплывает меньше
 - **UI:** «PID → дополнительно»
+- **Итог:** abs_control_gain/limit/error_limit/cutoff: потерянный угол копится (быстрое движение стика — нет) и возвращается поправкой уставки; крен и тангаж в ACRO, рысканье всегда; 5" под постоянным моментом: крен 0.03° и курс 0.3° вместо 2–5° и 16–49°; в QuadSim — внешний момент (коммит f00f5d9)
 
-### [ ] 030 · thrust_linear, motor_output_limit
+### [x] 030 · thrust_linear, motor_output_limit
 - **BF:** `thrust_linear` (%), `motor_output_limit` (%)
 - **Что:** настройкой (сейчас thrustLinear из размера винта); предел выхода моторов (батарея 6S на моторах под 4S).
 - **Файлы:** copter/Mixer.h, copter/Params.h
 - **Тест:** test_copter: предел 80 % — команда не выше
 - **UI:** вкладка «Моторы»
+- **Итог:** thrust_linear (модель 15–30, BF 0) и motor_output_limit в PID-профиле; предел режет ход выше холостых, как в BF: полный газ и стик — не выше холостых + 80 % хода; «t» печатает предел (коммит f00f5d9)
 
 ### [ ] 031 · vbat_sag_compensation (%)
 - **BF:** `vbat_sag_compensation`
