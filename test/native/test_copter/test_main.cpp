@@ -963,9 +963,9 @@ struct Bench
     CopterRc rc;
     CopterOutputs out;
 
-    Bench()
+    explicit Bench(const CopterSettings& s = CopterSettings())
     {
-        ctl.configure(deriveTune(*findBuild("freestyle5"), 1000.0f, EscProtocol::DSHOT600));
+        ctl.configure(deriveTune(*findBuild("freestyle5"), 1000.0f, EscProtocol::DSHOT600), s);
         sens.accel[2] = 1.0f;
         sens.batteryVolts = 25.0f;
         rc.linkOk = true;
@@ -1146,7 +1146,7 @@ void test_link_loss_on_ground_disarms_and_needs_switch_toggle()
     b.rc.linkOk = true;
     b.run(0.5f);
     TEST_ASSERT_FALSE(b.ctl.isArmed());   // тумблер так и стоит на ARM — сам не армится
-    TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_SWITCH);
+    TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_NOT_DISARMED);
     b.rc.armSwitch = false;
     b.run(0.01f);
     b.rc.armSwitch = true;
@@ -1154,6 +1154,160 @@ void test_link_loss_on_ground_disarms_and_needs_switch_toggle()
     TEST_ASSERT_TRUE(b.ctl.isArmed());
     b.ctl.disarm();
     TEST_ASSERT_FALSE(b.ctl.isArmed());
+}
+
+// Биты причин — номера флагов запрета ARM Betaflight 4.5 (конфигуратор
+// читает маску по номерам), наши — после них.
+void test_arm_block_bits_are_betaflight_flags()
+{
+    TEST_ASSERT_EQUAL_HEX32(1u << 0, ARM_BLOCK_IMU);
+    TEST_ASSERT_EQUAL_HEX32(1u << 1, ARM_BLOCK_FAILSAFE);
+    TEST_ASSERT_EQUAL_HEX32(1u << 2, ARM_BLOCK_NO_LINK);
+    TEST_ASSERT_EQUAL_HEX32(1u << 3, ARM_BLOCK_NOT_DISARMED);
+    TEST_ASSERT_EQUAL_HEX32(1u << 4, ARM_BLOCK_FAILSAFE_SWITCH);
+    TEST_ASSERT_EQUAL_HEX32(1u << 5, ARM_BLOCK_RUNAWAY);
+    TEST_ASSERT_EQUAL_HEX32(1u << 6, ARM_BLOCK_CRASH);
+    TEST_ASSERT_EQUAL_HEX32(1u << 7, ARM_BLOCK_THROTTLE);
+    TEST_ASSERT_EQUAL_HEX32(1u << 8, ARM_BLOCK_TILT);
+    TEST_ASSERT_EQUAL_HEX32(1u << 11, ARM_BLOCK_LOAD);
+    TEST_ASSERT_EQUAL_HEX32(1u << 12, ARM_BLOCK_SETTLING);
+    TEST_ASSERT_EQUAL_HEX32(1u << 13, ARM_BLOCK_CLI);
+    TEST_ASSERT_EQUAL_HEX32(1u << 16, ARM_BLOCK_MSP);
+    TEST_ASSERT_EQUAL_HEX32(1u << 21, ARM_BLOCK_REBOOT);
+    TEST_ASSERT_EQUAL_HEX32(1u << 23, ARM_BLOCK_NO_ACC_CAL);
+    TEST_ASSERT_EQUAL_HEX32(1u << 25, ARM_BLOCK_SWITCH);
+    const char* bf[ARM_BLOCK_BF_COUNT] = { "NOGYRO", "FAILSAFE", "RXLOSS", "NOT_DISARMED", "BOXFAILSAFE", "RUNAWAY",
+                                           "CRASH", "THROTTLE", "ANGLE", "BOOTGRACE", "NOPREARM", "LOAD", "CALIB",
+                                           "CLI", "CMS", "BST", "MSP", "PARALYZE", "GPS", "RESC", "RPMFILTER",
+                                           "REBOOT_REQD", "DSHOT_BBANG", "NO_ACC_CAL", "MOTOR_PROTO", "ARMSWITCH" };
+    for (uint8_t i = 0; i < ARM_BLOCK_BF_COUNT; ++i) TEST_ASSERT_EQUAL_STRING(bf[i], armBlockCode(1u << i));
+    // наши — вне маски BF, коды не повторяются
+    TEST_ASSERT_FALSE(ARM_BLOCK_MOVING & ARM_BLOCK_BF_MASK);
+    TEST_ASSERT_FALSE(ARM_BLOCK_CONFIG & ARM_BLOCK_BF_MASK);
+    for (uint32_t a = 1; a && a <= ARM_BLOCK_LAST; a <<= 1)
+        for (uint32_t b = a << 1; b && b <= ARM_BLOCK_LAST; b <<= 1) TEST_ASSERT_NOT_EQUAL(0, strcmp(armBlockCode(a), armBlockCode(b)));
+}
+
+// small_angle: стоит под 30° — с 25 не армится, с 35 и 180 — армится.
+void test_small_angle_setting()
+{
+    const float limits[3] = { 25.0f, 35.0f, 180.0f };
+    for (int k = 0; k < 3; ++k)
+    {
+        CopterSettings s;
+        s.smallAngleDeg = limits[k];
+        Bench b(s);
+        b.sens.accel[0] = 0.5f;
+        b.sens.accel[2] = 0.866f;
+        TEST_ASSERT_EQUAL(k > 0, b.armAfterBoot());
+        if (k == 0) TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_TILT);
+    }
+}
+
+// auto_disarm_delay: заармлен на земле с газом внизу — DISARM через 5 с,
+// газ двигали — отсчёт заново; 0 — не разоружается.
+void test_auto_disarm_on_the_ground()
+{
+    {
+        Bench b;
+        TEST_ASSERT_TRUE(b.armAfterBoot());
+        b.run(4.0f);
+        b.rc.throttle = 0.04f;   // в пределах «газ внизу» — отсчёт идёт
+        b.run(0.9f);
+        TEST_ASSERT_TRUE(b.ctl.isArmed());
+        b.run(0.2f);
+        TEST_ASSERT_FALSE(b.ctl.isArmed());
+        TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_NOT_DISARMED);
+        b.rc.armSwitch = false;
+        b.run(0.01f);
+        TEST_ASSERT_EQUAL_HEX32(0, b.ctl.getStatus().armBlockers);
+        b.rc.armSwitch = true;
+        b.run(0.01f);
+        TEST_ASSERT_TRUE(b.ctl.isArmed());
+        b.run(3.0f);
+        b.rc.throttle = 0.08f;   // приподнял газ (коптер ещё не оторвался) — отсчёт заново
+        b.run(0.05f);
+        b.rc.throttle = 0.0f;
+        b.run(3.0f);
+        TEST_ASSERT_TRUE(b.ctl.isArmed());
+    }
+    {
+        CopterSettings s;
+        s.autoDisarmS = 0.0f;
+        Bench b(s);
+        TEST_ASSERT_TRUE(b.armAfterBoot());
+        b.run(10.0f);
+        TEST_ASSERT_TRUE(b.ctl.isArmed());
+    }
+}
+
+// После DISARM failsafe'ом ARM ждёт, пока связь продержится
+// failsafe_recovery_delay (FAILSAFE), и выключения тумблера (NOT_DISARMED).
+void test_arm_after_failsafe_waits_for_recovery_delay()
+{
+    CopterSettings s;
+    s.failsafeRecoveryS = 1.0f;
+    Bench b(s);
+    TEST_ASSERT_TRUE(b.armAfterBoot());
+    b.rc.linkOk = false;
+    b.run(0.5f);
+    TEST_ASSERT_FALSE(b.ctl.isArmed());
+    TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_NO_LINK);
+    TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_FAILSAFE);
+    b.rc.linkOk = true;
+    b.rc.armSwitch = false;
+    b.run(0.5f);
+    TEST_ASSERT_EQUAL_HEX32(ARM_BLOCK_FAILSAFE, b.ctl.getStatus().armBlockers);
+    b.rc.armSwitch = true;
+    b.run(0.01f);
+    TEST_ASSERT_FALSE(b.ctl.isArmed());
+    b.rc.armSwitch = false;
+    b.run(0.6f);
+    TEST_ASSERT_EQUAL_HEX32(0, b.ctl.getStatus().armBlockers);
+    b.rc.armSwitch = true;
+    b.run(0.01f);
+    TEST_ASSERT_TRUE(b.ctl.isArmed());
+}
+
+// Настройки безопасности и failsafe — в реестре под именами BF, в
+// контроллер — в его единицах.
+void test_safety_params_reach_the_controller()
+{
+    CopterParams p;
+    TEST_ASSERT_TRUE(p.setValue(PARAM_SMALL_ANGLE, 0, 40.0f));
+    TEST_ASSERT_TRUE(p.setValue(PARAM_AUTO_DISARM_DELAY, 0, 0.0f));
+    TEST_ASSERT_TRUE(p.setValue(PARAM_FAILSAFE_DELAY, 0, 8.0f));
+    TEST_ASSERT_TRUE(p.setValue(PARAM_FAILSAFE_THROTTLE, 0, 1350.0f));
+    TEST_ASSERT_TRUE(p.setValue(PARAM_FAILSAFE_RECOVERY_DELAY, 0, 10.0f));
+    TEST_ASSERT_TRUE(p.setValue(PARAM_RUNAWAY_TAKEOFF_DEACTIVATE_DELAY, 0, 300.0f));
+    char err[64];
+    TEST_ASSERT_TRUE(p.parse(PARAM_FAILSAFE_PROCEDURE, 0, "DROP", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_FAILSAFE_SWITCH_MODE, 0, "kill", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_RUNAWAY_TAKEOFF_PREVENTION, 0, "OFF", err, sizeof(err)));
+    CopterSettings s;
+    p.applyTo(s);
+    TEST_ASSERT_EQUAL_FLOAT(40.0f, s.smallAngleDeg);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, s.autoDisarmS);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.8f, s.failsafeDelayS);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.35f, s.failsafeThrottle);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.0f, s.failsafeRecoveryS);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.3f, s.runawayDeactivateS);
+    TEST_ASSERT_FALSE(s.runawayPrevention);
+    TEST_ASSERT_EQUAL(static_cast<int>(FailsafeProcedure::DROP), static_cast<int>(s.failsafeProcedure));
+    TEST_ASSERT_EQUAL(static_cast<int>(FailsafeSwitchMode::KILL), static_cast<int>(s.failsafeSwitchMode));
+    // умолчания — как в BF 4.5, кроме процедуры (у нас AUTO-LAND) и времени посадки
+    CopterParams d;
+    CopterSettings ds;
+    d.applyTo(ds);
+    TEST_ASSERT_EQUAL_FLOAT(25.0f, ds.smallAngleDeg);
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, ds.autoDisarmS);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.5f, ds.failsafeDelayS);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.5f, ds.failsafeRecoveryS);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 10.0f, ds.failsafeThrottleLowS);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, ds.failsafeThrottle);
+    TEST_ASSERT_TRUE(ds.runawayPrevention);
+    TEST_ASSERT_EQUAL(static_cast<int>(FailsafeProcedure::AUTO_LAND), static_cast<int>(ds.failsafeProcedure));
+    TEST_ASSERT_EQUAL_STRING("safety", paramGroupName(paramInfo(PARAM_FAILSAFE_DELAY).group));
 }
 
 void test_mode_names_and_settings()
@@ -3644,6 +3798,11 @@ int main()
     RUN_TEST(test_arm_blockers);
     RUN_TEST(test_motor_test_only_disarmed_and_times_out);
     RUN_TEST(test_link_loss_on_ground_disarms_and_needs_switch_toggle);
+    RUN_TEST(test_arm_block_bits_are_betaflight_flags);
+    RUN_TEST(test_small_angle_setting);
+    RUN_TEST(test_auto_disarm_on_the_ground);
+    RUN_TEST(test_arm_after_failsafe_waits_for_recovery_delay);
+    RUN_TEST(test_safety_params_reach_the_controller);
     RUN_TEST(test_mode_names_and_settings);
     RUN_TEST(test_params_table_is_consistent);
     RUN_TEST(test_params_set_get_bounds_and_enums);

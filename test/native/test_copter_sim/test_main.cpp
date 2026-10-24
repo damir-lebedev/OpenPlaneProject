@@ -100,6 +100,8 @@ namespace
     {
         QuadHarness h(b, p, seed);
         TEST_ASSERT_TRUE_MESSAGE(h.takeoffTo(10.0), label(b, variant));
+        // обычный взлёт выключил проверку runaway takeoff (и не сработал на ней)
+        TEST_ASSERT_FALSE_MESSAGE(h.ctl.getStatus().runawayCheck, label(b, variant));
         h.rc.linkOk = false;
         const double t0 = h.sim.now();
         double maxDescent = 0;
@@ -358,9 +360,9 @@ void test_link_glitch_and_recovery_in_flight()
     TEST_ASSERT_EQUAL(static_cast<int>(CopterState::FAILSAFE), static_cast<int>(h.ctl.getStatus().state));
     TEST_ASSERT_TRUE(h.sim.height() < 10.0);
     h.rc.linkOk = true;
-    h.run(0.5);
+    h.run(0.3);
     TEST_ASSERT_EQUAL(static_cast<int>(CopterState::FAILSAFE), static_cast<int>(h.ctl.getStatus().state));
-    h.run(1.0);
+    h.run(0.3);
     TEST_ASSERT_EQUAL(static_cast<int>(CopterState::ARMED), static_cast<int>(h.ctl.getStatus().state));
     // и тумблер снова работает как аварийный
     h.rc.armSwitch = false;
@@ -1042,6 +1044,159 @@ void test_absolute_control_holds_attitude_against_torque()
     }
 }
 
+// Runaway takeoff: два мотора на чужих выходах (провода перепутаны) —
+// на газе коптер кувыркается, DISARM меньше чем за 1 с, ARM — после
+// выключения тумблера. Без защиты runaway её DISARM не срабатывает.
+void test_runaway_takeoff_disarms_on_wrong_motor_wiring()
+{
+    for (int prevent = 1; prevent >= 0; --prevent)
+    {
+        CopterSettings s;
+        s.runawayPrevention = prevent != 0;
+        QuadHarness h(five(), QuadPerturb(), 40, EscProtocol::DSHOT600, 1000.0f, s);
+        h.wiring[0] = 1;
+        h.wiring[1] = 0;
+        TEST_ASSERT_TRUE(h.armOnGround(CopterMode::ANGLE));
+        TEST_ASSERT_EQUAL(prevent != 0, h.ctl.getStatus().runawayCheck);
+        h.rc.throttle = 0.6f;
+        const double t0 = h.sim.now();
+        while (h.ctl.isArmed() && h.sim.now() - t0 < 1.0) h.step();
+        char line[160];
+        snprintf(line, sizeof(line), "runaway %s: %s after %.3f s, max tilt %.0f deg", prevent ? "ON" : "OFF",
+                 h.ctl.isArmed() ? "still armed" : "DISARM", h.sim.now() - t0, h.stats.maxTilt);
+        TEST_MESSAGE(line);
+        if (prevent)
+        {
+            TEST_ASSERT_FALSE_MESSAGE(h.ctl.isArmed(), line);
+            TEST_ASSERT_TRUE(h.ctl.getStatus().runaway);
+            TEST_ASSERT_FALSE(h.out.spinning);
+            h.step();
+            const uint32_t b = h.ctl.getStatus().armBlockers;
+            TEST_ASSERT_TRUE(b & ARM_BLOCK_RUNAWAY);
+            TEST_ASSERT_TRUE(b & ARM_BLOCK_NOT_DISARMED);
+            h.rc.throttle = 0.0f;
+            h.rc.armSwitch = false;
+            h.step();
+            TEST_ASSERT_FALSE(h.ctl.getStatus().runaway);
+        }
+        else
+        {
+            TEST_ASSERT_FALSE(h.ctl.getStatus().runaway);
+        }
+    }
+}
+
+// Этапы failsafe: этап 1 (до failsafe_delay) — ровно и держит высоту,
+// этап 2 — снижение; связь вернулась на этапе 1 — управление сразу, на
+// этапе 2 — через failsafe_recovery_delay.
+void test_failsafe_stage1_holds_altitude_then_stage2_descends()
+{
+    QuadHarness h(five(), QuadPerturb(), 41);
+    TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+    const double h0 = h.sim.height();
+    h.rc.linkOk = false;
+    h.run(1.0);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterState::FAILSAFE), static_cast<int>(h.ctl.getStatus().state));
+    TEST_ASSERT_EQUAL_UINT8(1, h.ctl.getStatus().failsafeStage);
+    TEST_ASSERT_FLOAT_WITHIN(0.5, h0, h.sim.height());
+    h.rc.linkOk = true;
+    h.step();
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterState::ARMED), static_cast<int>(h.ctl.getStatus().state));
+    h.run(1.0);
+    h.rc.linkOk = false;
+    h.run(1.6);
+    TEST_ASSERT_EQUAL_UINT8(2, h.ctl.getStatus().failsafeStage);
+    h.run(2.0);
+    TEST_ASSERT_TRUE(h.sim.height() < h0 - 0.7);
+    h.rc.linkOk = true;
+    h.run(0.4);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterState::FAILSAFE), static_cast<int>(h.ctl.getStatus().state));
+    h.run(0.2);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterState::ARMED), static_cast<int>(h.ctl.getStatus().state));
+    TEST_ASSERT_EQUAL_UINT8(0, h.ctl.getStatus().failsafeStage);
+}
+
+// DROP: этап 2 — моторы стоп. ARM снова — только когда связь продержалась
+// failsafe_recovery_delay и тумблер выключили.
+void test_failsafe_drop_procedure()
+{
+    CopterSettings s;
+    s.failsafeProcedure = FailsafeProcedure::DROP;
+    QuadHarness h(five(), QuadPerturb(), 42, EscProtocol::DSHOT600, 1000.0f, s);
+    TEST_ASSERT_TRUE(h.takeoffTo(5.0));
+    h.rc.linkOk = false;
+    h.run(1.4);
+    TEST_ASSERT_TRUE(h.ctl.isArmed());
+    h.run(0.2);
+    TEST_ASSERT_FALSE(h.ctl.isArmed());
+    TEST_ASSERT_FALSE(h.out.spinning);
+    while (h.sim.height() > 0.01) h.step();
+    h.rc.linkOk = true;
+    h.rc.throttle = 0.0f;
+    h.rc.armSwitch = false;
+    h.run(0.2);
+    TEST_ASSERT_TRUE(h.ctl.getStatus().armBlockers & ARM_BLOCK_FAILSAFE);
+    h.run(0.4);
+    TEST_ASSERT_FALSE(h.ctl.getStatus().armBlockers & ARM_BLOCK_FAILSAFE);
+}
+
+// Режим FAILSAFE с тумблера: STAGE2 — сразу снижение, тумблер назад —
+// управление сразу; KILL — моторы стоп сразу, ARM не раньше чем через 1 с.
+void test_failsafe_switch_modes()
+{
+    {
+        CopterSettings s;
+        s.failsafeSwitchMode = FailsafeSwitchMode::STAGE2;
+        QuadHarness h(five(), QuadPerturb(), 43, EscProtocol::DSHOT600, 1000.0f, s);
+        TEST_ASSERT_TRUE(h.takeoffTo(5.0));
+        h.rc.failsafeSwitch = true;
+        h.step();
+        TEST_ASSERT_EQUAL_UINT8(2, h.ctl.getStatus().failsafeStage);
+        h.run(1.0);
+        h.rc.failsafeSwitch = false;
+        h.step();
+        TEST_ASSERT_EQUAL(static_cast<int>(CopterState::ARMED), static_cast<int>(h.ctl.getStatus().state));
+    }
+    {
+        CopterSettings s;
+        s.failsafeSwitchMode = FailsafeSwitchMode::KILL;
+        QuadHarness h(five(), QuadPerturb(), 44, EscProtocol::DSHOT600, 1000.0f, s);
+        TEST_ASSERT_TRUE(h.takeoffTo(3.0));
+        h.rc.failsafeSwitch = true;
+        h.step();
+        TEST_ASSERT_FALSE(h.ctl.isArmed());
+        TEST_ASSERT_FALSE(h.out.spinning);
+        while (h.sim.height() > 0.01) h.step();
+        h.rc.failsafeSwitch = false;
+        h.rc.throttle = 0.0f;
+        h.rc.armSwitch = false;
+        h.run(0.8);
+        TEST_ASSERT_TRUE(h.ctl.getStatus().armBlockers & ARM_BLOCK_FAILSAFE);
+        h.run(0.3);
+        TEST_ASSERT_FALSE(h.ctl.getStatus().armBlockers & ARM_BLOCK_FAILSAFE);
+    }
+}
+
+// GPS-RESCUE (пока без GPS — снижение): связь вернулась — управление
+// пилоту, только когда он отклонит стик дальше failsafe_stick_threshold.
+void test_failsafe_rescue_returns_control_by_stick()
+{
+    CopterSettings s;
+    s.failsafeProcedure = FailsafeProcedure::GPS_RESCUE;
+    QuadHarness h(five(), QuadPerturb(), 45, EscProtocol::DSHOT600, 1000.0f, s);
+    TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+    h.rc.linkOk = false;
+    h.run(2.0);
+    TEST_ASSERT_EQUAL_UINT8(2, h.ctl.getStatus().failsafeStage);
+    h.rc.linkOk = true;
+    h.rc.roll = 0.2f;
+    h.run(1.0);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterState::FAILSAFE), static_cast<int>(h.ctl.getStatus().state));
+    h.rc.roll = 0.4f;
+    h.step();
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterState::ARMED), static_cast<int>(h.ctl.getStatus().state));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -1072,5 +1227,10 @@ int main()
     RUN_TEST(test_feedforward_max_rate_limit_on_a_full_stick_flip);
     RUN_TEST(test_integrated_yaw_on_big_hexa);
     RUN_TEST(test_absolute_control_holds_attitude_against_torque);
+    RUN_TEST(test_runaway_takeoff_disarms_on_wrong_motor_wiring);
+    RUN_TEST(test_failsafe_stage1_holds_altitude_then_stage2_descends);
+    RUN_TEST(test_failsafe_drop_procedure);
+    RUN_TEST(test_failsafe_switch_modes);
+    RUN_TEST(test_failsafe_rescue_returns_control_by_stick);
     return UNITY_END();
 }

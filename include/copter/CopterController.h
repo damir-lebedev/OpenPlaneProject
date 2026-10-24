@@ -31,14 +31,24 @@
 //
 // Защиты:
 //   • ARM — только когда всё в порядке (armBlockers()): связь есть,
-//     газ внизу, коптер стоит ровно и не качается, гироскоп жив,
-//     батарея не пустая, проверка моторов выключена; ARM, включённый
-//     раньше времени, надо выключить и включить заново;
+//     газ внизу, коптер стоит ровно (small_angle) и не качается,
+//     гироскоп жив, батарея не пустая, проверка моторов выключена; ARM,
+//     включённый раньше времени, надо выключить и включить заново;
 //   • выключение ARM — моторы стоп в любой момент (аварийная кнопка);
-//   • потеря связи: на земле — сразу DISARM; в воздухе — ровно и
-//     снижение 0.7 м/с (с барометром — по нему, без — по
-//     акселерометру), касание земли -> DISARM. Связь вернулась на 1 с —
-//     управление снова у пилота;
+//   • заармлен, но стоит на земле с газом внизу auto_disarm_delay — DISARM;
+//   • runaway takeoff: после ARM сумма PID упёрлась (больше 60 % хода
+//     моторов) и коптер при этом вращается — 75 мс подряд, — DISARM
+//     (перепутаны моторы, винты, установка платы). Проверка гаснет, когда
+//     коптер полсекунды спокойно летит на газе;
+//   • потеря связи (или режим FAILSAFE с тумблера): первые 0.3 с —
+//     последние ручки; дальше на земле — сразу DISARM, в воздухе этап 1 —
+//     ровно и держит высоту до failsafe_delay, затем этап 2 по
+//     failsafe_procedure: AUTO-LAND — ровно и снижение 0.7 м/с (с
+//     барометром — по нему, без — по акселерометру), касание земли —
+//     DISARM; DROP — моторы стоп. Связь вернулась: на этапе 1 — управление
+//     пилоту сразу, на этапе 2 — через failsafe_recovery_delay; после
+//     DISARM защитой ARM — только когда связь продержалась столько же и
+//     тумблер выключили;
 //   • авария: в ANGLE/ALT_HOLD наклон больше 90° дольше 0.7 с или не тот,
 //     что просит стик, больше 30° дольше 2 с (отказал мотор, лежит на
 //     боку); в любом режиме лежит вверх ногами 1 с или рысканье разошлось
@@ -69,59 +79,92 @@ namespace copter
         return "?";
     }
 
-    // Почему не армится (битовая маска). Код — как флаг запрета ARM в
-    // Betaflight (`status`), где такой есть; у наших проверок — свой.
+    // Почему не армится (битовая маска). Биты 0–25 — номера флагов запрета
+    // ARM Betaflight 4.5 (`status`, MSP_STATUS_EX: конфигуратор BF читает
+    // маску по номерам), коды — их имена. Наши проверки, которых в BF нет, —
+    // с бита 26. Флаги BF, которые пока ставить нечему (CMS, PARALYZE, GPS…),
+    // зарезервированы — их ставит снаружи то, что появится (setExternalBlockers).
     enum ArmBlock : uint32_t
     {
-        ARM_BLOCK_NO_LINK = 1u << 0,
-        ARM_BLOCK_THROTTLE = 1u << 1,
-        ARM_BLOCK_TILT = 1u << 2,
-        ARM_BLOCK_SWITCH = 1u << 3,
-        ARM_BLOCK_IMU = 1u << 4,
-        ARM_BLOCK_SETTLING = 1u << 5,
-        ARM_BLOCK_MOVING = 1u << 6,
-        ARM_BLOCK_BATTERY = 1u << 7,
-        ARM_BLOCK_MOTOR_TEST = 1u << 8,
-        ARM_BLOCK_CRASH = 1u << 9,
-        ARM_BLOCK_FAILSAFE_SWITCH = 1u << 10,
-        ARM_BLOCK_NO_PREARM = 1u << 11,
-        ARM_BLOCK_NO_ARM_SWITCH = 1u << 12,
-        // снаружи (setExternalBlockers): плата, консоль, приложение
+        ARM_BLOCK_IMU = 1u << 0,              // NOGYRO
+        ARM_BLOCK_FAILSAFE = 1u << 1,         // failsafe был — ждём связь failsafe_recovery_delay
+        ARM_BLOCK_NO_LINK = 1u << 2,          // RXLOSS
+        ARM_BLOCK_NOT_DISARMED = 1u << 3,     // после DISARM защитой тумблер ARM так и включён
+        ARM_BLOCK_FAILSAFE_SWITCH = 1u << 4,  // BOXFAILSAFE
+        ARM_BLOCK_RUNAWAY = 1u << 5,
+        ARM_BLOCK_CRASH = 1u << 6,
+        ARM_BLOCK_THROTTLE = 1u << 7,
+        ARM_BLOCK_TILT = 1u << 8,             // ANGLE: больше small_angle
+        ARM_BLOCK_BOOT_GRACE = 1u << 9,
+        ARM_BLOCK_NO_PREARM = 1u << 10,
+        ARM_BLOCK_LOAD = 1u << 11,
+        ARM_BLOCK_SETTLING = 1u << 12,        // CALIB
         ARM_BLOCK_CLI = 1u << 13,
-        ARM_BLOCK_MSP = 1u << 14,
-        ARM_BLOCK_NO_ACC_CAL = 1u << 15,
-        ARM_BLOCK_REBOOT = 1u << 16,
-        ARM_BLOCK_CONFIG = 1u << 17,
-        ARM_BLOCK_LOAD = 1u << 18,
-        ARM_BLOCK_LAST = ARM_BLOCK_LOAD,
+        ARM_BLOCK_CMS = 1u << 14,
+        ARM_BLOCK_BST = 1u << 15,
+        ARM_BLOCK_MSP = 1u << 16,
+        ARM_BLOCK_PARALYZE = 1u << 17,
+        ARM_BLOCK_GPS = 1u << 18,
+        ARM_BLOCK_RESCUE_SWITCH = 1u << 19,   // RESC
+        ARM_BLOCK_RPM_FILTER = 1u << 20,
+        ARM_BLOCK_REBOOT = 1u << 21,
+        ARM_BLOCK_DSHOT_BITBANG = 1u << 22,
+        ARM_BLOCK_NO_ACC_CAL = 1u << 23,
+        ARM_BLOCK_MOTOR_PROTOCOL = 1u << 24,
+        ARM_BLOCK_SWITCH = 1u << 25,          // ARMSWITCH: включён заранее
+        // наши, в BF таких нет
+        ARM_BLOCK_MOVING = 1u << 26,
+        ARM_BLOCK_BATTERY = 1u << 27,
+        ARM_BLOCK_MOTOR_TEST = 1u << 28,
+        ARM_BLOCK_NO_ARM_SWITCH = 1u << 29,
+        ARM_BLOCK_CONFIG = 1u << 30,
+        ARM_BLOCK_LAST = ARM_BLOCK_CONFIG,
     };
 
-    constexpr uint32_t ARM_BLOCK_EXTERNAL_MASK =
-        ARM_BLOCK_CLI | ARM_BLOCK_MSP | ARM_BLOCK_NO_ACC_CAL | ARM_BLOCK_REBOOT | ARM_BLOCK_CONFIG | ARM_BLOCK_LOAD;
+    // Флаги, у которых есть номер в Betaflight 4.5 (биты 0–25).
+    constexpr uint8_t ARM_BLOCK_BF_COUNT = 26;
+    constexpr uint32_t ARM_BLOCK_BF_MASK = (1u << ARM_BLOCK_BF_COUNT) - 1u;
+
+    constexpr uint32_t ARM_BLOCK_EXTERNAL_MASK = ARM_BLOCK_CLI | ARM_BLOCK_MSP | ARM_BLOCK_NO_ACC_CAL | ARM_BLOCK_REBOOT |
+                                                 ARM_BLOCK_CONFIG | ARM_BLOCK_LOAD | ARM_BLOCK_BOOT_GRACE | ARM_BLOCK_CMS |
+                                                 ARM_BLOCK_BST | ARM_BLOCK_PARALYZE | ARM_BLOCK_GPS | ARM_BLOCK_RESCUE_SWITCH |
+                                                 ARM_BLOCK_RPM_FILTER | ARM_BLOCK_DSHOT_BITBANG | ARM_BLOCK_MOTOR_PROTOCOL;
 
     inline const char* armBlockText(uint32_t bit)
     {
         switch (bit)
         {
-            case ARM_BLOCK_NO_LINK: return "нет связи с пультом";
-            case ARM_BLOCK_THROTTLE: return "газ не внизу";
-            case ARM_BLOCK_TILT: return "коптер стоит не ровно (больше 25°)";
-            case ARM_BLOCK_SWITCH: return "ARM был включён заранее — выключить и включить снова";
             case ARM_BLOCK_IMU: return "гироскоп/акселерометр не отвечает";
+            case ARM_BLOCK_FAILSAFE: return "был failsafe — связь должна продержаться failsafe_recovery_delay";
+            case ARM_BLOCK_NO_LINK: return "нет связи с пультом";
+            case ARM_BLOCK_NOT_DISARMED: return "моторы остановила защита — выключить ARM и включить снова";
+            case ARM_BLOCK_FAILSAFE_SWITCH: return "включён режим FAILSAFE (тумблер)";
+            case ARM_BLOCK_RUNAWAY: return "коптер «убегал» на взлёте (моторы, винты, установка платы?) — выключить ARM";
+            case ARM_BLOCK_CRASH: return "была авария (переворот, потеря управления) — выключить ARM";
+            case ARM_BLOCK_THROTTLE: return "газ не внизу";
+            case ARM_BLOCK_TILT: return "коптер стоит не ровно (больше small_angle)";
+            case ARM_BLOCK_BOOT_GRACE: return "сразу после включения";
+            case ARM_BLOCK_NO_PREARM: return "PREARM не включён";
+            case ARM_BLOCK_LOAD: return "цикл не успевает (загрузка больше 100 %)";
             case ARM_BLOCK_SETTLING: return "ориентация ещё не определилась (2 с после включения)";
+            case ARM_BLOCK_CLI: return "открыт CLI";
+            case ARM_BLOCK_CMS: return "открыто меню OSD";
+            case ARM_BLOCK_BST: return "шина BST";
+            case ARM_BLOCK_MSP: return "в приложении несохранённые настройки";
+            case ARM_BLOCK_PARALYZE: return "включён режим PARALYZE";
+            case ARM_BLOCK_GPS: return "нет GPS для возврата домой";
+            case ARM_BLOCK_RESCUE_SWITCH: return "включён тумблер возврата домой";
+            case ARM_BLOCK_RPM_FILTER: return "нет оборотов от регуляторов для фильтра";
+            case ARM_BLOCK_REBOOT: return "нужна перезагрузка (сменилась рама или выходы)";
+            case ARM_BLOCK_DSHOT_BITBANG: return "DShot не запустился";
+            case ARM_BLOCK_NO_ACC_CAL: return "не откалибрована установка платы ('o' в консоли)";
+            case ARM_BLOCK_MOTOR_PROTOCOL: return "протокол моторов не выбран или не работает";
+            case ARM_BLOCK_SWITCH: return "ARM был включён заранее — выключить и включить снова";
             case ARM_BLOCK_MOVING: return "коптер качают — поставить на землю";
             case ARM_BLOCK_BATTERY: return "батарея разряжена";
             case ARM_BLOCK_MOTOR_TEST: return "идёт проверка моторов";
-            case ARM_BLOCK_CRASH: return "была авария (переворот, потеря управления) — выключить ARM";
-            case ARM_BLOCK_FAILSAFE_SWITCH: return "включён режим FAILSAFE (тумблер)";
-            case ARM_BLOCK_NO_PREARM: return "PREARM не включён";
             case ARM_BLOCK_NO_ARM_SWITCH: return "ARM не назначен ни на один тумблер (aux)";
-            case ARM_BLOCK_CLI: return "открыт CLI";
-            case ARM_BLOCK_MSP: return "в приложении несохранённые настройки";
-            case ARM_BLOCK_NO_ACC_CAL: return "не откалибрована установка платы ('o' в консоли)";
-            case ARM_BLOCK_REBOOT: return "нужна перезагрузка (сменилась рама или выходы)";
             case ARM_BLOCK_CONFIG: return "описание коптера не сходится с платой (см. консоль)";
-            case ARM_BLOCK_LOAD: return "цикл не успевает (загрузка больше 100 %)";
         }
         return "?";
     }
@@ -131,34 +174,62 @@ namespace copter
     {
         switch (bit)
         {
+            case ARM_BLOCK_IMU: return "NOGYRO";
+            case ARM_BLOCK_FAILSAFE: return "FAILSAFE";
             case ARM_BLOCK_NO_LINK: return "RXLOSS";
+            case ARM_BLOCK_NOT_DISARMED: return "NOT_DISARMED";
+            case ARM_BLOCK_FAILSAFE_SWITCH: return "BOXFAILSAFE";
+            case ARM_BLOCK_RUNAWAY: return "RUNAWAY";
+            case ARM_BLOCK_CRASH: return "CRASH";
             case ARM_BLOCK_THROTTLE: return "THROTTLE";
             case ARM_BLOCK_TILT: return "ANGLE";
-            case ARM_BLOCK_SWITCH: return "ARMSWITCH";
-            case ARM_BLOCK_IMU: return "NOGYRO";
+            case ARM_BLOCK_BOOT_GRACE: return "BOOTGRACE";
+            case ARM_BLOCK_NO_PREARM: return "NOPREARM";
+            case ARM_BLOCK_LOAD: return "LOAD";
             case ARM_BLOCK_SETTLING: return "CALIB";
+            case ARM_BLOCK_CLI: return "CLI";
+            case ARM_BLOCK_CMS: return "CMS";
+            case ARM_BLOCK_BST: return "BST";
+            case ARM_BLOCK_MSP: return "MSP";
+            case ARM_BLOCK_PARALYZE: return "PARALYZE";
+            case ARM_BLOCK_GPS: return "GPS";
+            case ARM_BLOCK_RESCUE_SWITCH: return "RESC";
+            case ARM_BLOCK_RPM_FILTER: return "RPMFILTER";
+            case ARM_BLOCK_REBOOT: return "REBOOT_REQD";
+            case ARM_BLOCK_DSHOT_BITBANG: return "DSHOT_BBANG";
+            case ARM_BLOCK_NO_ACC_CAL: return "NO_ACC_CAL";
+            case ARM_BLOCK_MOTOR_PROTOCOL: return "MOTOR_PROTO";
+            case ARM_BLOCK_SWITCH: return "ARMSWITCH";
             case ARM_BLOCK_MOVING: return "MOVING";
             case ARM_BLOCK_BATTERY: return "BATTERY";
             case ARM_BLOCK_MOTOR_TEST: return "MOTOR_TEST";
-            case ARM_BLOCK_CRASH: return "CRASH";
-            case ARM_BLOCK_FAILSAFE_SWITCH: return "BOXFAILSAFE";
-            case ARM_BLOCK_NO_PREARM: return "NOPREARM";
             case ARM_BLOCK_NO_ARM_SWITCH: return "NO_ARM_AUX";
-            case ARM_BLOCK_CLI: return "CLI";
-            case ARM_BLOCK_MSP: return "MSP";
-            case ARM_BLOCK_NO_ACC_CAL: return "NO_ACC_CAL";
-            case ARM_BLOCK_REBOOT: return "REBOOT_REQD";
             case ARM_BLOCK_CONFIG: return "CONFIG";
-            case ARM_BLOCK_LOAD: return "LOAD";
         }
         return "?";
     }
+
+    // Что делать на втором этапе failsafe (failsafe_procedure, порядок — как в BF).
+    enum class FailsafeProcedure : uint8_t
+    {
+        AUTO_LAND,    // ровно и снижение (у нас — по высоте; failsafe_throttle > 1000 — фиксированный газ, как в BF)
+        DROP,         // моторы стоп сразу
+        GPS_RESCUE,   // возврата по GPS пока нет — снижение, как AUTO_LAND; вернуть управление — стиком
+    };
+
+    // Режим FAILSAFE с тумблера (failsafe_switch_mode, порядок — как в BF).
+    enum class FailsafeSwitchMode : uint8_t
+    {
+        STAGE1,   // как потеря связи: этап 1, затем процедура
+        KILL,     // моторы стоп сразу
+        STAGE2,   // сразу процедура
+    };
 
     enum class CopterState : uint8_t
     {
         DISARMED,
         ARMED,       // пилот управляет
-        FAILSAFE,    // нет связи: выравнивание и снижение
+        FAILSAFE,    // нет связи: этап 1 — ровно и высота, этап 2 — снижение (status.failsafeStage)
     };
 
     struct CopterSensors
@@ -205,11 +276,25 @@ namespace copter
         bool rpmNotches = true;
         float rcSmoothingHz = 40.0f;
         float horizonTransition = 0.75f;   // HORIZON: с какого отклонения стика — чистое ACRO
-        float failsafeDescent = 0.7f;      // м/с
-        float failsafeRecoveryS = 1.0f;    // связь держится столько — управление пилоту
-        float failsafeGuardS = 0.3f;       // столько связи нет — failsafe
-        float failsafeMaxS = 120.0f;       // не села за это время — DISARM
+        // failsafe (BF: failsafe_*). Связи нет FAILSAFE_HOLD_S — этап 1:
+        // ровно и держит высоту; нет failsafeDelayS — этап 2 (процедура)
+        float failsafeDescent = 0.7f;      // м/с: снижение AUTO-LAND
+        float failsafeDelayS = 1.5f;       // failsafe_delay: столько связи нет — этап 2
+        float failsafeLandingS = 120.0f;   // failsafe_landing_time: не села за это время — DISARM
+        float failsafeThrottle = 0.0f;     // failsafe_throttle: 0 — снижение по высоте, иначе газ 0..1 как в BF
+        float failsafeThrottleLowS = 10.0f;   // failsafe_throttle_low_delay: газ внизу дольше — сразу DISARM; 0 — нет
+        float failsafeRecoveryS = 0.5f;    // failsafe_recovery_delay: связь держится столько — управление пилоту
+        float failsafeStickThreshold = 0.3f;   // failsafe_stick_threshold: GPS-RESCUE отдаёт управление по стику
+        FailsafeProcedure failsafeProcedure = FailsafeProcedure::AUTO_LAND;
+        FailsafeSwitchMode failsafeSwitchMode = FailsafeSwitchMode::STAGE1;
         float minCellVolts = 3.5f;         // ниже (без нагрузки) — не армить: vbat_warning_cell_voltage
+        float smallAngleDeg = 25.0f;       // small_angle: наклон больше — не армить; 180 — проверки нет
+        float autoDisarmS = 5.0f;          // auto_disarm_delay: на земле с газом внизу столько — DISARM; 0 — нет
+        // runaway_takeoff_*: «убегает» на взлёте — DISARM; проверка гаснет,
+        // когда коптер столько продержался в воздухе спокойно
+        bool runawayPrevention = true;
+        float runawayDeactivateS = 0.5f;
+        float runawayDeactivateThrottle = 0.2f;
         bool crashDetection = true;
         AltitudeController::Settings alt;
     };
@@ -231,6 +316,9 @@ namespace copter
         bool airborne = false;
         bool saturated = false;
         bool crashed = false;
+        bool runaway = false;          // DISARM защитой runaway takeoff (до выключения тумблера)
+        bool runawayCheck = false;     // проверка runaway takeoff ещё работает (после ARM, до уверенного взлёта)
+        uint8_t failsafeStage = 0;     // 0 — нет, 1 — ровно и держит высоту, 2 — процедура
         uint32_t armCount = 0;
         uint32_t loops = 0;
     };
@@ -389,6 +477,7 @@ namespace copter
             trackFrames(rc.frame);
             const bool rcValid = handleLink(rc);
             handleArming(rc, sens, rcValid);
+            if (status.state == CopterState::ARMED) autoDisarm(rc);
             if (status.state != CopterState::DISARMED) detectCrash();
 
             if (status.state == CopterState::DISARMED)
@@ -407,7 +496,9 @@ namespace copter
 
             // ---- уставки ----
             const bool failsafe = status.state == CopterState::FAILSAFE;
-            const CopterMode mode = failsafe ? CopterMode::ALT_HOLD : rc.mode;
+            // этап 2 с failsafe_throttle — ровно на постоянном газе, как в BF
+            const bool fixedThrottle = failsafe && status.failsafeStage >= 2 && set.failsafeThrottle > 0.0f;
+            const CopterMode mode = failsafe ? (fixedThrottle ? CopterMode::ANGLE : CopterMode::ALT_HOLD) : rc.mode;
             if (mode != status.mode && (mode == CopterMode::ALT_HOLD))
             {
                 altCtl.reset(vertical.altitude(), status.throttle);
@@ -449,7 +540,7 @@ namespace copter
                 float climb = 0.0f;
                 if (failsafe)
                 {
-                    climb = -set.failsafeDescent;
+                    climb = status.failsafeStage >= 2 ? -set.failsafeDescent : 0.0f;   // этап 1 — держит высоту
                 }
                 else
                 {
@@ -464,7 +555,7 @@ namespace copter
             }
             else
             {
-                thrust = sticks[3];
+                thrust = fixedThrottle ? set.failsafeThrottle : sticks[3];
                 status.altTarget = vertical.altitude();
             }
 
@@ -541,6 +632,7 @@ namespace copter
                 hi = fmaxf(hi, mr.motor[i]);
             }
             lastMixSpread = tune.frame.count ? hi - lo : 0.0f;
+            checkRunaway(thrust, rates);
 
             // ---- моторы ----
             float vComp = 1.0f;
@@ -582,9 +674,86 @@ namespace copter
         {
             status.state = CopterState::DISARMED;
             status.airborne = false;
+            status.failsafeStage = 0;
+            status.runawayCheck = false;
         }
 
     private:
+        static constexpr float FAILSAFE_HOLD_S = 0.3f;        // провал связи короче — последние ручки (как в BF)
+        static constexpr float FAILSAFE_KILL_LOCK_S = 1.0f;   // после KILL с тумблера ARM не раньше
+        // runaway takeoff: сумма PID оси больше доли хода моторов, а гироскоп
+        // по ней быстрее порога — RUNAWAY_TRIGGER_S подряд; «спокойно» —
+        // сумма PID всех осей меньше RUNAWAY_CALM_PIDSUM
+        static constexpr float RUNAWAY_PIDSUM = 0.6f;
+        static constexpr float RUNAWAY_CALM_PIDSUM = 0.1f;
+        static constexpr float RUNAWAY_GYRO_RP_DPS = 15.0f;
+        static constexpr float RUNAWAY_GYRO_YAW_DPS = 50.0f;
+        static constexpr float RUNAWAY_TRIGGER_S = 0.075f;
+
+        // Газ внизу: для ARM, автодисарма. В ALT_HOLD газ у центра — висеть,
+        // ниже середины — «не взлетать».
+        static bool throttleLow(const CopterRc& rc)
+        {
+            return rc.mode == CopterMode::ALT_HOLD ? rc.throttle <= 0.42f : rc.throttle <= 0.05f;
+        }
+
+        // DISARM защитой: снова ARM — только выключив и включив тумблер.
+        void forcedDisarm()
+        {
+            disarm();
+            switchSeenOff = false;
+            forcedOff = true;
+        }
+
+        // DISARM failsafe'ом: ARM ещё и после того, как связь продержится
+        // failsafe_recovery_delay (KILL — 1 с).
+        void failsafeDisarm(bool kill = false)
+        {
+            forcedDisarm();
+            failsafeLatch = true;
+            killLatch = kill;
+        }
+
+        // auto_disarm_delay: заармлен, стоит на земле, газ внизу — DISARM.
+        void autoDisarm(const CopterRc& rc)
+        {
+            const bool idle = !status.airborne && rc.linkOk && throttleLow(rc);
+            groundIdleTimer = idle ? groundIdleTimer + dt : 0.0f;
+            if (set.autoDisarmS > 0.0f && groundIdleTimer >= set.autoDisarmS) forcedDisarm();
+        }
+
+        // Runaway takeoff: регулятор упёрся, а коптер всё равно вращается —
+        // контур работает наоборот (моторы не на тех выходах, винты не той
+        // стороной, плата повёрнута). Проверка — от ARM до уверенного взлёта.
+        void checkRunaway(float thrust, const float rates[3])
+        {
+            if (!status.runawayCheck) return;
+            bool runaway = false, calm = true;
+            for (uint8_t a = 0; a < 3; ++a)
+            {
+                const AxisTerms& t = axes[a].lastTerms();
+                const float sum = fabsf(t.p + t.i + t.d + t.ff);   // до pidsum_limit
+                const float gyroLimit = a == 2 ? RUNAWAY_GYRO_YAW_DPS : RUNAWAY_GYRO_RP_DPS;
+                if (sum > RUNAWAY_PIDSUM && fabsf(rates[a]) > gyroLimit) runaway = true;
+                if (sum > RUNAWAY_CALM_PIDSUM) calm = false;
+            }
+            runawayTimer = runaway ? runawayTimer + dt : 0.0f;
+            if (runawayTimer >= RUNAWAY_TRIGGER_S)
+            {
+                status.runaway = true;
+                forcedDisarm();
+                return;
+            }
+            // газ выше порога (или коптер уже поднялся выше метра — висение
+            // у мощного коптера бывает ниже порога)
+            const bool flying = thrust >= set.runawayDeactivateThrottle || (status.airborne && vertical.altitude() > 1.0f);
+            if (flying && calm)
+            {
+                runawayFlown += dt;
+                if (runawayFlown >= set.runawayDeactivateS) status.runawayCheck = false;
+            }
+        }
+
         bool spinning() const { return status.state != CopterState::DISARMED; }
 
         // Кадры приёмника: пришёл ли новый в этом цикле и их период
@@ -624,6 +793,8 @@ namespace copter
             lostControlTimer = 0.0f;
             yawLostTimer = 0.0f;
             levelErrorDeg = 0.0f;
+            runawayTimer = 0.0f;
+            groundIdleTimer = 0.0f;
             if (sens.baroOk) baroHome = sens.baroAltM;
             vertical.reset(sens.baroOk ? sens.baroAltM - baroHome : 0.0f);
             altCtl.reset(0.0f, 0.0f);
@@ -636,57 +807,111 @@ namespace copter
             {
                 lostTimer = 0.0f;
                 lastGoodRc = rc;
+                goodTimer += dt;
+                if (failsafeLatch && goodTimer >= (killLatch ? FAILSAFE_KILL_LOCK_S : set.failsafeRecoveryS))
+                {
+                    failsafeLatch = killLatch = false;
+                }
+                if (status.state == CopterState::FAILSAFE) recoverFromFailsafe(rc);
                 if (status.state == CopterState::FAILSAFE)
                 {
-                    recoverTimer += dt;
-                    if (recoverTimer >= set.failsafeRecoveryS)
-                    {
-                        status.state = CopterState::ARMED;
-                        recoverTimer = 0.0f;
-                        // режим — какой стоит на пульте; ALT_HOLD подхватит текущий газ
-                        altCtl.reset(vertical.altitude(), status.throttle);
-                    }
+                    // управление ещё у автомата: стики не трогают ни наклон, ни газ
+                    rc.roll = rc.pitch = rc.yaw = 0.0f;
+                    rc.throttle = 0.0f;
                 }
+                // failsafe_throttle_low_delay: газ внизу так долго — коптер, видно, на земле
+                const bool low = rc.mode != CopterMode::ALT_HOLD && rc.throttle <= 0.05f;
+                lowThrottleTimer = (status.state == CopterState::ARMED && low) ? lowThrottleTimer + dt : 0.0f;
                 return true;
             }
 
+            goodTimer = 0.0f;
             recoverTimer = 0.0f;
+            const bool bySwitch = rc.failsafeSwitch && rc.linkOk;
+            if (lostTimer == 0.0f || !rc.linkOk) failsafeBySwitch = bySwitch;
             lostTimer += dt;
-            // короткий провал: держим последние ручки
-            if (lostTimer < set.failsafeGuardS && status.state == CopterState::ARMED)
+            if (bySwitch && set.failsafeSwitchMode == FailsafeSwitchMode::KILL)
             {
-                rc = lastGoodRc;
-                rc.linkOk = false;
-                return true;
+                if (isArmed()) failsafeDisarm(true);
             }
-            rc.roll = rc.pitch = rc.yaw = 0.0f;
-            rc.throttle = 0.0f;
-            if (status.state == CopterState::ARMED)
+            else if (status.state == CopterState::ARMED)
             {
-                if (!status.airborne)
+                // короткий провал связи: последние ручки (тумблер — сразу)
+                if (!bySwitch && lostTimer < FAILSAFE_HOLD_S)
                 {
-                    disarm();
+                    rc = lastGoodRc;
+                    rc.linkOk = false;
+                    return true;
+                }
+                const bool longLow = set.failsafeThrottleLowS > 0.0f && lowThrottleTimer >= set.failsafeThrottleLowS;
+                if (!status.airborne || longLow)
+                {
+                    failsafeDisarm();   // на земле — просто DISARM
                 }
                 else
                 {
                     status.state = CopterState::FAILSAFE;
+                    status.failsafeStage = 1;
                     failsafeTimer = 0.0f;
                     landingTimer = 0.0f;
                     altCtl.reset(vertical.altitude(), status.throttle);
                 }
             }
+            if (status.state == CopterState::FAILSAFE && status.failsafeStage == 1)
+            {
+                const bool skip = bySwitch && set.failsafeSwitchMode == FailsafeSwitchMode::STAGE2;
+                if (skip || lostTimer >= set.failsafeDelayS)
+                {
+                    if (set.failsafeProcedure == FailsafeProcedure::DROP)
+                    {
+                        failsafeDisarm();
+                    }
+                    else
+                    {
+                        status.failsafeStage = 2;
+                        failsafeTimer = 0.0f;
+                    }
+                }
+            }
+            rc.roll = rc.pitch = rc.yaw = 0.0f;
+            rc.throttle = 0.0f;
             return false;
+        }
+
+        // Связь (или тумблер) вернулась во время failsafe. Этап 1 или режим
+        // FAILSAFE с тумблера — управление пилоту сразу; этап 2 — когда связь
+        // продержится failsafe_recovery_delay, а у GPS-RESCUE ещё и пилот
+        // отклонит стик дальше failsafe_stick_threshold.
+        void recoverFromFailsafe(const CopterRc& rc)
+        {
+            bool back = failsafeBySwitch || status.failsafeStage < 2;
+            if (!back)
+            {
+                recoverTimer += dt;
+                back = recoverTimer >= set.failsafeRecoveryS;
+                if (back && set.failsafeProcedure == FailsafeProcedure::GPS_RESCUE)
+                {
+                    const float stick = fmaxf(fabsf(rc.roll), fmaxf(fabsf(rc.pitch), fabsf(rc.yaw)));
+                    back = stick > set.failsafeStickThreshold;
+                }
+            }
+            if (!back) return;
+            status.state = CopterState::ARMED;
+            status.failsafeStage = 0;
+            recoverTimer = 0.0f;
+            // режим — какой стоит на пульте; ALT_HOLD подхватит текущий газ
+            altCtl.reset(vertical.altitude(), status.throttle);
         }
 
         uint32_t computeBlockers(const CopterRc& rc, const CopterSensors& sens) const
         {
             uint32_t b = 0;
             if (!rc.linkOk) b |= ARM_BLOCK_NO_LINK;
-            if (rc.throttle > 0.05f && rc.mode != CopterMode::ALT_HOLD) b |= ARM_BLOCK_THROTTLE;
-            if (rc.mode == CopterMode::ALT_HOLD && rc.throttle > 0.42f) b |= ARM_BLOCK_THROTTLE;
+            if (failsafeLatch || status.state == CopterState::FAILSAFE) b |= ARM_BLOCK_FAILSAFE;
+            if (!throttleLow(rc)) b |= ARM_BLOCK_THROTTLE;
             if (!sens.imuOk) b |= ARM_BLOCK_IMU;
             if (uptime < 2.0f || !attitude.isInitialized()) b |= ARM_BLOCK_SETTLING;
-            else if (attitude.tiltDeg() > 25.0f) b |= ARM_BLOCK_TILT;
+            else if (set.smallAngleDeg < 180.0f && attitude.tiltDeg() > set.smallAngleDeg) b |= ARM_BLOCK_TILT;
             if (motionTimer < 0.3f) b |= ARM_BLOCK_MOVING;
             if (status.volts > 1.0f && tune.volts > 1.0f)
             {
@@ -695,11 +920,12 @@ namespace copter
             }
             if (testLeft > 0.0f) b |= ARM_BLOCK_MOTOR_TEST;
             if (status.crashed) b |= ARM_BLOCK_CRASH;
+            if (status.runaway) b |= ARM_BLOCK_RUNAWAY;
             if (rc.failsafeSwitch) b |= ARM_BLOCK_FAILSAFE_SWITCH;
             if (!rc.prearm) b |= ARM_BLOCK_NO_PREARM;
             if (!rc.armAssigned) b |= ARM_BLOCK_NO_ARM_SWITCH;
             b |= externalBlockers;
-            if (!switchSeenOff) b |= ARM_BLOCK_SWITCH;
+            if (!switchSeenOff) b |= forcedOff ? ARM_BLOCK_NOT_DISARMED : ARM_BLOCK_SWITCH;
             return b;
         }
 
@@ -716,7 +942,9 @@ namespace copter
             if (!rc.armSwitch)
             {
                 switchSeenOff = true;
+                forcedOff = false;
                 status.crashed = false;
+                status.runaway = false;
                 if (status.state != CopterState::DISARMED) disarm();
                 prevSwitch = false;
                 return;
@@ -730,6 +958,9 @@ namespace copter
                 status.mode = rc.mode;
                 ++status.armCount;
                 testLeft = 0.0f;
+                status.runawayCheck = set.runawayPrevention;
+                runawayTimer = runawayFlown = 0.0f;
+                groundIdleTimer = lowThrottleTimer = 0.0f;
                 attitude.setGrounded(true);
                 if (rc.mode == CopterMode::ALT_HOLD) altCtl.reset(vertical.altitude(), 0.0f);
             }
@@ -754,8 +985,7 @@ namespace copter
             if (lostControlTimer > 2.0f || yawLostTimer > 1.5f)
             {
                 status.crashed = true;
-                switchSeenOff = false;
-                disarm();
+                forcedDisarm();
                 return;
             }
             // лежит на спине: акселерометр видит силу по оси −Z рамы — в
@@ -768,8 +998,7 @@ namespace copter
                 if (crashTimer >= limit)
                 {
                     status.crashed = true;
-                    switchSeenOff = false;
-                    disarm();
+                    forcedDisarm();
                 }
             }
             else
@@ -798,12 +1027,13 @@ namespace copter
                 status.airborne = false;
                 landingTimer = 0.0f;
                 vertical.reset(vertical.altitude());
-                if (status.state == CopterState::FAILSAFE) disarm();
+                if (status.state == CopterState::FAILSAFE) failsafeDisarm();
             }
-            if (status.state == CopterState::FAILSAFE)
+            // failsafe_landing_time: этап 2 не кончился посадкой — DISARM
+            if (status.state == CopterState::FAILSAFE && status.failsafeStage >= 2)
             {
                 failsafeTimer += dt;
-                if (failsafeTimer > set.failsafeMaxS) disarm();
+                if (failsafeTimer > set.failsafeLandingS) failsafeDisarm();
             }
         }
 
@@ -899,7 +1129,16 @@ namespace copter
         float uptime = 0.0f;
         float motionTimer = 0.0f;
         float lostTimer = 0.0f;
+        float goodTimer = 0.0f;          // связь держится (failsafe_recovery_delay после DISARM)
         float recoverTimer = 0.0f;
+        float lowThrottleTimer = 0.0f;   // газ внизу (failsafe_throttle_low_delay)
+        float groundIdleTimer = 0.0f;    // на земле с газом внизу (auto_disarm_delay)
+        float runawayTimer = 0.0f;
+        float runawayFlown = 0.0f;       // спокойного полёта после ARM (гасит runaway takeoff)
+        bool failsafeLatch = false;      // DISARM failsafe'ом: ARM после связи failsafe_recovery_delay
+        bool killLatch = false;          // ... а после KILL — 1 с
+        bool failsafeBySwitch = false;   // failsafe включил тумблер, а не потеря связи
+        bool forcedOff = false;          // DISARM защитой — код NOT_DISARMED
         float failsafeTimer = 0.0f;
         float landingTimer = 0.0f;
         float crashTimer = 0.0f;

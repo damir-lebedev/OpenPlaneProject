@@ -39,6 +39,7 @@ public:
         ctl.configure(tune, settings);
         rc.linkOk = true;
         rc.mode = copter::CopterMode::ANGLE;
+        for (uint8_t i = 0; i < copter::MAX_MOTORS; ++i) wiring[i] = i;
     }
 
     // Другая настройка контроллера на той же физике (дефолты Betaflight, свои PID).
@@ -58,7 +59,9 @@ public:
         s.batteryVolts = sim.readVolts();
         out = ctl.update(s, rc);
         lastSens = s;
-        sim.step(out.motor, out.spinning);
+        float motor[copter::MAX_MOTORS] = {};
+        for (uint8_t i = 0; i < out.count; ++i) motor[wiring[i]] = out.motor[i];
+        sim.step(motor, out.spinning);
 
         // статистика
         const auto w = sim.rates();
@@ -119,6 +122,7 @@ public:
     std::function<void()> afterStep;         // после каждого шага (чёрный ящик в тестах)
     bool baroOk = true;
     bool imuOk = true;
+    uint8_t wiring[copter::MAX_MOTORS];      // выход i -> мотор wiring[i] (перепутанные провода)
     long steps = 0;
 
 private:

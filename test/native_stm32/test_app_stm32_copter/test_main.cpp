@@ -110,7 +110,7 @@ void test_arm_waits_for_mount_calibration()
     run(rc, 0.01);
     const std::string status = takeSerial();
     TEST_ASSERT_TRUE_MESSAGE(contains(status, "  - NO_ACC_CAL: не откалибрована установка платы"), status.c_str());
-    TEST_ASSERT_TRUE_MESSAGE(contains(status, "Arming disable flags: ARMSWITCH NO_ACC_CAL\r\n"), status.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(contains(status, "Arming disable flags: NO_ACC_CAL ARMSWITCH\r\n"), status.c_str());
     TEST_ASSERT_TRUE(contains(status, "Батарея 25."));
     rc.set(Channels::ARM, 1000);
     run(rc, 0.2);

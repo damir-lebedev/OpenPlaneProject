@@ -474,9 +474,12 @@ private:
         info("bits.flags=%s", BlackBoxFormat::CopterFlag::NAMES);
         info("names.mode=ACRO HORIZON ANGLE ALT_HOLD");
         info("names.state=DISARMED ARMED FAILSAFE");
-        char codes[220];
-        blockerCodes(0xFFFFFFFFu, codes, sizeof(codes));
+        // всё одной записью не влезает (255 байт): флаги BF — биты 0–25, наши — с 26-го
+        char codes[240];
+        blockerCodes(copter::ARM_BLOCK_BF_MASK, codes, sizeof(codes));
         info("bits.arm_blockers=%s", codes);
+        blockerCodes(~copter::ARM_BLOCK_BF_MASK, codes, sizeof(codes));
+        info("bits.arm_blockers_from%u=%s", static_cast<unsigned>(copter::ARM_BLOCK_BF_COUNT), codes);
         info("sensor.imu=%s", sensorName(imu));
         info("sensor.baro=%s", sensorName(baro));
         info("sensor.gps=%s", sensorName(gps));

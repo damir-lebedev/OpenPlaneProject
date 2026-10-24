@@ -168,7 +168,8 @@ void test_arm_records_the_flight_to_the_card()
     TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "loop_hz=1000"));
     TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "set.p_roll=52"));
     TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "pid.roll="));   // с чем летит (без save — прежнее), set.* — что задано
-    TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "bits.arm_blockers=RXLOSS THROTTLE"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "bits.arm_blockers=NOGYRO FAILSAFE RXLOSS NOT_DISARMED BOXFAILSAFE RUNAWAY CRASH THROTTLE ANGLE BOOTGRACE NOPREARM LOAD CALIB CLI CMS BST MSP PARALYZE GPS RESC RPMFILTER REBOOT_REQD DSHOT_BBANG NO_ACC_CAL MOTOR_PROTO ARMSWITCH"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "bits.arm_blockers_from26=MOVING BATTERY MOTOR_TEST NO_ARM_AUX CONFIG"));
     TEST_ASSERT_TRUE(hasText(recs, REC_SCHEMA, "QGYRO"));
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "запись: старт (ARM)"));
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "ARM"));

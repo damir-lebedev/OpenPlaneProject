@@ -241,6 +241,19 @@ namespace copter
         PARAM_BLACKBOX_DEVICE,
         PARAM_BLACKBOX_MODE,
         PARAM_BLACKBOX_SAMPLE_RATE,
+        PARAM_SMALL_ANGLE,
+        PARAM_AUTO_DISARM_DELAY,
+        PARAM_RUNAWAY_TAKEOFF_PREVENTION,
+        PARAM_RUNAWAY_TAKEOFF_DEACTIVATE_DELAY,
+        PARAM_RUNAWAY_TAKEOFF_DEACTIVATE_THROTTLE,
+        PARAM_FAILSAFE_DELAY,
+        PARAM_FAILSAFE_LANDING_TIME,
+        PARAM_FAILSAFE_THROTTLE,
+        PARAM_FAILSAFE_THROTTLE_LOW_DELAY,
+        PARAM_FAILSAFE_RECOVERY_DELAY,
+        PARAM_FAILSAFE_STICK_THRESHOLD,
+        PARAM_FAILSAFE_PROCEDURE,
+        PARAM_FAILSAFE_SWITCH_MODE,
         PARAM_COUNT
     };
 
@@ -279,6 +292,9 @@ namespace copter
         static const char* const BLACKBOX_DEVICES[] = { "NONE", "SDCARD" };
         static const char* const BLACKBOX_MODES[] = { "NORMAL", "MOTOR_TEST", "ALWAYS" };
         static const char* const BLACKBOX_RATES[] = { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" };
+        // порядок — как FailsafeProcedure и FailsafeSwitchMode (CopterController.h) и в BF
+        static const char* const FS_PROCEDURES[] = { "AUTO-LAND", "DROP", "GPS-RESCUE" };
+        static const char* const FS_SWITCH_MODES[] = { "STAGE1", "KILL", "STAGE2" };
         uint8_t buildCount = 0;
         const char* const* builds = buildIds(buildCount);
         constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
@@ -287,7 +303,8 @@ namespace copter
         constexpr ParamGroup kGroupPid = ParamGroup::PID, kGroupRates = ParamGroup::RATES, kGroupRx = ParamGroup::RECEIVER,
                              kGroupCopter = ParamGroup::COPTER, kGroupPower = ParamGroup::POWER,
                              kGroupVtx = ParamGroup::VTX, kGroupGps = ParamGroup::GPS, kGroupBlackbox = ParamGroup::BLACKBOX,
-                             kGroupFilters = ParamGroup::FILTERS, kGroupMotors = ParamGroup::MOTORS;
+                             kGroupFilters = ParamGroup::FILTERS, kGroupMotors = ParamGroup::MOTORS,
+                             kGroupSafety = ParamGroup::SAFETY;
         constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD,
                                kBattery = ParamDefault::BATTERY;
         static const ParamInfo table[] = {
@@ -465,6 +482,32 @@ namespace copter
               "когда писать: NORMAL — пока ARM, MOTOR_TEST — пока крутятся моторы, ALWAYS — всегда" },
             { "blackbox_sample_rate", kEnum, kMaster, kGroupBlackbox, 0, 5, 0, kTable, "", BLACKBOX_RATES, 6,
               "гироскоп, PID и моторы — каждый какой цикл (1/1 — каждый: шум виден до половины частоты цикла)" },
+            { "small_angle", kInt, kMaster, kGroupSafety, 0, 180, 25, kTable, "°", nullptr, 0,
+              "стоит наклонённым больше — не армить; 180 — без проверки" },
+            { "auto_disarm_delay", kInt, kMaster, kGroupSafety, 0, 60, 5, kTable, "с", nullptr, 0,
+              "заармлен, но стоит на земле с газом внизу столько — DISARM; 0 — никогда" },
+            { "runaway_takeoff_prevention", kEnum, kMaster, kGroupSafety, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "после ARM регулятор упёрся, а коптер вращается (моторы, винты, плата не так) — DISARM" },
+            { "runaway_takeoff_deactivate_delay", kInt, kMaster, kGroupSafety, 100, 1000, 500, kTable, "мс", nullptr, 0,
+              "столько спокойного полёта на газе — проверка runaway выключается до следующего ARM" },
+            { "runaway_takeoff_deactivate_throttle_percent", kInt, kMaster, kGroupSafety, 0, 100, 20, kTable, "%", nullptr, 0,
+              "газ, выше которого полёт считается для выключения проверки runaway (или коптер уже висит)" },
+            { "failsafe_delay", kInt, kMaster, kGroupSafety, 1, 200, 15, kTable, "x0.1 с", nullptr, 0,
+              "связи нет столько — этап 2 (процедура); до того — этап 1: ровно и держит высоту" },
+            { "failsafe_landing_time", kInt, kMaster, kGroupSafety, 1, 250, 120, kTable, "с", nullptr, 0,
+              "AUTO-LAND не сел за это время — DISARM (BF — 60 с: у него посадка на постоянном газе)" },
+            { "failsafe_throttle", kInt, kMaster, kGroupSafety, 1000, 2000, 1000, kTable, "мкс", nullptr, 0,
+              "AUTO-LAND: 1000 — снижение 0.7 м/с по высоте; больше — постоянный газ, как в BF" },
+            { "failsafe_throttle_low_delay", kInt, kMaster, kGroupSafety, 0, 300, 100, kTable, "x0.1 с", nullptr, 0,
+              "газ был внизу дольше перед потерей связи — сразу DISARM (коптер на земле); 0 — нет" },
+            { "failsafe_recovery_delay", kInt, kMaster, kGroupSafety, 1, 200, 5, kTable, "x0.1 с", nullptr, 0,
+              "связь держится столько — управление пилоту (этап 2), снова можно ARM (после DISARM)" },
+            { "failsafe_stick_threshold", kInt, kMaster, kGroupSafety, 0, 50, 30, kTable, "%", nullptr, 0,
+              "GPS-RESCUE: связь вернулась — управление пилоту, когда стик отклонён дальше" },
+            { "failsafe_procedure", kEnum, kMaster, kGroupSafety, 0, 2, 0, kTable, "", FS_PROCEDURES, 3,
+              "этап 2: AUTO-LAND — ровно и снижение, DROP — моторы стоп, GPS-RESCUE — пока как AUTO-LAND" },
+            { "failsafe_switch_mode", kEnum, kMaster, kGroupSafety, 0, 2, 0, kTable, "", FS_SWITCH_MODES, 3,
+              "режим FAILSAFE с тумблера: STAGE1 — как потеря связи, STAGE2 — сразу процедура, KILL — моторы стоп" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;
@@ -647,8 +690,24 @@ namespace copter
         }
 
         // Настройки контроллера, которые задаёт реестр: батарея ниже порога
-        // «пора домой» без нагрузки — не армить.
-        void applyTo(CopterSettings& s) const { s.minCellVolts = value(PARAM_VBAT_WARNING_CELL_VOLTAGE) * 0.01f; }
+        // «пора домой» без нагрузки — не армить; ARM, runaway, failsafe.
+        void applyTo(CopterSettings& s) const
+        {
+            s.minCellVolts = value(PARAM_VBAT_WARNING_CELL_VOLTAGE) * 0.01f;
+            s.smallAngleDeg = value(PARAM_SMALL_ANGLE);
+            s.autoDisarmS = value(PARAM_AUTO_DISARM_DELAY);
+            s.runawayPrevention = value(PARAM_RUNAWAY_TAKEOFF_PREVENTION) > 0.5f;
+            s.runawayDeactivateS = value(PARAM_RUNAWAY_TAKEOFF_DEACTIVATE_DELAY) * 0.001f;
+            s.runawayDeactivateThrottle = value(PARAM_RUNAWAY_TAKEOFF_DEACTIVATE_THROTTLE) * 0.01f;
+            s.failsafeDelayS = value(PARAM_FAILSAFE_DELAY) * 0.1f;
+            s.failsafeLandingS = value(PARAM_FAILSAFE_LANDING_TIME);
+            s.failsafeThrottle = (value(PARAM_FAILSAFE_THROTTLE) - 1000.0f) * 0.001f;
+            s.failsafeThrottleLowS = value(PARAM_FAILSAFE_THROTTLE_LOW_DELAY) * 0.1f;
+            s.failsafeRecoveryS = value(PARAM_FAILSAFE_RECOVERY_DELAY) * 0.1f;
+            s.failsafeStickThreshold = value(PARAM_FAILSAFE_STICK_THRESHOLD) * 0.01f;
+            s.failsafeProcedure = static_cast<FailsafeProcedure>(static_cast<uint8_t>(value(PARAM_FAILSAFE_PROCEDURE)));
+            s.failsafeSwitchMode = static_cast<FailsafeSwitchMode>(static_cast<uint8_t>(value(PARAM_FAILSAFE_SWITCH_MODE)));
+        }
 
         // Пульт: карта каналов, rxrange, таблица aux.
         RcConfig& rc() { return rcConfig; }
