@@ -184,7 +184,8 @@ void test_rth_turns_toward_home_and_swd_does_not_reverse_in_flight()
     fly(rc, 0.5);
     TEST_ASSERT_FALSE(flightController.getOutputState().motorReverse);
     TEST_ASSERT_TRUE(flightController.getMotorReverse().isPending());
-    TEST_ASSERT_GREATER_THAN_UINT32(Config::ESC_NEUTRAL_US + 100, pulseUs(ServoChannel::ESC));
+    TEST_ASSERT_GREATER_THAN(100, escPower(pulseUs(ServoChannel::ESC)));   // тянет (с MOTOR_REVERSED «вперёд» — ниже нейтрали)
+    TEST_ASSERT_EQUAL(static_cast<long>(EscSignal::pulseUs(1600, false)) > Config::ESC_NEUTRAL_US, static_cast<long>(pulseUs(ServoChannel::ESC)) > Config::ESC_NEUTRAL_US);
     TEST_ASSERT_TRUE(contains(takeSerial(), "реверс НЕ переключён"));
 
     // RTH — с дашборда (тумблер RTH в Controls.h закомментирован).

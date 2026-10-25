@@ -1121,7 +1121,7 @@ void test_failsafe_rth_keeps_motor_and_payload_closed()
     for (int i = 0; i < 300; ++i) plane.tickWithoutFrame();   // 600 мс без кадров
     TEST_ASSERT_TRUE(plane.controller.isReceiverFailsafe());
     TEST_ASSERT_TRUE(plane.autopilot.isFailsafeReturning());
-    TEST_ASSERT_GREATER_THAN_UINT16(escUs(1000), plane.pwm(ServoChannel::ESC));   // мотор работает — домой
+    TEST_ASSERT_GREATER_THAN(escPower(escUs(1000)), escPower(plane.pwm(ServoChannel::ESC)));   // мотор работает — домой
     TEST_ASSERT_EQUAL_UINT16(Config::PAYLOAD_CLOSED_US, plane.pwm(ServoChannel::AUX1));
 }
 

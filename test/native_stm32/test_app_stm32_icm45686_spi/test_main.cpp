@@ -180,7 +180,7 @@ void test_link_loss_returns_home_and_ground_station_sees_it()
     fly(rc, 1.5);
     TEST_ASSERT_TRUE(flightController.isReceiverFailsafe());
     TEST_ASSERT_TRUE(autopilot.isFailsafeReturning());
-    TEST_ASSERT_GREATER_THAN(escUs(1100), fake::timerPulseUs(Config::PIN_ESC));   // мотор работает
+    TEST_ASSERT_GREATER_THAN(escPower(escUs(1100)), escPower(fake::timerPulseUs(Config::PIN_ESC)));   // мотор работает
 
     const auto msgs = takeMavlink();
     const Mavlink::Message* hb = last(msgs, Mavlink::Msg::HEARTBEAT);

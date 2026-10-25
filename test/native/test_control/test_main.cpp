@@ -451,9 +451,9 @@ void test_outputs_write_and_failsafe()
     TEST_ASSERT_EQUAL_UINT16(escUs(1600), board.servos[ServoChannel::ESC].lastUs);
     TEST_ASSERT_EQUAL_UINT16(1600, outputs.getLastState().throttle);
 
-    s.motorReverse = true;   // тот же газ назад: 1500 - 60% от 500
+    s.motorReverse = true;   // тот же газ назад: 1500 - 60% от 500 (с MOTOR_REVERSED — вперёд)
     outputs.write(s);
-    TEST_ASSERT_EQUAL_UINT16(1200, board.servos[ServoChannel::ESC].lastUs);
+    TEST_ASSERT_EQUAL_UINT16(Config::MOTOR_REVERSED ? 1800 : 1200, board.servos[ServoChannel::ESC].lastUs);
 
     outputs.setFailsafe();
     TEST_ASSERT_EQUAL_UINT16(Config::FAILSAFE_AILERON, board.servos[ServoChannel::AILERON_LEFT].lastUs);
@@ -494,13 +494,15 @@ void test_esc_signal_bidirectional_mapping()
     TEST_ASSERT_EQUAL_UINT16(1500, EscSignal::stopUs());
     TEST_ASSERT_EQUAL_UINT16(1500, EscSignal::pulseUs(1000, false));
     TEST_ASSERT_EQUAL_UINT16(1500, EscSignal::pulseUs(1000, true));
-    TEST_ASSERT_EQUAL_UINT16(1750, EscSignal::pulseUs(1500, false));
-    TEST_ASSERT_EQUAL_UINT16(2000, EscSignal::pulseUs(2000, false));
-    TEST_ASSERT_EQUAL_UINT16(1250, EscSignal::pulseUs(1500, true));
-    TEST_ASSERT_EQUAL_UINT16(1000, EscSignal::pulseUs(2000, true));
+    // направление «вперёд» на пине — с учётом MOTOR_REVERSED (здесь — явно false)
+    TEST_ASSERT_EQUAL_UINT16(1750, EscSignal::pulseUs(1500, false, false));
+    TEST_ASSERT_EQUAL_UINT16(2000, EscSignal::pulseUs(2000, false, false));
+    TEST_ASSERT_EQUAL_UINT16(1250, EscSignal::pulseUs(1500, true, false));
+    TEST_ASSERT_EQUAL_UINT16(1000, EscSignal::pulseUs(2000, true, false));
+    TEST_ASSERT_EQUAL_UINT16(1250, EscSignal::pulseUs(1500, false, true));   // MOTOR_REVERSED
     // Вне диапазона — обрезается, а не переворачивается.
-    TEST_ASSERT_EQUAL_UINT16(1500, EscSignal::pulseUs(900, true));
-    TEST_ASSERT_EQUAL_UINT16(2000, EscSignal::pulseUs(2100, false));
+    TEST_ASSERT_EQUAL_UINT16(1500, EscSignal::pulseUs(900, true, false));
+    TEST_ASSERT_EQUAL_UINT16(2000, EscSignal::pulseUs(2100, false, false));
 }
 
 void test_motor_reverse_changes_only_when_disarmed_and_blocks_arm_while_settling()
@@ -519,9 +521,12 @@ void test_motor_reverse_changes_only_when_disarmed_and_blocks_arm_while_settling
     reverse.update(true, false, 1000);             // DISARM — переключается
     TEST_ASSERT_TRUE(reverse.isReversed());
     TEST_ASSERT_FALSE(reverse.isPending());
-    TEST_ASSERT_NOT_NULL(reverse.armBlockReason(1000));
-    TEST_ASSERT_NOT_NULL(reverse.armBlockReason(1000 + Config::REVERSE_SETTLE_MS - 1));
-    TEST_ASSERT_NULL(reverse.armBlockReason(1000 + Config::REVERSE_SETTLE_MS));
+    if (Config::REVERSE_SETTLE_MS > 0)
+    {
+        TEST_ASSERT_NOT_NULL(reverse.armBlockReason(1000));
+        TEST_ASSERT_NOT_NULL(reverse.armBlockReason(1000 + Config::REVERSE_SETTLE_MS - 1));
+    }
+    TEST_ASSERT_NULL(reverse.armBlockReason(1000 + Config::REVERSE_SETTLE_MS));   // 0 — паузы нет вовсе
 
     reverse.update(false, true, 5000);             // и обратно — тоже только без ARM
     TEST_ASSERT_TRUE(reverse.isReversed());

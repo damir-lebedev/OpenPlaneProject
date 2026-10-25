@@ -295,11 +295,15 @@ void test_motor_reverse_switches_only_when_disarmed()
     TEST_ASSERT_EQUAL_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));   // стоит
     TEST_ASSERT_TRUE(contains(takeSerial(), "MotorReverse: мотор НАЗАД"));
 
-    // Сразу после смены направления ARM нельзя — мотор мог ещё крутиться.
-    rc.set(Channels::ARM, 2000);
-    plane.tick(rc);
-    TEST_ASSERT_FALSE(plane.controller.isArmed());
-    TEST_ASSERT_TRUE(contains(takeSerial(), "направление мотора только что сменилось"));
+    // Сразу после смены направления ARM нельзя — мотор мог ещё крутиться
+    // (если пауза задана: REVERSE_SETTLE_MS = 0 — её нет).
+    if (Config::REVERSE_SETTLE_MS > 0)
+    {
+        rc.set(Channels::ARM, 2000);
+        plane.tick(rc);
+        TEST_ASSERT_FALSE(plane.controller.isArmed());
+        TEST_ASSERT_TRUE(contains(takeSerial(), "направление мотора только что сменилось"));
+    }
 
     rc.set(Channels::ARM, 1000);
     plane.tick(rc);
@@ -315,7 +319,9 @@ void test_motor_reverse_switches_only_when_disarmed()
     const uint16_t fullBack = Config::PWM_MIN + 10 * Config::REVERSE_THROTTLE_LIMIT_PCT;
     TEST_ASSERT_EQUAL_UINT16(fullBack, plane.controller.getOutputState().throttle);
     TEST_ASSERT_EQUAL_UINT16(escUs(fullBack, true), plane.pwm(ServoChannel::ESC));
-    TEST_ASSERT_LESS_THAN_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));
+    // назад — ниже нейтрали (с MOTOR_REVERSED на пине — выше)
+    if (Config::MOTOR_REVERSED) TEST_ASSERT_GREATER_THAN_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));
+    else TEST_ASSERT_LESS_THAN_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));
 
     // Тумблер назад в ARM: направление не меняется, ждёт DISARM.
     rc.set(Channels::SWD, 1000);

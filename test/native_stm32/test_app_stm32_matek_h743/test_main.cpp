@@ -143,7 +143,7 @@ void test_stabilized_arm_waits_for_mount_calibration_manual_does_not()
     TEST_ASSERT_TRUE(flightController.isArmed());
     rc.set(Channels::THROTTLE, 1600);
     fly(rc, 0.3);
-    TEST_ASSERT_GREATER_THAN(escUs(1100), fake::timerPulseUs(PB0));   // мотор — S1
+    TEST_ASSERT_GREATER_THAN(escPower(escUs(1100)), escPower(fake::timerPulseUs(PB0)));   // мотор — S1
     rc.set(Channels::ARM, 1000).set(Channels::THROTTLE, 1000);
     fly(rc, 0.3);
     TEST_ASSERT_FALSE(flightController.isArmed());

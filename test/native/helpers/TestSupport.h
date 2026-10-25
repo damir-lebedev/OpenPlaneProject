@@ -60,6 +60,14 @@ inline uint16_t escUs(uint16_t throttleUs, bool reverse = false)
     return EscSignal::pulseUs(throttleUs, reverse);
 }
 
+// «Сколько газа» в импульсе ESC, мкс от «стоп» — в любую сторону (у 3D-ESC с
+// MOTOR_REVERSED «вперёд» — ниже нейтрали): мотор работает — больше нуля.
+inline long escPower(long pulseUs)
+{
+    const long stop = EscSignal::stopUs();
+    return pulseUs > stop ? pulseUs - stop : stop - pulseUs;
+}
+
 inline void resetWorld()
 {
     fake::resetHal();
