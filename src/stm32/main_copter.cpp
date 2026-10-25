@@ -510,7 +510,8 @@ static void flightTask(void*)
         if (!configOk) blockers |= copter::ARM_BLOCK_CONFIG;
         if (Config::IMU_MOUNT_CALIBRATION_REQUIRED && !imuSensor.isMountCalibrated()) blockers |= copter::ARM_BLOCK_NO_ACC_CAL;
         if (copterConsole.cliActive()) blockers |= copter::ARM_BLOCK_CLI;
-        if (copterConsole.appUnsaved()) blockers |= copter::ARM_BLOCK_MSP;
+        // приложение или конфигуратор BF (MSP) не сохранили настройки, конфигуратор запретил ARM
+        if (copterConsole.appUnsaved() || copterConsole.mspBlocksArming(millis())) blockers |= copter::ARM_BLOCK_MSP;
         if (rebootRequired) blockers |= copter::ARM_BLOCK_REBOOT;
         if (copterConsole.cpuPercent() >= 100) blockers |= copter::ARM_BLOCK_LOAD;
         copterController.setExternalBlockers(blockers);
@@ -725,6 +726,36 @@ static void setupBlackBox()
 }
 #endif
 
+// MSP для конфигуратора Betaflight (telemetry/CopterMsp.h): что за плата и датчики.
+static void setupMsp()
+{
+    copter::MspBoard b;
+    b.boardName = OP_BOARD_ENV;
+#if defined(BOARD_STM32F405)
+    b.target = "OPENPLANE_F405";
+    b.mcuType = 1;
+#else
+    b.target = "OPENPLANE_H743";
+    b.mcuType = 12;
+#endif
+    b.commit = OP_SOURCE_COMMIT;
+#if defined(ARDUINO_ARCH_STM32)
+    b.uid[0] = HAL_GetUIDw0();
+    b.uid[1] = HAL_GetUIDw1();
+    b.uid[2] = HAL_GetUIDw2();
+#endif
+    uint16_t sensors = 0;
+    if (imuSensor.isAvailable()) sensors |= 1u | (1u << 5);   // ACC, GYRO
+    if (baroSensor.isAvailable()) sensors |= 1u << 1;
+    if (compass) sensors |= 1u << 2;
+    if (gps.isAvailable()) sensors |= 1u << 3;
+    b.sensors = sensors;
+    b.gps = gps.isAvailable();
+    b.osd = Config::BOARD_OSD_CS >= 0;
+    b.rcChannels = Config::RC_CHANNELS;
+    copterConsole.mspHandler().setBoard(b);
+}
+
 // Вызывается ядром Arduino, а не из кода проекта.
 // cppcheck-suppress unusedFunction
 void setup()
@@ -787,6 +818,7 @@ void setup()
     Serial.println(" иначе ACRO.");
 #if defined(ARDUINO_ARCH_STM32)
     copterConsole.setBootloaderHook(stm32RebootToBootloader);
+    copterConsole.setRebootHook([]() { NVIC_SystemReset(); });
 #endif
     copterConsole.setApplyHook(applySettings);
     copterConsole.setRxInput(&rxInput);
@@ -794,6 +826,7 @@ void setup()
     copterConsole.setVtx(&vtx);
     copterConsole.setGps(&gps, &gpsHome);
     copterConsole.setCompass(compass);
+    setupMsp();
     if (Config::BOARD_OSD_CS >= 0)
     {
         osdAccess.begin();

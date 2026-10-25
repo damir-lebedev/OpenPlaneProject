@@ -12,6 +12,7 @@
 #include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "telemetry/CopterLink.h"
+#include "telemetry/CopterMsp.h"
 #include "telemetry/FirmwareIdentity.h"
 #include "telemetry/IFlightRecorder.h"
 #include "telemetry/TaskStats.h"
@@ -52,7 +53,7 @@ public:
     CopterConsole(Stream& stream, copter::CopterController& controller, copter::CopterParams& paramsRef,
                   ImuSensor& imuSensor, RcReceiver& receiver)
         : io(stream), ctl(controller), params(paramsRef), imu(imuSensor), rc(receiver), cli(paramsRef, controller, *this),
-          link(stream, controller, paramsRef, cli, receiver)
+          link(stream, controller, paramsRef, cli, receiver), msp(controller, paramsRef, cli)
     {
         cli.setVersion("OpenPlane copter / " OP_BOARD_ENV " / " OP_SOURCE_COMMIT);
     }
@@ -61,7 +62,13 @@ public:
     void setStore(KeyValueStore* store) { cli.setStore(store); }
     bool cliActive() const { return cli.active(); }
     // Приложение поменяло настройки и не сохранило — ARM нельзя.
-    bool appUnsaved() const { return link.hasUnsaved(); }
+    bool appUnsaved() const { return link.hasUnsaved() || msp.hasUnsaved(); }
+    // Конфигуратор BF запретил ARM (MSP_SET_ARMING_DISABLED) и ещё на связи — флаг MSP.
+    bool mspBlocksArming(uint32_t nowMs) const { return msp.blocksArming(nowMs); }
+    // MSP конфигуратора Betaflight (telemetry/CopterMsp.h): плата, датчики — main_copter.cpp.
+    copter::CopterMsp& mspHandler() { return msp; }
+    // MSP_REBOOT 0 — перезагрузка платы.
+    void setRebootHook(void (*hook)()) { rebootHook = hook; }
 
     // CliPort: вывод CLI — в этот же порт.
     void write(const char* text) override { io.print(text); }
@@ -80,12 +87,18 @@ public:
     {
         rxInput = input;
         link.setRxInput(input);
+        msp.setRx(input, rc.getState().data(), Config::RC_CHANNELS);
     }
-    void setOutputs(const copter::CopterOutputs& out) { link.setOutputs(out); }
+    void setOutputs(const copter::CopterOutputs& out)
+    {
+        link.setOutputs(out);
+        msp.setOutputs(out);
+    }
     void setBattery(const copter::BatteryMonitor* monitor)
     {
         battery = monitor;
         link.setBattery(monitor);
+        msp.setBattery(monitor);
     }
     void setVtx(const copter::VtxController* controller)
     {
@@ -133,6 +146,13 @@ public:
         {
             // строками, и вставка diff целиком: всё, что пришло, за один цикл
             for (int n = 0; n < 512 && io.available() && cli.active(); ++n) cli.feed(static_cast<char>(io.read()));
+            // вышли из CLI посреди вставки (save в diff BF): хвост вставки — не клавиши
+            if (!cli.active() && cli.takePastedTail()) drainUntilMs = nowMs + DRAIN_AFTER_CLI_MS;
+            return;
+        }
+        if (static_cast<int32_t>(drainUntilMs - nowMs) > 0)
+        {
+            while (io.available()) io.read();
             return;
         }
         link.update(nowMs);
@@ -144,6 +164,11 @@ public:
         }
         // строка команды приложения — сразу вся, что пришла
         for (int n = 0; n < 160 && hostLine && io.available(); ++n) collectHostCommand(static_cast<char>(io.read()), nowMs);
+        // кадр MSP (конфигуратор Betaflight): начинается с '$' — весь, что пришёл
+        for (int n = 0; n < 600 && !hostLine && io.available() && (mspParser.busy() || io.peek() == '$'); ++n)
+        {
+            if (mspParser.feed(static_cast<uint8_t>(io.read()))) answerMsp(nowMs);
+        }
         if (hostLine || !io.available()) return;
         const int key = io.read();
         if (key == STX)
@@ -327,10 +352,30 @@ public:
     void settingsApplied() override
     {
         link.settingsApplied();
+        msp.settingsApplied();
         if (applyHook) applyHook();
     }
 
 private:
+    void answerMsp(uint32_t nowMs)
+    {
+        const ImuData& d = imu.getImuData();
+        msp.setImu(d.gyroX, d.gyroY, d.gyroZ, d.accelX, d.accelY, d.accelZ);
+        msp.setLoad(static_cast<uint16_t>(cpuPercent()));
+        msp.setLinkQuality(rc.getLinkQuality());
+        static uint8_t out[msp::MAX_PAYLOAD + 16];
+        const size_t n = msp.handle(mspParser, out, sizeof(out), nowMs);
+        if (n) io.write(out, n);
+        uint8_t mode = 0;
+        if (msp.takeReboot(mode))
+        {
+            io.flush();
+            delay(50);
+            if (mode == 1 && bootloaderHook) bootloaderHook();
+            else if (mode == 0 && rebootHook) rebootHook();
+        }
+    }
+
     void handle(char key)
     {
         switch (key)
@@ -636,6 +681,11 @@ private:
     const copter::BatteryMonitor* battery = nullptr;
     const copter::IMotorTelemetry* motorTelemetry = nullptr;
     const SpiNorFlash* flashChip = nullptr;
+    copter::CopterMsp msp;
+    msp::Parser mspParser;
+    void (*rebootHook)() = nullptr;
+    static constexpr uint32_t DRAIN_AFTER_CLI_MS = 500;
+    uint32_t drainUntilMs = 0;
     const copter::VtxController* vtx = nullptr;
     const GpsSensor* gps = nullptr;
     const copter::GpsHome* gpsHome = nullptr;

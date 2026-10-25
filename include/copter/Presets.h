@@ -264,6 +264,7 @@ namespace copter
         float idle = 0.055f;            // холостые: доля команды регулятору
         float thrustLinear = 0.25f;
         float motorOutputLimit = 1.0f;  // motor_output_limit: доля хода от холостых до полного
+        float vbatSagCompensation = 1.0f;   // vbat_sag_compensation: доля компенсации просадки (1 — полная)
         float hoverThrust = 0.4f;       // доля тяги (выход смесителя) на висении
         float tpa[TPA_POINTS] = {};     // поправка PD по газу из модели (tpa_mode = MODEL)
 

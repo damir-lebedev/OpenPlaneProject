@@ -30,6 +30,12 @@
 //   defaults [nosave]      — всё по умолчанию (и сохранить)
 //   status, tasks, version, help, exit (несохранённое отменяется)
 //
+// Вставленный diff из BF (между `batch start` и `batch end`): понятное
+// применяется, команды железа BF (resource, timer, dma, serial, feature,
+// board_name…: у нас это заголовок платы) пропускаются комментарием, а не
+// ошибкой; `defaults nosave` из diff не трогает описание коптера (у BF его
+// нет); в конце — сводка: сколько строк применено и что не перенесено.
+//
 // Вывод diff и dump — в формате BF (`map`, `aux`, `rxrange`, `set имя =
 // значение`, `profile N`), и обратно: diff из Betaflight можно вставить
 // целиком — строки комментариев, `batch start/end` пропускаются,
@@ -151,6 +157,25 @@ namespace copter
             if (*args) *args++ = '\0';
             args = skipSpaces(args);
 
+            const uint16_t errorsBefore = errorCount;
+            if (batchOpen && isBfHardware(cmd))
+            {
+                print("# пропущено: %s — у нас это заголовок платы (tools/bf_board.py)\r\n", cmd);
+                noteSkipped(cmd);
+                return;
+            }
+            if (is(cmd, "batch"))
+            {
+                batch(args);
+                return;
+            }
+            dispatch(cmd, args);
+            if (batchOpen && errorCount == errorsBefore) ++batchApplied;
+        }
+
+        // Строки, что пришли не в batch, — как раньше; счётчик ошибок — для сводки.
+        void dispatch(char* cmd, char* args)
+        {
             if (is(cmd, "set")) cmdSet(args);
             else if (is(cmd, "get")) cmdGet(args);
             else if (is(cmd, "diff")) cmdDump(args, true);
@@ -173,8 +198,20 @@ namespace copter
             else if (is(cmd, "tasks")) port.printTasks();
             else if (is(cmd, "version")) print("# %s\r\n", version);
             else if (is(cmd, "help")) cmdHelp();
-            else if (is(cmd, "batch")) return;   // batch start / end из diff BF
-            else printError("нет команды %s (help — список)", cmd);
+            else
+            {
+                printError("нет команды %s (help — список)", cmd);
+                noteSkipped(cmd);
+            }
+        }
+
+        // Вышли из CLI по save посреди вставки (diff BF) — остаток вставки
+        // консоли не клавиши (true — один раз).
+        bool takePastedTail()
+        {
+            const bool t = pastedTail;
+            pastedTail = false;
+            return t;
         }
 
         // Во флеш и в работу (как save, только без выхода из CLI) — и для
@@ -459,6 +496,7 @@ namespace copter
             if (found < 0)
             {
                 printError("нет настройки %s", args);
+                noteSkipped(args);
                 return;
             }
             const ParamId id = static_cast<ParamId>(found);
@@ -466,6 +504,7 @@ namespace copter
             if (!params.parse(id, params.activeSlot(id), valueText, error, sizeof(error)))
             {
                 printError("%s: %s", paramInfo(id).name, error);
+                noteSkipped(paramInfo(id).name);
                 return;
             }
             dirty = true;
@@ -581,6 +620,11 @@ namespace copter
 
         void cmdSave()
         {
+            if (batchOpen)   // diff BF: save внутри batch — сводка до выхода, хвост вставки — не клавиши
+            {
+                batch("end");
+                pastedTail = true;
+            }
             const SaveResult r = saveAndApply();
             if (r == SaveResult::NO_STORE) printError("некуда сохранить — настройка работает до перезагрузки");
             else if (r == SaveResult::FLASH_FULL) printError("флеш настроек переполнен — не сохранено");
@@ -590,7 +634,9 @@ namespace copter
 
         void cmdDefaults(const char* args)
         {
-            params.resetAll();
+            // diff из BF начинается с defaults nosave: описание коптера (у BF его нет) — не трогаем
+            if (batchOpen) params.resetAllExcept(ParamGroup::COPTER);
+            else params.resetAll();
             dirty = true;
             if (is(args, "nosave"))
             {
@@ -676,8 +722,63 @@ namespace copter
             port.write(buf);
         }
 
+        // batch start — начало вставки (diff BF); batch end — сводка.
+        void batch(const char* args)
+        {
+            if (is(args, "start"))
+            {
+                batchOpen = true;
+                batchApplied = 0;
+                skippedCount = 0;
+                skipped[0] = '\0';
+                return;
+            }
+            if (!is(args, "end") || !batchOpen) return;
+            batchOpen = false;
+            print("# вставлено: применено %u строк", batchApplied);
+            if (skippedCount == 0)
+            {
+                print(", всё понято\r\n");
+                return;
+            }
+            print("; не перенесено %u: %s\r\n", skippedCount, skipped);
+        }
+
+        // Что не перенесено: без повторов, сколько влезет.
+        void noteSkipped(const char* what)
+        {
+            if (!batchOpen || !what || !*what) return;
+            char word[40];
+            snprintf(word, sizeof(word), "%s", what);
+            const size_t wl = strlen(word);
+            for (const char* p = skipped; (p = strstr(p, word)) != nullptr; p += wl)
+            {
+                const bool startOk = p == skipped || p[-1] == ' ';
+                const bool endOk = p[wl] == '\0' || p[wl] == ',';
+                if (startOk && endOk) return;   // уже есть
+            }
+            ++skippedCount;
+            const size_t len = strlen(skipped);
+            if (len + wl + 3 < sizeof(skipped)) snprintf(skipped + len, sizeof(skipped) - len, "%s%s", len ? ", " : "", word);
+            else if (len + 5 < sizeof(skipped) && strcmp(skipped + len - 3, "...") != 0) strcat(skipped, ", ...");
+        }
+
+        // Команды BF про железо: у нас это заголовок платы, а не настройки.
+        static bool isBfHardware(const char* cmd)
+        {
+            static const char* const LIST[] = { "board_name", "manufacturer_id", "mcu_id", "signature", "resource", "timer",
+                                                "dma", "serial", "feature", "beeper", "beacon", "mixer", "mmix", "smix",
+                                                "led", "color", "mode_color", "adjrange", "vtxtable", "servo", "dshot_prog" };
+            for (const char* name : LIST)
+            {
+                if (is(cmd, name)) return true;
+            }
+            return false;
+        }
+
         void printError(const char* fmt, ...)
         {
+            ++errorCount;
             char buf[160];
             va_list ap;
             va_start(ap, fmt);
@@ -715,6 +816,10 @@ namespace copter
         const char* version = "OpenPlane copter";
         bool open = false;
         bool dirty = false;
+        bool batchOpen = false;
+        bool pastedTail = false;
+        uint16_t errorCount = 0, batchApplied = 0, skippedCount = 0;
+        char skipped[320] = {};
         bool overflow = false;
         bool lastWasCr = false;
         char line[LINE_MAX] = {};

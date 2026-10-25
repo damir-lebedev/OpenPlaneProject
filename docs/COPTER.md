@@ -1,7 +1,7 @@
 # COPTER.md — прошивка для мультикоптеров
 
-Та же прошивка, те же платы (Matek H743-WING V3, DevEBox H743), те же
-датчики и приёмники — но вместо самолёта квадрокоптер, гекса, окта, Y6
+Та же прошивка, те же платы (Matek H743-WING V3, DevEBox H743 и почти любой
+F405 из-под Betaflight), те же датчики и приёмники — но вместо самолёта квадрокоптер, гекса, окта, Y6
 или X8. Главное отличие от Betaflight, INAV и ArduPilot — **PID, фильтры,
 холостые и расходы не подбираются руками**: вы описываете коптер (раму,
 винты, моторы, батарею, массу), а прошивка по физической модели выводит
@@ -23,7 +23,7 @@ flowchart LR
     T --> C["CopterController<br/>1 кГц"]
     G["Гироскоп<br/>режекторы по оборотам · ФНЧ"] --> C
     C --> X["Смеситель<br/>airmode · линеаризация тяги"]
-    X --> E["Регуляторы<br/>PWM · OneShot · Multishot"]
+    X --> E["Регуляторы<br/>PWM · OneShot · Multishot · DShot"]
 ```
 
 1. **Модель винтомоторной группы** (`copter/Propulsion.h`): мотор с
@@ -173,10 +173,16 @@ Betaflight; таймер каждого мотора — тот же, что в�
   настройку в этих числах: для 5" это P 25, I 41, D 28, F 35 против
   дефолтных 45/80/40/120 у BF — модель мягче, потому что держит запас по
   усилению 12 дБ.
-- **diff из Betaflight можно вставить целиком**: известные настройки
-  зададутся, `profile`/`rateprofile` переключатся, `map`, `aux`,
-  `rxrange`, `vtx` и `rxfail` лягут в свои таблицы, комментарии и `batch start/end`
-  пропускаются, остальное — строкой `###ОШИБКА…###`.
+- **diff из Betaflight можно вставить целиком** (`diff all` 4.5): известные
+  настройки зададутся, `profile`/`rateprofile` переключатся, `map`, `aux`,
+  `rxrange`, `vtx` и `rxfail` лягут в свои таблицы, комментарии пропускаются,
+  незнакомая настройка — строкой `###ОШИБКА…###`. Команды железа BF
+  (`resource`, `timer`, `dma`, `serial`, `feature`, `board_name`…: у нас это
+  заголовок платы) — комментарием `# пропущено`, `defaults nosave` из diff не
+  трогает описание коптера (у BF его нет). На `batch end` (или на `save`
+  внутри вставки) — сводка: `# вставлено: применено N строк; не перенесено M:
+  имена…`. После такого `save` остаток вставки полсекунды не считается
+  клавишами консоли.
 - `tune_source = BETAFLIGHT` — дефолты BF 4.5 целиком: PID 45/80/40/120,
   47/84/46/125, 45/80/0/120; расходы Actual 70/670/0; TPA только на D,
   65 % от газа 1350, на малом газе −20 % до взлёта; `iterm_limit` 400;
@@ -297,6 +303,8 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `failsafe_recovery_delay` | общая | 1–200 (×0.1 с) | 5 | связь держится столько — управление пилоту (этап 2) и снова можно ARM после DISARM failsafe'ом |
 | `failsafe_stick_threshold` | общая | 0–50 % | 30 | GPS-RESCUE: связь вернулась — управление пилоту, когда стик отклонён дальше |
 | `failsafe_switch_mode` | общая | `STAGE1`, `KILL`, `STAGE2` | `STAGE1` | режим FAILSAFE с тумблера: как потеря связи · моторы стоп сразу (ARM через 1 с) · сразу этап 2 |
+| `craft_name` | общая | до 16 знаков | — | имя коптера: конфигуратор BF (`MSP_NAME`) и журнал |
+| `vbat_sag_compensation` | PID-профиль | 0–150 % | 100 (BF: 0) | поправка моторов на просадку батареи: 100 — на севшей отвечают как на полной, 0 — без поправки |
 
 Описание коптера (`copter_build` … `props_out`): умолчание — сборка из
 каталога с поправками «своего коптера» из `CopterConfig.h`; сменили
@@ -477,6 +485,32 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 Открывается ли `.BFL` в самом Blackbox Explorer — проверяет пользователь:
 формат сверен с описанием, наш разбор читает его по заголовку.
 
+## Конфигуратор Betaflight (MSP)
+
+Конфигуратор Betaflight подключается к коптеру по той же USB-консоли:
+кадры MSP (`$M<…` v1 и `$X<…` v2, `telemetry/Msp.h`) идут вперемешку с
+клавишами и строками приложения. Коптер представляется как **Betaflight 4.5**
+(FC_VARIANT `BTFL`, MSP API 1.46, FC_VERSION 4.5.0) — по ним конфигуратор
+решает, какие вкладки показать; в BOARD_INFO и BUILD_INFO — честно
+`OpenPlane`, имя платы и коммит (`telemetry/CopterMsp.h`).
+
+| Что | Сообщения | Как у нас |
+|---|---|---|
+| Вход и плата | `API_VERSION`, `FC_VARIANT`, `FC_VERSION`, `BOARD_INFO`, `BUILD_INFO`, `UID`, `NAME`/`SET_NAME` | имя — `craft_name` |
+| Живые данные | `STATUS`, `STATUS_EX`, `RAW_IMU`, `ATTITUDE`, `ALTITUDE`, `ANALOG`, `BATTERY_STATE`, `RC`, `MOTOR`, `BOXNAMES`, `BOXIDS` | флаги запрета ARM — номерами BF (`status`), режимы — наша таблица |
+| PID, расходы | `PID`, `RC_TUNING`, `PID_ADVANCED` и `SET_*` | в реестр, единицы BF; тип расходов — `ACTUAL` (наша кривая), LEVEL и MAG — дефолты BF, не меняются |
+| Фильтры | `FILTER_CONFIG`, `SET_FILTER_CONFIG` | показываются фильтры из модели; записать можно только `yaw_lowpass_hz` |
+| Режимы, приёмник | `MODE_RANGES`, `SET_MODE_RANGE`, `RX_CONFIG`, `RX_MAP`, `RXFAIL_CONFIG` и `SET_*` | таблицы `aux`, `map`, `rxfail`, `serialrx_provider`, `rx_min/max_usec` |
+| Моторы, безопасность, батарея | `MOTOR_CONFIG`, `ADVANCED_CONFIG`, `FAILSAFE_CONFIG`, `ARMING_CONFIG`, `BATTERY_CONFIG`, `MIXER_CONFIG`, `FEATURE_CONFIG` и `SET_*` | `motor_poles`, `dshot_bidir`, `failsafe_*`, `small_angle`, `auto_disarm_delay`, `vbat_*`; протокол регуляторов — сборкой, features — только показываются |
+| Профили, сохранение, перезагрузка | `SELECT_SETTING`, `EEPROM_WRITE`, `REBOOT` (0 — плата, 1 — DFU), `SET_ARMING_DISABLED` | как `save` в CLI |
+
+Записи (`SET_*`) меняют настройки в памяти, `EEPROM_WRITE` — сохраняет и
+применяет; до него ARM запрещён (флаг `MSP`), как и пока конфигуратор держит
+`SET_ARMING_DISABLED` и опрашивает плату (3 с тишины — флаг снят). При ARM
+настройки не меняются (ответ `!`). Проверки моторов из конфигуратора
+(`SET_MOTOR`) пока нет — консоль, `m`. Как конфигуратор всё это покажет —
+пункт 160 плана (стенд).
+
 ## Связь с приложением
 
 Команды ПК — как у самолёта: байт STX (0x02), строка, перевод строки.
@@ -583,7 +617,10 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 | `tools/bf_board.py` · `include/config/boards/` | плата из Betaflight: дамп CLI с платы, родная прошивка по DFU, заголовок с распиновкой |
 | `copter/CopterCli.h` | CLI как в Betaflight (`telemetry/CopterConsole.h` — консоль по клавишам) |
 | `telemetry/CopterLink.h` | протокол настроек и живые данные для приложения |
-| `hal/stm32/Stm32MotorOutput.h` · `src/stm32/main_copter.cpp` | регуляторы и точка входа на STM32 |
+| `hal/stm32/Stm32MotorOutput.h` · `hal/stm32/Stm32Dshot.h` | регуляторы: импульсы (PWM, OneShot, Multishot) · DShot на таймере с DMA, ответ регулятора |
+| `telemetry/CopterBlackBox.h` · `hal/SpiNorFlash.h` · `telemetry/BflEncoder.h` | чёрный ящик · SPI-флеш F405 · формат Betaflight (.BFL) |
+| `telemetry/Msp.h` · `telemetry/CopterMsp.h` | MSP: кадры v1/v2 · ответы конфигуратору Betaflight |
+| `src/stm32/main_copter.cpp` | точка входа на STM32 |
 
 ## Как это проверено
 
@@ -612,8 +649,8 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 порывами, failsafe без барометра, обычные PWM-регуляторы, провал и возврат
 связи, этапы failsafe и процедуры DROP / GPS-RESCUE, тумблер FAILSAFE
 (STAGE2, KILL), перепутанные провода моторов (runaway takeoff), падение
-на спину, отказ мотора, проверка моторов, просадка батареи. В `test_copter` — каждый блок по отдельности (79 тестов, среди
-них реестр настроек, единицы BF, профили и CLI), в
+на спину, отказ мотора, проверка моторов, просадка батареи. В `test_copter` — каждый блок по отдельности (108 тестов, среди
+них реестр настроек, единицы BF, профили, CLI и вставка diff из BF, MSP, батарея, DShot и ответ регулятора), в
 `native_stm32/test_app_stm32_copter` — прошивка целиком на фейках Matek
 H743: импульсы «стоп» до ARM, калибровка установки, холостые после ARM,
 режимы с тумблера, потеря связи на земле, консоль, CLI → `save` → флеш →

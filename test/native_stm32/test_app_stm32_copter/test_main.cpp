@@ -634,6 +634,48 @@ void test_app_protocol_params_set_save()
     takeSerial();
 }
 
+// 158–163: конфигуратор Betaflight по той же USB-консоли — кадры MSP среди
+// клавиш и строк приложения; запрет ARM от конфигуратора — флаг MSP; diff из
+// BF с save посередине — хвост вставки не уходит в консоль клавишами.
+void test_msp_over_usb_console()
+{
+    RcChannels rc;
+    run(rc, 0.05);
+    takeSerial();
+    // MSP_API_VERSION: ответ $M> 3 1 | 0 1 46 | xor
+    Serial.pushRx(std::string("$M<\x00\x01\x01", 6));
+    run(rc, 0.01);
+    std::string out = takeSerial();
+    const std::string expect = std::string("$M>\x03\x01\x00\x01\x2e", 8) + static_cast<char>(3 ^ 1 ^ 0 ^ 1 ^ 46);
+    TEST_ASSERT_TRUE_MESSAGE(out.find(expect) != std::string::npos, "нет ответа MSP_API_VERSION");
+    // FC_VARIANT — BTFL
+    Serial.pushRx(std::string("$M<\x00\x02\x02", 6));
+    run(rc, 0.01);
+    TEST_ASSERT_TRUE(takeSerial().find("BTFL") != std::string::npos);
+
+    // MSP_SET_ARMING_DISABLED 1 — ARM запрещён флагом MSP, пока конфигуратор на связи
+    Serial.pushRx(std::string("$M<\x01\x63\x01", 6) + static_cast<char>(1 ^ 0x63 ^ 1));
+    run(rc, 0.05);
+    TEST_ASSERT_TRUE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_MSP);
+    run(rc, 3.5);   // конфигуратор замолчал — флаг снят
+    TEST_ASSERT_FALSE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_MSP);
+    takeSerial();
+
+    // diff из BF целиком, save внутри batch: сводка, сохранение, хвост — не клавиши
+    Serial.pushRx("#\r\nbatch start\r\nresource MOTOR 1 B06\r\nset motor_poles = 12\r\nsave\r\n"
+                  "# end the command batch\r\nbatch end\r\nDm\r\n");
+    run(rc, 0.2);
+    out = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(out, "# вставлено: применено 1 строк; не перенесено 1: resource"), out.c_str());
+    TEST_ASSERT_TRUE(contains(out, "Сохранено"));
+    TEST_ASSERT_FALSE_MESSAGE(contains(out, "Проверка моторов"), out.c_str());   // 'm' хвоста не нажат
+    TEST_ASSERT_EQUAL_FLOAT(12.0f, copterParams.value(copter::PARAM_MOTOR_POLES));
+    run(rc, 0.5);   // окно, в котором хвост вставки глушится, прошло
+    Serial.pushRx("#set motor_poles = 14\r\nsave\r\n");
+    run(rc, 0.6);
+    takeSerial();
+}
+
 // 080: DShot на таймере с DMA. Моторы Matek H743 S1–S4 (TIM1 CH2/CH3, TIM2
 // CH1/CH2) и S7/S8 (TIM4 CH1/CH2): три таймера, у каждого свой burst.
 // Буфер, что ушёл бы в TIMx_DMAR, расшифровывается обратно в кадры:
@@ -946,6 +988,7 @@ int main()
     RUN_TEST(test_status_and_tasks_like_betaflight);
     RUN_TEST(test_copter_build_from_cli);
     RUN_TEST(test_app_protocol_params_set_save);
+    RUN_TEST(test_msp_over_usb_console);
     RUN_TEST(test_dshot_frames_on_timer_dma);
     RUN_TEST(test_dshot_commands_skips_and_missing_dma);
     RUN_TEST(test_dshot_eight_motors_timers_and_af);

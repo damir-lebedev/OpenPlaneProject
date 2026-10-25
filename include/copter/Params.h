@@ -276,6 +276,8 @@ namespace copter
         PARAM_FAILSAFE_SWITCH_MODE,
         PARAM_MOTOR_POLES,
         PARAM_DSHOT_BIDIR,
+        PARAM_CRAFT_NAME,
+        PARAM_VBAT_SAG_COMPENSATION,
         PARAM_COUNT
     };
 
@@ -571,6 +573,10 @@ namespace copter
               "магнитов в роторе мотора (у 2207 — 14): обороты = eRPM x 2 / motor_poles" },
             { "dshot_bidir", kEnum, kMaster, kGroupMotors, 0, 1, 0, kTable, "", OFF_ON, 2,
               "двунаправленный DShot: регулятор отвечает оборотами (Bluejay, BLHeli_32, AM32); меняется после перезагрузки" },
+            { "craft_name", kText, kMaster, ParamGroup::OTHER, 0, 16, 0, kTable, "", nullptr, 0,
+              "имя коптера: в OSD, конфигураторе BF (MSP_NAME) и журнале" },
+            { "vbat_sag_compensation", kInt, kPid, kGroupPid, 0, 150, 100, kTable, "%", nullptr, 0,
+              "компенсация просадки батареи: 100 — моторы отвечают одинаково на полной и севшей (у BF 0)" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;
@@ -640,7 +646,7 @@ namespace copter
     {
     public:
         static constexpr uint8_t PROFILES = 4;
-        static constexpr uint8_t NAME_LENGTH = 8;
+        static constexpr uint8_t NAME_LENGTH = 16;   // craft_name; имена профилей — до 8 (profile_name)
         static constexpr uint8_t STORE_VERSION = 1;
         static constexpr const char* STORE_SPACE = "copter";
         static constexpr const char* STORE_KEY = "params";
@@ -860,7 +866,7 @@ namespace copter
         bool setText(ParamId id, uint8_t slot, const char* s)
         {
             char* dst = stringSlot(id, slot);
-            if (!dst || !s || strlen(s) > NAME_LENGTH) return false;
+            if (!dst || !s || strlen(s) > NAME_LENGTH || strlen(s) > paramInfo(id).max) return false;
             strcpy(dst, s);
             return true;
         }
@@ -881,6 +887,26 @@ namespace copter
             rcConfig.reset();
             refreshDefaults();
         }
+
+        // Всё по умолчанию, кроме группы keep (defaults nosave из diff BF не
+        // трогает описание коптера — у BF его нет).
+        void resetAllExcept(ParamGroup keep)
+        {
+            static float keptValues[PARAM_COUNT][PROFILES];
+            static uint8_t keptMask[PARAM_COUNT];
+            memcpy(keptValues, values, sizeof(values));
+            memcpy(keptMask, setMask, sizeof(setMask));
+            resetAll();
+            for (uint8_t i = 0; i < PARAM_COUNT; ++i)
+            {
+                if (paramInfo(static_cast<ParamId>(i)).group != keep) continue;
+                memcpy(values[i], keptValues[i], sizeof(values[i]));
+                setMask[i] = keptMask[i];
+            }
+            refreshDefaults();
+        }
+
+        EscProtocol escProtocol() const { return esc; }
 
         TuneSource source() const { return static_cast<TuneSource>(static_cast<uint8_t>(value(PARAM_TUNE_SOURCE))); }
 
@@ -1060,6 +1086,7 @@ namespace copter
             if (isSet(PARAM_YAW_LOWPASS_HZ, pidIndex)) t.yawLpfHz = valueIn(PARAM_YAW_LOWPASS_HZ, pidIndex);
             if (isSet(PARAM_THRUST_LINEAR, pidIndex)) t.thrustLinear = valueIn(PARAM_THRUST_LINEAR, pidIndex) / 100.0f;
             t.motorOutputLimit = valueIn(PARAM_MOTOR_OUTPUT_LIMIT, pidIndex) / 100.0f;
+            t.vbatSagCompensation = valueIn(PARAM_VBAT_SAG_COMPENSATION, pidIndex) / 100.0f;
             return t;
         }
 
@@ -1199,6 +1226,7 @@ namespace copter
             memset(values, 0, sizeof(values));
             memset(setMask, 0, sizeof(setMask));
             memset(names, 0, sizeof(names));
+            memset(craftName, 0, sizeof(craftName));
             pidIndex = 0;
             rateIndex = 0;
         }
@@ -1304,6 +1332,7 @@ namespace copter
             if (slot >= PROFILES) return nullptr;
             if (id == PARAM_PROFILE_NAME) return names[0][slot];
             if (id == PARAM_RATEPROFILE_NAME) return names[1][slot];
+            if (id == PARAM_CRAFT_NAME) return slot == 0 ? craftName : nullptr;
             return nullptr;
         }
         const char* stringSlot(ParamId id, uint8_t slot) const { return const_cast<CopterParams*>(this)->stringSlot(id, slot); }
@@ -1347,6 +1376,7 @@ namespace copter
         float values[PARAM_COUNT][PROFILES];
         uint8_t setMask[PARAM_COUNT];
         char names[2][PROFILES][NAME_LENGTH + 1];
+        char craftName[NAME_LENGTH + 1] = {};
         uint8_t pidIndex = 0;
         uint8_t rateIndex = 0;
     };

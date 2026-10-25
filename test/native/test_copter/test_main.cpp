@@ -38,6 +38,8 @@
 #include "copter/GyroFilter.h"
 #include "copter/Mixer.h"
 #include "copter/Params.h"
+#include "telemetry/CopterMsp.h"
+#include "telemetry/Msp.h"
 #include "copter/Presets.h"
 #include "copter/Propulsion.h"
 #include "copter/RateController.h"
@@ -2650,7 +2652,7 @@ void test_cli_set_get_diff_save_and_paste()
     };
     for (const char* line : bfDiff) cli.execute(line);
     out = port.take();
-    TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет команды feature"));
+    TEST_ASSERT_TRUE(has(out, "# пропущено: feature — у нас это заголовок платы"));   // 163: железо BF в diff
     TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки no_such_bf_setting###"));
     TEST_ASSERT_FALSE(has(out, "d_max_pitch###"));
     cli.execute("profile");
@@ -3257,6 +3259,411 @@ void test_cli_rxfail_and_diff()
     TEST_ASSERT_TRUE(p.rc().isDefault());
     cli.execute("exit");
     port.take();
+}
+
+// ---- 158–159: MSP для конфигуратора Betaflight ----
+
+namespace
+{
+    // Запрос v1: '$' 'M' '<' размер команда данные xor.
+    std::vector<uint8_t> mspRequest(uint8_t cmd, std::vector<uint8_t> data = {})
+    {
+        std::vector<uint8_t> f = { '$', 'M', '<', static_cast<uint8_t>(data.size()), cmd };
+        uint8_t x = static_cast<uint8_t>(data.size() ^ cmd);
+        for (uint8_t b : data)
+        {
+            f.push_back(b);
+            x ^= b;
+        }
+        f.push_back(x);
+        return f;
+    }
+
+    struct MspBench
+    {
+        CopterParams& params = five5Params();
+        Bench bench;
+        CliCapture port;
+        CopterCli cli{ params, bench.ctl, port };
+        CopterMsp msp{ bench.ctl, params, cli };
+        msp::Parser parser;
+        uint32_t nowMs = 1000;
+
+        MspBench()
+        {
+            bench.ctl.configure(params.tune());
+            MspBoard b;
+            b.boardName = "TESTBOARD";
+            b.target = "OPENPLANE_F405";
+            b.commit = "abcdef123";
+            b.mcuType = 1;
+            b.sensors = 0x23;
+            msp.setBoard(b);
+        }
+
+        // Ответ на запрос: true — '>', данные — в payload.
+        bool ask(uint8_t cmd, std::vector<uint8_t> data, std::vector<uint8_t>& payload)
+        {
+            const std::vector<uint8_t> req = mspRequest(cmd, data);
+            bool done = false;
+            for (uint8_t b : req) done = parser.feed(b);
+            TEST_ASSERT_TRUE_MESSAGE(done, "кадр запроса не собрался");
+            uint8_t out[600];
+            const size_t n = msp.handle(parser, out, sizeof(out), nowMs);
+            TEST_ASSERT_TRUE(n >= 6);
+            TEST_ASSERT_EQUAL_UINT8('$', out[0]);
+            TEST_ASSERT_EQUAL_UINT8('M', out[1]);
+            TEST_ASSERT_EQUAL_UINT8(cmd, out[4]);
+            uint8_t x = static_cast<uint8_t>(out[3] ^ out[4]);
+            payload.assign(out + 5, out + 5 + out[3]);
+            for (uint8_t b : payload) x ^= b;
+            TEST_ASSERT_EQUAL_HEX8(x, out[5 + out[3]]);
+            return out[2] == '>';
+        }
+        std::vector<uint8_t> get(uint8_t cmd)
+        {
+            std::vector<uint8_t> p;
+            TEST_ASSERT_TRUE_MESSAGE(ask(cmd, {}, p), "ответ — ошибка");
+            return p;
+        }
+    };
+
+    uint16_t le16(const std::vector<uint8_t>& p, size_t at) { return static_cast<uint16_t>(p[at] | p[at + 1] << 8); }
+    uint32_t le32(const std::vector<uint8_t>& p, size_t at)
+    {
+        return static_cast<uint32_t>(p[at] | p[at + 1] << 8 | p[at + 2] << 16 | static_cast<uint32_t>(p[at + 3]) << 24);
+    }
+}
+
+// Кадры MSP: v1 (xor), v2 (CRC-8 DVB-S2), испорченные не принимаются.
+void test_msp_frames_v1_v2()
+{
+    // CRC-8/DVB-S2: контрольное значение «123456789» — 0xBC
+    uint8_t crc = 0;
+    for (char c : std::string("123456789")) crc = msp::crc8DvbS2(crc, static_cast<uint8_t>(c));
+    TEST_ASSERT_EQUAL_HEX8(0xBC, crc);
+
+    msp::Parser p;
+    bool done = false;
+    for (uint8_t b : mspRequest(1)) done = p.feed(b);
+    TEST_ASSERT_TRUE(done);
+    TEST_ASSERT_EQUAL_UINT8(1, p.version);
+    TEST_ASSERT_EQUAL_UINT16(1, p.cmd);
+    TEST_ASSERT_EQUAL_UINT16(0, p.size);
+
+    std::vector<uint8_t> bad = mspRequest(112, { 1, 2, 3 });
+    bad.back() ^= 0xFF;
+    done = false;
+    for (uint8_t b : bad) done = done || p.feed(b);
+    TEST_ASSERT_FALSE(done);
+    TEST_ASSERT_EQUAL_UINT32(1, p.errors);
+
+    // v2: '$' 'X' '<' флаг, команда u16, размер u16, данные, CRC
+    const uint8_t data[2] = { 0xAA, 0x55 };
+    uint8_t frame[32];
+    const size_t n = msp::frame(frame, sizeof(frame), 2, 0x1F01, false, data, 2);
+    TEST_ASSERT_EQUAL_UINT32(3 + 5 + 2 + 1, n);
+    TEST_ASSERT_EQUAL_UINT8('X', frame[1]);
+    TEST_ASSERT_EQUAL_UINT8('>', frame[2]);
+    frame[2] = '<';   // тот же кадр как запрос
+    done = false;
+    for (size_t i = 0; i < n; ++i) done = p.feed(frame[i]);
+    TEST_ASSERT_TRUE(done);
+    TEST_ASSERT_EQUAL_UINT8(2, p.version);
+    TEST_ASSERT_EQUAL_UINT16(0x1F01, p.cmd);
+    TEST_ASSERT_EQUAL_UINT8(0x55, p.payload[1]);
+    // мусор между кадрами не мешает
+    done = false;
+    for (uint8_t b : std::vector<uint8_t>{ 'x', '$', 'q' }) done = p.feed(b);
+    for (uint8_t b : mspRequest(2)) done = p.feed(b);
+    TEST_ASSERT_TRUE(done);
+    TEST_ASSERT_EQUAL_UINT16(2, p.cmd);
+    // ответ-ошибка: '!', без данных
+    const size_t e = msp::frame(frame, sizeof(frame), 1, 200, true, data, 0);
+    TEST_ASSERT_EQUAL_UINT32(6, e);
+    TEST_ASSERT_EQUAL_UINT8('!', frame[2]);
+}
+
+// 158: как BF 4.5 — API 1.46, BTFL 4.5.0; в BOARD_INFO и BUILD_INFO — OpenPlane;
+// состояние, режимы, флаги запрета ARM — номерами BF.
+void test_msp_identity_and_status()
+{
+    MspBench m;
+    std::vector<uint8_t> p = m.get(1);
+    TEST_ASSERT_EQUAL_UINT8(0, p[0]);
+    TEST_ASSERT_EQUAL_UINT8(1, p[1]);
+    TEST_ASSERT_EQUAL_UINT8(46, p[2]);
+    p = m.get(2);
+    TEST_ASSERT_EQUAL_STRING("BTFL", std::string(p.begin(), p.end()).c_str());
+    p = m.get(3);
+    TEST_ASSERT_EQUAL_UINT8(4, p[0]);
+    TEST_ASSERT_EQUAL_UINT8(5, p[1]);
+    p = m.get(4);
+    TEST_ASSERT_EQUAL_STRING("OPLN", std::string(p.begin(), p.begin() + 4).c_str());
+    const std::string info(p.begin(), p.end());
+    TEST_ASSERT_TRUE(info.find("OPENPLANE_F405") != std::string::npos);
+    TEST_ASSERT_TRUE(info.find("TESTBOARD") != std::string::npos);
+    p = m.get(5);
+    TEST_ASSERT_EQUAL_UINT32(26, p.size());
+    TEST_ASSERT_EQUAL_STRING("abcdef1", std::string(p.begin() + 19, p.end()).c_str());
+
+    // STATUS_EX: цикл, датчики, профиль, 4 профиля, флаги запрета ARM (26 флагов BF)
+    m.bench.run(0.1f);
+    p = m.get(150);
+    TEST_ASSERT_EQUAL_UINT16(1000, le16(p, 0));
+    TEST_ASSERT_EQUAL_UINT16(0x23, le16(p, 4));
+    TEST_ASSERT_EQUAL_UINT8(4, p[13]);
+    const size_t at = 15 + 1 + p[15];
+    TEST_ASSERT_EQUAL_UINT8(ARM_BLOCK_BF_COUNT, p[at]);
+    TEST_ASSERT_EQUAL_HEX32(m.bench.ctl.getStatus().armBlockers & ARM_BLOCK_BF_MASK, le32(p, at + 1));
+
+    // режимы: имена через ';', номера BF; ARM — первый
+    p = m.get(116);
+    const std::string names(p.begin(), p.end());
+    TEST_ASSERT_EQUAL(0, names.find("ARM;ANGLE;"));
+    p = m.get(119);
+    TEST_ASSERT_EQUAL_UINT8(BOX_ARM, p[0]);
+    TEST_ASSERT_EQUAL_UINT8(BOX_ANGLE, p[1]);
+
+    // незнакомая команда — '!'
+    std::vector<uint8_t> none;
+    TEST_ASSERT_FALSE(m.ask(240, {}, none));
+    TEST_ASSERT_EQUAL_UINT32(1, m.msp.errors);
+}
+
+// 159: настройки через MSP — в реестр (единицы BF), запись — по EEPROM_WRITE;
+// до неё и при запрете ARM конфигуратором — флаг MSP; при ARM — отказ.
+void test_msp_settings_roundtrip()
+{
+    MspBench m;
+    // PID: P I D по осям — как в реестре
+    std::vector<uint8_t> p = m.get(112);
+    TEST_ASSERT_EQUAL_UINT32(15, p.size());   // 5 строк BF: крен, тангаж, рысканье, LEVEL, MAG
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(m.params.value(PARAM_P_ROLL)), p[0]);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(m.params.value(PARAM_D_YAW)), p[8]);
+    p[0] = 55;
+    p[4] = 66;   // I тангажа
+    TEST_ASSERT_TRUE(m.ask(202, p, p));
+    TEST_ASSERT_EQUAL_FLOAT(55.0f, m.params.value(PARAM_P_ROLL));
+    TEST_ASSERT_EQUAL_FLOAT(66.0f, m.params.value(PARAM_I_PITCH));
+    TEST_ASSERT_TRUE(m.msp.hasUnsaved());
+    TEST_ASSERT_TRUE(m.msp.blocksArming(m.nowMs));
+    TEST_ASSERT_TRUE(m.ask(250, {}, p));   // EEPROM_WRITE
+    TEST_ASSERT_FALSE(m.msp.hasUnsaved());
+
+    // расходы: rc_rate, expo, srate (единицы BF ACTUAL), тип — ACTUAL
+    p = m.get(111);
+    TEST_ASSERT_EQUAL_UINT32(23, p.size());
+    TEST_ASSERT_EQUAL_UINT8(3, p[22]);
+    p[2] = 80;    // srate крена
+    p[11] = 9;    // rc_rate рысканья
+    TEST_ASSERT_TRUE(m.ask(204, p, p));
+    TEST_ASSERT_EQUAL_FLOAT(80.0f, m.params.value(PARAM_ROLL_SRATE));
+    TEST_ASSERT_EQUAL_FLOAT(9.0f, m.params.value(PARAM_YAW_RC_RATE));
+
+    // режимы: строка 0 — ARM на AUX1 1700..2100 (шаги 32..48)
+    TEST_ASSERT_TRUE(m.ask(35, { 0, BOX_ARM, 0, 32, 48 }, p));
+    TEST_ASSERT_EQUAL_UINT8(BOX_ARM, m.params.rc().aux(0).mode);
+    TEST_ASSERT_EQUAL_UINT16(1700, m.params.rc().aux(0).startUs);
+    TEST_ASSERT_EQUAL_UINT16(2100, m.params.rc().aux(0).endUs);
+    p = m.get(34);
+    TEST_ASSERT_EQUAL_UINT32(20 * 4, p.size());
+    TEST_ASSERT_EQUAL_UINT8(32, p[2]);
+
+    // failsafe и arming: туда и обратно
+    p = m.get(75);
+    TEST_ASSERT_EQUAL_UINT32(8, p.size());
+    p[0] = 20;   // failsafe_delay
+    p[7] = 1;    // DROP
+    TEST_ASSERT_TRUE(m.ask(76, p, p));
+    TEST_ASSERT_EQUAL_FLOAT(20.0f, m.params.value(PARAM_FAILSAFE_DELAY));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, m.params.value(PARAM_FAILSAFE_PROCEDURE));
+    TEST_ASSERT_TRUE(m.ask(62, { 7, 0, 40 }, p));
+    TEST_ASSERT_EQUAL_FLOAT(7.0f, m.params.value(PARAM_AUTO_DISARM_DELAY));
+    TEST_ASSERT_EQUAL_FLOAT(40.0f, m.params.value(PARAM_SMALL_ANGLE));
+
+    // карта каналов: TAER (газ — CH1)
+    TEST_ASSERT_TRUE(m.ask(65, { 1, 2, 3, 0, 4, 5, 6, 7 }, p));
+    char map[9];
+    m.params.rc().formatMap(map, sizeof(map));
+    TEST_ASSERT_EQUAL_STRING("TAER1234", map);
+    TEST_ASSERT_FALSE(m.ask(65, { 0, 0, 3, 1, 4, 5, 6, 7 }, p));   // канал дважды
+
+    // приёмник: CRSF у BF — 9; моторы: полюса и bidir
+    TEST_ASSERT_EQUAL_UINT8(7, m.get(44)[0]);   // iBUS
+    TEST_ASSERT_TRUE(m.ask(222, { 0x2E, 0x04, 0xD0, 0x07, 0xE8, 0x03, 12, 1 }, p));
+    TEST_ASSERT_EQUAL_FLOAT(12.0f, m.params.value(PARAM_MOTOR_POLES));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, m.params.value(PARAM_DSHOT_BIDIR));
+    p = m.get(94);
+    TEST_ASSERT_EQUAL_UINT32(61, p.size());
+    TEST_ASSERT_EQUAL_UINT8(100, p[55]);   // vbat_sag_compensation
+    TEST_ASSERT_TRUE(m.ask(95, p, p));     // записать то же — ничего не меняется
+    p = m.get(92);
+    TEST_ASSERT_EQUAL_UINT32(49, p.size());
+    TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(lroundf(m.bench.ctl.getTune().gyroLpfHz)), le16(p, 20));
+    TEST_ASSERT_EQUAL_UINT8(1, m.get(90)[3]);   // OneShot125
+
+    // имя: SET_NAME / NAME
+    TEST_ASSERT_TRUE(m.ask(11, { '7', 'i', 'n' }, p));
+    p = m.get(10);
+    TEST_ASSERT_EQUAL_STRING("7in", std::string(p.begin(), p.end()).c_str());
+
+    // профиль: SELECT_SETTING 2 и расходов 0x81
+    TEST_ASSERT_TRUE(m.ask(210, { 2 }, p));
+    TEST_ASSERT_EQUAL_UINT8(2, m.params.pidProfile());
+    TEST_ASSERT_TRUE(m.ask(210, { 0x81 }, p));
+    TEST_ASSERT_EQUAL_UINT8(1, m.params.rateProfile());
+
+    // конфигуратор запретил ARM — флаг, пока он на связи (3 с тишины — снят)
+    TEST_ASSERT_TRUE(m.ask(250, {}, p));
+    TEST_ASSERT_TRUE(m.ask(99, { 1 }, p));
+    TEST_ASSERT_TRUE(m.msp.blocksArming(m.nowMs + 1000));
+    TEST_ASSERT_FALSE(m.msp.blocksArming(m.nowMs + 3500));
+    TEST_ASSERT_TRUE(m.ask(99, { 0 }, p));
+    TEST_ASSERT_FALSE(m.msp.blocksArming(m.nowMs));
+
+    // перезагрузка: ответ, потом takeReboot; в DFU — режим 1
+    uint8_t mode = 9;
+    TEST_ASSERT_TRUE(m.ask(68, { 1 }, p));
+    TEST_ASSERT_TRUE(m.msp.takeReboot(mode));
+    TEST_ASSERT_EQUAL_UINT8(1, mode);
+    TEST_ASSERT_FALSE(m.msp.takeReboot(mode));
+
+    // при ARM — настройки не меняются
+    TEST_ASSERT_TRUE(m.bench.armAfterBoot());
+    TEST_ASSERT_FALSE(m.ask(202, std::vector<uint8_t>(15, 30), p));
+    TEST_ASSERT_FALSE(m.ask(250, {}, p));
+    TEST_ASSERT_TRUE(m.ask(101, {}, p));   // читать — можно
+    m.params.resetAll();
+}
+
+// 163: настоящий diff all из BF 4.5 — понятное применяется, железо BF —
+// комментарием, defaults nosave не трогает описание коптера, сводка в конце.
+void test_cli_pastes_betaflight_diff()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_TRUE(p.parse(PARAM_COPTER_MASS_G, 0, "1350", err, sizeof(err)));   // описание — наше
+    Bench b;
+    b.ctl.configure(p.tune());
+    CliCapture port;
+    CopterCli cli(p, b.ctl, port);
+    TEST_ASSERT_TRUE(cli.enter());
+    port.take();
+    static const char* const DIFF[] = {
+        "# version",
+        "# Betaflight / STM32F405 (S405) 4.5.1 Nov 11 2024 / 11:46:43 (77d01ba3b) MSP API: 1.46",
+        "# config rev: 1e1a8c4",
+        "# start the command batch",
+        "batch start",
+        "# reset configuration to default settings",
+        "defaults nosave",
+        "board_name GETFUNF405V3",
+        "manufacturer_id GTFN",
+        "mcu_id 003300293233510936363331",
+        "signature ",
+        "# name: 7inch",
+        "resource MOTOR 1 B06",
+        "timer B06 AF2",
+        "dma ADC 1 1",
+        "feature -RX_PARALLEL_PWM",
+        "serial 1 64 115200 57600 0 115200",
+        "beeper -GYRO_CALIBRATED",
+        "# map",
+        "map TAER1234",
+        "# aux",
+        "aux 0 0 0 1700 2100 0 0",
+        "aux 1 1 1 1300 1700 0 0",
+        "# rxfail",
+        "rxfail 4 h",
+        "# master",
+        "set gyro_lpf1_static_hz = 0",
+        "set dshot_bidir = ON",
+        "set motor_pwm_protocol = DSHOT300",
+        "set motor_poles = 12",
+        "set small_angle = 180",
+        "set craft_name = 7inch",
+        "profile 0",
+        "# profile 0",
+        "set p_roll = 52",
+        "set d_min_roll = 32",
+        "set simplified_pids_mode = OFF",
+        "rateprofile 0",
+        "# rateprofile 0",
+        "set roll_srate = 75",
+        "# restore original profile selection",
+        "profile 0",
+        "rateprofile 0",
+        "# end the command batch",
+        "batch end",
+    };
+    std::string out;
+    for (const char* line : DIFF)
+    {
+        cli.execute(line);
+        out += port.take();
+    }
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# пропущено: resource — у нас это заголовок платы"), out.c_str());
+    TEST_ASSERT_FALSE_MESSAGE(has(out, "###ОШИБКА: нет команды resource"), out.c_str());
+    TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки gyro_lpf1_static_hz###"));   // каждую — видно сразу
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# вставлено: применено 16 строк; не перенесено 13: board_name, manufacturer_id, mcu_id, "
+                                      "signature, resource, timer, dma, feature, serial, beeper, gyro_lpf1_static_hz, "
+                                      "motor_pwm_protocol, simplified_pids_mode\r\n"),
+                             out.c_str());
+    TEST_ASSERT_EQUAL_FLOAT(52.0f, p.value(PARAM_P_ROLL));
+    TEST_ASSERT_EQUAL_FLOAT(32.0f, p.value(PARAM_D_MIN_ROLL));
+    TEST_ASSERT_EQUAL_FLOAT(75.0f, p.value(PARAM_ROLL_SRATE));
+    TEST_ASSERT_EQUAL_FLOAT(12.0f, p.value(PARAM_MOTOR_POLES));
+    TEST_ASSERT_EQUAL_FLOAT(180.0f, p.value(PARAM_SMALL_ANGLE));
+    TEST_ASSERT_EQUAL_STRING("7inch", p.text(PARAM_CRAFT_NAME, 0));
+    TEST_ASSERT_EQUAL_UINT8(BOX_ANGLE, p.rc().aux(1).mode);
+    TEST_ASSERT_EQUAL(static_cast<int>(RxfailMode::HOLD), static_cast<int>(p.rc().rxfail(4).mode));
+    TEST_ASSERT_EQUAL_FLOAT(1350.0f, p.value(PARAM_COPTER_MASS_G));   // defaults nosave описание не тронул
+
+    // вне batch — как раньше: незнакомое — ошибка
+    cli.execute("resource MOTOR 1 B06");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: нет команды resource"));
+    cli.execute("defaults nosave");
+    TEST_ASSERT_TRUE(p.rc().isDefault());
+    cli.execute("exit");
+    port.take();
+    p.resetAll();
+}
+
+// 031: vbat_sag_compensation — доля поправки на просадку: 100 % — моторы на
+// севшей батарее отвечают как на полной, 0 — без поправки.
+void test_vbat_sag_compensation_percent()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, p.value(PARAM_VBAT_SAG_COMPENSATION));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.0f, p.tune().vbatSagCompensation);
+    TEST_ASSERT_TRUE(p.parse(PARAM_VBAT_SAG_COMPENSATION, p.pidProfile(), "50", err, sizeof(err)));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, p.tune().vbatSagCompensation);
+    p.resetAll();
+
+    // контроллер: одна и та же команда на полной и на просевшей батарее
+    auto motorAt = [](float sag, float volts) {
+        Bench b;
+        CopterTune t = deriveTune(*findBuild("freestyle5"), 1000.0f, EscProtocol::DSHOT600);
+        t.vbatSagCompensation = sag;
+        b.ctl.configure(t);
+        b.sens.batteryVolts = t.volts;   // ARM — на полной (просевшую не армят)
+        TEST_ASSERT_TRUE(b.armAfterBoot());
+        b.sens.batteryVolts = volts;     // под газом просела
+        b.rc.throttle = 0.5f;
+        b.run(2.0f);
+        return b.out.motor[0];
+    };
+    const float full = deriveTune(*findBuild("freestyle5"), 1000.0f, EscProtocol::DSHOT600).volts;
+    const float m100 = motorAt(1.0f, full * 0.85f), m0 = motorAt(0.0f, full * 0.85f), m50 = motorAt(0.5f, full * 0.85f);
+    const float ref = motorAt(1.0f, full);
+    char why[96];
+    snprintf(why, sizeof(why), "ref %.4f m0 %.4f m50 %.4f m100 %.4f", ref, m0, m50, m100);
+    TEST_MESSAGE(why);
+    TEST_ASSERT_TRUE_MESSAGE(m100 > m50 && m50 > m0, why);            // поправка растёт с процентом
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, ref, m0);                          // 0 % — как на полной (без поправки)
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, (m100 + m0) * 0.5f, m50);          // 50 % — посередине
 }
 
 // ---- батарея (copter/Battery.h) ----
@@ -4230,6 +4637,11 @@ int main()
     RUN_TEST(test_rxfail_table_like_betaflight);
     RUN_TEST(test_rx_input_rxfail_values);
     RUN_TEST(test_cli_rxfail_and_diff);
+    RUN_TEST(test_msp_frames_v1_v2);
+    RUN_TEST(test_msp_identity_and_status);
+    RUN_TEST(test_msp_settings_roundtrip);
+    RUN_TEST(test_cli_pastes_betaflight_diff);
+    RUN_TEST(test_vbat_sag_compensation_percent);
     RUN_TEST(test_battery_voltage_current_and_mah);
     RUN_TEST(test_battery_warning_critical_hysteresis_and_sag);
     RUN_TEST(test_battery_chemistry_params);

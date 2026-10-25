@@ -380,6 +380,7 @@ namespace copter
             tune.yawLpfHz = t.yawLpfHz;
             tune.thrustLinear = t.thrustLinear;
             tune.motorOutputLimit = t.motorOutputLimit;
+            tune.vbatSagCompensation = t.vbatSagCompensation;
             for (int a = 0; a < 3; ++a) tune.rates[a] = t.rates[a];
             axes[0].setGains(t.roll);
             axes[1].setGains(t.pitch);
@@ -648,7 +649,8 @@ namespace copter
             float vComp = 1.0f;
             if (set.voltageCompensation && status.volts > 1.0f)
             {
-                vComp = fminf(1.3f, fmaxf(1.0f, tune.volts / status.volts));
+                // vbat_sag_compensation: доля поправки (100 % — моторы отвечают как на полной)
+                vComp = 1.0f + (fminf(1.3f, fmaxf(1.0f, tune.volts / status.volts)) - 1.0f) * tune.vbatSagCompensation;
             }
             float sum = 0.0f;
             for (uint8_t i = 0; i < out.count; ++i)
