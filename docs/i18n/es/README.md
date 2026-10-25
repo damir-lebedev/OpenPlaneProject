@@ -140,9 +140,12 @@ Cuadricóptero, hexa, octo, Y6, X8, en las mismas placas. **Los PID, los filtros
 
 | | |
 |---|---|
-| **Modos** | ACRO (airmode), HORIZON, ANGLE, ALT_HOLD, desde el interruptor SwC |
-| **Protecciones** | ARM solo si pasan todas las comprobaciones (cada motivo de rechazo con palabras), pérdida de señal → nivelación, descenso y DISARM en el suelo, vuelco y fallo de motor → motores parados |
-| **Variadores** | PWM, OneShot125/42, Multishot; DShot es la siguiente etapa |
+| **Modos** | ACRO (airmode), HORIZON, ANGLE, ALT_HOLD; en los interruptores, una tabla `aux` como en Betaflight (por defecto ARM — SwA, modo — SwC), orden de canales — `map` |
+| **Ajustes como en Betaflight** | CLI: `set`/`get`/`diff`/`save`, 4 perfiles PID y 4 perfiles de rates, PID en unidades BF, un diff de BF se pega entero (el hardware de BF se omite, al final un resumen); **el configurador de Betaflight se conecta por MSP** (el cóptero se presenta como BF 4.5); la descripción del cóptero también son ajustes; el protocolo `@params`/`@set` para la aplicación |
+| **Protecciones** | ARM solo si pasan todas las comprobaciones (cada motivo de rechazo con código, como en el `status` de BF, y con palabras), pérdida de señal → nivelación, descenso y DISARM en el suelo, vuelco y fallo de motor → motores parados |
+| **Variadores** | PWM, OneShot125/42, Multishot, DShot150/300/600 (timer con DMA, hasta 8 motores; aún no comprobado en hardware); DShot bidireccional: tramas y decodificación de RPM listas, la lectura de la respuesta, en el banco |
+| **Controladoras** | Matek H743, DevEBox H743 y **casi cualquier F405 de Betaflight** (ICM-42688-P, SPL06/DPS310): `tools/bf_board.py` saca el pinout de la propia placa, aunque su target no esté en ningún repositorio; el firmware original se guarda por DFU |
+| **FPV** | transmisor de vídeo por SmartAudio/Tramp con **techo de potencia** y nivel desde un interruptor, OSD (AT7456E): batería, corriente, mAh, tiempo, casa, avisos; telemetría a la emisora por CRSF; GPS, brújula y punto de casa; Li-ion con sus umbrales; PINIO (cámaras, 12 V); zumbador |
 | **Comprobado** | 12 montajes × 3 variantes de física «equivocada» en un simulador de 6 grados de libertad: estacionario ±0.3 m, inclinación con el stick en 0.14–0.35 s, aterrizaje con pérdida de señal. **Todavía no en el aire** |
 
 ```bash
@@ -176,7 +179,7 @@ Un buen sensor de velocidad del aire cuesta como la mitad de un controlador de v
 
 ## 📼 Caja negra
 
-La placa graba cada vuelo: IMU a 500 Hz, ángulos y decisiones del piloto automático, PID, todas las salidas, sticks, barómetro, brújula, GPS, batería y eventos, desde el ARM y el acelerador hasta el aterrizaje, con 10 segundos antes del inicio. La **ESP32-S3** graba en su flash integrada (13.9 MB, unos 11 minutos); la **STM32H743**, en una tarjeta SD (64 MB, aproximadamente una hora; la tarjeta sigue siendo una FAT32 normal y el firmware escribe en un archivo creado de antemano, `BLACKBOX.BIN`). El borrado solo se hace en tierra. Después del vuelo, `python tools/blackbox.py download` descarga el vuelo por USB y lo desglosa en CSV; los vuelos de la tarjeta SD también se pueden descodificar sin la placa: `python tools/blackbox.py ring E:/BLACKBOX.BIN`. Más detalles: [BLACKBOX.md](BLACKBOX.md).
+La placa graba cada vuelo: IMU a 500 Hz, ángulos y decisiones del piloto automático, PID, todas las salidas, sticks, barómetro, brújula, GPS, batería y eventos, desde el ARM y el acelerador hasta el aterrizaje, con 10 segundos antes del inicio. La **ESP32-S3** graba en su flash integrada (13.9 MB, unos 11 minutos); la **STM32H743**, en una tarjeta SD (64 MB, aproximadamente una hora; la tarjeta sigue siendo una FAT32 normal y el firmware escribe en un archivo creado de antemano, `BLACKBOX.BIN`). El borrado solo se hace en tierra. Después del vuelo, `python tools/blackbox.py download` descarga el vuelo por USB y lo desglosa en CSV; los vuelos de la tarjeta SD también se pueden descodificar sin la placa: `python tools/blackbox.py ring E:/BLACKBOX.BIN`. El cóptero graba giroscopio, PID y motores en cada ciclo (1 kHz): en el H743, en la misma tarjeta SD; en el F405, en la flash SPI de la placa (W25Q128 y similares); `python tools/blackbox.py download --bfl` entrega el vuelo del cóptero en formato Betaflight (`.BFL`) para Blackbox Explorer y PIDtoolbox. Para verlo: **OpenPlane Studio, sección «Caja negra»**: línea de tiempo con modos y eventos, gráficas con cursor común, espectro de ruido, orientación en 3D. Más detalles: [BLACKBOX.md](BLACKBOX.md).
 
 ---
 
@@ -322,8 +325,11 @@ El modelo de avión de las simulaciones está simplificado y los coeficientes so
 - [x] Receptores SBUS y CRSF (ExpressLRS, TBS Crossfire) junto a iBUS: se eligen en `Config.h` o en OpenPlane Studio
 - [x] Controladora lista para usar Matek H743-WING V3: sensores en la placa, flasheo con un botón (aún sin probar en hardware)
 - [x] Multicópteros (cuadricóptero, hexa, octo, Y6, X8): ajuste deducido de la descripción del cóptero, comprobado en simulador
+- [x] Cóptero en OpenPlane Studio: en el hangar junto a los aviones, grabación con un botón, primera configuración (receptor, vídeo con techo de potencia, interruptores)
 - [ ] STM32H743: conectar los sensores y pasar el banco igual que con la ESP32-S3
-- [ ] Cóptero: DShot, ciclo de 4 kHz, caja negra y MAVLink, pruebas de vuelo
+- [x] Cóptero: caja negra en la tarjeta SD y su visualización en OpenPlane Studio
+- [x] Cóptero: ajustes como en Betaflight (CLI, diff de BF, MSP para el configurador de BF), batería y failsafe como en BF, DShot en timer con DMA, caja negra en la flash SPI del F405, registro en formato Betaflight
+- [ ] Cóptero: DShot y DShot bidireccional en el banco, ciclo de 4 kHz, MAVLink, pruebas de vuelo
 - [ ] Controladoras populares con STM32F405: SpeedyBee F405 WING, Matek F405-WTE
 - [ ] Ensayos en vuelo del piloto automático con el nuevo avión
 - [ ] Una placa de controlador de vuelo propia ([FC_BOARD.md](FC_BOARD.md)) con la STM32H743

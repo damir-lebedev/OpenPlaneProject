@@ -140,9 +140,12 @@ Quad, hexa, okto, Y6, X8 – på samma kort. **PID, filter, tomgång och rates s
 
 | | |
 |---|---|
-| **Lägen** | ACRO (airmode), HORIZON, ANGLE, ALT_HOLD – med brytaren SwC |
-| **Skydd** | ARM bara när alla kontroller går igenom (varje avslagsorsak i ord), förlorad förbindelse → plant läge, sjunkning och DISARM på marken, vält och motorfel → motorerna stannar |
-| **Fartreglage** | PWM, OneShot125/42, Multishot; DShot är nästa steg |
+| **Lägen** | ACRO (airmode), HORIZON, ANGLE, ALT_HOLD; på brytarna – en `aux`-tabell som i Betaflight (standard ARM – SwA, läge – SwC), kanalordning – `map` |
+| **Inställningar som i Betaflight** | CLI: `set`/`get`/`diff`/`save`, 4 PID-profiler och 4 rate-profiler, PID i BF-enheter, en BF-diff kan klistras in hel (BF:s hårdvara hoppas över, i slutet en sammanfattning); **Betaflight-konfiguratorn ansluter via MSP** (koptern presenterar sig som BF 4.5); kopterns beskrivning är också inställningar; protokollet `@params`/`@set` för appen |
+| **Skydd** | ARM bara när alla kontroller går igenom (varje avslagsorsak som kod, som i BF:s `status`, och i ord), förlorad förbindelse → plant läge, sjunkning och DISARM på marken, vält och motorfel → motorerna stannar |
+| **Fartreglage** | PWM, OneShot125/42, Multishot, DShot150/300/600 (timer med DMA, upp till 8 motorer; inte provat på hårdvara än); dubbelriktad DShot – ramar och avkodning av varvtal klara, läsningen av svaret görs på bänken |
+| **Styrkort** | Matek H743, DevEBox H743 och **nästan vilket F405 som helst från Betaflight** (ICM-42688-P, SPL06/DPS310): `tools/bf_board.py` läser stiftplaceringen från kortet självt – även om dess target inte finns i något förråd; originalfirmwaren sparas via DFU |
+| **FPV** | videosändare via SmartAudio/Tramp med **effekttak** och nivå från en brytare, OSD (AT7456E): batteri, ström, mAh, tid, hem, varningar; telemetri till radion via CRSF; GPS, kompass och hempunkt; Li-ion med sina gränser; PINIO (kameror, 12 V); summer |
 | **Kontrollerat** | 12 byggen × 3 varianter av ”fel” fysik i en simulator med 6 frihetsgrader: hovring ±0,3 m, lutning efter spaken på 0,14–0,35 s, landning vid förlorad förbindelse. **Inte i luften än** |
 
 ```bash
@@ -176,7 +179,7 @@ En riktig lufthastighetssensor kostar ungefär som en halv flygkontroller. Här 
 
 ## 📼 Svart låda
 
-Kortet registrerar varje flygning: IMU på 500 Hz, vinklar och autopilotens beslut, PID, alla utgångar, spakar, barometer, kompass, GPS, batteri och händelser – från ARM och gaspådrag till landning, med 10 sekunder före start. **ESP32-S3** skriver till sitt inbyggda flashminne (13,9 MB, cirka 11 minuter), **STM32H743** till ett SD-kort (64 MB – ungefär en timme; kortet förblir ett vanligt FAT32-kort, och firmwaren skriver i en i förväg skapad fil `BLACKBOX.BIN`). Radering sker bara på marken. Efter flygningen hämtar `python tools/blackbox.py download` flygningen via USB och delar upp den i CSV-filer; flygningar kan också avkodas från SD-kortet utan kortet: `python tools/blackbox.py ring E:/BLACKBOX.BIN`. Detaljer – [BLACKBOX.md](BLACKBOX.md).
+Kortet registrerar varje flygning: IMU på 500 Hz, vinklar och autopilotens beslut, PID, alla utgångar, spakar, barometer, kompass, GPS, batteri och händelser – från ARM och gaspådrag till landning, med 10 sekunder före start. **ESP32-S3** skriver till sitt inbyggda flashminne (13,9 MB, cirka 11 minuter), **STM32H743** till ett SD-kort (64 MB – ungefär en timme; kortet förblir ett vanligt FAT32-kort, och firmwaren skriver i en i förväg skapad fil `BLACKBOX.BIN`). Radering sker bara på marken. Efter flygningen hämtar `python tools/blackbox.py download` flygningen via USB och delar upp den i CSV-filer; flygningar kan också avkodas från SD-kortet utan kortet: `python tools/blackbox.py ring E:/BLACKBOX.BIN`. Koptern skriver gyro, PID och motorer varje varv (1 kHz): på H743 – till samma SD-kort, på F405 – till kortets SPI-flash (W25Q128 och liknande); `python tools/blackbox.py download --bfl` lämnar kopterns flygning i Betaflight-format (`.BFL`) – för Blackbox Explorer och PIDtoolbox. Titta – i **OpenPlane Studio, avsnittet ”Svart låda”**: tidslinje med lägen och händelser, grafer med gemensam markör, brusspektrum, attityd i 3D. Detaljer – [BLACKBOX.md](BLACKBOX.md).
 
 ---
 
@@ -322,8 +325,11 @@ Flygplansmodellen i simuleringarna är förenklad, och koefficienterna är start
 - [x] SBUS- och CRSF-mottagare (ExpressLRS, TBS Crossfire) vid sidan av iBUS – väljs i `Config.h` eller i OpenPlane Studio
 - [x] Färdig flygkontroller Matek H743-WING V3: sensorer på kortet, flashning med en knapp (ännu inte provad på hårdvara)
 - [x] Multikoptrar (quad, hexa, okto, Y6, X8): inställning härledd ur kopterns beskrivning, kontrollerad i simulator
+- [x] Kopter i OpenPlane Studio: i hangaren bredvid flygplanen, flashning med en knapp, första inställning (mottagare, video med effekttak, brytare)
 - [ ] STM32H743: koppla in sensorerna och gå igenom bänken på samma sätt som med ESP32-S3
-- [ ] Kopter: DShot, 4 kHz-cykel, svart låda och MAVLink, flygprov
+- [x] Kopter: svart låda på SD-kort och visning av den i OpenPlane Studio
+- [x] Kopter: inställningar som i Betaflight (CLI, BF-diff, MSP för BF-konfiguratorn), batteri och failsafe som i BF, DShot på timer med DMA, svart låda på F405:ans SPI-flash, logg i Betaflight-format
+- [ ] Kopter: DShot och dubbelriktad DShot på bänken, 4 kHz-cykel, MAVLink, flygprov
 - [ ] Populära flygkontroller med STM32F405: SpeedyBee F405 WING, Matek F405-WTE
 - [ ] Flygprov av autopiloten på den nya flygplansstommen
 - [ ] Ett eget flygkontrollerkort ([FC_BOARD.md](FC_BOARD.md)) med STM32H743

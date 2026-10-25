@@ -140,9 +140,12 @@ SwD をモーター逆転ではなくサーマル・ソアリングにしたい�
 
 | | |
 |---|---|
-| **モード** | ACRO（airmode）、HORIZON、ANGLE、ALT_HOLD — SwC スイッチで切り替え |
-| **保護** | すべてのチェックを通ったときだけ ARM（拒否の理由は一つずつ言葉で）、信号喪失 → 水平・降下・地上で DISARM、転覆とモーター故障 → モーター停止 |
-| **ESC** | PWM、OneShot125/42、Multishot。DShot は次の段階です |
+| **モード** | ACRO（airmode）、HORIZON、ANGLE、ALT_HOLD。スイッチには Betaflight と同じ `aux` 表（既定は ARM — SwA、モード — SwC）、チャンネル順は `map` |
+| **Betaflight と同じ設定** | CLI：`set`/`get`/`diff`/`save`、PID プロファイル 4 つとレートプロファイル 4 つ、PID は BF 単位、BF の diff を丸ごと貼り付け可能（BF のハードウェア行は飛ばし、最後にまとめ）。**Betaflight コンフィギュレーターが MSP で接続できます**（コプターは BF 4.5 と名乗ります）。コプターの記述も設定の一部。アプリ向けの `@params`/`@set` プロトコル |
+| **保護** | すべてのチェックを通ったときだけ ARM（拒否の理由は BF の `status` と同じコードと言葉で）、信号喪失 → 水平・降下・地上で DISARM、転覆とモーター故障 → モーター停止 |
+| **ESC** | PWM、OneShot125/42、Multishot、DShot150/300/600（タイマーと DMA、最大 8 モーター。実機では未確認）。双方向 DShot — フレームと回転数のデコードは完成、応答の読み取りはベンチで |
+| **フライトコントローラー** | Matek H743、DevEBox H743、そして **Betaflight が動くほぼすべての F405**（ICM-42688-P、SPL06/DPS310）：`tools/bf_board.py` がボード自身からピン配置を読み取ります — ターゲットがどのリポジトリにもなくても。純正ファームウェアは DFU で保存 |
+| **FPV** | SmartAudio/Tramp による映像送信機（**出力上限**付き、スイッチで出力段）、OSD（AT7456E）：バッテリー、電流、mAh、時間、ホーム、警告。CRSF で送信機へテレメトリー。GPS、コンパス、ホーム地点。Li-ion とそのしきい値。PINIO（カメラ、12 V）。ブザー |
 | **確認済み** | 6 自由度シミュレーターで 12 構成 × 3 種類の「ずれた」物理：ホバリング ±0.3 m、スティックによる傾きが 0.14–0.35 s、信号喪失時の着陸。**実機ではまだ飛んでいません** |
 
 ```bash
@@ -176,7 +179,7 @@ pio run -e matek-h743-quad -t upload    # その後コンソールで：t — �
 
 ## 📼 ブラックボックス
 
-ボードはすべてのフライトを記録します。500 Hz の IMU、姿勢角とオートパイロットの判断、PID、すべての出力、スティック、気圧センサー、コンパス、GPS、バッテリー、イベントを、ARM とスロットルから着陸まで、開始の 10 秒前から残します。**ESP32-S3** は内蔵フラッシュ（13.9 MB、約 11 分）に、**STM32H743** は SD カード（64 MB、約 1 時間）に書き込みます。SD カードは普通の FAT32 のままで、ファームウェアは事前に作っておいたファイル `BLACKBOX.BIN` に書き込みます。消去は地上でのみ行われます。飛行後は `python tools/blackbox.py download` で USB 経由でフライトをダウンロードして CSV に展開できます。SD カードのフライトは、ボードなしでも解析できます：`python tools/blackbox.py ring E:/BLACKBOX.BIN`。詳しくは [BLACKBOX.md](BLACKBOX.md) をご覧ください。
+ボードはすべてのフライトを記録します。500 Hz の IMU、姿勢角とオートパイロットの判断、PID、すべての出力、スティック、気圧センサー、コンパス、GPS、バッテリー、イベントを、ARM とスロットルから着陸まで、開始の 10 秒前から残します。**ESP32-S3** は内蔵フラッシュ（13.9 MB、約 11 分）に、**STM32H743** は SD カード（64 MB、約 1 時間）に書き込みます。SD カードは普通の FAT32 のままで、ファームウェアは事前に作っておいたファイル `BLACKBOX.BIN` に書き込みます。消去は地上でのみ行われます。飛行後は `python tools/blackbox.py download` で USB 経由でフライトをダウンロードして CSV に展開できます。SD カードのフライトは、ボードなしでも解析できます：`python tools/blackbox.py ring E:/BLACKBOX.BIN`。コプターは毎ループ（1 kHz）ジャイロ、PID、モーターを記録します：H743 では同じ SD カードへ、F405 ではボードの SPI フラッシュ（W25Q128 など）へ。`python tools/blackbox.py download --bfl` でコプターのフライトを Betaflight 形式（`.BFL`）で取り出せます — Blackbox Explorer と PIDtoolbox 用。見るには — **OpenPlane Studio の「ブラックボックス」セクション**：モードとイベントのタイムライン、共通カーソルのグラフ、ノイズスペクトル、3D の姿勢。詳しくは [BLACKBOX.md](BLACKBOX.md) をご覧ください。
 
 ---
 
@@ -322,8 +325,11 @@ DevEBox：このボードには BOOT0 ボタンがありません。初回の書
 - [x] iBUS に加えて SBUS と CRSF 受信機（ExpressLRS、TBS Crossfire）——`Config.h` または OpenPlane Studio で選択
 - [x] 完成品のフライトコントローラー Matek H743-WING V3：ボード上のセンサー、ボタン 1 つで書き込み（実機ではまだ試していない）
 - [x] マルチコプター（クアッド、ヘキサ、オクト、Y6、X8）：コプターの記述から設定を導出、シミュレーターで確認済み
+- [x] OpenPlane Studio のコプター：格納庫で飛行機と並べて管理、ボタン 1 つで書き込み、初期設定（受信機、出力上限付きの映像、スイッチ）
 - [ ] STM32H743：センサーを接続し、ESP32-S3 と同じようにテストベンチを通す
-- [ ] コプター：DShot、4 kHz の制御周期、ブラックボックスと MAVLink、飛行試験
+- [x] コプター：SD カードへのブラックボックスと OpenPlane Studio での表示
+- [x] コプター：Betaflight と同じ設定（CLI、BF の diff、BF コンフィギュレーター用の MSP）、BF と同じバッテリーとフェイルセーフ、タイマーと DMA による DShot、F405 の SPI フラッシュへのブラックボックス、Betaflight 形式のログ
+- [ ] コプター：DShot と双方向 DShot のベンチ確認、4 kHz の制御周期、MAVLink、飛行試験
 - [ ] STM32F405 の人気フライトコントローラー：SpeedyBee F405 WING、Matek F405-WTE
 - [ ] 新しい機体でのオートパイロットの飛行試験
 - [ ] STM32H743 を使った自作フライトコントローラー基板（[FC_BOARD.md](FC_BOARD.md)）

@@ -140,9 +140,12 @@ constexpr Binding BINDINGS[] = {
 
 | | |
 |---|---|
-| **模式** | ACRO（airmode）、HORIZON、ANGLE、ALT_HOLD——由 SwC 开关切换 |
-| **保护** | 只有所有检查都通过才能 ARM（每个拒绝原因都用文字说明），信号丢失 → 改平、下降并在地面 DISARM，翻覆和电机故障 → 电机停转 |
-| **电调** | PWM、OneShot125/42、Multishot；DShot 是下一步 |
+| **模式** | ACRO（airmode）、HORIZON、ANGLE、ALT_HOLD；开关上的模式表 `aux` 与 Betaflight 相同（默认 ARM — SwA，模式 — SwC），通道顺序——`map` |
+| **类似 Betaflight 的设置** | CLI：`set`/`get`/`diff`/`save`，4 个 PID 配置和 4 个速率配置，PID 使用 BF 单位，BF 的 diff 可以整段粘贴（BF 硬件命令会被跳过，最后给出汇总）；**Betaflight 配置器可通过 MSP 连接**（飞行器自称 BF 4.5）；飞行器描述本身也是设置；面向应用的 `@params`/`@set` 协议 |
+| **保护** | 只有所有检查都通过才能 ARM（每个拒绝原因都给出与 BF `status` 相同的代码和文字说明），信号丢失 → 改平、下降并在地面 DISARM，翻覆和电机故障 → 电机停转 |
+| **电调** | PWM、OneShot125/42、Multishot、DShot150/300/600（定时器 + DMA，最多 8 个电机；尚未在硬件上验证）；双向 DShot——帧和转速解码已完成，读取应答在台架上完成 |
+| **飞控** | Matek H743、DevEBox H743，以及**几乎任何来自 Betaflight 的 F405**（ICM-42688-P、SPL06/DPS310）：`tools/bf_board.py` 直接从板子上读取引脚分配——即使它的目标板不在任何仓库中；原厂固件通过 DFU 备份 |
+| **FPV** | 通过 SmartAudio/Tramp 控制图传，带**功率上限**并可用开关选择功率档；OSD（AT7456E）：电池、电流、mAh、时间、家、警告；通过 CRSF 向遥控器回传遥测；GPS、罗盘和家的位置；支持 Li-ion 及其阈值；PINIO（摄像头、12 V）；蜂鸣器 |
 | **已验证** | 在 6 自由度仿真器中测试 12 种机型 × 3 种“不对”的物理参数：悬停 ±0.3 m，0.14–0.35 s 内按摇杆倾斜到位，信号丢失后降落。**尚未真机试飞** |
 
 ```bash
@@ -176,7 +179,7 @@ pio run -e matek-h743-quad -t upload    # 然后在控制台中：t — 参数�
 
 ## 📼 黑匣子
 
-开发板会记录每一次飞行：500 Hz 的 IMU、姿态角和自动驾驶仪的决策、PID、所有输出、摇杆、气压计、罗盘、GPS、电池和各种事件——从解锁（ARM）并推油门开始，一直到降落，并且包含起飞前的 10 秒。**ESP32-S3** 写入片上闪存（13.9 MB，约 11 分钟），**STM32H743** 写入 SD 卡（64 MB，约一小时；SD 卡仍是普通的 FAT32，固件写入预先创建好的文件 `BLACKBOX.BIN`）。擦除只在地面进行。飞行结束后，`python tools/blackbox.py download` 通过 USB 下载飞行记录并拆分成 CSV；SD 卡里的飞行记录也可以不借助开发板直接解析：`python tools/blackbox.py ring E:/BLACKBOX.BIN`。详情见 [BLACKBOX.md](BLACKBOX.md)。
+开发板会记录每一次飞行：500 Hz 的 IMU、姿态角和自动驾驶仪的决策、PID、所有输出、摇杆、气压计、罗盘、GPS、电池和各种事件——从解锁（ARM）并推油门开始，一直到降落，并且包含起飞前的 10 秒。**ESP32-S3** 写入片上闪存（13.9 MB，约 11 分钟），**STM32H743** 写入 SD 卡（64 MB，约一小时；SD 卡仍是普通的 FAT32，固件写入预先创建好的文件 `BLACKBOX.BIN`）。擦除只在地面进行。飞行结束后，`python tools/blackbox.py download` 通过 USB 下载飞行记录并拆分成 CSV；SD 卡里的飞行记录也可以不借助开发板直接解析：`python tools/blackbox.py ring E:/BLACKBOX.BIN`。多旋翼每个周期（1 kHz）记录陀螺仪、PID 和电机：在 H743 上写到同一张 SD 卡，在 F405 上写到板载 SPI 闪存（W25Q128 等）；`python tools/blackbox.py download --bfl` 以 Betaflight 格式（`.BFL`）输出多旋翼的飞行记录——供 Blackbox Explorer 和 PIDtoolbox 使用。查看——**OpenPlane Studio 的“黑匣子”页面**：带模式和事件的时间轴、共用光标的曲线、噪声频谱、3D 姿态。详情见 [BLACKBOX.md](BLACKBOX.md)。
 
 ---
 
@@ -322,8 +325,11 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 - [x] 在 iBUS 之外支持 SBUS 和 CRSF 接收机（ExpressLRS、TBS Crossfire）——在 `Config.h` 或 OpenPlane Studio 中选择
 - [x] 现成的飞控 Matek H743-WING V3：板载传感器，一键烧录（尚未在硬件上试过）
 - [x] 多旋翼（四旋翼、六旋翼、八旋翼、Y6、X8）：由飞行器描述推导参数，已在仿真器中验证
+- [x] OpenPlane Studio 中的多旋翼：与飞机一起放在机库里，一键烧录，首次配置（接收机、带功率上限的图传、开关）
 - [ ] STM32H743：接上传感器，并像 ESP32-S3 一样走完台架测试
-- [ ] 多旋翼：DShot、4 kHz 控制周期、黑匣子和 MAVLink、试飞
+- [x] 多旋翼：SD 卡黑匣子及其在 OpenPlane Studio 中的查看
+- [x] 多旋翼：类似 Betaflight 的设置（CLI、BF diff、供 BF 配置器使用的 MSP），与 BF 相同的电池和 failsafe，基于定时器 + DMA 的 DShot，F405 SPI 闪存上的黑匣子，Betaflight 格式的日志
+- [ ] 多旋翼：在台架上验证 DShot 和双向 DShot、4 kHz 控制周期、MAVLink、试飞
 - [ ] 基于 STM32F405 的热门飞控：SpeedyBee F405 WING、Matek F405-WTE
 - [ ] 在新机体上对自动驾驶仪进行试飞
 - [ ] 基于 STM32H743 的自研飞控板（[FC_BOARD.md](FC_BOARD.md)）
