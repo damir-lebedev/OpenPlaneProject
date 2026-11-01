@@ -542,6 +542,8 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_EQUAL_MESSAGE(1, static_cast<int>(header.size()), log.c_str());
     TEST_ASSERT_TRUE_MESSAGE(isJson(header[0]), header[0].c_str());
     TEST_ASSERT_TRUE(contains(header[0], "\"build\":\"freestyle5\""));
+    TEST_ASSERT_TRUE_MESSAGE(contains(header[0], "\"frame\":{\"type\":\"Quad X\",\"motors\":[[-0.71,0.71,\"cw\",false],"), header[0].c_str());
+    TEST_ASSERT_TRUE(contains(header[0], "\"motorTestMax\":30}"));
     const auto lines = linesWith(log, "@param ");
     TEST_ASSERT_EQUAL(copter::PARAM_COUNT, static_cast<int>(lines.size()));
     for (const std::string& l : lines) TEST_ASSERT_TRUE_MESSAGE(isJson(l), l.c_str());
@@ -617,6 +619,26 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE(contains(live[0], "\"state\":\"DISARMED\",\"mode\":\"ANGLE\""));
     TEST_ASSERT_TRUE(contains(live[0], "\"motors\":[0.000,0.000,0.000,0.000]"));
     TEST_ASSERT_TRUE(contains(live[0], "\"modes\":[1]"));
+
+    // проверка моторов: ползунок держится, пока приложение повторяет
+    host("motor 1 12");
+    run(rc, 0.05);
+    log = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "@motor {\"ok\":true,\"max\":30,\"m\":[0.0,12.0,0.0,0.0]}"), log.c_str());
+    TEST_ASSERT_TRUE(copterController.motorTestActive());
+    host("motor all 50");
+    run(rc, 0.05);
+    TEST_ASSERT_TRUE(contains(takeSerial(), "\"m\":[30.0,30.0,30.0,30.0]"));
+    run(rc, 1.1);
+    TEST_ASSERT_FALSE(copterController.motorTestActive());
+    host("motor 0 10");
+    host("motor stop");
+    host("motor x");
+    run(rc, 0.05);
+    log = takeSerial();
+    TEST_ASSERT_TRUE(contains(log, "\"m\":[0.0,0.0,0.0,0.0]"));
+    TEST_ASSERT_TRUE(contains(log, "@error {\"cmd\":\"motor\""));
+    TEST_ASSERT_FALSE(copterController.motorTestActive());
 
     // заармленному менять нельзя
     run(rc, 2.5);

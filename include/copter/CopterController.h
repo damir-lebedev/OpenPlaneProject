@@ -409,14 +409,40 @@ namespace copter
         bool startMotorTest(uint8_t index, float thrust, float seconds)
         {
             if (status.state != CopterState::DISARMED || index >= tune.frame.count) return false;
-            testMotor = index;
-            testThrust = fminf(0.3f, fmaxf(0.0f, thrust));
-            testLeft = fminf(5.0f, fmaxf(0.0f, seconds));
+            for (float& t : testThrust) t = 0.0f;
+            return setMotorTest(index, thrust, seconds);
+        }
+
+        // Ползунок мотора (вкладка «Моторы» приложения, `motor` в CLI,
+        // MSP_SET_MOTOR): остальные моторы — как были; MOTOR_TEST_ALL — все.
+        // Каждый вызов продлевает проверку на seconds: нового нет — стоп.
+        static constexpr uint8_t MOTOR_TEST_ALL = 0xFF;
+        static constexpr float MOTOR_TEST_MAX = 0.3f;
+        bool setMotorTest(uint8_t index, float thrust, float seconds)
+        {
+            if (status.state != CopterState::DISARMED) return false;
+            if (index != MOTOR_TEST_ALL && index >= tune.frame.count) return false;
+            const float v = fminf(MOTOR_TEST_MAX, fmaxf(0.0f, thrust));
+            for (uint8_t i = 0; i < MAX_MOTORS; ++i)
+            {
+                if (index == MOTOR_TEST_ALL || i == index) testThrust[i] = i < tune.frame.count ? v : 0.0f;
+            }
+            bool any = false;
+            for (float t : testThrust) any = any || t > 0.0f;
+            testLeft = any ? fminf(5.0f, fmaxf(0.0f, seconds)) : 0.0f;
             return true;
         }
 
-        void stopMotorTest() { testLeft = 0.0f; }
+        void stopMotorTest()
+        {
+            testLeft = 0.0f;
+            for (float& t : testThrust) t = 0.0f;
+        }
         bool motorTestActive() const { return testLeft > 0.0f; }
+        float motorTestValue(uint8_t index) const
+        {
+            return testLeft > 0.0f && index < MAX_MOTORS ? testThrust[index] : 0.0f;
+        }
 
         // Один цикл стабилизации.
         CopterOutputs update(const CopterSensors& sens, const CopterRc& rcIn)
@@ -496,8 +522,12 @@ namespace copter
                 if (testLeft > 0.0f)
                 {
                     testLeft -= dt;
-                    out.motor[testMotor] = tune.motorCommand(testThrust);
+                    for (uint8_t i = 0; i < out.count && i < MAX_MOTORS; ++i)
+                    {
+                        if (testThrust[i] > 0.0f) out.motor[i] = tune.motorCommand(testThrust[i]);
+                    }
                     out.spinning = true;
+                    if (testLeft <= 0.0f) stopMotorTest();
                 }
                 avgThrust = 0.0f;
                 status.throttle = 0.0f;
@@ -976,7 +1006,7 @@ namespace copter
                 status.state = CopterState::ARMED;
                 status.mode = rc.mode;
                 ++status.armCount;
-                testLeft = 0.0f;
+                stopMotorTest();
                 status.runawayCheck = set.runawayPrevention;
                 runawayTimer = runawayFlown = 0.0f;
                 groundIdleTimer = lowThrottleTimer = 0.0f;
@@ -1171,8 +1201,7 @@ namespace copter
         bool prevSwitch = false;
         uint32_t externalBlockers = 0;
 
-        uint8_t testMotor = 0;
-        float testThrust = 0.0f;
+        float testThrust[MAX_MOTORS] = {};
         float testLeft = 0.0f;
     };
 }

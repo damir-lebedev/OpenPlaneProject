@@ -24,6 +24,7 @@ github.com/betaflight/config (#define MOTOR1_PIN PC6 …). Из них беру�
 """
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -447,12 +448,91 @@ def generate(board, baro="SPL06", source_note=""):
 CLI_COMMANDS = ("version", "status", "resource", "resource show all", "dump hardware", "diff all")
 
 
-def read_cli(port, out_path, timeout=8.0):
+def open_serial(port):
     try:
         import serial  # pyserial — есть в Python PlatformIO
     except ImportError:
         sys.exit("нужен pyserial: запустите Python из PlatformIO (~/.platformio/penv/Scripts/python.exe)")
-    with serial.Serial(port, 115200, timeout=0.2) as s:
+    return serial.Serial(port, 115200, timeout=0.2)
+
+
+# MSP v1 — узнать, что на плате, не входя в CLI (как конфигуратор BF).
+MSP_FC_VARIANT, MSP_FC_VERSION, MSP_BOARD_INFO = 2, 3, 4
+
+
+def msp_request(cmd):
+    return bytes([ord("$"), ord("M"), ord("<"), 0, cmd, cmd])
+
+
+def msp_parse(data, cmd):
+    """Ответ '$M>' на cmd из потока байт: полезные данные или None."""
+    i = 0
+    while True:
+        i = data.find(b"$M>", i)
+        if i < 0 or i + 5 > len(data):
+            return None
+        size, got = data[i + 3], data[i + 4]
+        end = i + 5 + size
+        if got == cmd and end < len(data):
+            payload = data[i + 5:end]
+            x = size ^ got
+            for b in payload:
+                x ^= b
+            if x == data[end]:
+                return payload
+        i += 3
+
+
+def parse_board_info(p):
+    """MSP_BOARD_INFO: id(4) ревизия(2) тип(1) возможности(1), затем строки «длина + текст»."""
+    info = {"id": p[:4].decode("ascii", "replace")}
+    pos = 8
+    for key in ("target", "board", "manufacturer"):
+        if pos >= len(p):
+            break
+        n = p[pos]
+        info[key] = p[pos + 1:pos + 1 + n].decode("ascii", "replace")
+        pos += 1 + n
+    return info
+
+
+def probe(port, wait=1.0):
+    """Что за прошивка на плате: {"variant": "BTFL", "version": "4.5.1", "board": …} или {}."""
+    with open_serial(port) as s:
+        s.reset_input_buffer()
+        result = {}
+        for cmd in (MSP_FC_VARIANT, MSP_FC_VERSION, MSP_BOARD_INFO):
+            s.write(msp_request(cmd))
+            deadline = time.time() + wait
+            data = b""
+            payload = None
+            while time.time() < deadline and payload is None:
+                data += s.read(512)
+                payload = msp_parse(data, cmd)
+            if payload is None:
+                return result
+            if cmd == MSP_FC_VARIANT:
+                result["variant"] = payload[:4].decode("ascii", "replace")
+            elif cmd == MSP_FC_VERSION and len(payload) >= 3:
+                result["version"] = "{}.{}.{}".format(payload[0], payload[1], payload[2])
+            elif cmd == MSP_BOARD_INFO:
+                result.update(parse_board_info(payload))
+        return result
+
+
+def enter_dfu(port):
+    """Betaflight сам уходит в загрузчик DFU: CLI, команда bl (BOOT зажимать не нужно)."""
+    with open_serial(port) as s:
+        s.write(b"#")
+        time.sleep(0.5)
+        s.read(4096)
+        s.write(b"bl\r\n")
+        s.flush()
+        time.sleep(0.3)
+
+
+def read_cli(port, out_path, timeout=8.0):
+    with open_serial(port) as s:
         s.reset_input_buffer()
         s.write(b"#")
         time.sleep(0.5)
@@ -478,7 +558,8 @@ def read_cli(port, out_path, timeout=8.0):
 
 
 def dfu_util():
-    base = os.path.join(os.path.expanduser("~"), ".platformio", "packages", "tool-dfuutil", "bin")
+    core = os.environ.get("PLATFORMIO_CORE_DIR") or os.path.join(os.path.expanduser("~"), ".platformio")
+    base = os.path.join(core, "packages", "tool-dfuutil", "bin")
     for name in ("dfu-util.exe", "dfu-util"):
         path = os.path.join(base, name)
         if os.path.exists(path):
@@ -498,6 +579,17 @@ def backup(out_path, size=1024 * 1024):
         out_path, os.path.getsize(out_path), cmd[0], out_path))
 
 
+def restore(path):
+    """Родная прошивка обратно (плата в DFU) — и запуск."""
+    if not os.path.exists(path):
+        sys.exit("нет файла {}".format(path))
+    cmd = [dfu_util(), "-a", "0", "-s", "0x08000000:leave", "-D", path]
+    print(" ".join(cmd))
+    if subprocess.run(cmd).returncode != 0:
+        sys.exit("не вышло: плата в DFU? (в Windows — драйвер WinUSB)")
+    print("Родная прошивка записана, плата перезапущена")
+
+
 def main(argv=None):
     # консоль Windows (cp1252) русских букв не печатает
     for stream in (sys.stdout, sys.stderr):
@@ -508,8 +600,15 @@ def main(argv=None):
     r = sub.add_parser("read", help="дамп CLI Betaflight с платы в файл")
     r.add_argument("--port", required=True)
     r.add_argument("--out", required=True)
+    r.add_argument("--dfu", action="store_true", help="после дампа — в загрузчик DFU (команда bl)")
+    pr = sub.add_parser("probe", help="что на плате (MSP): прошивка, версия, таргет — JSON")
+    pr.add_argument("--port", required=True)
+    d = sub.add_parser("dfu", help="Betaflight — в загрузчик DFU (команда bl)")
+    d.add_argument("--port", required=True)
     b = sub.add_parser("backup", help="родная прошивка целиком по DFU")
     b.add_argument("--out", required=True)
+    rs = sub.add_parser("restore", help="вернуть родную прошивку (плата в DFU)")
+    rs.add_argument("file")
     h = sub.add_parser("header", help="заголовок платы из дампа или config.h")
     h.add_argument("source")
     h.add_argument("--name")
@@ -520,9 +619,22 @@ def main(argv=None):
 
     if args.cmd == "read":
         print("Сохранено:", read_cli(args.port, args.out))
+        if args.dfu:
+            enter_dfu(args.port)
+            print("Плата ушла в загрузчик DFU")
+        return 0
+    if args.cmd == "probe":
+        print(json.dumps(probe(args.port), ensure_ascii=False))
+        return 0
+    if args.cmd == "dfu":
+        enter_dfu(args.port)
+        print("Плата ушла в загрузчик DFU")
         return 0
     if args.cmd == "backup":
         backup(args.out)
+        return 0
+    if args.cmd == "restore":
+        restore(args.file)
         return 0
     board = load(args.source)
     if args.name:

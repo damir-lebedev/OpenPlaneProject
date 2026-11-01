@@ -37,7 +37,9 @@
 //                       ibata_scale, ответ — как на set;
 //   save              — во флеш и в работу: "@save {...}";
 //   revert            — отменить несохранённое: "@revert {...}";
-//   live · live 0     — "@live {...}" 20 раз в секунду ещё 3 с / хватит.
+//   live · live 0     — "@live {...}" 20 раз в секунду ещё 3 с / хватит;
+//   motor N|all % · motor stop — проверка моторов без пропеллеров (до 30 %,
+//                       держится 1 с — приложение повторяет): "@motor {...}".
 //
 // Менять — только без ARM и при закрытом CLI; пока изменения не
 // сохранены или не отменены, ARM запрещён (флаг MSP — как при
@@ -114,6 +116,11 @@ public:
         if (strcmp(cmd, "params") == 0)
         {
             dumpStep = 0;
+            return true;
+        }
+        if (strcmp(cmd, "motor") == 0)
+        {
+            doMotor(args);
             return true;
         }
         const bool changes = strcmp(cmd, "set") == 0 || strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0 ||
@@ -350,13 +357,68 @@ private:
             w.add("@params {\"count\":%d,\"profiles\":%u,\"profile\":%u,\"rateprofile\":%u,\"build\":", PARAM_COUNT,
                   CopterParams::PROFILES, params.pidProfile(), params.rateProfile());
             w.str(b.id ? b.id : "");
-            w.add(",\"source\":\"%s\",\"unsaved\":%s}\n", params.source() == TuneSource::BETAFLIGHT ? "BETAFLIGHT" : "MODEL",
+            w.add(",\"source\":\"%s\",\"unsaved\":%s", params.source() == TuneSource::BETAFLIGHT ? "BETAFLIGHT" : "MODEL",
                   dirty ? "true" : "false");
+            // рама для вкладки «Моторы»: где мотор (x — к носу, y — вправо) и куда крутится
+            const Frame& f = ctl.getTune().frame;
+            w.add(",\"frame\":{\"type\":\"%s\",\"motors\":[", frameName(f.type));
+            for (uint8_t i = 0; i < f.count; ++i)
+            {
+                const MotorPlace& p = f.place[i];
+                w.add("%s[%.2f,%.2f,\"%s\",%s]", i ? "," : "", p.x, p.y, p.spin == Spin::CW ? "cw" : "ccw",
+                      p.bottom ? "true" : "false");
+            }
+            w.add("]},\"motorTestMax\":%.0f}\n", copter::CopterController::MOTOR_TEST_MAX * 100.0f);
             return w.overflow ? 0 : w.length;
         }
         if (step <= PARAM_COUNT) return formatParam(static_cast<ParamId>(step - 1), buffer, capacity);
         if (step == PARAM_COUNT + 1) return formatRc(buffer, capacity);
         return formatModes(buffer, capacity);
+    }
+
+    // «motor N проценты» (N — 0…, all — все) / «motor stop»: проверка моторов
+    // без пропеллеров, до MOTOR_TEST_MAX; держится MOTOR_HOLD_S — приложение
+    // повторяет команду, пока ползунок не на нуле: связь пропала — моторы встали.
+    static constexpr float MOTOR_HOLD_S = 1.0f;
+
+    void doMotor(char* args)
+    {
+        using copter::CopterController;
+        if (ctl.isArmed() || cli.active())
+        {
+            sendError("motor", ctl.isArmed() ? "только без ARM" : "открыт CLI");
+            return;
+        }
+        bool ok = true;
+        if (strncmp(args, "stop", 4) == 0)
+        {
+            ctl.stopMotorTest();
+        }
+        else
+        {
+            char* end = nullptr;
+            const bool all = strncmp(args, "all", 3) == 0;
+            const long index = all ? 0 : strtol(args, &end, 10);
+            if (all) end = args + 3;
+            const float percent = strtof(end, nullptr);
+            ok = (all || end != args) && percent >= 0.0f &&
+                 ctl.setMotorTest(all ? CopterController::MOTOR_TEST_ALL : static_cast<uint8_t>(index < 0 ? 255 : index),
+                                  percent / 100.0f, MOTOR_HOLD_S);
+            if (!ok)
+            {
+                sendError("motor", "motor N|all проценты (0-30) · motor stop");
+                return;
+            }
+        }
+        char line[160];
+        JsonWriter w(line, sizeof(line));
+        w.add("@motor {\"ok\":true,\"max\":%.0f,\"m\":[", CopterController::MOTOR_TEST_MAX * 100.0f);
+        for (uint8_t i = 0; i < ctl.getTune().frame.count && i < copter::MAX_MOTORS; ++i)
+        {
+            w.add(i ? ",%.1f" : "%.1f", ctl.motorTestValue(i) * 100.0f);
+        }
+        w.add("]}\n");
+        send(w);
     }
 
     // «calibrate vbat 16.80» / «calibrate ibat 12.5» — по мультиметру: новый

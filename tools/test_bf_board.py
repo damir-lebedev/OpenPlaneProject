@@ -229,6 +229,24 @@ class BfBoardTest(unittest.TestCase):
             with open(out, encoding="utf-8") as f:
                 self.assertIn("#define OPB_BARO_DPS310 1", f.read())
 
+    def test_msp_answers(self):
+        def answer(cmd, payload):
+            x = len(payload) ^ cmd
+            for b in payload:
+                x ^= b
+            return b"$M>" + bytes([len(payload), cmd]) + payload + bytes([x])
+
+        self.assertEqual(b"$M<\x00\x02\x02", bf_board.msp_request(2))
+        noise = b"garbage$M>\x01\x05\x00\x04"   # чужой ответ перед нужным
+        self.assertEqual(b"BTFL", bf_board.msp_parse(noise + answer(2, b"BTFL"), 2))
+        broken = bytearray(answer(2, b"BTFL"))
+        broken[-1] ^= 0xFF
+        self.assertIsNone(bf_board.msp_parse(bytes(broken), 2))
+        self.assertIsNone(bf_board.msp_parse(answer(2, b"BT"), 3))
+        info = b"S405" + b"\x00\x00" + b"\x00\x00" + b"\x0cGETFUNF405V3" + b"\x0cGETFUNF405V3" + b"\x04GETF"
+        self.assertEqual({"id": "S405", "target": "GETFUNF405V3", "board": "GETFUNF405V3", "manufacturer": "GETF"},
+                         bf_board.parse_board_info(info))
+
 
 if __name__ == "__main__":
     unittest.main()

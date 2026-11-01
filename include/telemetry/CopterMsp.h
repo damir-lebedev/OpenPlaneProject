@@ -25,8 +25,8 @@
 // Чего у нас нет — отвечаем значением BF по умолчанию и при записи
 // пропускаем: фильтры (кроме yaw_lowpass_hz — у нас они из модели),
 // протокол регуляторов (выбирается сборкой), тип расходов (наша кривая —
-// ACTUAL), features (у нас нет такого механизма). MSP_SET_MOTOR, то есть
-// проверка моторов из конфигуратора, — пока нет: консоль, 'm'.
+// ACTUAL), features (у нас нет такого механизма). MSP_SET_MOTOR (вкладка
+// «Моторы» конфигуратора) — до 30 % тяги, пока конфигуратор на связи.
 //
 // Без Arduino — тесты на ПК (test_copter).
 // ============================================================
@@ -102,6 +102,9 @@ namespace copter
         {
             lastFrameMs = nowMs;
             seen = true;
+            // Проверка моторов из конфигуратора держится, пока он на связи (он
+            // всё время что-то спрашивает): замолчал — моторы встают за 1 с.
+            if (motorTestOn) holdMotorTest();
             msp::Writer w;
             msp::Reader r(in.payload, in.size);
             const bool ok = command(in.cmd, r, w) && !w.overflow;
@@ -196,6 +199,20 @@ namespace copter
                     armingDisabled = r.u8() != 0;
                     return true;
                 case SET_RAW_RC: return true;   // приёмника по MSP нет — как у BF без RX_MSP
+                case SET_MOTOR:
+                    // вкладка «Моторы»: 1000 — стоп, 2000 — полный (у нас не выше
+                    // MOTOR_TEST_MAX); только без ARM и при закрытом CLI
+                    if (armed || cli.active()) return false;
+                    motorTestOn = false;
+                    for (uint8_t i = 0; i < 8; ++i)
+                    {
+                        const uint16_t v = r.remaining() >= 2 ? r.u16() : 1000;
+                        motorTest[i] = v > 1000 ? fminf(1.0f, (v - 1000) / 1000.0f) : 0.0f;
+                        motorTestOn = motorTestOn || motorTest[i] > 0.0f;
+                    }
+                    if (motorTestOn) holdMotorTest();
+                    else ctl.stopMotorTest();
+                    return true;
                 case REBOOT:
                     rebootMode = r.remaining() ? r.u8() : 0;
                     if (rebootMode > 1 || armed) return false;
@@ -419,6 +436,16 @@ namespace copter
                 if (rx) ch = f < RcConfig::STICKS ? rx->config().channelFor(f) : rx->config().auxChannel(f - RcConfig::STICKS);
                 w.u16(raw && ch < rawCount ? raw[ch] : 0);
             }
+        }
+
+        void holdMotorTest()
+        {
+            if (ctl.isArmed())
+            {
+                motorTestOn = false;
+                return;
+            }
+            for (uint8_t i = 0; i < 8; ++i) ctl.setMotorTest(i, motorTest[i], 1.0f);
         }
 
         void motor(msp::Writer& w)
@@ -938,6 +965,8 @@ namespace copter
         uint16_t loadPercent = 0;
         int16_t linkQuality = -1;
         bool armingDisabled = false, unsaved = false, seen = false, rebootPending = false;
+        float motorTest[8] = {};
+        bool motorTestOn = false;
         uint8_t rebootMode = 0;
         uint32_t lastFrameMs = 0;
     };

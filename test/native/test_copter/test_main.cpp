@@ -1236,6 +1236,40 @@ void test_motor_test_only_disarmed_and_times_out()
     TEST_ASSERT_FALSE(b.ctl.startMotorTest(0, 0.1f, 1.0f));
 }
 
+// 079: ползунки моторов — каждый свой, «все сразу», продление и стоп.
+void test_motor_test_sliders_per_motor()
+{
+    Bench b;
+    b.run(2.5f);
+    TEST_ASSERT_TRUE(b.ctl.setMotorTest(1, 0.1f, 1.0f));
+    TEST_ASSERT_TRUE(b.ctl.setMotorTest(3, 0.2f, 1.0f));
+    b.run(0.1f);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, b.out.motor[0]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, b.ctl.getTune().motorCommand(0.1f), b.out.motor[1]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, b.ctl.getTune().motorCommand(0.2f), b.out.motor[3]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.2f, b.ctl.motorTestValue(3));
+    // все сразу, выше предела — до MOTOR_TEST_MAX
+    TEST_ASSERT_TRUE(b.ctl.setMotorTest(CopterController::MOTOR_TEST_ALL, 0.9f, 1.0f));
+    b.run(0.1f);
+    for (uint8_t i = 0; i < 4; ++i)
+        TEST_ASSERT_FLOAT_WITHIN(1e-4f, b.ctl.getTune().motorCommand(CopterController::MOTOR_TEST_MAX), b.out.motor[i]);
+    // продление: команда каждые 0.5 с — крутится 3 с; перестали — встал за 1 с
+    for (int k = 0; k < 6; ++k)
+    {
+        b.ctl.setMotorTest(0, 0.1f, 1.0f);
+        b.run(0.5f);
+        TEST_ASSERT_TRUE(b.ctl.motorTestActive());
+    }
+    b.run(1.0f);
+    TEST_ASSERT_FALSE(b.ctl.motorTestActive());
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, b.ctl.motorTestValue(1));   // после остановки ползунки — на нуле
+    // все на нуле — проверки нет
+    TEST_ASSERT_TRUE(b.ctl.setMotorTest(2, 0.1f, 1.0f));
+    TEST_ASSERT_TRUE(b.ctl.setMotorTest(2, 0.0f, 1.0f));
+    TEST_ASSERT_FALSE(b.ctl.motorTestActive());
+    TEST_ASSERT_FALSE(b.ctl.setMotorTest(7, 0.1f, 1.0f));   // у квадра нет мотора 8
+}
+
 void test_link_loss_on_ground_disarms_and_needs_switch_toggle()
 {
     Bench b;
@@ -3433,6 +3467,57 @@ void test_msp_identity_and_status()
 
 // 159: настройки через MSP — в реестр (единицы BF), запись — по EEPROM_WRITE;
 // до неё и при запрете ARM конфигуратором — флаг MSP; при ARM — отказ.
+// MSP_SET_MOTOR: вкладка «Моторы» конфигуратора BF; держится, пока он на связи.
+void test_msp_set_motor()
+{
+    MspBench m;
+    m.bench.run(2.5f);
+    std::vector<uint8_t> data;
+    const uint16_t values[8] = { 1100, 1000, 1000, 1500, 1000, 1000, 1000, 1000 };
+    for (uint16_t v : values)
+    {
+        data.push_back(static_cast<uint8_t>(v & 0xFF));
+        data.push_back(static_cast<uint8_t>(v >> 8));
+    }
+    std::vector<uint8_t> p;
+    TEST_ASSERT_TRUE(m.ask(214, data, p));
+    m.bench.run(0.1f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.1f, m.bench.ctl.motorTestValue(0));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, CopterController::MOTOR_TEST_MAX, m.bench.ctl.motorTestValue(3));   // 50 % → 30 %
+    TEST_ASSERT_TRUE(m.bench.out.spinning);
+    // конфигуратор спрашивает состояние — моторы крутятся дольше секунды
+    for (int k = 0; k < 5; ++k)
+    {
+        m.get(101);
+        m.bench.run(0.5f);
+    }
+    TEST_ASSERT_TRUE(m.bench.ctl.motorTestActive());
+    m.bench.run(1.1f);   // замолчал — стоп
+    TEST_ASSERT_FALSE(m.bench.ctl.motorTestActive());
+    // все 1000 — стоп сразу
+    TEST_ASSERT_TRUE(m.ask(214, data, p));
+    std::vector<uint8_t> stop(16);
+    for (size_t i = 0; i < 16; i += 2)
+    {
+        stop[i] = 1000 & 0xFF;
+        stop[i + 1] = 1000 >> 8;
+    }
+    TEST_ASSERT_TRUE(m.ask(214, stop, p));
+    TEST_ASSERT_FALSE(m.bench.ctl.motorTestActive());
+    // CLI: motor как в BF
+    m.cli.execute("#");
+    m.cli.execute("motor 2 1150");
+    std::string out = m.port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "motor 2: 1150 (5 с; не выше 1300)"), out.c_str());
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.15f, m.bench.ctl.motorTestValue(2));
+    m.cli.execute("motor 9 1100");
+    TEST_ASSERT_TRUE(has(m.port.take(), "motor №(0-3 или 255 — все) 1000-2000"));
+    m.cli.execute("motor 255 1000");
+    TEST_ASSERT_FALSE(m.bench.ctl.motorTestActive());
+    m.cli.execute("exit");
+    m.port.take();
+}
+
 void test_msp_settings_roundtrip()
 {
     MspBench m;
@@ -4597,6 +4682,7 @@ int main()
     RUN_TEST(test_arm_requires_settling_then_arms_with_switch);
     RUN_TEST(test_arm_blockers);
     RUN_TEST(test_motor_test_only_disarmed_and_times_out);
+    RUN_TEST(test_motor_test_sliders_per_motor);
     RUN_TEST(test_link_loss_on_ground_disarms_and_needs_switch_toggle);
     RUN_TEST(test_arm_block_bits_are_betaflight_flags);
     RUN_TEST(test_small_angle_setting);
@@ -4640,6 +4726,7 @@ int main()
     RUN_TEST(test_msp_frames_v1_v2);
     RUN_TEST(test_msp_identity_and_status);
     RUN_TEST(test_msp_settings_roundtrip);
+    RUN_TEST(test_msp_set_motor);
     RUN_TEST(test_cli_pastes_betaflight_diff);
     RUN_TEST(test_vbat_sag_compensation_percent);
     RUN_TEST(test_battery_voltage_current_and_mah);

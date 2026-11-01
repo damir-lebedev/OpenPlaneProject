@@ -187,6 +187,7 @@ namespace copter
             else if (is(cmd, "rxrange")) cmdRxrange(args);
             else if (is(cmd, "rxfail")) cmdRxfail(args);
             else if (is(cmd, "vtx")) cmdVtx(args);
+            else if (is(cmd, "motor")) cmdMotor(args);
             else if (is(cmd, "vtx_info")) port.printVtxInfo();
             else if (is(cmd, "dshot_telemetry_info")) port.printDshotTelemetry();
             else if (is(cmd, "flash_info")) port.printFlashInfo();
@@ -243,11 +244,44 @@ namespace copter
             print("aux [№ режим канал от до логика связь] — режимы на тумблерах (режимы: aux help)\r\n");
             print("map [AETR1234] · rxrange [0-3 мин макс] — порядок каналов · концы стиков\r\n");
             print("rxfail [канал a|h|s [значение]] — канал без связи: a — авто, h — держать, s — задать (AUX)\r\n");
+            print("motor [№|255 значение] — мотор без пропеллеров: 1000 стоп … 2000 (у нас до 30 %%), 5 с; 255 — все\r\n");
             print("dshot_telemetry_info — обороты моторов и ошибки ответа (dshot_bidir)\r\n");
             print("flash_info · flash_erase — флеш чёрного ящика: что за микросхема и полёты · стереть всё\r\n");
             print("vtx [№ канал полоса канал_VTX мощность от до] · vtx_info — видеопередатчик с тумблера · что он ответил\r\n");
             print("save — сохранить и пересчитать настройку · defaults [nosave] — всё по умолчанию\r\n");
             print("status · tasks · version · exit (несохранённое отменяется)\r\n");
+        }
+
+        // ---- проверка моторов (BF: motor <index> <value>) ----
+
+        void cmdMotor(const char* args)
+        {
+            const uint8_t count = ctl.getTune().frame.count;
+            if (*args == '\0')
+            {
+                for (uint8_t i = 0; i < count; ++i)
+                {
+                    print("motor %u: %ld\r\n", i, lroundf(1000.0f + ctl.motorTestValue(i) * 1000.0f));
+                }
+                return;
+            }
+            char* end = nullptr;
+            const long index = strtol(args, &end, 10);
+            const long value = strtol(end, &end, 10);
+            if (end == args || (index != 255 && (index < 0 || index >= count)) || value < 1000 || value > 2000)
+            {
+                printError("motor №(0-%u или 255 — все) 1000-2000", count ? count - 1 : 0);
+                return;
+            }
+            const float thrust = (value - 1000) / 1000.0f;
+            const uint8_t which = index == 255 ? CopterController::MOTOR_TEST_ALL : static_cast<uint8_t>(index);
+            if (!ctl.setMotorTest(which, thrust, 5.0f))
+            {
+                printError("моторы — только без ARM");
+                return;
+            }
+            print("motor %ld: %ld (5 с; не выше %ld)\r\n", index, value,
+                  lroundf(1000.0f + CopterController::MOTOR_TEST_MAX * 1000.0f));
         }
 
         // ---- режимы на тумблерах ----
