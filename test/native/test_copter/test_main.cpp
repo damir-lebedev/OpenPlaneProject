@@ -3778,6 +3778,84 @@ namespace
     }
 }
 
+// 033–036: ANGLE, HORIZON, ACRO TRAINER и профиль по батарее — настройки
+// профиля; у модели наклон и сила выравнивания — точные, без округления.
+void test_angle_horizon_trainer_params()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    const CopterTune model = p.modelTune();
+    CopterTune t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(model.maxAngleDeg, t.maxAngleDeg);
+    TEST_ASSERT_EQUAL_FLOAT(model.levelGain, t.levelGain);
+    TEST_ASSERT_EQUAL_FLOAT(roundf(model.maxAngleDeg), p.defaultValue(PARAM_ANGLE_LIMIT));
+    TEST_ASSERT_EQUAL_FLOAT(roundf(model.levelGain * 10.0f), p.defaultValue(PARAM_ANGLE_P_GAIN));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t.pid.angleFf);            // модель — как раньше, без упреждения
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, t.pid.angleEarthRef);
+    TEST_ASSERT_EQUAL_FLOAT(0.75f, t.pid.horizonStrength);
+    TEST_ASSERT_EQUAL_FLOAT(135.0f, t.pid.horizonLimitDeg);
+    TEST_ASSERT_EQUAL_FLOAT(20.0f, t.pid.acroTrainerLimitDeg);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 7.5f, t.pid.acroTrainerGain);
+
+    TEST_ASSERT_TRUE(p.parse(PARAM_ANGLE_LIMIT, 0, "35", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ANGLE_P_GAIN, 0, "65", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ANGLE_FEEDFORWARD, 0, "80", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_HORIZON_DELAY_MS, 0, "250", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_ACRO_TRAINER_ANGLE_LIMIT, 0, "90", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(35.0f, t.maxAngleDeg);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 6.5f, t.levelGain);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.8f, t.pid.angleFf);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.25f, t.pid.horizonDelayS);
+    // другой профиль — свои
+    TEST_ASSERT_TRUE(p.selectPidProfile(1));
+    TEST_ASSERT_EQUAL_FLOAT(model.maxAngleDeg, p.tune().maxAngleDeg);
+
+    // BF: 60°, 50, упреждение 50 %
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(60.0f, p.defaultValue(PARAM_ANGLE_LIMIT));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, p.defaultValue(PARAM_ANGLE_P_GAIN));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, p.defaultValue(PARAM_ANGLE_FEEDFORWARD));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, p.tune().pid.angleFf);
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, p.tune().levelGain);
+
+    // auto_profile_cell_count: 4S — профиль 3, 6S — профиль 2, 3S — нет
+    TEST_ASSERT_TRUE(p.parse(PARAM_AUTO_PROFILE_CELL_COUNT, 2, "6", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_AUTO_PROFILE_CELL_COUNT, 3, "4", err, sizeof(err)));
+    TEST_ASSERT_EQUAL(2, p.profileForCells(6));
+    TEST_ASSERT_EQUAL(3, p.profileForCells(4));
+    TEST_ASSERT_EQUAL(-1, p.profileForCells(3));
+    TEST_ASSERT_EQUAL(-1, p.profileForCells(0));
+    p.resetAll();
+}
+
+// auto_profile_cell_count: банок по напряжению при подключении — как BF.
+void test_battery_detects_cells_on_plug_in()
+{
+    BatteryMonitor b;
+    b.configure(liion6s());
+    TEST_ASSERT_EQUAL(0u, b.plugEvents());
+    feed(b, 25.0f, 0.0f, 1.0f);
+    TEST_ASSERT_EQUAL(6, b.detectedCells());
+    TEST_ASSERT_EQUAL(1u, b.plugEvents());
+    feed(b, 24.0f, 0.0f, 1.0f);   // та же батарея — не новое подключение
+    TEST_ASSERT_EQUAL(1u, b.plugEvents());
+    feed(b, 0.0f, 0.0f, 3.0f);    // сняли
+    feed(b, 16.4f, 0.0f, 1.0f);   // 4S
+    TEST_ASSERT_EQUAL(4, b.detectedCells());
+    TEST_ASSERT_EQUAL(2u, b.plugEvents());
+}
+
+// ACRO TRAINER — режим с тумблера.
+void test_acro_trainer_box()
+{
+    RcConfig cfg;
+    char err[64];
+    TEST_ASSERT_TRUE(cfg.parseAux("0 0 0 1700 2100 0 0", err, sizeof(err)));
+    TEST_ASSERT_TRUE(cfg.parseAux("1 47 1 1700 2100 0 0", err, sizeof(err)));
+    TEST_ASSERT_TRUE(findBox(BOX_ACRO_TRAINER)->works);
+}
+
 void test_battery_voltage_current_and_mah()
 {
     BatteryMonitor b;
@@ -4727,6 +4805,9 @@ int main()
     RUN_TEST(test_msp_identity_and_status);
     RUN_TEST(test_msp_settings_roundtrip);
     RUN_TEST(test_msp_set_motor);
+    RUN_TEST(test_angle_horizon_trainer_params);
+    RUN_TEST(test_battery_detects_cells_on_plug_in);
+    RUN_TEST(test_acro_trainer_box);
     RUN_TEST(test_cli_pastes_betaflight_diff);
     RUN_TEST(test_vbat_sag_compensation_percent);
     RUN_TEST(test_battery_voltage_current_and_mah);

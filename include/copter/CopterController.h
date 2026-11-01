@@ -254,6 +254,7 @@ namespace copter
         bool armSwitch = false;
         CopterMode mode = CopterMode::ANGLE;
         bool airmode = false;          // режим AIR MODE с тумблера (поверх настройки)
+        bool acroTrainer = false;      // режим ACRO TRAINER: в ACRO наклон не больше acro_trainer_angle_limit
         bool failsafeSwitch = false;   // режим FAILSAFE: как потеря связи
         bool prearm = true;            // PREARM включён или его нет в таблице
         bool armAssigned = true;       // ARM есть в таблице режимов
@@ -280,7 +281,6 @@ namespace copter
         bool voltageCompensation = true;
         bool rpmNotches = true;
         float rcSmoothingHz = 40.0f;
-        float horizonTransition = 0.75f;   // HORIZON: с какого отклонения стика — чистое ACRO
         // failsafe (BF: failsafe_*). Связи нет FAILSAFE_HOLD_S — этап 1:
         // ровно и держит высоту; нет failsafeDelayS — этап 2 (процедура)
         float failsafeDescent = 0.7f;      // м/с: снижение AUTO-LAND
@@ -350,6 +350,7 @@ namespace copter
             for (int a = 0; a < 4; ++a) stickLpf[a].configure(s.rcSmoothingHz, dt);
             throttleHpLpf.configure(t.pid.antiGravityHz, dt);
             throttleBoostLpf.configure(t.pid.throttleBoostHz, dt);
+            configureLevelFilters(t.pid);
             for (auto& f : accelLpf) f.configure(20.0f, dt);
             motionLpf.configure(3.0f, dt);
             voltLpf.configure(2.0f, dt);
@@ -395,6 +396,9 @@ namespace copter
             }
             throttleHpLpf.configure(t.pid.antiGravityHz, dt);
             throttleBoostLpf.configure(t.pid.throttleBoostHz, dt);
+            tune.levelGain = t.levelGain;
+            tune.maxAngleDeg = t.maxAngleDeg;
+            configureLevelFilters(t.pid);
         }
 
         // Внешние причины не армить (ARM_BLOCK_EXTERNAL_MASK): CLI, приложение,
@@ -549,7 +553,7 @@ namespace copter
             const float sticks[4] = { stickLpf[0].apply(rc.roll), stickLpf[1].apply(rc.pitch),
                                       stickLpf[2].apply(rc.yaw), stickLpf[3].apply(rc.throttle) };
             float sp[3], stickSp[3];
-            rateSetpoints(mode, sticks, sp, stickSp);
+            rateSetpoints(mode, sticks, sp, stickSp, rc.acroTrainer);
             const float raw[3] = { rc.roll, rc.pitch, rc.yaw };
             for (uint8_t a = 0; a < 3; ++a)
             {
@@ -822,6 +826,9 @@ namespace copter
         {
             for (auto& ax : axes) ax.reset();
             for (auto& f : stickLpf) f.reset();
+            for (auto& f : angleFfLpf) f.reset();
+            angleTargetValid = false;
+            horizonStick.reset(1.0f);
             throttleHpLpf.reset();
             throttleBoostLpf.reset();
             tpaLowDone = false;
@@ -1086,29 +1093,111 @@ namespace copter
             }
         }
 
+        // Сглаживание упреждения ANGLE и возврата выравнивания HORIZON (BF 4.5).
+        void configureLevelFilters(const PidExtras& p)
+        {
+            const float ffHz = p.angleFfSmoothingS > 0.0f ? 1.0f / (2.0f * PI_F * p.angleFfSmoothingS) : 0.0f;
+            for (auto& f : angleFfLpf) f.configure(ffHz, dt);
+            horizonStick.configure(p.horizonDelayS > 0.0f ? 1.0f / (2.0f * PI_F * p.horizonDelayS) : 0.0f, dt);
+        }
+
         // Уставки угловой скорости; stick — их часть от стика (для упреждения:
         // в ANGLE — наклон стиком, без поправки горизонта).
-        void rateSetpoints(CopterMode mode, const float sticks[4], float sp[3], float stick[3])
+        //   ACRO     — кривая расходов; с ACRO TRAINER наклон крена и тангажа не
+        //              больше acro_trainer_angle_limit (с упреждением по скорости);
+        //   ANGLE    — стик задаёт угол до angle_limit; выравнивание angle_p_gain,
+        //              упреждение angle_feedforward по скорости целевого угла,
+        //              рысканье вокруг вертикали Земли (angle_earth_ref);
+        //   HORIZON  — как в BF 4.5: ACRO плюс выравнивание к горизонту силой
+        //              horizon_level_strength, гаснущее к horizon_limit_sticks
+        //              стика и к horizon_limit_degrees наклона, после флипа
+        //              возвращается за horizon_delay_ms.
+        void rateSetpoints(CopterMode mode, const float sticks[4], float sp[3], float stick[3], bool trainer = false)
         {
+            const PidExtras& px = tune.pid;
             float acro[3];
             for (int a = 0; a < 3; ++a) acro[a] = tune.rates[a].apply(sticks[a]);
+            // ANGLE и ALT_HOLD (и автомат failsafe) — целевой угол стиком; иначе упреждения нет
+            if (mode == CopterMode::ACRO || mode == CopterMode::HORIZON) angleTargetValid = false;
             if (mode == CopterMode::ACRO)
             {
                 for (int a = 0; a < 3; ++a) sp[a] = stick[a] = acro[a];
+                if (trainer) acroTrainer(sp);
                 return;
             }
 
-            // Угол: желаемый «верх» в осях рамы против текущего -> поворот
-            // кратчайшим путём; рысканье — вокруг вертикали Земли.
-            const float maxA = tune.maxAngleDeg * PI_F / 180.0f;
-            const float tr = sticks[0] * maxA, tp = sticks[1] * maxA;
-            const Vec3 target = { sinf(tp), -sinf(tr) * cosf(tp), -cosf(tr) * cosf(tp) };
             const Vec3 up = attitude.upBody();
+            const Vec3 down = attitude.downBody();
+            const float cap = 0.9f * tune.rates[0].maxDps;
+            // рысканье: вокруг вертикали Земли или оси рамы (angle_earth_ref)
+            const float er = fminf(1.0f, fmaxf(0.0f, px.angleEarthRef));
+            const float yawRate = acro[2];
+            const Vec3 yawAxis = { er * down.x, er * down.y, er * down.z + (1.0f - er) };
+
+            if (mode == CopterMode::HORIZON)
+            {
+                // выравнивание к горизонту, как в ANGLE с центральным стиком
+                float level[3];
+                levelTo(0.0f, 0.0f, up, level);
+                const float deflection = fmaxf(fabsf(sticks[0]), fabsf(sticks[1]));
+                const float stickAtt = fmaxf(0.0f, 1.0f - deflection / fmaxf(0.05f, px.horizonLimitSticks));
+                // гаснет сразу, возвращается плавно (horizon_delay_ms)
+                const float smooth = stickAtt < horizonStick.value() ? (horizonStick.reset(stickAtt), stickAtt)
+                                                                     : horizonStick.apply(stickAtt);
+                const float tiltDeg = acosf(fminf(1.0f, fmaxf(-1.0f, -up.z))) * 180.0f / PI_F;
+                const float angleAtt = fmaxf(0.0f, 1.0f - tiltDeg / fmaxf(1.0f, px.horizonLimitDeg));
+                const float k = px.horizonStrength * smooth * angleAtt;
+                for (int a = 0; a < 2; ++a)
+                {
+                    sp[a] = acro[a] + k * fminf(cap, fmaxf(-cap, level[a]));
+                    stick[a] = acro[a];
+                }
+                sp[2] = acro[2] + k * level[2];
+                stick[2] = acro[2];
+                return;
+            }
+
+            // ANGLE: целевой угол стиком; упреждение — по его скорости
+            const float maxA = tune.maxAngleDeg;
+            const float target[2] = { sticks[0] * maxA, sticks[1] * maxA };
+            float ff[2] = { 0.0f, 0.0f };
+            if (px.angleFf > 0.0f)
+            {
+                for (int a = 0; a < 2; ++a)
+                {
+                    const float speed = angleTargetValid ? (target[a] - angleTarget[a]) / dt : 0.0f;
+                    ff[a] = px.angleFf * angleFfLpf[a].apply(speed);
+                }
+            }
+            angleTarget[0] = target[0];
+            angleTarget[1] = target[1];
+            angleTargetValid = true;
+            float level[3];
+            levelTo(target[0], target[1], up, level);
+            float angleSp[3] = { level[0] + yawRate * yawAxis.x + ff[0], level[1] + yawRate * yawAxis.y + ff[1],
+                                 level[2] + yawRate * yawAxis.z };
+            for (int a = 0; a < 2; ++a) angleSp[a] = fminf(cap, fmaxf(-cap, angleSp[a]));
+            // наклон стиком: у ровного коптера — levelGain × угол стика (+ упреждение)
+            float angleStick[3] = { tune.levelGain * target[0] + ff[0], tune.levelGain * target[1] + ff[1], acro[2] };
+            for (int a = 0; a < 2; ++a) angleStick[a] = fminf(cap, fmaxf(-cap, angleStick[a]));
+            for (int a = 0; a < 3; ++a)
+            {
+                sp[a] = angleSp[a];
+                stick[a] = angleStick[a];
+            }
+        }
+
+        // Желаемый «верх» в осях рамы против текущего -> поворот кратчайшим
+        // путём, levelGain (°/с) на градус ошибки.
+        void levelTo(float rollDeg, float pitchDeg, const Vec3& up, float level[3])
+        {
+            const float tr = rollDeg * PI_F / 180.0f, tp = pitchDeg * PI_F / 180.0f;
+            const Vec3 target = { sinf(tp), -sinf(tr) * cosf(tp), -cosf(tr) * cosf(tp) };
             Vec3 axis = cross(target, up);
             const float s = length(axis);
             const float angle = atan2f(s, dot(target, up));
             levelErrorDeg = angle * 180.0f / PI_F;
-            float level[3] = { 0.0f, 0.0f, 0.0f };
+            level[0] = level[1] = level[2] = 0.0f;
             if (s > 1e-6f)
             {
                 const float k = tune.levelGain * angle * 180.0f / PI_F / s;
@@ -1116,32 +1205,20 @@ namespace copter
                 level[1] = axis.y * k;
                 level[2] = axis.z * k;
             }
-            const Vec3 down = attitude.downBody();
-            const float yawRate = acro[2];
-            float angleSp[3] = { level[0] + yawRate * down.x, level[1] + yawRate * down.y, level[2] + yawRate * down.z };
-            const float cap = 0.9f * tune.rates[0].maxDps;
-            for (int a = 0; a < 2; ++a) angleSp[a] = fminf(cap, fmaxf(-cap, angleSp[a]));
-            // наклон стиком: у ровного коптера — levelGain × угол стика
-            float angleStick[3] = { tune.levelGain * tune.maxAngleDeg * sticks[0], tune.levelGain * tune.maxAngleDeg * sticks[1],
-                                    acro[2] };
-            for (int a = 0; a < 2; ++a) angleStick[a] = fminf(cap, fmaxf(-cap, angleStick[a]));
+        }
 
-            if (mode == CopterMode::HORIZON)
+        // ACRO TRAINER: наклон (с упреждением по скорости) за пределом — уставка
+        // не дальше, чем возвращает к пределу (acro_trainer_gain).
+        void acroTrainer(float sp[3]) const
+        {
+            const PidExtras& px = tune.pid;
+            const float angle[2] = { status.roll, status.pitch };
+            for (int a = 0; a < 2; ++a)
             {
-                const float deflection = fmaxf(fabsf(sticks[0]), fabsf(sticks[1]));
-                const float h = fminf(1.0f, deflection / fmaxf(0.05f, set.horizonTransition));
-                const float blend = h * h;
-                for (int a = 0; a < 3; ++a)
-                {
-                    sp[a] = (1.0f - blend) * angleSp[a] + blend * acro[a];
-                    stick[a] = (1.0f - blend) * angleStick[a] + blend * acro[a];
-                }
-                return;
-            }
-            for (int a = 0; a < 3; ++a)
-            {
-                sp[a] = angleSp[a];
-                stick[a] = angleStick[a];
+                const float projected = angle[a] + status.rates[a] * px.acroTrainerLookaheadS;
+                const float limit = px.acroTrainerLimitDeg;
+                if (projected > limit) sp[a] = fminf(sp[a], px.acroTrainerGain * (limit - projected));
+                else if (projected < -limit) sp[a] = fmaxf(sp[a], px.acroTrainerGain * (-limit - projected));
             }
         }
 
@@ -1155,6 +1232,10 @@ namespace copter
         Pt1 stickLpf[4];
         Pt1 throttleHpLpf;               // anti-gravity
         Pt1 throttleBoostLpf;            // throttle_boost
+        Pt1 angleFfLpf[2];               // angle_feedforward_smoothing_ms
+        Pt1 horizonStick;                // horizon_delay_ms
+        float angleTarget[2] = {};
+        bool angleTargetValid = false;
         Pt1 voltLpf;
         bool heldThrottle = false;   // этап 1 failsafe на последнем газе (rxfail 3 h)
         float throttleLimit = 1.0f;   // vbat_cutoff_percent

@@ -278,6 +278,19 @@ namespace copter
         PARAM_DSHOT_BIDIR,
         PARAM_CRAFT_NAME,
         PARAM_VBAT_SAG_COMPENSATION,
+        PARAM_ANGLE_LIMIT,
+        PARAM_ANGLE_P_GAIN,
+        PARAM_ANGLE_FEEDFORWARD,
+        PARAM_ANGLE_FEEDFORWARD_SMOOTHING_MS,
+        PARAM_ANGLE_EARTH_REF,
+        PARAM_HORIZON_LEVEL_STRENGTH,
+        PARAM_HORIZON_LIMIT_DEGREES,
+        PARAM_HORIZON_LIMIT_STICKS,
+        PARAM_HORIZON_DELAY_MS,
+        PARAM_ACRO_TRAINER_ANGLE_LIMIT,
+        PARAM_ACRO_TRAINER_LOOKAHEAD_MS,
+        PARAM_ACRO_TRAINER_GAIN,
+        PARAM_AUTO_PROFILE_CELL_COUNT,
         PARAM_COUNT
     };
 
@@ -577,6 +590,32 @@ namespace copter
               "имя коптера: в OSD, конфигураторе BF (MSP_NAME) и журнале" },
             { "vbat_sag_compensation", kInt, kPid, kGroupPid, 0, 150, 100, kTable, "%", nullptr, 0,
               "компенсация просадки батареи: 100 — моторы отвечают одинаково на полной и севшей (у BF 0)" },
+            { "angle_limit", kInt, kPid, kGroupPid, 10, 90, 0, kTune, "°", nullptr, 0,
+              "ANGLE: наибольший наклон стиком (не задан — по стилю коптера; BF 60)" },
+            { "angle_p_gain", kInt, kPid, kGroupPid, 0, 200, 0, kTune, "", nullptr, 0,
+              "ANGLE: сила выравнивания, десятые °/с на градус (не задана — из модели; BF 50)" },
+            { "angle_feedforward", kInt, kPid, kGroupPid, 0, 200, 0, kTune, "%", nullptr, 0,
+              "ANGLE: упреждение по скорости стика — наклон без запаздывания (BF 50)" },
+            { "angle_feedforward_smoothing_ms", kInt, kPid, kGroupPid, 10, 250, 80, kTable, "мс", nullptr, 0,
+              "ANGLE: сглаживание упреждения" },
+            { "angle_earth_ref", kInt, kPid, kGroupPid, 0, 100, 100, kTable, "%", nullptr, 0,
+              "ANGLE: рысканье вокруг вертикали Земли (100) или оси рамы (0)" },
+            { "horizon_level_strength", kInt, kPid, kGroupPid, 0, 100, 75, kTable, "%", nullptr, 0,
+              "HORIZON: сила выравнивания относительно ANGLE" },
+            { "horizon_limit_degrees", kInt, kPid, kGroupPid, 10, 250, 135, kTable, "°", nullptr, 0,
+              "HORIZON: на таком наклоне выравнивание гаснет (флипы)" },
+            { "horizon_limit_sticks", kInt, kPid, kGroupPid, 10, 200, 75, kTable, "%", nullptr, 0,
+              "HORIZON: при таком отклонении стика выравнивание гаснет" },
+            { "horizon_delay_ms", kInt, kPid, kGroupPid, 10, 5000, 500, kTable, "мс", nullptr, 0,
+              "HORIZON: за сколько выравнивание возвращается после флипа" },
+            { "acro_trainer_angle_limit", kInt, kPid, kGroupPid, 10, 80, 20, kTable, "°", nullptr, 0,
+              "ACRO TRAINER: наклон не больше" },
+            { "acro_trainer_lookahead_ms", kInt, kPid, kGroupPid, 10, 200, 50, kTable, "мс", nullptr, 0,
+              "ACRO TRAINER: упреждение по скорости вращения — не перелетать предел" },
+            { "acro_trainer_gain", kInt, kPid, kGroupPid, 25, 255, 75, kTable, "", nullptr, 0,
+              "ACRO TRAINER: как сильно возвращать к пределу, десятые °/с на градус" },
+            { "auto_profile_cell_count", kInt, kPid, kGroupPower, 0, 8, 0, kTable, "", nullptr, 0,
+              "батарея с таким числом банок — этот PID-профиль сам (0 — нет)" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;
@@ -835,6 +874,16 @@ namespace copter
             return slot < PROFILES && (setMask[id] >> slot) & 1u;
         }
         float valueIn(ParamId id, uint8_t slot) const { return isSet(id, slot) ? values[id][slot] : defaults[id]; }
+
+        // auto_profile_cell_count: PID-профиль для батареи из стольких банок; -1 — такого нет.
+        int profileForCells(uint8_t cells) const
+        {
+            for (uint8_t s = 0; s < PROFILES; ++s)
+            {
+                if (cells > 0 && lroundf(valueIn(PARAM_AUTO_PROFILE_CELL_COUNT, s)) == cells) return s;
+            }
+            return -1;
+        }
         float value(ParamId id) const { return valueIn(id, activeSlot(id)); }
 
         const char* text(ParamId id, uint8_t slot) const
@@ -1087,6 +1136,20 @@ namespace copter
             if (isSet(PARAM_THRUST_LINEAR, pidIndex)) t.thrustLinear = valueIn(PARAM_THRUST_LINEAR, pidIndex) / 100.0f;
             t.motorOutputLimit = valueIn(PARAM_MOTOR_OUTPUT_LIMIT, pidIndex) / 100.0f;
             t.vbatSagCompensation = valueIn(PARAM_VBAT_SAG_COMPENSATION, pidIndex) / 100.0f;
+            // ANGLE/HORIZON/ACRO TRAINER (BF 4.5); наклон и сила выравнивания не
+            // заданы — точные значения модели (или BF), без округления
+            if (isSet(PARAM_ANGLE_LIMIT, pidIndex)) t.maxAngleDeg = valueIn(PARAM_ANGLE_LIMIT, pidIndex);
+            if (isSet(PARAM_ANGLE_P_GAIN, pidIndex)) t.levelGain = valueIn(PARAM_ANGLE_P_GAIN, pidIndex) / 10.0f;
+            t.pid.angleFf = valueIn(PARAM_ANGLE_FEEDFORWARD, pidIndex) / 100.0f;
+            t.pid.angleFfSmoothingS = valueIn(PARAM_ANGLE_FEEDFORWARD_SMOOTHING_MS, pidIndex) / 1000.0f;
+            t.pid.angleEarthRef = valueIn(PARAM_ANGLE_EARTH_REF, pidIndex) / 100.0f;
+            t.pid.horizonStrength = valueIn(PARAM_HORIZON_LEVEL_STRENGTH, pidIndex) / 100.0f;
+            t.pid.horizonLimitDeg = valueIn(PARAM_HORIZON_LIMIT_DEGREES, pidIndex);
+            t.pid.horizonLimitSticks = valueIn(PARAM_HORIZON_LIMIT_STICKS, pidIndex) / 100.0f;
+            t.pid.horizonDelayS = valueIn(PARAM_HORIZON_DELAY_MS, pidIndex) / 1000.0f;
+            t.pid.acroTrainerLimitDeg = valueIn(PARAM_ACRO_TRAINER_ANGLE_LIMIT, pidIndex);
+            t.pid.acroTrainerLookaheadS = valueIn(PARAM_ACRO_TRAINER_LOOKAHEAD_MS, pidIndex) / 1000.0f;
+            t.pid.acroTrainerGain = valueIn(PARAM_ACRO_TRAINER_GAIN, pidIndex) / 10.0f;
             return t;
         }
 
@@ -1293,6 +1356,9 @@ namespace copter
             defaults[PARAM_FEEDFORWARD_MAX_RATE_LIMIT] = roundf(pidBase.pid.ffMaxRateLimit * 100.0f);
             defaults[PARAM_YAW_LOWPASS_HZ] = roundf(pidBase.yawLpfHz);
             defaults[PARAM_THRUST_LINEAR] = roundf(pidBase.thrustLinear * 100.0f);
+            defaults[PARAM_ANGLE_LIMIT] = fminf(90.0f, fmaxf(10.0f, roundf(pidBase.maxAngleDeg)));
+            defaults[PARAM_ANGLE_P_GAIN] = fminf(200.0f, roundf(pidBase.levelGain * 10.0f));
+            defaults[PARAM_ANGLE_FEEDFORWARD] = roundf(pidBase.pid.angleFf * 100.0f);
         }
 
         // Сборка каталога с поправками прошивки (для сборки прошивки — она сама).

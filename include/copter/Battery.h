@@ -189,6 +189,9 @@ namespace copter
                 lvcOn = false;
                 lvcTimer = 0.0f;
                 full = v >= cfg.cells * cfg.fullCellVolts;
+                // как BF: банок — сколько полных «максимумов» помещается, плюс одна
+                detected = static_cast<uint8_t>(fminf(8.0f, fmaxf(1.0f, floorf(v / cfg.maxCellVolts) + 1.0f)));
+                ++plugCount;
             }
             displayVolts += (v - displayVolts) * gain(cfg.displayLpfPeriod, dt);
             sagVoltsF += (v - sagVoltsF) * gain(cfg.sagLpfPeriod, dt);
@@ -206,6 +209,11 @@ namespace copter
         bool hasCurrent() const { return cfg.currentSensor; }
         uint8_t cells() const { return cfg.cells; }
         bool wasFullWhenPluggedIn() const { return batteryState != BatteryState::NOT_PRESENT && full; }
+        // Банок по напряжению при подключении (для auto_profile_cell_count; пороги
+        // считаются по cells — из описания или force_battery_cell_count).
+        uint8_t detectedCells() const { return detected; }
+        // Сколько раз подключали батарею — по нему видно новое подключение.
+        uint32_t plugEvents() const { return plugCount; }
 
         // Худшее из «по напряжению» и «по расходу».
         BatteryState state() const
@@ -341,6 +349,8 @@ namespace copter
         BatteryConfig cfg;
         bool started = false;
         bool full = false;
+        uint8_t detected = 0;
+        uint32_t plugCount = 0;
         bool lvcOn = false;
         float lvcTimer = 0.0f;
         float belowSince = 0.0f;

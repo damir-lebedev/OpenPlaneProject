@@ -441,6 +441,19 @@ static uint32_t lap(uint8_t task, uint32_t sinceUs)
     return now;
 }
 
+// auto_profile_cell_count: подключили батарею — PID-профиль, у которого
+// столько банок (как BF; только без ARM, в флеш не пишется).
+static uint32_t batteryPlugsSeen = 0;
+static void autoProfile()
+{
+    if (battery.plugEvents() == batteryPlugsSeen) return;
+    batteryPlugsSeen = battery.plugEvents();
+    if (copterController.isArmed()) return;
+    const int p = copterParams.profileForCells(battery.detectedCells());
+    if (p < 0 || p == copterParams.pidProfile()) return;
+    if (copterParams.selectPidProfile(static_cast<uint8_t>(p))) copterController.applyProfile(copterParams.tune());
+}
+
 // Батарея и ток (раз в 10 мс): мВ на пинах АЦП -> copter/Battery.h (масштабы
 // vbat_scale, ibata_scale, ibata_offset — настройки коптера).
 static void readBattery()
@@ -450,6 +463,7 @@ static void readBattery()
         return pin < 0 ? 0.0f : static_cast<float>(analogRead(static_cast<uint32_t>(pin))) * 3300.0f / 4095.0f;
     };
     battery.update(pinMv(Config::PIN_VBAT_ADC), pinMv(Config::PIN_CURRENT_ADC), 0.01f);
+    autoProfile();
 }
 
 static void flightTask(void*)

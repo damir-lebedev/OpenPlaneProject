@@ -241,6 +241,19 @@ namespace copter
         float absLimit = 90.0f;           // предел поправки, °/с
         float absErrorLimit = 20.0f;      // предел накопленной ошибки, °
         float absCutoffHz = 11.0f;        // ФНЧ уставки: что считать быстрым движением стика
+        // ANGLE как в BF 4.5 (наклон — levelGain/maxAngleDeg настройки)
+        float angleFf = 0.0f;             // angle_feedforward: доля скорости движения целевого угла — сразу в уставку
+        float angleFfSmoothingS = 0.08f;  // angle_feedforward_smoothing_ms: сглаживание этой скорости
+        float angleEarthRef = 1.0f;       // angle_earth_ref: рысканье вокруг вертикали Земли (1) или оси рамы (0)
+        // HORIZON как в BF 4.5: ACRO + выравнивание, слабеющее к краю стика и на большом наклоне
+        float horizonStrength = 0.75f;    // horizon_level_strength: доля выравнивания ANGLE
+        float horizonLimitDeg = 135.0f;   // horizon_limit_degrees: на таком наклоне выравнивания нет (флип)
+        float horizonLimitSticks = 0.75f; // horizon_limit_sticks: при таком отклонении стика выравнивания нет
+        float horizonDelayS = 0.5f;       // horizon_delay_ms: выравнивание возвращается плавно после флипа
+        // ACRO TRAINER (режим): ACRO, но наклон не больше предела
+        float acroTrainerLimitDeg = 20.0f;   // acro_trainer_angle_limit
+        float acroTrainerLookaheadS = 0.05f; // acro_trainer_lookahead_ms: упреждение по скорости вращения
+        float acroTrainerGain = 7.5f;        // acro_trainer_gain / 10: (°/с) на градус за пределом
     };
 
     struct CopterTune
@@ -720,6 +733,8 @@ namespace copter
         constexpr uint8_t DEFAULT_FF_SMOOTH_FACTOR = 25, DEFAULT_FF_JITTER_FACTOR = 7, DEFAULT_FF_BOOST = 15;
         // feedforward_max_rate_limit 90 %, yaw_lowpass_hz 100, thrust_linear 0
         constexpr uint8_t DEFAULT_FF_MAX_RATE_LIMIT = 90, DEFAULT_YAW_LOWPASS_HZ = 100, DEFAULT_THRUST_LINEAR = 0;
+        // ANGLE BF 4.5: angle_limit 60, angle_p_gain 50, angle_feedforward 50
+        constexpr uint8_t DEFAULT_ANGLE_FEEDFORWARD = 50;
 
         // Газ в мкс (1000–2000) -> доля 0..1 и обратно.
         inline float throttleFromUs(float us) { return fminf(1.0f, fmaxf(0.0f, (us - 1000.0f) / 1000.0f)); }
@@ -817,6 +832,7 @@ namespace copter
         t.pid.ffMaxRateLimit = bf::DEFAULT_FF_MAX_RATE_LIMIT / 100.0f;
         t.levelGain = 5.0f;
         t.maxAngleDeg = 60.0f;
+        t.pid.angleFf = bf::DEFAULT_ANGLE_FEEDFORWARD / 100.0f;
         t.gainsFromModel = false;
     }
 }

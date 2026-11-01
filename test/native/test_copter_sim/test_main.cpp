@@ -1203,6 +1203,147 @@ void test_failsafe_switch_modes()
 
 // GPS-RESCUE (пока без GPS — снижение): связь вернулась — управление
 // пилоту, только когда он отклонит стик дальше failsafe_stick_threshold.
+// 034: angle_feedforward — наклон стиком без запаздывания: до 90 % угла
+// быстрее, без перелёта больше 10 % (5" на трёх физиках, в ALT_HOLD на 10 м).
+namespace
+{
+    struct TiltStep
+    {
+        double t90 = -1;
+        double peak = 0;
+    };
+
+    TiltStep tiltStep(const CopterTune& t, const QuadPerturb& p)
+    {
+        QuadHarness h(five(), p, 3);
+        h.useTune(t);
+        TiltStep r;
+        if (!h.takeoffTo(10.0)) return r;
+        const double target = 0.5 * t.maxAngleDeg;
+        h.rc.roll = 0.5f;
+        const double t0 = h.sim.now();
+        while (h.sim.now() - t0 < 1.5)
+        {
+            h.step();
+            const double roll = h.sim.rollDeg();
+            r.peak = std::fmax(r.peak, roll);
+            if (r.t90 < 0 && roll >= 0.9 * target) r.t90 = h.sim.now() - t0;
+        }
+        r.peak /= target;
+        return r;
+    }
+}
+
+void test_angle_feedforward_tilts_faster()
+{
+    const CopterTune base = deriveTune(five(), 1000.0f, EscProtocol::DSHOT600);
+    CopterTune ff = base;
+    ff.pid.angleFf = 0.5f;
+    const QuadPerturb ps[] = { QuadPerturb(), sluggish(), twitchy() };
+    const char* names[] = { "nominal", "sluggish", "twitchy" };
+    for (uint8_t k = 0; k < 3; ++k)
+    {
+        const TiltStep off = tiltStep(base, ps[k]);
+        const TiltStep on = tiltStep(ff, ps[k]);
+        char line[200];
+        snprintf(line, sizeof(line), "angle_feedforward 50 %-8s: t90 %.0f ms / %.0f ms, peak %.0f%% / %.0f%% (with / without)",
+                 names[k], on.t90 * 1000.0, off.t90 * 1000.0, on.peak * 100.0, off.peak * 100.0);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(on.t90 > 0 && off.t90 > 0, line);
+        TEST_ASSERT_TRUE_MESSAGE(on.t90 < off.t90, line);
+        TEST_ASSERT_TRUE_MESSAGE(on.peak < off.peak + 0.10, line);
+    }
+}
+
+// 035: HORIZON как в BF 4.5 — полный стик крутит флип (выравнивание гаснет
+// к horizon_limit_sticks), стик в центре — ровно.
+void test_horizon_flips_and_levels()
+{
+    QuadHarness h(five(), QuadPerturb(), 5);
+    TEST_ASSERT_TRUE(h.takeoffTo(15.0));
+    const float hover = h.ctl.getStatus().hoverLearned;
+    h.rc.mode = CopterMode::HORIZON;
+    h.rc.throttle = hover;
+    h.run(1.0);
+    TEST_ASSERT_TRUE(h.sim.tiltDeg() < 5.0);
+    // полстика — наклон держится, как в мягком ANGLE (не крутится дальше)
+    h.rc.roll = 0.3f;
+    h.run(1.5);
+    const double held = h.sim.tiltDeg();
+    char line[160];
+    snprintf(line, sizeof(line), "HORIZON: 30%% stick holds %.0f deg", held);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(held > 5.0 && held < 80.0, line);
+    // полный стик — флип: коптер побывал вверх ногами; стик отпущен, когда
+    // оборот закончен (вверх ногами за horizon_limit_degrees выравнивания нет — как в BF)
+    h.rc.roll = 1.0f;
+    double maxTilt = 0;
+    for (int i = 0; i < 3000; ++i)
+    {
+        h.step();
+        maxTilt = std::fmax(maxTilt, h.sim.tiltDeg());
+        if (maxTilt > 150.0 && h.sim.tiltDeg() < 60.0) break;
+    }
+    h.rc.roll = 0.0f;
+    snprintf(line, sizeof(line), "HORIZON: full stick reaches %.0f deg tilt", maxTilt);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(maxTilt > 150.0, line);
+    // центр — выравнивается (после horizon_delay_ms)
+    h.run(2.5);
+    snprintf(line, sizeof(line), "HORIZON: %.1f deg 2.5 s after the flip", h.sim.tiltDeg());
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(h.sim.tiltDeg() < 8.0, line);
+    TEST_ASSERT_TRUE(h.ctl.isArmed());
+}
+
+// 036: ACRO TRAINER — полный стик в ACRO, наклон не больше предела (+ запас на
+// перелёт); без режима тот же стик крутит коптер дальше.
+void test_acro_trainer_limits_tilt()
+{
+    for (int trainer = 1; trainer >= 0; --trainer)
+    {
+        QuadHarness h(five(), QuadPerturb(), 7);
+        TEST_ASSERT_TRUE(h.takeoffTo(15.0));
+        const float hover = h.ctl.getStatus().hoverLearned;
+        h.rc.mode = CopterMode::ACRO;
+        h.rc.acroTrainer = trainer != 0;
+        h.rc.throttle = hover;
+        h.run(0.5);
+        double maxRoll = 0, maxPitch = 0;
+        h.rc.roll = 1.0f;
+        for (int i = 0; i < 1500; ++i)
+        {
+            h.step();
+            maxRoll = std::fmax(maxRoll, std::fabs(h.sim.rollDeg()));
+            if (!trainer && maxRoll > 60.0) break;
+        }
+        if (trainer)
+        {
+            h.rc.roll = 0.0f;
+            h.rc.pitch = -1.0f;
+            for (int i = 0; i < 1500; ++i)
+            {
+                h.step();
+                maxPitch = std::fmax(maxPitch, h.sim.tiltDeg());
+            }
+        }
+        char line[160];
+        snprintf(line, sizeof(line), "ACRO %s: full roll stick -> %.0f deg, full pitch -> tilt %.0f deg",
+                 trainer ? "TRAINER" : "plain", maxRoll, maxPitch);
+        TEST_MESSAGE(line);
+        if (trainer)
+        {
+            TEST_ASSERT_TRUE_MESSAGE(maxRoll < 30.0, line);   // предел 20° + перелёт
+            TEST_ASSERT_TRUE_MESSAGE(maxPitch < 30.0, line);
+            TEST_ASSERT_TRUE(h.ctl.isArmed());
+        }
+        else
+        {
+            TEST_ASSERT_TRUE_MESSAGE(maxRoll > 60.0, line);
+        }
+    }
+}
+
 void test_failsafe_rescue_returns_control_by_stick()
 {
     CopterSettings s;
@@ -1257,5 +1398,8 @@ int main()
     RUN_TEST(test_failsafe_drop_procedure);
     RUN_TEST(test_failsafe_switch_modes);
     RUN_TEST(test_failsafe_rescue_returns_control_by_stick);
+    RUN_TEST(test_angle_feedforward_tilts_faster);
+    RUN_TEST(test_horizon_flips_and_levels);
+    RUN_TEST(test_acro_trainer_limits_tilt);
     return UNITY_END();
 }
