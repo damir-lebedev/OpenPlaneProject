@@ -254,22 +254,25 @@
 - **Файлы:** новый telemetry/BflEncoder.h · **Тест:** разбор нашим декодером + проверка заголовка; отдельно — открыть в Blackbox Explorer (пользователь) · **UI:** «Чёрный ящик»: «открыть в Blackbox Explorer»
 - **Итог:** BflEncoder.h: заголовок H, кадры I (каждые 32)/P (разность с прошлым), S, E «End of log», числа переменной длины и zigzag; перевод наших QGYRO/QCTRL/QMOT8/QSTATE в поля BF; плата отдаёт полёт в .BFL сама (bb bfl N, blackbox.py download --bfl); полёт симулятора — 45979 кадров, 1.6 МБ (вдвое меньше нашего), пример в Documents/OpenPlane/Blackbox/sim_freestyle5_flips.bfl — открыть в Blackbox Explorer должен пользователь (коммит d85e00a)
 
-### [ ] 158 · MSP: транспорт и базовые сообщения
+### [x] 158 · MSP: транспорт и базовые сообщения
 - **BF:** MSP v1/v2 (API_VERSION, FC_VARIANT, FC_VERSION, BOARD_INFO, STATUS, RAW_IMU, ATTITUDE, ALTITUDE, ANALOG, RC, MOTOR)
 - **Что:** своя реализация по открытому описанию протокола. Представляемся как BF 4.5: FC_VARIANT «BTFL», MSP API 1.46, FC_VERSION 4.5.x — чтобы работал конфигуратор BF; в BOARD_INFO и BUILD_INFO честно «OpenPlane …» (как он это покажет — неважно, главное, что работает).
 - **Файлы:** новый telemetry/Msp.h · **Тест:** test_telemetry: кадры с CRC (v1 xor, v2 crc8 dvb-s2) · **UI:** —
+- **Итог:** транспорт MSP v1/v2 (xor, CRC-8 DVB-S2) на USB-консоли рядом с клавишами и строками приложения; ответы как BF 4.5 (BTFL, API 1.46) — паспорт, состояние с флагами BF, IMU, углы, батарея, RC, моторы, имена режимов (коммит 850a062)
 
-### [ ] 159 · MSP: чтение и запись настроек
+### [x] 159 · MSP: чтение и запись настроек
 - **BF:** MSP_PID / SET_PID, RC_TUNING, FILTER_CONFIG, ADVANCED_CONFIG, MODE_RANGES, MOTOR_CONFIG, FAILSAFE_CONFIG, EEPROM_WRITE
 - **Файлы:** telemetry/Msp.h, copter/Params.h · **Тест:** test_telemetry · **UI:** —
+- **Итог:** PID, расходы, PID advanced, фильтры, режимы, приёмник, rxfail, моторы, failsafe, ARM, батарея и их SET_* — в реестр; EEPROM_WRITE = save; несохранённое и запрет от конфигуратора — флаг MSP; REBOOT 0/1 (коммит 850a062)
 
 ### [ ] 160 · Подключение конфигуратора Betaflight — Стенд: да
 - **Что:** конфигуратор BF подключается к нам как к BF 4.5 (158) и настраивает PID, Rates, приёмник, режимы, моторы, CLI; что отображается странно — записать, что не работает — чинить в 159. Можно на DevEBox, коптер не нужен.
 
-### [ ] 163 · Импорт diff из Betaflight
+### [x] 163 · Импорт diff из Betaflight
 - **BF:** вывод `diff all`
 - **Что:** вставить diff BF в нашу CLI — понятное применяется, непонятное перечисляется списком.
 - **Файлы:** telemetry/CopterConsole.h · **Тест:** test_app_stm32_copter: настоящий diff 4.5 · **UI:** «CLI»: кнопка «вставить diff из BF»
+- **Итог:** вставка diff BF в CLI: железные строки внутри batch пропускаются, defaults nosave сохраняет описание коптера, сводка — что не перенеслось; в Studio — «Перенести настройки из Betaflight» по группам (коммит 850a062, Studio 11b266b)
 
 ### [ ] D13 · Переводы: до первого полёта (11 языков)
 - **Что:** всё, что поменялось в русских COPTER.md и README с прошлых переводов, — в docs/i18n/<lang>/ на 11 языков.
@@ -485,12 +488,13 @@
 - **UI:** вкладка «Моторы»
 - **Итог:** thrust_linear (модель 15–30, BF 0) и motor_output_limit в PID-профиле; предел режет ход выше холостых, как в BF: полный газ и стик — не выше холостых + 80 % хода; «t» печатает предел (коммит f00f5d9)
 
-### [ ] 031 · vbat_sag_compensation (%)
+### [x] 031 · vbat_sag_compensation (%)
 - **BF:** `vbat_sag_compensation`
 - **Что:** процент компенсации просадки (сейчас вкл/выкл).
 - **Файлы:** copter/CopterController.h
 - **Тест:** test_copter_sim: на 100 % газ висения не растёт с разрядом
 - **UI:** вкладка «PID»
+- **Итог:** vbat_sag_compensation 0–150 % (у нас 100, BF 0) вместо вкл/выкл (коммит 850a062)
 
 ### [ ] 032 · Упрощённая настройка — ползунки
 - **BF:** `simplified_pids_mode`, `simplified_master_multiplier`, `simplified_i_gain`, `simplified_d_gain`, `simplified_pi_gain`, `simplified_dmax_gain`, `simplified_feedforward_gain`, `simplified_pitch_d_gain`, `simplified_pitch_pi_gain`
@@ -499,35 +503,39 @@
 - **Тест:** test_copter: master ×1.5 → P,I,D,F ×1.5; предупреждение запаса
 - **UI:** вкладка «PID»: ползунки + полоса «запас устойчивости» из модели (зелёная/жёлтая/красная)
 
-### [ ] 033 · auto_profile_cell_count
+### [x] 033 · auto_profile_cell_count
 - **BF:** `auto_profile_cell_count`
 - **Что:** выбор PID-профиля по числу банок батареи.
 - **Файлы:** copter/Params.h, src/stm32/main_copter.cpp
 - **Тест:** test_app_stm32_copter: 4S → профиль 2
 - **UI:** вкладка «PID», поле у профиля
+- **Итог:** auto_profile_cell_count: подключили батарею — число банок по напряжению как в BF, профиль с таким числом выбирается сам (без ARM, не сохраняется) (коммит b36602a)
 
-### [ ] 034 · Режим ANGLE как в BF 4.5
+### [x] 034 · Режим ANGLE как в BF 4.5
 - **BF:** `angle_limit`, `angle_p_gain`, `angle_feedforward`, `angle_feedforward_smoothing_ms`, `angle_earth_ref`
 - **Что:** сила выравнивания, FF по скорости стика, рысканье относительно Земли (у нас уже есть) — настройками.
 - **Сейчас:** levelGain из модели, maxAngleDeg по стилю, рысканье вокруг вертикали.
 - **Файлы:** copter/CopterController.h (rateSetpoints), copter/Params.h
 - **Тест:** test_copter_sim: ANGLE — выход на наклон быстрее с FF
 - **UI:** вкладка «PID → Angle/Horizon»
+- **Итог:** angle_limit и angle_p_gain (не заданы — точные значения модели), angle_feedforward по скорости целевого угла (+ angle_feedforward_smoothing_ms; модель 0, BF 50): 5" на 90 % наклона за 108 мс вместо 193 без лишнего перелёта на трёх физиках; angle_earth_ref (коммит b36602a)
 
-### [ ] 035 · Режим HORIZON как в BF 4.5
+### [x] 035 · Режим HORIZON как в BF 4.5
 - **BF:** `horizon_level_strength`, `horizon_limit_degrees`, `horizon_limit_sticks`, `horizon_delay_ms`
 - **Что:** смешение ANGLE/ACRO по стику и по углу, задержка выравнивания.
 - **Сейчас:** horizonTransition 0.75, квадратичное смешение.
 - **Файлы:** copter/CopterController.h
 - **Тест:** test_copter_sim: флип в HORIZON проходит, у центра — выравнивается
 - **UI:** «PID → Angle/Horizon»
+- **Итог:** HORIZON как в BF 4.5: ACRO + выравнивание силы horizon_level_strength, гаснущее к horizon_limit_sticks стика и horizon_limit_degrees наклона, возвращается за horizon_delay_ms; флип полным стиком и выравнивание за 2.5 с в симуляции (коммит b36602a)
 
-### [ ] 036 · Acro trainer
+### [x] 036 · Acro trainer
 - **BF:** `acro_trainer_angle_limit`, `acro_trainer_lookahead_ms`, `acro_trainer_gain`, режим ACRO TRAINER
 - **Что:** ACRO с ограничением наклона — для обучения.
 - **Файлы:** copter/CopterController.h
 - **Тест:** test_copter_sim: полный стик — наклон не больше предела
 - **UI:** «PID → Angle/Horizon» + режим на вкладке «Режимы»
+- **Итог:** режим ACRO TRAINER (BF 47): в ACRO наклон не больше acro_trainer_angle_limit с упреждением acro_trainer_lookahead_ms, возврат acro_trainer_gain; 5" полным стиком — 21° крен, 29° тангаж при пределе 20° (коммит b36602a)
 
 ### [ ] 037 · Launch control
 - **BF:** `launch_control_mode` (NORMAL/PITCHONLY/FULL), `launch_trigger_allow_reset`, `launch_trigger_throttle_percent`, `launch_angle_limit`, `launch_control_gain`, режим LAUNCH CONTROL
@@ -760,11 +768,12 @@
 - **Тест:** test_copter_sim: трикоптер висит и рыскает
 - **UI:** «Моторы»
 
-### [ ] 079 · Проверка моторов из CLI
+### [x] 079 · Проверка моторов из CLI
 - **BF:** `motor <n> <значение>`, вкладка Motors
 - **Что:** ручное управление каждым мотором с защитой (пропеллеры!), остановка при потере связи с ПК.
 - **Сейчас:** 'm' — по очереди на 6 %.
 - **Файлы:** telemetry/CopterConsole.h · **Тест:** test_app_stm32_copter · **UI:** вкладка «Моторы»: ползунки на каждый мотор, «я снял пропеллеры»
+- **Итог:** CLI `motor № 1000-2000` как в BF (255 — все, 5 с), команда приложения `motor N %` (держится 1 с, приложение повторяет), MSP_SET_MOTOR для вкладки Motors конфигуратора BF (держится, пока он на связи); не выше 30 %; вкладка «Моторы» Studio со схемой рамы (коммит 94462a2, Studio 11b266b)
 
 ### [ ] 083 · DShot: команды
 - **BF:** `dshotprog`, команды BEEP, ESC_INFO, SPIN_DIRECTION, 3D, SAVE, LED

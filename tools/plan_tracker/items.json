@@ -596,7 +596,7 @@
    "id": "158",
    "section": 1,
    "title": "MSP: транспорт и базовые сообщения",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -605,6 +605,7 @@
    "files": "новый telemetry/Msp.h",
    "test": "test_telemetry: кадры с CRC (v1 xor, v2 crc8 dvb-s2)",
    "ui": "—",
+   "result": "транспорт MSP v1/v2 (xor, CRC-8 DVB-S2) на USB-консоли рядом с клавишами и строками приложения; ответы как BF 4.5 (BTFL, API 1.46) — паспорт, состояние с флагами BF, IMU, углы, батарея, RC, моторы, имена режимов (коммит 850a062)",
    "settings": [],
    "tab": ""
   },
@@ -612,7 +613,7 @@
    "id": "159",
    "section": 1,
    "title": "MSP: чтение и запись настроек",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -620,6 +621,7 @@
    "files": "telemetry/Msp.h, copter/Params.h",
    "test": "test_telemetry",
    "ui": "—",
+   "result": "PID, расходы, PID advanced, фильтры, режимы, приёмник, rxfail, моторы, failsafe, ARM, батарея и их SET_* — в реестр; EEPROM_WRITE = save; несохранённое и запрет от конфигуратора — флаг MSP; REBOOT 0/1 (коммит 850a062)",
    "settings": [],
    "tab": ""
   },
@@ -639,7 +641,7 @@
    "id": "163",
    "section": 1,
    "title": "Импорт diff из Betaflight",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -648,6 +650,7 @@
    "files": "telemetry/CopterConsole.h",
    "test": "test_app_stm32_copter: настоящий diff 4.5",
    "ui": "«CLI»: кнопка «вставить diff из BF»",
+   "result": "вставка diff BF в CLI: железные строки внутри batch пропускаются, defaults nosave сохраняет описание коптера, сводка — что не перенеслось; в Studio — «Перенести настройки из Betaflight» по группам (коммит 850a062, Studio 11b266b)",
    "settings": [
     "diff",
     "all"
@@ -1202,7 +1205,7 @@
    "id": "031",
    "section": 3,
    "title": "vbat_sag_compensation (%)",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -1211,6 +1214,7 @@
    "files": "copter/CopterController.h",
    "test": "test_copter_sim: на 100 % газ висения не растёт с разрядом",
    "ui": "вкладка «PID»",
+   "result": "vbat_sag_compensation 0–150 % (у нас 100, BF 0) вместо вкл/выкл (коммит 850a062)",
    "settings": [
     "vbat_sag_compensation"
    ],
@@ -1246,7 +1250,7 @@
    "id": "033",
    "section": 3,
    "title": "auto_profile_cell_count",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -1255,6 +1259,7 @@
    "files": "copter/Params.h, src/stm32/main_copter.cpp",
    "test": "test_app_stm32_copter: 4S → профиль 2",
    "ui": "вкладка «PID», поле у профиля",
+   "result": "auto_profile_cell_count: подключили батарею — число банок по напряжению как в BF, профиль с таким числом выбирается сам (без ARM, не сохраняется) (коммит b36602a)",
    "settings": [
     "auto_profile_cell_count"
    ],
@@ -1264,7 +1269,7 @@
    "id": "034",
    "section": 3,
    "title": "Режим ANGLE как в BF 4.5",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -1274,6 +1279,7 @@
    "files": "copter/CopterController.h (rateSetpoints), copter/Params.h",
    "test": "test_copter_sim: ANGLE — выход на наклон быстрее с FF",
    "ui": "вкладка «PID → Angle/Horizon»",
+   "result": "angle_limit и angle_p_gain (не заданы — точные значения модели), angle_feedforward по скорости целевого угла (+ angle_feedforward_smoothing_ms; модель 0, BF 50): 5\" на 90 % наклона за 108 мс вместо 193 без лишнего перелёта на трёх физиках; angle_earth_ref (коммит b36602a)",
    "settings": [
     "angle_limit",
     "angle_p_gain",
@@ -1287,7 +1293,7 @@
    "id": "035",
    "section": 3,
    "title": "Режим HORIZON как в BF 4.5",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -1297,6 +1303,7 @@
    "files": "copter/CopterController.h",
    "test": "test_copter_sim: флип в HORIZON проходит, у центра — выравнивается",
    "ui": "«PID → Angle/Horizon»",
+   "result": "HORIZON как в BF 4.5: ACRO + выравнивание силы horizon_level_strength, гаснущее к horizon_limit_sticks стика и horizon_limit_degrees наклона, возвращается за horizon_delay_ms; флип полным стиком и выравнивание за 2.5 с в симуляции (коммит b36602a)",
    "settings": [
     "horizon_level_strength",
     "horizon_limit_degrees",
@@ -1309,7 +1316,7 @@
    "id": "036",
    "section": 3,
    "title": "Acro trainer",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -1318,6 +1325,7 @@
    "files": "copter/CopterController.h",
    "test": "test_copter_sim: полный стик — наклон не больше предела",
    "ui": "«PID → Angle/Horizon» + режим на вкладке «Режимы»",
+   "result": "режим ACRO TRAINER (BF 47): в ACRO наклон не больше acro_trainer_angle_limit с упреждением acro_trainer_lookahead_ms, возврат acro_trainer_gain; 5\" полным стиком — 21° крен, 29° тангаж при пределе 20° (коммит b36602a)",
    "settings": [
     "acro_trainer_angle_limit",
     "acro_trainer_lookahead_ms",
@@ -2057,7 +2065,7 @@
    "id": "079",
    "section": 6,
    "title": "Проверка моторов из CLI",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -2067,6 +2075,7 @@
    "files": "telemetry/CopterConsole.h",
    "test": "test_app_stm32_copter",
    "ui": "вкладка «Моторы»: ползунки на каждый мотор, «я снял пропеллеры»",
+   "result": "CLI `motor № 1000-2000` как в BF (255 — все, 5 с), команда приложения `motor N %` (держится 1 с, приложение повторяет), MSP_SET_MOTOR для вкладки Motors конфигуратора BF (держится, пока он на связи); не выше 30 %; вкладка «Моторы» Studio со схемой рамы (коммит 94462a2, Studio 11b266b)",
    "settings": [
     "motor"
    ],
