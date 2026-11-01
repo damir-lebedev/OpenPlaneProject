@@ -999,18 +999,22 @@
 ### [ ] 147 · OSD: элементы полёта
 - **BF:** `osd_vbat_pos`, `osd_rssi_pos`, `osd_flymode_pos`, `osd_throttle_pos`, `osd_crosshairs_pos`, `osd_ah_pos`, `osd_ah_sbar_pos`, `osd_tim_1_pos`, `osd_warnings_pos`, `osd_link_quality_pos`
 - **Файлы:** новый telemetry/Osd.h · **Тест:** test_app_stm32_copter: экран в буфере · **UI:** «OSD»: перетаскивание элементов по экрану
+- **Ход:** Сделано (878faaf): osd_*_pos как в BF (x + 32·y, 0x0800, профили 2–3 = показан) для vbat, flymode, throttle, crosshairs, tim_2, warnings, link_quality; Studio — вкладка «OSD». Осталось: ah/ah_sbar (символы шрифта проверить на железе), tim_1, rssi
 
-### [ ] 148 · OSD: элементы навигации
+### [x] 148 · OSD: элементы навигации
 - **BF:** `osd_altitude_pos`, `osd_vario_pos`, `osd_gps_speed_pos`, `osd_gps_sats_pos`, `osd_home_dir_pos`, `osd_home_dist_pos`, `osd_gps_lat_pos`, `osd_gps_lon_pos`, `osd_compass_bar_pos`
 - **Файлы:** telemetry/Osd.h · **Тест:** test_app_stm32_copter · **UI:** «OSD»
+- **Итог:** osd_altitude/vario_num/gps_speed/gps_sats/home_dir/home_dist/gps_lat/gps_lon_pos — позиции BF, alt_alarm мигает; Studio 2ddd952 — вкладка «OSD» с перетаскиванием (коммит 878faaf). Нет: vario-стрелок, compass_bar
 
 ### [ ] 149 · OSD: питание и моторы
 - **BF:** `osd_current_pos`, `osd_mah_drawn_pos`, `osd_avg_cell_voltage_pos`, `osd_esc_tmp_pos`, `osd_esc_rpm_pos`, `osd_power_pos`
 - **Файлы:** telemetry/Osd.h · **Тест:** test_app_stm32_copter · **UI:** «OSD»
+- **Ход:** Сделано (878faaf): current, mah_drawn, avg_cell_voltage, power. Осталось: esc_tmp, esc_rpm — после телеметрии регуляторов (091/092)
 
-### [ ] 150 · OSD: предупреждения и статистика после полёта
+### [x] 150 · OSD: предупреждения и статистика после полёта
 - **BF:** `osd_warn_*`, `osd_stat_*`, единицы, `osd_cap_alarm`, `osd_alt_alarm`
 - **Файлы:** telemetry/Osd.h · **Тест:** test_app_stm32_copter · **UI:** «OSD»
+- **Итог:** osd_warn_* (6), osd_stat_* (9) — экран после DISARM до стика вверх/ARM/минуты, osd_cap_alarm, osd_alt_alarm, osd_link_quality_alarm (мигание, LINK QUALITY); единиц (osd_units) нет — только метры (коммит 878faaf)
 
 ### [ ] 151 · OSD: меню настроек стиками (CMS)
 - **BF:** CMS
@@ -1146,6 +1150,7 @@
 ### [ ] 157 · Studio: вкладки «OSD», «Видео», «LED» — Репо: studio
 - **Что:** редактор OSD перетаскиванием, предпросмотр шрифта.
 - **UI:** сам пункт
+- **Ход:** Сделано (studio 2ddd952): вкладка «OSD» — экран очков 30×16/13, перетаскивание, живые значения, статистика и тревоги. «Видео» уже была (VtxTab). Осталось: «LED»
 
 ### [ ] 170 · Studio: вкладки «Сервы» и «Автонастройка» — Репо: studio
 

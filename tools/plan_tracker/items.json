@@ -2884,7 +2884,7 @@
    "id": "148",
    "section": 11,
    "title": "OSD: элементы навигации",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -2892,6 +2892,7 @@
    "files": "telemetry/Osd.h",
    "test": "test_app_stm32_copter",
    "ui": "«OSD»",
+   "result": "osd_altitude/vario_num/gps_speed/gps_sats/home_dir/home_dist/gps_lat/gps_lon_pos — позиции BF, alt_alarm мигает; Studio 2ddd952 — вкладка «OSD» с перетаскиванием (коммит 878faaf). Нет: vario-стрелок, compass_bar",
    "settings": [
     "osd_altitude_pos",
     "osd_vario_pos",
@@ -2931,7 +2932,7 @@
    "id": "150",
    "section": 11,
    "title": "OSD: предупреждения и статистика после полёта",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -2939,6 +2940,7 @@
    "files": "telemetry/Osd.h",
    "test": "test_app_stm32_copter",
    "ui": "«OSD»",
+   "result": "osd_warn_* (6), osd_stat_* (9) — экран после DISARM до стика вверх/ARM/минуты, osd_cap_alarm, osd_alt_alarm, osd_link_quality_alarm (мигание, LINK QUALITY); единиц (osd_units) нет — только метры (коммит 878faaf)",
    "settings": [
     "osd_cap_alarm",
     "osd_alt_alarm"
