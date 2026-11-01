@@ -132,6 +132,7 @@ static uint32_t lastGpsMs = 0, lastTelemetryMs = 0;
 copter::CrsfTelemetry crsfTelemetry;
 static bool crsfTelemetryOn = false;
 static copter::CopterMode switchMode = copter::CopterMode::ACRO;   // режим на тумблерах (без ARM — для пульта)
+static volatile bool sticksUp = false;   // газ или тангаж вверх — убрать статистику OSD
 
 // OSD (AT7456E/MAX7456 на своей шине SPI) — рисуется фоновой задачей.
 SPIClass osdSpi;
@@ -160,6 +161,7 @@ BlackBoxStorage blackBoxStorage(blackBoxFlash);
 CopterBlackBox copterBlackBox(copterController, copterParams, blackBoxStorage, loopStats, rcReceiver);
 #endif
 copter::OsdScreen osdScreen;
+copter::OsdStats osdStats;
 static uint32_t armedMs = 0;   // время в полёте (заармлен), для OSD
 
 // Пищалка — copter/Beeper.h.
@@ -427,16 +429,27 @@ static void composeOsd()
     d.batteryNotFull = battery.state() != copter::BatteryState::NOT_PRESENT && !battery.wasFullWhenPluggedIn();
     d.flightSeconds = armedMs / 1000;
     d.altitudeM = s.altitude;
+    d.climbMs = s.climbRate;
+    d.throttle = s.throttle;
     d.gpsPresent = gps.isAvailable();
-    d.satellites = gpsHome.fix().satellites;
+    const copter::GpsFix& fix = gpsHome.fix();
+    d.satellites = fix.satellites;
+    d.gpsFix = fix.valid;
+    d.speedKmh = fix.speedMs * 3.6f;
+    d.latitude = fix.latitude;
+    d.longitude = fix.longitude;
     d.home = gpsHome.hasHome();
     d.homeDistanceM = gpsHome.distanceM();
     d.homeRelativeDeg = gpsHome.relativeHomeDeg(headingDeg());
     d.vtxMw = vtx.state().online ? vtx.state().powerMw : 0;
     d.vtxPit = vtx.state().pit;
     d.armBlock = d.armed ? nullptr : firstArmBlock();
+    d.craftName = copterParams.text(copter::PARAM_CRAFT_NAME, 0);
+    d.blink = (millis() / 250) % 2 == 0;
+    d.exitStats = sticksUp;
+    osdStats.update(d, millis());
     osdScreen.setRows(osdChip.rows());
-    osdScreen.compose(d);
+    osdScreen.compose(d, copter::osdLayoutFrom(copterParams), &osdStats);
 }
 
 // Фоновая задача OSD: 20 раз в секунду экран — в чип (только изменения), раз
@@ -514,6 +527,7 @@ static void flightTask(void*)
         rcReceiver.update();
         const copter::CopterRc rc = readRc();
         switchMode = rc.mode;
+        sticksUp = rc.linkOk && (rc.throttle > 0.9f || rc.pitch > 0.9f);
         t = lap(TASK_RX, t);
         if (millis() - lastGpsMs >= 5)
         {

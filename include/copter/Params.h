@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "copter/Battery.h"
+#include "copter/Osd.h"
 #include "copter/Presets.h"
 #include "copter/RateController.h"
 #include "copter/RcSetup.h"
@@ -82,6 +83,7 @@ namespace copter
         VTX,
         GPS,
         BLACKBOX,
+        OSD,
         OTHER,
     };
 
@@ -101,6 +103,7 @@ namespace copter
             case ParamGroup::VTX: return "vtx";
             case ParamGroup::GPS: return "gps";
             case ParamGroup::BLACKBOX: return "blackbox";
+            case ParamGroup::OSD: return "osd";
             case ParamGroup::OTHER: return "other";
         }
         return "other";
@@ -308,6 +311,46 @@ namespace copter
         PARAM_GPS_RESCUE_VELOCITY_P,
         PARAM_GPS_RESCUE_VELOCITY_I,
         PARAM_GPS_RESCUE_VELOCITY_D,
+        // OSD: по порядку OsdElement, OsdStat, OsdWarn (copter/Osd.h)
+        PARAM_OSD_LINK_QUALITY_POS,
+        PARAM_OSD_FLYMODE_POS,
+        PARAM_OSD_GPS_SATS_POS,
+        PARAM_OSD_VTX_CHANNEL_POS,
+        PARAM_OSD_CROSSHAIRS_POS,
+        PARAM_OSD_WARNINGS_POS,
+        PARAM_OSD_CURRENT_POS,
+        PARAM_OSD_MAH_DRAWN_POS,
+        PARAM_OSD_HOME_DIR_POS,
+        PARAM_OSD_HOME_DIST_POS,
+        PARAM_OSD_ALTITUDE_POS,
+        PARAM_OSD_VBAT_POS,
+        PARAM_OSD_AVG_CELL_VOLTAGE_POS,
+        PARAM_OSD_TIM_2_POS,
+        PARAM_OSD_THROTTLE_POS,
+        PARAM_OSD_GPS_SPEED_POS,
+        PARAM_OSD_VARIO_NUM_POS,
+        PARAM_OSD_CRAFT_NAME_POS,
+        PARAM_OSD_POWER_POS,
+        PARAM_OSD_GPS_LAT_POS,
+        PARAM_OSD_GPS_LON_POS,
+        PARAM_OSD_STAT_TIM_2,
+        PARAM_OSD_STAT_MAX_ALT,
+        PARAM_OSD_STAT_MAX_SPD,
+        PARAM_OSD_STAT_MAX_DIST,
+        PARAM_OSD_STAT_MIN_BATT,
+        PARAM_OSD_STAT_ENDBATT,
+        PARAM_OSD_STAT_USED_MAH,
+        PARAM_OSD_STAT_MAX_CURR,
+        PARAM_OSD_STAT_MIN_LINK_QUALITY,
+        PARAM_OSD_WARN_ARMING_DISABLE,
+        PARAM_OSD_WARN_BATT_NOT_FULL,
+        PARAM_OSD_WARN_BATT_WARNING,
+        PARAM_OSD_WARN_BATT_CRITICAL,
+        PARAM_OSD_WARN_FAIL_SAFE,
+        PARAM_OSD_WARN_LINK_QUALITY,
+        PARAM_OSD_ALT_ALARM,
+        PARAM_OSD_CAP_ALARM,
+        PARAM_OSD_LINK_QUALITY_ALARM,
         PARAM_COUNT
     };
 
@@ -364,7 +407,7 @@ namespace copter
                              kGroupCopter = ParamGroup::COPTER, kGroupPower = ParamGroup::POWER,
                              kGroupVtx = ParamGroup::VTX, kGroupGps = ParamGroup::GPS, kGroupBlackbox = ParamGroup::BLACKBOX,
                              kGroupFilters = ParamGroup::FILTERS, kGroupMotors = ParamGroup::MOTORS,
-                             kGroupSafety = ParamGroup::SAFETY;
+                             kGroupSafety = ParamGroup::SAFETY, kGroupOsd = ParamGroup::OSD;
         constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD,
                                kBattery = ParamDefault::BATTERY;
         static const ParamInfo table[] = {
@@ -670,6 +713,84 @@ namespace copter
               "скорость домой: I (ветер в лоб)" },
             { "gps_rescue_velocity_d", kInt, kMaster, kGroupGps, 0, 200, 12, kTable, "", nullptr, 0,
               "скорость домой: D" },
+            { "osd_link_quality_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2049, kTable, "", nullptr, 0,
+              "OSD: качество связи (LQ), % — x + 32·y, +2048 — показан" },
+            { "osd_flymode_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2061, kTable, "", nullptr, 0,
+              "OSD: режим полёта (ANGL, ACRO, RESC, !FS!) — x + 32·y, +2048 — показан" },
+            { "osd_gps_sats_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2072, kTable, "", nullptr, 0,
+              "OSD: спутники GPS — x + 32·y, +2048 — показан" },
+            { "osd_vtx_channel_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2103, kTable, "", nullptr, 0,
+              "OSD: мощность видеопередатчика (PIT — на земле) — x + 32·y, +2048 — показан" },
+            { "osd_crosshairs_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2254, kTable, "", nullptr, 0,
+              "OSD: прицел — x + 32·y, +2048 — показан" },
+            { "osd_warnings_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2345, kTable, "", nullptr, 0,
+              "OSD: главное предупреждение (по центру поля в 12 знаков) — x + 32·y, +2048 — показан" },
+            { "osd_current_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2369, kTable, "", nullptr, 0,
+              "OSD: ток, А — x + 32·y, +2048 — показан" },
+            { "osd_mah_drawn_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2376, kTable, "", nullptr, 0,
+              "OSD: израсходовано, мА·ч — x + 32·y, +2048 — показан" },
+            { "osd_home_dir_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2401, kTable, "", nullptr, 0,
+              "OSD: стрелка домой — x + 32·y, +2048 — показан" },
+            { "osd_home_dist_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2402, kTable, "", nullptr, 0,
+              "OSD: расстояние домой — x + 32·y, +2048 — показан" },
+            { "osd_altitude_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2423, kTable, "", nullptr, 0,
+              "OSD: высота от точки ARM — x + 32·y, +2048 — показан" },
+            { "osd_vbat_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2433, kTable, "", nullptr, 0,
+              "OSD: напряжение батареи — x + 32·y, +2048 — показан" },
+            { "osd_avg_cell_voltage_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2440, kTable, "", nullptr, 0,
+              "OSD: напряжение на банку — x + 32·y, +2048 — показан" },
+            { "osd_tim_2_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2454, kTable, "", nullptr, 0,
+              "OSD: время в полёте (таймер 2 BF) — x + 32·y, +2048 — показан" },
+            { "osd_throttle_pos", kInt, kMaster, kGroupOsd, 0, 16383, 65, kTable, "", nullptr, 0,
+              "OSD: газ, % — x + 32·y, +2048 — показан" },
+            { "osd_gps_speed_pos", kInt, kMaster, kGroupOsd, 0, 16383, 87, kTable, "", nullptr, 0,
+              "OSD: скорость по GPS, км/ч — x + 32·y, +2048 — показан" },
+            { "osd_vario_num_pos", kInt, kMaster, kGroupOsd, 0, 16383, 343, kTable, "", nullptr, 0,
+              "OSD: вертикальная скорость, м/с — x + 32·y, +2048 — показан" },
+            { "osd_craft_name_pos", kInt, kMaster, kGroupOsd, 0, 16383, 394, kTable, "", nullptr, 0,
+              "OSD: имя коптера (craft_name) — x + 32·y, +2048 — показан" },
+            { "osd_power_pos", kInt, kMaster, kGroupOsd, 0, 16383, 335, kTable, "", nullptr, 0,
+              "OSD: мощность, Вт — x + 32·y, +2048 — показан" },
+            { "osd_gps_lat_pos", kInt, kMaster, kGroupOsd, 0, 16383, 97, kTable, "", nullptr, 0,
+              "OSD: широта — найти упавший — x + 32·y, +2048 — показан" },
+            { "osd_gps_lon_pos", kInt, kMaster, kGroupOsd, 0, 16383, 129, kTable, "", nullptr, 0,
+              "OSD: долгота — x + 32·y, +2048 — показан" },
+            { "osd_stat_tim_2", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "статистика после полёта: время в полёте" },
+            { "osd_stat_max_alt", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "статистика после полёта: наибольшая высота" },
+            { "osd_stat_max_spd", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "статистика после полёта: наибольшая скорость по GPS" },
+            { "osd_stat_max_dist", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "статистика после полёта: дальше всего от дома" },
+            { "osd_stat_min_batt", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "статистика после полёта: наименьшее напряжение батареи" },
+            { "osd_stat_endbatt", kEnum, kMaster, kGroupOsd, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "статистика после полёта: напряжение после посадки" },
+            { "osd_stat_used_mah", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "статистика после полёта: израсходовано мА·ч" },
+            { "osd_stat_max_curr", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "статистика после полёта: наибольший ток" },
+            { "osd_stat_min_link_quality", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "статистика после полёта: наименьшее качество связи" },
+            { "osd_warn_arming_disable", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: без ARM — почему не армится (код BF)" },
+            { "osd_warn_batt_not_full", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: подключили не полную батарею (BATT < FULL)" },
+            { "osd_warn_batt_warning", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: LOW BATTERY" },
+            { "osd_warn_batt_critical", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: BATT CRITICAL" },
+            { "osd_warn_fail_safe", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: FAILSAFE и RXLOSS" },
+            { "osd_warn_link_quality", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: связь хуже osd_link_quality_alarm (LINK QUALITY)" },
+            { "osd_alt_alarm", kInt, kMaster, kGroupOsd, 0, 10000, 100, kTable, "м", nullptr, 0,
+              "выше — высота на OSD мигает; 0 — нет" },
+            { "osd_cap_alarm", kInt, kMaster, kGroupOsd, 0, 20000, 2200, kTable, "мА·ч", nullptr, 0,
+              "израсходовано больше — мА·ч на OSD мигают; 0 — нет" },
+            { "osd_link_quality_alarm", kInt, kMaster, kGroupOsd, 0, 100, 80, kTable, "%", nullptr, 0,
+              "связь хуже — LQ на OSD мигает и предупреждение LINK QUALITY; 0 — нет" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;
@@ -740,6 +861,11 @@ namespace copter
     public:
         static constexpr uint8_t PROFILES = 4;
         static constexpr uint8_t NAME_LENGTH = 16;   // craft_name; имена профилей — до 8 (profile_name)
+        // Запись во флеш: число — хэш имени 2 + слот 1 + значение 4, строка — хэш 2 +
+        // слот 1 + длина 1 + текст. Больше ёмкости хранилища записать нельзя.
+        static constexpr size_t NUMBER_ENTRY = 7;
+        static constexpr size_t STRING_ENTRY = 4 + NAME_LENGTH;
+        static constexpr size_t SAVE_MAX = KeyValueStore::CAPACITY;
         static constexpr uint8_t STORE_VERSION = 1;
         static constexpr const char* STORE_SPACE = "copter";
         static constexpr const char* STORE_KEY = "params";
@@ -1250,8 +1376,8 @@ namespace copter
         // Записать заданное руками (commit — за вызывающим).
         bool save(KeyValueStore& kv) const
         {
-            // ~7 КБ: не на стеке полётной задачи (save — только из неё, по одному)
-            static uint8_t blob[3 + PARAM_COUNT * PROFILES * (4 + NAME_LENGTH)];
+            // 2 КБ: не на стеке полётной задачи (save — только из неё, по одному)
+            static uint8_t blob[SAVE_MAX];
             size_t n = 0;
             blob[n++] = STORE_VERSION;
             blob[n++] = pidIndex;
@@ -1266,6 +1392,7 @@ namespace copter
                 for (uint8_t slot = 0; slot < slots; ++slot)
                 {
                     if (!isSet(id, slot)) continue;
+                    if (n + (info.type == ParamType::STRING ? STRING_ENTRY : NUMBER_ENTRY) > sizeof(blob)) return false;
                     any = true;
                     blob[n++] = static_cast<uint8_t>(h);
                     blob[n++] = static_cast<uint8_t>(h >> 8);
@@ -1518,4 +1645,32 @@ namespace copter
         uint8_t pidIndex = 0;
         uint8_t rateIndex = 0;
     };
+
+    static_assert(PARAM_OSD_GPS_LON_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
+    static_assert(PARAM_OSD_STAT_MIN_LINK_QUALITY - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
+    static_assert(PARAM_OSD_WARN_LINK_QUALITY - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
+
+    // Раскладка OSD из настроек osd_* (copter/Osd.h).
+    inline OsdLayout osdLayoutFrom(const CopterParams& p)
+    {
+        OsdLayout l;
+        for (uint8_t e = 0; e < OSD_ELEMENT_COUNT; ++e)
+        {
+            l.pos[e] = static_cast<uint16_t>(p.value(static_cast<ParamId>(PARAM_OSD_LINK_QUALITY_POS + e)));
+        }
+        l.stats = 0;
+        for (uint8_t s = 0; s < OSD_STAT_COUNT; ++s)
+        {
+            if (p.value(static_cast<ParamId>(PARAM_OSD_STAT_TIM_2 + s)) > 0.5f) l.stats = static_cast<uint16_t>(l.stats | (1u << s));
+        }
+        l.warnings = 0;
+        for (uint8_t w = 0; w < OSD_WARN_COUNT; ++w)
+        {
+            if (p.value(static_cast<ParamId>(PARAM_OSD_WARN_ARMING_DISABLE + w)) > 0.5f) l.warnings = static_cast<uint8_t>(l.warnings | (1u << w));
+        }
+        l.altAlarmM = static_cast<uint16_t>(p.value(PARAM_OSD_ALT_ALARM));
+        l.capAlarmMah = static_cast<uint16_t>(p.value(PARAM_OSD_CAP_ALARM));
+        l.linkQualityAlarm = static_cast<uint8_t>(p.value(PARAM_OSD_LINK_QUALITY_ALARM));
+        return l;
+    }
 }

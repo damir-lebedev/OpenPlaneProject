@@ -1577,6 +1577,27 @@ void test_params_set_get_bounds_and_enums()
     TEST_ASSERT_FALSE(p.isSet(PARAM_PROFILE_NAME, 1));
 }
 
+// Заданного больше, чем помещается в хранилище (2 КБ), — save отказывает, а не пишет за буфер.
+void test_params_save_refuses_overflow()
+{
+    RamFlash flash;
+    KeyValueStore kv(flash);
+    CopterParams p;
+    for (uint8_t i = 0; i < PARAM_COUNT; ++i)
+    {
+        const ParamId id = static_cast<ParamId>(i);
+        const ParamInfo& info = paramInfo(id);
+        if (info.type == ParamType::STRING) continue;
+        const uint8_t slots = info.scope == ParamScope::MASTER ? 1 : CopterParams::PROFILES;
+        for (uint8_t slot = 0; slot < slots; ++slot) p.setValue(id, slot, p.valueIn(id, slot) == info.min ? info.max : info.min);
+    }
+    TEST_ASSERT_FALSE(p.save(kv));
+    // обычный BF-diff (несколько десятков строк) помещается
+    CopterParams q;
+    for (uint8_t i = 0; i < 120; ++i) q.setValue(static_cast<ParamId>(i), 0, paramInfo(static_cast<ParamId>(i)).min);
+    TEST_ASSERT_TRUE(q.save(kv));
+}
+
 void test_params_survive_flash_and_skip_unknown()
 {
     RamFlash flash;
@@ -4718,27 +4739,192 @@ void test_osd_screen_layout()
     TEST_ASSERT_EQUAL_HEX8(osdsym::SAT_L, s.at(0, 24));
     TEST_ASSERT_TRUE(has(row(0), "12"));
     TEST_ASSERT_TRUE(has(row(1), "400MW"));
-    TEST_ASSERT_EQUAL_HEX8(osdsym::CROSSHAIR, s.at(8, 14));
-    TEST_ASSERT_EQUAL_HEX8(osdArrow(90), s.at(13, 1));
-    TEST_ASSERT_TRUE(has(row(13), "1.3KM"));
-    TEST_ASSERT_TRUE(has(row(13), "12"));
-    TEST_ASSERT_TRUE_MESSAGE(has(row(14), "25.2"), row(14).c_str());
-    TEST_ASSERT_TRUE(has(row(14), "4.20"));
-    TEST_ASSERT_TRUE(has(row(14), "02:13"));
-    TEST_ASSERT_TRUE(has(row(15), "12.3"));
-    TEST_ASSERT_TRUE(has(row(15), "1234"));
+    TEST_ASSERT_EQUAL_HEX8(osdsym::CROSSHAIR, s.at(6, 14));
+    TEST_ASSERT_EQUAL_HEX8(osdArrow(90), s.at(11, 1));
+    TEST_ASSERT_TRUE(has(row(11), "1.3KM"));
+    TEST_ASSERT_TRUE(has(row(11), "12"));
+    TEST_ASSERT_TRUE_MESSAGE(has(row(12), "25.2"), row(12).c_str());
+    TEST_ASSERT_TRUE(has(row(12), "4.20"));
+    TEST_ASSERT_TRUE(has(row(12), "02:13"));
+    TEST_ASSERT_TRUE(has(row(10), "12.3"));
+    TEST_ASSERT_TRUE(has(row(10), "1234"));
     // текст — заглавными (в шрифте только они; 0x60–0x6F — это стрелки)
     OsdScreen t;
     t.print(0, 0, "Angl");
     TEST_ASSERT_EQUAL_HEX8('A', t.at(0, 0));
     TEST_ASSERT_EQUAL_HEX8('N', t.at(0, 1));
 
-    // NTSC — 13 строк: низ экрана выше
+    // NTSC — 13 строк: умолчание BF в них помещается
     s.setRows(13);
     d.batteryState = 2;
     s.compose(d);
-    TEST_ASSERT_TRUE(has(row(11), "25.2"));
-    TEST_ASSERT_TRUE(has(row(8), "LOW BATTERY"));
+    TEST_ASSERT_TRUE(has(row(12), "25.2"));
+    TEST_ASSERT_TRUE(has(row(9), "LOW BATTERY"));
+}
+
+// Раскладка как в BF: osd_*_pos, видимость, NTSC, мигание тревог, выключенные предупреждения.
+void test_osd_layout_from_bf_positions()
+{
+    // кодировка позиции: x + 32·y, 0x0800 — показан, 0x0400 — шестой бит x
+    TEST_ASSERT_EQUAL_UINT16(2433, osdPos(1, 12));
+    TEST_ASSERT_EQUAL_UINT8(1, osdPosX(2433));
+    TEST_ASSERT_EQUAL_UINT8(12, osdPosY(2433));
+    TEST_ASSERT_TRUE(osdPosVisible(2433));
+    TEST_ASSERT_FALSE(osdPosVisible(385));
+    TEST_ASSERT_TRUE(osdPosVisible(385 | 0x1000));   // профиль 2 BF — тоже показан
+    TEST_ASSERT_EQUAL_UINT8(40, osdPosX(osdPos(40, 3)));
+
+    CopterParams p;
+    TEST_ASSERT_EQUAL_FLOAT(2433.0f, p.value(PARAM_OSD_VBAT_POS));               // умолчание BF
+    TEST_ASSERT_TRUE(p.setValue(PARAM_OSD_VBAT_POS, 0, 2090.0f));                // x10 y1, показан
+    TEST_ASSERT_TRUE(p.setValue(PARAM_OSD_CROSSHAIRS_POS, 0, 206.0f));           // спрятан
+    TEST_ASSERT_TRUE(p.setValue(PARAM_OSD_THROTTLE_POS, 0, 2145.0f));            // x1 y3 — включили
+    TEST_ASSERT_TRUE(p.setValue(PARAM_OSD_TIM_2_POS, 0, 2529.0f));               // y15 — на NTSC не видно
+    TEST_ASSERT_TRUE(p.setValue(PARAM_OSD_WARN_BATT_WARNING, 0, 0.0f));
+    TEST_ASSERT_TRUE(p.setValue(PARAM_OSD_ALT_ALARM, 0, 50.0f));
+    const OsdLayout l = osdLayoutFrom(p);
+    TEST_ASSERT_EQUAL_UINT16(2090, l.pos[OSD_MAIN_BATT_VOLTAGE]);
+    TEST_ASSERT_EQUAL_UINT16(50, l.altAlarmM);
+    TEST_ASSERT_FALSE(l.warn(OSD_WARN_BATT_WARNING));
+    TEST_ASSERT_TRUE(l.warn(OSD_WARN_BATT_CRITICAL));
+
+    OsdScreen s;
+    s.setRows(13);
+    OsdData d;
+    d.armed = true;
+    d.volts = 14.8f;
+    d.cellVolts = 3.7f;
+    d.throttle = 0.42f;
+    d.altitudeM = 60.0f;
+    d.flightSeconds = 75;
+    auto row = [&s](uint8_t r) {
+        std::string t;
+        for (uint8_t c = 0; c < OsdScreen::COLS; ++c) t += static_cast<char>(s.at(r, c));
+        return t;
+    };
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_TRUE_MESSAGE(has(row(1), "14.8"), row(1).c_str());
+    TEST_ASSERT_EQUAL_HEX8('1', s.at(1, 10));
+    TEST_ASSERT_FALSE(has(row(12), "14.8"));                 // старое место пусто
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(6, 14));                // прицел спрятан
+    TEST_ASSERT_EQUAL_HEX8(osdsym::THROTTLE, s.at(3, 1));
+    TEST_ASSERT_TRUE(has(row(3), "42"));
+    for (uint8_t r = 0; r < 13; ++r) TEST_ASSERT_FALSE(has(row(r), "01:15"));   // строка 15 — за краем NTSC
+    s.setRows(16);
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_TRUE(has(row(15), "01:15"));
+
+    // тревога высоты: выше osd_alt_alarm — мигает
+    TEST_ASSERT_EQUAL_HEX8(osdsym::ALTITUDE, s.at(11, 23));
+    d.blink = false;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(11, 23));
+    d.blink = true;
+
+    // предупреждения: LOW BATTERY выключено — не показывается, CRITICAL — да
+    d.batteryState = 2;
+    TEST_ASSERT_NULL(OsdScreen::warningText(d, l));
+    d.batteryState = 3;
+    TEST_ASSERT_EQUAL_STRING("BATT CRITICAL", OsdScreen::warningText(d, l));
+    // связь хуже osd_link_quality_alarm (80) — LINK QUALITY
+    d.batteryState = 1;
+    d.linkQuality = 60;
+    TEST_ASSERT_EQUAL_STRING("LINK QUALITY", OsdScreen::warningText(d, l));
+    // новые элементы: мощность, вариометр, координаты, имя
+    OsdLayout all;
+    for (uint8_t e = 0; e < OSD_ELEMENT_COUNT; ++e) all.pos[e] = static_cast<uint16_t>(all.pos[e] | OSD_VISIBLE);
+    d.hasCurrent = true;
+    d.amps = 10.0f;
+    d.climbMs = -1.25f;
+    d.gpsFix = true;
+    d.latitude = 55.7512345;
+    d.longitude = 37.6184321;
+    d.craftName = "Seven";
+    s.compose(d, all, nullptr);
+    TEST_ASSERT_TRUE_MESSAGE(has(row(10), "148"), row(10).c_str());        // 14.8 В × 10 А
+    TEST_ASSERT_TRUE(has(row(10), "-1.2"));
+    TEST_ASSERT_TRUE(has(row(3), "55.7512345"));
+    TEST_ASSERT_TRUE(has(row(4), "37.6184321"));
+    TEST_ASSERT_TRUE(has(row(12), "SEVEN"));
+}
+
+// Статистика после полёта: копится в ARM, показывается после DISARM, уходит по стику.
+void test_osd_stats_after_flight()
+{
+    OsdStats st;
+    OsdData d;
+    d.armed = true;
+    d.linkQuality = 100;
+    d.hasCurrent = true;
+    d.gpsFix = true;
+    d.home = true;
+    for (uint32_t i = 0; i < 100; ++i)
+    {
+        d.flightSeconds = i / 10;
+        d.altitudeM = static_cast<float>(i % 50);
+        d.speedKmh = static_cast<float>(i);
+        d.homeDistanceM = 3.0f * static_cast<float>(i);
+        d.volts = 16.0f - 0.02f * static_cast<float>(i);
+        d.amps = i == 50 ? 55.0f : 10.0f;
+        d.mahDrawn = 5.0f * static_cast<float>(i);
+        d.linkQuality = i == 70 ? 41 : 100;
+        st.update(d, i * 100);
+        TEST_ASSERT_FALSE(st.isShowing());
+    }
+    d.armed = false;
+    d.volts = 15.2f;
+    st.update(d, 10000);
+    TEST_ASSERT_TRUE(st.isShowing());
+    TEST_ASSERT_EQUAL_FLOAT(49.0f, st.maxAltM);
+    TEST_ASSERT_EQUAL_FLOAT(99.0f, st.maxSpeedKmh);
+    TEST_ASSERT_EQUAL_FLOAT(297.0f, st.maxDistM);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 14.02f, st.minVolts);
+    TEST_ASSERT_EQUAL_FLOAT(55.0f, st.maxAmps);
+    TEST_ASSERT_EQUAL_INT16(41, st.minLq);
+
+    OsdScreen s;
+    s.setRows(16);
+    OsdLayout l;
+    s.compose(d, l, &st);
+    auto screen = [&s]() {
+        std::string t;
+        for (uint8_t r = 0; r < 16; ++r)
+            for (uint8_t c = 0; c < OsdScreen::COLS; ++c) t += static_cast<char>(s.at(r, c));
+        return t;
+    };
+    TEST_ASSERT_TRUE(has(screen(), "--- STATS ---"));
+    TEST_ASSERT_TRUE(has(screen(), "MAX ALTITUDE"));
+    TEST_ASSERT_TRUE(has(screen(), "99KM/H"));
+    TEST_ASSERT_TRUE(has(screen(), "MIN LINK"));
+    TEST_ASSERT_FALSE(has(screen(), "END BATTERY"));   // osd_stat_endbatt выключена по умолчанию
+    l.stats = static_cast<uint16_t>(l.stats | (1u << OSD_STAT_END_BATT));
+    s.compose(d, l, &st);
+    TEST_ASSERT_TRUE(has(screen(), "15.2V"));
+
+    // газ вверх — обычный экран
+    d.exitStats = true;
+    st.update(d, 11000);
+    TEST_ASSERT_FALSE(st.isShowing());
+    // случайный ARM на столе короче секунды — без статистики
+    OsdStats bench;
+    OsdData b;
+    b.armed = true;
+    bench.update(b, 0);
+    b.armed = false;
+    bench.update(b, 500);
+    TEST_ASSERT_FALSE(bench.isShowing());
+    // новый полёт — всё заново; через минуту статистика уходит сама
+    d.exitStats = false;
+    d.armed = true;
+    d.flightSeconds = 5;
+    d.speedKmh = 7.0f;
+    st.update(d, 20000);
+    TEST_ASSERT_EQUAL_FLOAT(7.0f, st.maxSpeedKmh);
+    d.armed = false;
+    st.update(d, 21000);
+    TEST_ASSERT_TRUE(st.isShowing());
+    st.update(d, 21000 + OsdStats::SHOW_MS + 1);
+    TEST_ASSERT_FALSE(st.isShowing());
 }
 
 void test_osd_chip_driver()
@@ -4892,6 +5078,7 @@ int main()
     RUN_TEST(test_mode_names_and_settings);
     RUN_TEST(test_params_table_is_consistent);
     RUN_TEST(test_params_set_get_bounds_and_enums);
+    RUN_TEST(test_params_save_refuses_overflow);
     RUN_TEST(test_params_survive_flash_and_skip_unknown);
     RUN_TEST(test_pid_in_betaflight_units);
     RUN_TEST(test_betaflight_source_takes_bf_45_defaults);
@@ -4950,6 +5137,8 @@ int main()
     RUN_TEST(test_crsf_telemetry_frames);
     RUN_TEST(test_osd_arrows_and_warnings);
     RUN_TEST(test_osd_screen_layout);
+    RUN_TEST(test_osd_layout_from_bf_positions);
+    RUN_TEST(test_osd_stats_after_flight);
     RUN_TEST(test_osd_chip_driver);
     RUN_TEST(test_beeper_events_and_alarms);
     return UNITY_END();
