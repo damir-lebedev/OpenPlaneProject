@@ -544,13 +544,14 @@
 - **Тест:** test_copter_sim: старт под 30°, взлёт без кувырка
 - **UI:** «PID → дополнительно» + режим
 
-### [ ] 038 · Crash recovery
+### [x] 038 · Crash recovery
 - **BF:** `crash_recovery` (OFF/ON/BEEP/DISARM), `crash_dthreshold`, `crash_gthreshold`, `crash_setpoint_threshold`, `crash_time`, `crash_delay`, `crash_recovery_angle`, `crash_recovery_rate`, `crash_limit_yaw`
 - **Что:** удар в воздухе → выравнивание; DISARM — как наша защита (оставить и нашу).
 - **Сейчас:** переворот > 90° 0.7 с, на спине 1 с, потеря управления 30° 2 с, рысканье мимо уставки > 200 °/с 1.5 с (волчок на трёх моторах, с 017) → DISARM.
 - **Файлы:** copter/CopterController.h
 - **Тест:** test_copter_sim: удар (импульс момента) — выровнялся
 - **UI:** вкладка «Безопасность»
+- **Итог:** crash_recovery OFF/ON/BEEP/DISARM + 8 порогов BF (PID-профиль): моторы в упоре + скачок скорости + ошибка при спокойном стике → к горизонту, I в нуле, рысканье ≤ crash_limit_yaw, airmode; сим 5" на трёх физиках: кувырок 90–175° → ровно за 0.26–0.34 с, флип стиком не срабатывает; Studio — карточка на «Безопасности» (коммит ed8e3c8, studio 716c133)
 
 ### [ ] 039 · EZ landing
 - **BF:** `ez_landing_threshold`, `ez_landing_limit`, `ez_landing_speed`, `mixer_type = EZLANDING`
@@ -850,15 +851,17 @@
 
 ## 8. Пульт: сглаживание, приёмники, телеметрия, крутилки
 
-### [ ] 111 · RC smoothing как в BF
+### [x] 111 · RC smoothing как в BF
 - **BF:** `rc_smoothing`, `rc_smoothing_auto_factor`, `rc_smoothing_auto_factor_throttle`, `rc_smoothing_setpoint_cutoff`, `rc_smoothing_feedforward_cutoff`, `rc_smoothing_throttle_cutoff`
 - **Что:** частота кадров приёмника измеряется → частоты фильтров автоматически.
 - **Сейчас:** PT1 40 Гц на стиках.
 - **Файлы:** copter/CopterController.h, rc/RcReceiver.h · **Тест:** test_copter: 50/150/500 Гц кадров · **UI:** «Приёмник»: частота кадров и фильтры
+- **Итог:** copter/RcSmoothing.h: частота кадров меряется, PT3 на стиках и газе, срез = кадры × 1.5/(1 + factor/10) ≥ 15 Гц, пересчёт при уходе > 10 %; rc_smoothing, *_auto_factor(_throttle), *_setpoint/throttle_cutoff, CLI rc_smoothing_info, @live rxhz/rcsp/rcth; Studio — карточка с графиком ступенек и сглаженной кривой (коммит a281a70, studio c1f0f4b). rc_smoothing_feedforward_cutoff нет: у упреждения своё сглаживание (feedforward_smooth_factor)
 
-### [ ] 112 · Мёртвые зоны
+### [x] 112 · Мёртвые зоны
 - **BF:** `deadband`, `yaw_deadband`
 - **Файлы:** copter/CopterController.h · **Тест:** test_copter · **UI:** «Приёмник»
+- **Итог:** deadband, yaw_deadband (единицы BF, упор растянут до полного), в «Приёмнике» Studio (коммит a281a70)
 
 ### [ ] 113 · RSSI и качество связи
 - **BF:** `rssi_channel`, `rssi_scale`, `rssi_offset`, `rssi_src_frame_errors`, LQ CRSF
@@ -1023,9 +1026,10 @@
 
 ### [ ] 152 · OSD: стенд — Стенд: да
 
-### [ ] 153 · VTX: SmartAudio и Tramp
+### [x] 153 · VTX: SmartAudio и Tramp
 - **BF:** `vtx_band`, `vtx_channel`, `vtx_power`, `vtx_pit_mode_freq`, `vtxtable`, режим VTX PIT MODE
 - **Файлы:** новый telemetry/VtxControl.h · **Тест:** test_telemetry: кадры протоколов · **UI:** вкладка «Видео»
+- **Итог:** уже было: copter/Vtx.h — SmartAudio 1/2/2.1 и Tramp на эмуляторах (test_copter), vtx_band/channel/freq/power, потолок vtx_max_power_mw, PIT, таблица vtx с тумблера, vtx_info, Studio «Видео». vtxtable принимается из diff и не действует (мощности берутся у передатчика), vtx_pit_mode_freq нет
 
 ### [ ] 154 · Цифровое видео (DJI/Walksnail/HDZero) — MSP DisplayPort
 - **BF:** MSP DisplayPort OSD

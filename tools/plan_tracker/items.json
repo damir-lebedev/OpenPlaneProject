@@ -1359,7 +1359,7 @@
    "id": "038",
    "section": 3,
    "title": "Crash recovery",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -1369,6 +1369,7 @@
    "files": "copter/CopterController.h",
    "test": "test_copter_sim: удар (импульс момента) — выровнялся",
    "ui": "вкладка «Безопасность»",
+   "result": "crash_recovery OFF/ON/BEEP/DISARM + 8 порогов BF (PID-профиль): моторы в упоре + скачок скорости + ошибка при спокойном стике → к горизонту, I в нуле, рысканье ≤ crash_limit_yaw, airmode; сим 5\" на трёх физиках: кувырок 90–175° → ровно за 0.26–0.34 с, флип стиком не срабатывает; Studio — карточка на «Безопасности» (коммит ed8e3c8, studio 716c133)",
    "settings": [
     "crash_recovery",
     "crash_dthreshold",
@@ -2330,7 +2331,7 @@
    "id": "111",
    "section": 8,
    "title": "RC smoothing как в BF",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -2340,6 +2341,7 @@
    "files": "copter/CopterController.h, rc/RcReceiver.h",
    "test": "test_copter: 50/150/500 Гц кадров",
    "ui": "«Приёмник»: частота кадров и фильтры",
+   "result": "copter/RcSmoothing.h: частота кадров меряется, PT3 на стиках и газе, срез = кадры × 1.5/(1 + factor/10) ≥ 15 Гц, пересчёт при уходе > 10 %; rc_smoothing, *_auto_factor(_throttle), *_setpoint/throttle_cutoff, CLI rc_smoothing_info, @live rxhz/rcsp/rcth; Studio — карточка с графиком ступенек и сглаженной кривой (коммит a281a70, studio c1f0f4b). rc_smoothing_feedforward_cutoff нет: у упреждения своё сглаживание (feedforward_smooth_factor)",
    "settings": [
     "rc_smoothing",
     "rc_smoothing_auto_factor",
@@ -2354,7 +2356,7 @@
    "id": "112",
    "section": 8,
    "title": "Мёртвые зоны",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -2362,6 +2364,7 @@
    "files": "copter/CopterController.h",
    "test": "test_copter",
    "ui": "«Приёмник»",
+   "result": "deadband, yaw_deadband (единицы BF, упор растянут до полного), в «Приёмнике» Studio (коммит a281a70)",
    "settings": [
     "deadband",
     "yaw_deadband"
@@ -2978,7 +2981,7 @@
    "id": "153",
    "section": 11,
    "title": "VTX: SmartAudio и Tramp",
-   "fileStatus": "todo",
+   "fileStatus": "done",
    "bench": false,
    "repo": "firmware",
    "docs": false,
@@ -2986,6 +2989,7 @@
    "files": "новый telemetry/VtxControl.h",
    "test": "test_telemetry: кадры протоколов",
    "ui": "вкладка «Видео»",
+   "result": "уже было: copter/Vtx.h — SmartAudio 1/2/2.1 и Tramp на эмуляторах (test_copter), vtx_band/channel/freq/power, потолок vtx_max_power_mw, PIT, таблица vtx с тумблера, vtx_info, Studio «Видео». vtxtable принимается из diff и не действует (мощности берутся у передатчика), vtx_pit_mode_freq нет",
    "settings": [
     "vtx_band",
     "vtx_channel",
