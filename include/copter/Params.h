@@ -311,6 +311,15 @@ namespace copter
         PARAM_GPS_RESCUE_VELOCITY_P,
         PARAM_GPS_RESCUE_VELOCITY_I,
         PARAM_GPS_RESCUE_VELOCITY_D,
+        PARAM_CRASH_RECOVERY,
+        PARAM_CRASH_DTHRESHOLD,
+        PARAM_CRASH_GTHRESHOLD,
+        PARAM_CRASH_SETPOINT_THRESHOLD,
+        PARAM_CRASH_TIME,
+        PARAM_CRASH_DELAY,
+        PARAM_CRASH_RECOVERY_ANGLE,
+        PARAM_CRASH_RECOVERY_RATE,
+        PARAM_CRASH_LIMIT_YAW,
         // OSD: по порядку OsdElement, OsdStat, OsdWarn (copter/Osd.h)
         PARAM_OSD_LINK_QUALITY_POS,
         PARAM_OSD_FLYMODE_POS,
@@ -398,6 +407,7 @@ namespace copter
         // порядок — как RescueAltMode и RescueSanity (GpsRescue.h) и в BF
         static const char* const RESCUE_ALT_MODES[] = { "MAX_ALT", "FIXED_ALT", "CURRENT_ALT" };
         static const char* const RESCUE_SANITY[] = { "OFF", "ON", "FS_ONLY" };
+        static const char* const CRASH_RECOVERY[] = { "OFF", "ON", "BEEP", "DISARM" };   // как CrashRecovery
         uint8_t buildCount = 0;
         const char* const* builds = buildIds(buildCount);
         constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
@@ -713,6 +723,24 @@ namespace copter
               "скорость домой: I (ветер в лоб)" },
             { "gps_rescue_velocity_d", kInt, kMaster, kGroupGps, 0, 200, 12, kTable, "", nullptr, 0,
               "скорость домой: D" },
+            { "crash_recovery", kEnum, kPid, kGroupSafety, 0, 3, 0, kTable, "", CRASH_RECOVERY, 4,
+              "удар в воздухе в ACRO/HORIZON: ON — выровняться, BEEP — и пищать, DISARM — моторы стоп" },
+            { "crash_dthreshold", kInt, kPid, kGroupSafety, 10, 2000, 50, kTable, "", nullptr, 0,
+              "удар — скачок скорости вращения больше стольких тысяч °/с²" },
+            { "crash_gthreshold", kInt, kPid, kGroupSafety, 100, 2000, 400, kTable, "°/с", nullptr, 0,
+              "и гироскоп разошёлся с уставкой больше чем на столько" },
+            { "crash_setpoint_threshold", kInt, kPid, kGroupSafety, 50, 2000, 350, kTable, "°/с", nullptr, 0,
+              "стик просит вращение быстрее — это не удар, а манёвр" },
+            { "crash_time", kInt, kPid, kGroupSafety, 100, 5000, 500, kTable, "мс", nullptr, 0,
+              "дольше не выровнялся — управление пилоту" },
+            { "crash_delay", kInt, kPid, kGroupSafety, 0, 500, 0, kTable, "мс", nullptr, 0,
+              "выравнивать не меньше стольких" },
+            { "crash_recovery_angle", kInt, kPid, kGroupSafety, 5, 30, 10, kTable, "°", nullptr, 0,
+              "ровно — наклон меньше" },
+            { "crash_recovery_rate", kInt, kPid, kGroupSafety, 50, 255, 100, kTable, "°/с", nullptr, 0,
+              "и вращение медленнее" },
+            { "crash_limit_yaw", kInt, kPid, kGroupSafety, 0, 1000, 200, kTable, "°/с", nullptr, 0,
+              "рысканье при выравнивании не быстрее" },
             { "osd_link_quality_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2049, kTable, "", nullptr, 0,
               "OSD: качество связи (LQ), % — x + 32·y, +2048 — показан" },
             { "osd_flymode_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2061, kTable, "", nullptr, 0,
@@ -1348,6 +1376,15 @@ namespace copter
             t.pid.acroTrainerLimitDeg = valueIn(PARAM_ACRO_TRAINER_ANGLE_LIMIT, pidIndex);
             t.pid.acroTrainerLookaheadS = valueIn(PARAM_ACRO_TRAINER_LOOKAHEAD_MS, pidIndex) / 1000.0f;
             t.pid.acroTrainerGain = valueIn(PARAM_ACRO_TRAINER_GAIN, pidIndex) / 10.0f;
+            t.pid.crashRecovery = static_cast<CrashRecovery>(static_cast<uint8_t>(valueIn(PARAM_CRASH_RECOVERY, pidIndex)));
+            t.pid.crashDThreshold = valueIn(PARAM_CRASH_DTHRESHOLD, pidIndex) * 1000.0f;
+            t.pid.crashGThreshold = valueIn(PARAM_CRASH_GTHRESHOLD, pidIndex);
+            t.pid.crashSetpointThreshold = valueIn(PARAM_CRASH_SETPOINT_THRESHOLD, pidIndex);
+            t.pid.crashTimeS = valueIn(PARAM_CRASH_TIME, pidIndex) / 1000.0f;
+            t.pid.crashDelayS = valueIn(PARAM_CRASH_DELAY, pidIndex) / 1000.0f;
+            t.pid.crashRecoveryAngleDeg = valueIn(PARAM_CRASH_RECOVERY_ANGLE, pidIndex);
+            t.pid.crashRecoveryRate = valueIn(PARAM_CRASH_RECOVERY_RATE, pidIndex);
+            t.pid.crashLimitYaw = valueIn(PARAM_CRASH_LIMIT_YAW, pidIndex);
             return t;
         }
 

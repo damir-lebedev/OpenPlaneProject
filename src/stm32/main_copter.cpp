@@ -386,6 +386,8 @@ static void updateBeeper()
     in.batteryWarning = armed && battery.alertState() == copter::BatteryState::WARNING;     // use_vbat_alerts
     in.batteryCritical = armed && battery.alertState() == copter::BatteryState::CRITICAL;
     in.failsafe = copterController.getStatus().state == copter::CopterState::FAILSAFE;
+    in.crashRecovery = copterController.getStatus().crashRecovery &&
+                       copterController.getTune().pid.crashRecovery == copter::CrashRecovery::BEEP;
     in.findMe = rxInput.isActive(copter::BOX_BEEPER);
     in.muted = rxInput.isActive(copter::BOX_BEEPER_MUTE);
     const bool on = beeper.tick(in);

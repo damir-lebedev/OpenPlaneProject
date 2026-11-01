@@ -1044,6 +1044,81 @@ void test_absolute_control_holds_attitude_against_torque()
     }
 }
 
+// 038: crash recovery — ACRO, висит; 10 мс на раму давит момент вдвое сильнее
+// всей управляемости (задели ветку, столкнулись в воздухе): кувырок до 90–175°. Без восстановления
+// ACRO держит тот угол, на котором удар кончился; с crash_recovery = ON
+// коптер сам выравнивается и отдаёт управление. Полный флип стиком — не удар.
+void test_crash_recovery_levels_after_a_hit()
+{
+    const QuadPerturb ps[] = { QuadPerturb(), sluggish(), twitchy() };
+    const char* names[] = { "nominal", "sluggish", "twitchy" };
+    for (uint8_t k = 0; k < 3; ++k)
+    {
+        double tilt[2] = {}, peak[2] = {}, levelAt = -1;
+        bool recovered[2] = {};
+        for (uint8_t on = 0; on < 2; ++on)
+        {
+            CopterTune t = fiveTune();
+            t.pid.crashRecovery = on ? CrashRecovery::ON : CrashRecovery::OFF;
+            QuadHarness h(five(), ps[k], 38);
+            h.useTune(t);
+            hoverInAcro(h, 20.0);
+            h.sim.setDisturbance(2.0 * t.kRoll, 1.0 * t.kPitch, 0.0);
+            for (int i = 0; i < 10; ++i) h.step();
+            h.sim.setDisturbance(0.0, 0.0, 0.0);
+            for (int i = 0; i < 1500; ++i)
+            {
+                h.step();
+                peak[on] = std::fmax(peak[on], h.sim.tiltDeg());
+                recovered[on] = recovered[on] || h.ctl.getStatus().crashRecovery;
+                if (on && levelAt < 0 && recovered[on] && !h.ctl.getStatus().crashRecovery) levelAt = (i + 1) * 0.001;
+            }
+            tilt[on] = h.sim.tiltDeg();
+            TEST_ASSERT_TRUE(h.ctl.isArmed());
+        }
+        char line[220];
+        snprintf(line, sizeof(line), "crash recovery 5\" %-8s: tilt after 1.5 s %.1f deg (off %.1f), peak %.0f / %.0f deg, back to pilot at %.2f s",
+                 names[k], tilt[1], tilt[0], peak[1], peak[0], levelAt);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(recovered[1] && !recovered[0], line);
+        TEST_ASSERT_TRUE_MESSAGE(tilt[1] < 10.0 && tilt[0] > 30.0, line);
+        TEST_ASSERT_TRUE_MESSAGE(levelAt > 0.0 && levelAt < 0.6, line);
+    }
+
+    // флип полным стиком с crash_recovery = ON: восстановление не включается
+    CopterTune t = fiveTune();
+    t.pid.crashRecovery = CrashRecovery::ON;
+    QuadHarness h(five(), QuadPerturb(), 38);
+    h.useTune(t);
+    hoverInAcro(h, 20.0);
+    h.rc.roll = 1.0f;
+    bool falseHit = false;
+    for (int i = 0; i < 400; ++i)
+    {
+        h.step();
+        falseHit = falseHit || h.ctl.getStatus().crashRecovery;
+    }
+    h.rc.roll = 0.0f;
+    for (int i = 0; i < 300; ++i)
+    {
+        h.step();
+        falseHit = falseHit || h.ctl.getStatus().crashRecovery;
+    }
+    TEST_ASSERT_FALSE_MESSAGE(falseHit, "flip by stick taken for a crash");
+
+    // crash_recovery = DISARM — моторы стоп по удару
+    CopterTune td = fiveTune();
+    td.pid.crashRecovery = CrashRecovery::DISARM;
+    QuadHarness hd(five(), QuadPerturb(), 38);
+    hd.useTune(td);
+    hoverInAcro(hd, 20.0);
+    hd.sim.setDisturbance(3.0 * td.kRoll, 0.0, 0.0);
+    for (int i = 0; i < 12; ++i) hd.step();
+    hd.sim.setDisturbance(0.0, 0.0, 0.0);
+    TEST_ASSERT_FALSE(hd.ctl.isArmed());
+    TEST_ASSERT_TRUE(hd.ctl.getStatus().crashed);
+}
+
 // Runaway takeoff: два мотора на чужих выходах (провода перепутаны) —
 // на газе коптер кувыркается, DISARM меньше чем за 1 с, ARM — после
 // выключения тумблера. Без защиты runaway её DISARM не срабатывает.
@@ -1553,6 +1628,7 @@ int main()
     RUN_TEST(test_feedforward_max_rate_limit_on_a_full_stick_flip);
     RUN_TEST(test_integrated_yaw_on_big_hexa);
     RUN_TEST(test_absolute_control_holds_attitude_against_torque);
+    RUN_TEST(test_crash_recovery_levels_after_a_hit);
     RUN_TEST(test_runaway_takeoff_disarms_on_wrong_motor_wiring);
     RUN_TEST(test_failsafe_stage1_holds_altitude_then_stage2_descends);
     RUN_TEST(test_failsafe_stage1_rxfail_hold);

@@ -177,6 +177,9 @@ namespace copter
 
     // iterm_relax: на каких осях интеграл придерживается при резком движении
     // уставки; *_INC — только пока интеграл растёт (уменьшаться может всегда).
+    // crash_recovery: что делать при ударе в воздухе (номера — как в BF)
+    enum class CrashRecovery : uint8_t { OFF, ON, BEEP, DISARM };
+
     enum class ItermRelax : uint8_t
     {
         OFF,
@@ -254,6 +257,17 @@ namespace copter
         float acroTrainerLimitDeg = 20.0f;   // acro_trainer_angle_limit
         float acroTrainerLookaheadS = 0.05f; // acro_trainer_lookahead_ms: упреждение по скорости вращения
         float acroTrainerGain = 7.5f;        // acro_trainer_gain / 10: (°/с) на градус за пределом
+        // crash recovery как в BF: удар в ACRO/HORIZON (моторы в упоре, гироскоп
+        // скачком, а стик спокоен) — выровняться, потом управление пилоту
+        CrashRecovery crashRecovery = CrashRecovery::OFF;
+        float crashDThreshold = 50000.0f;    // crash_dthreshold × 1000: скачок скорости, °/с²
+        float crashGThreshold = 400.0f;      // crash_gthreshold: уставка и гироскоп разошлись, °/с
+        float crashSetpointThreshold = 350.0f; // crash_setpoint_threshold: стик быстрее — это не удар
+        float crashTimeS = 0.5f;             // crash_time: дольше не выравнивает — управление пилоту
+        float crashDelayS = 0.0f;            // crash_delay: столько выравнивает в любом случае
+        float crashRecoveryAngleDeg = 10.0f; // crash_recovery_angle: ровно, если наклон меньше
+        float crashRecoveryRate = 100.0f;    // crash_recovery_rate: и вращение меньше, °/с
+        float crashLimitYaw = 200.0f;        // crash_limit_yaw: рысканье при выравнивании, °/с
     };
 
     struct CopterTune

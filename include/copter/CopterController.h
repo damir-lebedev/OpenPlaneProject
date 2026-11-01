@@ -325,6 +325,7 @@ namespace copter
         bool airborne = false;
         bool saturated = false;
         bool crashed = false;
+        bool crashRecovery = false;    // удар в воздухе — выравнивается (crash_recovery)
         bool runaway = false;          // DISARM защитой runaway takeoff (до выключения тумблера)
         bool runawayCheck = false;     // проверка runaway takeoff ещё работает (после ARM, до уверенного взлёта)
         uint8_t failsafeStage = 0;     // 0 — нет, 1 — ровно и держит высоту, 2 — процедура
@@ -577,6 +578,12 @@ namespace copter
                                       stickLpf[2].apply(rc.yaw), stickLpf[3].apply(rc.throttle) };
             float sp[3], stickSp[3];
             rateSetpoints(mode, sticks, sp, stickSp, rc.acroTrainer, rescuing ? &rescueCmd : nullptr);
+            if (!crashRecovery(mode, sp, rates))
+            {
+                out = CopterOutputs();   // crash_recovery = DISARM
+                out.count = tune.frame.count;
+                return out;
+            }
             const float raw[3] = { rc.roll, rc.pitch, rc.yaw };
             for (uint8_t a = 0; a < 3; ++a)
             {
@@ -687,12 +694,14 @@ namespace copter
             mi.roll = axes[0].update(sp[0], rates[0], tpa, iBoost, holdI, status.saturated, pBoost);
             mi.pitch = axes[1].update(sp[1], rates[1], tpa, iBoost, holdI, status.saturated, pBoost);
             mi.yaw = axes[2].update(sp[2], rates[2], 1.0f, iBoost, holdI, status.saturated);
-            if (holdI)
+            // на земле — и при выравнивании после удара (как в BF: накопленное
+            // за кувырок потом докручивало бы раму мимо горизонта)
+            if (holdI || status.crashRecovery)
             {
                 for (auto& ax : axes) ax.resetIntegral();
             }
 
-            mixer.setAirmode(set.airmode || rc.airmode);
+            mixer.setAirmode(set.airmode || rc.airmode || status.crashRecovery);
             const MixResult mr = mixer.mix(tune.frame, mi);
             status.saturated = mr.saturated;
             status.throttle = thrust;
@@ -866,6 +875,8 @@ namespace copter
             failsafeTimer = 0.0f;
             landingTimer = 0.0f;
             crashTimer = 0.0f;
+            status.crashRecovery = false;
+            crashPrevValid = false;
             lostControlTimer = 0.0f;
             yawLostTimer = 0.0f;
             levelErrorDeg = 0.0f;
@@ -1094,6 +1105,62 @@ namespace copter
             }
         }
 
+        // Crash recovery (как в BF): в ACRO и HORIZON в воздухе удар — моторы в
+        // упоре, скорость по крену или тангажу скачком (crash_dthreshold) и
+        // разошлась с уставкой (crash_gthreshold), а стик спокоен
+        // (crash_setpoint_threshold). Тогда уставка — к горизонту, рысканье не
+        // быстрее crash_limit_yaw, I в нуле, airmode; ровно и спокойно (после
+        // crash_delay) или прошло crash_time — управление пилоту. DISARM —
+        // моторы стоп сразу. false — разоружился.
+        bool crashRecovery(CopterMode mode, float sp[3], const float r[3])
+        {
+            const PidExtras& px = tune.pid;
+            float jump[2];
+            for (uint8_t a = 0; a < 2; ++a)
+            {
+                jump[a] = crashPrevValid ? fabsf(r[a] - crashPrevRate[a]) / dt : 0.0f;
+                crashPrevRate[a] = r[a];
+            }
+            crashPrevValid = true;
+            const bool allowed = px.crashRecovery != CrashRecovery::OFF && status.airborne &&
+                                 (mode == CopterMode::ACRO || mode == CopterMode::HORIZON);
+            if (!allowed)
+            {
+                status.crashRecovery = false;
+                return true;
+            }
+            if (!status.crashRecovery)
+            {
+                if (!status.saturated) return true;
+                bool hit = false;
+                for (uint8_t a = 0; a < 2; ++a)
+                {
+                    hit = hit || (jump[a] > px.crashDThreshold && fabsf(sp[a] - r[a]) > px.crashGThreshold &&
+                                  fabsf(sp[a]) < px.crashSetpointThreshold);
+                }
+                if (!hit) return true;
+                if (px.crashRecovery == CrashRecovery::DISARM)
+                {
+                    status.crashed = true;
+                    forcedDisarm();
+                    return false;
+                }
+                status.crashRecovery = true;
+                crashRecoveryTimer = 0.0f;
+            }
+            crashRecoveryTimer += dt;
+            float level[3];
+            levelTo(0.0f, 0.0f, attitude.upBody(), level);
+            const float cap = 0.9f * tune.rates[0].maxDps;
+            sp[0] = fminf(cap, fmaxf(-cap, level[0]));
+            sp[1] = fminf(cap, fmaxf(-cap, level[1]));
+            sp[2] = fminf(px.crashLimitYaw, fmaxf(-px.crashLimitYaw, sp[2]));
+            const bool calm = !status.saturated && fabsf(r[0]) < px.crashRecoveryRate && fabsf(r[1]) < px.crashRecoveryRate &&
+                              attitude.tiltDeg() < px.crashRecoveryAngleDeg;
+            if ((calm && crashRecoveryTimer >= px.crashDelayS) || crashRecoveryTimer >= px.crashTimeS) status.crashRecovery = false;
+            return true;
+        }
+
         // Сел: тяга заметно меньше висения, а коптер не падает и не крутится.
         // Интеграл снова держится (не накручивается о землю), в failsafe — DISARM.
         void checkLanded(float thrust)
@@ -1318,6 +1385,9 @@ namespace copter
         float landingTimer = 0.0f;
         float crashTimer = 0.0f;
         float lostControlTimer = 0.0f;
+        float crashPrevRate[2] = {};
+        bool crashPrevValid = false;
+        float crashRecoveryTimer = 0.0f;
         float yawLostTimer = 0.0f;
         float levelErrorDeg = 0.0f;
         float baroHome = 0.0f;
