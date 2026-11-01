@@ -15,51 +15,18 @@ Betaflight одной кнопкой → без пропеллеров пров�
 
 ---
 
-## 0. Недоделано в прошлом чате (рабочее дерево, НЕ закоммичено)
+## 0. Недоделано в прошлом чате — закрыто 2026-11-01
 
-`git status` в `plane`: изменены Config.h, CopterController.h, GpsHome.h,
-Params.h, RcSetup.h, SensorSelection.h, AppLink.h, BlackBoxCore.h,
-BlackBoxFormat.h, BlackBoxRing.h, CopterLink.h, src/stm32/main.cpp,
-main_copter.cpp, QuadHarness.h, test_copter, test_copter_sim, blackbox.py,
-opconfig.py, test_opconfig.py; новые — copter/GpsRescue.h,
-hal/stm32/Stm32Camera.h, sensors/camera/Ov5640.h, telemetry/CameraStream.h,
-test/native/test_camera/. В нём два независимых куска — коммитить раздельно.
+### 0.1 GPS Rescue — ГОТОВО
 
-### 0.1 GPS Rescue (пункты PLAN_COPTER 129, 133–136) — код готов, осталось довести
-
-Сделано: `copter/GpsRescue.h` (этапы CLIMB → FLY_HOME → DESCEND → LAND, ABORT;
-MAX_ALT/FIXED_ALT/CURRENT_ALT; проверки FS_ONLY/ON: нет GPS 2 с, мало
-спутников, не приближается 15 с, улетает +50 м → посадка на месте вместо
-DISARM у BF; без компаса — 1 с прямо, поправка курса гироскопа по курсу GPS,
-потом медленная подстройка на прямых; посадка с удержанием точки и интегралом
-крена против ветра, у земли (<1 м) — ровно). В контроллере: `CopterSensors.gps`
-(GpsInput), `CopterRc.gpsRescue` (режим BF 46 с тумблера), `CopterSettings.rescue`,
-`status.rescuePhase/rescueFail/rescueHeadingFix`, ARM-блок `GPS` при
-failsafe_procedure = GPS-RESCUE без фикса (gps_rescue_allow_arming_without_fix),
-failsafe_landing_time не считает полёт домой. 17 настроек `gps_rescue_*` (группа
-gps), `@live` → `"rescue"`, main_copter заполняет GpsInput (`fillGps`,
-`GpsHome::offsetFromHome`). Харнесс: модель GPS (`h.gpsOn`, `h.compass`,
-`h.gpsLost`, 10 Гц, шум 0.4 м, дом при ARM).
-
-Проверено: test_copter 115/115 (юнит-тесты `test_gps_rescue_logic`,
-`test_gps_rescue_params`); новые сим-тесты по отдельности зелёные: с 150 м при
-боковом ветре 4 м/с — сел в 3 м от дома за 56 с; без компаса с ошибкой курса
-70° — в 2.4 м; потеря GPS → GPS_LOST, посадка на месте; режим с тумблера.
-
-Осталось:
-1. Полный прогон: `pio test -e native -f native/test_copter -f native/test_copter_sim`
-   (crosswind-тест теперь на трёх физиках — nominal/sluggish/twitchy — ещё не гонялся),
-   `pio test -e native-stm32 -f native_stm32/test_app_stm32_copter`, сборки
-   `aocodarc-f405v3-quad matek-h743-quad stm32h743-devebox-quad`.
-2. Строки `gps_rescue_*` в таблицу «Настройки» docs/COPTER.md, раздел «GPS
-   Rescue» там же; PLAN_COPTER: 129, 133, 134, 135, 136 → [x] с «Итог»
-   (130/131/132 — отдельно: оценка положения GPS+акселерометр, компас, POSHOLD
-   ещё не сделаны), `python tools/plan_to_json.py`.
-3. Коммит кода (include/copter, src/stm32/main_copter.cpp, test/native/helpers,
-   test_copter, test_copter_sim, include/telemetry/CopterLink.h), затем коммит плана.
-4. Studio: вкладка «GPS» показывает настройки сама (группа gps); добавить на
-   «Безопасность» подсказку выбрать failsafe_procedure = GPS-RESCUE для 7" и
-   статус возврата из `@live.rescue` на «Подготовке».
+Прошивка — коммит 9642998 (тесты: test_copter, сим на трёх физиках,
+test_app_stm32_copter, сборки F405/Matek H743/DevEBox); план 129, 133–136 —
+[x]. Плюс к сделанному: OSD показывает режим RESC и предупреждение RESCUE
+FAIL, пульт — режим RTH. Studio e94b45a: вкладка «GPS» — схема возврата по
+настройкам (или по живым расстоянию и высоте) с оценкой времени, этап
+возврата из `@live.rescue`, подсказки выбрать GPS-RESCUE на «Безопасности»
+и «GPS», режим 46 среди главных в «Режимах». Документация — раздел «GPS
+Rescue» в docs/COPTER.md и строки `gps_rescue_*` в «Настройках».
 
 ### 0.2 Камера OV5640 на DevEBox H743 (просьба пользователя) — прошивка готова, железо пострадало
 
@@ -109,6 +76,12 @@ RST. С новым модулем: консоль `cam diag` (такты, PWDN, 
    или README (камера DevEBox, распиновка J6), docs/TESTING.md (test_camera).
 5. Коммит прошивки и Studio раздельно, push.
 
+**Статус 2026-11-01:** прошивка — коммит 131237b (п. 1, 2, 4 сделаны:
+сборки devebox/matek-h743/stm32h743/esp32-s3 зелёные, с камерой — тоже;
+docs/BLACKBOX.md и TESTING.md). **Отложено** до нового модуля (к MVP дрона
+не относится): Studio-часть (п. 3) и 5 строк прошивки без перевода в
+en.firmware.json (i18n_check покажет).
+
 ---
 
 ## 1. Сделано в прошлом чате (для ориентира)
@@ -133,7 +106,7 @@ RST. С новым модулем: консоль `cam diag` (такты, PWDN, 
 
 | # | Что | Пункты PLAN_COPTER | Зачем для MVP |
 |---|---|---|---|
-| 1 | GPS Rescue — довести и закоммитить | 0.1 выше | 7" дальнобой: связь пропала — домой |
+| 1 | ~~GPS Rescue — довести и закоммитить~~ ГОТОВО | 0.1 выше | 7" дальнобой: связь пропала — домой |
 | 2 | OSD на AT7456E (MAX7456) по SPI: драйвер, шрифт, элементы полёта, батарея, предупреждения, стрелка домой | 145–150 | на GETFUN аналоговое видео: без OSD летать вслепую по батарее |
 | 3 | VTX SmartAudio/Tramp — проверить, что сделано в copter/Vtx.h, довести до пункта | 153 | мощность с тумблера, потолок 25 мВт |
 | 4 | Crash recovery | 038 | удар в воздухе — выровняться |

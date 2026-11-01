@@ -911,10 +911,11 @@
 - **Сейчас:** свой ALT_HOLD (VerticalEstimator + AltitudeController, обучение висения).
 - **Файлы:** copter/AltitudeHold.h, copter/Params.h · **Тест:** test_copter_sim · **UI:** вкладка «Автопилот»
 
-### [ ] 129 · GPS для коптера
+### [x] 129 · GPS для коптера
 - **BF:** `gps_provider`, `gps_sbas_mode`, `gps_auto_config`, `gps_set_home_point_once`, `gps_use_3d_speed`
 - **Что:** подключить существующий UbloxM10 к коптеру, дом при ARM.
 - **Файлы:** src/stm32/main_copter.cpp, sensors/gps/* · **Тест:** test_app_stm32_copter с NAV-PVT · **UI:** вкладка «GPS»: карта, спутники
+- **Итог:** GpsInput в контроллере (фикс, спутники, смещение от дома, скорость, курс), main_copter fillGps; дом при ARM, gps_minimum_sats; UbloxM10 уже стоял (коммит 9642998)
 
 ### [ ] 130 · Оценка положения и скорости (GPS + акселерометр)
 - **BF:** основа POSHOLD/RESCUE
@@ -928,21 +929,25 @@
 - **BF:** режим POSHOLD, `pos_hold_adjust_rate`, `pos_hold_deadband`, `pos_hold_without_mag`
 - **Файлы:** новый copter/PositionHold.h · **Тест:** test_copter_sim: ветер 5 м/с — дрейф < 2 м · **UI:** «Автопилот»
 
-### [ ] 133 · GPS Rescue: набор высоты и разворот
+### [x] 133 · GPS Rescue: набор высоты и разворот
 - **BF:** `gps_rescue_min_start_dist`, `gps_rescue_alt_mode`, `gps_rescue_initial_climb`, `gps_rescue_ascend_rate`, `gps_rescue_return_alt`
 - **Файлы:** новый copter/GpsRescue.h · **Тест:** test_copter_sim · **UI:** вкладка «Возврат»
+- **Итог:** copter/GpsRescue.h: CLIMB с разворотом носа, MAX_ALT/FIXED_ALT/CURRENT_ALT, min_start_dist — сразу посадка (коммит 9642998)
 
-### [ ] 134 · GPS Rescue: полёт домой
+### [x] 134 · GPS Rescue: полёт домой
 - **BF:** `gps_rescue_ground_speed`, `gps_rescue_max_angle`, `gps_rescue_roll_mix`, `gps_rescue_pitch_cutoff`, `gps_rescue_yaw_p`, `gps_rescue_velocity_p/i/d`, `gps_rescue_use_mag`
 - **Файлы:** copter/GpsRescue.h · **Тест:** test_copter_sim: с 300 м домой при ветре · **UI:** «Возврат»
+- **Итог:** FLY_HOME: нос на дом (yaw_p), PID скорости по земле velocity_p/i/d, крен гасит снос, max_angle; без компаса — курс по GPS; сим: 150 м при боковом ветре 4 м/с на трёх физиках (коммит 9642998)
 
-### [ ] 135 · GPS Rescue: снижение и посадка
+### [x] 135 · GPS Rescue: снижение и посадка
 - **BF:** `gps_rescue_descent_dist`, `gps_rescue_descend_rate`, `gps_rescue_landing_alt`, `gps_rescue_disarm_threshold`, `gps_rescue_throttle_min/max/hover`, `gps_rescue_throttle_p/i/d`
 - **Файлы:** copter/GpsRescue.h · **Тест:** test_copter_sim: посадка в 5 м от дома · **UI:** «Возврат»
+- **Итог:** DESCEND (высота линейно к landing_alt у дома) и LAND с удержанием точки, ниже landing_alt — вдвое медленнее, касание — DISARM; сим: сел в 3 м от дома (коммит 9642998)
 
-### [ ] 136 · GPS Rescue: проверки
+### [x] 136 · GPS Rescue: проверки
 - **BF:** `gps_rescue_sanity_checks`, `gps_rescue_min_sats`, `gps_rescue_allow_arming_without_fix`, режим GPS RESCUE
 - **Файлы:** copter/GpsRescue.h, copter/CopterController.h · **Тест:** test_copter_sim: потеря GPS в пути → посадка · **UI:** «Возврат»
+- **Итог:** sanity_checks OFF/ON/FS_ONLY: GPS 2 с, min_sats, нет приближения 15 с, улёт +50 м → посадка на месте (у BF — DISARM); ARM-блок GPS без фикса; режим 46 с тумблера; OSD RESC/RESCUE FAIL, CRSF RTH (коммит 9642998)
 
 ---
 
