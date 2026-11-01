@@ -1,3 +1,12 @@
+<!-- download:start -->
+<p align="center">
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="ダウンロード Windows"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="ダウンロード macOS Apple Silicon"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="ダウンロード macOS Intel"></a>
+</p>
+<p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — 設定・書き込み・飛行まで：固定翼とマルチコプター（Betaflight から移行するボードも）。インストーラーはオフラインで動作し、必要なものはすべて同梱。</a></p>
+<!-- download:end -->
+
 <!-- i18n-bar:start -->
   <p align="center">
     <a href="../../../README.md"><img src="../../images/flags/ru.svg" width="20" height="20" align="absmiddle" alt="🇷🇺"> Читать на русском</a>

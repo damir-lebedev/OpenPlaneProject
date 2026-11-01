@@ -1,3 +1,12 @@
+<!-- download:start -->
+<p align="center">
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Скачать Windows"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="Скачать macOS Apple Silicon"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Скачать macOS Intel"></a>
+</p>
+<p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — настроить, прошить и полететь: самолёт и коптер (в том числе плату из-под Betaflight). Установщик работает без интернета — всё нужное внутри.</a></p>
+<!-- download:end -->
+
 <!-- i18n-bar:start -->
   <p align="center">
     <img src="docs/images/flags/ru.svg" width="20" height="20" align="absmiddle" alt="🇷🇺"> <b>Читать на русском</b>
@@ -266,7 +275,7 @@ flowchart LR
 
 ## 🚀 Быстрый старт
 
-Проще всего — **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**: приложение для Windows настраивает плату под ваш самолёт по шагам, собирает прошивку и прошивает её одной кнопкой, а потом помогает наладить всё на земле по живым данным с платы. Из командной строки:
+Проще всего — **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)** ([скачать](https://github.com/damir-lebedev/openplane-studio/releases/latest)): приложение для Windows и macOS настраивает плату под ваш самолёт по шагам, собирает прошивку и прошивает её одной кнопкой, а потом помогает наладить всё на земле по живым данным с платы. Из командной строки:
 
 ```bash
 pip install platformio
@@ -324,6 +333,7 @@ DevEBox: на плате нет кнопки BOOT0 — перед первой �
 - [x] Готовый полётник Matek H743-WING V3: датчики на плате, прошивка одной кнопкой (на железе ещё не проверяли)
 - [x] Мультикоптеры (квадро, гекса, окта, Y6, X8): настройка из описания коптера, проверено в симуляторе
 - [x] Коптер в OpenPlane Studio: в ангаре рядом с самолётами, прошивка одной кнопкой, первая настройка (приёмник, видео с потолком мощности, тумблеры)
+- [x] Коптер в OpenPlane Studio как в конфигураторе Betaflight: вкладки PID, расходы, приёмник, режимы, моторы (проверка ползунками), питание, видео, CLI; переход с Betaflight одной кнопкой — распиновка и родная прошивка снимаются с платы сами
 - [ ] STM32H743: подключить датчики и пройти стенд так же, как ESP32-S3
 - [x] Коптер: чёрный ящик на SD-карту и его просмотр в OpenPlane Studio
 - [x] Коптер: настройки как в Betaflight (CLI, diff из BF, MSP для конфигуратора BF), батарея и failsafe как в BF, DShot на таймере с DMA, ящик на SPI-флеше F405, журнал в формате Betaflight

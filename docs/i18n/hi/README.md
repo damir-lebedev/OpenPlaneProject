@@ -1,3 +1,12 @@
+<!-- download:start -->
+<p align="center">
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/%E0%A4%A1%E0%A4%BE%E0%A4%89%E0%A4%A8%E0%A4%B2%E0%A5%8B%E0%A4%A1-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="डाउनलोड Windows"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/%E0%A4%A1%E0%A4%BE%E0%A4%89%E0%A4%A8%E0%A4%B2%E0%A5%8B%E0%A4%A1-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="डाउनलोड macOS Apple Silicon"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/%E0%A4%A1%E0%A4%BE%E0%A4%89%E0%A4%A8%E0%A4%B2%E0%A5%8B%E0%A4%A1-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="डाउनलोड macOS Intel"></a>
+</p>
+<p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — सेट करें, फ़्लैश करें और उड़ाएँ: विमान और कॉप्टर (Betaflight वाले बोर्ड सहित)। इंस्टॉलर बिना इंटरनेट के चलता है — ज़रूरी सब कुछ अंदर है।</a></p>
+<!-- download:end -->
+
 <!-- i18n-bar:start -->
   <p align="center">
     <a href="../../../README.md"><img src="../../images/flags/ru.svg" width="20" height="20" align="absmiddle" alt="🇷🇺"> Читать на русском</a>

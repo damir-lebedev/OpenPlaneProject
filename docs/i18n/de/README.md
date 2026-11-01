@@ -1,3 +1,12 @@
+<!-- download:start -->
+<p align="center">
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/Herunterladen-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Herunterladen Windows"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/Herunterladen-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="Herunterladen macOS Apple Silicon"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/Herunterladen-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Herunterladen macOS Intel"></a>
+</p>
+<p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — einrichten, flashen und fliegen: Flugzeuge und Copter (auch ein Board, das mit Betaflight kam). Der Installer funktioniert offline — alles Nötige ist dabei.</a></p>
+<!-- download:end -->
+
 <!-- i18n-bar:start -->
   <p align="center">
     <a href="../../../README.md"><img src="../../images/flags/ru.svg" width="20" height="20" align="absmiddle" alt="🇷🇺"> Читать на русском</a>
