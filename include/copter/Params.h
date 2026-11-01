@@ -311,6 +311,7 @@ namespace copter
         PARAM_GPS_RESCUE_VELOCITY_P,
         PARAM_GPS_RESCUE_VELOCITY_I,
         PARAM_GPS_RESCUE_VELOCITY_D,
+        PARAM_AIRMODE_START_THROTTLE_PERCENT,
         PARAM_RC_SMOOTHING,
         PARAM_RC_SMOOTHING_AUTO_FACTOR,
         PARAM_RC_SMOOTHING_AUTO_FACTOR_THROTTLE,
@@ -730,6 +731,8 @@ namespace copter
               "скорость домой: I (ветер в лоб)" },
             { "gps_rescue_velocity_d", kInt, kMaster, kGroupGps, 0, 200, 12, kTable, "", nullptr, 0,
               "скорость домой: D" },
+            { "airmode_start_throttle_percent", kInt, kMaster, kGroupSafety, 0, 100, 25, kTable, "%", nullptr, 0,
+              "airmode включается, когда после ARM газ хоть раз был выше: на земле коптер не прыгает" },
             { "rc_smoothing", kEnum, kMaster, kGroupRx, 0, 1, 1, kTable, "", OFF_ON, 2,
               "сглаживание стиков между кадрами приёмника (OFF — ступеньками, как пришло)" },
             { "rc_smoothing_auto_factor", kInt, kMaster, kGroupRx, 1, 250, 30, kTable, "", nullptr, 0,
@@ -1061,6 +1064,7 @@ namespace copter
             s.failsafeStickThreshold = value(PARAM_FAILSAFE_STICK_THRESHOLD) * 0.01f;
             s.failsafeProcedure = static_cast<FailsafeProcedure>(static_cast<uint8_t>(value(PARAM_FAILSAFE_PROCEDURE)));
             s.failsafeSwitchMode = static_cast<FailsafeSwitchMode>(static_cast<uint8_t>(value(PARAM_FAILSAFE_SWITCH_MODE)));
+            s.airmodeStartThrottle = value(PARAM_AIRMODE_START_THROTTLE_PERCENT) * 0.01f;
             RcSmoothingSettings& rs = s.rcSmoothing;
             rs.enabled = value(PARAM_RC_SMOOTHING) > 0.5f;
             rs.autoFactor = static_cast<uint8_t>(value(PARAM_RC_SMOOTHING_AUTO_FACTOR));

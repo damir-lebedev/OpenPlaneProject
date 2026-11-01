@@ -282,6 +282,7 @@ namespace copter
     struct CopterSettings
     {
         bool airmode = true;
+        float airmodeStartThrottle = 0.25f;   // airmode_start_throttle_percent: airmode — после газа выше (с ARM)
         bool voltageCompensation = true;
         bool rpmNotches = true;
         RcSmoothingSettings rcSmoothing;   // rc_smoothing_*, deadband (copter/RcSmoothing.h)
@@ -709,7 +710,11 @@ namespace copter
                 for (auto& ax : axes) ax.resetIntegral();
             }
 
-            mixer.setAirmode(set.airmode || rc.airmode || status.crashRecovery);
+            // airmode — когда после ARM стик газа хоть раз был выше
+            // airmode_start_throttle_percent (как в BF: на земле с газом внизу
+            // моторы не раскачивают коптер) или коптер уже в воздухе (наше)
+            if (sticks[3] >= set.airmodeStartThrottle || status.airborne) airmodeStarted = true;
+            mixer.setAirmode(((set.airmode || rc.airmode) && airmodeStarted) || status.crashRecovery);
             const MixResult mr = mixer.mix(tune.frame, mi);
             status.saturated = mr.saturated;
             status.throttle = thrust;
@@ -876,6 +881,7 @@ namespace copter
             throttleHpLpf.reset();
             throttleBoostLpf.reset();
             tpaLowDone = false;
+            airmodeStarted = false;
             status.airborne = false;
             status.saturated = false;
             lastMixThrottle = 0.0f;
@@ -1372,6 +1378,7 @@ namespace copter
         float lastMixThrottle = 0.0f;
         float lastMixSpread = 0.0f;      // разброс моторов прошлого цикла (iterm_windup)
         bool tpaLowDone = false;         // газ после ARM был выше tpa_low_breakpoint
+        bool airmodeStarted = false;     // газ после ARM был выше airmode_start_throttle_percent
         uint32_t lastRcFrame = 0;        // кадры приёмника (feedforward_*)
         uint32_t loopsSinceFrame = 0;
         bool frameNow = true;

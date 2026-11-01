@@ -273,6 +273,7 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `roll_srate` `pitch_srate` `yaw_srate` | профиль расходов | 0–255 (×10 °/с) | по стилю полёта; BF: 67 | расход на упоре стика |
 | `roll_expo` `pitch_expo` `yaw_expo` | профиль расходов | 0–100 % | по стилю полёта; BF: 0 | экспо: мягче у центра |
 | `serialrx_provider` | общая | `IBUS`, `SBUS`, `CRSF` | `RX_PROTOCOL` из `Config.h` | протокол приёмника; меняется после `save` без перезагрузки |
+| `airmode_start_throttle_percent` | общая | 0–100 % | 25 | airmode включается, когда после ARM стик газа хоть раз был выше (как в BF: на земле коптер не прыгает) или коптер уже в воздухе (наше) |
 | `rc_smoothing` | общая | `OFF`, `ON` | `ON` | сглаживание стиков между кадрами приёмника фильтром PT3 (`OFF` — ступеньками, как пришло); что намерено — `rc_smoothing_info` |
 | `rc_smoothing_auto_factor` · `rc_smoothing_auto_factor_throttle` | общая | 1–250 | 30 · 30 | срез = частота кадров × 1.5 / (1 + factor/10), не ниже 15 Гц, как в BF: ELRS 250 Гц — 94 Гц, 150 Гц — 56, iBUS 50 Гц — 19; больше — плавнее и позже |
 | `rc_smoothing_setpoint_cutoff` · `rc_smoothing_throttle_cutoff` | общая | 0–255 Гц | 0 | срез стиков · газа числом; 0 — по частоте кадров |

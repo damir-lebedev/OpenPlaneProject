@@ -258,6 +258,33 @@ void test_airmode_keeps_control_at_zero_throttle()
     TEST_ASSERT_FLOAT_WITHIN(0.1 * target, target, maxRate);
 }
 
+// 098: airmode_start_throttle_percent — на земле после ARM газ внизу, стик
+// крена в сторону: без airmode моторы на холостых одинаково (коптер не
+// прыгает); газ хоть раз выше 25 % — airmode работает и на нуле газа.
+void test_airmode_starts_after_throttle_threshold()
+{
+    QuadHarness h(five(), QuadPerturb(), 22);
+    TEST_ASSERT_TRUE(h.armOnGround(CopterMode::ACRO));
+    h.rc.roll = 0.5f;
+    h.run(0.1);
+    auto spread = [&h]() {
+        float lo = 1e9f, hi = -1e9f;
+        for (uint8_t i = 0; i < h.out.count; ++i)
+        {
+            lo = std::fmin(lo, h.out.motor[i]);
+            hi = std::fmax(hi, h.out.motor[i]);
+        }
+        return hi - lo;
+    };
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, spread());
+    h.rc.throttle = 0.3f;
+    h.step();
+    h.rc.throttle = 0.0f;
+    h.run(0.02);
+    TEST_ASSERT_TRUE(h.ctl.isArmed());
+    TEST_ASSERT_TRUE(spread() > 0.01f);
+}
+
 void test_yaw_rate_follows_stick_and_stays_level()
 {
     QuadHarness h(five(), QuadPerturb(), 22);
@@ -1607,6 +1634,7 @@ int main()
     RUN_TEST(test_every_build_follows_angle_stick);
     RUN_TEST(test_every_build_tracks_acro_rate);
     RUN_TEST(test_airmode_keeps_control_at_zero_throttle);
+    RUN_TEST(test_airmode_starts_after_throttle_threshold);
     RUN_TEST(test_yaw_rate_follows_stick_and_stays_level);
     RUN_TEST(test_hover_in_gusty_wind);
     RUN_TEST(test_failsafe_without_barometer);
