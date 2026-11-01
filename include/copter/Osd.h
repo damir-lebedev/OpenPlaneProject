@@ -61,6 +61,8 @@ namespace copter
         bool armed = false;
         bool failsafe = false;
         const char* mode = "ACRO";          // ACRO, ANGL, HOR, ALTH
+        bool rescue = false;                // GPS Rescue летит домой — режим RESC, как в BF
+        bool rescueAbort = false;           // возврат невозможен — садится на месте
         int16_t linkQuality = -1;           // %, −1 — неизвестно
         bool linkLost = false;
         float volts = 0.0f, cellVolts = 0.0f;
@@ -122,7 +124,7 @@ namespace copter
                 print(0, 2, s);
             }
             // режим
-            snprintf(s, sizeof(s), "%s", d.failsafe ? "!FS!" : d.mode);
+            snprintf(s, sizeof(s), "%s", d.rescue ? "RESC" : d.failsafe ? "!FS!" : d.mode);
             print(0, static_cast<uint8_t>(COLS / 2 - strlen(s) / 2), s);
             // спутники
             if (d.gpsPresent)
@@ -184,6 +186,7 @@ namespace copter
         // Самое важное, что сейчас не так (или nullptr).
         static const char* warningText(const OsdData& d)
         {
+            if (d.rescueAbort) return "RESCUE FAIL";
             if (d.failsafe) return "FAILSAFE";
             if (d.linkLost) return "RXLOSS";
             if (d.batteryState == 3) return "BATT CRITICAL";

@@ -291,6 +291,23 @@ namespace copter
         PARAM_ACRO_TRAINER_LOOKAHEAD_MS,
         PARAM_ACRO_TRAINER_GAIN,
         PARAM_AUTO_PROFILE_CELL_COUNT,
+        PARAM_GPS_RESCUE_MIN_START_DIST,
+        PARAM_GPS_RESCUE_ALT_MODE,
+        PARAM_GPS_RESCUE_INITIAL_CLIMB,
+        PARAM_GPS_RESCUE_ASCEND_RATE,
+        PARAM_GPS_RESCUE_RETURN_ALT,
+        PARAM_GPS_RESCUE_GROUND_SPEED,
+        PARAM_GPS_RESCUE_MAX_ANGLE,
+        PARAM_GPS_RESCUE_YAW_P,
+        PARAM_GPS_RESCUE_DESCENT_DIST,
+        PARAM_GPS_RESCUE_DESCEND_RATE,
+        PARAM_GPS_RESCUE_LANDING_ALT,
+        PARAM_GPS_RESCUE_MIN_SATS,
+        PARAM_GPS_RESCUE_SANITY_CHECKS,
+        PARAM_GPS_RESCUE_ALLOW_ARMING_WITHOUT_FIX,
+        PARAM_GPS_RESCUE_VELOCITY_P,
+        PARAM_GPS_RESCUE_VELOCITY_I,
+        PARAM_GPS_RESCUE_VELOCITY_D,
         PARAM_COUNT
     };
 
@@ -335,6 +352,9 @@ namespace copter
         // порядок — как FailsafeProcedure и FailsafeSwitchMode (CopterController.h) и в BF
         static const char* const FS_PROCEDURES[] = { "AUTO-LAND", "DROP", "GPS-RESCUE" };
         static const char* const FS_SWITCH_MODES[] = { "STAGE1", "KILL", "STAGE2" };
+        // порядок — как RescueAltMode и RescueSanity (GpsRescue.h) и в BF
+        static const char* const RESCUE_ALT_MODES[] = { "MAX_ALT", "FIXED_ALT", "CURRENT_ALT" };
+        static const char* const RESCUE_SANITY[] = { "OFF", "ON", "FS_ONLY" };
         uint8_t buildCount = 0;
         const char* const* builds = buildIds(buildCount);
         constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
@@ -616,6 +636,40 @@ namespace copter
               "ACRO TRAINER: как сильно возвращать к пределу, десятые °/с на градус" },
             { "auto_profile_cell_count", kInt, kPid, kGroupPower, 0, 8, 0, kTable, "", nullptr, 0,
               "батарея с таким числом банок — этот PID-профиль сам (0 — нет)" },
+            { "gps_rescue_min_start_dist", kInt, kMaster, kGroupGps, 10, 30, 15, kTable, "м", nullptr, 0,
+              "возврат ближе к дому — сразу посадка на месте" },
+            { "gps_rescue_alt_mode", kEnum, kMaster, kGroupGps, 0, 2, 0, kTable, "", RESCUE_ALT_MODES, 3,
+              "высота возврата: MAX_ALT — наибольшая за полёт + initial_climb, FIXED_ALT — return_alt, CURRENT_ALT — текущая + initial_climb" },
+            { "gps_rescue_initial_climb", kInt, kMaster, kGroupGps, 0, 100, 10, kTable, "м", nullptr, 0,
+              "сколько набрать сверх высоты полёта перед возвратом" },
+            { "gps_rescue_ascend_rate", kInt, kMaster, kGroupGps, 50, 2500, 750, kTable, "см/с", nullptr, 0,
+              "скорость набора высоты" },
+            { "gps_rescue_return_alt", kInt, kMaster, kGroupGps, 5, 1000, 30, kTable, "м", nullptr, 0,
+              "высота возврата в FIXED_ALT" },
+            { "gps_rescue_ground_speed", kInt, kMaster, kGroupGps, 0, 3000, 750, kTable, "см/с", nullptr, 0,
+              "скорость полёта домой по земле" },
+            { "gps_rescue_max_angle", kInt, kMaster, kGroupGps, 10, 60, 45, kTable, "°", nullptr, 0,
+              "наибольший наклон при возврате" },
+            { "gps_rescue_yaw_p", kInt, kMaster, kGroupGps, 10, 200, 20, kTable, "", nullptr, 0,
+              "как быстро нос поворачивает на дом (десятые °/с на градус)" },
+            { "gps_rescue_descent_dist", kInt, kMaster, kGroupGps, 5, 500, 20, kTable, "м", nullptr, 0,
+              "с такого расстояния — снижение к дому" },
+            { "gps_rescue_descend_rate", kInt, kMaster, kGroupGps, 25, 500, 150, kTable, "см/с", nullptr, 0,
+              "скорость снижения над домом" },
+            { "gps_rescue_landing_alt", kInt, kMaster, kGroupGps, 1, 15, 4, kTable, "м", nullptr, 0,
+              "ниже — снижение вдвое медленнее до касания" },
+            { "gps_rescue_min_sats", kInt, kMaster, kGroupGps, 5, 50, 8, kTable, "", nullptr, 0,
+              "меньше спутников — возврат не начинается (или прерывается)" },
+            { "gps_rescue_sanity_checks", kEnum, kMaster, kGroupGps, 0, 2, 2, kTable, "", RESCUE_SANITY, 3,
+              "проверки в пути: нет GPS, не приближается, улетает — посадка на месте; FS_ONLY — только при потере связи" },
+            { "gps_rescue_allow_arming_without_fix", kEnum, kMaster, kGroupGps, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "ARM без фикса GPS, хотя failsafe_procedure = GPS-RESCUE (вернуться он не сможет)" },
+            { "gps_rescue_velocity_p", kInt, kMaster, kGroupGps, 0, 200, 8, kTable, "", nullptr, 0,
+              "скорость домой: P" },
+            { "gps_rescue_velocity_i", kInt, kMaster, kGroupGps, 0, 200, 40, kTable, "", nullptr, 0,
+              "скорость домой: I (ветер в лоб)" },
+            { "gps_rescue_velocity_d", kInt, kMaster, kGroupGps, 0, 200, 12, kTable, "", nullptr, 0,
+              "скорость домой: D" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;
@@ -832,6 +886,24 @@ namespace copter
             s.failsafeStickThreshold = value(PARAM_FAILSAFE_STICK_THRESHOLD) * 0.01f;
             s.failsafeProcedure = static_cast<FailsafeProcedure>(static_cast<uint8_t>(value(PARAM_FAILSAFE_PROCEDURE)));
             s.failsafeSwitchMode = static_cast<FailsafeSwitchMode>(static_cast<uint8_t>(value(PARAM_FAILSAFE_SWITCH_MODE)));
+            GpsRescueSettings& r = s.rescue;
+            r.minStartDistM = value(PARAM_GPS_RESCUE_MIN_START_DIST);
+            r.altMode = static_cast<RescueAltMode>(static_cast<uint8_t>(value(PARAM_GPS_RESCUE_ALT_MODE)));
+            r.initialClimbM = value(PARAM_GPS_RESCUE_INITIAL_CLIMB);
+            r.ascendRate = value(PARAM_GPS_RESCUE_ASCEND_RATE) * 0.01f;
+            r.returnAltM = value(PARAM_GPS_RESCUE_RETURN_ALT);
+            r.groundSpeed = value(PARAM_GPS_RESCUE_GROUND_SPEED) * 0.01f;
+            r.maxAngleDeg = value(PARAM_GPS_RESCUE_MAX_ANGLE);
+            r.yawP = value(PARAM_GPS_RESCUE_YAW_P);
+            r.descentDistM = value(PARAM_GPS_RESCUE_DESCENT_DIST);
+            r.descendRate = value(PARAM_GPS_RESCUE_DESCEND_RATE) * 0.01f;
+            r.landingAltM = value(PARAM_GPS_RESCUE_LANDING_ALT);
+            r.minSats = static_cast<uint8_t>(value(PARAM_GPS_RESCUE_MIN_SATS));
+            r.sanity = static_cast<RescueSanity>(static_cast<uint8_t>(value(PARAM_GPS_RESCUE_SANITY_CHECKS)));
+            r.allowArmingWithoutFix = value(PARAM_GPS_RESCUE_ALLOW_ARMING_WITHOUT_FIX) > 0.5f;
+            r.velocityP = value(PARAM_GPS_RESCUE_VELOCITY_P);
+            r.velocityI = value(PARAM_GPS_RESCUE_VELOCITY_I);
+            r.velocityD = value(PARAM_GPS_RESCUE_VELOCITY_D);
         }
 
         // Пульт: карта каналов, rxrange, таблица aux.

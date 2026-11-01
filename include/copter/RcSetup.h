@@ -114,7 +114,7 @@ namespace copter
             { BOX_BLACKBOX, "BLACKBOX", false },
             { BOX_FLIP_OVER_AFTER_CRASH, "FLIP OVER AFTER CRASH", false },
             { BOX_PARALYZE, "PARALYZE", false },
-            { BOX_GPS_RESCUE, "GPS RESCUE", false },
+            { BOX_GPS_RESCUE, "GPS RESCUE", true },
             { BOX_ACRO_TRAINER, "ACRO TRAINER", true },
             { BOX_LAUNCH_CONTROL, "LAUNCH CONTROL", false },
             { BOX_BEEPER_MUTE, "BEEPER MUTE", true },
@@ -836,6 +836,7 @@ namespace copter
             else rc.mode = CopterMode::ACRO;
             rc.airmode = isActive(BOX_AIRMODE);
             rc.acroTrainer = isActive(BOX_ACRO_TRAINER);
+            rc.gpsRescue = isActive(BOX_GPS_RESCUE);
             rc.failsafeSwitch = isActive(BOX_FAILSAFE);
             rc.prearm = !cfg.hasMode(BOX_PREARM) || isActive(BOX_PREARM);
             rc.armAssigned = cfg.hasMode(BOX_ARM);

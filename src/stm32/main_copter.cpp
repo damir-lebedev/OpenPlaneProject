@@ -276,11 +276,14 @@ static void updatePinio(bool force)
 }
 
 // Новый фикс GPS -> дом, расстояние, направление (copter/GpsHome.h).
+static bool gpsFresh = false;   // новый фикс с прошлого цикла — возврату домой
+
 static void updateGps()
 {
     const GpsData& d = gps.getGpsData();
     if (d.timestamp == lastGpsStamp) return;
     lastGpsStamp = d.timestamp;
+    gpsFresh = true;
     copter::GpsFix f;
     f.valid = gps.isAvailable() && d.fixType >= 3;
     f.satellites = d.numSatellites;
@@ -303,6 +306,23 @@ static float headingDeg()
     float yaw = copterController.getStatus().yaw;
     if (yaw < 0.0f) yaw += 360.0f;
     return yaw;
+}
+
+// GPS для возврата домой (copter/GpsRescue.h): смещение от дома, скорость по
+// земле (север, восток), курс носа — по компасу, если он откалиброван.
+static void fillGps(copter::GpsInput& g)
+{
+    const copter::GpsFix& f = gpsHome.fix();
+    g.fresh = gpsFresh;
+    gpsFresh = false;
+    g.fix = f.valid;
+    g.sats = f.satellites;
+    g.home = gpsHome.offsetFromHome(g.northM, g.eastM);
+    const float course = f.courseDeg * 0.017453293f;
+    g.velN = f.speedMs * cosf(course);
+    g.velE = f.speedMs * sinf(course);
+    g.headingTrusted = compass && compass->isAvailable() && compass->isCalibrated();
+    g.headingDeg = headingDeg();
 }
 
 // Режим для пульта, как пишет Betaflight (4 буквы, без ARM — «*»).
@@ -340,8 +360,9 @@ static void sendTelemetry()
     d.altitudeM = f.altitudeM;
     d.satellites = f.satellites;
     const copter::CopterMode mode = copterController.isArmed() ? s.mode : switchMode;
-    copter::CrsfTelemetry::modeName(d.mode, sizeof(d.mode), crsfModeName(mode), copterController.isArmed(),
-                                    s.state == copter::CopterState::FAILSAFE);
+    const bool rescue = s.rescuePhase != copter::RescuePhase::IDLE && s.rescuePhase != copter::RescuePhase::ABORT;
+    copter::CrsfTelemetry::modeName(d.mode, sizeof(d.mode), rescue ? "RTH" : crsfModeName(mode), copterController.isArmed(),
+                                    s.state == copter::CopterState::FAILSAFE && !rescue);
     uint8_t frame[copter::CrsfTelemetry::MAX_FRAME];
     const uint8_t n = crsfTelemetry.next(d, frame);
     if (n) board.rcUart().write(frame, n);
@@ -393,6 +414,8 @@ static void composeOsd()
     d.armed = copterController.isArmed();
     d.failsafe = s.state == copter::CopterState::FAILSAFE;
     d.mode = crsfModeName(d.armed ? s.mode : switchMode);
+    d.rescue = s.rescuePhase != copter::RescuePhase::IDLE && s.rescuePhase != copter::RescuePhase::ABORT;
+    d.rescueAbort = s.rescuePhase == copter::RescuePhase::ABORT;
     d.linkQuality = rcReceiver.getLinkQuality();
     d.linkLost = rcReceiver.isSignalLost();
     d.volts = battery.volts();
@@ -514,6 +537,7 @@ static void flightTask(void*)
         sens.baroAltM = baroSensor.getBarometerData().altitude;
         // компенсации просадки — быстрый фильтр (vbat_sag_lpf_period), а не показ
         sens.batteryVolts = battery.state() == copter::BatteryState::NOT_PRESENT ? 0.0f : battery.sagVolts();
+        fillGps(sens.gps);
         copterController.setThrottleLimit(battery.throttleLimit());   // vbat_cutoff_percent
 
         // ARM запрещён, пока описание коптера не сошлось с платой,

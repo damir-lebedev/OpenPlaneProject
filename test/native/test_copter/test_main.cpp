@@ -3103,8 +3103,8 @@ void test_cli_aux_map_rxrange_and_diff()
     TEST_ASSERT_TRUE(cli.hasUnsaved());
     cli.execute("aux 0 0 1 1700 2100 0 0");
     TEST_ASSERT_FALSE(has(port.take(), "нет ARM"));
-    cli.execute("aux 2 46 3 1700 2100 0 0");
-    TEST_ASSERT_TRUE(has(port.take(), "# режим 46 GPS RESCUE у нас пока не действует — строка хранится"));
+    cli.execute("aux 2 4 3 1700 2100 0 0");
+    TEST_ASSERT_TRUE(has(port.take(), "# режим 4 ANTI GRAVITY у нас пока не действует — строка хранится"));
     cli.execute("aux 3 0 9 1700 2100 0 0");
     TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: канал 0-5"));
     cli.execute("aux help");
@@ -3135,7 +3135,7 @@ void test_cli_aux_map_rxrange_and_diff()
     cli.execute("diff");
     out = port.take();
     TEST_ASSERT_TRUE_MESSAGE(has(out, "\r\n# map\r\nmap TAER1234\r\n\r\n# aux\r\naux 0 0 1 1700 2100 0 0\r\naux 1 1 2 1300 1700 0 0\r\n"
-                                      "aux 2 46 3 1700 2100 0 0\r\n\r\n# rxrange\r\nrxrange 3 1050 1950\r\n\r\n# master\r\n"
+                                      "aux 2 4 3 1700 2100 0 0\r\n\r\n# rxrange\r\nrxrange 3 1050 1950\r\n\r\n# master\r\n"
                                       "set copter_mass_g = 742\r\n"),
                              out.c_str());
     cli.execute("dump");
@@ -3856,6 +3856,115 @@ void test_acro_trainer_box()
     TEST_ASSERT_TRUE(findBox(BOX_ACRO_TRAINER)->works);
 }
 
+// 133–136: автомат GPS Rescue без физики — начало, проверки, высота возврата.
+void test_gps_rescue_logic()
+{
+    GpsRescue r;
+    GpsRescueSettings s;
+    r.configure(s);
+    GpsInput g;
+    g.fresh = true;
+    g.fix = true;
+    g.sats = 12;
+    g.home = true;
+    g.northM = 100.0f;
+    g.headingTrusted = true;
+    g.headingDeg = 0.0f;   // нос на север, дом — на юге
+    r.track(g, 25.0f, 0.01f);
+    g.fresh = false;
+    r.track(g, 12.0f, 0.01f);
+    TEST_ASSERT_TRUE(r.gpsOk());
+    // MAX_ALT: наибольшая высота полёта (25) + initial_climb (10)
+    r.start(12.0f, true);
+    TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::CLIMB), static_cast<int>(r.phase()));
+    TEST_ASSERT_EQUAL_FLOAT(35.0f, r.targetAltitude());
+    RescueCommand c = r.update(12.0f, 0.0f, 0.01f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, s.ascendRate, c.climbRate);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, GpsRescue::MAX_YAW_RATE, fabsf(c.yawRateDps));   // поворот на дом (180°) — на пределе
+    // набрал — домой: нос на юг, наклон вперёд
+    r.track(g, 35.0f, 0.01f);
+    r.update(35.0f, 0.0f, 0.01f);
+    TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::FLY_HOME), static_cast<int>(r.phase()));
+    g.headingDeg = 180.0f;
+    g.fresh = true;
+    r.track(g, 35.0f, 0.01f);
+    c = r.update(35.0f, 0.0f, 0.01f);
+    TEST_ASSERT_TRUE(c.pitchDeg < 0.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 0.0f, c.yawRateDps);
+
+    // FIXED_ALT и CURRENT_ALT
+    s.altMode = RescueAltMode::FIXED_ALT;
+    r.configure(s);
+    r.start(12.0f, true);
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, r.targetAltitude());
+    s.altMode = RescueAltMode::CURRENT_ALT;
+    r.configure(s);
+    r.start(12.0f, true);
+    TEST_ASSERT_EQUAL_FLOAT(22.0f, r.targetAltitude());
+
+    // ближе min_start_dist — сразу посадка
+    g.northM = 10.0f;
+    r.track(g, 12.0f, 0.01f);
+    r.start(12.0f, true);
+    TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::LAND), static_cast<int>(r.phase()));
+    c = r.update(12.0f, 0.0f, 0.01f);
+    TEST_ASSERT_TRUE(c.climbRate < 0.0f);
+
+    // мало спутников — не начинается; GPS замолчал в пути — прерван (FS_ONLY: по потере связи)
+    g.northM = 100.0f;
+    g.sats = 5;
+    r.track(g, 12.0f, 0.01f);
+    r.start(12.0f, true);
+    TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::ABORT), static_cast<int>(r.phase()));
+    TEST_ASSERT_EQUAL(static_cast<int>(RescueFail::LOW_SATS), static_cast<int>(r.failure()));
+    g.sats = 12;
+    r.track(g, 40.0f, 0.01f);
+    r.start(40.0f, true);
+    g.fresh = false;
+    for (int i = 0; i < 250; ++i)
+    {
+        r.track(g, 40.0f, 0.01f);
+        r.update(40.0f, 0.0f, 0.01f);
+    }
+    TEST_ASSERT_EQUAL(static_cast<int>(RescueFail::GPS_LOST), static_cast<int>(r.failure()));
+    // с тумблера (не failsafe) и FS_ONLY — проверок в пути нет
+    g.fresh = true;
+    r.track(g, 40.0f, 0.01f);
+    g.fresh = false;
+    r.start(40.0f, false);
+    for (int i = 0; i < 250; ++i)
+    {
+        r.track(g, 40.0f, 0.01f);
+        r.update(40.0f, 0.0f, 0.01f);
+    }
+    TEST_ASSERT_TRUE(r.phase() != RescuePhase::ABORT);
+    TEST_ASSERT_EQUAL_STRING("FLY_HOME", rescuePhaseName(RescuePhase::FLY_HOME));
+    TEST_ASSERT_EQUAL_STRING("NO_PROGRESS", rescueFailName(RescueFail::NO_PROGRESS));
+}
+
+// gps_rescue_* в реестре — в единицах BF (см/с), в CopterSettings — м/с.
+void test_gps_rescue_params()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    CopterSettings s;
+    p.applyTo(s);
+    TEST_ASSERT_EQUAL_FLOAT(7.5f, s.rescue.groundSpeed);
+    TEST_ASSERT_EQUAL(static_cast<int>(RescueSanity::FS_ONLY), static_cast<int>(s.rescue.sanity));
+    TEST_ASSERT_TRUE(p.parse(PARAM_GPS_RESCUE_GROUND_SPEED, 0, "1200", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_GPS_RESCUE_ALT_MODE, 0, "FIXED_ALT", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_GPS_RESCUE_RETURN_ALT, 0, "60", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_GPS_RESCUE_ALLOW_ARMING_WITHOUT_FIX, 0, "ON", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_GPS_RESCUE_MAX_ANGLE, 0, "80", err, sizeof(err)));
+    p.applyTo(s);
+    TEST_ASSERT_EQUAL_FLOAT(12.0f, s.rescue.groundSpeed);
+    TEST_ASSERT_EQUAL(static_cast<int>(RescueAltMode::FIXED_ALT), static_cast<int>(s.rescue.altMode));
+    TEST_ASSERT_EQUAL_FLOAT(60.0f, s.rescue.returnAltM);
+    TEST_ASSERT_TRUE(s.rescue.allowArmingWithoutFix);
+    TEST_ASSERT_TRUE(findBox(BOX_GPS_RESCUE)->works);
+    p.resetAll();
+}
+
 void test_battery_voltage_current_and_mah()
 {
     BatteryMonitor b;
@@ -4556,6 +4665,19 @@ void test_osd_arrows_and_warnings()
     TEST_ASSERT_EQUAL_STRING("RXLOSS", OsdScreen::warningText(d));
     d.failsafe = true;
     TEST_ASSERT_EQUAL_STRING("FAILSAFE", OsdScreen::warningText(d));
+    d.rescueAbort = true;   // возврат не удался — садится на месте
+    TEST_ASSERT_EQUAL_STRING("RESCUE FAIL", OsdScreen::warningText(d));
+    // GPS Rescue летит домой — в строке режима RESC вместо !FS!
+    OsdScreen rs;
+    OsdData r;
+    r.armed = true;
+    r.failsafe = true;
+    r.rescue = true;
+    rs.compose(r);
+    char top[OsdScreen::COLS + 1] = {};
+    for (uint8_t c = 0; c < OsdScreen::COLS; ++c) top[c] = static_cast<char>(rs.at(0, c));
+    TEST_ASSERT_NOT_NULL(strstr(top, "RESC"));
+    TEST_ASSERT_NULL(strstr(top, "!FS!"));
     OsdData ground;
     ground.armed = false;
     TEST_ASSERT_EQUAL_STRING("DISARMED", OsdScreen::warningText(ground));
@@ -4808,6 +4930,8 @@ int main()
     RUN_TEST(test_angle_horizon_trainer_params);
     RUN_TEST(test_battery_detects_cells_on_plug_in);
     RUN_TEST(test_acro_trainer_box);
+    RUN_TEST(test_gps_rescue_logic);
+    RUN_TEST(test_gps_rescue_params);
     RUN_TEST(test_cli_pastes_betaflight_diff);
     RUN_TEST(test_vbat_sag_compensation_percent);
     RUN_TEST(test_battery_voltage_current_and_mah);

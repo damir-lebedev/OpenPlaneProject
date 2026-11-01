@@ -4,6 +4,7 @@
 
 #include "copter/AltitudeHold.h"
 #include "copter/Attitude.h"
+#include "copter/GpsRescue.h"
 #include "copter/GyroFilter.h"
 #include "copter/Mixer.h"
 #include "copter/Presets.h"
@@ -242,6 +243,7 @@ namespace copter
         float baroAltM = 0.0f;
         bool baroOk = false;
         float batteryVolts = 0.0f;   // 0 — не измеряется
+        GpsInput gps;                // GPS и курс — для возврата домой (copter/GpsRescue.h)
     };
 
     struct CopterRc
@@ -255,6 +257,7 @@ namespace copter
         CopterMode mode = CopterMode::ANGLE;
         bool airmode = false;          // режим AIR MODE с тумблера (поверх настройки)
         bool acroTrainer = false;      // режим ACRO TRAINER: в ACRO наклон не больше acro_trainer_angle_limit
+        bool gpsRescue = false;        // режим GPS RESCUE: возврат домой с тумблера
         bool failsafeSwitch = false;   // режим FAILSAFE: как потеря связи
         bool prearm = true;            // PREARM включён или его нет в таблице
         bool armAssigned = true;       // ARM есть в таблице режимов
@@ -302,6 +305,7 @@ namespace copter
         float runawayDeactivateThrottle = 0.2f;
         bool crashDetection = true;
         AltitudeController::Settings alt;
+        GpsRescueSettings rescue;          // gps_rescue_*
     };
 
     struct CopterStatus
@@ -324,6 +328,9 @@ namespace copter
         bool runaway = false;          // DISARM защитой runaway takeoff (до выключения тумблера)
         bool runawayCheck = false;     // проверка runaway takeoff ещё работает (после ARM, до уверенного взлёта)
         uint8_t failsafeStage = 0;     // 0 — нет, 1 — ровно и держит высоту, 2 — процедура
+        RescuePhase rescuePhase = RescuePhase::IDLE;   // возврат домой: этап
+        RescueFail rescueFail = RescueFail::NONE;      // и почему прерван
+        float rescueHeadingFix = 0.0f;                  // без компаса: поправка курса гироскопа по GPS, °
         uint32_t armCount = 0;
         uint32_t loops = 0;
     };
@@ -358,6 +365,7 @@ namespace copter
             attitude.reset();
             vertical.configure(2.5f);
             altCtl.configure(s.alt, t.hoverThrust);
+            rescue.configure(s.rescue);
             hover = t.hoverThrust;
             disarm();
             status = CopterStatus();
@@ -512,6 +520,8 @@ namespace copter
             motionLpf.apply(motion);
             motionTimer = motion > 15.0f ? 0.0f : motionTimer + dt;
 
+            rescue.track(sens.gps, vertical.altitude(), dt);
+
             // ---- связь, ARM, failsafe ----
             CopterRc rc = rcIn;
             trackFrames(rc.frame);
@@ -543,7 +553,20 @@ namespace copter
             // этап 2 с failsafe_throttle — ровно на постоянном газе, как в BF
             const bool fixedThrottle = failsafe && status.failsafeStage >= 2 && set.failsafeThrottle > 0.0f;
             // этап 1 с rxfail газа HOLD — ровно на последнем газе, как в BF
-            const CopterMode mode = failsafe ? (fixedThrottle || heldThrottle ? CopterMode::ANGLE : CopterMode::ALT_HOLD) : rc.mode;
+            // возврат домой: этап 2 failsafe с GPS-RESCUE или режим GPS RESCUE в воздухе
+            const bool wantRescue = (failsafe && status.failsafeStage >= 2 && set.failsafeProcedure == FailsafeProcedure::GPS_RESCUE) ||
+                                    (rc.gpsRescue && status.state == CopterState::ARMED && status.airborne);
+            if (wantRescue && !rescue.active()) rescue.start(vertical.altitude(), failsafe);
+            if (!wantRescue && rescue.active()) rescue.stop();
+            RescueCommand rescueCmd;
+            if (rescue.active()) rescueCmd = rescue.update(vertical.altitude(), status.yaw, dt);
+            const bool rescuing = rescue.active() && rescue.phase() != RescuePhase::ABORT;
+            status.rescuePhase = rescue.phase();
+            status.rescueFail = rescue.failure();
+            status.rescueHeadingFix = rescue.headingCorrection();
+            const CopterMode mode = rescuing ? CopterMode::ALT_HOLD
+                                    : failsafe ? (fixedThrottle || heldThrottle ? CopterMode::ANGLE : CopterMode::ALT_HOLD)
+                                               : rc.mode;
             if (mode != status.mode && (mode == CopterMode::ALT_HOLD))
             {
                 altCtl.reset(vertical.altitude(), status.throttle);
@@ -553,7 +576,7 @@ namespace copter
             const float sticks[4] = { stickLpf[0].apply(rc.roll), stickLpf[1].apply(rc.pitch),
                                       stickLpf[2].apply(rc.yaw), stickLpf[3].apply(rc.throttle) };
             float sp[3], stickSp[3];
-            rateSetpoints(mode, sticks, sp, stickSp, rc.acroTrainer);
+            rateSetpoints(mode, sticks, sp, stickSp, rc.acroTrainer, rescuing ? &rescueCmd : nullptr);
             const float raw[3] = { rc.roll, rc.pitch, rc.yaw };
             for (uint8_t a = 0; a < 3; ++a)
             {
@@ -583,7 +606,11 @@ namespace copter
             if (mode == CopterMode::ALT_HOLD)
             {
                 float climb = 0.0f;
-                if (failsafe)
+                if (rescuing)
+                {
+                    climb = rescueCmd.climbRate;
+                }
+                else if (failsafe)
                 {
                     climb = status.failsafeStage >= 2 ? -set.failsafeDescent : 0.0f;   // этап 1 — держит высоту
                 }
@@ -847,6 +874,7 @@ namespace copter
             if (sens.baroOk) baroHome = sens.baroAltM;
             vertical.reset(sens.baroOk ? sens.baroAltM - baroHome : 0.0f);
             altCtl.reset(0.0f, 0.0f);
+            rescue.resetFlight();
         }
 
         // Возвращает false, если ручкам пульта верить нельзя (связи нет).
@@ -980,6 +1008,9 @@ namespace copter
             if (rc.failsafeSwitch) b |= ARM_BLOCK_FAILSAFE_SWITCH;
             if (!rc.prearm) b |= ARM_BLOCK_NO_PREARM;
             if (!rc.armAssigned) b |= ARM_BLOCK_NO_ARM_SWITCH;
+            // GPS-RESCUE по потере связи без GPS не вернёт — не армить (как BF)
+            if (set.failsafeProcedure == FailsafeProcedure::GPS_RESCUE && !set.rescue.allowArmingWithoutFix && !rescue.gpsOk())
+                b |= ARM_BLOCK_GPS;
             b |= externalBlockers;
             if (!switchSeenOff) b |= forcedOff ? ARM_BLOCK_NOT_DISARMED : ARM_BLOCK_SWITCH;
             return b;
@@ -1084,9 +1115,12 @@ namespace copter
                 landingTimer = 0.0f;
                 vertical.reset(vertical.altitude());
                 if (status.state == CopterState::FAILSAFE) failsafeDisarm();
+                else if (rescue.landing()) forcedDisarm();   // GPS RESCUE с тумблера сел
             }
             // failsafe_landing_time: этап 2 не кончился посадкой — DISARM
-            if (status.state == CopterState::FAILSAFE && status.failsafeStage >= 2)
+            // (полёт домой — не посадка: время идёт с этапа LAND или без возврата)
+            const bool flyingHome = rescue.active() && !rescue.landing() && rescue.phase() != RescuePhase::ABORT;
+            if (status.state == CopterState::FAILSAFE && status.failsafeStage >= 2 && !flyingHome)
             {
                 failsafeTimer += dt;
                 if (failsafeTimer > set.failsafeLandingS) failsafeDisarm();
@@ -1112,7 +1146,8 @@ namespace copter
         //              horizon_level_strength, гаснущее к horizon_limit_sticks
         //              стика и к horizon_limit_degrees наклона, после флипа
         //              возвращается за horizon_delay_ms.
-        void rateSetpoints(CopterMode mode, const float sticks[4], float sp[3], float stick[3], bool trainer = false)
+        void rateSetpoints(CopterMode mode, const float sticks[4], float sp[3], float stick[3], bool trainer = false,
+                           const RescueCommand* rescueCmd = nullptr)
         {
             const PidExtras& px = tune.pid;
             float acro[3];
@@ -1131,7 +1166,7 @@ namespace copter
             const float cap = 0.9f * tune.rates[0].maxDps;
             // рысканье: вокруг вертикали Земли или оси рамы (angle_earth_ref)
             const float er = fminf(1.0f, fmaxf(0.0f, px.angleEarthRef));
-            const float yawRate = acro[2];
+            const float yawRate = rescueCmd ? rescueCmd->yawRateDps : acro[2];
             const Vec3 yawAxis = { er * down.x, er * down.y, er * down.z + (1.0f - er) };
 
             if (mode == CopterMode::HORIZON)
@@ -1159,9 +1194,16 @@ namespace copter
 
             // ANGLE: целевой угол стиком; упреждение — по его скорости
             const float maxA = tune.maxAngleDeg;
-            const float target[2] = { sticks[0] * maxA, sticks[1] * maxA };
+            float target[2] = { sticks[0] * maxA, sticks[1] * maxA };
+            if (rescueCmd)
+            {
+                // возврат домой: наклон задаёт автомат (copter/GpsRescue.h)
+                target[0] = rescueCmd->rollDeg;
+                target[1] = rescueCmd->pitchDeg;
+                angleTargetValid = false;
+            }
             float ff[2] = { 0.0f, 0.0f };
-            if (px.angleFf > 0.0f)
+            if (px.angleFf > 0.0f && !rescueCmd)
             {
                 for (int a = 0; a < 2; ++a)
                 {
@@ -1178,7 +1220,7 @@ namespace copter
                                  level[2] + yawRate * yawAxis.z };
             for (int a = 0; a < 2; ++a) angleSp[a] = fminf(cap, fmaxf(-cap, angleSp[a]));
             // наклон стиком: у ровного коптера — levelGain × угол стика (+ упреждение)
-            float angleStick[3] = { tune.levelGain * target[0] + ff[0], tune.levelGain * target[1] + ff[1], acro[2] };
+            float angleStick[3] = { tune.levelGain * target[0] + ff[0], tune.levelGain * target[1] + ff[1], yawRate };
             for (int a = 0; a < 2; ++a) angleStick[a] = fminf(cap, fmaxf(-cap, angleStick[a]));
             for (int a = 0; a < 3; ++a)
             {
@@ -1229,6 +1271,7 @@ namespace copter
         GyroFilter gyroFilter;
         RateAxis axes[3];
         AbsoluteControl absCtl[3];
+        GpsRescue rescue;
         Pt1 stickLpf[4];
         Pt1 throttleHpLpf;               // anti-gravity
         Pt1 throttleBoostLpf;            // throttle_boost

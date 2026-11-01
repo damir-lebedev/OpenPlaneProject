@@ -311,6 +311,11 @@ public:
                   v.frequencyMhz, v.powerMw, v.pit ? "true" : "false", vtx->levelMw(vtx->topAllowedLevel()));
         }
         w.add(",\"hdg\":%.0f", headingDeg);
+        if (s.rescuePhase != RescuePhase::IDLE)
+        {
+            w.add(",\"rescue\":\"%s\"", rescuePhaseName(s.rescuePhase));
+            if (s.rescueFail != RescueFail::NONE) w.add(",\"rescueFail\":\"%s\"", rescueFailName(s.rescueFail));
+        }
         if (gps && gpsHome && gps->isAvailable())
         {
             const copter::GpsFix& f = gpsHome->fix();

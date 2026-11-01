@@ -94,6 +94,14 @@ namespace copter
             return d;
         }
 
+        // Смещение от дома на север и восток, м; false — дома нет.
+        bool offsetFromHome(float& north, float& east) const
+        {
+            if (!homeSet) return false;
+            offset(north, east);
+            return true;
+        }
+
         // Высота над домом по GPS, м.
         float altitudeAboveHomeM() const { return homeSet ? last.altitudeM - homeAlt : 0.0f; }
 

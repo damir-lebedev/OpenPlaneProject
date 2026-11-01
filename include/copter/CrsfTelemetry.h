@@ -53,7 +53,7 @@ namespace copter
         double latitude = 0.0, longitude = 0.0;
         float speedMs = 0.0f, courseDeg = 0.0f, altitudeM = 0.0f;
         uint8_t satellites = 0;
-        char mode[16] = "ACRO";   // как в BF: ACRO, ANGL, HOR, ALTH, !FS!; без ARM — с «*»
+        char mode[16] = "ACRO";   // как в BF: ACRO, ANGL, HOR, ALTH, !FS!, RTH; без ARM — с «*»
     };
 
     class CrsfTelemetry

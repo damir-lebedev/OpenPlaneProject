@@ -57,6 +57,7 @@ public:
         s.baroOk = baroOk;
         s.baroAltM = baroOk ? sim.readBaro() + 120.0f : 0.0f;   // над уровнем моря — не ноль
         s.batteryVolts = sim.readVolts();
+        feedGps(s.gps);
         out = ctl.update(s, rc);
         lastSens = s;
         float motor[copter::MAX_MOTORS] = {};
@@ -111,6 +112,50 @@ public:
         run(3.0);
         return std::fabs(sim.height() - height) < 2.0;
     }
+
+    // Модель GPS: фикс 10 Гц, шум положения и скорости, дом — где заармились;
+    // курс носа — компас (точно) или нет (контроллер учит его по курсу GPS).
+    void feedGps(copter::GpsInput& g)
+    {
+        if (!gpsOn) return;
+        const bool armed = ctl.isArmed();
+        if (armed && !wasArmedGps)
+        {
+            homeN = sim.position().x;
+            homeE = sim.position().y;
+            gpsHomeSet = true;
+        }
+        wasArmedGps = armed;
+        g = gpsLast;
+        g.fresh = false;
+        if (gpsLost || steps % std::lround(tune.loopHz / 10.0) != 0) return;
+        auto noise = [this](double sigma) {
+            gpsSeed = gpsSeed * 1103515245u + 12345u;
+            return sigma * (static_cast<double>((gpsSeed >> 8) & 0xFFFF) / 32768.0 - 1.0);
+        };
+        g.fresh = true;
+        g.fix = true;
+        g.sats = gpsSats;
+        g.home = gpsHomeSet;
+        g.northM = static_cast<float>(sim.position().x - homeN + noise(0.4));
+        g.eastM = static_cast<float>(sim.position().y - homeE + noise(0.4));
+        g.velN = static_cast<float>(sim.velocity().x + noise(0.1));
+        g.velE = static_cast<float>(sim.velocity().y + noise(0.1));
+        double yaw = sim.yawDeg();
+        if (yaw < 0) yaw += 360.0;
+        g.headingDeg = static_cast<float>(yaw);
+        g.headingTrusted = compass;
+        gpsLast = g;
+    }
+
+    bool gpsOn = false;        // есть GPS
+    bool compass = true;       // и компас
+    bool gpsLost = false;      // GPS замолчал
+    uint8_t gpsSats = 14;
+    bool gpsHomeSet = false, wasArmedGps = false;
+    double homeN = 0, homeE = 0;
+    uint32_t gpsSeed = 12345;
+    copter::GpsInput gpsLast;
 
     copter::CopterTune tune;
     QuadSim sim;

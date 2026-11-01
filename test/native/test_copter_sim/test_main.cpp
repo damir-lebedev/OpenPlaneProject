@@ -1344,11 +1344,172 @@ void test_acro_trainer_limits_tilt()
     }
 }
 
+// 129–136: GPS Rescue в симуляторе — 5" с GPS (10 Гц, шум 0.4 м) улетел
+// за 150 м, связь пропала: набор высоты, разворот, домой при боковом ветре,
+// снижение и посадка у дома с DISARM.
+namespace
+{
+    struct RescueRun
+    {
+        bool disarmed = false;
+        double homeDist = 1e9;    // где сел, м от дома
+        double seconds = 0;       // от потери связи
+        double maxTilt = 0;
+        double maxHeight = 0;
+        RescuePhase lastPhase = RescuePhase::IDLE;
+    };
+
+    double homeDistance(QuadHarness& h)
+    {
+        const double n = h.sim.position().x - h.homeN, e = h.sim.position().y - h.homeE;
+        return std::sqrt(n * n + e * e);
+    }
+
+    // Улететь на dist м носом на курс yawDeg (ALT_HOLD), потом — что скажет setup.
+    bool flyAway(QuadHarness& h, double dist, float yawStick, double yawSeconds)
+    {
+        if (!h.takeoffTo(10.0)) return false;
+        h.rc.yaw = yawStick;
+        h.run(yawSeconds);
+        h.rc.yaw = 0.0f;
+        h.rc.pitch = -0.6f;
+        for (int i = 0; i < 120000 && homeDistance(h) < dist; ++i) h.step();
+        h.rc.pitch = 0.0f;
+        h.run(2.0);
+        return homeDistance(h) >= dist;
+    }
+
+    RescueRun linkLostRescue(QuadHarness& h, double limitS)
+    {
+        RescueRun r;
+        h.rc.linkOk = false;
+        const double t0 = h.sim.now();
+        while (h.ctl.isArmed() && h.sim.now() - t0 < limitS)
+        {
+            h.step();
+            r.maxTilt = std::fmax(r.maxTilt, h.sim.tiltDeg());
+            r.maxHeight = std::fmax(r.maxHeight, h.sim.height());
+            if (h.ctl.getStatus().rescuePhase != RescuePhase::IDLE) r.lastPhase = h.ctl.getStatus().rescuePhase;
+        }
+        r.disarmed = !h.ctl.isArmed();
+        r.homeDist = homeDistance(h);
+        r.seconds = h.sim.now() - t0;
+        return r;
+    }
+
+    CopterSettings rescueSettings()
+    {
+        CopterSettings s;
+        s.failsafeProcedure = FailsafeProcedure::GPS_RESCUE;
+        return s;
+    }
+}
+
+void test_gps_rescue_returns_home_in_crosswind()
+{
+    const QuadPerturb ps[] = { QuadPerturb(), sluggish(), twitchy() };
+    const char* names[] = { "nominal", "sluggish", "twitchy" };
+    for (uint8_t k = 0; k < 3; ++k)
+    {
+        QuadHarness h(five(), ps[k], 61 + k, EscProtocol::DSHOT600, 1000.0f, rescueSettings());
+        h.gpsOn = true;
+        TEST_ASSERT_TRUE(flyAway(h, 150.0, 0.5f, 1.0));
+        h.sim.setWind(0.0, 4.0, 0.5);   // боковой ветер 4 м/с
+        const RescueRun r = linkLostRescue(h, 150.0);
+        char line[220];
+        snprintf(line, sizeof(line), "GPS rescue %-8s from 150 m, crosswind 4 m/s: landed %.1f m from home in %.0f s, max tilt %.0f, max height %.0f m (%s)",
+                 names[k], r.homeDist, r.seconds, r.maxTilt, r.maxHeight, rescuePhaseName(r.lastPhase));
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(r.disarmed, line);
+        TEST_ASSERT_TRUE_MESSAGE(r.homeDist < 6.0, line);
+        TEST_ASSERT_TRUE_MESSAGE(r.maxTilt < 50.0, line);
+        TEST_ASSERT_TRUE_MESSAGE(r.maxHeight > 18.0, line);   // MAX_ALT: 10 м полёта + 10 м initial_climb
+        TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(RescuePhase::LAND), static_cast<int>(r.lastPhase), line);
+    }
+}
+
+// Без компаса: гироскоп считает курс от включения, а коптер стоял носом на
+// 70° — возврат выравнивает курс по GPS в пути и всё равно садится дома.
+void test_gps_rescue_without_compass_aligns_heading()
+{
+    QuadHarness h(five(), QuadPerturb(), 62, EscProtocol::DSHOT600, 1000.0f, rescueSettings());
+    h.gpsOn = true;
+    h.compass = false;
+    h.sim.setAttitude(0.0, 0.0, 70.0);
+    TEST_ASSERT_TRUE(flyAway(h, 120.0, -0.4f, 1.5));
+    const RescueRun r = linkLostRescue(h, 120.0);
+    char line[200];
+    snprintf(line, sizeof(line), "GPS rescue without compass (70 deg off): landed %.1f m from home in %.0f s",
+             r.homeDist, r.seconds);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(r.disarmed, line);
+    TEST_ASSERT_TRUE_MESSAGE(r.homeDist < 8.0, line);
+}
+
+// GPS пропал на пути домой — возврат прерван, посадка на месте (у BF — DISARM).
+void test_gps_rescue_gps_loss_lands_in_place()
+{
+    QuadHarness h(five(), QuadPerturb(), 63, EscProtocol::DSHOT600, 1000.0f, rescueSettings());
+    h.gpsOn = true;
+    TEST_ASSERT_TRUE(flyAway(h, 150.0, 0.0f, 0.0));
+    h.rc.linkOk = false;
+    while (h.ctl.getStatus().rescuePhase != RescuePhase::FLY_HOME && h.sim.now() < 300.0) h.step();
+    h.run(3.0);
+    const double before = homeDistance(h);
+    h.gpsLost = true;
+    double tilt = 0;
+    const double t0 = h.sim.now();
+    while (h.ctl.isArmed() && h.sim.now() - t0 < 120.0)
+    {
+        h.step();
+        if (h.sim.now() - t0 > 4.0) tilt = std::fmax(tilt, h.sim.tiltDeg());
+    }
+    char line[200];
+    snprintf(line, sizeof(line), "GPS lost at %.0f m: %s, landed %.0f m from home, tilt after 4 s %.0f",
+             before, rescueFailName(h.ctl.getStatus().rescueFail), homeDistance(h), tilt);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_FALSE_MESSAGE(h.ctl.isArmed(), line);
+    TEST_ASSERT_EQUAL(static_cast<int>(RescueFail::GPS_LOST), static_cast<int>(h.ctl.getStatus().rescueFail));
+    TEST_ASSERT_TRUE_MESSAGE(homeDistance(h) > 60.0, line);   // не долетел — сел, где был
+    TEST_ASSERT_TRUE_MESSAGE(tilt < 15.0, line);
+}
+
+// Режим GPS RESCUE с тумблера: связь есть, коптер летит домой; тумблер назад —
+// управление пилоту сразу. Без GPS и с GPS-RESCUE — ARM запрещён (флаг GPS).
+void test_gps_rescue_switch_and_arming_check()
+{
+    {
+        QuadHarness h(five(), QuadPerturb(), 64, EscProtocol::DSHOT600, 1000.0f, rescueSettings());
+        TEST_ASSERT_FALSE(h.armOnGround());
+        TEST_ASSERT_TRUE(h.ctl.getStatus().armBlockers & ARM_BLOCK_GPS);
+    }
+    QuadHarness h(five(), QuadPerturb(), 65, EscProtocol::DSHOT600, 1000.0f, rescueSettings());
+    h.gpsOn = true;
+    TEST_ASSERT_TRUE(flyAway(h, 80.0, 0.0f, 0.0));
+    const double start = homeDistance(h);
+    h.rc.gpsRescue = true;
+    h.run(15.0);
+    const double mid = homeDistance(h);
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterState::ARMED), static_cast<int>(h.ctl.getStatus().state));
+    TEST_ASSERT_TRUE(h.ctl.getStatus().rescuePhase == RescuePhase::FLY_HOME || h.ctl.getStatus().rescuePhase == RescuePhase::DESCEND);
+    char line[120];
+    snprintf(line, sizeof(line), "GPS RESCUE switch: %.0f m -> %.0f m in 15 s", start, mid);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(mid < start - 30.0, line);
+    h.rc.gpsRescue = false;
+    h.step();
+    TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::IDLE), static_cast<int>(h.ctl.getStatus().rescuePhase));
+    h.run(2.0);
+    TEST_ASSERT_TRUE(h.ctl.isArmed());
+    TEST_ASSERT_TRUE(h.sim.tiltDeg() < 10.0);   // ALT_HOLD пилота, стики в центре — ровно
+}
+
 void test_failsafe_rescue_returns_control_by_stick()
 {
     CopterSettings s;
     s.failsafeProcedure = FailsafeProcedure::GPS_RESCUE;
     QuadHarness h(five(), QuadPerturb(), 45, EscProtocol::DSHOT600, 1000.0f, s);
+    h.gpsOn = true;   // GPS-RESCUE без GPS не армится
     TEST_ASSERT_TRUE(h.takeoffTo(10.0));
     h.rc.linkOk = false;
     h.run(2.0);
@@ -1401,5 +1562,9 @@ int main()
     RUN_TEST(test_angle_feedforward_tilts_faster);
     RUN_TEST(test_horizon_flips_and_levels);
     RUN_TEST(test_acro_trainer_limits_tilt);
+    RUN_TEST(test_gps_rescue_returns_home_in_crosswind);
+    RUN_TEST(test_gps_rescue_without_compass_aligns_heading);
+    RUN_TEST(test_gps_rescue_gps_loss_lands_in_place);
+    RUN_TEST(test_gps_rescue_switch_and_arming_check);
     return UNITY_END();
 }
