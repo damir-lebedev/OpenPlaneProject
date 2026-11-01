@@ -311,6 +311,13 @@ namespace copter
         PARAM_GPS_RESCUE_VELOCITY_P,
         PARAM_GPS_RESCUE_VELOCITY_I,
         PARAM_GPS_RESCUE_VELOCITY_D,
+        PARAM_RC_SMOOTHING,
+        PARAM_RC_SMOOTHING_AUTO_FACTOR,
+        PARAM_RC_SMOOTHING_AUTO_FACTOR_THROTTLE,
+        PARAM_RC_SMOOTHING_SETPOINT_CUTOFF,
+        PARAM_RC_SMOOTHING_THROTTLE_CUTOFF,
+        PARAM_DEADBAND,
+        PARAM_YAW_DEADBAND,
         PARAM_CRASH_RECOVERY,
         PARAM_CRASH_DTHRESHOLD,
         PARAM_CRASH_GTHRESHOLD,
@@ -723,6 +730,20 @@ namespace copter
               "скорость домой: I (ветер в лоб)" },
             { "gps_rescue_velocity_d", kInt, kMaster, kGroupGps, 0, 200, 12, kTable, "", nullptr, 0,
               "скорость домой: D" },
+            { "rc_smoothing", kEnum, kMaster, kGroupRx, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "сглаживание стиков между кадрами приёмника (OFF — ступеньками, как пришло)" },
+            { "rc_smoothing_auto_factor", kInt, kMaster, kGroupRx, 1, 250, 30, kTable, "", nullptr, 0,
+              "больше — плавнее и позже: срез = частота кадров × 1.5 / (1 + factor/10), не ниже 15 Гц" },
+            { "rc_smoothing_auto_factor_throttle", kInt, kMaster, kGroupRx, 1, 250, 30, kTable, "", nullptr, 0,
+              "то же для газа" },
+            { "rc_smoothing_setpoint_cutoff", kInt, kMaster, kGroupRx, 0, 255, 0, kTable, "Гц", nullptr, 0,
+              "срез стиков числом; 0 — по частоте кадров" },
+            { "rc_smoothing_throttle_cutoff", kInt, kMaster, kGroupRx, 0, 255, 0, kTable, "Гц", nullptr, 0,
+              "срез газа числом; 0 — по частоте кадров" },
+            { "deadband", kInt, kMaster, kGroupRx, 0, 32, 0, kTable, "", nullptr, 0,
+              "мёртвая зона крена и тангажа у центра (500 — полстика); дальше растянуто до упора" },
+            { "yaw_deadband", kInt, kMaster, kGroupRx, 0, 100, 0, kTable, "", nullptr, 0,
+              "мёртвая зона рысканья" },
             { "crash_recovery", kEnum, kPid, kGroupSafety, 0, 3, 0, kTable, "", CRASH_RECOVERY, 4,
               "удар в воздухе в ACRO/HORIZON: ON — выровняться, BEEP — и пищать, DISARM — моторы стоп" },
             { "crash_dthreshold", kInt, kPid, kGroupSafety, 10, 2000, 50, kTable, "", nullptr, 0,
@@ -1040,6 +1061,14 @@ namespace copter
             s.failsafeStickThreshold = value(PARAM_FAILSAFE_STICK_THRESHOLD) * 0.01f;
             s.failsafeProcedure = static_cast<FailsafeProcedure>(static_cast<uint8_t>(value(PARAM_FAILSAFE_PROCEDURE)));
             s.failsafeSwitchMode = static_cast<FailsafeSwitchMode>(static_cast<uint8_t>(value(PARAM_FAILSAFE_SWITCH_MODE)));
+            RcSmoothingSettings& rs = s.rcSmoothing;
+            rs.enabled = value(PARAM_RC_SMOOTHING) > 0.5f;
+            rs.autoFactor = static_cast<uint8_t>(value(PARAM_RC_SMOOTHING_AUTO_FACTOR));
+            rs.autoFactorThrottle = static_cast<uint8_t>(value(PARAM_RC_SMOOTHING_AUTO_FACTOR_THROTTLE));
+            rs.setpointCutoffHz = static_cast<uint16_t>(value(PARAM_RC_SMOOTHING_SETPOINT_CUTOFF));
+            rs.throttleCutoffHz = static_cast<uint16_t>(value(PARAM_RC_SMOOTHING_THROTTLE_CUTOFF));
+            rs.deadband = static_cast<uint8_t>(value(PARAM_DEADBAND));
+            rs.yawDeadband = static_cast<uint8_t>(value(PARAM_YAW_DEADBAND));
             GpsRescueSettings& r = s.rescue;
             r.minStartDistM = value(PARAM_GPS_RESCUE_MIN_START_DIST);
             r.altMode = static_cast<RescueAltMode>(static_cast<uint8_t>(value(PARAM_GPS_RESCUE_ALT_MODE)));

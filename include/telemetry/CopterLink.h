@@ -295,6 +295,7 @@ public:
               ctl.isArmed() ? "true" : "false", stateName(s.state), copterModeName(s.mode));
         w.add(",\"rx\":\"%s\"", rc.isFrameTimeout() ? "lost" : rc.isFailsafeReported() ? "fs" : "ok");
         if (rc.getLinkQuality() >= 0) w.add(",\"lq\":%d", static_cast<int>(rc.getLinkQuality()));
+        w.add(",\"rxhz\":%.0f,\"rcsp\":%.0f,\"rcth\":%.0f", s.rcFrameHz, s.rcSetpointCutoffHz, s.rcThrottleCutoffHz);
         w.add(",\"ch\":[");
         for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i) w.add(i ? ",%u" : "%u", static_cast<unsigned>(rc.getState().get(i)));
         w.add("],\"att\":[%.1f,%.1f,%.1f],\"alt\":%.2f,\"vz\":%.2f,\"thr\":%.3f,\"v\":%.2f", s.roll, s.pitch, s.yaw,

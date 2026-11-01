@@ -9,6 +9,7 @@
 #include "copter/Mixer.h"
 #include "copter/Presets.h"
 #include "copter/RateController.h"
+#include "copter/RcSmoothing.h"
 
 // ============================================================
 // Мультикоптер целиком: датчики и ручки пульта -> команды моторам.
@@ -283,7 +284,7 @@ namespace copter
         bool airmode = true;
         bool voltageCompensation = true;
         bool rpmNotches = true;
-        float rcSmoothingHz = 40.0f;
+        RcSmoothingSettings rcSmoothing;   // rc_smoothing_*, deadband (copter/RcSmoothing.h)
         // failsafe (BF: failsafe_*). Связи нет FAILSAFE_HOLD_S — этап 1:
         // ровно и держит высоту; нет failsafeDelayS — этап 2 (процедура)
         float failsafeDescent = 0.7f;      // м/с: снижение AUTO-LAND
@@ -326,6 +327,9 @@ namespace copter
         bool saturated = false;
         bool crashed = false;
         bool crashRecovery = false;    // удар в воздухе — выравнивается (crash_recovery)
+        float rcFrameHz = 0;           // частота кадров приёмника (измерена)
+        float rcSetpointCutoffHz = 0;  // сглаживание стиков: срез PT3 (0 — выключено)
+        float rcThrottleCutoffHz = 0;  // и газа
         bool runaway = false;          // DISARM защитой runaway takeoff (до выключения тумблера)
         bool runawayCheck = false;     // проверка runaway takeoff ещё работает (после ARM, до уверенного взлёта)
         uint8_t failsafeStage = 0;     // 0 — нет, 1 — ровно и держит высоту, 2 — процедура
@@ -355,7 +359,7 @@ namespace copter
                 axes[a].setMaxRate(t.rates[a].apply(1.0f));
                 absCtl[a].configure(t.pid.absCutoffHz, dt);
             }
-            for (int a = 0; a < 4; ++a) stickLpf[a].configure(s.rcSmoothingHz, dt);
+            rcSmooth.configure(s.rcSmoothing, dt);
             throttleHpLpf.configure(t.pid.antiGravityHz, dt);
             throttleBoostLpf.configure(t.pid.throttleBoostHz, dt);
             configureLevelFilters(t.pid);
@@ -574,8 +578,12 @@ namespace copter
             }
             status.mode = mode;
 
-            const float sticks[4] = { stickLpf[0].apply(rc.roll), stickLpf[1].apply(rc.pitch),
-                                      stickLpf[2].apply(rc.yaw), stickLpf[3].apply(rc.throttle) };
+            rcSmooth.track(framePeriod);
+            float sticks[4] = { rc.roll, rc.pitch, rc.yaw, rc.throttle };
+            rcSmooth.apply(sticks);
+            status.rcFrameHz = rcSmooth.frameRateHz();
+            status.rcSetpointCutoffHz = rcSmooth.setpointCutoffHz();
+            status.rcThrottleCutoffHz = rcSmooth.throttleCutoffHz();
             float sp[3], stickSp[3];
             rateSetpoints(mode, sticks, sp, stickSp, rc.acroTrainer, rescuing ? &rescueCmd : nullptr);
             if (!crashRecovery(mode, sp, rates))
@@ -861,7 +869,7 @@ namespace copter
         void resetFlight(const CopterSensors& sens)
         {
             for (auto& ax : axes) ax.reset();
-            for (auto& f : stickLpf) f.reset();
+            rcSmooth.reset();
             for (auto& f : angleFfLpf) f.reset();
             angleTargetValid = false;
             horizonStick.reset(1.0f);
@@ -1339,7 +1347,7 @@ namespace copter
         RateAxis axes[3];
         AbsoluteControl absCtl[3];
         GpsRescue rescue;
-        Pt1 stickLpf[4];
+        RcSmoothing rcSmooth;
         Pt1 throttleHpLpf;               // anti-gravity
         Pt1 throttleBoostLpf;            // throttle_boost
         Pt1 angleFfLpf[2];               // angle_feedforward_smoothing_ms

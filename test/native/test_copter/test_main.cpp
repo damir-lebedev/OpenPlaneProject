@@ -4664,6 +4664,83 @@ void test_crsf_telemetry_frames()
     TEST_ASSERT_EQUAL_UINT8_ARRAY(expected, types, 8);
 }
 
+// ---- сглаживание стиков и мёртвые зоны (copter/RcSmoothing.h) ----
+
+void test_rc_smoothing_cutoff_follows_frame_rate()
+{
+    // как в BF: частота кадров × 1.5 / (1 + factor/10), не ниже 15 Гц
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 93.75f, RcSmoothing::autoCutoff(250.0f, 30));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 56.25f, RcSmoothing::autoCutoff(150.0f, 30));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 187.5f, RcSmoothing::autoCutoff(500.0f, 30));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 15.0f, RcSmoothing::autoCutoff(30.0f, 30));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 125.0f, RcSmoothing::autoCutoff(250.0f, 20));
+
+    RcSmoothing r;
+    RcSmoothingSettings s;
+    r.configure(s, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 93.75f, r.setpointCutoffHz());   // до измерения — 250 Гц
+    r.track(1.0f / 150.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 150.0f, r.frameRateHz());
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 56.25f, r.setpointCutoffHz());
+    r.track(1.0f / 155.0f);                                          // дрожь меньше 10 % — не пересчитывать
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 56.25f, r.setpointCutoffHz());
+    s.setpointCutoffHz = 40;
+    s.autoFactorThrottle = 60;
+    r.configure(s, 0.001f);
+    TEST_ASSERT_EQUAL_FLOAT(40.0f, r.setpointCutoffHz());
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 150.0f * 1.5f / 7.0f, r.throttleCutoffHz());
+
+    // PT3: −3 дБ на срезе — синус 50 Гц через срез 50 Гц
+    Pt3 f;
+    f.configure(50.0f, 0.0001f);
+    float peak = 0.0f;
+    for (int i = 0; i < 20000; ++i)
+    {
+        const float y = f.apply(sinf(2.0f * PI_F * 50.0f * i * 0.0001f));
+        if (i > 10000) peak = fmaxf(peak, fabsf(y));
+    }
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, 0.7071f, peak);
+
+    // ступенька кадров: без сглаживания — ступенька, со сглаживанием — плавно
+    RcSmoothingSettings off;
+    off.enabled = false;
+    RcSmoothing raw;
+    raw.configure(off, 0.001f);
+    float st[4] = { 0.5f, 0.0f, 0.0f, 0.3f };
+    raw.apply(st);
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, st[0]);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, raw.setpointCutoffHz());
+    RcSmoothing smooth;
+    smooth.configure(RcSmoothingSettings(), 0.001f);
+    float sm[4] = { 0.5f, 0.0f, 0.0f, 0.3f };
+    smooth.apply(sm);
+    TEST_ASSERT_TRUE(sm[0] > 0.0f && sm[0] < 0.25f);   // три PT1 по 184 Гц за 1 мс: 0.5 × 0.685³
+}
+
+void test_deadband_zeroes_center_and_keeps_full_stick()
+{
+    TEST_ASSERT_EQUAL_FLOAT(0.3f, applyDeadband(0.3f, 0));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, applyDeadband(0.015f, 10));       // 10 из 500 = 0.02
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, applyDeadband(-0.02f, 10));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, applyDeadband(1.0f, 10));          // упор — полный
+    TEST_ASSERT_EQUAL_FLOAT(-1.0f, applyDeadband(-1.0f, 32));
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.49f / 0.98f, applyDeadband(0.51f, 10));
+
+    // в контроллере: крен в мёртвой зоне — уставка ноль, рысканье — своя зона
+    CopterSettings s;
+    s.rcSmoothing.enabled = false;
+    s.rcSmoothing.deadband = 10;
+    s.rcSmoothing.yawDeadband = 50;
+    RcSmoothing r;
+    r.configure(s.rcSmoothing, 0.001f);
+    float st[4] = { 0.015f, 0.05f, 0.08f, 0.5f };
+    r.apply(st);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, st[0]);
+    TEST_ASSERT_TRUE(st[1] > 0.0f);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, st[2]);
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, st[3]);                            // газ — без зоны
+}
+
 // ---- OSD (copter/Osd.h, hal/Max7456.h) ----
 
 void test_osd_arrows_and_warnings()
@@ -5135,6 +5212,8 @@ int main()
     RUN_TEST(test_cli_vtx_and_params);
     RUN_TEST(test_gps_home_distance_and_direction);
     RUN_TEST(test_crsf_telemetry_frames);
+    RUN_TEST(test_rc_smoothing_cutoff_follows_frame_rate);
+    RUN_TEST(test_deadband_zeroes_center_and_keeps_full_stick);
     RUN_TEST(test_osd_arrows_and_warnings);
     RUN_TEST(test_osd_screen_layout);
     RUN_TEST(test_osd_layout_from_bf_positions);

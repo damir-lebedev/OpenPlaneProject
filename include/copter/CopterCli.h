@@ -26,6 +26,7 @@
 //   rxfail [канал a|h|s [значение]] — канал без связи: авто, держать, задать
 //   vtx [№ канал полоса канал_VTX мощность от до] — видеопередатчик с тумблера;
 //   vtx_info               — что ответил видеопередатчик, его таблица мощностей
+//   rc_smoothing_info      — частота кадров приёмника и срезы сглаживания стиков
 //   save                   — во флеш, настройка пересчитана, выход из CLI
 //   defaults [nosave]      — всё по умолчанию (и сохранить)
 //   status, tasks, version, help, exit (несохранённое отменяется)
@@ -188,6 +189,7 @@ namespace copter
             else if (is(cmd, "rxfail")) cmdRxfail(args);
             else if (is(cmd, "vtx")) cmdVtx(args);
             else if (is(cmd, "motor")) cmdMotor(args);
+            else if (is(cmd, "rc_smoothing_info")) cmdRcSmoothingInfo();
             else if (is(cmd, "vtx_info")) port.printVtxInfo();
             else if (is(cmd, "dshot_telemetry_info")) port.printDshotTelemetry();
             else if (is(cmd, "flash_info")) port.printFlashInfo();
@@ -248,6 +250,7 @@ namespace copter
             print("dshot_telemetry_info — обороты моторов и ошибки ответа (dshot_bidir)\r\n");
             print("flash_info · flash_erase — флеш чёрного ящика: что за микросхема и полёты · стереть всё\r\n");
             print("vtx [№ канал полоса канал_VTX мощность от до] · vtx_info — видеопередатчик с тумблера · что он ответил\r\n");
+            print("rc_smoothing_info — частота кадров приёмника и сглаживание стиков\r\n");
             print("save — сохранить и пересчитать настройку · defaults [nosave] — всё по умолчанию\r\n");
             print("status · tasks · version · exit (несохранённое отменяется)\r\n");
         }
@@ -368,6 +371,18 @@ namespace copter
             char m[RcConfig::MAPPABLE + 1];
             rc.formatMap(m, sizeof(m));
             print("map %s\r\n", m);
+        }
+
+        // Что намерило сглаживание стиков (как rc_smoothing_info в BF).
+        void cmdRcSmoothingInfo()
+        {
+            const CopterStatus& st = ctl.getStatus();
+            const RcSmoothingSettings& rs = ctl.getSettings().rcSmoothing;
+            print("# RC Smoothing: %s\r\n", rs.enabled ? "ON" : "OFF");
+            print("# Кадры приёмника: %d Гц\r\n", static_cast<int>(lroundf(st.rcFrameHz)));
+            print("# Стики: %d Гц (%s), газ: %d Гц (%s), фильтр PT3\r\n", static_cast<int>(lroundf(st.rcSetpointCutoffHz)),
+                  rs.setpointCutoffHz ? "задан" : "авто", static_cast<int>(lroundf(st.rcThrottleCutoffHz)),
+                  rs.throttleCutoffHz ? "задан" : "авто");
         }
 
         void cmdRxrange(char* args)
