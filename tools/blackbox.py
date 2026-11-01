@@ -115,14 +115,17 @@ class Schema:
             self.fields.append((name, fmt, float(div) if div else 1.0))
 
     def compile(self):
-        fixed = [f for f in self.fields if f[1] != "s"]
+        fixed = [f for f in self.fields if f[1] not in ("s", "y")]
         self.struct = struct.Struct("<" + "".join(f[1] for f in fixed))
         self.text = any(f[1] == "s" for f in self.fields)
+        self.raw = any(f[1] == "y" for f in self.fields)   # байты до конца записи (кадр камеры)
 
     def decode(self, payload):
         values = list(self.struct.unpack_from(payload))
         if self.text:
             values.append(payload[self.struct.size:].decode("utf-8", "replace"))
+        if self.raw:
+            values.append(bytes(payload[self.struct.size:]))
         return values
 
 
@@ -167,6 +170,35 @@ def decode_records(records):
         else:
             unknown += 1
     return schemas, info, events, rows, unknown
+
+
+def assemble_frames(items):
+    """Записи CAM (t_us, кадр, смещение, длина, байты) -> [(t_us, кадр, jpeg)]; неполные — мимо."""
+    frames = {}
+    for t_us, frame, off, size, data in items:
+        f = frames.setdefault((frame, size), {"t": t_us, "parts": {}})
+        f["parts"][off] = data
+    out = []
+    for (frame, size), f in frames.items():
+        parts = f["parts"]
+        jpeg = b"".join(parts[k] for k in sorted(parts))
+        if len(jpeg) == size and jpeg[:2] == b"\xff\xd8":
+            out.append((f["t"], frame, jpeg))
+    return sorted(out)
+
+
+def save_camera_frames(items, zero, out_dir):
+    """Кадры камеры из журнала — файлами camera/000123_12.345s.jpg."""
+    frames = assemble_frames(items)
+    if not frames:
+        return 0
+    os.makedirs(out_dir, exist_ok=True)
+    unwrap = Unwrap()
+    for t_us, frame, jpeg in frames:
+        t = (unwrap(t_us) - zero) / 1e6
+        with open(os.path.join(out_dir, f"{frame:06d}_{t:.3f}s.jpg"), "wb") as f:
+            f.write(jpeg)
+    return len(frames)
 
 
 class Unwrap:
@@ -214,6 +246,10 @@ def decode_file(path, out_dir=None, quiet=False):
     mode_names = info.get("names.mode", "").split()
 
     stats = {}
+    cam = rows.pop("CAM", None)
+    if cam:
+        stats["CAM"] = (cam[0], cam[1])
+        save_camera_frames(cam[1], zero, os.path.join(out_dir, "camera"))
     for name, (schema, items) in rows.items():
         unwrap = Unwrap()
         columns = [f[0] for f in schema.fields]

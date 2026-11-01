@@ -427,6 +427,11 @@ namespace Config
     constexpr int16_t PIN_CURRENT_ADC = PC1;   // ADC1_INP11: датчик тока
     constexpr int16_t PIN_TELEM_RX    = PD0;   // UART4 (эти же пины — FDCAN1)
     constexpr int16_t PIN_TELEM_TX    = PD1;
+    // Камера OV5640 — разъём DCMI J6 DevEBox (SENSOR_CAMERA): шина данных и
+    // такты — в hal/stm32/Stm32Camera.h (D0–D7 PC6 PC7 PE0 PE1 PE4 PD3 PE5 PE6,
+    // PCLK PA6, HREF PA4, VSYNC PB7, XCLK PA8), SCCB — шина датчиков PB10/PB11.
+    constexpr int16_t PIN_CAM_PWDN    = PA7;
+    constexpr int16_t PIN_CAM_RESET   = PC4;
 
     // Отдельного внешнего разъёма I2C нет: компас и трубка Пито — на шине датчиков.
     constexpr int16_t PIN_I2C_EXT_SDA = -1;
@@ -1273,6 +1278,16 @@ namespace Config
     // больше.
     constexpr const char* BLACKBOX_SD_FILE = "BLACKBOX.BIN";
     constexpr uint32_t BLACKBOX_SD_MAX_BYTES = 256UL * 1024 * 1024;
+
+    // Камера (SENSOR_CAMERA): кадр JPEG в чёрный ящик раз в столько мс, пока
+    // идёт запись (0 — только снимки по просьбе приложения); размер и
+    // качество (0x4407 OV5640: 2 — лучше и больше, 40 — хуже и меньше).
+    constexpr uint32_t CAMERA_BLACKBOX_PERIOD_MS = 1000;
+    constexpr uint16_t CAMERA_WIDTH = 640;
+    constexpr uint16_t CAMERA_HEIGHT = 480;
+    constexpr uint8_t CAMERA_QUALITY = 12;
+    constexpr uint32_t CAMERA_BUFFER_BYTES = 160UL * 1024;      // AXI SRAM: кадр 640×480 — 8–40 КБ
+    constexpr uint32_t CAMERA_BLACKBOX_RESERVE = 96UL * 1024;   // столько очереди ящика кадр не займёт
 
     constexpr uint32_t BLACKBOX_PREROLL_MS = 10000;
     constexpr uint32_t BLACKBOX_POSTROLL_MS = 10000;

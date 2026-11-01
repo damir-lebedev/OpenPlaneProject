@@ -253,7 +253,14 @@ class OpconfigTest(unittest.TestCase):
         text = read(self.tmp, opconfig.FILES["sensors"])
         self.assertIn("#define SENSOR_KIT SENSOR_KIT_CUSTOM", text)
         self.assertIn("#define SENSOR_GPS SENSOR_GPS_NONE", text)
-        self.assertEqual(custom, opconfig.describe(opconfig.Source(self.tmp))["current"]["sensors"])
+        self.assertEqual(dict(custom, camera="SENSOR_CAMERA_NONE"), opconfig.describe(opconfig.Source(self.tmp))["current"]["sensors"])
+
+        # камера — своей строкой поверх набора
+        self.apply(self.config(sensors=dict(kits["SENSOR_KIT_LSM6DSV_PITOT"], camera="SENSOR_CAMERA_OV5640")))
+        text = read(self.tmp, opconfig.FILES["sensors"])
+        self.assertIn("#define SENSOR_KIT SENSOR_KIT_LSM6DSV_PITOT", text)
+        self.assertIn("#define SENSOR_CAMERA SENSOR_CAMERA_OV5640", text)
+        self.assertEqual("SENSOR_CAMERA_OV5640", opconfig.describe(opconfig.Source(self.tmp))["current"]["sensors"]["camera"])
 
         self.apply(self.config(sensors=self.manifest["current"]["sensors"]))
         self.assertEqual(original, read(self.tmp, opconfig.FILES["sensors"]))
@@ -264,10 +271,10 @@ class OpconfigTest(unittest.TestCase):
         kits = {k["id"]: k["sensors"] for k in self.manifest["sensors"]["kits"] if k["sensors"]}
         boards = {b["env"]: b for b in self.manifest["boards"]}
         self.assertEqual("SENSOR_KIT_MATEK_H743", boards["matek-h743"]["kit"])
-        self.assertEqual(kits["SENSOR_KIT_MATEK_H743"], boards["matek-h743"]["sensors"])
+        self.assertEqual(dict(kits["SENSOR_KIT_MATEK_H743"], camera="SENSOR_CAMERA_NONE"), boards["matek-h743"]["sensors"])
         self.assertIsNone(boards["stm32h743-devebox"]["kit"])
         self.assertEqual(self.manifest["current"]["sensors"], boards["stm32h743-devebox"]["sensors"])
-        self.assertEqual(kits["SENSOR_KIT_MATEK_H743"], self.config("matek-h743")["sensors"])
+        self.assertEqual(dict(kits["SENSOR_KIT_MATEK_H743"], camera="SENSOR_CAMERA_NONE"), self.config("matek-h743")["sensors"])
         original = read(self.tmp, opconfig.FILES["sensors"])
 
         self.assertEqual([], self.apply(self.config("matek-h743"))["changed"])
@@ -281,7 +288,7 @@ class OpconfigTest(unittest.TestCase):
         self.assertEqual(original.count("#define SENSOR_KIT SENSOR_KIT_BENCH_GY521"),
                          text.count("#define SENSOR_KIT SENSOR_KIT_BENCH_GY521"))
         manifest = opconfig.describe(opconfig.Source(self.tmp))
-        self.assertEqual(with_mag, next(b for b in manifest["boards"] if b["env"] == "matek-h743")["sensors"])
+        self.assertEqual(dict(with_mag, camera="SENSOR_CAMERA_NONE"), next(b for b in manifest["boards"] if b["env"] == "matek-h743")["sensors"])
 
         # Чужой набор целиком — тоже строками SENSOR_*: строку SENSOR_KIT перекрыл бы флаг.
         self.apply(self.config("matek-h743", sensors=kits["SENSOR_KIT_LSM6DSV_PITOT"]))

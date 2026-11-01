@@ -33,7 +33,7 @@
 //
 // Поле схемы — имя:тип[/делитель]. Тип — символ модуля struct в
 // Python: I/i — u32/i32, H/h — u16/i16, B/b — u8/i8, f — float; s —
-// текст до конца записи. Значение = сырое / делитель. Длинная схема
+// текст до конца записи, y — байты до конца записи (кадр камеры). Значение = сырое / делитель. Длинная схема
 // режется на несколько записей SCHEMA: продолжение — "<id> + поля...".
 // ============================================================
 
@@ -119,6 +119,7 @@ namespace BlackBoxFormat
         REC_QCTRL  = 0x21,   // каждый цикл: P I D F по осям, моторы 1–4, газ
         REC_QMOT8  = 0x22,   // каждый цикл, если моторов больше 4: моторы 5–8
         REC_QSTATE = 0x23,   // 50 Гц: углы, высота, стики, батарея, режим, флаги, запреты ARM
+        REC_CAM    = 0x24,   // кадр камеры (JPEG) кусками: номер, смещение, длина, байты (telemetry/CameraStream.h)
         REC_ERASED = 0xFF,   // стёртый флеш: дальше в секторе записей нет
     };
 
@@ -442,6 +443,8 @@ namespace BlackBoxFormat
         { REC_QCTRL,  "QCTRL",  QCTRL_FIELDS, sizeof(CopterCtrlRecord) },
         { REC_QMOT8,  "QMOT8",  QMOT8_FIELDS, sizeof(CopterMotor8Record) },
         { REC_QSTATE, "QSTATE", QSTATE_FIELDS, sizeof(CopterStateRecord) },
+        // y — байты до конца записи (кусок JPEG)
+        { REC_CAM,    "CAM",    "t_us:I frame:H off:I size:I data:y", 0 },
     };
 
     inline const Schema* findSchema(uint8_t type)

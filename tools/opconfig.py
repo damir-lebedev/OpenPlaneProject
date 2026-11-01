@@ -68,7 +68,7 @@ NEED_TOKENS = {
     "buzzer": "пищалка",
     "esc3d": "двунаправленный ESC",
 }
-SENSOR_CATEGORIES = ("imu", "baro", "mag", "airspeed", "gps")
+SENSOR_CATEGORIES = ("imu", "baro", "mag", "airspeed", "gps", "camera")
 BOARD_TAG_KEYS = {"blackbox": ("flash", "sd", "none"), "telemetry": ("wifi", "mavlink", "none")}
 
 INT_LIMITS = {
@@ -546,7 +546,7 @@ def parse_sensors(tf):
     kit_block = None
     for i, raw in enumerate(lines):
         line = raw.strip()
-        m = re.match(r"#define (SENSOR_(IMU|BARO|MAG|AIRSPEED|GPS)_\w+)\s+(\d+)\s*(?://\s*(.*))?$", line)
+        m = re.match(r"#define (SENSOR_(IMU|BARO|MAG|AIRSPEED|GPS|CAMERA)_\w+)\s+(\d+)\s*(?://\s*(.*))?$", line)
         if m:
             ident, cat, value, note = m.group(1), m.group(2).lower(), int(m.group(3)), (m.group(4) or "").strip()
             chip = ident.split("_", 2)[2]
@@ -554,7 +554,8 @@ def parse_sensors(tf):
                 bus, title, doc = "none", "нет", ""
             else:
                 base = chip[:-4] if chip.endswith("_SPI") else chip
-                bus = "spi" if ("SPI" in note or chip.endswith("_SPI")) else ("uart" if cat == "gps" else "i2c")
+                bus = ("spi" if ("SPI" in note or chip.endswith("_SPI"))
+                       else "uart" if cat == "gps" else "dcmi" if cat == "camera" else "i2c")
                 key = norm(base.replace("PITOT_", ""))
                 pool = [h for h in header if "в трубке" in h.lower()] if cat == "airspeed" else header
                 doc = next((h for h in pool if key and key in norm(h)), "")
@@ -573,7 +574,7 @@ def parse_sensors(tf):
             continue
         if line.startswith("#elif") or line.startswith("#endif"):
             kit_block = None
-        m = re.match(r"#define KIT_(IMU|BARO|MAG|AIRSPEED|GPS)\s+(SENSOR_\w+)", line)
+        m = re.match(r"#define KIT_(IMU|BARO|MAG|AIRSPEED|GPS|CAMERA)\s+(SENSOR_\w+)", line)
         if m and kit_block:
             kit_map[kit_block][m.group(1).lower()] = m.group(2)
             continue
@@ -581,9 +582,9 @@ def parse_sensors(tf):
         if m and i > 0 and KIT_GUARD.match(lines[i - 1].strip()):
             current_kit = m.group(1)
             continue
-        m = re.match(r"#define SENSOR_(IMU|BARO|MAG|AIRSPEED|GPS)\s+(SENSOR_(?:IMU|BARO|MAG|AIRSPEED|GPS)_\w+)", line)
+        m = re.match(r"#define SENSOR_(IMU|BARO|MAG|AIRSPEED|GPS|CAMERA)\s+(SENSOR_(?:IMU|BARO|MAG|AIRSPEED|GPS|CAMERA)_\w+)", line)
         if m:
-            explicit[m.group(1).lower()] = m.group(2)
+            explicit.setdefault(m.group(1).lower(), m.group(2))   # первая строка (блок приложения) главнее
     for kit in kits:
         kit["sensors"] = kit_map.get(kit["id"], {})
     current = {c: explicit.get(c, kit_map.get(current_kit, {}).get(c)) for c in SENSOR_CATEGORIES}
@@ -595,7 +596,8 @@ def board_sensors(info, board_kit):
     своего у платы (-D SENSOR_KIT=… в её env) или из строки SENSOR_KIT."""
     kits = {k["id"]: k["sensors"] for k in info["kits"]}
     base = kits.get(board_kit or info["currentKit"], {})
-    return {c: info["explicit"].get(c, base.get(c)) for c in SENSOR_CATEGORIES}
+    # камеры в наборах нет — без своей строки её нет
+    return {c: info["explicit"].get(c, base.get(c, "SENSOR_CAMERA_NONE" if c == "camera" else None)) for c in SENSOR_CATEGORIES}
 
 
 # ------------------------------------------------------------
@@ -988,9 +990,15 @@ def apply_sensors(tf, requested, manifest, errors, board_kit=None):
         if wanted == board_sensors(dict(info, explicit={}), board_kit):
             return
     else:
-        kit = next((k["id"] for k in info["kits"] if k["sensors"] and k["sensors"] == wanted), None)
+        # камеры в наборах нет: набор подбирается по остальным датчикам,
+        # камера — своей строкой в блоке приложения
+        plain = {c: v for c, v in wanted.items() if c != "camera"}
+        kit = next((k["id"] for k in info["kits"] if k["sensors"] and k["sensors"] == plain), None)
         if kit:
             lines[guard + 1] = "#define SENSOR_KIT " + kit
+            if wanted.get("camera", "SENSOR_CAMERA_NONE") != "SENSOR_CAMERA_NONE":
+                block = [STUDIO_BEGIN, "#ifndef SENSOR_CAMERA", "#define SENSOR_CAMERA " + wanted["camera"], "#endif", STUDIO_END]
+                lines[guard + 3:guard + 3] = block
             return
         lines[guard + 1] = "#define SENSOR_KIT SENSOR_KIT_CUSTOM"
     block = [STUDIO_BEGIN]

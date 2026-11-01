@@ -60,6 +60,10 @@
 #include "telemetry/LoopStats.h"
 #include "telemetry/MavlinkTelemetry.h"
 #include "telemetry/OledDisplay.h"
+#include "telemetry/CameraStream.h"
+#if SENSOR_CAMERA == SENSOR_CAMERA_OV5640
+#include "hal/stm32/Stm32Camera.h"
+#endif
 
 
 // ------------------------------------------------------------
@@ -150,6 +154,143 @@ DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogge
 AppLink appLink(flightController, &autopilot, &loopStats);   // живая связь с OpenPlane Studio
 MavlinkTelemetry mavlink(*board.telemetryUart(), flightController, &autopilot, &loopStats);
 OledDisplay oledDisplay(flightController, &autopilot, loopStats);
+
+// ------------------------------------------------------------
+// Камера OV5640 (SENSOR_CAMERA, разъём DCMI DevEBox): своя задача снимает
+// кадр JPEG раз в CAMERA_BLACKBOX_PERIOD_MS, пока пишет чёрный ящик, и по
+// просьбе приложения ("cam snap"); кадры — telemetry/CameraStream.h.
+// Буфер кадра — в SRAM домена D2 (0x30000000, 288 КБ): AXI SRAM почти вся у
+// очереди ящика, а DMA2 видит обе.
+// ------------------------------------------------------------
+CameraStream cameraStream;
+#if SENSOR_CAMERA == SENSOR_CAMERA_OV5640
+Stm32Camera cameraHw;
+Ov5640 ov5640;
+static uint8_t* const cameraBuffer = reinterpret_cast<uint8_t*>(0x30000000);
+static_assert(Config::CAMERA_BUFFER_BYTES <= 288UL * 1024, "буфер кадра — в D2 SRAM, 288 КБ");
+
+static void setupCamera()
+{
+    RCC->AHB2ENR |= RCC_AHB2ENR_D2SRAM1EN | RCC_AHB2ENR_D2SRAM2EN | RCC_AHB2ENR_D2SRAM3EN;
+    cameraHw.powerUp(Config::PIN_CAM_PWDN, Config::PIN_CAM_RESET);
+    I2cSccb sccb(board.i2c());
+    CameraSettings s;
+    s.width = Config::CAMERA_WIDTH;
+    s.height = Config::CAMERA_HEIGHT;
+    s.quality = Config::CAMERA_QUALITY;
+    Serial.print("Камера OV5640: ");
+    if (!ov5640.begin(sccb, s))
+    {
+        cameraStream.state = ov5640.chipId() == 0 ? CameraStream::State::NORESP : CameraStream::State::ERROR;
+        cameraStream.chip = ov5640.chipId();
+        Serial.print(ov5640.error());
+        if (ov5640.failedRegister())
+        {
+            Serial.print(" 0x");
+            Serial.print(ov5640.failedRegister(), HEX);
+        }
+        Serial.println();
+        return;
+    }
+    cameraStream.chip = ov5640.chipId();
+    cameraStream.width = ov5640.frameWidth();
+    cameraStream.height = ov5640.frameHeight();
+    delay(300);   // автоэкспозиция успевает схватиться
+    const uint32_t start = millis();
+    const uint32_t n = cameraHw.snapshot(cameraBuffer, Config::CAMERA_BUFFER_BYTES, 1000);
+    if (n == 0)
+    {
+        cameraStream.state = CameraStream::State::ERROR;
+        Serial.print("SCCB ответил, но кадра нет (DCMI: принято ");
+        Serial.print(static_cast<unsigned long>(cameraHw.lastRawBytes()));
+        Serial.print(" байт, RIS 0x");
+        Serial.print(cameraHw.lastRis(), HEX);
+        Serial.println(")");
+        return;
+    }
+    cameraStream.state = CameraStream::State::OK;
+    cameraStream.lastBytes = n;
+    Serial.print(cameraStream.width);
+    Serial.print("x");
+    Serial.print(cameraStream.height);
+    Serial.print(" JPEG, кадр ");
+    Serial.print(static_cast<unsigned long>(n));
+    Serial.print(" байт за ");
+    Serial.print(static_cast<unsigned long>(millis() - start));
+    Serial.println(" мс");
+}
+
+// "cam diag": такты XCLK, PWDN/RESET, ответ SCCB при обеих полярностях PWDN.
+static void cameraDiag()
+{
+    Serial.printf("HSI48 %s, MCO1SEL %lu MCO1PRE %lu, PA8 MODER %lu AF %lu\n", (RCC->CR & RCC_CR_HSI48RDY) ? "RDY" : "off",
+                  static_cast<unsigned long>((RCC->CFGR & RCC_CFGR_MCO1) >> RCC_CFGR_MCO1_Pos),
+                  static_cast<unsigned long>((RCC->CFGR & RCC_CFGR_MCO1PRE) >> RCC_CFGR_MCO1PRE_Pos),
+                  static_cast<unsigned long>((GPIOA->MODER >> 16) & 3), static_cast<unsigned long>((GPIOA->AFR[1] >> 0) & 0xF));
+    I2cSccb sccb(board.i2c());
+    I2cSccb sccb2640(board.i2c(), 0x30);
+    for (int pwdn = 0; pwdn < 2; ++pwdn)
+    {
+        digitalWrite(Config::PIN_CAM_PWDN, pwdn ? HIGH : LOW);
+        digitalWrite(Config::PIN_CAM_RESET, LOW);
+        delay(5);
+        digitalWrite(Config::PIN_CAM_RESET, HIGH);
+        delay(30);
+        uint8_t a = 0, b = 0;
+        const bool ok = sccb.read(0x300A, a) && sccb.read(0x300B, b);
+        uint8_t c = 0;
+        const bool ok2640 = sccb2640.write(0xFF, 0x01) && sccb2640.read(0x0A, c);
+        Serial.printf("PWDN=%d: OV5640 0x3C %s %02X%02X; 0x30 %s %02X\n", pwdn, ok ? "ответ" : "молчит", a, b,
+                      ok2640 ? "ответ" : "молчит", c);
+    }
+    digitalWrite(Config::PIN_CAM_PWDN, LOW);
+    int found = 0;
+    for (uint8_t addr = 1; addr < 127; ++addr)
+    {
+        board.i2c().beginTransmission(addr);
+        if (board.i2c().endTransmission(true) == 0)
+        {
+            Serial.printf("I2C датчиков: 0x%02X\n", addr);
+            ++found;
+        }
+    }
+    Serial.printf("на шине датчиков устройств: %d; камера: %s, кадров %lu, ошибок %lu, RIS 0x%lX, принято %lu\n", found,
+                  cameraStream.stateName(), static_cast<unsigned long>(cameraStream.frames),
+                  static_cast<unsigned long>(cameraStream.errors), static_cast<unsigned long>(cameraHw.lastRis()),
+                  static_cast<unsigned long>(cameraHw.lastRawBytes()));
+}
+
+static void cameraTask(void*)
+{
+    uint16_t frame = 0;
+    uint32_t lastRecordMs = 0;
+    for (;;)
+    {
+        vTaskDelay(pdMS_TO_TICKS(20));
+        if (cameraStream.state != CameraStream::State::OK || cameraStream.busy()) continue;
+        const bool forHost = cameraStream.snapshotWanted();
+        const uint32_t now = millis();
+        const bool forBox = Config::CAMERA_BLACKBOX_PERIOD_MS > 0 && blackBox.isRecording() &&
+                            now - lastRecordMs >= Config::CAMERA_BLACKBOX_PERIOD_MS;
+        if (!forHost && !forBox) continue;
+        const uint32_t tUs = micros();
+        const uint32_t n = cameraHw.snapshot(cameraBuffer, Config::CAMERA_BUFFER_BYTES, 500);
+        if (n == 0)
+        {
+            if (forHost) cameraStream.snapshotFailed("кадр не пришёл");
+            else cameraStream.errors++;
+            continue;
+        }
+        ++frame;
+        if (forBox)
+        {
+            lastRecordMs = now;
+            if (blackBox.pushCameraFrame(cameraBuffer, n, frame, tUs, Config::CAMERA_BLACKBOX_RESERVE)) cameraStream.recordedFrames++;
+        }
+        cameraStream.frameReady(cameraBuffer, n, frame, cameraStream.width, cameraStream.height, forHost);
+    }
+}
+#endif
 
 
 static void printBanner()
@@ -301,6 +442,9 @@ void setup()
     }
 
     setupSensors();
+#if SENSOR_CAMERA == SENSOR_CAMERA_OV5640
+    setupCamera();   // до задач: SCCB — на шине датчиков, потом шина у полётной задачи
+#endif
 
     flightController.begin();    // приёмник пульта
     mavlink.begin();             // радиомодем
@@ -320,12 +464,19 @@ void setup()
     debugConsole.setBootloaderHook(stm32RebootToBootloader);   // 'D' — перепрошивка без BOOT0
 #endif
     debugConsole.setAppLink(&appLink);
+    appLink.setCamera(&cameraStream);
+#if SENSOR_CAMERA == SENSOR_CAMERA_OV5640
+    appLink.setCameraDiag(cameraDiag);
+#endif
     debugConsole.printHint();
     Serial.println();
 
     // Стек в байтах; полётной задаче — с запасом под printf лога.
     Rtos::startTask(flightTask, "flight", 16384, nullptr, Rtos::PRIORITY_FLIGHT);
     Rtos::startTask(storageTask, "storage", 2048, nullptr, Rtos::PRIORITY_BACKGROUND);
+#if SENSOR_CAMERA == SENSOR_CAMERA_OV5640
+    Rtos::startTask(cameraTask, "camera", 2048, nullptr, Rtos::PRIORITY_BACKGROUND);
+#endif
     vTaskStartScheduler();       // не возвращается
 
     Serial.println("FreeRTOS не запустился (мало памяти?)");

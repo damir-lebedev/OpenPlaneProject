@@ -43,6 +43,9 @@
 //   GPS:
 //     • u-blox M10 (UBX)           — UART
 //     • нет
+//   Камера (только STM32H743 DevEBox: разъём DCMI FPC-24):
+//     • OV5640                     — DCMI, настройка по I2C датчиков 0x3C; кадры JPEG в чёрный ящик
+//     • нет
 // ============================================================
 
 // Нужны тем, кто раскрывает SELECTED_*_DEVICE(board): макросы
@@ -76,6 +79,9 @@
 
 #define SENSOR_GPS_NONE      0
 #define SENSOR_GPS_UBLOX_M10 1
+
+#define SENSOR_CAMERA_NONE   0
+#define SENSOR_CAMERA_OV5640 1   // DCMI
 
 // Готовые наборы: SENSOR_KIT задаёт все датчики разом.
 #define SENSOR_KIT_CUSTOM          0   // каждый датчик — своей строкой ниже
@@ -158,6 +164,14 @@
 
 #ifndef SENSOR_GPS
 #define SENSOR_GPS  KIT_GPS
+#endif
+
+// Камеры в наборах нет: ставится этой строкой (или флагом сборки).
+#ifndef SENSOR_CAMERA
+#define SENSOR_CAMERA SENSOR_CAMERA_NONE
+#endif
+#if SENSOR_CAMERA != SENSOR_CAMERA_NONE && !defined(BOARD_STM32H743)
+#error "SensorSelection.h: камера OV5640 — только на STM32H743 (разъём DCMI DevEBox)"
 #endif
 
 

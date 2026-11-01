@@ -6,6 +6,7 @@
 #include "hal/Rtos.h"
 #include "telemetry/BlackBoxFormat.h"
 #include "telemetry/BlackBoxRing.h"
+#include "telemetry/CameraStream.h"
 #include "telemetry/BlackBoxStorage.h"
 #include "telemetry/IFlightRecorder.h"
 
@@ -35,6 +36,21 @@ public:
     void requestManualStart() override { manualStartRequested = true; }
     void requestManualStop() override { manualStopRequested = true; }
     bool isManual() const { return manualRecording; }
+
+    // Кадр камеры (JPEG) в журнал записями REC_CAM — из задачи камеры. Только
+    // пока идёт запись и в очереди остаётся reserve байт: полётные данные
+    // важнее, кадр не вытесняет их. false — кадр не записан.
+    bool pushCameraFrame(const uint8_t* jpeg, uint32_t size, uint16_t frame, uint32_t tUs, uint32_t reserve)
+    {
+        if (!isRecording() || ring.freeBytes() < size + size / 8 + reserve) return false;
+        uint8_t record[BlackBoxFormat::MAX_RECORD];
+        for (uint32_t off = 0; off < size; off += CameraFormat::CAM_DATA)
+        {
+            const size_t n = size - off > CameraFormat::CAM_DATA ? CameraFormat::CAM_DATA : size - off;
+            push(record, CameraFormat::record(record, tUs, frame, off, size, jpeg + off, n));
+        }
+        return true;
+    }
 
     // --------------------------------------------------------
     // Задача записи (ядро 0): один шаг — не больше одной-двух

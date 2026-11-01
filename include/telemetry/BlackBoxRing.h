@@ -32,6 +32,7 @@ public:
     bool isReady() const { return capacity > 0; }
     uint32_t size() const { return capacity; }
     uint32_t used() const { return usedBytes; }
+    uint32_t freeBytes() const { return capacity - usedBytes; }
     uint32_t dropped() const { return droppedRecords; }
 
     void clear()

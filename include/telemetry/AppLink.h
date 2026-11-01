@@ -14,6 +14,7 @@
 #include "rc/RcChannelState.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/airspeed/AirspeedSensor.h"
+#include "telemetry/CameraStream.h"
 #include "telemetry/JsonWriter.h"
 #include "telemetry/LoopStats.h"
 
@@ -25,7 +26,9 @@
 //             Приложение повторяет команду раз в секунду, пока слушает:
 //             закрыли приложение или выдернули кабель — плата замолкает
 //             сама и не тратит на это полётный цикл;
-//   live 0  — замолчать сразу.
+//   live 0  — замолчать сразу;
+//   cam snap — снимок камеры (если она есть): строки "@cam {...}" с кадром
+//             JPEG кусками в base64 (telemetry/CameraStream.h).
 //
 // "@live {...}" — одна строка JSON: ARM, режим, связь с пультом, каналы,
 // выходы, углы, датчики и их калибровки (установка IMU, стоянка, компас),
@@ -63,9 +66,25 @@ public:
     {
     }
 
+    // Камера (SENSOR_CAMERA): её состояние — в @live, снимки — по "cam snap".
+    void setCamera(CameraStream* stream) { camera = stream; }
+    // "cam diag" — разбор камеры на стенде (main.cpp печатает в консоль).
+    void setCameraDiag(void (*diag)()) { cameraDiag = diag; }
+
     // Команда ПК (без STX и '\n'). true — команда наша.
     bool handleHostCommand(const char* command, uint32_t nowMs)
     {
+        if (strcmp(command, "cam diag") == 0)
+        {
+            if (cameraDiag) cameraDiag();
+            return true;
+        }
+        if (strcmp(command, "cam snap") == 0)
+        {
+            if (camera && camera->state == CameraStream::State::OK) camera->request();
+            else Serial.print("@cam {\"error\":\"камеры нет\"}\n");
+            return true;
+        }
         if (strcmp(command, "live") == 0 || strcmp(command, "live 1") == 0)
         {
             live = true;
@@ -83,6 +102,7 @@ public:
     // Вызывать каждый такт.
     void update(uint32_t nowMs)
     {
+        sendCamera();
         if (!live) return;
         if (static_cast<int32_t>(nowMs - liveUntilMs) >= 0)
         {
@@ -171,6 +191,14 @@ public:
         w.add(",\"pitot\":\"%s\"", sensorState(pitot));
         if (pitot && pitot->isAvailable()) w.add(",\"ias\":%.1f", pitot->getAirspeedData().indicatedMs);
 
+        w.add(",\"cam\":\"%s\"", camera ? camera->stateName() : "none");
+        if (camera && camera->state == CameraStream::State::OK)
+        {
+            w.add(",\"camw\":%u,\"camh\":%u,\"camn\":%lu,\"camkb\":%.1f,\"camrec\":%lu", camera->width, camera->height,
+                  static_cast<unsigned long>(camera->frames), camera->lastBytes / 1024.0f,
+                  static_cast<unsigned long>(camera->recordedFrames));
+        }
+
         w.add(",\"block\":");
         const char* block = controller.armBlockNow();
         if (block) w.str(block);
@@ -200,6 +228,23 @@ public:
 
 private:
 
+    // Кадр для приложения — строкой за такт, когда в порту есть место.
+    void sendCamera()
+    {
+        if (!camera) return;
+        char line[CameraStream::LINE_CAPACITY];
+        size_t n = camera->errorLine(line, sizeof(line));
+        if (n)
+        {
+            Serial.write(reinterpret_cast<const uint8_t*>(line), n);
+            return;
+        }
+        n = camera->nextLine(line, sizeof(line));
+        if (n == 0 || Serial.availableForWrite() < static_cast<int>(n)) return;
+        Serial.write(reinterpret_cast<const uint8_t*>(line), n);
+        camera->lineSent();
+    }
+
     template <typename SensorType>
     static const char* sensorState(const SensorType* sensor)
     {
@@ -209,6 +254,8 @@ private:
     FlightController& controller;
     Autopilot* autopilot;
     LoopStats* loopStats;
+    CameraStream* camera = nullptr;
+    void (*cameraDiag)() = nullptr;
 
     bool live = false;
     uint32_t liveUntilMs = 0;
