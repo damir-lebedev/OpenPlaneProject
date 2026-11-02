@@ -1,36 +1,33 @@
 # PLAN_COPTER.md — всё из Betaflight в коптерную прошивку
 
-Рабочий план. Пользователь чистит чат и пишет «продолжай работу по плану» —
-тогда выполняется **ровно этот протокол**, без чтения всего файла:
+Подробности каждого пункта BF. **Порядок работы — в `PLAN_MVP.md`** (с него
+начинать после «продолжай работать по плану»); здесь — только описание
+пунктов, которые он называет. Протокол батча:
 
-1. `grep -n "^### \[ \]" PLAN_COPTER.md | grep -v "Стенд: да" | head -5` —
-   первые 5 невыполненных пунктов без стенда; прочитать только их (Read с
-   offset/limit ~10 строк на пункт). Пункты «Стенд: да» — только вместе с
-   пользователем, когда он скажет, что железо на столе.
+1. Взять следующие пункты по списку PLAN_MVP.md (до ~5 за раз); прочитать
+   здесь только их: `grep -n "^### \[.\] NNN" PLAN_COPTER.md`, Read с
+   offset/limit. Пункты «Стенд: да» — только вместе с пользователем, когда
+   железо на столе.
 2. Читать только файлы из строки «Файлы»; искать — grep, а не чтение целиком.
    Память: `copter-firmware.md` (как устроено ядро).
-3. Сделать, покрыть тестами, проверить:
+3. Сделать прошивку **и сразу её UI в Studio** (`../openplane-studio`:
+   вкладка, наглядная картинка, перевод en.json — `python tools/i18n_check.py`,
+   `npx tsc --noEmit && npx vitest run`). Покрыть тестами, проверить:
    `export PATH="$HOME/tools/mingw64/bin:$HOME/.platformio/penv/Scripts:$PATH"`
-   `pio test -e native -f native/test_copter -f native/test_copter_sim 2>&1 | tail -3`
-   `pio test -e native-stm32 -f native_stm32/test_app_stm32_copter 2>&1 | tail -3`
-   `pio run -e matek-h743-quad -e stm32h743-devebox-quad 2>&1 | grep -E "error|warning: |SUCCESS|FAILED"`
-   Если в батче есть пункт с номером, кратным 20, или пункт «D» — полный прогон
-   `pio test -e native -e native-stm32 2>&1 | tail -3`.
-4. Отметить пункты: `### [x] NNN · …` и в конце пункта строка
-   `- **Итог:** что сделано одной строкой (коммит abcdef0)`.
-5. Трекер <https://claude.ai/artifact/CjjoBvwmspqw8rnrWMhpVa> (страница
-   `tools/plan_tracker/index.html`): ArtifactData (ToolSearch `select:ArtifactData`),
-   коллекция `status`, документ `NNN` = `{status: "done"|"doing"|"blocked",
-   commit, result, date}` — один batch на все 5 пунктов; документ уже есть —
-   его `version` в `if_version`. Менялся текст плана — `python tools/plan_to_json.py`
-   и публикация Artifact с `url` трекера, файлом index.html и `files: {"items.json":
-   "tools/plan_tracker/items.json"}`.
-6. Новые настройки — строкой в таблицу «Настройки» в `docs/COPTER.md` (только
+   `pio test -e native -f native/test_copter -f native/test_copter_sim 2>&1 | grep -E "error:|FAIL|cases"`
+   `pio test -e native-stm32 -f native_stm32/test_app_stm32_copter 2>&1 | tail -1`
+   `pio run -e aocodarc-f405v3-quad -e matek-h743-quad -e stm32h743-devebox-quad 2>&1 | grep -E "RAM:|error|FAILED|succeeded"`
+   (getfun-f405v3-quad не собирается без дампа платы — так и задумано.)
+   Один сим-тест быстро: скопировать test_main.cpp, оставить нужные RUN_TEST,
+   `g++ -std=gnu++17 -O2 -DUNITY_INCLUDE_DOUBLE -I include -I test/native -I lib -I .pio/libdeps/native/Unity/src x.cpp -x c .pio/libdeps/native/Unity/src/unity.c`.
+4. Готовый пункт **удалить** отсюда и дописать номером в строку «Сделано» ниже;
+   частично готовый — `[~]` и строка «Ход». Потом `PYTHONIOENCODING=utf-8 python tools/plan_to_json.py`.
+5. Новые настройки — строкой в таблицу «Настройки» в `docs/COPTER.md` (только
    русский; переводы — пунктами «D»).
-7. Коммит по путям: `git add` нужные файлы, затем
-   `git commit -- README.md docs include platformio.ini src test tools PLAN_COPTER.md`
-   (airframe не трогать никогда), `git push origin main`.
-8. Ответ пользователю — 5–10 строк: что сделано, что проверено, что дальше.
+6. Коммит по путям (airframe и `stack/` не трогать никогда; `git stash` не
+   использовать — пользователь держит airframe в индексе): прошивка и Studio —
+   раздельно, затем план; `git push origin main` в обоих репо.
+7. Ответ пользователю — 5–10 строк: что сделано, что проверено, что дальше.
 
 Правила:
 - **Код Betaflight не копировать** (GPL-3.0 несовместима с OpenPlane License):
@@ -59,99 +56,30 @@
   (API 1.46), в имени платы и сборки — «OpenPlane …».
 - «Не хуже BF» — критерии пункта 183; релиз 1.0 — раздел 13.
 - Переводы — к релизам (D13–D15), не по разделам; русский — сразу.
-- Вкладки Studio, телеметрия регулятора (EDT/UART), разделы 14–16 — после 1.0.
+- Разделы 14–16 — после 1.0.
 
-Статусы: `[ ]` не начат · `[~]` в работе · `[x]` готов · `[!]` заблокирован (причина в «Итог»).
+Решения (2026-11-02, просьба пользователя: «самый топовый софт на рынке»):
+- **Каждая фича — сразу со своим UI в Studio** (вкладка, наглядная картинка:
+  график, схема, экран), а не «после 1.0». Новичку — понятные слова и
+  картинки, профи — все настройки, пришедшему с BF — имена BF рядом.
+- Интерфейс BF не копируем: делаем красиво и по-своему; совместимость с BF —
+  только по именам настроек, diff, MSP и CLI.
+- DShot2400/DShot1200 не делаем: в BF их нет, регуляторы (BLHeli_S/Bluejay,
+  AM32, BLHeli_32) их не держат; потолок — DShot600 + bidir, уже через DMA
+  без прерываний (Stm32Dshot.h).
+- Фильтр Калмана гироскопа (как в EmuFlight/IMUF) — исследование после 1.0
+  (пункт 189): берём, только если сим и журналы покажут выигрыш против
+  RPM-фильтра + динамических режекторов BF.
+
+Статусы: `[ ]` не начат · `[~]` в работе · `[!]` заблокирован (причина в «Итог»).
+Готовый пункт **удаляется** из плана (строка в сводку ниже), частично
+сделанный — `[~]` и строка «Ход: сделано… осталось…».
+
+Сделано и проверено (из плана убрано, подробности — `git log`, docs/COPTER.md): 001 Реестр настроек коптера, 002 CLI как в Betaflight, 003 PID в единицах Betaflight, 004 Дефолты Betaflight 4.5 как источник настройки, 005 Профили PID и расходов, 006 Режимы на тумблерах как в BF, 007 Карта каналов и диапазон приёмника, 008 status и tasks как в BF, 009 Описание коптера, 010 Машинный протокол параметров для приложения, 097 Угол для ARM и автодисарм, 099 Runaway takeoff prevention, 101 Флаги запрета ARM как в BF, 102 Failsafe: этапы и задержки, 103 Failsafe: процедура, 104 Значения каналов при потере связи, 124 Напряжения банки, 125 Делитель и датчик тока, 126 Ёмкость и предупреждения, 080 DShot: кадры на таймере с DMA (F405 и H743), 081 DShot: несколько таймеров и пины F405 / H743, 087 Двунаправленный DShot: приём ответа (GCR), 088 Обороты: число полюсов и проверка, 177 Чёрный ящик на SPI-флеше (F405, 16 МБ), 139 Формат журнала Betaflight (.BFL), 158 MSP: транспорт и базовые сообщения, 159 MSP: чтение и запись настроек, 163 Импорт diff из Betaflight, 011 d_max (d_min), 012 iterm_relax, 013 iterm_rotation, 014 iterm_windup, 015 iterm_limit, 016 pidsum_limit, pidsum_limit_yaw, 017 anti_gravity, 018 throttle_boost, 019 TPA как в BF, 020 tpa_low, 021 feedforward_transition, 022 feedforward_averaging, 023 feedforward_smooth_factor, 024 feedforward_jitter_factor, 025 feedforward_boost, 026 feedforward_max_rate_limit, 027 yaw_lowpass_hz, 028 integrated yaw, 029 absolute control, 030 thrust_linear, motor_output_limit, 031 vbat_sag_compensation (%), 033 auto_profile_cell_count, 034 Режим ANGLE как в BF 4.5, 035 Режим HORIZON как в BF 4.5, 036 Acro trainer, 038 Crash recovery, 079 Проверка моторов из CLI, 098 Airmode с порогом газа, 100 PREARM, 111 RC smoothing как в BF, 112 Мёртвые зоны, 118 Телеметрия CRSF (ExpressLRS), 129 GPS для коптера, 133 GPS Rescue: набор высоты и разворот, 134 GPS Rescue: полёт домой, 135 GPS Rescue: снижение и посадка, 136 GPS Rescue: проверки, 138 Чёрный ящик коптера, 144 Studio: вкладка «Чёрный ящик», 148 OSD: элементы навигации, 150 OSD: предупреждения и статистика после полёта, 153 VTX: SmartAudio и Tramp.
 
 ---
 
 ## 0. Основа
-
-### [x] 001 · Реестр настроек коптера
-- **BF:** все `set имя = значение` из CLI BF — механизм
-- **Что:** таблица параметров (имя BF, тип int/float/enum/bool, мин, макс, дефолт, единицы, группа, описание); указатель на поле CopterSettings/CopterTune; сохранение в KeyValueStore (флеш, как калибровки), версия схемы; «0 = из модели» для параметров, которые выводит Presets.
-- **Сейчас:** CopterSettings (поля в коде), CopterConfig.h (constexpr), ничего не сохраняется.
-- **Файлы:** новый include/copter/Params.h, copter/CopterController.h, config/CopterConfig.h, storage/KeyValueStore.h
-- **Тест:** test_copter: set/get/границы/enum по имени/сохранение-загрузка через фейк флеша/неизвестное имя
-- **UI:** основа всех вкладок — список параметров по группам
-- **Итог:** реестр copter/Params.h: имя BF, тип, границы, умолчание (у PID и расходов — вывод из модели, а не «0»), единицы, группа, описание; 4+4 профиля; во флеш — только заданное, ключ — хеш имени, версия схемы (коммит 3d293e9)
-
-### [x] 002 · CLI как в Betaflight
-- **BF:** `#` вход в CLI, `set`, `get`, `dump`, `diff`, `save`, `defaults`, `exit`, `status`, `version`, `help`
-- **Что:** строковый режим консоли коптера по `#` (как BF): разбор `set x = y`, `get` по подстроке, `diff` (только отличные от дефолта), `dump`, `save` (во флеш + перезапуск контроллера), `defaults`; ответы в формате BF (чтобы diff из BF можно было вставить).
-- **Сейчас:** консоль по одной клавише (t, m, s, o, i, r, l, D).
-- **Файлы:** telemetry/CopterConsole.h, copter/Params.h
-- **Тест:** test_app_stm32_copter: `#` → `set p_roll = 50` → `save` → перезагрузка фейка → `get p_roll`
-- **UI:** вкладка «CLI» в приложении (терминал + вставка diff)
-- **Итог:** CLI copter/CopterCli.h по «#»: set/get/diff/dump/profile/rateprofile/save/defaults/status/version/exit, вставка diff из BF, ARM запрещён, пока CLI открыт (коммит 3d293e9)
-
-### [x] 003 · PID в единицах Betaflight
-- **BF:** `p_roll i_roll d_roll f_roll` и то же для pitch/yaw
-- **Что:** перевод BF ↔ наши (P·0.032029/1000 на °/с, I·0.244381/1000, D·0.000529/1000, F·0.013754/1000 — масштабы BF, проверить по документации); 0 = из модели; `t` показывает и BF-числа.
-- **Сейчас:** AxisGains p/i/d/ff в «команда смесителя на °/с».
-- **Файлы:** copter/Params.h, copter/Presets.h, telemetry/CopterConsole.h
-- **Тест:** test_copter: модельный 5" в BF-единицах — порядок BF-дефолтов (P 30–60); set p_roll меняет AxisGains
-- **UI:** вкладка «PID»: таблица P/I/D/F по осям, как в конфигураторе BF
-- **Итог:** масштабы BF 4.5 в Presets.h (I рысканья ×2.5, F ×0.01); модель 5" = P 25 I 41 D 28 F 35; «t» печатает и BF-числа (коммит 3d293e9)
-
-### [x] 004 · Дефолты Betaflight 4.5 как источник настройки
-- **BF:** дефолтный профиль 4.5 (P/I/D/F, d_max, фильтры, TPA, AG, FF)
-- **Что:** `tune_source = MODEL | BETAFLIGHT` (наша настройка): BF-дефолты целиком; симуляция всех 12 сборок на BF-дефолтах при нашем цикле 1 кГц и OneShot — где не летает, честно записать в COPTER.md.
-- **Файлы:** copter/Presets.h, copter/Params.h, test_copter_sim
-- **Тест:** test_copter_sim: freestyle5 висит и держит расход на BF-дефолтах
-- **UI:** вкладка «PID»: переключатель «из модели / как в BF»
-- **Итог:** tune_source = BETAFLIGHT: PID 4.5, Actual 70/670/0, TPA только на D, фильтры в пересчёте; симуляция: 10 из 12 сборок летают, hex13/hex15 — раскачка ~36 °/с (COPTER.md) (коммит 3d293e9)
-
-### [x] 005 · Профили PID и расходов
-- **BF:** `profile 0..3`, `rateprofile 0..3`, `pid_profile`, `rateprofile_name`, `profile_name`
-- **Что:** 4 PID-профиля и 4 профиля расходов в реестре, переключение из CLI (и с тумблера/крутилки — пункт 122).
-- **Файлы:** copter/Params.h, telemetry/CopterConsole.h
-- **Тест:** test_copter: профили независимы, переключение без перезапуска
-- **UI:** выпадающий список профиля на вкладках PID и Rates
-- **Итог:** 4 PID-профиля и 4 профиля расходов, profile/rateprofile в CLI, CopterController::applyProfile — на ходу, без сброса интегралов и ARM (коммит 3d293e9)
-
-### [x] 006 · Режимы на тумблерах как в BF
-- **BF:** `aux <i> <режим> <канал> <от> <до>`, режимы ARM, ANGLE, HORIZON, AIRMODE, ALTHOLD, FAILSAFE, BEEPER…
-- **Что:** таблица диапазонов вместо зашитых SwA/SwC; режимы с приоритетом как в BF; `aux` в CLI.
-- **Сейчас:** ARM = CH5 > 1700, режим — SwC (CopterConfig::MODE_*).
-- **Файлы:** copter/Params.h, src/stm32/main_copter.cpp, config/CopterConfig.h
-- **Тест:** test_app_stm32_copter: `aux` ARM на CH6, ANGLE на CH7 1300–1700
-- **UI:** вкладка «Режимы»: полосы каналов с ползунками диапазонов и живой меткой положения тумблера
-- **Итог:** таблица aux как в BF (copter/RcSetup.h): 20 строк, номера режимов BF, ИЛИ/И, связь; ARM, ANGLE, HORIZON, ALTHOLD, AIR MODE, FAILSAFE, PREARM действуют, прочие хранятся; пустая таблица — тумблеры CopterConfig.h, своя строка заменяет её целиком (коммит abb5d63)
-
-### [x] 007 · Карта каналов и диапазон приёмника
-- **BF:** `map`, `rx_min_usec`, `rx_max_usec`, `rxrange`, `serialrx_provider`
-- **Что:** AETR/TAER… порядок, калибровка концов стиков по каналу, выбор протокола без пересборки.
-- **Сейчас:** порядок — config/Channels.h, протокол — Config::RX_PROTOCOL (сборка).
-- **Файлы:** rc/RcReceiver.h, copter/Params.h, src/stm32/main_copter.cpp
-- **Тест:** test_app_stm32_copter: `map TAER1234` меняет газ/крен
-- **UI:** вкладка «Приёмник»: живые полосы каналов, выбор порядка, протокол
-- **Итог:** map AETR1234, rxrange, rx_min_usec/rx_max_usec (стик вне — потеря связи, AUX — держится), serialrx_provider меняется после save без перезагрузки; failsafe по газу — на канале газа по map (коммит abb5d63)
-
-### [x] 008 · `status` и `tasks` как в BF
-- **BF:** `status` (CPU, цикл, флаги запрета ARM), `tasks`
-- **Что:** загрузка цикла, пик, причины запрета ARM кодами BF (RXLOSS, ANGLE, THROTTLE, CLI, MSP…) и словами.
-- **Файлы:** telemetry/CopterConsole.h, copter/CopterController.h
-- **Тест:** test_app_stm32_copter: вывод status содержит флаги
-- **UI:** строка состояния внизу приложения (как в конфигураторе)
-- **Итог:** status как в BF (CPU, cycle time, GYRO/RX/System rate, Voltage, Arming disable flags кодами BF + словами), tasks — 7 частей цикла (TaskStats.h); новые причины: CLI, MSP, NO_ACC_CAL, REBOOT_REQD, LOAD, BOXFAILSAFE, NOPREARM, NO_ARM_AUX (коммит abb5d63)
-
-### [x] 009 · Описание коптера — тоже параметры
-- **BF:** — (наше; в BF это пресеты)
-- **Что:** COPTER_BUILD, масса, винт, мотор, KV, батарея, рама — в реестр (`set copter_build = race5`, `set copter_mass_g = 742`), пересчёт настройки при `save`.
-- **Сейчас:** только constexpr в CopterConfig.h + пересборка.
-- **Файлы:** config/CopterConfig.h, copter/Params.h, src/stm32/main_copter.cpp
-- **Тест:** test_app_stm32_copter: смена сборки через CLI → `t` показывает новую
-- **UI:** вкладка «Коптер»: мастер «рама → винт → мотор → батарея → масса» с картинками и итогом (тяга/вес, висение, предупреждения)
-- **Итог:** copter_build, масса, рама, винт, мотор, KV, батарея, props_out — в реестре; умолчание — сборка + поправки CopterConfig.h, модель пересчитывается при save и загрузке; другое число моторов — REBOOT_REQD (коммит abb5d63)
-
-### [x] 010 · Машинный протокол параметров для приложения
-- **BF:** аналог MSP-запросов настроек
-- **Что:** строки `@params` (JSON-список с группами, единицами, границами), `@set`, `@save`, `@live` коптера (углы, моторы, газ, батарея, режим, причины запрета ARM) — как AppLink самолёта.
-- **Файлы:** telemetry/CopterConsole.h (или новый CopterLink.h), telemetry/AppLink.h (образец)
-- **Тест:** test_app_stm32_copter: `@params` разбирается как JSON, `@set` меняет параметр
-- **UI:** транспорт для всех вкладок приложения
-- **Итог:** telemetry/CopterLink.h: id, params (@params/@param/@rc/@modes по строке, когда есть место), set, profile, aux/map/rxrange, save, revert, live; менять — только без ARM, несохранённое — флаг MSP (коммит abb5d63)
 
 ---
 
@@ -159,125 +87,29 @@
 
 Всё проверяется в симуляторе и на фейках, железа нет. Порядок: безопасность и батарея → DShot под F405 → чёрный ящик на флеше и журнал BF → MSP под конфигуратор BF.
 
-### [x] 097 · Угол для ARM и автодисарм
-- **BF:** `small_angle`, `auto_disarm_delay`
-- **Сейчас:** 25° зашит; автодисарма нет.
-- **Файлы:** copter/CopterController.h · **Тест:** test_copter · **UI:** «Безопасность»
-- **Итог:** small_angle (25, 180 — без проверки) и auto_disarm_delay (5 с: на земле с газом внизу — DISARM, и с тумблером тоже; ARM — после щелчка, NOT_DISARMED) в реестре, группа safety (коммит d7850ee)
-
-### [x] 099 · Runaway takeoff prevention
-- **BF:** `runaway_takeoff_prevention`, `runaway_takeoff_deactivate_delay`, `runaway_takeoff_deactivate_throttle_percent`
-- **Что:** не та сторона мотора/неверная плата → коптер «убегает» на взлёте → DISARM.
-- **Файлы:** copter/CopterController.h · **Тест:** test_copter_sim: перепутанные моторы → DISARM за 1 с · **UI:** «Безопасность»
-- **Итог:** сумма PID оси > 60 % и вращение > 15 °/с (рысканье 50) 75 мс → DISARM, RUNAWAY до выключения тумблера; гаснет после 0.5 с спокойного полёта (газ > 20 % или выше 1 м); 5" с перепутанными моторами — DISARM за 0.26 с, на всех 36 взлётах не срабатывает (коммит d7850ee)
-
-### [x] 101 · Флаги запрета ARM как в BF
-- **BF:** arming disable flags (RXLOSS, FAILSAFE, ANGLE, CALIB, CLI, CMS, BOXFAILSAFE, RUNAWAY, CRASH, THROTTLE, MSP, PARALYZE, GPS, RESC, RPMFILTER, REBOOT_REQD, DSHOT_BBANG, NO_ACC_CAL, MOTOR_PROTO, ARMSWITCH)
-- **Сейчас:** наши ArmBlock с текстом.
-- **Файлы:** copter/CopterController.h · **Тест:** test_copter · **UI:** строка состояния: значки причин
-- **Итог:** биты 0–25 = номера флагов BF 4.5 (для MSP_STATUS_EX), коды как в status; новые FAILSAFE, NOT_DISARMED, RUNAWAY, остальные BF зарезервированы (setExternalBlockers), наши — с бита 26; легенда в ящике — двумя записями; значки в Studio — с вкладками после 1.0 (коммит d7850ee)
-
-### [x] 102 · Failsafe: этапы и задержки
-- **BF:** `failsafe_delay`, `failsafe_off_delay` / `failsafe_landing_time`, `failsafe_throttle`, `failsafe_throttle_low_delay`, `failsafe_recovery_delay`, `failsafe_stick_threshold`
-- **Сейчас:** охрана 0.3 с, снижение 0.7 м/с, возврат через 1 с, максимум 120 с.
-- **Файлы:** copter/CopterController.h · **Тест:** test_copter_sim · **UI:** вкладка «Failsafe»: шкала времени этапов
-- **Итог:** 0.3 с — последние ручки; этап 1 до failsafe_delay (15) — ровно и держит высоту; этап 2; failsafe_landing_time 120 с (BF 60), failsafe_throttle (1000 — снижение по высоте, иначе постоянный газ), throttle_low_delay 100, recovery_delay 5 (и блок ARM после DISARM), stick_threshold 30 (коммит d7850ee)
-
-### [x] 103 · Failsafe: процедура
-- **BF:** `failsafe_procedure` (AUTO-LAND / DROP / GPS-RESCUE), `failsafe_switch_mode` (STAGE1/STAGE2/KILL), режим FAILSAFE
-- **Файлы:** copter/CopterController.h · **Тест:** test_copter_sim: каждая процедура · **UI:** «Failsafe»
-- **Итог:** failsafe_procedure AUTO-LAND (наш дефолт; BF — DROP) / DROP / GPS-RESCUE (пока снижение, управление обратно — стиком); failsafe_switch_mode STAGE1 / STAGE2 / KILL (ARM через 1 с), тумблер назад — управление сразу (коммит d7850ee)
-
-### [x] 104 · Значения каналов при потере связи
-- **BF:** `rxfail <канал> <режим> <значение>`
-- **Файлы:** rc/RcReceiver.h, src/stm32/main_copter.cpp · **Тест:** test_app_stm32_copter · **UI:** «Failsafe»
-- **Итог:** rxfail 0–17 как в BF (стики a/h, AUX h/s 750–2250 шагом 25) в RcConfig: CLI, diff/dump, флеш, приложение; AUX без связи или с битым импульсом — 0.3 с прежнее, затем rxfail; стик h — этап 1 failsafe на последнем положении (газ h — на последнем газе в ANGLE вместо высоты), этап 2 — автомат (коммит 9352ec3)
-
-### [x] 124 · Напряжения банки
-- **Что:** пороги по химии: Li-ion 6S (пресет longrange7li) — полная 4.2, предупреждение ~3.0, минимум ~2.8 В на банку; LiPo — дефолты BF.
-- **BF:** `vbat_max_cell_voltage`, `vbat_full_cell_voltage`, `vbat_min_cell_voltage`, `vbat_warning_cell_voltage`, `vbat_hysteresis`, `vbat_detect_cell_voltage`, `force_battery_cell_count`
-- **Сейчас:** minCellVolts 3.3 для ARM; число банок — из описания.
-- **Файлы:** copter/CopterController.h, src/stm32/main_copter.cpp · **Тест:** test_app_stm32_copter · **UI:** вкладка «Питание»
-- **Итог:** vbat_full_cell_voltage (по химии, OSD «BATT < FULL»), vbat_hysteresis 1 и логика порогов как в BF (вниз — порог − гистерезис, обратно — выше порога), vbat_detect_cell_voltage 300 (USB — не батарея), force_battery_cell_count (0 — из описания, не угадывать: Li-ion 6S); пороги Li-ion 280/310/425 уже были (коммит 9352ec3)
-
-### [x] 125 · Делитель и датчик тока
-- **Что:** GETFUN F405V3 — `ibata_scale` 100 и делитель из BF-дампа (178).
-- **BF:** `vbat_scale`, `vbat_divider`, `vbat_multiplier`, `ibata_scale`, `ibata_offset`, `current_meter`, `battery_meter`
-- **Сейчас:** BLACKBOX_VBAT_DIVIDER зашит, ток не меряется.
-- **Файлы:** src/stm32/main_copter.cpp · **Тест:** test_app_stm32_copter · **UI:** «Питание»: калибровка по мультиметру
-- **Итог:** vbat_divider/vbat_multiplier (формула BF), battery_meter, current_meter со всеми значениями BF (действует ADC), масштабы — из дампа платы через bf_board.py (OPB_VBAT_DIVIDER/MULTIPLIER); калибровка: BatteryMonitor::vbatScaleFor/ibataScaleFor и команда приложения calibrate vbat|ibat. ibata_scale 100 у GETFUN — после дампа (178) (коммит 9352ec3)
-
-### [x] 126 · Ёмкость и предупреждения
-- **BF:** `bat_capacity`, `use_vbat_alerts`, `use_cbat_alerts`, `cbat_alert_percent`, `vbat_cutoff_percent`, `vbat_duration_for_warning`, `vbat_duration_for_critical`, `vbat_lpf_period`, `ibat_lpf_period`
-- **Файлы:** новый copter/Battery.h · **Тест:** test_copter · **UI:** «Питание»
-- **Итог:** bat_capacity (0 — battery_mah), use_vbat_alerts, use_cbat_alerts + cbat_alert_percent (состояние — худшее из напряжения и расхода), vbat_cutoff_percent (LVC: газ стика за 10 с до доли), vbat_display/sag_lpf_period и ibat_lpf_period (ФНЧ 10/период Гц), vbat_duration_for_warning/critical — у нас 20 (BF 0): провал на панче не пищит (коммит 9352ec3)
-
-### [x] 080 · DShot: кадры на таймере с DMA (F405 и H743)
-- **BF:** `motor_pwm_protocol = DSHOT150/300/600`
-- **Что:** драйвер DShot: таймер в режиме burst DMA, буфер длительностей (EscProtocol::frameToPulses уже есть), отправка раз в цикл. Сначала F405 (GETFUN, AOCODARC), затем H743 тем же кодом.
-- **Файлы:** новый hal/stm32/Stm32Dshot.h
-- **Тест:** test_app_stm32_copter на фейке DMA: длительности бит, CRC, частота
-- **UI:** «Моторы»
-- **Итог:** hal/stm32/Stm32Dshot.h: группы по таймерам, burst DMA в TIMx_DMAR на событие обновления (18 слотов: 16 бит + 2 нуля), без прерываний; потоки F405 по RM0090, H743 — DMA2 через DMAMUX; занятый поток — кадр пропускается; команды DShot ×10 с битом телеметрии; Stm32MotorOutput сам выбирает DShot; цикл быстрее maxLoopHz — ARM запрещён. Сборки F405/H743 с DSHOT600 компилируются, на железе не проверено (коммит 9352ec3)
-
-### [x] 081 · DShot: несколько таймеров и пины F405 / H743
-- **BF:** —
-- **Что:** M1–M8 по заголовку платы (F405: потоки DMA1/DMA2 без конфликтов с SPI гироскопа, OSD и флеша; H743: TIM1/TIM2/TIM4) — одновременный запуск.
-- **Файлы:** hal/stm32/Stm32Dshot.h · **Тест:** test_app_stm32_copter · **UI:** —
-- **Итог:** до 4 таймеров, буферы всех собираются, потом потоки запускаются подряд; таймер пина — по AF из дампа BF (bf_board.py: строки timer -> OPB_MOTOR_AF), иначе первый вариант пина с потоком DMA и свободным каналом (ALT1…); таблица потоков dshot_dma::f405/h743 без пересечений (тест), прочие драйверы DMA не берут (коммит d85e00a)
-
-### [x] 087 · Двунаправленный DShot: приём ответа (GCR)
-- **BF:** `dshot_bidir`
-- **Что:** переключение пина на вход, захват таймером/DMA, декодирование GCR → eRPM.
-- **Файлы:** hal/stm32/Stm32Dshot.h, copter/EscProtocol.h
-- **Тест:** test_copter: декодер на эталонных кадрах; test_app_stm32_copter на фейке захвата
-- **UI:** «Моторы»: обороты каждого мотора живьём
-- **Итог:** кадры bidir (инверсная линия, CRC), ответ: GCR 4->5, NRZI, CRC, период e/m -> eRPM; разбор по отсчётам линии (дробный шаг, иголки, обрыв); все одиночные помехи ловятся; драйвер собирает ответы через Stm32DshotCapture (фейк в тестах), предел цикла с ответом; захвата ножки на железе нет — перенесён в стендовый 089 (коммит d85e00a)
-
-### [x] 088 · Обороты: число полюсов и проверка
-- **BF:** `motor_poles`, `dshot_bidir` ошибки (%)
-- **Файлы:** copter/Params.h · **Тест:** test_copter · **UI:** «Моторы»: % ошибок телеметрии
-- **Итог:** motor_poles (14) и dshot_bidir (OFF; смена — REBOOT_REQD), доля кадров без ответа за окно 1000 кадров, CLI dshot_telemetry_info как в BF (eRPM, RPM, Гц, Invalid), copter::IMotorTelemetry для консоли и приложения (коммит d85e00a)
-
-### [x] 177 · Чёрный ящик на SPI-флеше (F405, 16 МБ)
-- **BF:** `blackbox_device = SPIFLASH`, `flash_info`, `flash_erase`
-- **Что:** драйвер SPI-NOR (W25Q128, M25P16 и совместимые — по JEDEC ID) как IFlashRegion для CopterBlackBox; стирание командой и поведение при заполнении — как в BF; COPTER_BLACKBOX на F405 (GETFUN, AOCODARC — CS флеша из заголовка платы); скачивание тем же `bb list/get`.
-- **Сейчас:** ящик пишется только на SD у H743; драйвера SPI-флеша нет.
-- **Файлы:** новый hal/stm32/Stm32SpiFlash.h, telemetry/CopterBlackBox.h, src/stm32/main_copter.cpp, config/boards/*.h
-- **Тест:** test_app_stm32_copter на фейке флеша: полёт пишется, стирание, заполнение, чтение через `bb get`
-- **UI:** «Ящик» в Studio (уже умеет, 144): объём флеша, кнопка «стереть»
-- **Итог:** hal/SpiNorFlash.h (JEDEC ID, страницы с переходом границы, сектор/блок/вся одной командой, ожидание «занята», до 16 МБ) поверх ISpiBus, общая с OSD шина — LockedSpiBus; ящик на F405 (очередь 60 КБ в CCM, запас стёртого — половина флеша, blackbox_sample_rate 1/2), blackbox_device NONE/SPIFLASH/SDCARD/SERIAL как в BF, flash_info, flash_erase; вместо «полный — стоп» как в BF — кольцо со стиранием старых полётов на земле (коммит d85e00a)
-
-### [x] 139 · Формат журнала Betaflight (.BFL)
-- **BF:** формат blackbox (заголовок H, кадры I/P, кодирование знаков переменной длины)
-- **Что:** писать в формате BF — открывается в Blackbox Explorer и PIDtoolbox; своя реализация по описанию формата.
-- **Файлы:** новый telemetry/BflEncoder.h · **Тест:** разбор нашим декодером + проверка заголовка; отдельно — открыть в Blackbox Explorer (пользователь) · **UI:** «Чёрный ящик»: «открыть в Blackbox Explorer»
-- **Итог:** BflEncoder.h: заголовок H, кадры I (каждые 32)/P (разность с прошлым), S, E «End of log», числа переменной длины и zigzag; перевод наших QGYRO/QCTRL/QMOT8/QSTATE в поля BF; плата отдаёт полёт в .BFL сама (bb bfl N, blackbox.py download --bfl); полёт симулятора — 45979 кадров, 1.6 МБ (вдвое меньше нашего), пример в Documents/OpenPlane/Blackbox/sim_freestyle5_flips.bfl — открыть в Blackbox Explorer должен пользователь (коммит d85e00a)
-
-### [x] 158 · MSP: транспорт и базовые сообщения
-- **BF:** MSP v1/v2 (API_VERSION, FC_VARIANT, FC_VERSION, BOARD_INFO, STATUS, RAW_IMU, ATTITUDE, ALTITUDE, ANALOG, RC, MOTOR)
-- **Что:** своя реализация по открытому описанию протокола. Представляемся как BF 4.5: FC_VARIANT «BTFL», MSP API 1.46, FC_VERSION 4.5.x — чтобы работал конфигуратор BF; в BOARD_INFO и BUILD_INFO честно «OpenPlane …» (как он это покажет — неважно, главное, что работает).
-- **Файлы:** новый telemetry/Msp.h · **Тест:** test_telemetry: кадры с CRC (v1 xor, v2 crc8 dvb-s2) · **UI:** —
-- **Итог:** транспорт MSP v1/v2 (xor, CRC-8 DVB-S2) на USB-консоли рядом с клавишами и строками приложения; ответы как BF 4.5 (BTFL, API 1.46) — паспорт, состояние с флагами BF, IMU, углы, батарея, RC, моторы, имена режимов (коммит 850a062)
-
-### [x] 159 · MSP: чтение и запись настроек
-- **BF:** MSP_PID / SET_PID, RC_TUNING, FILTER_CONFIG, ADVANCED_CONFIG, MODE_RANGES, MOTOR_CONFIG, FAILSAFE_CONFIG, EEPROM_WRITE
-- **Файлы:** telemetry/Msp.h, copter/Params.h · **Тест:** test_telemetry · **UI:** —
-- **Итог:** PID, расходы, PID advanced, фильтры, режимы, приёмник, rxfail, моторы, failsafe, ARM, батарея и их SET_* — в реестр; EEPROM_WRITE = save; несохранённое и запрет от конфигуратора — флаг MSP; REBOOT 0/1 (коммит 850a062)
-
 ### [ ] 160 · Подключение конфигуратора Betaflight — Стенд: да
 - **Что:** конфигуратор BF подключается к нам как к BF 4.5 (158) и настраивает PID, Rates, приёмник, режимы, моторы, CLI; что отображается странно — записать, что не работает — чинить в 159. Можно на DevEBox, коптер не нужен.
-
-### [x] 163 · Импорт diff из Betaflight
-- **BF:** вывод `diff all`
-- **Что:** вставить diff BF в нашу CLI — понятное применяется, непонятное перечисляется списком.
-- **Файлы:** telemetry/CopterConsole.h · **Тест:** test_app_stm32_copter: настоящий diff 4.5 · **UI:** «CLI»: кнопка «вставить diff из BF»
-- **Итог:** вставка diff BF в CLI: железные строки внутри batch пропускаются, defaults nosave сохраняет описание коптера, сводка — что не перенеслось; в Studio — «Перенести настройки из Betaflight» по группам (коммит 850a062, Studio 11b266b)
 
 ### [ ] D13 · Переводы: до первого полёта (11 языков)
 - **Что:** всё, что поменялось в русских COPTER.md и README с прошлых переводов, — в docs/i18n/<lang>/ на 11 языков.
 
 ---
+
+### [ ] 190 · Studio: режимы «Новичок» и «Профи» — Репо: studio
+- **Что:** переключатель в шапке коптера. «Новичок»: мастер по шагам (рама и винты → пульт и режимы → моторы без винтов → failsafe и возврат → батарея → OSD и видео → «можно лететь») и одна страница «Настройка полёта» с 5–6 ползунками (отзывчивость, плавность, фильтры, расходы, предел наклона) — без единого имени настройки. «Профи»: все вкладки и все настройки как сейчас, поиск по имени.
+- **Файлы:** src/components/CopterView.tsx, новый src/components/copter/Wizard.tsx, core/copterParams.ts
+- **Тест:** vitest: новичок не видит профи-вкладок; мастер доходит до «можно лететь» на фейковой плате
+- **UI:** сам пункт
+
+### [ ] 191 · Studio: переход с Betaflight — имена BF и поиск — Репо: studio
+- **Что:** у каждой строки настройки — понятное название крупно и имя BF мелко (`p_roll`); поиск сверху по имени BF или по-русски («газ висения», `dyn_notch`) — переход на нужную вкладку с подсветкой; страница «Я с Betaflight»: какая вкладка BF где у нас, что сделано иначе и почему (наши отличия: AUTO-LAND по умолчанию, посадка вместо DISARM в GPS Rescue, airmode в воздухе…), импорт diff — уже есть.
+- **Файлы:** src/components/copter/common.tsx, новый src/components/copter/Search.tsx
+- **Тест:** vitest: поиск по имени BF открывает вкладку · **UI:** сам пункт
+
+### [ ] 192 · Хранилище настроек больше 2 КБ
+- **Что:** KeyValueStore — 2 КБ на всю плату, заданная руками настройка — 7 байт; большой diff BF (сотни строк, OSD-раскладка) не влезет — `save` ответит FLASH_FULL. Свой сектор флеша под настройки коптера (F405: 16 КБ, H743: 128 КБ) или второй ключ.
+- **Файлы:** storage/KeyValueStore.h, copter/Params.h, hal/stm32/*
+- **Тест:** test_copter: diff на 400 строк сохраняется и читается после «перезагрузки» · **UI:** «Прочее»: занято N из M
 
 ## 2. С 22 ноября: железо, эталон BF, первый полёт
 
@@ -323,179 +155,6 @@
 
 ## 3. Регулятор (PID-профиль)
 
-### [x] 011 · d_max (d_min) — D растёт при резких движениях
-- **BF:** `d_max_roll d_max_pitch d_max_yaw d_max_gain d_max_advance` (до 4.5 — `d_min_*`, `d_min_gain`, `d_min_advance`)
-- **Что:** базовый D меньше, до d_max — по скорости изменения гироскопа/уставки.
-- **Файлы:** copter/RateController.h, copter/Params.h
-- **Тест:** test_copter: D растёт на ступеньке; test_copter_sim: шум моторов на висении не выше прежнего
-- **UI:** вкладка «PID»: колонка D max и ползунок «D max»
-- **Итог:** D растёт от рывков гироскопа и стика между D в покое и d_max_* (имена BF 2025.12) или d_min_* и D (BF 4.5, d_min_gain/advance — псевдонимы); в модели выкл, в BF — 30/34 → 40/46; в симуляторе D в покое −30 % даёт −25–30 % шума моторов на висении на всех сборках (вупы — на 4 кГц) (коммит c95be05)
-
-### [x] 012 · iterm_relax — тип и частота
-- **BF:** `iterm_relax` (OFF/RP/RPY/RP_INC/RPY_INC), `iterm_relax_type` (GYRO/SETPOINT), `iterm_relax_cutoff`
-- **Что:** BF-вариант relax по ФВЧ уставки; наш relax по ошибке — отдельной настройкой `iterm_relax_error` (наша, дефолт вкл).
-- **Сейчас:** RateAxis: relax по уставке (PT1 10 Гц, 40 °/с) и по ошибке (20–80 °/с).
-- **Файлы:** copter/RateController.h, copter/Params.h
-- **Тест:** test_copter: типы; test_copter_sim: «вялая» гекса — перелёт ≤ 12 %
-- **UI:** вкладка «PID → дополнительно»
-- **Итог:** iterm_relax OFF/RP/RPY/*_INC, iterm_relax_type SETPOINT/GYRO, iterm_relax_cutoff; наш relax по ошибке — iterm_relax_error (вкл); модель — RPY 10 Гц как было, BF — RP 15 Гц; «вялые» гексы с relax BF — перелёт 10–12 % (коммит c95be05)
-
-### [x] 013 · iterm_rotation
-- **BF:** `iterm_rotation`
-- **Что:** вектор интеграла поворачивается вместе с рамой при вращении (полезно в рысканье на крене).
-- **Файлы:** copter/RateController.h, copter/CopterController.h
-- **Тест:** test_copter: пируэт — интеграл крена переходит в тангаж
-- **UI:** «PID → дополнительно», переключатель
-- **Итог:** iterm_rotation: интеграл поворачивается вместе с рамой (FRD, v −= ω×v·dt), пируэт переносит крен в тангаж (коммит c95be05)
-
-### [x] 014 · iterm_windup
-- **BF:** `iterm_windup` (%)
-- **Что:** интеграл не копится, когда моторы упираются больше заданного процента.
-- **Сейчас:** anti-windup по флагу saturated смесителя.
-- **Файлы:** copter/RateController.h, copter/Mixer.h
-- **Тест:** test_copter: на упоре интеграл стоит
-- **UI:** «PID → дополнительно»
-- **Итог:** iterm_windup: разброс моторов выше порога — I копится слабее, на полном стоит; модель 100 (выкл), BF 85 (коммит c95be05)
-
-### [x] 015 · iterm_limit
-- **BF:** `iterm_limit`
-- **Что:** предел интеграла в BF-единицах (сейчас iLimit 0.3 доли смесителя).
-- **Файлы:** copter/RateController.h, copter/Params.h
-- **Тест:** test_copter: предел соблюдается
-- **UI:** «PID → дополнительно»
-- **Итог:** iterm_limit в единицах BF (1000 — весь ход): модель 300, BF 400; все тонкости — настройки PID-профиля, переключаются на ходу (коммит c95be05)
-
-### [x] 016 · pidsum_limit, pidsum_limit_yaw
-- **BF:** `pidsum_limit`, `pidsum_limit_yaw`
-- **Что:** ограничение суммы PID по осям (сейчас ±1 одно на все).
-- **Файлы:** copter/RateController.h
-- **Тест:** test_copter: рысканье ограничено своим пределом
-- **UI:** «PID → дополнительно»
-- **Итог:** pidsum_limit / pidsum_limit_yaw — свой предел суммы у крена и тангажа и у рысканья (модель 1000 — как было, BF 500/400); в пределе I не копится (коммит 5752876)
-
-### [x] 017 · anti_gravity — как в BF 4.3+
-- **BF:** `anti_gravity_gain`, `anti_gravity_cutoff_hz`, `anti_gravity_p_gain`
-- **Что:** усиление I (и P) по ФВЧ газа с настраиваемой частотой.
-- **Сейчас:** iBoost = 1 + min(3, |Δгаз|·30), ФНЧ 15 Гц.
-- **Файлы:** copter/CopterController.h, copter/RateController.h
-- **Тест:** test_copter_sim: рывок газом — нос не клюёт (тангаж < 3°)
-- **UI:** вкладка «PID»: ползунок Anti Gravity
-- **Итог:** anti_gravity_gain/cutoff_hz/p_gain как в BF 4.3+ (I и P по сглаженной скорости газа); модель 80/5 Гц без P, BF 80/5/100. Симулятор нашёл: наш relax по ошибке держал I на любой большой ошибке — на рывке газом «вялый»/«резвый» 5" клевал на 44–83°; теперь он придерживает только ошибку от движения стика — 3.1°/2.4° (как в описании 0.05°). Детектор аварии ловит волчок на трёх моторах (рысканье > 200 °/с мимо уставки 1.5 с) (коммит 5752876)
-
-### [x] 018 · throttle_boost
-- **BF:** `throttle_boost`, `throttle_boost_cutoff`
-- **Что:** добавка к газу по его ФВЧ — быстрее отклик на рывок газа.
-- **Файлы:** copter/CopterController.h
-- **Тест:** test_copter_sim: вертикальное ускорение после рывка быстрее
-- **UI:** «PID → дополнительно»
-- **Итог:** throttle_boost / throttle_boost_cutoff: быстрая часть газа со стика ×(1 + boost/10), в ALT_HOLD — нет; модель 0, BF 5 — через 50 мс после рывка скорость набора +12 % (10 — +24 %) (коммит 5752876)
-
-### [x] 019 · TPA как в BF
-- **BF:** `tpa_mode` (PD/D), `tpa_rate`, `tpa_breakpoint`
-- **Что:** классическое ослабление PD выше точки излома; наш TPA из модели — режим `tpa_mode = MODEL` (наш, дефолт).
-- **Сейчас:** таблица tpa[11] из модели, множитель P и D.
-- **Файлы:** copter/Presets.h, copter/CopterController.h, copter/Params.h
-- **Тест:** test_copter: кривая TPA; test_copter_sim: полный газ без раскачки
-- **UI:** вкладка «PID»: график коэффициента от газа
-- **Итог:** tpa_mode PD/D/MODEL, tpa_rate, tpa_breakpoint (мкс) — кривая BF или таблица модели, всё в PID-профиле и на ходу; полный газ 1 с — без раскачки во всех трёх режимах (коммит 5752876)
-
-### [x] 020 · tpa_low — TPA на малом газе
-- **BF:** `tpa_low_rate`, `tpa_low_breakpoint`, `tpa_low_always`
-- **Что:** изменение PD на малом газе (спуски, флипы на нуле).
-- **Файлы:** copter/CopterController.h
-- **Тест:** test_copter: кривая; test_copter_sim: airmode на нуле газа не раскачивается
-- **UI:** тот же график TPA
-- **Итог:** tpa_low_rate (−128…100 %, < 0 — сильнее), tpa_low_breakpoint, tpa_low_always: до первого подъёма газа после ARM или всегда; модель 0, BF 20 % ниже 1050; нулевой газ в airmode — без раскачки и при −20 %, и при +50 % (коммит 5752876)
-
-### [x] 021 · feedforward_transition
-- **BF:** `feedforward_transition`
-- **Что:** FF ослабляется у центра стика.
-- **Сейчас:** FF = 0.7/K·d(уставки)/dt через PT1 25 Гц.
-- **Файлы:** copter/RateController.h, copter/CopterController.h
-- **Тест:** test_copter: FF у центра меньше
-- **UI:** «PID → Feedforward»
-- **Итог:** feedforward_transition: у центра стика FF слабее линейно (0.1 стика при 50 — ×0.2); все feedforward_* — только на часть уставки от стика, горизонт ANGLE — как был; кадры — счётчик rc.frame (без него 250 Гц) (коммит 5021fb0)
-
-### [x] 022 · feedforward_averaging
-- **BF:** `feedforward_averaging` (OFF/2/3/4_POINT)
-- **Что:** усреднение производной уставки по кадрам приёмника.
-- **Файлы:** copter/RateController.h
-- **Тест:** test_copter: ступени кадров 50 Гц сглажены
-- **UI:** «PID → Feedforward»
-- **Итог:** feedforward_averaging OFF/2/3/4_POINT: сдвиг стика за N кадров на время между их отметками — «лесенка» кадров 50 Гц, и неровная тоже, без пульсаций (2.9 → 0), среднее то же (коммит 5021fb0)
-
-### [x] 023 · feedforward_smooth_factor
-- **BF:** `feedforward_smooth_factor`
-- **Что:** сглаживание FF между кадрами.
-- **Файлы:** copter/RateController.h
-- **Тест:** test_copter
-- **UI:** «PID → Feedforward»
-- **Итог:** feedforward_smooth_factor: доля старого за кадр в пересчёте на циклы; лесенка 50 Гц — пульсации 2.9 → 0.46 (25) → 0.15 (65), среднее то же; модель 0, BF 25 (коммит 5021fb0)
-
-### [x] 024 · feedforward_jitter_factor
-- **BF:** `feedforward_jitter_factor`
-- **Что:** ослабление FF при медленном дрожании стика.
-- **Файлы:** copter/RateController.h
-- **Тест:** test_copter: дрожание ±2 % — FF почти ноль
-- **UI:** «PID → Feedforward»
-- **Итог:** feedforward_jitter_factor: стик за кадр (в среднем за два) сдвинулся меньше порога — FF плавно к нулю; дрожь ±2 % — FF в 8 раз меньше, флик — без изменений; модель 0, BF 7 (коммит 5021fb0)
-
-### [x] 025 · feedforward_boost
-- **BF:** `feedforward_boost`
-- **Что:** добавка по второй производной уставки (ускорение стика).
-- **Файлы:** copter/RateController.h
-- **Тест:** test_copter
-- **UI:** «PID → Feedforward»
-- **Итог:** feedforward_boost: добавка по ускорению стика, 15 — 3 мс упреждения, не больше самой скорости стика; разгон стика — FF +12 %; BF 25/7/15 на флике 20 мс с кадрами 250 Гц: перелёт 10.3 % против 13.4 %; модель 0, BF 15 (коммит 5021fb0)
-
-### [x] 026 · feedforward_max_rate_limit
-- **BF:** `feedforward_max_rate_limit`
-- **Что:** FF гаснет у предела расхода — нет перелёта на краю.
-- **Файлы:** copter/RateController.h
-- **Тест:** test_copter_sim: флип полным стиком — перелёт расхода < 5 %
-- **UI:** «PID → Feedforward»
-- **Итог:** feedforward_max_rate_limit: у края расхода FF наружу не больше P на оставшийся запас, за краем — ноль; модель 0 (перелёта и так нет), BF 90: «резвый» 5" на флипе полным стиком — перелёт 1.3 % вместо 7.9 %, до 90 % расхода на ~6 мс дольше (коммит f00f5d9)
-
-### [x] 027 · yaw_lowpass_hz
-- **BF:** `yaw_lowpass_hz`
-- **Что:** ФНЧ выхода рысканья настройкой (сейчас yawLpfHz из модели).
-- **Файлы:** copter/Params.h, copter/CopterController.h
-- **Тест:** test_copter
-- **UI:** вкладка «Фильтры»
-- **Итог:** yaw_lowpass_hz в PID-профиле (0 — без фильтра): не задан — частота модели, BF 100; меняется и со сменой профиля (коммит f00f5d9)
-
-### [x] 028 · integrated yaw
-- **BF:** `use_integrated_yaw`, `integrated_yaw_relax`
-- **Что:** рысканье через интеграл суммы PID — для коптеров со слабым рысканьем (большие винты).
-- **Файлы:** copter/RateController.h
-- **Тест:** test_copter_sim: hex15 — рысканье держит расход
-- **UI:** «PID → дополнительно»
-- **Итог:** use_integrated_yaw, integrated_yaw_relax: выход рысканья — интеграл суммы PID (×100 1/с, утечка relax×0.08); числа BF — как в BF (I без ×2.5), PID из модели пересчитаны (тот же контур); hex15 на числах BF: ошибка 1.3 °/с вместо 11.9, перелёт 3.9 % вместо 14.7 % (коммит f00f5d9)
-
-### [x] 029 · absolute control
-- **BF:** `abs_control_gain`, `abs_control_limit`, `abs_control_error_limit`, `abs_control_cutoff`
-- **Что:** коррекция накопленной ошибки угла (против «уплывания» в акро на ветру).
-- **Файлы:** copter/RateController.h
-- **Тест:** test_copter_sim: ветер — в ACRO курс уплывает меньше
-- **UI:** «PID → дополнительно»
-- **Итог:** abs_control_gain/limit/error_limit/cutoff: потерянный угол копится (быстрое движение стика — нет) и возвращается поправкой уставки; крен и тангаж в ACRO, рысканье всегда; 5" под постоянным моментом: крен 0.03° и курс 0.3° вместо 2–5° и 16–49°; в QuadSim — внешний момент (коммит f00f5d9)
-
-### [x] 030 · thrust_linear, motor_output_limit
-- **BF:** `thrust_linear` (%), `motor_output_limit` (%)
-- **Что:** настройкой (сейчас thrustLinear из размера винта); предел выхода моторов (батарея 6S на моторах под 4S).
-- **Файлы:** copter/Mixer.h, copter/Params.h
-- **Тест:** test_copter: предел 80 % — команда не выше
-- **UI:** вкладка «Моторы»
-- **Итог:** thrust_linear (модель 15–30, BF 0) и motor_output_limit в PID-профиле; предел режет ход выше холостых, как в BF: полный газ и стик — не выше холостых + 80 % хода; «t» печатает предел (коммит f00f5d9)
-
-### [x] 031 · vbat_sag_compensation (%)
-- **BF:** `vbat_sag_compensation`
-- **Что:** процент компенсации просадки (сейчас вкл/выкл).
-- **Файлы:** copter/CopterController.h
-- **Тест:** test_copter_sim: на 100 % газ висения не растёт с разрядом
-- **UI:** вкладка «PID»
-- **Итог:** vbat_sag_compensation 0–150 % (у нас 100, BF 0) вместо вкл/выкл (коммит 850a062)
-
 ### [ ] 032 · Упрощённая настройка — ползунки
 - **BF:** `simplified_pids_mode`, `simplified_master_multiplier`, `simplified_i_gain`, `simplified_d_gain`, `simplified_pi_gain`, `simplified_dmax_gain`, `simplified_feedforward_gain`, `simplified_pitch_d_gain`, `simplified_pitch_pi_gain`
 - **Что:** множители поверх модели/BF-дефолтов — ровно как ползунки BF; запас по усилению пересчитывать и предупреждать, если < 6 дБ.
@@ -503,55 +162,12 @@
 - **Тест:** test_copter: master ×1.5 → P,I,D,F ×1.5; предупреждение запаса
 - **UI:** вкладка «PID»: ползунки + полоса «запас устойчивости» из модели (зелёная/жёлтая/красная)
 
-### [x] 033 · auto_profile_cell_count
-- **BF:** `auto_profile_cell_count`
-- **Что:** выбор PID-профиля по числу банок батареи.
-- **Файлы:** copter/Params.h, src/stm32/main_copter.cpp
-- **Тест:** test_app_stm32_copter: 4S → профиль 2
-- **UI:** вкладка «PID», поле у профиля
-- **Итог:** auto_profile_cell_count: подключили батарею — число банок по напряжению как в BF, профиль с таким числом выбирается сам (без ARM, не сохраняется) (коммит b36602a)
-
-### [x] 034 · Режим ANGLE как в BF 4.5
-- **BF:** `angle_limit`, `angle_p_gain`, `angle_feedforward`, `angle_feedforward_smoothing_ms`, `angle_earth_ref`
-- **Что:** сила выравнивания, FF по скорости стика, рысканье относительно Земли (у нас уже есть) — настройками.
-- **Сейчас:** levelGain из модели, maxAngleDeg по стилю, рысканье вокруг вертикали.
-- **Файлы:** copter/CopterController.h (rateSetpoints), copter/Params.h
-- **Тест:** test_copter_sim: ANGLE — выход на наклон быстрее с FF
-- **UI:** вкладка «PID → Angle/Horizon»
-- **Итог:** angle_limit и angle_p_gain (не заданы — точные значения модели), angle_feedforward по скорости целевого угла (+ angle_feedforward_smoothing_ms; модель 0, BF 50): 5" на 90 % наклона за 108 мс вместо 193 без лишнего перелёта на трёх физиках; angle_earth_ref (коммит b36602a)
-
-### [x] 035 · Режим HORIZON как в BF 4.5
-- **BF:** `horizon_level_strength`, `horizon_limit_degrees`, `horizon_limit_sticks`, `horizon_delay_ms`
-- **Что:** смешение ANGLE/ACRO по стику и по углу, задержка выравнивания.
-- **Сейчас:** horizonTransition 0.75, квадратичное смешение.
-- **Файлы:** copter/CopterController.h
-- **Тест:** test_copter_sim: флип в HORIZON проходит, у центра — выравнивается
-- **UI:** «PID → Angle/Horizon»
-- **Итог:** HORIZON как в BF 4.5: ACRO + выравнивание силы horizon_level_strength, гаснущее к horizon_limit_sticks стика и horizon_limit_degrees наклона, возвращается за horizon_delay_ms; флип полным стиком и выравнивание за 2.5 с в симуляции (коммит b36602a)
-
-### [x] 036 · Acro trainer
-- **BF:** `acro_trainer_angle_limit`, `acro_trainer_lookahead_ms`, `acro_trainer_gain`, режим ACRO TRAINER
-- **Что:** ACRO с ограничением наклона — для обучения.
-- **Файлы:** copter/CopterController.h
-- **Тест:** test_copter_sim: полный стик — наклон не больше предела
-- **UI:** «PID → Angle/Horizon» + режим на вкладке «Режимы»
-- **Итог:** режим ACRO TRAINER (BF 47): в ACRO наклон не больше acro_trainer_angle_limit с упреждением acro_trainer_lookahead_ms, возврат acro_trainer_gain; 5" полным стиком — 21° крен, 29° тангаж при пределе 20° (коммит b36602a)
-
 ### [ ] 037 · Launch control
 - **BF:** `launch_control_mode` (NORMAL/PITCHONLY/FULL), `launch_trigger_allow_reset`, `launch_trigger_throttle_percent`, `launch_angle_limit`, `launch_control_gain`, режим LAUNCH CONTROL
 - **Что:** гоночный старт: коптер на земле держит наклон до рывка газом.
 - **Файлы:** copter/CopterController.h
 - **Тест:** test_copter_sim: старт под 30°, взлёт без кувырка
 - **UI:** «PID → дополнительно» + режим
-
-### [x] 038 · Crash recovery
-- **BF:** `crash_recovery` (OFF/ON/BEEP/DISARM), `crash_dthreshold`, `crash_gthreshold`, `crash_setpoint_threshold`, `crash_time`, `crash_delay`, `crash_recovery_angle`, `crash_recovery_rate`, `crash_limit_yaw`
-- **Что:** удар в воздухе → выравнивание; DISARM — как наша защита (оставить и нашу).
-- **Сейчас:** переворот > 90° 0.7 с, на спине 1 с, потеря управления 30° 2 с, рысканье мимо уставки > 200 °/с 1.5 с (волчок на трёх моторах, с 017) → DISARM.
-- **Файлы:** copter/CopterController.h
-- **Тест:** test_copter_sim: удар (импульс момента) — выровнялся
-- **UI:** вкладка «Безопасность»
-- **Итог:** crash_recovery OFF/ON/BEEP/DISARM + 8 порогов BF (PID-профиль): моторы в упоре + скачок скорости + ошибка при спокойном стике → к горизонту, I в нуле, рысканье ≤ crash_limit_yaw, airmode; сим 5" на трёх физиках: кувырок 90–175° → ровно за 0.26–0.34 с, флип стиком не срабатывает; Studio — карточка на «Безопасности» (коммит ed8e3c8, studio 716c133)
 
 ### [ ] 039 · EZ landing
 - **BF:** `ez_landing_threshold`, `ez_landing_limit`, `ez_landing_speed`, `mixer_type = EZLANDING`
@@ -769,13 +385,6 @@
 - **Тест:** test_copter_sim: трикоптер висит и рыскает
 - **UI:** «Моторы»
 
-### [x] 079 · Проверка моторов из CLI
-- **BF:** `motor <n> <значение>`, вкладка Motors
-- **Что:** ручное управление каждым мотором с защитой (пропеллеры!), остановка при потере связи с ПК.
-- **Сейчас:** 'm' — по очереди на 6 %.
-- **Файлы:** telemetry/CopterConsole.h · **Тест:** test_app_stm32_copter · **UI:** вкладка «Моторы»: ползунки на каждый мотор, «я снял пропеллеры»
-- **Итог:** CLI `motor № 1000-2000` как в BF (255 — все, 5 с), команда приложения `motor N %` (держится 1 с, приложение повторяет), MSP_SET_MOTOR для вкладки Motors конфигуратора BF (держится, пока он на связи); не выше 30 %; вкладка «Моторы» Studio со схемой рамы (коммит 94462a2, Studio 11b266b)
-
 ### [ ] 083 · DShot: команды
 - **BF:** `dshotprog`, команды BEEP, ESC_INFO, SPIN_DIRECTION, 3D, SAVE, LED
 - **Что:** очередь команд (повтор 6–10 раз, только при остановленных моторах).
@@ -790,10 +399,11 @@
 - **BF:** `3d_deadband_low`, `3d_deadband_high`, `3d_neutral`, `3d_deadband_throttle`, `3d_limit_low`, `3d_limit_high`, `3d_switched_mode`, режим 3D
 - **Файлы:** copter/Mixer.h, copter/CopterController.h · **Тест:** test_copter · **UI:** «Моторы»
 
-### [ ] 086 · Turtle mode (переворот после падения)
+### [~] 086 · Turtle mode (переворот после падения)
 - **BF:** `crashflip_motor_percent`, `crashflip_expo`, режим FLIP OVER AFTER CRASH
 - **Что:** нужен DShot-реверс; лёг на спину → переворот моторами.
 - **Файлы:** copter/CopterController.h · **Тест:** test_copter_sim: на спине — перевернулся · **UI:** режим на вкладке «Режимы»
+- **Ход:** написан `copter/Turtle.h` (не закоммичен, не подключён): turtleMix — сторона по стику (крен/тангаж/диагональ ±30°/рысканье), мёртвая зона 15 %, экспо crashflip_expo, остальные моторы crashflip_motor_percent или MOTOR_STOP = −1. Осталось: режим 35 в RcSetup (works = true, rc.flipOverAfterCrash), в контроллере status.turtle при ARM с режимом и DShot (CopterSettings.turtleAvailable), обход PID, без проверок small_angle/crash/auto-disarm/runaway, без связи — DISARM; CopterOutputs.reversed; dshot::throttleValue — команда < 0 → STOP; main_copter: смена reversed → sendCommand(0xFF, SPIN_DIRECTION_REVERSED/NORMAL) и моторы стоят, пока commandPending(); настройки crashflip_expo (35), crashflip_motor_percent (0); тесты turtleMix и контроллера; Studio — режим в «Режимах» с картинкой «какие моторы крутятся».
 
 ### [ ] 090 · Обороты из DShot — в режекторы и модель
 - **BF:** RPM filter
@@ -815,15 +425,6 @@
 ---
 
 ## 7. ARM, failsafe, безопасность, пищалка
-
-### [ ] 098 · Airmode с порогом газа
-- **BF:** `airmode_start_throttle_percent`, режим AIRMODE, feature AIRMODE
-- **Сейчас:** airmode — всегда (CopterSettings).
-- **Файлы:** copter/Mixer.h, copter/CopterController.h · **Тест:** test_copter · **UI:** «Безопасность» + режим
-
-### [ ] 100 · PREARM
-- **BF:** режим PREARM
-- **Файлы:** copter/CopterController.h · **Тест:** test_copter · **UI:** режим
 
 ### [ ] 105 · Команды стиками
 - **BF:** ARM/DISARM стиками, калибровка гироскопа/акселерометра стиками, выбор профиля стиками, триммеры акселерометра стиками, режим STICK COMMANDS DISABLE
@@ -851,18 +452,6 @@
 
 ## 8. Пульт: сглаживание, приёмники, телеметрия, крутилки
 
-### [x] 111 · RC smoothing как в BF
-- **BF:** `rc_smoothing`, `rc_smoothing_auto_factor`, `rc_smoothing_auto_factor_throttle`, `rc_smoothing_setpoint_cutoff`, `rc_smoothing_feedforward_cutoff`, `rc_smoothing_throttle_cutoff`
-- **Что:** частота кадров приёмника измеряется → частоты фильтров автоматически.
-- **Сейчас:** PT1 40 Гц на стиках.
-- **Файлы:** copter/CopterController.h, rc/RcReceiver.h · **Тест:** test_copter: 50/150/500 Гц кадров · **UI:** «Приёмник»: частота кадров и фильтры
-- **Итог:** copter/RcSmoothing.h: частота кадров меряется, PT3 на стиках и газе, срез = кадры × 1.5/(1 + factor/10) ≥ 15 Гц, пересчёт при уходе > 10 %; rc_smoothing, *_auto_factor(_throttle), *_setpoint/throttle_cutoff, CLI rc_smoothing_info, @live rxhz/rcsp/rcth; Studio — карточка с графиком ступенек и сглаженной кривой (коммит a281a70, studio c1f0f4b). rc_smoothing_feedforward_cutoff нет: у упреждения своё сглаживание (feedforward_smooth_factor)
-
-### [x] 112 · Мёртвые зоны
-- **BF:** `deadband`, `yaw_deadband`
-- **Файлы:** copter/CopterController.h · **Тест:** test_copter · **UI:** «Приёмник»
-- **Итог:** deadband, yaw_deadband (единицы BF, упор растянут до полного), в «Приёмнике» Studio (коммит a281a70)
-
 ### [ ] 113 · RSSI и качество связи
 - **BF:** `rssi_channel`, `rssi_scale`, `rssi_offset`, `rssi_src_frame_errors`, LQ CRSF
 - **Файлы:** rc/RcReceiver.h · **Тест:** test_rc · **UI:** «Приёмник»: полоса RSSI/LQ
@@ -882,10 +471,6 @@
 ### [ ] 117 · Инверсия и полудуплекс UART приёмника
 - **BF:** `serialrx_inverted`, `serialrx_halfduplex`
 - **Файлы:** hal/stm32/Stm32UartPort.h · **Тест:** test_hal · **UI:** «Приёмник»
-
-### [ ] 118 · Телеметрия CRSF (ExpressLRS)
-- **BF:** CRSF telemetry: батарея, ориентация, режим, GPS, вариометр
-- **Файлы:** новый telemetry/CrsfTelemetry.h · **Тест:** test_telemetry: кадры с CRC · **UI:** «Приёмник»: что уходит на пульт
 
 ### [ ] 119 · Телеметрия iBUS (FlySky, iBUS-SENS)
 - **BF:** IBUS telemetry
@@ -914,12 +499,6 @@
 - **Сейчас:** свой ALT_HOLD (VerticalEstimator + AltitudeController, обучение висения).
 - **Файлы:** copter/AltitudeHold.h, copter/Params.h · **Тест:** test_copter_sim · **UI:** вкладка «Автопилот»
 
-### [x] 129 · GPS для коптера
-- **BF:** `gps_provider`, `gps_sbas_mode`, `gps_auto_config`, `gps_set_home_point_once`, `gps_use_3d_speed`
-- **Что:** подключить существующий UbloxM10 к коптеру, дом при ARM.
-- **Файлы:** src/stm32/main_copter.cpp, sensors/gps/* · **Тест:** test_app_stm32_copter с NAV-PVT · **UI:** вкладка «GPS»: карта, спутники
-- **Итог:** GpsInput в контроллере (фикс, спутники, смещение от дома, скорость, курс), main_copter fillGps; дом при ARM, gps_minimum_sats; UbloxM10 уже стоял (коммит 9642998)
-
 ### [ ] 130 · Оценка положения и скорости (GPS + акселерометр)
 - **BF:** основа POSHOLD/RESCUE
 - **Файлы:** новый copter/PositionEstimator.h · **Тест:** test_copter_sim с моделью GPS (шум, задержка 0.1 с) · **UI:** «GPS»
@@ -932,35 +511,9 @@
 - **BF:** режим POSHOLD, `pos_hold_adjust_rate`, `pos_hold_deadband`, `pos_hold_without_mag`
 - **Файлы:** новый copter/PositionHold.h · **Тест:** test_copter_sim: ветер 5 м/с — дрейф < 2 м · **UI:** «Автопилот»
 
-### [x] 133 · GPS Rescue: набор высоты и разворот
-- **BF:** `gps_rescue_min_start_dist`, `gps_rescue_alt_mode`, `gps_rescue_initial_climb`, `gps_rescue_ascend_rate`, `gps_rescue_return_alt`
-- **Файлы:** новый copter/GpsRescue.h · **Тест:** test_copter_sim · **UI:** вкладка «Возврат»
-- **Итог:** copter/GpsRescue.h: CLIMB с разворотом носа, MAX_ALT/FIXED_ALT/CURRENT_ALT, min_start_dist — сразу посадка (коммит 9642998)
-
-### [x] 134 · GPS Rescue: полёт домой
-- **BF:** `gps_rescue_ground_speed`, `gps_rescue_max_angle`, `gps_rescue_roll_mix`, `gps_rescue_pitch_cutoff`, `gps_rescue_yaw_p`, `gps_rescue_velocity_p/i/d`, `gps_rescue_use_mag`
-- **Файлы:** copter/GpsRescue.h · **Тест:** test_copter_sim: с 300 м домой при ветре · **UI:** «Возврат»
-- **Итог:** FLY_HOME: нос на дом (yaw_p), PID скорости по земле velocity_p/i/d, крен гасит снос, max_angle; без компаса — курс по GPS; сим: 150 м при боковом ветре 4 м/с на трёх физиках (коммит 9642998)
-
-### [x] 135 · GPS Rescue: снижение и посадка
-- **BF:** `gps_rescue_descent_dist`, `gps_rescue_descend_rate`, `gps_rescue_landing_alt`, `gps_rescue_disarm_threshold`, `gps_rescue_throttle_min/max/hover`, `gps_rescue_throttle_p/i/d`
-- **Файлы:** copter/GpsRescue.h · **Тест:** test_copter_sim: посадка в 5 м от дома · **UI:** «Возврат»
-- **Итог:** DESCEND (высота линейно к landing_alt у дома) и LAND с удержанием точки, ниже landing_alt — вдвое медленнее, касание — DISARM; сим: сел в 3 м от дома (коммит 9642998)
-
-### [x] 136 · GPS Rescue: проверки
-- **BF:** `gps_rescue_sanity_checks`, `gps_rescue_min_sats`, `gps_rescue_allow_arming_without_fix`, режим GPS RESCUE
-- **Файлы:** copter/GpsRescue.h, copter/CopterController.h · **Тест:** test_copter_sim: потеря GPS в пути → посадка · **UI:** «Возврат»
-- **Итог:** sanity_checks OFF/ON/FS_ONLY: GPS 2 с, min_sats, нет приближения 15 с, улёт +50 м → посадка на месте (у BF — DISARM); ARM-блок GPS без фикса; режим 46 с тумблера; OSD RESC/RESCUE FAIL, CRSF RTH (коммит 9642998)
-
 ---
 
 ## 10. Чёрный ящик, отладка, цикл
-
-### [x] 138 · Чёрный ящик коптера
-- **BF:** `blackbox_device`, `blackbox_mode` (NORMAL/MOTOR_TEST/ALWAYS), `blackbox_sample_rate`
-- **Что:** на SD (как самолёт): гироскоп сырой/после фильтров, уставки, P/I/D/F, моторы, газ, батарея, режим.
-- **Файлы:** telemetry/BlackBox*.h (образец), новый telemetry/CopterBlackBox.h · **Тест:** test_app_stm32_copter + разбор · **UI:** вкладка «Чёрный ящик»
-- **Итог:** ящик коптера на SD (H743): QGYRO/QCTRL/QMOT8 каждый цикл, QSTATE 50 Гц, GPS, SYS, события, заголовок с PID и set.*; blackbox_device/mode/sample_rate как в BF; общее ядро с самолётом telemetry/BlackBoxCore.h; SD — блоки по 512 байт, после сбоя записи — новый сектор, полёт через сектор без заголовка не рвётся; полёт в симуляторе с флипами пишется целиком (коммит 4d08142)
 
 ### [ ] 140 · Выбор полей и debug_mode
 - **BF:** `blackbox_disable_*`, `blackbox_high_resolution`, `debug_mode` (GYRO_SCALED, FFT, RPM_FILTER, FEEDFORWARD, D_MAX, RC_SMOOTHING…)
@@ -980,11 +533,6 @@
 ### [ ] 143 · Быстрый цикл: стенд — Стенд: да
 - **Что:** время цикла и джиттер на F405 (GETFUN) и Matek H743 (`status`, `tasks`).
 
-### [x] 144 · Studio: вкладка «Чёрный ящик» — Репо: studio
-- **Что:** скачать журнал, графики гироскопа/уставок/моторов, спектр, кнопка «открыть в Blackbox Explorer».
-- **UI:** сам пункт
-- **Итог:** вкладка «Ящик» в Studio: полёты с платы (bb list/get, CRC, прогресс; проверено на DevEBox — 28 полётов самолёта), сохранённые .bbl, BLACKBOX.BIN с карты; таймлайн с режимами и событиями, графики с общим курсором, масштабом и воспроизведением, спектр шума с оборотами мотора, коптер в 3D (studio, коммит 15197d7)
-
 ---
 
 ## 11. OSD, VTX, LED, камера
@@ -999,25 +547,15 @@
 - **BF:** `font` / загрузка шрифта MCM
 - **Файлы:** hal/stm32/Max7456.h · **Тест:** эмулятор · **UI:** «OSD»: выбор шрифта
 
-### [ ] 147 · OSD: элементы полёта
+### [~] 147 · OSD: элементы полёта
 - **BF:** `osd_vbat_pos`, `osd_rssi_pos`, `osd_flymode_pos`, `osd_throttle_pos`, `osd_crosshairs_pos`, `osd_ah_pos`, `osd_ah_sbar_pos`, `osd_tim_1_pos`, `osd_warnings_pos`, `osd_link_quality_pos`
 - **Файлы:** новый telemetry/Osd.h · **Тест:** test_app_stm32_copter: экран в буфере · **UI:** «OSD»: перетаскивание элементов по экрану
 - **Ход:** Сделано (878faaf): osd_*_pos как в BF (x + 32·y, 0x0800, профили 2–3 = показан) для vbat, flymode, throttle, crosshairs, tim_2, warnings, link_quality; Studio — вкладка «OSD». Осталось: ah/ah_sbar (символы шрифта проверить на железе), tim_1, rssi
 
-### [x] 148 · OSD: элементы навигации
-- **BF:** `osd_altitude_pos`, `osd_vario_pos`, `osd_gps_speed_pos`, `osd_gps_sats_pos`, `osd_home_dir_pos`, `osd_home_dist_pos`, `osd_gps_lat_pos`, `osd_gps_lon_pos`, `osd_compass_bar_pos`
-- **Файлы:** telemetry/Osd.h · **Тест:** test_app_stm32_copter · **UI:** «OSD»
-- **Итог:** osd_altitude/vario_num/gps_speed/gps_sats/home_dir/home_dist/gps_lat/gps_lon_pos — позиции BF, alt_alarm мигает; Studio 2ddd952 — вкладка «OSD» с перетаскиванием (коммит 878faaf). Нет: vario-стрелок, compass_bar
-
-### [ ] 149 · OSD: питание и моторы
+### [~] 149 · OSD: питание и моторы
 - **BF:** `osd_current_pos`, `osd_mah_drawn_pos`, `osd_avg_cell_voltage_pos`, `osd_esc_tmp_pos`, `osd_esc_rpm_pos`, `osd_power_pos`
 - **Файлы:** telemetry/Osd.h · **Тест:** test_app_stm32_copter · **UI:** «OSD»
 - **Ход:** Сделано (878faaf): current, mah_drawn, avg_cell_voltage, power. Осталось: esc_tmp, esc_rpm — после телеметрии регуляторов (091/092)
-
-### [x] 150 · OSD: предупреждения и статистика после полёта
-- **BF:** `osd_warn_*`, `osd_stat_*`, единицы, `osd_cap_alarm`, `osd_alt_alarm`
-- **Файлы:** telemetry/Osd.h · **Тест:** test_app_stm32_copter · **UI:** «OSD»
-- **Итог:** osd_warn_* (6), osd_stat_* (9) — экран после DISARM до стика вверх/ARM/минуты, osd_cap_alarm, osd_alt_alarm, osd_link_quality_alarm (мигание, LINK QUALITY); единиц (osd_units) нет — только метры (коммит 878faaf)
 
 ### [ ] 151 · OSD: меню настроек стиками (CMS)
 - **BF:** CMS
@@ -1025,11 +563,6 @@
 - **Файлы:** новый telemetry/OsdMenu.h · **Тест:** test_app_stm32_copter · **UI:** —
 
 ### [ ] 152 · OSD: стенд — Стенд: да
-
-### [x] 153 · VTX: SmartAudio и Tramp
-- **BF:** `vtx_band`, `vtx_channel`, `vtx_power`, `vtx_pit_mode_freq`, `vtxtable`, режим VTX PIT MODE
-- **Файлы:** новый telemetry/VtxControl.h · **Тест:** test_telemetry: кадры протоколов · **UI:** вкладка «Видео»
-- **Итог:** уже было: copter/Vtx.h — SmartAudio 1/2/2.1 и Tramp на эмуляторах (test_copter), vtx_band/channel/freq/power, потолок vtx_max_power_mw, PIT, таблица vtx с тумблера, vtx_info, Studio «Видео». vtxtable принимается из diff и не действует (мощности берутся у передатчика), vtx_pit_mode_freq нет
 
 ### [ ] 154 · Цифровое видео (DJI/Walksnail/HDZero) — MSP DisplayPort
 - **BF:** MSP DisplayPort OSD
@@ -1047,6 +580,13 @@
 ---
 
 ## 12. MSP и совместимость
+
+### [ ] 188 · Настройка с пульта: MSP через CRSF и Lua-скрипты Betaflight
+- **BF:** MSP over CRSF (ELRS/Crossfire) и SmartPort; betaflight-tx-lua-scripts на EdgeTX (PID, расходы, VTX, фильтры, ползунки)
+- **Что:** MSP-запросы приходят кадрами CRSF 0x7A/0x7B через приёмник, ответ — телеметрией; тот же разбор, что по USB (telemetry/CopterMsp.h). Lua-скрипты BF на пульте пользователя (RadioMaster TX12, EdgeTX) работают без правок. Позже — свой Lua-скрипт с нашими страницами (GPS Rescue, OSD).
+- **Файлы:** telemetry/CopterMsp.h, copter/CrsfTelemetry.h, rc/RcReceiver.h
+- **Тест:** test_copter: кадры MSP в CRSF (запрос, ответ кусками, CRC), чтение и запись PID с «пульта»
+- **UI:** Studio «Приёмник»: «Настройка с пульта» — кнопка скачать Lua-скрипты на SD пульта и картинка, где их найти в EdgeTX
 
 ### [ ] 161 · MSP для ELRS Backpack и очков
 - **BF:** MSP over CRSF, DisplayPort
@@ -1151,7 +691,7 @@
 - **Что:** карта с домом и траекторией, профиль высоты возврата.
 - **UI:** сам пункт
 
-### [ ] 157 · Studio: вкладки «OSD», «Видео», «LED» — Репо: studio
+### [~] 157 · Studio: вкладки «OSD», «Видео», «LED» — Репо: studio
 - **Что:** редактор OSD перетаскиванием, предпросмотр шрифта.
 - **UI:** сам пункт
 - **Ход:** Сделано (studio 2ddd952): вкладка «OSD» — экран очков 30×16/13, перетаскивание, живые значения, статистика и тревоги. «Видео» уже была (VtxTab). Осталось: «LED»
@@ -1170,6 +710,12 @@
 ---
 
 ## 16. После 1.0: сверх Betaflight — просьбы пользователя
+
+### [ ] 189 · Исследование: адаптивный фильтр гироскопа (Калман)
+- **BF:** нет (есть в EmuFlight, IMUF)
+- **Что:** фильтр Калмана по оси гироскопа (шум оценивается на ходу) против цепочки BF (RPM + динамические режекторы + ФНЧ): задержка, шум D, запас контура — на симуляторе с моделью вибраций и на эталонных журналах (181). Включать, только если выигрыш виден на обоих.
+- **Файлы:** copter/GyroFilter.h, новый copter/GyroKalman.h
+- **Тест:** test_copter_sim: тот же шум — меньше задержка при том же шуме D · **UI:** «Фильтры»: выбор цепочки и график АЧХ
 
 ### [ ] 173 · Телеметрия на телефон и в браузер
 - **BF:** нет (BF шлёт телеметрию только на пульт; у ExpressLRS есть TX Backpack с Wi-Fi и MAVLink)
