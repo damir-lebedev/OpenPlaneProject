@@ -1762,6 +1762,38 @@ void test_training_fence_turns_back()
     TEST_ASSERT_TRUE(h.sim.height() < 23.0);   // и возврат — не выше потолка
 }
 
+// P32: долгий разгон в ALT_HOLD с удержанием высоты — модуль ускорения
+// около 1 g, а «верх» акселерометра наклонён меньше настоящего. Горизонт
+// не должен уходить (раньше — на 12°: лимит 30°, реально 42°), а высота —
+// врать на метры. С GPS поправка гаснет по ускорению, без GPS — по наклону.
+void test_horizon_and_altitude_hold_in_long_acceleration()
+{
+    for (int withGps = 1; withGps >= 0; --withGps)
+    {
+        QuadHarness h(five(), QuadPerturb(), 73, EscProtocol::DSHOT600, 1000.0f, trainingSettings());
+        h.gpsOn = withGps != 0;
+        TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+        double horizon = 0, alt = 0;
+        auto watch = [&]() {
+            const CopterStatus& st = h.ctl.getStatus();
+            horizon = std::fmax(horizon, std::fabs(st.pitch - h.sim.pitchDeg()));
+            alt = std::fmax(alt, std::fabs(st.altitude - h.sim.height()));
+        };
+        h.rc.pitch = -1.0f;   // 6 с стика вперёд — разгон до 15 м/с с лимитом 30°
+        for (int i = 0; i < 6000; ++i, watch()) h.step();
+        h.rc.pitch = 1.0f;    // торможение
+        for (int i = 0; i < 3000; ++i, watch()) h.step();
+        h.rc.pitch = 0.0f;
+        for (int i = 0; i < 5000; ++i, watch()) h.step();
+        char line[160];
+        snprintf(line, sizeof(line), "long acceleration in ALT_HOLD %s GPS: horizon error up to %.1f deg, altitude error up to %.2f m",
+                 withGps ? "with" : "without", horizon, alt);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(horizon < (withGps ? 6.0 : 8.0), line);
+        TEST_ASSERT_TRUE_MESSAGE(alt < 1.0, line);
+    }
+}
+
 // Скорость: в ANGLE полный стик вперёд — с пределом 20 км/ч наклон
 // уменьшается, коптер разгоняется вдвое меньше, чем без него.
 void test_training_speed_limit()
@@ -1837,6 +1869,7 @@ int main()
     RUN_TEST(test_level_trim_shifts_angle_hover);
     RUN_TEST(test_training_ceiling_holds_full_throttle);
     RUN_TEST(test_training_fence_turns_back);
+    RUN_TEST(test_horizon_and_altitude_hold_in_long_acceleration);
     RUN_TEST(test_training_speed_limit);
     return UNITY_END();
 }

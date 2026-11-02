@@ -571,6 +571,8 @@ namespace copter
             }
             for (int a = 0; a < 3; ++a) accelG[a] = accel[a];
             attitude.setGrounded(!status.airborne);
+            gpsAccel.update(sens.gps.fresh, sens.gps.fix, sens.gps.velN, sens.gps.velE, dt);
+            attitude.setGroundAccel(gpsAccel.accel());
             if (sens.imuOk) attitude.update(sens.gyro, accel, dt);
             const float accelUp = attitude.isInitialized() ? attitude.verticalAccel(accel) : 0.0f;
             // без барометра смещение акселерометра учится, пока коптер стоит
@@ -1472,6 +1474,7 @@ namespace copter
         float accelG[3] = { 0.0f, 0.0f, 1.0f };   // после ФНЧ
         Pt1 motionLpf;
         AttitudeQuat attitude;
+        GpsAccel gpsAccel;               // в разгоне по GPS горизонт не тянется к акселерометру (P32)
         VerticalEstimator vertical;
         AltitudeController altCtl;
         CopterStatus status;

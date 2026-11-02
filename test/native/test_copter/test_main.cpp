@@ -953,6 +953,47 @@ void test_attitude_accelerometer_pulls_slowly_and_only_near_1g()
     TEST_ASSERT_EQUAL_FLOAT(0.0f, c.qx() + c.qy() + c.qz());
 }
 
+// P32: в полёте поправка гаснет при ускорении по GPS, без GPS — при наклоне.
+void test_attitude_trust_fades_with_gps_accel_or_tilt()
+{
+    AttitudeQuat a;
+    a.configure(2.0f, 0.2f);
+    float level[3] = { 0, 0, 1 }, gyro[3] = { 0, 0, 0 }, tilted[3];
+    a.update(gyro, level, 0.001f);
+    a.setGrounded(false);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, a.flightTrust());           // ровно, GPS нет
+    a.setGroundAccel(0.3f);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, a.flightTrust());           // шум GPS
+    a.setGroundAccel(1.45f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.5f, a.flightTrust());
+    a.setGroundAccel(3.0f);                                   // разгон — акселерометр не опора
+    accelFor(20.0f, 0.0f, tilted);
+    for (int i = 0; i < 1000; ++i) a.update(gyro, tilted, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, a.rollDeg());
+    // без GPS — по наклону: 25° — наполовину, 40° — никак
+    AttitudeQuat b;
+    accelFor(25.0f, 0.0f, tilted);
+    b.update(gyro, tilted, 0.001f);
+    b.setGrounded(false);
+    TEST_ASSERT_FLOAT_WITHIN(0.02f, 0.5f, b.flightTrust());
+    accelFor(40.0f, 0.0f, tilted);
+    AttitudeQuat c;
+    c.update(gyro, tilted, 0.001f);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, c.flightTrust());
+
+    // ускорение по скорости GPS: 10 Гц, разгон 2 м/с² на север
+    GpsAccel g;
+    TEST_ASSERT_EQUAL_FLOAT(-1.0f, g.accel());
+    for (int i = 0; i < 1000; ++i)
+    {
+        const bool fresh = i % 100 == 0;
+        g.update(fresh, true, 2.0f * i / 1000.0f, 0.0f, 0.001f);
+    }
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 2.0f, g.accel());
+    for (int i = 0; i < 600; ++i) g.update(false, true, 0, 0, 0.001f);   // фиксов нет 0.6 с
+    TEST_ASSERT_EQUAL_FLOAT(-1.0f, g.accel());
+}
+
 // ---------------- высота ----------------
 
 void test_vertical_estimator_fuses_baro_and_accel()
@@ -6405,6 +6446,7 @@ int main()
     RUN_TEST(test_attitude_starts_from_accelerometer);
     RUN_TEST(test_attitude_integrates_full_flip_and_yaw);
     RUN_TEST(test_attitude_accelerometer_pulls_slowly_and_only_near_1g);
+    RUN_TEST(test_attitude_trust_fades_with_gps_accel_or_tilt);
     RUN_TEST(test_vertical_estimator_fuses_baro_and_accel);
     RUN_TEST(test_vertical_estimator_without_baro_learns_bias_on_ground);
     RUN_TEST(test_altitude_controller);
