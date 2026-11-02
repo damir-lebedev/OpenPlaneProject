@@ -634,7 +634,7 @@ private:
 
         // всё, что задано руками (как diff в CLI): «set.<имя>=<значение>»
         char value[48];
-        for (uint8_t i = 0; i < copter::PARAM_COUNT; ++i)
+        for (uint16_t i = 0; i < copter::PARAM_COUNT; ++i)
         {
             const copter::ParamId id = static_cast<copter::ParamId>(i);
             const copter::ParamInfo& p = copter::paramInfo(id);

@@ -328,7 +328,7 @@ classDiagram
 |---|---|---|---|
 | 5 | `flight` (16 KB) | `FlightController::update()` → `MavlinkTelemetry::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` | 2 ms, `vTaskDelayUntil` |
 | 1 | `oled` (4 KB) | `OledDisplay::draw()` por el segundo bus I2C | 200 ms |
-| 1 | `storage` (2 KB) | `Stm32FlashStorage::service()`: borrado y escritura del sector de ajustes | 100 ms |
+| 1 | `storage` (8 KB) | `Stm32FlashStorage::service()`: borrado y escritura del sector de ajustes | 100 ms |
 | 2 | `bbox` (8 KB) | `BlackBox::writerStep()`: una página de la cola a la tarjeta SD; en tierra, borrado. La desaloja la tarea de vuelo | notificación tras cada ciclo (si no, una vez cada 20 ms) |
 
 **Reglas de separación de datos:**

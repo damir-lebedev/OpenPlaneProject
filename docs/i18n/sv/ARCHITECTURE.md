@@ -353,7 +353,7 @@ classDiagram
 |---|---|---|---|
 | 5 | `flight` (16 KB) | `FlightController::update()` → `MavlinkTelemetry::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` | 2 ms, `vTaskDelayUntil` |
 | 1 | `oled` (4 KB) | `OledDisplay::draw()` över den andra I2C-bussen | 200 ms |
-| 1 | `storage` (2 KB) | `Stm32FlashStorage::service()` – radering och skrivning av inställningssektorn | 100 ms |
+| 1 | `storage` (8 KB) | `Stm32FlashStorage::service()` – radering och skrivning av inställningssektorn | 100 ms |
 | 2 | `bbox` (8 KB) | `BlackBox::writerStep()`: en sida från kön till SD-kortet; på marken – radering. Avbryts av flyguppgiften | aviseras efter varje cykel (annars var 20:e ms) |
 
 **Regler för dataseparation:**

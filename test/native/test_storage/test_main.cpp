@@ -175,7 +175,7 @@ void test_full_store_rejects_without_losing_data()
 {
     RamFlash flash;
     KeyValueStore store(flash);
-    uint8_t blob[200];
+    uint8_t blob[800];   // 8 КБ: влезает 9–10
     memset(blob, 0xAB, sizeof(blob));
 
     char key[8];
@@ -193,14 +193,14 @@ void test_full_store_rejects_without_losing_data()
     TEST_ASSERT_TRUE(store.put("big", "k0", blob, sizeof(blob)));
     size_t length = 0;
     const uint8_t* data = store.get("big", "k0", &length);
-    TEST_ASSERT_EQUAL(200, length);
-    TEST_ASSERT_EQUAL_HEX8(0xCD, data[199]);
+    TEST_ASSERT_EQUAL(sizeof(blob), length);
+    TEST_ASSERT_EQUAL_HEX8(0xCD, data[sizeof(blob) - 1]);
 
     // Больше, чем влезает, — отказ, старое значение цело.
     uint8_t huge[KeyValueStore::CAPACITY];
     TEST_ASSERT_FALSE(store.put("big", "k1", huge, sizeof(huge)));
     TEST_ASSERT_NOT_NULL(store.get("big", "k1", &length));
-    TEST_ASSERT_EQUAL(200, length);
+    TEST_ASSERT_EQUAL(sizeof(blob), length);
 }
 
 void test_corrupted_image_reads_as_empty()
@@ -305,6 +305,30 @@ void test_crc32_reference_value()
     TEST_ASSERT_EQUAL_HEX32(0xCBF43926u, KeyValueStore::crc32(text, sizeof(text)));
 }
 
+
+// reserve: место прямо в образе — заменяет старое, переживает перезагрузку;
+// не влезает — nullptr, старое цело. CRC по кускам = CRC целиком.
+void test_reserve_writes_in_place()
+{
+    RamFlash flash;
+    {
+        KeyValueStore store(flash);
+        TEST_ASSERT_TRUE(store.put("copter", "params", "old", 3));
+        uint8_t* at = store.reserve("copter", "params", 5000);
+        TEST_ASSERT_NOT_NULL(at);
+        for (size_t i = 0; i < 5000; ++i) at[i] = static_cast<uint8_t>(i * 7);
+        TEST_ASSERT_NULL(store.reserve("copter", "params", KeyValueStore::CAPACITY));
+        TEST_ASSERT_TRUE(store.commit());
+    }
+    KeyValueStore store(flash);
+    size_t length = 0;
+    const uint8_t* v = store.get("copter", "params", &length);
+    TEST_ASSERT_NOT_NULL(v);
+    TEST_ASSERT_EQUAL(5000, length);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(4999 * 7), v[4999]);
+    TEST_ASSERT_EQUAL_HEX32(KeyValueStore::crc32(v, length),
+                            ~KeyValueStore::crc32Update(KeyValueStore::crc32Update(0xFFFFFFFFu, v, 100), v + 100, length - 100));
+}
 
 // ---------------- KvPreferences (API Preferences) ----------------
 
@@ -435,6 +459,7 @@ int main(int, char**)
     RUN_TEST(test_record_structure_is_validated);
     RUN_TEST(test_small_or_failing_medium);
     RUN_TEST(test_crc32_reference_value);
+    RUN_TEST(test_reserve_writes_in_place);
     RUN_TEST(test_preferences_roundtrip_all_types);
     RUN_TEST(test_preferences_defaults_like_esp32);
     RUN_TEST(test_preferences_read_only_cannot_write);

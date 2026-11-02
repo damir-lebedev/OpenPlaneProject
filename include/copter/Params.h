@@ -151,7 +151,7 @@ namespace copter
     }
 
     // Порядок — как в таблице paramTable(): P, I, D, F по осям подряд.
-    enum ParamId : uint8_t
+    enum ParamId : uint16_t
     {
         PARAM_TUNE_SOURCE,
         PARAM_PROFILE_NAME,
@@ -967,11 +967,9 @@ namespace copter
     public:
         static constexpr uint8_t PROFILES = 4;
         static constexpr uint8_t NAME_LENGTH = 16;   // craft_name; имена профилей — до 8 (profile_name)
-        // Запись во флеш: число — хэш имени 2 + слот 1 + значение 4, строка — хэш 2 +
-        // слот 1 + длина 1 + текст. Больше ёмкости хранилища записать нельзя.
-        static constexpr size_t NUMBER_ENTRY = 7;
-        static constexpr size_t STRING_ENTRY = 4 + NAME_LENGTH;
-        static constexpr size_t SAVE_MAX = KeyValueStore::CAPACITY;
+        // Запись во флеш (serialize): число — хэш имени 2 + слот 1 + значение 4,
+        // строка — хэш 2 + слот 1 + длина 1 + текст. Больше ёмкости хранилища
+        // записать нельзя.
         static constexpr uint8_t STORE_VERSION = 1;
         static constexpr const char* STORE_SPACE = "copter";
         static constexpr const char* STORE_KEY = "params";
@@ -981,7 +979,7 @@ namespace copter
 
         CopterParams()
         {
-            for (uint8_t i = 0; i < PARAM_COUNT; ++i) tableDefaults[i] = paramTable()[i].def;
+            for (uint16_t i = 0; i < PARAM_COUNT; ++i) tableDefaults[i] = paramTable()[i].def;
             uint8_t n = 0;
             fileBuild = buildCatalog(n)[0];
             clearValues();
@@ -1288,7 +1286,7 @@ namespace copter
             memcpy(keptValues, values, sizeof(values));
             memcpy(keptMask, setMask, sizeof(setMask));
             resetAll();
-            for (uint8_t i = 0; i < PARAM_COUNT; ++i)
+            for (uint16_t i = 0; i < PARAM_COUNT; ++i)
             {
                 if (paramInfo(static_cast<ParamId>(i)).group != keep) continue;
                 memcpy(values[i], keptValues[i], sizeof(values[i]));
@@ -1539,17 +1537,69 @@ namespace copter
 
         // ---- флеш ----
 
-        // Записать заданное руками (commit — за вызывающим).
+        // Записать заданное руками (commit — за вызывающим). Сначала проход
+        // «посчитать» (длина и CRC), потом — прямо в образ хранилища
+        // (KeyValueStore::reserve), без своего буфера: diff BF на сотни строк
+        // — несколько КБ. Ничего не поменялось — флеш не трогаем.
         bool save(KeyValueStore& kv) const
         {
-            // 2 КБ: не на стеке полётной задачи (save — только из неё, по одному)
-            static uint8_t blob[SAVE_MAX];
+            BlobCounter count;
+            const bool any = serialize(count);
+            bool ok = true;
+            if (!any) kv.remove(STORE_SPACE, STORE_KEY);
+            else
+            {
+                size_t oldLength = 0;
+                const uint8_t* old = kv.get(STORE_SPACE, STORE_KEY, &oldLength);
+                const bool same = old && oldLength == count.n &&
+                                  KeyValueStore::crc32Update(0xFFFFFFFFu, old, oldLength) == count.crc;
+                if (!same)
+                {
+                    uint8_t* at = kv.reserve(STORE_SPACE, STORE_KEY, count.n);
+                    if (at)
+                    {
+                        BlobWriter w{ at };
+                        serialize(w);
+                    }
+                    else ok = false;
+                }
+            }
+
+            uint8_t rcBlob[RcConfig::STORE_MAX];
+            const size_t rcLength = rcConfig.serialize(rcBlob, sizeof(rcBlob));
+            if (rcConfig.isDefault()) kv.remove(STORE_SPACE, RC_KEY);
+            else ok = kv.put(STORE_SPACE, RC_KEY, rcBlob, rcLength) && ok;
+            return ok;
+        }
+
+        struct BlobCounter
+        {
             size_t n = 0;
-            blob[n++] = STORE_VERSION;
-            blob[n++] = pidIndex;
-            blob[n++] = rateIndex;
+            uint32_t crc = 0xFFFFFFFFu;
+            void put(const void* p, size_t len)
+            {
+                crc = KeyValueStore::crc32Update(crc, static_cast<const uint8_t*>(p), len);
+                n += len;
+            }
+        };
+        struct BlobWriter
+        {
+            uint8_t* at;
+            void put(const void* p, size_t len)
+            {
+                memcpy(at, p, len);
+                at += len;
+            }
+        };
+
+        // Формат записи настроек; true — есть что писать.
+        template <typename Out>
+        bool serialize(Out& out) const
+        {
+            const uint8_t head[3] = { STORE_VERSION, pidIndex, rateIndex };
+            out.put(head, 3);
             bool any = pidIndex != 0 || rateIndex != 0;
-            for (uint8_t i = 0; i < PARAM_COUNT; ++i)
+            for (uint16_t i = 0; i < PARAM_COUNT; ++i)
             {
                 const ParamId id = static_cast<ParamId>(i);
                 const ParamInfo& info = paramInfo(id);
@@ -1558,36 +1608,25 @@ namespace copter
                 for (uint8_t slot = 0; slot < slots; ++slot)
                 {
                     if (!isSet(id, slot)) continue;
-                    if (n + (info.type == ParamType::STRING ? STRING_ENTRY : NUMBER_ENTRY) > sizeof(blob)) return false;
                     any = true;
-                    blob[n++] = static_cast<uint8_t>(h);
-                    blob[n++] = static_cast<uint8_t>(h >> 8);
+                    uint8_t e[4] = { static_cast<uint8_t>(h), static_cast<uint8_t>(h >> 8), slot, 0 };
                     if (info.type == ParamType::STRING)
                     {
                         const char* s = text(id, slot);
                         const size_t len = strlen(s);
-                        blob[n++] = static_cast<uint8_t>(0x80u | slot);
-                        blob[n++] = static_cast<uint8_t>(len);
-                        memcpy(blob + n, s, len);
-                        n += len;
+                        e[2] = static_cast<uint8_t>(0x80u | slot);
+                        e[3] = static_cast<uint8_t>(len);
+                        out.put(e, 4);
+                        out.put(s, len);
                     }
                     else
                     {
-                        blob[n++] = slot;
-                        memcpy(blob + n, &values[id][slot], 4);
-                        n += 4;
+                        out.put(e, 3);
+                        out.put(&values[id][slot], 4);
                     }
                 }
             }
-            bool ok = true;
-            if (!any) kv.remove(STORE_SPACE, STORE_KEY);
-            else ok = kv.put(STORE_SPACE, STORE_KEY, blob, n);
-
-            uint8_t rcBlob[RcConfig::STORE_MAX];
-            const size_t rcLength = rcConfig.serialize(rcBlob, sizeof(rcBlob));
-            if (rcConfig.isDefault()) kv.remove(STORE_SPACE, RC_KEY);
-            else ok = kv.put(STORE_SPACE, RC_KEY, rcBlob, rcLength) && ok;
-            return ok;
+            return any;
         }
 
         // Прочитать из флеша (и пересчитать модель, если описание коптера
@@ -1663,7 +1702,7 @@ namespace copter
         // описание — из сборки copter_build.
         void refreshDefaults()
         {
-            for (uint8_t i = 0; i < PARAM_COUNT; ++i) defaults[i] = tableDefaults[i];
+            for (uint16_t i = 0; i < PARAM_COUNT; ++i) defaults[i] = tableDefaults[i];
             const BuildSpec base = baseBuild(static_cast<uint8_t>(value(PARAM_COPTER_BUILD)));
             defaults[PARAM_COPTER_MASS_G] = roundf(base.massG);
             defaults[PARAM_COPTER_WHEELBASE_MM] = roundf(base.wheelbaseMm);

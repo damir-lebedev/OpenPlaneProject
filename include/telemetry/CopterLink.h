@@ -35,7 +35,7 @@
 //   aux … · map … · rxrange … · vtx … · rxfail … — как в CLI; ответ — "@rc {...}";
 //   calibrate vbat В · calibrate ibat А — по мультиметру: vbat_scale /
 //                       ibata_scale, ответ — как на set;
-//   save              — во флеш и в работу: "@save {...}";
+//   save              — во флеш и в работу: "@save {...}" (и "flash":[занято, всего]);
 //   revert            — отменить несохранённое: "@revert {...}";
 //   live · live 0     — "@live {...}" 20 раз в секунду ещё 3 с / хватит;
 //   motor N|all % · motor stop — проверка моторов без пропеллеров (до 30 %,
@@ -373,6 +373,7 @@ private:
             w.str(b.id ? b.id : "");
             w.add(",\"source\":\"%s\",\"unsaved\":%s", params.source() == TuneSource::BETAFLIGHT ? "BETAFLIGHT" : "MODEL",
                   dirty ? "true" : "false");
+            flashUse(w);
             // рама для вкладки «Моторы»: где мотор (x — к носу, y — вправо) и куда крутится
             const Frame& f = ctl.getTune().frame;
             w.add(",\"frame\":{\"type\":\"%s\",\"motors\":[", frameName(f.type));
@@ -548,6 +549,13 @@ private:
     }
 
     // ,"margin":{"gm":дБ,"pm":°,"hz":срез} — запасы контура для PID, что работают.
+    // Флеш настроек: занято и всего, байт (вкладка «Прочее»).
+    void flashUse(JsonWriter& w) const
+    {
+        const KeyValueStore* kv = cli.store();
+        if (kv) w.add(",\"flash\":[%u,%u]", static_cast<unsigned>(kv->bytesUsed()), static_cast<unsigned>(KeyValueStore::CAPACITY));
+    }
+
     void margin(JsonWriter& w) const
     {
         const copter::LoopCheck c = copter::checkLoop(params.tune());
@@ -619,7 +627,7 @@ private:
     void doSave()
     {
         const copter::CopterCli::SaveResult r = cli.saveAndApply();
-        char line[160];
+        char line[224];
         JsonWriter w(line, sizeof(line));
         w.add("@save {\"ok\":%s,\"stored\":%s", r == copter::CopterCli::SaveResult::FLASH_FULL ? "false" : "true",
               r == copter::CopterCli::SaveResult::SAVED ? "true" : "false");
@@ -634,6 +642,7 @@ private:
             w.str("флеш настроек переполнен");
         }
         margin(w);   // описание коптера сменилось — модель пересчитана при save
+        flashUse(w);
         w.add("}\n");
         send(w);
     }

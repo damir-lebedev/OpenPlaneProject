@@ -328,7 +328,7 @@ classDiagram
 |---|---|---|---|
 | 5 | `flight` (16 KB) | `FlightController::update()` → `MavlinkTelemetry::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` | 2 ms, `vTaskDelayUntil` |
 | 1 | `oled` (4 KB) | `OledDisplay::draw()` über den zweiten I2C-Bus | 200 ms |
-| 1 | `storage` (2 KB) | `Stm32FlashStorage::service()` – Löschen und Schreiben des Einstellungssektors | 100 ms |
+| 1 | `storage` (8 KB) | `Stm32FlashStorage::service()` – Löschen und Schreiben des Einstellungssektors | 100 ms |
 | 2 | `bbox` (8 KB) | `BlackBox::writerStep()`: eine Seite aus der Queue auf die SD-Karte; am Boden – Löschen. Wird vom Flug-Task verdrängt | Benachrichtigung nach jedem Zyklus (sonst einmal alle 20 ms) |
 
 **Regeln der Datentrennung:**

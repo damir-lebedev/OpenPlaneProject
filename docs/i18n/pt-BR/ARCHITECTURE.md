@@ -328,7 +328,7 @@ classDiagram
 |---|---|---|---|
 | 5 | `flight` (16 KB) | `FlightController::update()` → `MavlinkTelemetry::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` | 2 ms, `vTaskDelayUntil` |
 | 1 | `oled` (4 KB) | `OledDisplay::draw()` pelo segundo barramento I2C | 200 ms |
-| 1 | `storage` (2 KB) | `Stm32FlashStorage::service()` — apagamento e gravação do setor de configurações | 100 ms |
+| 1 | `storage` (8 KB) | `Stm32FlashStorage::service()` — apagamento e gravação do setor de configurações | 100 ms |
 | 2 | `bbox` (8 KB) | `BlackBox::writerStep()`: uma página da fila para o cartão SD; no solo, apagamento. É preemptada pela tarefa de voo | notificação após cada ciclo (senão, uma vez a cada 20 ms) |
 
 **Regras de separação de dados:**

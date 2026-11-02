@@ -1577,13 +1577,20 @@ void test_params_set_get_bounds_and_enums()
     TEST_ASSERT_FALSE(p.isSet(PARAM_PROFILE_NAME, 1));
 }
 
-// Заданного больше, чем помещается в хранилище (2 КБ), — save отказывает, а не пишет за буфер.
+// Заданного больше, чем помещается в хранилище, — save отказывает, а не пишет за буфер,
+// и прежняя запись цела.
 void test_params_save_refuses_overflow()
 {
     RamFlash flash;
     KeyValueStore kv(flash);
+    CopterParams q;
+    q.setValue(PARAM_P_ROLL, 0, 50.0f);
+    TEST_ASSERT_TRUE(q.save(kv));
+    // чужие ключи заняли почти всё
+    static uint8_t junk[KeyValueStore::CAPACITY - 300] = {};
+    TEST_ASSERT_TRUE(kv.put("other", "junk", junk, sizeof(junk)));
     CopterParams p;
-    for (uint8_t i = 0; i < PARAM_COUNT; ++i)
+    for (uint16_t i = 0; i < PARAM_COUNT; ++i)
     {
         const ParamId id = static_cast<ParamId>(i);
         const ParamInfo& info = paramInfo(id);
@@ -1592,10 +1599,48 @@ void test_params_save_refuses_overflow()
         for (uint8_t slot = 0; slot < slots; ++slot) p.setValue(id, slot, p.valueIn(id, slot) == info.min ? info.max : info.min);
     }
     TEST_ASSERT_FALSE(p.save(kv));
-    // обычный BF-diff (несколько десятков строк) помещается
+    CopterParams r;
+    TEST_ASSERT_TRUE(r.load(kv));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, r.valueIn(PARAM_P_ROLL, 0));
+}
+
+// Большой diff BF (400+ строк: всё во всех профилях) сохраняется и читается
+// после «перезагрузки»; повторный save без изменений флеш не пишет.
+void test_params_big_diff_survives_reboot()
+{
+    RamFlash flash;
+    size_t lines = 0;
+    CopterParams p;
+    for (uint16_t i = 0; i < PARAM_COUNT; ++i)
+    {
+        const ParamId id = static_cast<ParamId>(i);
+        const ParamInfo& info = paramInfo(id);
+        if (info.type == ParamType::STRING) continue;
+        const uint8_t slots = info.scope == ParamScope::MASTER ? 1 : CopterParams::PROFILES;
+        for (uint8_t slot = 0; slot < slots; ++slot, ++lines) p.setValue(id, slot, p.valueIn(id, slot) == info.min ? info.max : info.min);
+    }
+    TEST_ASSERT_TRUE(lines >= 400);
+    {
+        KeyValueStore kv(flash);
+        kv.put("imu", "mount", "x", 1);
+        TEST_ASSERT_TRUE(p.save(kv));
+        TEST_ASSERT_TRUE(kv.commit());
+        TEST_ASSERT_TRUE(kv.bytesUsed() > 2048);
+        TEST_ASSERT_TRUE(p.save(kv));   // то же самое — образ не тронут
+        TEST_ASSERT_FALSE(kv.isDirty());
+    }
+    KeyValueStore kv(flash);   // «перезагрузка»
     CopterParams q;
-    for (uint8_t i = 0; i < 120; ++i) q.setValue(static_cast<ParamId>(i), 0, paramInfo(static_cast<ParamId>(i)).min);
-    TEST_ASSERT_TRUE(q.save(kv));
+    TEST_ASSERT_TRUE(q.load(kv));
+    for (uint16_t i = 0; i < PARAM_COUNT; ++i)
+    {
+        const ParamId id = static_cast<ParamId>(i);
+        const ParamInfo& info = paramInfo(id);
+        if (info.type == ParamType::STRING) continue;
+        const uint8_t slots = info.scope == ParamScope::MASTER ? 1 : CopterParams::PROFILES;
+        for (uint8_t slot = 0; slot < slots; ++slot) TEST_ASSERT_EQUAL_FLOAT(p.valueIn(id, slot), q.valueIn(id, slot));
+    }
+    TEST_ASSERT_TRUE(kv.contains("imu", "mount"));
 }
 
 void test_params_survive_flash_and_skip_unknown()
@@ -5564,6 +5609,7 @@ int main()
     RUN_TEST(test_params_table_is_consistent);
     RUN_TEST(test_params_set_get_bounds_and_enums);
     RUN_TEST(test_params_save_refuses_overflow);
+    RUN_TEST(test_params_big_diff_survives_reboot);
     RUN_TEST(test_params_survive_flash_and_skip_unknown);
     RUN_TEST(test_pid_in_betaflight_units);
     RUN_TEST(test_betaflight_source_takes_bf_45_defaults);

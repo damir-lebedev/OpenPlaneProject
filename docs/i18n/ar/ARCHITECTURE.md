@@ -354,7 +354,7 @@ classDiagram
 |---|---|---|---|
 | 5 | `flight` (16 KB) | `FlightController::update()` ← `MavlinkTelemetry::update()` ← `DebugLogger::update()` ← `DebugConsole::update()` ← `LoopStats::record()` | 2 ms، `vTaskDelayUntil` |
 | 1 | `oled` (4 KB) | `OledDisplay::draw()` عبر ناقل I2C الثاني | 200 ms |
-| 1 | `storage` (2 KB) | `Stm32FlashStorage::service()` — مسح قطاع الإعدادات وكتابته | 100 ms |
+| 1 | `storage` (8 KB) | `Stm32FlashStorage::service()` — مسح قطاع الإعدادات وكتابته | 100 ms |
 | 2 | `bbox` (8 KB) | `BlackBox::writerStep()`: صفحة من الطابور إلى بطاقة SD؛ وعلى الأرض — المسح. تستبقها مهمة الطيران | إشعار بعد كل دورة (وإلا مرة كل 20 ms) |
 
 **قواعد فصل البيانات:**

@@ -83,6 +83,7 @@ namespace copter
         }
 
         void setStore(KeyValueStore* store) { kv = store; }
+        const KeyValueStore* store() const { return kv; }
         // Регуляторы DShot (main_copter.cpp); нет — dshotprog недоступна.
         void setEscCommands(IEscCommands* e) { esc = e; }
         bool dshotCommandsAvailable() const { return esc && esc->commandsAvailable(); }
@@ -587,7 +588,7 @@ namespace copter
         {
             if (*args == '\0')
             {
-                for (uint8_t i = 0; i < PARAM_COUNT; ++i) printValue(static_cast<ParamId>(i));
+                for (uint16_t i = 0; i < PARAM_COUNT; ++i) printValue(static_cast<ParamId>(i));
                 return;
             }
             char* eq = strchr(args, '=');
@@ -629,7 +630,7 @@ namespace copter
         void cmdGet(const char* args)
         {
             bool any = false;
-            for (uint8_t i = 0; i < PARAM_COUNT; ++i)
+            for (uint16_t i = 0; i < PARAM_COUNT; ++i)
             {
                 const ParamId id = static_cast<ParamId>(i);
                 const ParamInfo& info = paramInfo(id);
@@ -693,7 +694,7 @@ namespace copter
 
         void dumpScope(ParamScope scope, uint8_t slot, bool onlyChanged)
         {
-            for (uint8_t i = 0; i < PARAM_COUNT; ++i)
+            for (uint16_t i = 0; i < PARAM_COUNT; ++i)
             {
                 const ParamId id = static_cast<ParamId>(i);
                 if (paramInfo(id).scope != scope) continue;

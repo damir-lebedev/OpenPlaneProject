@@ -328,7 +328,7 @@ classDiagram
 |---|---|---|---|
 | 5 | `flight` (16 KB) | `FlightController::update()` → `MavlinkTelemetry::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` | 2 ms, `vTaskDelayUntil` |
 | 1 | `oled` (4 KB) | दूसरी I2C बस पर `OledDisplay::draw()` | 200 ms |
-| 1 | `storage` (2 KB) | `Stm32FlashStorage::service()` — सेटिंग वाले सेक्टर को मिटाना और लिखना | 100 ms |
+| 1 | `storage` (8 KB) | `Stm32FlashStorage::service()` — सेटिंग वाले सेक्टर को मिटाना और लिखना | 100 ms |
 | 2 | `bbox` (8 KB) | `BlackBox::writerStep()`: क्यू से एक पेज SD कार्ड पर; ज़मीन पर — मिटाना। उड़ान वाला टास्क इसे रोक (प्रीएम्प्ट कर) सकता है | हर चक्र के बाद सूचना (वरना हर 20 ms पर एक बार) |
 
 **डेटा बँटवारे के नियम:**

@@ -354,7 +354,7 @@ classDiagram
 |---|---|---|---|
 | 5 | `flight` (16 КБ) | `FlightController::update()` → `MavlinkTelemetry::update()` → `DebugLogger::update()` → `DebugConsole::update()` → `LoopStats::record()` | 2 мс, `vTaskDelayUntil` |
 | 1 | `oled` (4 КБ) | `OledDisplay::draw()` по второй шине I2C | 200 мс |
-| 1 | `storage` (2 КБ) | `Stm32FlashStorage::service()` — стирание и запись сектора настроек | 100 мс |
+| 1 | `storage` (8 КБ) | `Stm32FlashStorage::service()` — стирание и запись сектора настроек | 100 мс |
 | 2 | `bbox` (8 КБ) | `BlackBox::writerStep()`: страница из очереди на SD-карту; на земле — стирание. Вытесняется полётной задачей | уведомление после каждого такта (иначе раз в 20 мс) |
 
 **Правила разделения данных:**

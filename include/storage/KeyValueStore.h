@@ -10,8 +10,9 @@
 // кусок флеша (EEPROM-эмуляция STM32duino). Весь образ живёт в ОЗУ
 // (CAPACITY байт), флеш читается один раз при первом обращении и
 // перезаписывается целиком в commit(). Ключей немного (калибровки,
-// триммер, настройки лога) — сотни байт, поэтому простота важнее
-// износа: запись только если что-то действительно поменялось.
+// триммер, настройки лога, настройки коптера — до нескольких КБ), поэтому
+// простота важнее износа: запись только если что-то действительно поменялось.
+// CAPACITY — 8 КБ, как страница EEPROM-эмуляции STM32duino (F405 и H743).
 //
 // Формат образа (little-endian):
 //   заголовок, 12 байт: "OPKV" | версия u16 | занято байт u16 | CRC32 записей u32
@@ -39,7 +40,7 @@ class KeyValueStore
 {
 public:
 
-    static constexpr size_t CAPACITY = 2048;
+    static constexpr size_t CAPACITY = 8192;
     static constexpr size_t HEADER_SIZE = 12;
     static constexpr size_t MAX_NAME_LENGTH = 15;   // как в NVS
     static constexpr uint16_t FORMAT_VERSION = 1;
@@ -155,6 +156,35 @@ public:
         return true;
     }
 
+    // Место под значение прямо в образе — без копии в ОЗУ у вызывающего
+    // (настройки коптера — несколько КБ). Старая запись удаляется, новая —
+    // в конце; вызывающий заполняет length байт. nullptr — не влезает
+    // (тогда старая запись цела).
+    uint8_t* reserve(const char* space, const char* key, size_t length)
+    {
+        mount();
+        const size_t spaceLength = nameLength(space);
+        const size_t keyLength = nameLength(key);
+        if (spaceLength == 0 || keyLength == 0 || length > 0xFFFF) return nullptr;
+
+        const long existing = find(space, key);
+        const size_t needed = 4 + spaceLength + keyLength + length;
+        const size_t freed = existing >= 0 ? recordSize(records() + existing) : 0;
+        if (used - freed + needed > CAPACITY - HEADER_SIZE) return nullptr;
+
+        if (existing >= 0) erase(static_cast<size_t>(existing));
+
+        uint8_t* record = records() + used;
+        record[0] = static_cast<uint8_t>(spaceLength);
+        record[1] = static_cast<uint8_t>(keyLength);
+        write16(record + 2, static_cast<uint16_t>(length));
+        memcpy(record + 4, space, spaceLength);
+        memcpy(record + 4 + spaceLength, key, keyLength);
+        used += needed;
+        dirty = true;
+        return record + 4 + spaceLength + keyLength;
+    }
+
     bool remove(const char* space, const char* key)
     {
         mount();
@@ -212,7 +242,12 @@ public:
 
     static uint32_t crc32(const uint8_t* data, size_t length)
     {
-        uint32_t crc = 0xFFFFFFFFu;
+        return ~crc32Update(0xFFFFFFFFu, data, length);
+    }
+
+    // CRC по кускам: начать с 0xFFFFFFFF, в конце — ~.
+    static uint32_t crc32Update(uint32_t crc, const uint8_t* data, size_t length)
+    {
         for (size_t i = 0; i < length; ++i)
         {
             crc ^= data[i];
@@ -221,7 +256,7 @@ public:
                 crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
             }
         }
-        return ~crc;
+        return crc;
     }
 
 
