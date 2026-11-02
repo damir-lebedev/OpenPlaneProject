@@ -97,6 +97,9 @@ constexpr copter::EscProtocol ESC_PROTOCOL = copter::EscProtocol::ONESHOT125;
 
 ## Прошивка и первый запуск
 
+> **Бета.** На железе коптер на этой прошивке ещё не летал. Порядок
+> проверки для тестеров — [BETA_TEST.md](BETA_TEST.md).
+
 ```bash
 pio run -e matek-h743-quad -t upload          # Matek H743-WING V3: кнопка BOOT + USB
 pio run -e stm32h743-devebox-quad -t upload   # DevEBox H743
