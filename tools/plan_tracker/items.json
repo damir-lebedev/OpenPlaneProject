@@ -95,21 +95,6 @@
    "tab": ""
   },
   {
-   "id": "192",
-   "section": 1,
-   "title": "Хранилище настроек больше 2 КБ",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "what": "KeyValueStore — 2 КБ на всю плату, заданная руками настройка — 7 байт; большой diff BF (сотни строк, OSD-раскладка) не влезет — `save` ответит FLASH_FULL. Свой сектор флеша под настройки коптера (F405: 16 КБ, H743: 128 КБ) или второй ключ.",
-   "files": "storage/KeyValueStore.h, copter/Params.h, hal/stm32/*",
-   "test": "test_copter: diff на 400 строк сохраняется и читается после «перезагрузки»",
-   "ui": "«Прочее»: занято N из M",
-   "settings": [],
-   "tab": "Прочее"
-  },
-  {
    "id": "178",
    "section": 2,
    "title": "GETFUN F405: дамп BF, бэкап родной прошивки, заголовок платы",
