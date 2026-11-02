@@ -166,6 +166,12 @@ public:
         return protocol == Config::RxProtocol::CRSF ? crsf.linkQuality() : -1;
     }
 
+    // Уровень сигнала, dBm — только CRSF; 0 — неизвестно.
+    int16_t getRssiDbm() const
+    {
+        return protocol == Config::RxProtocol::CRSF ? crsf.rssiDbm() : 0;
+    }
+
     // UART открылся в формате протокола. false — порт так не умеет
     // (SBUS без инверсии): кадров не будет, связь — «потеряна».
     bool isPortReady() const { return portReady; }

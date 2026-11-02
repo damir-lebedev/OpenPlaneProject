@@ -304,6 +304,9 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `rc_smoothing_setpoint_cutoff` · `rc_smoothing_throttle_cutoff` | общая | 0–255 Гц | 0 | срез стиков · газа числом; 0 — по частоте кадров |
 | `deadband` · `yaw_deadband` | общая | 0–32 · 0–100 | 0 · 0 | мёртвая зона у центра (500 — полстика): крен и тангаж · рысканье; дальше растянуто — упор по-прежнему полный |
 | `rx_min_usec` `rx_max_usec` | общая | 750–2250 мкс | 885, 2115 | импульс вне них — ошибка канала: на стике — потеря связи, на AUX держится прежнее |
+| `rssi_channel` | общая | 0–18 | 0 | канал, в котором приёмник шлёт RSSI (1000–2000 мкс → 0–100 %); 0 — RSSI по битым кадрам или от протокола (CRSF: −130…0 dBm → 0–100 %) |
+| `rssi_scale` · `rssi_offset` · `rssi_invert` | общая | 1–255 % · −100…100 % · `OFF`, `ON` | 100 · 0 · `OFF` | RSSI из канала: множитель, сдвиг, наоборот |
+| `rssi_src_frame_errors` | общая | `OFF`, `ON` | `OFF` | RSSI — доля целых кадров за полсекунды (SBUS, iBUS без RSSI) |
 | `copter_build` | общая | сборки каталога | `COPTER_BUILD` | основа описания коптера |
 | `copter_mass_g` | общая | 0–30000 г (0 — оценка) | из сборки | взлётная масса с батареей |
 | `copter_wheelbase_mm` | общая | 30–2000 мм | из сборки | между осями противоположных моторов |
@@ -334,10 +337,10 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `vtx_power` | общая | 1–12 | 1 | уровень мощности, 1 — самый слабый; таблица — от передатчика (`vtx_info`) |
 | `vtx_max_power_mw` | общая | 0–10000 мВт | 0 (нет) | **потолок**: выше не уйдёт ни с тумблера, ни кнопкой на передатчике |
 | `vtx_low_power_disarm` | общая | `OFF`, `ON`, `UNTIL_FIRST_ARM` | `OFF` | без ARM — самый слабый уровень |
-| `osd_<элемент>_pos` | общая | 0–16383 | как в BF: LQ 1,0 · режим 13,0 · спутники 24,0 · VTX 23,1 · прицел 14,6 · предупреждения 9,9 · ток 1,10 · мА·ч 8,10 · стрелка и расстояние домой 1,11 и 2,11 · высота 23,11 · батарея 1,12 · банка 8,12 · время 22,12, перед полётом 1,8 (показаны); газ, скорость, вариометр, имя, мощность, широта, долгота — спрятаны | позиция элемента OSD: x + 32·y, +2048 — показан. Элементы: `link_quality`, `flymode`, `gps_sats`, `vtx_channel`, `crosshairs`, `warnings`, `current`, `mah_drawn`, `home_dir`, `home_dist`, `altitude`, `vbat`, `avg_cell_voltage`, `tim_2`, `throttle`, `gps_speed`, `vario_num`, `craft_name`, `power`, `gps_lat`, `gps_lon`, `preflight` (своё: до ARM одной строкой — `BATT OK  GPS OK  RX OK`, что не готово — словом: `NOT FULL`, `BATT LOW`, `GPS WAIT`, `NO RADIO`) |
+| `osd_<элемент>_pos` | общая | 0–16383 | как в BF: LQ 1,0 · режим 13,0 · спутники 24,0 · VTX 23,1 · прицел 14,6 · предупреждения 9,9 · ток 1,10 · мА·ч 8,10 · стрелка и расстояние домой 1,11 и 2,11 · высота 23,11 · батарея 1,12 · банка 8,12 · время 22,12, перед полётом 1,8 (показаны); газ, скорость, вариометр, имя, мощность, широта, долгота, RSSI 6,0 — спрятаны | позиция элемента OSD: x + 32·y, +2048 — показан. Элементы: `link_quality`, `flymode`, `gps_sats`, `vtx_channel`, `crosshairs`, `warnings`, `current`, `mah_drawn`, `home_dir`, `home_dist`, `altitude`, `vbat`, `avg_cell_voltage`, `tim_2`, `throttle`, `gps_speed`, `vario_num`, `craft_name`, `power`, `gps_lat`, `gps_lon`, `rssi_value`, `preflight` (своё: до ARM одной строкой — `BATT OK  GPS OK  RX OK`, что не готово — словом: `NOT FULL`, `BATT LOW`, `GPS WAIT`, `NO RADIO`) |
 | `osd_stat_<строка>` | общая | `OFF`, `ON` | `ON`, кроме `endbatt` | статистика после посадки: `tim_2`, `max_alt`, `max_spd`, `max_dist`, `min_batt`, `endbatt`, `used_mah`, `max_curr`, `min_link_quality`, `overload` (своё: перегрузки по току, если были) |
-| `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality`, `overload` (своё: `ESC OVERLOAD`, `BATT OVERLOAD`, `CURRENT LIMIT`), `vtx_hot` (своё: `VTX HOT` — без ARM передатчик греется), `training` (своё: `ALT LIMIT`, `FENCE`, `FENCE RETURN`, `SPEED LIMIT`) |
-| `osd_alt_alarm` · `osd_cap_alarm` · `osd_link_quality_alarm` | общая | 0–10000 м · 0–20000 мА·ч · 0–100 % | 100 · 2200 · 80 | за порогом значение мигает (LQ — и предупреждение LINK QUALITY); 0 — нет |
+| `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality`, `overload` (своё: `ESC OVERLOAD`, `BATT OVERLOAD`, `CURRENT LIMIT`), `vtx_hot` (своё: `VTX HOT` — без ARM передатчик греется), `training` (своё: `ALT LIMIT`, `FENCE`, `FENCE RETURN`, `SPEED LIMIT`), `rssi` (`RSSI LOW`) |
+| `osd_alt_alarm` · `osd_cap_alarm` · `osd_link_quality_alarm` · `osd_rssi_alarm` | общая | 0–10000 м · 0–20000 мА·ч · 0–100 % · 0–100 % | 100 · 2200 · 80 · 20 | за порогом значение мигает (LQ и RSSI — и предупреждения LINK QUALITY, RSSI LOW); 0 — нет |
 | `gps_minimum_sats` | общая | 4–50 | 8 | дом ставится при ARM, если спутников не меньше |
 | `crsf_telemetry` | общая | `OFF`, `ON` | `ON` | телеметрия в пульт по CRSF |
 | `min_check` · `max_check` | общая | 750–2250 мкс | 1050 · 1900 | команды стиками: ниже — «низ», выше — «верх» |
@@ -552,7 +555,7 @@ Studio — вкладка «OSD»: экран очков, элементы пе�
 
 **Тревоги** мигают: высота выше `osd_alt_alarm`, мА·ч больше
 `osd_cap_alarm`, LQ ниже `osd_link_quality_alarm` (и предупреждение LINK
-QUALITY), напряжение — при LOW BATTERY. Предупреждения выключаются по
+QUALITY), RSSI ниже `osd_rssi_alarm` (и RSSI LOW), напряжение — при LOW BATTERY. Предупреждения выключаются по
 одному (`osd_warn_*`).
 
 **После посадки** (DISARM после полёта дольше секунды) — экран статистики:

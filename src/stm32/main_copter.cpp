@@ -38,6 +38,7 @@
 #include "copter/GpsHome.h"
 #include "copter/Osd.h"
 #include "copter/Params.h"
+#include "copter/Rssi.h"
 #include "copter/Vtx.h"
 #include "hal/Max7456.h"
 #include "hal/Rtos.h"
@@ -124,6 +125,7 @@ static uint8_t outputsAtBoot = 0;   // выходов на моторы наст
 copter::BatteryMonitor battery;
 // Перегрузка регулятора и батареи по току — copter/EscGuard.h.
 copter::EscGuard escGuard;
+copter::Rssi rssi;   // сила сигнала пульта: канал, битые кадры или dBm CRSF (113)
 copter::VtxHeatWatch vtxHeat;
 static bool wasArmedForGuard = false;
 Stm32VtxPort vtxPort(Config::BOARD_VTX_PIN);
@@ -254,6 +256,7 @@ static void applySettings()
                       static_cast<uint16_t>(copterParams.value(copter::PARAM_RX_MAX_USEC)));
     rcReceiver.setThrottleChannel(rxInput.throttleChannel());
     rcReceiver.setProtocol(static_cast<Config::RxProtocol>(static_cast<uint8_t>(copterParams.value(copter::PARAM_SERIALRX_PROVIDER))));
+    rssi.configure(copterParams.rssiConfig());
     copterBuild = copterParams.buildSpec();
     battery.configure(copterParams.batteryConfig());
     escGuard.configure(copterParams.escGuardConfig(copterController.getTune().frame.count));
@@ -576,6 +579,7 @@ static void composeOsd()
     d.rescue = s.rescuePhase != copter::RescuePhase::IDLE && s.rescuePhase != copter::RescuePhase::ABORT;
     d.rescueAbort = s.rescuePhase == copter::RescuePhase::ABORT;
     d.linkQuality = rcReceiver.getLinkQuality();
+    d.rssi = rssi.percent();
     d.linkLost = rcReceiver.isSignalLost();
     d.volts = battery.volts();
     d.cellVolts = battery.cellVolts();
@@ -695,6 +699,8 @@ static void flightTask(void*)
         }
         rcReceiver.update();
         copter::CopterRc rc = readRc();
+        rssi.update(rcReceiver.getState().data(), Config::RC_CHANNELS, rcReceiver.getRssiDbm(), rcReceiver.getGoodFrameCount(),
+                    rcReceiver.getBadFrameCount(), !rcReceiver.isSignalLost(), millis());
         rcLinkOk = rc.linkOk;
         rcSeen = rcSeen || rc.linkOk;
         const bool pilotArmSwitch = handleSticks(rc);
@@ -1067,6 +1073,7 @@ void setup()
     copterConsole.setRxInput(&rxInput);
     copterConsole.setBattery(&battery);
     copterConsole.setGuard(&escGuard);
+    copterConsole.setRssi(&rssi);
     copterConsole.setVtx(&vtx);
     copterConsole.setGps(&gps, &gpsHome);
     copterConsole.setCompass(compass);

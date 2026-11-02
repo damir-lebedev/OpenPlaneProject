@@ -109,6 +109,7 @@ namespace copter
         OSD_POWER,
         OSD_GPS_LAT,
         OSD_GPS_LON,
+        OSD_RSSI_VALUE,
         OSD_PREFLIGHT,   // своё: до ARM — батарея, GPS, пульт одной строкой (P08)
         OSD_ELEMENT_COUNT
     };
@@ -144,6 +145,7 @@ namespace copter
             { "power", osdPos(15, 10, false), "мощность, Вт" },
             { "gps_lat", osdPos(1, 3, false), "широта — найти упавший" },
             { "gps_lon", osdPos(1, 4, false), "долгота" },
+            { "rssi_value", osdPos(6, 0, false), "сила сигнала пульта (RSSI), %" },
             { "preflight", osdPos(1, 8), "до ARM: батарея, GPS, пульт (BATT OK  GPS OK  RX OK)" },
         };
         return table[e < OSD_ELEMENT_COUNT ? e : 0];
@@ -201,6 +203,7 @@ namespace copter
         OSD_WARN_OVERLOAD,   // своё: ESC OVERLOAD, BATT OVERLOAD, CURRENT LIMIT (copter/EscGuard.h)
         OSD_WARN_VTX_HOT,    // своё: VTX без ARM и обдува греется (copter/Vtx.h, VtxHeatWatch)
         OSD_WARN_TRAINING,   // своё: учебные ограничения (copter/TrainingLimits.h)
+        OSD_WARN_RSSI,
         OSD_WARN_COUNT
     };
 
@@ -216,6 +219,7 @@ namespace copter
             { "overload", true, "перегрузка по току: ESC OVERLOAD, BATT OVERLOAD, CURRENT LIMIT" },
             { "vtx_hot", true, "VTX без ARM греется на полной мощности (VTX HOT)" },
             { "training", true, "учебные ограничения: ALT LIMIT, FENCE, FENCE RETURN, SPEED LIMIT" },
+            { "rssi", true, "сигнал пульта слабее osd_rssi_alarm (RSSI LOW)" },
         };
         return table[w < OSD_WARN_COUNT ? w : 0];
     }
@@ -229,6 +233,7 @@ namespace copter
         uint16_t altAlarmM = 100;      // osd_alt_alarm: выше — высота мигает (0 — нет)
         uint16_t capAlarmMah = 2200;   // osd_cap_alarm: больше — мА·ч мигают (0 — нет)
         uint8_t linkQualityAlarm = 80; // osd_link_quality_alarm: ниже — LQ мигает и предупреждение
+        uint8_t rssiAlarm = 20;        // osd_rssi_alarm: ниже — RSSI мигает и предупреждение
 
         OsdLayout()
         {
@@ -256,6 +261,7 @@ namespace copter
         bool rescue = false;                // GPS Rescue летит домой — режим RESC, как в BF
         bool rescueAbort = false;           // возврат невозможен — садится на месте
         int16_t linkQuality = -1;           // %, −1 — неизвестно
+        int16_t rssi = -1;                  // %, −1 — неизвестно (copter/Rssi.h)
         bool linkLost = false;
         float volts = 0.0f, cellVolts = 0.0f;
         bool hasCurrent = false;
@@ -423,6 +429,7 @@ namespace copter
             {
                 return "LINK QUALITY";
             }
+            if (l.warn(OSD_WARN_RSSI) && d.armed && d.rssi >= 0 && l.rssiAlarm > 0 && d.rssi < l.rssiAlarm) return "RSSI LOW";
             if (l.warn(OSD_WARN_VTX_HOT) && !d.armed && d.vtxHot) return "VTX HOT";
             if (l.warn(OSD_WARN_BATT_NOT_FULL) && !d.armed && d.batteryNotFull) return "BATT < FULL";
             if (l.warn(OSD_WARN_ARMING_DISABLE) && !d.armed && d.armBlock) return d.armBlock;
@@ -440,6 +447,13 @@ namespace copter
                     if (!d.blink && l.linkQualityAlarm > 0 && d.linkQuality < l.linkQualityAlarm) return;
                     put(y, x, osdsym::LINK_QUALITY);
                     snprintf(s, n, "%d", d.linkQuality);
+                    print(y, static_cast<uint8_t>(x + 1), s);
+                    return;
+                case OSD_RSSI_VALUE:
+                    if (d.rssi < 0) return;
+                    if (!d.blink && l.rssiAlarm > 0 && d.rssi < l.rssiAlarm) return;
+                    put(y, x, osdsym::RSSI);
+                    snprintf(s, n, "%d", d.rssi);
                     print(y, static_cast<uint8_t>(x + 1), s);
                     return;
                 case OSD_FLYMODE:

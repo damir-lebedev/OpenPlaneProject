@@ -44,6 +44,7 @@
 #include "copter/Propulsion.h"
 #include "copter/RateController.h"
 #include "copter/RcSetup.h"
+#include "copter/Rssi.h"
 #include "copter/StickCommands.h"
 #include "copter/Vtx.h"
 
@@ -5132,6 +5133,85 @@ void test_osd_layout_from_bf_positions()
     TEST_ASSERT_TRUE(has(row(12), "SEVEN"));
 }
 
+// RSSI (113): канал пульта со scale/offset/invert, битые кадры, dBm CRSF.
+void test_rssi_sources()
+{
+    Rssi r;
+    uint16_t ch[16];
+    for (uint16_t& c : ch) c = 1500;
+    r.update(ch, 16, 0, 0, 0, true, 100);
+    TEST_ASSERT_EQUAL_INT16(-1, r.percent());                // источника нет
+    TEST_ASSERT_TRUE(r.source() == RssiSource::NONE);
+
+    // CRSF: −130…0 dBm → 0…100 %; связи нет — 0
+    r.update(ch, 16, -65, 0, 0, true, 100);
+    TEST_ASSERT_TRUE(r.source() == RssiSource::PROTOCOL);
+    TEST_ASSERT_EQUAL_INT16(50, r.percent());
+    r.update(ch, 16, -65, 0, 0, false, 100);
+    TEST_ASSERT_EQUAL_INT16(0, r.percent());
+    TEST_ASSERT_EQUAL_INT16(0, Rssi::fromDbm(-140));
+
+    // канал важнее протокола: AUX4 (канал 8) = 1750 мкс → 75 %
+    RssiConfig c;
+    c.channel = 8;
+    r.configure(c);
+    ch[7] = 1750;
+    r.update(ch, 16, -65, 0, 0, true, 100);
+    TEST_ASSERT_TRUE(r.source() == RssiSource::CHANNEL);
+    TEST_ASSERT_EQUAL_INT16(75, r.percent());
+    c.scale = 120;
+    c.offset = -10;
+    r.configure(c);
+    TEST_ASSERT_EQUAL_INT16(80, r.fromChannel(1750));         // 75·1.2 − 10
+    TEST_ASSERT_EQUAL_INT16(100, r.fromChannel(2100));        // не больше 100
+    c.invert = true;
+    r.configure(c);
+    TEST_ASSERT_EQUAL_INT16(20, r.fromChannel(1750));
+    c.channel = 20;                                           // такого канала нет — протокол
+    r.configure(c);
+    r.update(ch, 16, -65, 0, 0, true, 100);
+    TEST_ASSERT_TRUE(r.source() == RssiSource::PROTOCOL);
+
+    // битые кадры за полсекунды: 90 целых и 10 битых — 90 %
+    RssiConfig f;
+    f.frameErrors = true;
+    r.configure(f);
+    r.update(ch, 16, 0, 1000, 50, true, 1000);
+    TEST_ASSERT_TRUE(r.source() == RssiSource::FRAME_ERRORS);
+    r.update(ch, 16, 0, 1045, 55, true, 1300);
+    TEST_ASSERT_EQUAL_INT16(50, r.percent());                 // окно ещё не закрыто — прежнее
+    r.update(ch, 16, 0, 1090, 60, true, 1500);
+    TEST_ASSERT_EQUAL_INT16(90, r.percent());
+    r.update(ch, 16, 0, 1090, 60, false, 1600);               // связи нет — сразу 0
+    TEST_ASSERT_EQUAL_INT16(0, r.percent());
+
+    // OSD: элемент rssi_value и предупреждение RSSI LOW (osd_rssi_alarm 20)
+    OsdData d;
+    d.armed = true;
+    d.rssi = 15;
+    OsdLayout l;
+    TEST_ASSERT_EQUAL_STRING("RSSI LOW", OsdScreen::warningText(d, l));
+    d.linkQuality = 50;
+    TEST_ASSERT_EQUAL_STRING("LINK QUALITY", OsdScreen::warningText(d, l));   // LQ важнее
+    d.linkQuality = -1;
+    l.warnings = static_cast<uint16_t>(l.warnings & ~(1u << OSD_WARN_RSSI));
+    TEST_ASSERT_EQUAL_STRING(nullptr, OsdScreen::warningText(d, l));
+    l.pos[OSD_RSSI_VALUE] = static_cast<uint16_t>(osdPos(6, 0) | OSD_VISIBLE);
+    OsdScreen s;
+    d.rssi = 64;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(osdsym::RSSI, s.at(0, 6));
+    TEST_ASSERT_EQUAL_HEX8('6', s.at(0, 7));
+
+    // настройки BF и умолчания
+    CopterParams p;
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, p.value(PARAM_RSSI_SCALE));
+    TEST_ASSERT_EQUAL_FLOAT(20.0f, p.value(PARAM_OSD_RSSI_ALARM));
+    TEST_ASSERT_TRUE(p.setValue(PARAM_RSSI_CHANNEL, 0, 8));
+    TEST_ASSERT_EQUAL_UINT8(8, p.rssiConfig().channel);
+    TEST_ASSERT_EQUAL_UINT8(20, osdLayoutFrom(p).rssiAlarm);
+}
+
 // Защита по току (copter/EscGuard.h): регулятор 45 А длительно / 55 А пик на
 // мотор, 4 мотора, батарея 1300 мА·ч 100C (130 А), 5 с выше длительного.
 void test_esc_guard_overload()
@@ -6409,6 +6489,7 @@ int main()
     RUN_TEST(test_cli_vtx_and_params);
     RUN_TEST(test_gps_home_distance_and_direction);
     RUN_TEST(test_crsf_telemetry_frames);
+    RUN_TEST(test_rssi_sources);
     RUN_TEST(test_rc_smoothing_cutoff_follows_frame_rate);
     RUN_TEST(test_deadband_zeroes_center_and_keeps_full_stick);
     RUN_TEST(test_osd_arrows_and_warnings);

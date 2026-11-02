@@ -9,6 +9,7 @@
 #include "copter/GpsHome.h"
 #include "copter/Params.h"
 #include "copter/RcSetup.h"
+#include "copter/Rssi.h"
 #include "copter/Vtx.h"
 #include "hal/Platform.h"
 #include "rc/RcReceiver.h"
@@ -76,6 +77,7 @@ public:
     void setRxInput(const copter::RxInput* input) { rxInput = input; }
     void setBattery(const copter::BatteryMonitor* monitor) { battery = monitor; }
     void setGuard(const copter::EscGuard* g) { guard = g; }
+    void setRssi(const copter::Rssi* r) { rssi = r; }
     void setVtx(const copter::VtxController* controller) { vtx = controller; }
     void setGps(const GpsSensor* sensor, const copter::GpsHome* home)
     {
@@ -311,6 +313,11 @@ public:
         if (s.turtle) w.add(",\"turtle\":true");   // моторы наоборот (FLIP OVER AFTER CRASH)
         w.add(",\"rx\":\"%s\"", rc.isFrameTimeout() ? "lost" : rc.isFailsafeReported() ? "fs" : "ok");
         if (rc.getLinkQuality() >= 0) w.add(",\"lq\":%d", static_cast<int>(rc.getLinkQuality()));
+        if (rssi && rssi->percent() >= 0)
+        {
+            w.add(",\"rssi\":%d,\"rssisrc\":\"%s\"", static_cast<int>(rssi->percent()), copter::rssiSourceName(rssi->source()));
+        }
+        if (rc.getRssiDbm() < 0) w.add(",\"dbm\":%d", static_cast<int>(rc.getRssiDbm()));
         w.add(",\"rxhz\":%.0f,\"rcsp\":%.0f,\"rcth\":%.0f", s.rcFrameHz, s.rcSetpointCutoffHz, s.rcThrottleCutoffHz);
         w.add(",\"ch\":[");
         for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i) w.add(i ? ",%u" : "%u", static_cast<unsigned>(rc.getState().get(i)));
@@ -816,6 +823,7 @@ private:
     const copter::RxInput* rxInput = nullptr;
     const copter::BatteryMonitor* battery = nullptr;
     const copter::EscGuard* guard = nullptr;   // перегрузка по току (ovl, mma)
+    const copter::Rssi* rssi = nullptr;        // сила сигнала пульта (rssi, rssisrc)
     const copter::VtxController* vtx = nullptr;
     const GpsSensor* gps = nullptr;
     const copter::GpsHome* gpsHome = nullptr;

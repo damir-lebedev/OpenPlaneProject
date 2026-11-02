@@ -468,6 +468,7 @@ void test_crsf_opens_uart_8n1_at_420000()
     TEST_ASSERT_TRUE(uart.format == UartFormat::STANDARD_8N1);
     TEST_ASSERT_EQUAL_STRING("CRSF", receiver.getProtocolName());
     TEST_ASSERT_EQUAL_INT16(-1, receiver.getLinkQuality());   // статистики ещё не было
+    TEST_ASSERT_EQUAL_INT16(0, receiver.getRssiDbm());
 }
 
 // CRC8 DVB-S2 (полином 0xD5): проверочное значение для "123456789".
@@ -525,6 +526,7 @@ void test_crsf_zero_link_quality_means_link_lost()
     uart.push(crsfLinkStats(96) + crsfChannels(rc));
     receiver.update();
     TEST_ASSERT_EQUAL_INT16(96, receiver.getLinkQuality());
+    TEST_ASSERT_EQUAL_INT16(-60, receiver.getRssiDbm());   // антенна 1 (активная — 0)
     TEST_ASSERT_FALSE(receiver.isSignalLost());
 
     uart.push(crsfLinkStats(0) + crsfChannels(rc));

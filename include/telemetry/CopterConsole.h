@@ -103,6 +103,12 @@ public:
     }
     // Перегрузка по току (copter/EscGuard.h) — в живые кадры.
     void setGuard(const copter::EscGuard* g) { link.setGuard(g); }
+    // Сила сигнала пульта (copter/Rssi.h) — в живые кадры и MSP_ANALOG.
+    void setRssi(const copter::Rssi* r)
+    {
+        rssi = r;
+        link.setRssi(r);
+    }
 
     void setBattery(const copter::BatteryMonitor* monitor)
     {
@@ -378,6 +384,7 @@ private:
         msp.setImu(d.gyroX, d.gyroY, d.gyroZ, d.accelX, d.accelY, d.accelZ);
         msp.setLoad(static_cast<uint16_t>(cpuPercent()));
         msp.setLinkQuality(rc.getLinkQuality());
+        msp.setRssi(rssi ? rssi->percent() : -1);
         static uint8_t out[msp::MAX_PAYLOAD + 16];
         const size_t n = msp.handle(mspParser, out, sizeof(out), nowMs);
         if (n) io.write(out, n);
@@ -699,6 +706,7 @@ private:
     CopterLink link;
     const copter::RxInput* rxInput = nullptr;
     const copter::BatteryMonitor* battery = nullptr;
+    const copter::Rssi* rssi = nullptr;
     const copter::IMotorTelemetry* motorTelemetry = nullptr;
     const SpiNorFlash* flashChip = nullptr;
     copter::CopterMsp msp;

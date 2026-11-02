@@ -12,6 +12,7 @@
 #include "copter/Presets.h"
 #include "copter/RateController.h"
 #include "copter/RcSetup.h"
+#include "copter/Rssi.h"
 #include "copter/Vtx.h"
 #include "storage/KeyValueStore.h"
 
@@ -239,6 +240,11 @@ namespace copter
         PARAM_SERIALRX_PROVIDER,
         PARAM_RX_MIN_USEC,
         PARAM_RX_MAX_USEC,
+        PARAM_RSSI_CHANNEL,
+        PARAM_RSSI_SCALE,
+        PARAM_RSSI_OFFSET,
+        PARAM_RSSI_INVERT,
+        PARAM_RSSI_SRC_FRAME_ERRORS,
         PARAM_COPTER_BUILD,
         PARAM_COPTER_MASS_G,
         PARAM_COPTER_WHEELBASE_MM,
@@ -386,6 +392,7 @@ namespace copter
         PARAM_OSD_POWER_POS,
         PARAM_OSD_GPS_LAT_POS,
         PARAM_OSD_GPS_LON_POS,
+        PARAM_OSD_RSSI_VALUE_POS,
         PARAM_OSD_PREFLIGHT_POS,
         PARAM_OSD_STAT_TIM_2,
         PARAM_OSD_STAT_MAX_ALT,
@@ -406,9 +413,11 @@ namespace copter
         PARAM_OSD_WARN_OVERLOAD,
         PARAM_OSD_WARN_VTX_HOT,
         PARAM_OSD_WARN_TRAINING,
+        PARAM_OSD_WARN_RSSI,
         PARAM_OSD_ALT_ALARM,
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
+        PARAM_OSD_RSSI_ALARM,
         PARAM_MIN_CHECK,
         PARAM_MAX_CHECK,
         PARAM_ACC_TRIM_ROLL,
@@ -624,6 +633,16 @@ namespace copter
               "импульс короче — ошибка канала (стик — потеря связи, AUX — держится прежнее)" },
             { "rx_max_usec", kInt, kMaster, kGroupRx, 750, 2250, 2115, kTable, "мкс", nullptr, 0,
               "импульс длиннее — ошибка канала (стик — потеря связи, AUX — держится прежнее)" },
+            { "rssi_channel", kInt, kMaster, kGroupRx, 0, 18, 0, kTable, "", nullptr, 0,
+              "канал, в котором приёмник шлёт RSSI (0 — нет: RSSI от протокола или по битым кадрам)" },
+            { "rssi_scale", kInt, kMaster, kGroupRx, 1, 255, 100, kTable, "%", nullptr, 0,
+              "RSSI из канала: множитель" },
+            { "rssi_offset", kInt, kMaster, kGroupRx, -100, 100, 0, kTable, "%", nullptr, 0,
+              "RSSI из канала: сдвиг" },
+            { "rssi_invert", kEnum, kMaster, kGroupRx, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "RSSI из канала наоборот (100 − значение)" },
+            { "rssi_src_frame_errors", kEnum, kMaster, kGroupRx, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "RSSI по доле битых кадров — для приёмников без RSSI (SBUS, iBUS)" },
             { "copter_build", kEnum, kMaster, kGroupCopter, 0, static_cast<float>(buildCount - 1), 0, kTable, "", builds,
               buildCount, "сборка из каталога — основа описания коптера" },
             { "copter_mass_g", kInt, kMaster, kGroupCopter, 0, 30000, 0, kBuild, "г", nullptr, 0,
@@ -909,6 +928,8 @@ namespace copter
               "OSD: широта — найти упавший — x + 32·y, +2048 — показан" },
             { "osd_gps_lon_pos", kInt, kMaster, kGroupOsd, 0, 16383, 129, kTable, "", nullptr, 0,
               "OSD: долгота — x + 32·y, +2048 — показан" },
+            { "osd_rssi_value_pos", kInt, kMaster, kGroupOsd, 0, 16383, 6, kTable, "", nullptr, 0,
+              "OSD: сила сигнала пульта (RSSI), % — x + 32·y, +2048 — показан" },
             { "osd_preflight_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2305, kTable, "", nullptr, 0,
               "OSD: до ARM — батарея, GPS, пульт одной строкой (своё) — x + 32·y, +2048 — показан" },
             { "osd_stat_tim_2", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
@@ -949,12 +970,16 @@ namespace copter
               "предупреждение OSD: VTX без ARM греется на полной мощности — VTX HOT" },
             { "osd_warn_training", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "предупреждение OSD: учебные ограничения — ALT LIMIT, FENCE, FENCE RETURN, SPEED LIMIT" },
+            { "osd_warn_rssi", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: сигнал пульта слабее osd_rssi_alarm (RSSI LOW)" },
             { "osd_alt_alarm", kInt, kMaster, kGroupOsd, 0, 10000, 100, kTable, "м", nullptr, 0,
               "выше — высота на OSD мигает; 0 — нет" },
             { "osd_cap_alarm", kInt, kMaster, kGroupOsd, 0, 20000, 2200, kTable, "мА·ч", nullptr, 0,
               "израсходовано больше — мА·ч на OSD мигают; 0 — нет" },
             { "osd_link_quality_alarm", kInt, kMaster, kGroupOsd, 0, 100, 80, kTable, "%", nullptr, 0,
               "связь хуже — LQ на OSD мигает и предупреждение LINK QUALITY; 0 — нет" },
+            { "osd_rssi_alarm", kInt, kMaster, kGroupOsd, 0, 100, 20, kTable, "%", nullptr, 0,
+              "сигнал слабее — RSSI на OSD мигает и предупреждение RSSI LOW; 0 — нет" },
             { "min_check", kInt, kMaster, kGroupRx, 750, 2250, 1050, kTable, "мкс", nullptr, 0,
               "команды стиками: стик ниже — «низ»" },
             { "max_check", kInt, kMaster, kGroupRx, 750, 2250, 1900, kTable, "мкс", nullptr, 0,
@@ -1156,6 +1181,17 @@ namespace copter
             c.batteryMah = capacity > 0.0f ? capacity : value(PARAM_BATTERY_MAH);
             c.motors = motors;
             c.currentLimitA = value(PARAM_CURRENT_LIMIT_A);
+            return c;
+        }
+
+        RssiConfig rssiConfig() const
+        {
+            RssiConfig c;
+            c.channel = static_cast<uint8_t>(value(PARAM_RSSI_CHANNEL));
+            c.scale = static_cast<uint8_t>(value(PARAM_RSSI_SCALE));
+            c.offset = static_cast<int8_t>(value(PARAM_RSSI_OFFSET));
+            c.invert = value(PARAM_RSSI_INVERT) > 0.5f;
+            c.frameErrors = value(PARAM_RSSI_SRC_FRAME_ERRORS) > 0.5f;
             return c;
         }
 
@@ -1994,7 +2030,7 @@ namespace copter
 
     static_assert(PARAM_OSD_PREFLIGHT_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
     static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
-    static_assert(PARAM_OSD_WARN_TRAINING - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
+    static_assert(PARAM_OSD_WARN_RSSI - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 
     // Раскладка OSD из настроек osd_* (copter/Osd.h).
     inline OsdLayout osdLayoutFrom(const CopterParams& p)
@@ -2017,6 +2053,7 @@ namespace copter
         l.altAlarmM = static_cast<uint16_t>(p.value(PARAM_OSD_ALT_ALARM));
         l.capAlarmMah = static_cast<uint16_t>(p.value(PARAM_OSD_CAP_ALARM));
         l.linkQualityAlarm = static_cast<uint8_t>(p.value(PARAM_OSD_LINK_QUALITY_ALARM));
+        l.rssiAlarm = static_cast<uint8_t>(p.value(PARAM_OSD_RSSI_ALARM));
         return l;
     }
 }

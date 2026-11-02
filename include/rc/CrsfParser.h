@@ -11,7 +11,8 @@
 //   не длиннее 64 байт; CRC8 (полином 0xD5, DVB-S2) — по типу и данным.
 // Нужны два типа:
 //   0x16 — каналы: 16 по 11 бит, как в SBUS (Packed11);
-//   0x14 — статистика связи: третий байт — качество связи (LQ), %.
+//   0x14 — статистика связи: RSSI антенн 1 и 2 (−dBm), качество связи
+//          (LQ, %), SNR, активная антенна…
 //
 // Потеря связи: ExpressLRS по умолчанию просто перестаёт слать каналы
 // (RcReceiver видит таймаут кадров); в режиме «последние значения» или
@@ -62,6 +63,9 @@ public:
     // Качество связи, % (−1 — статистики ещё не было).
     int16_t linkQuality() const { return statsSeen ? quality : -1; }
 
+    // Уровень сигнала активной антенны, dBm (0 — статистики ещё не было).
+    int16_t rssiDbm() const { return statsSeen ? static_cast<int16_t>(-rssi) : 0; }
+
     uint32_t badFrames() const { return bad; }
 
     static uint8_t crc8(const uint8_t* data, uint8_t length)
@@ -85,6 +89,7 @@ private:
     uint8_t index = 0;
     uint16_t channels[Packed11::CHANNELS] = {};
     uint8_t quality = 0;
+    uint8_t rssi = 0;                                    // −dBm
     bool statsSeen = false;
     uint32_t bad = 0;
 
@@ -109,6 +114,7 @@ private:
         if (type == TYPE_LINK_STATISTICS && payloadLength >= 3)
         {
             quality = payload[2];                        // uplink LQ, %
+            rssi = (payloadLength >= 5 && payload[4]) ? payload[1] : payload[0];
             statsSeen = true;
         }
         return false;

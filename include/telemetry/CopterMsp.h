@@ -101,6 +101,7 @@ namespace copter
         }
         void setLoad(uint16_t percent) { loadPercent = percent; }
         void setLinkQuality(int16_t lq) { linkQuality = lq; }
+        void setRssi(int16_t percent) { rssiPercent = percent; }
 
         // Кадр пришёл — ответ в out (кадр целиком). 0 — отвечать нечем (не влезло).
         size_t handle(const msp::Parser& in, uint8_t* out, size_t capacity, uint32_t nowMs)
@@ -425,7 +426,9 @@ namespace copter
             const float v = battery ? battery->volts() : 0.0f;
             w.u8(static_cast<uint32_t>(fminf(255.0f, lroundf(v * 10.0f))));
             w.u16(battery ? static_cast<uint32_t>(fminf(65535.0f, battery->mahDrawn())) : 0);
-            w.u16(linkQuality >= 0 ? static_cast<uint32_t>(linkQuality * 1023 / 100) : 0);
+            // RSSI 0…1023: свой (copter/Rssi.h), без него — LQ
+            const int16_t r = rssiPercent >= 0 ? rssiPercent : linkQuality;
+            w.u16(r >= 0 ? static_cast<uint32_t>(r * 1023 / 100) : 0);
             w.u16(battery ? static_cast<uint16_t>(static_cast<int16_t>(lroundf(battery->amps() * 100.0f))) : 0);
             w.u16(static_cast<uint32_t>(lroundf(v * 100.0f)));
         }
@@ -992,6 +995,7 @@ namespace copter
         float imu[6] = {};
         uint16_t loadPercent = 0;
         int16_t linkQuality = -1;
+        int16_t rssiPercent = -1;
         bool armingDisabled = false, unsaved = false, seen = false, rebootPending = false;
         float motorTest[8] = {};
         bool motorTestOn = false;
