@@ -156,7 +156,9 @@ namespace
             ease(0.0f, 0.0f, 0.0f, 0.04);
             h.rc.mode = CopterMode::ANGLE;
             h.rc.throttle = h.ctl.getStatus().hoverLearned;
+            h.rc.acroTrainer = true;   // в ANGLE ничего не меняет — только событие в журнале
             h.run(0.8);
+            h.rc.acroTrainer = false;
         }
 
         void fly()
@@ -415,6 +417,9 @@ void test_simulated_flight_is_in_the_log()
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "запись: старт (ARM)"));
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "режим ACRO"));
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "режим ANGLE"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "ACRO TRAINER: вкл"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "ACRO TRAINER: выкл"));
+    TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "GPS Rescue"));   // без GPS возврата не было
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "DISARM"));
     TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "очередь переполнена"));
     TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "авария"));

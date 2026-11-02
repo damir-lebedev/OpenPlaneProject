@@ -278,6 +278,8 @@ private:
         uint8_t gpsFix = 0xFF;
         bool home = false;
         bool motorTest = false;
+        uint8_t rescue = 0;      // RescuePhase::IDLE
+        bool trainer = false;    // режим ACRO TRAINER
     } seen;
 
     bool vehicleArmed() const override { return ctl.isArmed(); }
@@ -380,6 +382,18 @@ private:
             if (s.state == copter::CopterState::FAILSAFE) event("FAILSAFE: нет связи — выравнивание и снижение");
             else if (seen.state == static_cast<uint8_t>(copter::CopterState::FAILSAFE)) event("FAILSAFE: кончился");
             seen.state = static_cast<uint8_t>(s.state);
+        }
+        // GPS Rescue и ACRO TRAINER — Studio по ним видит, проверен ли возврат
+        // и пробовал ли пилот тренер (подсказки P06)
+        if (static_cast<uint8_t>(s.rescuePhase) != seen.rescue)
+        {
+            event("GPS Rescue: %s", copter::rescuePhaseName(s.rescuePhase));
+            seen.rescue = static_cast<uint8_t>(s.rescuePhase);
+        }
+        if (rc.acroTrainer != seen.trainer)
+        {
+            event("ACRO TRAINER: %s", rc.acroTrainer ? "вкл" : "выкл");
+            seen.trainer = rc.acroTrainer;
         }
         if (s.crashed != seen.crashed)
         {
