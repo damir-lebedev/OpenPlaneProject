@@ -33,6 +33,7 @@
 #include "copter/Battery.h"
 #include "copter/Beeper.h"
 #include "copter/StickCommands.h"
+#include "copter/OsdMenu.h"
 #include "copter/CopterController.h"
 #include "copter/CrsfMsp.h"
 #include "copter/CrsfTelemetry.h"
@@ -179,6 +180,8 @@ static uint32_t armedMs = 0;   // время в полёте (заармлен),
 copter::Beeper beeper;
 copter::DshotBeacon dshotBeacon;
 copter::StickCommands stickCommands;
+// Меню настроек в очках стиками (CMS, copter/OsdMenu.h).
+copter::OsdMenu osdMenu;
 static bool wasArmedForBeeper = false;
 static bool readyBeeped = false;
 static uint32_t lastBeeperMs = 0;
@@ -275,6 +278,8 @@ static void applySettings()
                           static_cast<uint8_t>(copterParams.value(copter::PARAM_BEEPER_DSHOT_BEACON_TONE)));
     stickCommands.configure(static_cast<uint16_t>(copterParams.value(copter::PARAM_MIN_CHECK)),
                             static_cast<uint16_t>(copterParams.value(copter::PARAM_MAX_CHECK)));
+    osdMenu.configure(static_cast<uint16_t>(copterParams.value(copter::PARAM_MIN_CHECK)),
+                      static_cast<uint16_t>(copterParams.value(copter::PARAM_MAX_CHECK)));
     configureBuzzer();
     crsfTelemetryOn = copterParams.value(copter::PARAM_CRSF_TELEMETRY) > 0.5f &&
                       rcReceiver.getProtocol() == Config::RxProtocol::CRSF;
@@ -567,7 +572,17 @@ static bool handleSticks(copter::CopterRc& rc)
     const float dt = lastStickUs ? fminf(0.1f, (now - lastStickUs) * 1e-6f) : 0.001f;
     lastStickUs = now;
     const bool armed = copterController.isArmed();
-    const bool disabled = rxInput.isActive(BOX_STICK_COMMANDS_DISABLE) || copterConsole.cliActive();
+    // меню в очках: стики — его, команды стиками молчат
+    switch (osdMenu.update(rc, armed, dt, copterParams))
+    {
+        case OsdMenu::Exit::SAVE:
+            copterConsole.saveSettings();
+            beeper.event(BeeperCondition::MULTI_BEEPS, 1);
+            break;
+        case OsdMenu::Exit::DISCARD: copterConsole.revertSettings(); break;
+        case OsdMenu::Exit::NONE: break;
+    }
+    const bool disabled = rxInput.isActive(BOX_STICK_COMMANDS_DISABLE) || copterConsole.cliActive() || osdMenu.isOpen();
     const StickCommand cmd = stickCommands.update(rc, armed, copterController.getStatus().airborne,
                                                   rc.mode != CopterMode::ACRO, disabled, dt);
     const bool armSwitch = rc.armSwitch;
@@ -590,6 +605,12 @@ static const char* firstArmBlock()
 // Экран OSD из того, что знает прошивка (copter/Osd.h).
 static void composeOsd()
 {
+    if (osdMenu.isOpen())
+    {
+        osdScreen.setRows(osdChip.rows());
+        osdMenu.draw(osdScreen, copterParams);
+        return;
+    }
     if (rxInput.isActive(copter::BOX_OSD))   // режим OSD DISABLE — пусто
     {
         osdScreen.clear();
@@ -765,6 +786,7 @@ static void flightTask(void*)
         if (!configOk) blockers |= copter::ARM_BLOCK_CONFIG;
         if (Config::IMU_MOUNT_CALIBRATION_REQUIRED && !imuSensor.isMountCalibrated()) blockers |= copter::ARM_BLOCK_NO_ACC_CAL;
         if (copterConsole.cliActive()) blockers |= copter::ARM_BLOCK_CLI;
+        if (osdMenu.isOpen()) blockers |= copter::ARM_BLOCK_CMS;
         // приложение или конфигуратор BF (MSP) не сохранили настройки, конфигуратор запретил ARM
         if (copterConsole.appUnsaved() || copterConsole.mspBlocksArming(millis())) blockers |= copter::ARM_BLOCK_MSP;
         if (rebootRequired) blockers |= copter::ARM_BLOCK_REBOOT;

@@ -63,6 +63,8 @@ public:
     bool cliActive() const { return cli.active(); }
     // Сохранить и применить (команды стиками: профиль, save, горизонт) — как save.
     copter::CopterCli::SaveResult saveSettings() { return cli.saveAndApply(); }
+    // Отменить несохранённое (меню в очках: EXIT) — снова из флеша.
+    void revertSettings() { cli.revert(); }
     // Приложение поменяло настройки и не сохранило — ARM нельзя.
     bool appUnsaved() const { return link.hasUnsaved() || msp.hasUnsaved(); }
     // Конфигуратор BF запретил ARM (MSP_SET_ARMING_DISABLED) и ещё на связи — флаг MSP.

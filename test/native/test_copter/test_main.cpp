@@ -33,6 +33,7 @@
 #include "copter/CrsfTelemetry.h"
 #include "copter/GpsHome.h"
 #include "copter/Osd.h"
+#include "copter/OsdMenu.h"
 #include "copter/EscProtocol.h"
 #include "copter/Filters.h"
 #include "copter/Frames.h"
@@ -6555,6 +6556,106 @@ void test_training_limits_params_and_logic()
     p.resetAll();
 }
 
+// Меню в очках стиками (CMS): вход, отпустить в центр, ходить, менять, выйти.
+void test_osd_menu_by_sticks()
+{
+    CopterParams& p = five5Params();
+    OsdMenu m;
+    OsdMenu::Exit last = OsdMenu::Exit::NONE;
+    auto run = [&](CopterRc rc, float seconds, bool armed = false) {
+        for (int i = 0; i < static_cast<int>(seconds * 100.0f); ++i)
+        {
+            const OsdMenu::Exit e = m.update(rc, armed, 0.01f, p);
+            if (e != OsdMenu::Exit::NONE) last = e;
+        }
+    };
+    const int LO = 1000, CE = 1500, HI = 2000;
+    // газ в центре, рыск влево, тангаж от себя — 0.5 с
+    run(sticks(CE, LO, HI, CE), 0.3f);
+    TEST_ASSERT_FALSE(m.isOpen());
+    run(sticks(CE, LO, HI, CE), 0.3f);
+    TEST_ASSERT_TRUE(m.isOpen());
+    // пока стики не в центре — не листается и не выходит назад
+    run(sticks(CE, LO, HI, CE), 1.0f);
+    TEST_ASSERT_TRUE(m.isOpen());
+    TEST_ASSERT_EQUAL(0, m.cursorRow());
+    run(sticks(CE, CE, CE, CE), 0.1f);
+
+    // экран: заголовок и строки
+    OsdScreen scr;
+    scr.setRows(16);
+    m.draw(scr, p);
+    char row[OsdScreen::COLS + 1] = {};
+    for (int c = 0; c < OsdScreen::COLS; ++c) row[c] = static_cast<char>(scr.at(0, c));
+    TEST_ASSERT_NOT_NULL(strstr(row, "MENU"));
+    TEST_ASSERT_EQUAL('>', scr.at(2, 1));
+
+    // вниз на PID, вправо — внутрь, крен вправо — P крена +1
+    run(sticks(CE, CE, LO, CE), 0.05f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    TEST_ASSERT_EQUAL(1, m.cursorRow());
+    run(sticks(CE, CE, CE, HI), 0.05f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::PAGE_PID), m.currentPage());
+    const float p0 = p.value(PARAM_P_ROLL);
+    run(sticks(CE, CE, CE, HI), 0.05f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    TEST_ASSERT_EQUAL_FLOAT(p0 + 1.0f, p.value(PARAM_P_ROLL));
+    // держать — повтор: 0.4 с до первого, потом раз в 0.15 с
+    run(sticks(CE, CE, CE, LO), 1.0f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    TEST_ASSERT_EQUAL_FLOAT(p0 + 1.0f - 5.0f, p.value(PARAM_P_ROLL));
+    // рыск влево — назад в главное, курсор на PID
+    run(sticks(CE, LO, CE, CE), 0.05f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::PAGE_MAIN), m.currentPage());
+    TEST_ASSERT_EQUAL(1, m.cursorRow());
+    // вверх с первой строки — на последнюю (EXIT), выше — SAVE+EXIT
+    run(sticks(CE, CE, HI, CE), 0.05f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    run(sticks(CE, CE, HI, CE), 0.05f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    run(sticks(CE, CE, HI, CE), 0.05f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    TEST_ASSERT_EQUAL(6, m.cursorRow());
+    run(sticks(CE, CE, CE, HI), 0.05f);
+    TEST_ASSERT_FALSE(m.isOpen());
+    TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::Exit::SAVE), static_cast<int>(last));
+
+    // ARM или потеря связи — закрыть без сохранения; с ARM не открывается
+    last = OsdMenu::Exit::NONE;
+    run(sticks(CE, CE, CE, CE), 0.1f);
+    run(sticks(CE, LO, HI, CE), 1.0f, true);
+    TEST_ASSERT_FALSE(m.isOpen());
+    run(sticks(CE, LO, HI, CE), 0.6f);
+    TEST_ASSERT_TRUE(m.isOpen());
+    CopterRc lost = sticks(CE, CE, CE, CE);
+    lost.linkOk = false;
+    run(lost, 0.05f);
+    TEST_ASSERT_FALSE(m.isOpen());
+    TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::Exit::DISCARD), static_cast<int>(last));
+
+    // VTX: полоса буквой; в главном рыск влево — выйти без сохранения
+    run(sticks(CE, LO, HI, CE), 0.6f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    for (int i = 0; i < 4; ++i)
+    {
+        run(sticks(CE, CE, LO, CE), 0.05f);
+        run(sticks(CE, CE, CE, CE), 0.05f);
+    }
+    run(sticks(CE, CE, CE, HI), 0.05f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::PAGE_VTX), m.currentPage());
+    p.setValue(PARAM_VTX_BAND, 0, 5);
+    m.draw(scr, p);
+    TEST_ASSERT_EQUAL('R', scr.at(2, OsdScreen::COLS - 2));
+    run(sticks(CE, LO, CE, CE), 0.05f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    run(sticks(CE, LO, CE, CE), 0.05f);
+    TEST_ASSERT_FALSE(m.isOpen());
+    TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::Exit::DISCARD), static_cast<int>(last));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -6700,5 +6801,6 @@ int main()
     RUN_TEST(test_cli_beeper_and_beacon);
     RUN_TEST(test_msp_beeper_config);
     RUN_TEST(test_crsf_msp_from_radio);
+    RUN_TEST(test_osd_menu_by_sticks);
     return UNITY_END();
 }
