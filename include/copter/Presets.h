@@ -417,6 +417,12 @@ namespace copter
             {
                 if (n.on()) r = r * notchAt(n.hz, n.q(), w);
             }
+            // динамические режекторы — худший случай: все на нижнем краю полосы
+            if (f.dynNotch.on())
+            {
+                const Cx d = notchAt(f.dynNotch.minHz, f.dynNotch.q, w);
+                for (uint8_t i = 0; i < f.dynNotch.count; ++i) r = r * d;
+            }
             return r;
         }
 
@@ -626,6 +632,17 @@ namespace copter
         s.notchQ = t.notchQ;
         s.chain = t.filters.valid ? &t.filters : nullptr;
         notchCenters(t.rotHzHover, t.prop.prop.blades, t.minNotchHz, s.notchHz);
+        if (s.chain)
+        {
+            // RPM-фильтр из настроек (rpm_filter_*): режекторы на висении, вес — полный
+            const RpmFilterSpec& rpm = t.filters.rpm;
+            s.notchQ = rpm.q;
+            notchCenters(t.rotHzHover, t.prop.prop.blades, 0.0f, s.notchHz);
+            for (uint8_t h = 0; h < NOTCH_HARMONICS; ++h)
+            {
+                if (rpm.weightAt(h, s.notchHz[h]) <= 0.0f) s.notchHz[h] = 0.0f;
+            }
+        }
         const AxisGains* gains[3] = { &t.roll, &t.pitch, &t.yaw };
         const float k[3] = { t.kRoll, t.kPitch, t.kYaw };
         r.crossoverHz = 1e9f;
@@ -786,6 +803,12 @@ namespace copter
         axis(t.kPitch, false, wMax, t.pitch, wcP, pmP, gmP);
         t.minNotchHz = fmaxf(30.0f, 5.0f * fminf(wcR, wcP) / (2.0f * PI_F));
         notchCenters(t.rotHzHover, b.prop.blades, t.minNotchHz, notches);
+        // RPM-фильтр модели: свой Q и нижний край, включается сразу (без
+        // полосы fade), обороты модели уже сглажены постоянной времени мотора
+        t.filters.rpm.q = t.notchQ;
+        t.filters.rpm.minHz = t.minNotchHz;
+        t.filters.rpm.fadeHz = 0.0f;
+        t.filters.rpm.lpfHz = 0.0f;
         axis(t.kRoll, false, wMax, t.roll, wcR, pmR, gmR);
         axis(t.kPitch, false, wMax, t.pitch, wcP, pmP, gmP);
         axis(t.kYaw, true, 0.6f * fminf(wcR, wcP), t.yaw, wcY, pmY, gmY);

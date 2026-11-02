@@ -776,6 +776,17 @@ static void flightTask(void*)
         // компенсации просадки — быстрый фильтр (vbat_sag_lpf_period), а не показ
         sens.batteryVolts = battery.state() == copter::BatteryState::NOT_PRESENT ? 0.0f : battery.sagVolts();
         fillGps(sens.gps);
+        // обороты по DShot (dshot_bidir) — RPM-фильтру; нет ответа хоть от одного мотора — по модели
+        {
+            const copter::IMotorTelemetry& tel = motors.dshotOutput();
+            const uint8_t poles = static_cast<uint8_t>(copterParams.value(copter::PARAM_MOTOR_POLES));
+            sens.motorHzOk = tel.telemetryEnabled() && tel.telemetryMotors() > 0;
+            for (uint8_t i = 0; sens.motorHzOk && i < tel.telemetryMotors() && i < copter::MAX_MOTORS; ++i)
+            {
+                if (!tel.hasTelemetry(i)) sens.motorHzOk = false;
+                else sens.motorHz[i] = copter::dshot::erpmToRpm(tel.erpm(i), poles) / 60.0f;
+            }
+        }
         copterController.setThrottleLimit(battery.throttleLimit());   // vbat_cutoff_percent
 
         // ARM запрещён, пока описание коптера не сошлось с платой,

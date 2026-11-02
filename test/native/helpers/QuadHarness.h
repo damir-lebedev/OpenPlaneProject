@@ -58,6 +58,12 @@ public:
         s.baroAltM = baroOk ? sim.readBaro() + 120.0f : 0.0f;   // над уровнем моря — не ноль
         s.batteryVolts = sim.readVolts();
         feedGps(s.gps);
+        if (rpmTelemetry)
+        {
+            // двунаправленный DShot: настоящие обороты каждого мотора
+            s.motorHzOk = true;
+            for (uint8_t i = 0; i < tune.frame.count && i < copter::MAX_MOTORS; ++i) s.motorHz[i] = static_cast<float>(sim.rotorHz(wiring[i]));
+        }
         out = ctl.update(s, rc);
         lastSens = s;
         float motor[copter::MAX_MOTORS] = {};
@@ -168,6 +174,7 @@ public:
     std::function<void()> afterStep;         // после каждого шага (чёрный ящик в тестах)
     bool baroOk = true;
     bool imuOk = true;
+    bool rpmTelemetry = false;               // обороты моторов по DShot (иначе контроллер берёт модель)
     uint8_t wiring[copter::MAX_MOTORS];      // выход i -> мотор wiring[i] (перепутанные провода)
     long steps = 0;
 

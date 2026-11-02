@@ -239,6 +239,16 @@ namespace copter
         PARAM_DTERM_LPF2_TYPE,
         PARAM_DTERM_NOTCH_HZ,
         PARAM_DTERM_NOTCH_CUTOFF,
+        PARAM_DYN_NOTCH_COUNT,
+        PARAM_DYN_NOTCH_Q,
+        PARAM_DYN_NOTCH_MIN_HZ,
+        PARAM_DYN_NOTCH_MAX_HZ,
+        PARAM_RPM_FILTER_HARMONICS,
+        PARAM_RPM_FILTER_WEIGHTS,
+        PARAM_RPM_FILTER_Q,
+        PARAM_RPM_FILTER_MIN_HZ,
+        PARAM_RPM_FILTER_FADE_RANGE_HZ,
+        PARAM_RPM_FILTER_LPF_HZ,
         PARAM_USE_INTEGRATED_YAW,
         PARAM_INTEGRATED_YAW_RELAX,
         PARAM_ABS_CONTROL_GAIN,
@@ -662,6 +672,26 @@ namespace copter
               "режектор D: центр; 0 — выключен" },
             { "dterm_notch_cutoff", kInt, kPid, kGroupFilters, 0, 1000, 0, kTable, "Гц", nullptr, 0,
               "режектор D: нижний край полосы" },
+            { "dyn_notch_count", kInt, kMaster, kGroupFilters, 0, DYN_NOTCH_MAX, 1, kTable, "", nullptr, 0,
+              "динамический режектор: сколько режекторов на ось едут за пиками спектра гироскопа; 0 — выключен (1 и Q 500 — как BF советует при RPM-фильтре)" },
+            { "dyn_notch_q", kInt, kMaster, kGroupFilters, 1, 1000, 500, kTable, "", nullptr, 0,
+              "динамический режектор: добротность ×100 — больше — уже вырез, меньше задержка" },
+            { "dyn_notch_min_hz", kInt, kMaster, kGroupFilters, 20, 250, 100, kTable, "Гц", nullptr, 0,
+              "динамический режектор: ниже не опускается (у полосы контура съел бы запас по фазе)" },
+            { "dyn_notch_max_hz", kInt, kMaster, kGroupFilters, 200, 1000, 600, kTable, "Гц", nullptr, 0,
+              "динамический режектор: верх полосы поиска пиков (не выше половины цикла)" },
+            { "rpm_filter_harmonics", kInt, kMaster, kGroupFilters, 0, RPM_HARMONICS_MAX, 3, kTable, "", nullptr, 0,
+              "RPM-фильтр: гармоник оборотов на каждый мотор (1×, 2×, проход лопастей); 0 — выключен" },
+            { "rpm_filter_weights", kText, kMaster, kGroupFilters, 0, 11, 0, kTable, "%", nullptr, 0,
+              "RPM-фильтр: глубина режектора каждой гармоники, три числа 0..100 через запятую" },
+            { "rpm_filter_q", kInt, kMaster, kGroupFilters, 250, 3000, 0, kTune, "", nullptr, 0,
+              "RPM-фильтр: добротность ×100 — больше — уже вырез и меньше задержка, но нужны точные обороты" },
+            { "rpm_filter_min_hz", kInt, kMaster, kGroupFilters, 30, 200, 0, kTune, "Гц", nullptr, 0,
+              "RPM-фильтр: ниже режектор не работает (у полосы контура съел бы запас по фазе)" },
+            { "rpm_filter_fade_range_hz", kInt, kMaster, kGroupFilters, 0, 1000, 0, kTune, "Гц", nullptr, 0,
+              "RPM-фильтр: над min режектор включается плавно на этой полосе; 0 — сразу" },
+            { "rpm_filter_lpf_hz", kInt, kMaster, kGroupFilters, 100, 500, 150, kTable, "Гц", nullptr, 0,
+              "RPM-фильтр: сглаживание оборотов (ФНЧ) — меньше — ровнее, но режектор отстаёт на разгоне" },
             { "use_integrated_yaw", kEnum, kPid, kGroupPid, 0, 1, 0, kTable, "", OFF_ON, 2,
               "рысканье через интеграл суммы PID — для больших винтов; PID рысканья из модели пересчитываются" },
             { "integrated_yaw_relax", kInt, kPid, kGroupPid, 0, 255, 200, kTable, "", nullptr, 0,
@@ -1407,7 +1437,11 @@ namespace copter
         }
         bool isSet(ParamId id, uint8_t slot) const
         {
-            if (paramInfo(id).type == ParamType::STRING) return text(id, slot)[0] != '\0';
+            if (paramInfo(id).type == ParamType::STRING)
+            {
+                const char* s = stringSlot(id, slot);
+                return s && s[0] != '\0';
+            }
             return slot < PROFILES && (setMask[id] >> slot) & 1u;
         }
         float valueIn(ParamId id, uint8_t slot) const { return isSet(id, slot) ? values[id][slot] : defaultIn(id, slot); }
@@ -1426,7 +1460,30 @@ namespace copter
         const char* text(ParamId id, uint8_t slot) const
         {
             const char* s = stringSlot(id, slot);
-            return s ? s : "";
+            return s && s[0] ? s : textDefault(id);
+        }
+
+        // Умолчание строки (пустая строка в хранилище — это оно).
+        static const char* textDefault(ParamId id) { return id == PARAM_RPM_FILTER_WEIGHTS ? "100,100,100" : ""; }
+
+        // rpm_filter_weights: "a,b,c" (0..100) -> доли; false — не так написано.
+        static bool rpmWeights(const char* s, float out[RPM_HARMONICS_MAX])
+        {
+            float w[RPM_HARMONICS_MAX];
+            const char* p = s;
+            for (uint8_t h = 0; h < RPM_HARMONICS_MAX; ++h)
+            {
+                char* end = nullptr;
+                const long v = strtol(p, &end, 10);
+                if (end == p || v < 0 || v > 100) return false;
+                w[h] = v / 100.0f;
+                while (*end == ' ') ++end;
+                if (h + 1 < RPM_HARMONICS_MAX && *end != ',') return false;
+                if (h + 1 == RPM_HARMONICS_MAX && *end != '\0') return false;
+                p = end + 1;
+            }
+            for (uint8_t h = 0; h < RPM_HARMONICS_MAX; ++h) out[h] = w[h];
+            return true;
         }
 
         // Задать число (в границах, ENUM — номер значения). Равное
@@ -1509,6 +1566,19 @@ namespace copter
                 case ParamType::STRING:
                 {
                     const char* s = strcmp(buf, "-") == 0 ? "" : buf;
+                    if (id == PARAM_RPM_FILTER_WEIGHTS && *s)
+                    {
+                        float w[RPM_HARMONICS_MAX];
+                        if (!rpmWeights(s, w))
+                        {
+                            snprintf(error, errorSize, "три числа 0..100 через запятую, например 100,100,100");
+                            return false;
+                        }
+                        // как пишет BF; равное умолчанию — то же, что умолчание
+                        snprintf(buf, sizeof(buf), "%d,%d,%d", static_cast<int>(lroundf(w[0] * 100.0f)),
+                                 static_cast<int>(lroundf(w[1] * 100.0f)), static_cast<int>(lroundf(w[2] * 100.0f)));
+                        s = strcmp(buf, textDefault(id)) == 0 ? "" : buf;
+                    }
                     if (setText(id, slot, s)) return true;
                     snprintf(error, errorSize, "не длиннее %d символов", static_cast<int>(info.max));
                     return false;
@@ -1558,7 +1628,7 @@ namespace copter
             const ParamInfo& info = paramInfo(id);
             if (info.type == ParamType::STRING)
             {
-                snprintf(out, size, "%s", "");
+                snprintf(out, size, "%s", textDefault(id));
                 return;
             }
             formatNumber(info, defaultValue(id), out, size);
@@ -1886,6 +1956,7 @@ namespace copter
             memset(setMask, 0, sizeof(setMask));
             memset(names, 0, sizeof(names));
             memset(craftName, 0, sizeof(craftName));
+            memset(rpmWeightsText, 0, sizeof(rpmWeightsText));
             pidIndex = 0;
             rateIndex = 0;
         }
@@ -1989,6 +2060,10 @@ namespace copter
             defaults[PARAM_GYRO_LPF1_DYN_MIN_HZ] = scaled(base.gyroDyn.minHz, g);
             defaults[PARAM_GYRO_LPF1_DYN_MAX_HZ] = scaled(base.gyroDyn.maxHz, g);
             defaults[PARAM_GYRO_LPF2_STATIC_HZ] = scaled(base.gyro2.hz, g);
+            // RPM-фильтр: у BF — 500 и 100 Гц, у модели — свои (режектор не ниже 5 полос контура)
+            defaults[PARAM_RPM_FILTER_Q] = clampTo(PARAM_RPM_FILTER_Q, bf ? 500.0f : roundf(model.notchQ * 100.0f));
+            defaults[PARAM_RPM_FILTER_MIN_HZ] = clampTo(PARAM_RPM_FILTER_MIN_HZ, bf ? 100.0f : roundf(model.minNotchHz));
+            defaults[PARAM_RPM_FILTER_FADE_RANGE_HZ] = bf ? 50.0f : 0.0f;
             const float dBase[4] = { base.dterm1.hz, base.dtermDyn.minHz, base.dtermDyn.maxHz, base.dterm2.hz };
             for (uint8_t i = 0; i < 4; ++i)
             {
@@ -2028,6 +2103,16 @@ namespace copter
                            static_cast<uint8_t>(valueIn(PARAM_DTERM_LPF1_DYN_EXPO, s)) };
             f.dterm2 = { type(PARAM_DTERM_LPF2_TYPE, s), hz(PARAM_DTERM_LPF2_STATIC_HZ, s) };
             f.dtermNotch = { valueIn(PARAM_DTERM_NOTCH_HZ, s), valueIn(PARAM_DTERM_NOTCH_CUTOFF, s) };
+            f.dynNotch.count = static_cast<uint8_t>(valueIn(PARAM_DYN_NOTCH_COUNT, 0));
+            f.dynNotch.q = valueIn(PARAM_DYN_NOTCH_Q, 0) / 100.0f;
+            f.dynNotch.minHz = valueIn(PARAM_DYN_NOTCH_MIN_HZ, 0);
+            f.dynNotch.maxHz = fminf(0.48f * t.loopHz, valueIn(PARAM_DYN_NOTCH_MAX_HZ, 0));
+            f.rpm.harmonics = static_cast<uint8_t>(valueIn(PARAM_RPM_FILTER_HARMONICS, 0));
+            rpmWeights(text(PARAM_RPM_FILTER_WEIGHTS, 0), f.rpm.weights);
+            f.rpm.q = valueIn(PARAM_RPM_FILTER_Q, 0) / 100.0f;
+            f.rpm.minHz = valueIn(PARAM_RPM_FILTER_MIN_HZ, 0);
+            f.rpm.fadeHz = valueIn(PARAM_RPM_FILTER_FADE_RANGE_HZ, 0);
+            f.rpm.lpfHz = valueIn(PARAM_RPM_FILTER_LPF_HZ, 0);
             // для журнала, MSP и старых проверок — срез первой ступени (динамический — нижний)
             t.gyroLpfHz = f.gyroDyn.on() ? f.gyroDyn.minHz : f.gyro1.hz;
             t.dtermLpfHz = f.dtermDyn.on() ? f.dtermDyn.minHz : f.dterm1.hz;
@@ -2094,6 +2179,7 @@ namespace copter
             if (id == PARAM_PROFILE_NAME) return names[0][slot];
             if (id == PARAM_RATEPROFILE_NAME) return names[1][slot];
             if (id == PARAM_CRAFT_NAME) return slot == 0 ? craftName : nullptr;
+            if (id == PARAM_RPM_FILTER_WEIGHTS) return slot == 0 ? rpmWeightsText : nullptr;
             return nullptr;
         }
         const char* stringSlot(ParamId id, uint8_t slot) const { return const_cast<CopterParams*>(this)->stringSlot(id, slot); }
@@ -2139,6 +2225,7 @@ namespace copter
         uint8_t setMask[PARAM_COUNT];
         char names[2][PROFILES][NAME_LENGTH + 1];
         char craftName[NAME_LENGTH + 1] = {};
+        char rpmWeightsText[NAME_LENGTH + 1] = {};   // rpm_filter_weights; пусто — 100,100,100
         uint8_t pidIndex = 0;
         uint8_t rateIndex = 0;
     };

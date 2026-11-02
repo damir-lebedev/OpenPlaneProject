@@ -790,15 +790,15 @@ namespace copter
             w.u16(pv(PARAM_GYRO_LPF1_DYN_MAX_HZ));
             w.u16(pv(PARAM_DTERM_LPF1_DYN_MIN_HZ));
             w.u16(pv(PARAM_DTERM_LPF1_DYN_MAX_HZ));
-            w.u8(0);
-            w.u8(0);
-            w.u16(0);   // dyn notch q
-            w.u16(0);
-            w.u8(0);    // rpm_filter_harmonics (наши режекторы по оборотам — из модели)
-            w.u8(0);
-            w.u16(0);
+            w.u8(0);    // dyn_notch_range (устарело)
+            w.u8(0);    // dyn_notch_width_percent (устарело)
+            w.u16(pv(PARAM_DYN_NOTCH_Q));
+            w.u16(pv(PARAM_DYN_NOTCH_MIN_HZ));
+            w.u8(pv(PARAM_RPM_FILTER_HARMONICS));
+            w.u8(pv(PARAM_RPM_FILTER_MIN_HZ));
+            w.u16(pv(PARAM_DYN_NOTCH_MAX_HZ));
             w.u8(pv(PARAM_DTERM_LPF1_DYN_EXPO));
-            w.u8(0);    // dyn_notch_count
+            w.u8(pv(PARAM_DYN_NOTCH_COUNT));
         }
 
         // Как BF: старые конфигураторы шлют начало кадра — что пришло, то и задаём.
@@ -841,15 +841,18 @@ namespace copter
                 set(PARAM_DTERM_LPF1_DYN_MIN_HZ, r.u16());
                 set(PARAM_DTERM_LPF1_DYN_MAX_HZ, r.u16());
             }
-            // dyn notch, rpm — пункты 060–062; dterm_lpf1_dyn_expo — после них
-            if (r.remaining() >= 10)
+            if (r.remaining() >= 8)
             {
-                for (int i = 0; i < 2; ++i) r.u8();
-                for (int i = 0; i < 2; ++i) r.u16();
-                for (int i = 0; i < 2; ++i) r.u8();
-                r.u16();
+                r.u8();   // dyn_notch_range, dyn_notch_width_percent (устарели)
+                r.u8();
+                set(PARAM_DYN_NOTCH_Q, r.u16());
+                set(PARAM_DYN_NOTCH_MIN_HZ, r.u16());
+                set(PARAM_RPM_FILTER_HARMONICS, r.u8());
+                set(PARAM_RPM_FILTER_MIN_HZ, r.u8());
             }
+            if (r.remaining() >= 2) set(PARAM_DYN_NOTCH_MAX_HZ, r.u16());
             if (r.remaining() >= 1) set(PARAM_DTERM_LPF1_DYN_EXPO, r.u8());
+            if (r.remaining() >= 1) set(PARAM_DYN_NOTCH_COUNT, r.u8());
         }
 
         // motorPwmProtocol BF: PWM 0, ONESHOT125 1, ONESHOT42 2, MULTISHOT 3, DSHOT150 5, 300 6, 600 7.

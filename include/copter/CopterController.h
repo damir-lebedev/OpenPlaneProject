@@ -293,6 +293,10 @@ namespace copter
         bool baroOk = false;
         float batteryVolts = 0.0f;   // 0 — не измеряется
         GpsInput gps;                // GPS и курс — для возврата домой (copter/GpsRescue.h)
+        // обороты моторов по телеметрии DShot (dshot_bidir), Гц, в порядке смесителя;
+        // false — режекторы по модели (команда мотора -> обороты)
+        bool motorHzOk = false;
+        float motorHz[MAX_MOTORS] = {};
     };
 
     struct CopterRc
@@ -380,7 +384,8 @@ namespace copter
         float throttle = 0;                     // доля тяги на входе смесителя
         float hoverLearned = 0;
         float volts = 0;
-        float rotationHz = 0;
+        float rotationHz = 0;                   // средние обороты моторов, Гц
+        bool rpmTelemetry = false;              // обороты — по DShot, а не по модели
         bool airborne = false;
         bool saturated = false;
         bool crashed = false;
@@ -559,9 +564,11 @@ namespace copter
                 if (status.volts <= 1.0f) voltLpf.reset(sens.batteryVolts);
                 status.volts = voltLpf.apply(sens.batteryVolts);
             }
-            // обороты не меняются быстрее, чем мотор успевает разогнать винт:
-            // оценка идёт за командой с постоянной времени мотора — режекторы
-            // едут плавно, а не прыгают вслед за каждым циклом смесителя
+            // обороты: по телеметрии DShot — каждого мотора; иначе по модели —
+            // средние: обороты не меняются быстрее, чем мотор успевает разогнать
+            // винт: оценка идёт за командой с постоянной времени мотора —
+            // режекторы едут плавно, а не прыгают вслед за каждым циклом смесителя
+            const uint8_t motors = tune.frame.count < MAX_MOTORS ? tune.frame.count : MAX_MOTORS;
             float rotHz = 0.0f;
             if (spinning())
             {
@@ -573,8 +580,22 @@ namespace copter
             {
                 rotEstimate = tune.rotHzIdle;
             }
+            if (sens.motorHzOk)
+            {
+                float sum = 0.0f;
+                for (uint8_t i = 0; i < motors; ++i) sum += sens.motorHz[i];
+                rotHz = motors ? sum / motors : 0.0f;
+            }
             status.rotationHz = rotHz;
-            if (set.rpmNotches) gyroFilter.setRotationHz(rotHz);
+            status.rpmTelemetry = sens.motorHzOk;
+            // по телеметрии — режекторы на каждый мотор (063); по модели — один
+            // набор на средние обороты: каждый режектор стоит фазы у полосы
+            // контура, а модель моторы между собой всё равно не различит
+            if (set.rpmNotches)
+            {
+                if (sens.motorHzOk) gyroFilter.setMotorHz(sens.motorHz, motors);
+                else gyroFilter.setRotationHz(rotHz);
+            }
             // динамические ФНЧ гироскопа и D — по газу (как в BF)
             gyroFilter.setThrottle(status.throttle);
             for (uint8_t a = 0; a < 3; ++a) axes[a].setThrottle(status.throttle);

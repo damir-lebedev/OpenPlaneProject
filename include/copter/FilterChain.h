@@ -7,7 +7,9 @@
 // ============================================================
 // Цепочки фильтров как в Betaflight (пункты 054–059): две ступени ФНЧ
 // гироскопа и D любого из типов BF, динамический срез первой ступени по
-// газу, статические режекторы (гироскоп — два, D — один).
+// газу, статические режекторы (гироскоп — два, D — один). Пункты 060–063:
+// динамический режектор по спектру (`dyn_notch_*`, copter/Spectrum.h) и
+// RPM-фильтр (`rpm_filter_*`) — режекторы по оборотам каждого мотора.
 //
 // Имена и смысл — как настройки BF: `gyro_lpf1_type` …, частота 0 —
 // ступень выключена; режектор — центр и «cutoff» (нижний край полосы,
@@ -47,6 +49,40 @@ namespace copter
         float q() const { return hz * cutoffHz / (hz * hz - cutoffHz * cutoffHz); }
     };
 
+    constexpr uint8_t DYN_NOTCH_MAX = 5;      // dyn_notch_count — до 5, как в BF
+    constexpr uint8_t RPM_HARMONICS_MAX = 3;  // rpm_filter_harmonics — до 3
+
+    // Динамический режектор: count режекторов на оси едут за пиками спектра
+    // гироскопа в полосе minHz..maxHz; добротность q (dyn_notch_q / 100).
+    struct DynNotchSpec
+    {
+        uint8_t count = 0;   // 0 — выключен
+        float q = 3.0f;
+        float minHz = 100.0f, maxHz = 600.0f;
+        bool on() const { return count > 0 && maxHz > minHz; }
+    };
+
+    // RPM-фильтр: на каждый мотор — режекторы на гармониках его оборотов.
+    // Ниже minHz режектор стоит на minHz с весом 0, выше — вес растёт до
+    // weights[h] на полосе fadeHz; обороты сглаживаются ФНЧ lpfHz.
+    struct RpmFilterSpec
+    {
+        uint8_t harmonics = RPM_HARMONICS_MAX;   // 0 — выключен
+        float weights[RPM_HARMONICS_MAX] = { 1.0f, 1.0f, 1.0f };
+        float q = 5.0f;
+        float minHz = 100.0f;
+        float fadeHz = 50.0f;
+        float lpfHz = 150.0f;   // 0 — без сглаживания
+
+        // Вес гармоники на частоте hz (0 — режектор не работает).
+        float weightAt(uint8_t h, float hz) const
+        {
+            if (h >= harmonics || hz <= 0.0f || hz < minHz) return 0.0f;
+            const float fade = fadeHz > 0.0f ? fminf(1.0f, (hz - minHz) / fadeHz) : 1.0f;
+            return weights[h] * fade;
+        }
+    };
+
     struct FilterSpec
     {
         bool valid = false;   // false — цепочка не задана (старый путь: PT2 гироскопа и PT1 D)
@@ -56,15 +92,30 @@ namespace copter
         LpfStage dterm1, dterm2;
         DynLpf dtermDyn;
         NotchSpec dtermNotch;
+        DynNotchSpec dynNotch;
+        RpmFilterSpec rpm;
     };
 
     inline bool sameStage(const LpfStage& a, const LpfStage& b) { return a.type == b.type && a.hz == b.hz; }
     inline bool sameDyn(const DynLpf& a, const DynLpf& b) { return a.minHz == b.minHz && a.maxHz == b.maxHz && a.expo == b.expo; }
     inline bool sameNotch(const NotchSpec& a, const NotchSpec& b) { return a.hz == b.hz && a.cutoffHz == b.cutoffHz; }
 
+    inline bool sameDynNotch(const DynNotchSpec& a, const DynNotchSpec& b)
+    {
+        return a.count == b.count && a.q == b.q && a.minHz == b.minHz && a.maxHz == b.maxHz;
+    }
+    inline bool sameRpm(const RpmFilterSpec& a, const RpmFilterSpec& b)
+    {
+        for (uint8_t h = 0; h < RPM_HARMONICS_MAX; ++h)
+        {
+            if (a.weights[h] != b.weights[h]) return false;
+        }
+        return a.harmonics == b.harmonics && a.q == b.q && a.minHz == b.minHz && a.fadeHz == b.fadeHz && a.lpfHz == b.lpfHz;
+    }
+
     inline bool sameFilters(const FilterSpec& a, const FilterSpec& b)
     {
-        return a.valid == b.valid && sameStage(a.gyro1, b.gyro1) && sameStage(a.gyro2, b.gyro2) && sameDyn(a.gyroDyn, b.gyroDyn) &&
+        return sameDynNotch(a.dynNotch, b.dynNotch) && sameRpm(a.rpm, b.rpm) && a.valid == b.valid && sameStage(a.gyro1, b.gyro1) && sameStage(a.gyro2, b.gyro2) && sameDyn(a.gyroDyn, b.gyroDyn) &&
                sameNotch(a.gyroNotch[0], b.gyroNotch[0]) && sameNotch(a.gyroNotch[1], b.gyroNotch[1]) &&
                sameStage(a.dterm1, b.dterm1) && sameStage(a.dterm2, b.dterm2) && sameDyn(a.dtermDyn, b.dtermDyn) &&
                sameNotch(a.dtermNotch, b.dtermNotch);
@@ -167,11 +218,13 @@ namespace copter
             if (dynamic.on()) lpf1.setCutoff(dynLpfHz(dynamic, throttle));
         }
 
-        float apply(float x)
+        float apply(float x) { return applyLowpass(applyNotches(x)); }
+        float applyNotches(float x)
         {
             for (uint8_t i = 0; i < NOTCHES; ++i) x = notch[i].apply(x);
-            return lpf2.apply(lpf1.apply(x));
+            return x;
         }
+        float applyLowpass(float x) { return lpf2.apply(lpf1.apply(x)); }
 
         void reset()
         {

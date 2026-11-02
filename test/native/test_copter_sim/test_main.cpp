@@ -1819,6 +1819,90 @@ void test_training_speed_limit()
     TEST_ASSERT_TRUE_MESSAGE(speeds[1] * 3.6 < 28.0, line);
     TEST_ASSERT_TRUE_MESSAGE(speeds[1] < 0.7 * speeds[0], line);
 }
+// 061: вибрация не на тех оборотах, что думает модель (±30 %), — режекторы по
+// модели мимо; динамический режектор находит её по спектру — моторы тише.
+void test_dyn_notch_catches_vibration_the_rpm_model_misses()
+{
+    const double scales[] = { 0.7, 1.3 };
+    for (double scale : scales)
+    {
+        QuadPerturb p;
+        p.vibFrequency = scale;
+        p.vibration = 2.0;
+        double noise[2] = {};
+        for (int k = 0; k < 2; ++k)
+        {
+            QuadHarness h(five(), p, 31);
+            CopterTune t = h.tune;
+            t.filters.dynNotch.count = k ? 1 : 0;
+            t.filters.dynNotch.q = 5.0f;
+            t.filters.dynNotch.maxHz = 450.0f;
+            h.useTune(t);
+            TEST_ASSERT_TRUE(h.takeoffTo(5.0));
+            h.stats.reset();
+            h.run(3.0);
+            noise[k] = h.stats.motorNoiseRms();
+            TEST_ASSERT_TRUE(h.stats.maxTilt < 3.0);
+        }
+        char line[160];
+        snprintf(line, sizeof(line), "dyn notch, vibration at %.0f%% of model rpm: motor noise %.4f -> %.4f", scale * 100.0, noise[0],
+                 noise[1]);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(noise[1] < 0.8 * noise[0], line);
+    }
+}
+
+// 063: обороты по DShot — режекторы на каждом моторе там, где он крутится;
+// модель — на средних и по команде. В манёвре на «вялой» физике моторы тише.
+void test_rpm_filter_per_motor_from_dshot_in_manoeuvre()
+{
+    QuadPerturb p = sluggish();
+    p.motorSpread = 0.1;
+    p.vibration = 2.0;
+    double noise[2] = {}, residual[2] = {};
+    for (int k = 0; k < 2; ++k)
+    {
+        QuadHarness h(five(), p, 32);
+        h.rpmTelemetry = k == 1;
+        TEST_ASSERT_TRUE(h.takeoffTo(5.0));
+        h.rc.mode = CopterMode::ANGLE;
+        h.stats.reset();
+        // остаток вибрации в гироскопе после фильтров: отфильтрованное минус
+        // настоящее вращение, выше ~50 Гц (задержка фильтров на манёвре — ниже)
+        double lag[2] = {}, sum = 0;
+        long n = 0;
+        h.afterStep = [&]() {
+            const auto w = h.sim.rates();
+            const double truth[2] = { w.x * 57.29578, w.y * 57.29578 };
+            for (int a = 0; a < 2; ++a)
+            {
+                const double d = h.ctl.getStatus().rates[a] - truth[a];
+                lag[a] += 0.24 * (d - lag[a]);
+                sum += (d - lag[a]) * (d - lag[a]);
+            }
+            ++n;
+        };
+        for (int i = 0; i < 12; ++i)
+        {
+            h.rc.roll = i % 2 ? -0.6f : 0.6f;
+            h.run(0.25);
+        }
+        h.rc.roll = 0.0f;
+        h.afterStep = nullptr;
+        noise[k] = h.stats.motorNoiseRms();
+        residual[k] = std::sqrt(sum / n);
+        TEST_ASSERT_TRUE(h.ctl.isArmed());
+        TEST_ASSERT_EQUAL(k == 1, h.ctl.getStatus().rpmTelemetry);
+        TEST_ASSERT_EQUAL_UINT8(k == 1 ? 4 : 1, h.ctl.getGyroFilter().motorCount());
+    }
+    char line[160];
+    snprintf(line, sizeof(line), "rpm filter in manoeuvre: motor noise %.4f -> %.4f, gyro vibration left %.2f -> %.2f dps (model -> DShot per motor)",
+             noise[0], noise[1], residual[0], residual[1]);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(noise[1] < noise[0], line);
+    TEST_ASSERT_TRUE_MESSAGE(residual[1] < residual[0], line);
+}
+
 
 int main()
 {
@@ -1835,6 +1919,8 @@ int main()
     RUN_TEST(test_failsafe_without_barometer);
     RUN_TEST(test_pwm_esc_flies);
     RUN_TEST(test_whoop_on_fast_loop);
+    RUN_TEST(test_dyn_notch_catches_vibration_the_rpm_model_misses);
+    RUN_TEST(test_rpm_filter_per_motor_from_dshot_in_manoeuvre);
     RUN_TEST(test_link_glitch_and_recovery_in_flight);
     RUN_TEST(test_upside_down_crash_disarms);
     RUN_TEST(test_turtle_mode_flips_back_over);

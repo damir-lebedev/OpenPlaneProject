@@ -6752,6 +6752,212 @@ void test_filter_chain_like_betaflight()
     TEST_ASSERT_TRUE(qt.filters.gyroDyn.on());
     TEST_ASSERT_EQUAL_FLOAT(150.0f, qt.gyroLpfHz);
 }
+// 060: спектр гироскопа — синус 180 Гц в шуме: пик 180 ± 5 Гц (и на цикле 8 кГц — с усреднением отсчётов).
+void test_gyro_spectrum_finds_vibration_peak()
+{
+    const float rates[] = { 1000.0f, 8000.0f };
+    for (float fs : rates)
+    {
+        GyroSpectrum sp;
+        DynNotchSpec d;
+        d.count = 2;
+        sp.configure(fs, d);
+        uint32_t seed = 12345;
+        for (int i = 0; i < static_cast<int>(fs); ++i)
+        {
+            seed = seed * 1664525u + 1013904223u;
+            const float noise = 5.0f * ((seed >> 8) / 8388608.0f - 1.0f);
+            const float x[3] = { 20.0f * sinf(2 * PI_F * 180.0f * i / fs) + noise + 30.0f, noise, 0.0f };
+            sp.push(x);
+        }
+        char msg[96];
+        snprintf(msg, sizeof(msg), "%.0f Hz loop: peak %.1f Hz, analysis %.0f Hz", fs, sp.center(0, 0), sp.analysisHz());
+        TEST_ASSERT_FLOAT_WITHIN_MESSAGE(5.0f, 180.0f, sp.center(0, 0), msg);
+        TEST_ASSERT_TRUE_MESSAGE(sp.analysisHz() >= 2.2f * 600.0f || fs <= 1000.0f, msg);
+        // для приложения: самая сильная полоса — у 180 Гц
+        uint8_t best = 0;
+        for (uint8_t k = 1; k < SDFT_BINS; ++k)
+        {
+            if (sp.binPower(k) > sp.binPower(best)) best = k;
+        }
+        TEST_ASSERT_FLOAT_WITHIN_MESSAGE(sp.binWidthHz(), 180.0f, sp.binHz(best), msg);
+    }
+}
+
+// 061: динамический режектор находит вибрацию, которой нет в модели оборотов, и срезает её.
+void test_dyn_notch_cuts_unmodelled_vibration()
+{
+    GyroFilter f;
+    f.configure(1000.0f, 0.0f, 4.0f, 3, 80.0f);
+    FilterSpec spec;
+    spec.dynNotch.count = 1;
+    spec.dynNotch.q = 5.0f;
+    spec.dynNotch.maxHz = 450.0f;
+    spec.rpm.harmonics = 0;
+    f.configureChain(spec);
+    TEST_ASSERT_EQUAL_UINT8(1, f.dynNotchCount());
+    float peak = 0;
+    for (int i = 0; i < 3000; ++i)
+    {
+        float r[3] = { 40.0f * sinf(2 * PI_F * 230.0f * i / 1000.0f) + 10.0f, 0, 0 };
+        f.apply(r);
+        if (i > 2000) peak = fmaxf(peak, fabsf(r[0] - 10.0f));
+    }
+    TEST_ASSERT_FLOAT_WITHIN(5.0f, 230.0f, f.dynNotchHz(0, 0));
+    TEST_ASSERT_TRUE(peak < 6.0f);   // 40 °/с -> меньше 15 %
+    // count = 0 — режектор выключен, вибрация проходит
+    spec.dynNotch.count = 0;
+    f.configureChain(spec);
+    peak = 0;
+    for (int i = 0; i < 3000; ++i)
+    {
+        float r[3] = { 40.0f * sinf(2 * PI_F * 230.0f * i / 1000.0f), 0, 0 };
+        f.apply(r);
+        if (i > 2000) peak = fmaxf(peak, fabsf(r[0]));
+    }
+    TEST_ASSERT_TRUE(peak > 35.0f);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, f.dynNotchHz(0, 0));
+}
+
+// 062: веса гармоник и плавное включение выше rpm_filter_min_hz.
+void test_rpm_filter_weights_and_fade()
+{
+    RpmFilterSpec r;
+    r.minHz = 100.0f;
+    r.fadeHz = 50.0f;
+    r.weights[1] = 0.5f;
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, r.weightAt(0, 90.0f));
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, r.weightAt(0, 125.0f));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, r.weightAt(0, 200.0f));
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, r.weightAt(1, 300.0f));
+    r.harmonics = 1;
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, r.weightAt(1, 300.0f));
+
+    // вес 50 % — вибрация срезана наполовину; ниже min — не тронута
+    GyroFilter f;
+    f.configure(1000.0f, 0.0f, 4.0f, 3, 80.0f);
+    FilterSpec spec;
+    spec.rpm.harmonics = 1;
+    spec.rpm.weights[0] = 0.5f;
+    spec.rpm.minHz = 100.0f;
+    spec.rpm.fadeHz = 0.0f;
+    spec.rpm.lpfHz = 0.0f;
+    f.configureChain(spec);
+    auto residual = [&f](float hz) {
+        f.setRotationHz(hz);
+        float peak = 0;
+        for (int i = 0; i < 2000; ++i)
+        {
+            float x[3] = { 40.0f * sinf(2 * PI_F * hz * i / 1000.0f), 0, 0 };
+            f.apply(x);
+            if (i > 1500) peak = fmaxf(peak, fabsf(x[0]));
+        }
+        return peak;
+    };
+    TEST_ASSERT_FLOAT_WITHIN(3.0f, 20.0f, residual(150.0f));
+    TEST_ASSERT_EQUAL_FLOAT(150.0f, f.notchCenter(0));
+    TEST_ASSERT_TRUE(residual(80.0f) > 38.0f);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, f.notchCenter(0));
+}
+
+// 063: режекторы на каждый мотор — у двух моторов на разных оборотах срезаны обе вибрации.
+void test_rpm_filter_per_motor()
+{
+    GyroFilter f;
+    f.configure(1000.0f, 0.0f, 5.0f, 3, 80.0f);
+    const float hz[2] = { 150.0f, 190.0f };
+    f.setMotorHz(hz, 2);
+    TEST_ASSERT_EQUAL_UINT8(2, f.motorCount());
+    TEST_ASSERT_EQUAL_FLOAT(150.0f, f.motorNotchHz(0, 0));
+    TEST_ASSERT_EQUAL_FLOAT(380.0f, f.motorNotchHz(1, 1));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, f.motorNotchHz(2, 0));
+    float peak = 0;
+    for (int i = 0; i < 3000; ++i)
+    {
+        const float t = i / 1000.0f;
+        float r[3] = { 30.0f * sinf(2 * PI_F * 150.0f * t), 30.0f * sinf(2 * PI_F * 190.0f * t), 0 };
+        f.apply(r);
+        if (i > 2000) peak = fmaxf(peak, fmaxf(fabsf(r[0]), fabsf(r[1])));
+    }
+    TEST_ASSERT_TRUE(peak < 2.0f);
+    // ФНЧ оборотов (rpm_filter_lpf_hz): скачок оборотов — режектор догоняет плавно
+    FilterSpec spec;
+    spec.rpm.lpfHz = 100.0f;
+    spec.rpm.minHz = 80.0f;
+    f.configureChain(spec);
+    const float a[1] = { 150.0f }, b[1] = { 250.0f };
+    f.setMotorHz(a, 1);
+    f.setMotorHz(b, 1);
+    TEST_ASSERT_TRUE(f.motorRotationHz(0) > 150.0f && f.motorRotationHz(0) < 200.0f);
+    for (int i = 0; i < 100; ++i) f.setMotorHz(b, 1);
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 250.0f, f.motorRotationHz(0));
+}
+
+// 060–063: настройки BF dyn_notch_* и rpm_filter_* — в цепочку; rpm_filter_weights — строкой как в BF.
+void test_dyn_notch_and_rpm_filter_params()
+{
+    CopterParams& p = five5Params();
+    char err[96], out[32];
+    const CopterTune m = p.tune();
+    TEST_ASSERT_EQUAL_UINT8(1, m.filters.dynNotch.count);
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, m.filters.dynNotch.q);
+    TEST_ASSERT_EQUAL_UINT8(3, m.filters.rpm.harmonics);
+    // модель: Q и нижний край — свои, плавного включения нет
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, roundf(p.modelTune().notchQ * 100.0f) / 100.0f, m.filters.rpm.q);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, m.filters.rpm.fadeHz);
+    p.format(PARAM_RPM_FILTER_WEIGHTS, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("100,100,100", out);
+    TEST_ASSERT_FALSE(p.isSet(PARAM_RPM_FILTER_WEIGHTS, 0));
+
+    TEST_ASSERT_TRUE(p.parse(PARAM_RPM_FILTER_WEIGHTS, 0, "100, 50,0", err, sizeof(err)));
+    p.format(PARAM_RPM_FILTER_WEIGHTS, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("100,50,0", out);
+    TEST_ASSERT_FALSE(p.parse(PARAM_RPM_FILTER_WEIGHTS, 0, "100,50", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_RPM_FILTER_WEIGHTS, 0, "100,50,101", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_DYN_NOTCH_COUNT, 0, "3", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_DYN_NOTCH_MAX_HZ, 0, "1000", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_RPM_FILTER_Q, 0, "800", err, sizeof(err)));
+    const CopterTune t = p.tune();
+    TEST_ASSERT_EQUAL_UINT8(3, t.filters.dynNotch.count);
+    TEST_ASSERT_EQUAL_FLOAT(480.0f, t.filters.dynNotch.maxHz);   // не выше половины цикла
+    TEST_ASSERT_EQUAL_FLOAT(0.5f, t.filters.rpm.weights[1]);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t.filters.rpm.weights[2]);
+    TEST_ASSERT_EQUAL_FLOAT(8.0f, t.filters.rpm.q);
+    // как пишет BF — то же, что умолчание
+    TEST_ASSERT_TRUE(p.parse(PARAM_RPM_FILTER_WEIGHTS, 0, "100,100,100", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.isSet(PARAM_RPM_FILTER_WEIGHTS, 0));
+    // три режектора на оси — в проверке контура худший случай: запас по фазе меньше
+    TEST_ASSERT_TRUE(checkLoop(t).phaseMarginDeg < checkLoop(m).phaseMarginDeg - 1.0f);
+
+    // источник BETAFLIGHT: умолчания RPM-фильтра — как в BF
+    p.reset(PARAM_RPM_FILTER_Q, 0);
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(500.0f, p.value(PARAM_RPM_FILTER_Q));
+    TEST_ASSERT_EQUAL_FLOAT(100.0f, p.value(PARAM_RPM_FILTER_MIN_HZ));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, p.value(PARAM_RPM_FILTER_FADE_RANGE_HZ));
+}
+
+// 060–062: MSP_FILTER_CONFIG — поля динамического режектора и RPM-фильтра (порядок BF 4.5).
+void test_msp_filter_config_dyn_notch_and_rpm()
+{
+    MspBench m;
+    std::vector<uint8_t> p = m.get(92);
+    TEST_ASSERT_EQUAL_UINT32(49, p.size());
+    TEST_ASSERT_EQUAL_UINT16(500, p[39] | p[40] << 8);   // dyn_notch_q
+    TEST_ASSERT_EQUAL_UINT8(3, p[43]);                   // rpm_filter_harmonics
+    TEST_ASSERT_EQUAL_UINT8(1, p[48]);                   // dyn_notch_count
+    p[43] = 2;
+    p[44] = 90;      // rpm_filter_min_hz
+    p[45] = 0x58;    // dyn_notch_max_hz = 600
+    p[46] = 0x02;
+    p[48] = 3;
+    TEST_ASSERT_TRUE(m.ask(93, p, p));
+    TEST_ASSERT_EQUAL_FLOAT(2.0f, m.params.value(PARAM_RPM_FILTER_HARMONICS));
+    TEST_ASSERT_EQUAL_FLOAT(90.0f, m.params.value(PARAM_RPM_FILTER_MIN_HZ));
+    TEST_ASSERT_EQUAL_FLOAT(600.0f, m.params.value(PARAM_DYN_NOTCH_MAX_HZ));
+    TEST_ASSERT_EQUAL_FLOAT(3.0f, m.params.value(PARAM_DYN_NOTCH_COUNT));
+}
+
 
 int main()
 {
@@ -6900,5 +7106,11 @@ int main()
     RUN_TEST(test_crsf_msp_from_radio);
     RUN_TEST(test_osd_menu_by_sticks);
     RUN_TEST(test_filter_chain_like_betaflight);
+    RUN_TEST(test_gyro_spectrum_finds_vibration_peak);
+    RUN_TEST(test_dyn_notch_cuts_unmodelled_vibration);
+    RUN_TEST(test_rpm_filter_weights_and_fade);
+    RUN_TEST(test_rpm_filter_per_motor);
+    RUN_TEST(test_dyn_notch_and_rpm_filter_params);
+    RUN_TEST(test_msp_filter_config_dyn_notch_and_rpm);
     return UNITY_END();
 }

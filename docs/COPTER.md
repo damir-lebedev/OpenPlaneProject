@@ -274,6 +274,11 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `dterm_lpf1_static_hz` · `dterm_lpf2_static_hz` | PID-профиль | 0–1000 Гц | модель: её срез · 0; BF: 75 · 150 | срезы ФНЧ D (× ползунок фильтра D своего профиля) |
 | `dterm_lpf1_dyn_min_hz` · `dterm_lpf1_dyn_max_hz` · `dterm_lpf1_dyn_expo` | PID-профиль | 0–1000 Гц · 0–10 | модель: 0 · 0; BF: 75 · 150; 5 | динамический ФНЧ D по газу |
 | `dterm_notch_hz` · `dterm_notch_cutoff` | PID-профиль | 0–1000 Гц | 0 | статический режектор D |
+| `dyn_notch_count` · `dyn_notch_q` | общая | 0–5 · 1–1000 | 1 · 500 | динамический режектор: столько режекторов на ось едут за пиками спектра гироскопа (скользящее ДПФ, 64 отсчёта, окно Ханна); Q ×100. Умолчание — как BF советует при работающем RPM-фильтре (у нас он есть всегда: по модели или DShot); 0 — выключен |
+| `dyn_notch_min_hz` · `dyn_notch_max_hz` | общая | 20–250 · 200–1000 Гц | 100 · 600 | полоса поиска пиков (верх — не выше половины цикла); в проверке контура режекторы считаются стоящими на нижнем краю |
+| `rpm_filter_harmonics` · `rpm_filter_weights` | общая | 0–3 · `a,b,c` 0–100 | 3 · `100,100,100` | RPM-фильтр: гармоники оборотов 1×, 2×, проход лопастей (у 3-лопастных — 3×) и глубина каждой; 0 — выключен. По телеметрии DShot (`dshot_bidir`) — режекторы на каждый мотор, по модели — один набор на средние обороты (каждый режектор стоит фазы у полосы контура) |
+| `rpm_filter_q` · `rpm_filter_min_hz` · `rpm_filter_fade_range_hz` | общая | 250–3000 · 30–200 · 0–1000 Гц | модель: её Q · её нижний край · 0; BF: 500 · 100 · 50 | добротность ×100; ниже min режектор не работает; выше — включается плавно на полосе fade |
+| `rpm_filter_lpf_hz` | общая | 100–500 Гц | 150 | сглаживание оборотов (ФНЧ) перед режекторами |
 | `iterm_relax` | PID-профиль | `OFF`, `RP`, `RPY`, `RP_INC`, `RPY_INC` | `RPY`; BF: `RP` | на каких осях I ждёт, пока уставка резко меняется (нет отскока после флипа); `_INC` — придерживается только рост |
 | `iterm_relax_type` | PID-профиль | `GYRO`, `SETPOINT` | `SETPOINT` | `SETPOINT` — I копится медленнее; `GYRO` — I к сглаженной уставке, рядом с ней — ноль |
 | `iterm_relax_cutoff` | PID-профиль | 1–50 Гц | 10; BF: 15 | сглаживание уставки для relax: меньше — дольше ждёт |
@@ -726,7 +731,7 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 | Вход и плата | `API_VERSION`, `FC_VARIANT`, `FC_VERSION`, `BOARD_INFO`, `BUILD_INFO`, `UID`, `NAME`/`SET_NAME` | имя — `craft_name` |
 | Живые данные | `STATUS`, `STATUS_EX`, `RAW_IMU`, `ATTITUDE`, `ALTITUDE`, `ANALOG`, `BATTERY_STATE`, `RC`, `MOTOR`, `BOXNAMES`, `BOXIDS` | флаги запрета ARM — номерами BF (`status`), режимы — наша таблица |
 | PID, расходы | `PID`, `RC_TUNING`, `PID_ADVANCED` и `SET_*` | в реестр, единицы BF; тип расходов — `ACTUAL` (наша кривая), LEVEL и MAG — дефолты BF, не меняются |
-| Фильтры | `FILTER_CONFIG`, `SET_FILTER_CONFIG` | ФНЧ гироскопа и D (типы, срезы, динамика по газу), статические режекторы, `yaw_lowpass_hz` — как в BF; динамический режектор и RPM — после пунктов 060–062 |
+| Фильтры | `FILTER_CONFIG`, `SET_FILTER_CONFIG` | ФНЧ гироскопа и D (типы, срезы, динамика по газу), статические режекторы, `yaw_lowpass_hz`, динамический режектор (`dyn_notch_*`) и RPM-фильтр (`rpm_filter_harmonics`, `rpm_filter_min_hz`) — как в BF 4.5 |
 | Режимы, приёмник | `MODE_RANGES`, `SET_MODE_RANGE`, `RX_CONFIG`, `RX_MAP`, `RXFAIL_CONFIG` и `SET_*` | таблицы `aux`, `map`, `rxfail`, `serialrx_provider`, `rx_min/max_usec` |
 | Моторы, безопасность, батарея | `MOTOR_CONFIG`, `ADVANCED_CONFIG`, `FAILSAFE_CONFIG`, `ARMING_CONFIG`, `BATTERY_CONFIG`, `MIXER_CONFIG`, `FEATURE_CONFIG` и `SET_*` | `motor_poles`, `dshot_bidir`, `failsafe_*`, `small_angle`, `auto_disarm_delay`, `vbat_*`; протокол регуляторов — сборкой, features — только показываются |
 | Профили, сохранение, перезагрузка | `SELECT_SETTING`, `EEPROM_WRITE`, `REBOOT` (0 — плата, 1 — DFU), `SET_ARMING_DISABLED` | как `save` в CLI |

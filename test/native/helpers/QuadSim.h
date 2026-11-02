@@ -44,6 +44,7 @@ struct QuadPerturb
     double motorSpread = 0.0;     // разброс моторов между собой (доля, ±)
     double cgX = 0.0, cgY = 0.0;  // смещение центра тяжести, доля плеча
     double vibration = 1.0;       // множитель вибраций
+    double vibFrequency = 1.0;    // вибрация на стольких оборотах: модель оборотов ошибается
     double escDelayS = 0.0;       // сверх цикла
 };
 
@@ -68,6 +69,7 @@ struct QuadSimParams
     double accelNoiseG = 0.01;
     double vibDpsAtFull = 40.0;  // вибрация гироскопа на полном газе (амплитуда по оси)
     double vibGAtFull = 1.0;
+    double vibFrequency = 1.0;
     double imuAafHz = 400.0;     // фильтр чипа
     double baroNoiseM = 0.12;
     int blades = 3;
@@ -108,6 +110,7 @@ inline QuadSimParams quadParamsFrom(const copter::CopterTune& t, const copter::B
     s.blades = t.prop.prop.blades;
     s.vibDpsAtFull *= p.vibration;
     s.vibGAtFull *= p.vibration;
+    s.vibFrequency = p.vibFrequency;
     const double d = t.prop.prop.diameterIn * 0.0254;
     s.dragQuad = 0.5 * 1.225 * 1.0 * (0.25 * d * d + 0.004 * t.massKg);
     return s;
@@ -412,7 +415,7 @@ private:
             const double share[3] = { 1.0, 0.5, 0.35 };
             for (int h = 0; h < 3; ++h)
             {
-                vibPhase[i][h] += rotor[i] * mult[h] * dt;
+                vibPhase[i][h] += rotor[i] * par.vibFrequency * mult[h] * dt;
                 const double s = std::sin(vibPhase[i][h]) * amp * share[h];
                 vibG.x += s * vibDir[i][h].x;
                 vibG.y += s * vibDir[i][h].y;

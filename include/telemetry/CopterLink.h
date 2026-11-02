@@ -225,7 +225,7 @@ public:
             w.add("]");
         }
         w.add(",\"default\":");
-        if (info.type == ParamType::STRING) w.add("\"\"");
+        if (info.type == ParamType::STRING) w.str(CopterParams::textDefault(id));
         else number(w, info, params.defaultValue(id));
         w.add(",\"from\":\"%s\",\"units\":", fromName(info.from));
         w.str(info.units);
@@ -344,6 +344,7 @@ public:
                   v.frequencyMhz, v.powerMw, v.pit ? "true" : "false", vtx->levelMw(vtx->topAllowedLevel()));
         }
         w.add(",\"hdg\":%.0f", headingDeg);
+        spectrum(w);
         if (const char* tl = copter::trainingText(s.trainingFlags)) w.add(",\"train\":\"%s\"", tl);
         if (s.rescuePhase != RescuePhase::IDLE)
         {
@@ -383,6 +384,35 @@ public:
     }
 
 private:
+    // Спектр гироскопа (060–063): "spec":{"bw" — ширина полосы, Гц; "db" —
+    // амплитуда полос 0, bw, 2bw… (сумма осей) в дБ над 0.01 °/с; "dn" —
+    // центры динамических режекторов по осям; "rpm" — обороты моторов, Гц,
+    // "src" — откуда (dshot | model)}.
+    void spectrum(JsonWriter& w) const
+    {
+        using namespace copter;
+        const GyroFilter& f = ctl.getGyroFilter();
+        const GyroSpectrum& sp = f.getSpectrum();
+        w.add(",\"spec\":{\"bw\":%.1f,\"db\":[", sp.binWidthHz());
+        for (uint8_t k = 0; k < SDFT_BINS; ++k)
+        {
+            // у синуса амплитуды A пик окна Ханна — A·N/4
+            const float amp = sqrtf(sp.binPower(k)) * 4.0f / SDFT_SIZE;
+            const float db = amp > 0.01f ? 20.0f * log10f(amp * 100.0f) : 0.0f;
+            w.add(k ? ",%d" : "%d", static_cast<int>(lroundf(db)));
+        }
+        w.add("],\"dn\":[");
+        for (uint8_t a = 0; a < 3; ++a)
+        {
+            w.add(a ? ",[" : "[");
+            for (uint8_t i = 0; i < f.dynNotchCount(); ++i) w.add(i ? ",%.0f" : "%.0f", f.dynNotchHz(a, i));
+            w.add("]");
+        }
+        w.add("],\"rpm\":[");
+        for (uint8_t m = 0; m < f.motorCount(); ++m) w.add(m ? ",%.0f" : "%.0f", f.motorRotationHz(m));
+        w.add("],\"src\":\"%s\"}", ctl.getStatus().rpmTelemetry ? "dshot" : "model");
+    }
+
     // строки ответа на params: заголовок, настройки, @rc, @modes
     static constexpr int DUMP_LAST = copter::PARAM_COUNT + 2;
 
