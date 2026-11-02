@@ -124,6 +124,7 @@ static uint8_t outputsAtBoot = 0;   // выходов на моторы наст
 copter::BatteryMonitor battery;
 // Перегрузка регулятора и батареи по току — copter/EscGuard.h.
 copter::EscGuard escGuard;
+copter::VtxHeatWatch vtxHeat;
 static bool wasArmedForGuard = false;
 Stm32VtxPort vtxPort(Config::BOARD_VTX_PIN);
 copter::VtxController vtx(vtxPort);
@@ -604,6 +605,9 @@ static void composeOsd()
     d.blink = (millis() / 250) % 2 == 0;
     d.exitStats = sticksUp;
     d.overload = copter::overloadText(escGuard.state());
+    if (!d.overload && escGuard.limiting()) d.overload = "CURRENT LIMIT";
+    vtxHeat.update(d.armed, vtx.state(), millis());
+    d.vtxHot = vtxHeat.warn();
     d.escOverloads = escGuard.flightStats().escEvents;
     d.batteryOverloads = escGuard.flightStats().batteryEvents;
     osdStats.update(d, millis());
@@ -662,6 +666,7 @@ static void readBattery()
     if (armed && !wasArmedForGuard) escGuard.resetFlight();
     wasArmedForGuard = armed;
     escGuard.update(armed, battery.hasCurrent(), battery.amps(), 0.01f);
+    copterController.setOutputScale(escGuard.outputScale());
     autoProfile();
 }
 

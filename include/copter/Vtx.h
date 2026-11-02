@@ -175,6 +175,38 @@ namespace copter
         float temperatureC = NAN;        // Tramp
     };
 
+    // ---------------- напоминание «VTX греется» ----------------
+
+    // Передатчик без ARM стоит на столе без обдува: дольше HOT_S на
+    // мощности выше 25 мВт и не в PIT — «VTX HOT» в очках (включите
+    // vtx_low_power_disarm или PIT). Tramp сообщает температуру: выше
+    // HOT_C — сразу. ARM снимает напоминание: в полёте его обдувает.
+    class VtxHeatWatch
+    {
+    public:
+        static constexpr uint32_t HOT_S = 60;
+        static constexpr uint16_t COOL_MW = 25;
+        static constexpr float HOT_C = 70.0f;
+
+        void update(bool armed, const VtxState& st, uint32_t nowMs)
+        {
+            const bool loud = st.online && !st.pit && st.powerMw > COOL_MW;
+            if (armed || !loud)
+            {
+                sinceMs = nowMs;
+                hot = !armed && st.online && st.temperatureC >= HOT_C;
+                return;
+            }
+            hot = nowMs - sinceMs >= HOT_S * 1000u || st.temperatureC >= HOT_C;
+        }
+
+        bool warn() const { return hot; }
+
+    private:
+        uint32_t sinceMs = 0;
+        bool hot = false;
+    };
+
     // ---------------- контроллер ----------------
 
     class VtxController

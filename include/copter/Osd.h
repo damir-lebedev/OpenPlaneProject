@@ -196,7 +196,8 @@ namespace copter
         OSD_WARN_BATT_CRITICAL,
         OSD_WARN_FAIL_SAFE,
         OSD_WARN_LINK_QUALITY,
-        OSD_WARN_OVERLOAD,   // своё: ESC OVERLOAD, BATT OVERLOAD (copter/EscGuard.h)
+        OSD_WARN_OVERLOAD,   // своё: ESC OVERLOAD, BATT OVERLOAD, CURRENT LIMIT (copter/EscGuard.h)
+        OSD_WARN_VTX_HOT,    // своё: VTX без ARM и обдува греется (copter/Vtx.h, VtxHeatWatch)
         OSD_WARN_COUNT
     };
 
@@ -209,7 +210,8 @@ namespace copter
             { "batt_critical", true, "BATT CRITICAL" },
             { "fail_safe", true, "FAILSAFE и RXLOSS" },
             { "link_quality", true, "связь хуже osd_link_quality_alarm (LINK QUALITY)" },
-            { "overload", true, "перегрузка по току: ESC OVERLOAD, BATT OVERLOAD" },
+            { "overload", true, "перегрузка по току: ESC OVERLOAD, BATT OVERLOAD, CURRENT LIMIT" },
+            { "vtx_hot", true, "VTX без ARM греется на полной мощности (VTX HOT)" },
         };
         return table[w < OSD_WARN_COUNT ? w : 0];
     }
@@ -273,7 +275,8 @@ namespace copter
         const char* craftName = nullptr;
         bool blink = true;                  // фаза мигания (2 Гц): false — тревожные значения гаснут
         bool exitStats = false;             // газ или тангаж вверх — убрать статистику
-        const char* overload = nullptr;     // ESC OVERLOAD / BATT OVERLOAD (copter/EscGuard.h) или nullptr
+        const char* overload = nullptr;     // ESC OVERLOAD / BATT OVERLOAD / CURRENT LIMIT (copter/EscGuard.h) или nullptr
+        bool vtxHot = false;                // VTX без ARM греется (copter/Vtx.h, VtxHeatWatch)
         uint16_t escOverloads = 0, batteryOverloads = 0;   // за этот полёт
     };
 
@@ -414,6 +417,7 @@ namespace copter
             {
                 return "LINK QUALITY";
             }
+            if (l.warn(OSD_WARN_VTX_HOT) && !d.armed && d.vtxHot) return "VTX HOT";
             if (l.warn(OSD_WARN_BATT_NOT_FULL) && !d.armed && d.batteryNotFull) return "BATT < FULL";
             if (l.warn(OSD_WARN_ARMING_DISABLE) && !d.armed && d.armBlock) return d.armBlock;
             if (!d.armed) return "DISARMED";

@@ -323,9 +323,10 @@ public:
         }
         if (guard && battery && battery->hasCurrent())
         {
-            // перегрузка сейчас (ESC, BATT или пусто) и наибольший ток на мотор за полёт
+            // перегрузка сейчас (ESC, BATT, LIMIT — current_limit_a, или пусто) и наибольший ток на мотор за полёт
             const copter::Overload o = guard->state();
-            w.add(",\"ovl\":\"%s\",\"mma\":%.1f", o == copter::Overload::ESC ? "ESC" : o == copter::Overload::BATTERY ? "BATT" : "",
+            w.add(",\"ovl\":\"%s\",\"mma\":%.1f",
+                  o == copter::Overload::ESC ? "ESC" : o == copter::Overload::BATTERY ? "BATT" : guard->limiting() ? "LIMIT" : "",
                   guard->flightStats().maxMotorA);
         }
         if (vtx)

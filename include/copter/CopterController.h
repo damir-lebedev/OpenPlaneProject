@@ -399,6 +399,9 @@ namespace copter
         // throttle boost, ФНЧ рысканья, линеаризация и предел моторов — тоже
         // из профиля (как в BF); фильтры гироскопа и D и всё остальное
         // берутся из configure().
+        // Потолок моторов от ограничения тока (copter/EscGuard.h): 1 — нет.
+        void setOutputScale(float s) { outputScale = fminf(1.0f, fmaxf(0.0f, s)); }
+
         void applyProfile(const CopterTune& t)
         {
             tune.roll = t.roll;
@@ -756,7 +759,7 @@ namespace copter
             {
                 sum += mr.motor[i];
                 const float signal = Mixer::linearize(mr.motor[i], tune.thrustLinear) * vComp;
-                out.motor[i] = Mixer::withIdle(signal, tune.idle, tune.motorOutputLimit);
+                out.motor[i] = Mixer::withIdle(signal, tune.idle, tune.motorOutputLimit * outputScale);
             }
             avgThrust = out.count ? sum / out.count : 0.0f;
             out.spinning = true;
@@ -1420,6 +1423,7 @@ namespace copter
 
         float hover = 0.4f;
         float avgThrust = 0.0f;
+        float outputScale = 1.0f;        // current_limit_a (EscGuard::outputScale)
         float rotEstimate = 0.0f;
         float lastMixThrottle = 0.0f;
         float lastMixSpread = 0.0f;      // разброс моторов прошлого цикла (iterm_windup)

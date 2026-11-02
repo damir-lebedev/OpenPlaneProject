@@ -256,6 +256,7 @@ namespace copter
         PARAM_ESC_BURST_CURRENT_A,
         PARAM_ESC_OVERLOAD_TIME,
         PARAM_BATTERY_C_RATING,
+        PARAM_CURRENT_LIMIT_A,
         PARAM_VBAT_MIN_CELL_VOLTAGE,
         PARAM_VBAT_WARNING_CELL_VOLTAGE,
         PARAM_VBAT_MAX_CELL_VOLTAGE,
@@ -397,6 +398,7 @@ namespace copter
         PARAM_OSD_WARN_FAIL_SAFE,
         PARAM_OSD_WARN_LINK_QUALITY,
         PARAM_OSD_WARN_OVERLOAD,
+        PARAM_OSD_WARN_VTX_HOT,
         PARAM_OSD_ALT_ALARM,
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
@@ -643,6 +645,8 @@ namespace copter
               "сколько можно выше длительного тока регулятора или C батареи до предупреждения" },
             { "battery_c_rating", kInt, kMaster, kGroupCopter, 0, 300, 0, kTable, "C", nullptr, 0,
               "батарея: длительная токоотдача; ток выше C × ёмкость — BATT OVERLOAD (0 — не следить)" },
+            { "current_limit_a", kInt, kMaster, kGroupPower, 0, 500, 0, kTable, "А", nullptr, 0,
+              "ограничение общего тока: выше — потолок моторов плавно ниже, CURRENT LIMIT (0 — нет)" },
             { "vbat_min_cell_voltage", kInt, kMaster, kGroupPower, 100, 500, 0, kBattery, "x0.01 В", nullptr, 0,
               "банка ниже — батарея пуста: тревога CRITICAL" },
             { "vbat_warning_cell_voltage", kInt, kMaster, kGroupPower, 100, 500, 0, kBattery, "x0.01 В", nullptr, 0,
@@ -921,7 +925,9 @@ namespace copter
             { "osd_warn_link_quality", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "предупреждение OSD: связь хуже osd_link_quality_alarm (LINK QUALITY)" },
             { "osd_warn_overload", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
-              "предупреждение OSD: перегрузка по току — ESC OVERLOAD, BATT OVERLOAD" },
+              "предупреждение OSD: перегрузка по току — ESC OVERLOAD, BATT OVERLOAD, CURRENT LIMIT" },
+            { "osd_warn_vtx_hot", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: VTX без ARM греется на полной мощности — VTX HOT" },
             { "osd_alt_alarm", kInt, kMaster, kGroupOsd, 0, 10000, 100, kTable, "м", nullptr, 0,
               "выше — высота на OSD мигает; 0 — нет" },
             { "osd_cap_alarm", kInt, kMaster, kGroupOsd, 0, 20000, 2200, kTable, "мА·ч", nullptr, 0,
@@ -1128,6 +1134,7 @@ namespace copter
             const float capacity = value(PARAM_BAT_CAPACITY);
             c.batteryMah = capacity > 0.0f ? capacity : value(PARAM_BATTERY_MAH);
             c.motors = motors;
+            c.currentLimitA = value(PARAM_CURRENT_LIMIT_A);
             return c;
         }
 
@@ -1961,7 +1968,7 @@ namespace copter
 
     static_assert(PARAM_OSD_GPS_LON_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
     static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
-    static_assert(PARAM_OSD_WARN_OVERLOAD - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
+    static_assert(PARAM_OSD_WARN_VTX_HOT - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 
     // Раскладка OSD из настроек osd_* (copter/Osd.h).
     inline OsdLayout osdLayoutFrom(const CopterParams& p)

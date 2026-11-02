@@ -5244,6 +5244,132 @@ void test_esc_guard_params_and_osd()
     TEST_ASSERT_FALSE(has(t, "OVERLOAD"));
 }
 
+// P04b: ограничение тока current_limit_a — потолок моторов плавно вниз и
+// обратно, не ниже 30 %; в очках CURRENT LIMIT; по умолчанию выключено.
+void test_current_limit()
+{
+    EscGuardConfig c;
+    c.currentLimitA = 100.0f;
+    EscGuard g;
+    g.configure(c);
+    g.resetFlight();
+    const float dt = 0.01f;
+    auto run = [&](float amps, float seconds) {
+        for (int i = 0; i < static_cast<int>(lroundf(seconds / dt)); ++i) g.update(true, true, amps, dt);
+    };
+    run(90.0f, 1.0f);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, g.outputScale());
+    TEST_ASSERT_FALSE(g.limiting());
+    // 125 А — на 25 % выше: −100 %/с, за 0.2 с потолок 0.8
+    run(125.0f, 0.2f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.8f, g.outputScale());
+    TEST_ASSERT_TRUE(g.limiting());
+    // перегрузка не про регулятор и батарею: их не задали
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::NONE), static_cast<int>(g.state()));
+    // долго выше — не ниже 30 %
+    run(300.0f, 3.0f);
+    TEST_ASSERT_EQUAL_FLOAT(EscGuard::LIMIT_MIN, g.outputScale());
+    // у самого предела (ниже на 3 %) — держит; ниже на 10 % — возвращается +50 %/с
+    run(97.0f, 1.0f);
+    TEST_ASSERT_EQUAL_FLOAT(EscGuard::LIMIT_MIN, g.outputScale());
+    run(80.0f, 1.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.8f, g.outputScale());
+    run(80.0f, 1.0f);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, g.outputScale());
+    TEST_ASSERT_TRUE(g.flightStats().limitSeconds > 3.0f);
+    // DISARM и нет датчика — без ограничения
+    run(300.0f, 0.5f);
+    g.update(false, true, 300.0f, dt);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, g.outputScale());
+    run(300.0f, 0.5f);
+    g.update(true, false, 300.0f, dt);
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, g.outputScale());
+
+    // настройка: по умолчанию 0 — выключено, группа «Питание»
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.escGuardConfig(4).currentLimitA);
+    TEST_ASSERT_EQUAL_STRING("power", paramGroupName(paramInfo(PARAM_CURRENT_LIMIT_A).group));
+    TEST_ASSERT_TRUE(p.parse(PARAM_CURRENT_LIMIT_A, 0, "120", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(120.0f, p.escGuardConfig(4).currentLimitA);
+    p.parse(PARAM_CURRENT_LIMIT_A, 0, "0", err, sizeof(err));
+
+    // контроллер: потолок моторов на полном газу
+    Bench b;
+    TEST_ASSERT_TRUE(b.armAfterBoot());
+    b.rc.throttle = 1.0f;
+    b.run(0.3f);
+    float full = 0.0f;
+    for (uint8_t i = 0; i < b.out.count; ++i) full = fmaxf(full, b.out.motor[i]);
+    TEST_ASSERT_TRUE(full > 0.95f);
+    b.ctl.setOutputScale(0.5f);
+    b.run(0.05f);
+    const float idle = b.ctl.getTune().idle;
+    for (uint8_t i = 0; i < b.out.count; ++i) TEST_ASSERT_TRUE(b.out.motor[i] <= idle + (1.0f - idle) * 0.5f + 1e-4f);
+
+    // OSD: CURRENT LIMIT идёт тем же местом, что ESC OVERLOAD
+    OsdData d;
+    d.armed = true;
+    d.overload = "CURRENT LIMIT";
+    TEST_ASSERT_EQUAL_STRING("CURRENT LIMIT", OsdScreen::warningText(d));
+}
+
+// P04b: VTX без ARM и обдува — через минуту на мощности VTX HOT; PIT, 25 мВт,
+// ARM — тихо; Tramp сказал «горячо» — сразу.
+void test_vtx_heat_watch()
+{
+    VtxState st;
+    st.online = true;
+    st.powerMw = 400;
+    VtxHeatWatch w;
+    w.update(false, st, 0);
+    TEST_ASSERT_FALSE(w.warn());
+    w.update(false, st, 59000);
+    TEST_ASSERT_FALSE(w.warn());
+    w.update(false, st, 60000);
+    TEST_ASSERT_TRUE(w.warn());
+    // ARM — обдув, тихо; DISARM — минута заново
+    w.update(true, st, 61000);
+    TEST_ASSERT_FALSE(w.warn());
+    w.update(false, st, 62000);
+    TEST_ASSERT_FALSE(w.warn());
+    w.update(false, st, 120500);
+    TEST_ASSERT_FALSE(w.warn());
+    w.update(false, st, 122000);
+    TEST_ASSERT_TRUE(w.warn());
+    // PIT или 25 мВт — не греется
+    st.pit = true;
+    w.update(false, st, 200000);
+    TEST_ASSERT_FALSE(w.warn());
+    st.pit = false;
+    st.powerMw = 25;
+    w.update(false, st, 400000);
+    TEST_ASSERT_FALSE(w.warn());
+    // температура известна (Tramp) — выше 70 °C сразу
+    st.temperatureC = 72.0f;
+    w.update(false, st, 400100);
+    TEST_ASSERT_TRUE(w.warn());
+    // нет передатчика — молчит
+    VtxState none;
+    w.update(false, none, 500000);
+    TEST_ASSERT_FALSE(w.warn());
+
+    // OSD: только без ARM, важнее «BATT < FULL», выключается osd_warn_vtx_hot
+    OsdData d;
+    d.vtxHot = true;
+    d.batteryNotFull = true;
+    TEST_ASSERT_EQUAL_STRING("VTX HOT", OsdScreen::warningText(d));
+    d.armed = true;
+    TEST_ASSERT_NULL(OsdScreen::warningText(d));
+    d.armed = false;
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_TRUE(osdLayoutFrom(p).warn(OSD_WARN_VTX_HOT));
+    TEST_ASSERT_TRUE(p.parse(PARAM_OSD_WARN_VTX_HOT, 0, "OFF", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("BATT < FULL", OsdScreen::warningText(d, osdLayoutFrom(p)));
+    p.parse(PARAM_OSD_WARN_VTX_HOT, 0, "ON", err, sizeof(err));
+}
+
 // Статистика после полёта: копится в ARM, показывается после DISARM, уходит по стику.
 void test_osd_stats_after_flight()
 {
@@ -6147,6 +6273,8 @@ int main()
     RUN_TEST(test_battery_chemistry_params);
     RUN_TEST(test_esc_guard_overload);
     RUN_TEST(test_esc_guard_params_and_osd);
+    RUN_TEST(test_current_limit);
+    RUN_TEST(test_vtx_heat_watch);
     RUN_TEST(test_battery_betaflight_settings);
     RUN_TEST(test_battery_params_like_betaflight);
     RUN_TEST(test_throttle_limit_scales_stick_throttle);

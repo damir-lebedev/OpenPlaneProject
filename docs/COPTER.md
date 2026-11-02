@@ -311,6 +311,7 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `battery_chemistry` | общая | `LIPO`, `LIHV`, `LIION` | из сборки (Li-Po) | химия: пороги банки и напряжение под нагрузкой для модели тяги (3.75 / 3.85 / 3.5 В) |
 | `esc_current_a` · `esc_burst_current_a` | общая | 0–500 А · 0–600 А | 0 · 0 | регулятор: длительный и пиковый ток на мотор (своё, в BF нет); 0 — не следить · пиковый = 1.25 × длительного. Выше — `ESC OVERLOAD` (раздел «Защиты») |
 | `battery_c_rating` | общая | 0–300 C | 0 | батарея: длительная токоотдача; ток выше C × ёмкость — `BATT OVERLOAD`; 0 — не следить |
+| `current_limit_a` | общая | 0–500 А | 0 | ограничение общего тока (своё, в BF нет): выше — потолок моторов плавно ниже, как `motor_output_limit`, не ниже 30 %; `CURRENT LIMIT` в очках; 0 — нет |
 | `esc_overload_time` | общая | 1–600 (×0.1 с) | 50 | сколько можно выше длительного тока регулятора или C батареи до предупреждения |
 | `vbat_min_cell_voltage` `vbat_warning_cell_voltage` `vbat_max_cell_voltage` | общая | 100–500 (×0.01 В) | по химии: Li-Po 330/350/430, Li-HV 330/350/440, Li-ion 280/310/425 | банка: пуста (CRITICAL) · пора домой (WARNING; ниже без нагрузки — не армить) · полная |
 | `vbat_full_cell_voltage` | общая | 100–500 (×0.01 В) | по химии: Li-Po 410, Li-HV 425, Li-ion 410 | банка выше при подключении — батарея полная; иначе в OSD без ARM `BATT < FULL` |
@@ -332,7 +333,7 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `vtx_low_power_disarm` | общая | `OFF`, `ON`, `UNTIL_FIRST_ARM` | `OFF` | без ARM — самый слабый уровень |
 | `osd_<элемент>_pos` | общая | 0–16383 | как в BF: LQ 1,0 · режим 13,0 · спутники 24,0 · VTX 23,1 · прицел 14,6 · предупреждения 9,9 · ток 1,10 · мА·ч 8,10 · стрелка и расстояние домой 1,11 и 2,11 · высота 23,11 · батарея 1,12 · банка 8,12 · время 22,12 (показаны); газ, скорость, вариометр, имя, мощность, широта, долгота — спрятаны | позиция элемента OSD: x + 32·y, +2048 — показан. Элементы: `link_quality`, `flymode`, `gps_sats`, `vtx_channel`, `crosshairs`, `warnings`, `current`, `mah_drawn`, `home_dir`, `home_dist`, `altitude`, `vbat`, `avg_cell_voltage`, `tim_2`, `throttle`, `gps_speed`, `vario_num`, `craft_name`, `power`, `gps_lat`, `gps_lon` |
 | `osd_stat_<строка>` | общая | `OFF`, `ON` | `ON`, кроме `endbatt` | статистика после посадки: `tim_2`, `max_alt`, `max_spd`, `max_dist`, `min_batt`, `endbatt`, `used_mah`, `max_curr`, `min_link_quality`, `overload` (своё: перегрузки по току, если были) |
-| `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality`, `overload` (своё: `ESC OVERLOAD`, `BATT OVERLOAD`) |
+| `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality`, `overload` (своё: `ESC OVERLOAD`, `BATT OVERLOAD`, `CURRENT LIMIT`), `vtx_hot` (своё: `VTX HOT` — без ARM передатчик греется) |
 | `osd_alt_alarm` · `osd_cap_alarm` · `osd_link_quality_alarm` | общая | 0–10000 м · 0–20000 мА·ч · 0–100 % | 100 · 2200 · 80 | за порогом значение мигает (LQ — и предупреждение LINK QUALITY); 0 — нет |
 | `gps_minimum_sats` | общая | 4–50 | 8 | дом ставится при ARM, если спутников не меньше |
 | `crsf_telemetry` | общая | `OFF`, `ON` | `ON` | телеметрия в пульт по CRSF |
@@ -825,7 +826,17 @@ CRSF, видеопередатчик с потолком мощности, ту�
   Предупреждение держится 2 с после конца. Газ не отнимается — лучше
   предупредить, чем лишить тяги в воздухе. Studio заранее, по модели
   тяги, пишет, хватит ли регулятора и батареи на полный газ; в живых
-  кадрах — `ovl` (ESC, BATT) и `mma` (наибольший ток на мотор за полёт).
+  кадрах — `ovl` (ESC, BATT, LIMIT) и `mma` (наибольший ток на мотор за полёт).
+- **Ограничение тока** (`current_limit_a`, своё, выключено по умолчанию):
+  общий ток выше предела — потолок моторов опускается (на 25 % выше —
+  на 100 %/с), ниже предела на 5 % — возвращается на 50 %/с; не ниже 30 %
+  хода. Пока ограничивает — `CURRENT LIMIT` в очках. Studio предлагает
+  предел кнопкой, когда полный газ просит больше, чем выдержат батарея
+  (C × ёмкость) или регуляторы (длительный × моторы).
+- **«VTX греется»** (`copter/Vtx.h`, `VtxHeatWatch`): без ARM передатчик не
+  обдувает — дольше минуты выше 25 мВт и не в PIT — `VTX HOT` в очках
+  (`osd_warn_vtx_hot`); Tramp сообщает температуру — выше 70 °C сразу.
+  Лечится `vtx_low_power_disarm = ON` или режимом VTX PIT MODE.
 
 ## Что внутри — коротко
 
