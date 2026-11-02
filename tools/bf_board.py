@@ -521,7 +521,8 @@ def probe(port, wait=1.0):
 
 
 def enter_dfu(port):
-    """Betaflight сам уходит в загрузчик DFU: CLI, команда bl (BOOT зажимать не нужно)."""
+    """Betaflight или INAV сам уходит в загрузчик DFU (BOOT зажимать не нужно):
+    CLI, команда bl (Betaflight); INAV её не знает и уходит по dfu."""
     with open_serial(port) as s:
         s.write(b"#")
         time.sleep(0.5)
@@ -529,6 +530,12 @@ def enter_dfu(port):
         s.write(b"bl\r\n")
         s.flush()
         time.sleep(0.3)
+        try:
+            s.write(b"dfu\r\n")   # Betaflight уже перезагружается — порта нет
+            s.flush()
+            time.sleep(0.3)
+        except Exception:
+            pass
 
 
 def read_cli(port, out_path, timeout=8.0):
