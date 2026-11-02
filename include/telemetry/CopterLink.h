@@ -318,7 +318,8 @@ public:
               s.altitude, s.climbRate, s.throttle, s.volts);
         if (battery)
         {
-            w.add(",\"bat\":\"%s\",\"cell\":%.2f", copter::batteryStateName(battery->state()), battery->cellVolts());
+            w.add(",\"bat\":\"%s\",\"cell\":%.2f,\"full\":%s", copter::batteryStateName(battery->state()), battery->cellVolts(),
+                  battery->wasFullWhenPluggedIn() ? "true" : "false");
             if (battery->hasCurrent()) w.add(",\"amps\":%.1f,\"mah\":%.0f", battery->amps(), battery->mahDrawn());
         }
         if (guard && battery && battery->hasCurrent())

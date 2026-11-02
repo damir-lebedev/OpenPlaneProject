@@ -109,6 +109,7 @@ namespace copter
         OSD_POWER,
         OSD_GPS_LAT,
         OSD_GPS_LON,
+        OSD_PREFLIGHT,   // своё: до ARM — батарея, GPS, пульт одной строкой (P08)
         OSD_ELEMENT_COUNT
     };
 
@@ -143,6 +144,7 @@ namespace copter
             { "power", osdPos(15, 10, false), "мощность, Вт" },
             { "gps_lat", osdPos(1, 3, false), "широта — найти упавший" },
             { "gps_lon", osdPos(1, 4, false), "долгота" },
+            { "preflight", osdPos(1, 8), "до ARM: батарея, GPS, пульт (BATT OK  GPS OK  RX OK)" },
         };
         return table[e < OSD_ELEMENT_COUNT ? e : 0];
     }
@@ -535,10 +537,28 @@ namespace copter
                     snprintf(s, n, "%.7f", e == OSD_GPS_LAT ? d.latitude : d.longitude);
                     print(y, static_cast<uint8_t>(x + 1), s);
                     return;
+                case OSD_PREFLIGHT:
+                    if (d.armed) return;
+                    preflightText(d, s, n);
+                    print(y, x, s);
+                    return;
                 case OSD_ELEMENT_COUNT:
                 default:
                     return;
             }
+        }
+
+        // Короткий список перед ARM (P08): что не готово — словом, готово — OK.
+        // Не больше 28 знаков: «NOT FULL  GPS WAIT  NO RADIO».
+        static void preflightText(const OsdData& d, char* s, size_t n)
+        {
+            const char* bat = nullptr;
+            if (d.batteryState >= 2) bat = "BATT LOW";
+            else if (d.batteryNotFull) bat = "NOT FULL";
+            else if (d.batteryState == 1) bat = "BATT OK";
+            const char* gps = d.gpsPresent ? (d.gpsFix ? "GPS OK" : "GPS WAIT") : nullptr;
+            const char* rx = d.linkLost ? "NO RADIO" : "RX OK";
+            snprintf(s, n, "%s%s%s%s%s", bat ? bat : "", bat ? "  " : "", gps ? gps : "", gps ? "  " : "", rx);
         }
 
         void composeStats(const OsdStats& st, const OsdLayout& l)

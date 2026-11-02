@@ -4932,6 +4932,33 @@ void test_osd_arrows_and_warnings()
     TEST_ASSERT_EQUAL_HEX8(0x6C, osdArrow(-90.0f));   // налево
     TEST_ASSERT_EQUAL_HEX8(0x67, osdArrow(20.0f));    // чуть правее — соседняя
 
+    {
+        // перед полётом (P08): одна строка до ARM, после ARM — пусто
+        OsdData p;
+        OsdScreen scr;
+        scr.compose(p);
+        char row[OsdScreen::COLS + 1] = {};
+        auto line = [&](uint8_t y, uint8_t x, uint8_t len) {
+            for (uint8_t i = 0; i < len; ++i) row[i] = static_cast<char>(scr.at(y, static_cast<uint8_t>(x + i)));
+            row[len] = 0;
+            return row;
+        };
+        TEST_ASSERT_EQUAL_STRING("BATT OK  RX OK", line(8, 1, 14));
+        p.batteryNotFull = true;
+        p.gpsPresent = true;
+        p.linkLost = true;
+        scr.compose(p);
+        TEST_ASSERT_EQUAL_STRING("NOT FULL  GPS WAIT  NO RADIO", line(8, 1, 28));
+        p.batteryState = 3;
+        p.gpsFix = true;
+        p.linkLost = false;
+        scr.compose(p);
+        TEST_ASSERT_EQUAL_STRING("BATT LOW  GPS OK  RX OK", line(8, 1, 23));
+        p.armed = true;
+        scr.compose(p);
+        TEST_ASSERT_EQUAL_STRING("                       ", line(8, 1, 23));
+    }
+
     OsdData d;
     d.armed = true;
     TEST_ASSERT_NULL(OsdScreen::warningText(d));

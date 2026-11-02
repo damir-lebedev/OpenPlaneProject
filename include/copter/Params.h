@@ -381,6 +381,7 @@ namespace copter
         PARAM_OSD_POWER_POS,
         PARAM_OSD_GPS_LAT_POS,
         PARAM_OSD_GPS_LON_POS,
+        PARAM_OSD_PREFLIGHT_POS,
         PARAM_OSD_STAT_TIM_2,
         PARAM_OSD_STAT_MAX_ALT,
         PARAM_OSD_STAT_MAX_SPD,
@@ -892,6 +893,8 @@ namespace copter
               "OSD: широта — найти упавший — x + 32·y, +2048 — показан" },
             { "osd_gps_lon_pos", kInt, kMaster, kGroupOsd, 0, 16383, 129, kTable, "", nullptr, 0,
               "OSD: долгота — x + 32·y, +2048 — показан" },
+            { "osd_preflight_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2305, kTable, "", nullptr, 0,
+              "OSD: до ARM — батарея, GPS, пульт одной строкой (своё) — x + 32·y, +2048 — показан" },
             { "osd_stat_tim_2", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "статистика после полёта: время в полёте" },
             { "osd_stat_max_alt", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
@@ -1966,7 +1969,7 @@ namespace copter
         uint8_t rateIndex = 0;
     };
 
-    static_assert(PARAM_OSD_GPS_LON_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
+    static_assert(PARAM_OSD_PREFLIGHT_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
     static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
     static_assert(PARAM_OSD_WARN_VTX_HOT - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 
