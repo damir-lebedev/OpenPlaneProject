@@ -390,17 +390,30 @@ namespace copter
             // Разомкнутый контур при P = 1: C(jω)·K/(jω(1+jωτ))·e^(−jωT)·фильтры.
             Cx at(float w) const
             {
-                const Cx jw = { 0.0f, w };
+                const Cx one = { 1.0f, 0.0f };
+                Cx c = one + Cx{ 0.0f, -iRatio };   // I: ωI = ω·iRatio -> ωI/(jω) = −j·iRatio
+                if (dRatio > 0.0f) c = c + dPath(w, dRatio, tauM);
+                return c * plant(w) * delay(w);
+            }
+
+            // D-путь регулятора на d = a·b (с): jωd через ФНЧ D и полцикла задержки
+            // (производная — разность соседних отсчётов).
+            Cx dPath(float w, float a, float b) const
+            {
                 const Cx one = { 1.0f, 0.0f };
                 const float wd = 2.0f * PI_F * dtermHz;
-                Cx c = one + Cx{ 0.0f, -iRatio };   // I: ωI = ω·iRatio -> ωI/(jω) = −j·iRatio
-                if (dRatio > 0.0f)
-                {
-                    // производная — разность соседних отсчётов: ещё полцикла задержки
-                    const float half = 0.5f / loopHz;
-                    const Cx dDelay = { cosf(-w * half), sinf(-w * half) };
-                    c = c + (Cx{ 0.0f, w * dRatio * tauM } / (one + Cx{ 0.0f, w / wd })) * dDelay;
-                }
+                const float half = 0.5f / loopHz;
+                const Cx dDelay = { cosf(-w * half), sinf(-w * half) };
+                return (Cx{ 0.0f, w * a * b } / (one + Cx{ 0.0f, w / wd })) * dDelay;
+            }
+
+            Cx delay(float w) const { return { cosf(-w * delayS), sinf(-w * delayS) }; }
+
+            // Объект с фильтрами гироскопа, режекторами и ФНЧ выхода, без задержки.
+            Cx plant(float w) const
+            {
+                const Cx jw = { 0.0f, w };
+                const Cx one = { 1.0f, 0.0f };
                 Cx plant = Cx{ k, 0.0f } / (jw * (one + Cx{ 0.0f, w * tauM }));
                 const float wg = 2.0f * PI_F * gyroHz * 1.553774f;
                 const Cx g = one + Cx{ 0.0f, w / wg };
@@ -413,8 +426,7 @@ namespace copter
                     plant = plant * (Cx{ re, 0.0f } / Cx{ re, x / notchQ });
                 }
                 if (outHz > 0.0f) plant = plant / (one + Cx{ 0.0f, w / (2.0f * PI_F * outHz) });
-                const Cx delay = { cosf(-w * delayS), sinf(-w * delayS) };
-                return c * plant * delay;
+                return plant;
             }
 
             // Фаза с развёрткой (непрерывная по частоте), градусы.
@@ -483,6 +495,98 @@ namespace copter
             pm = 180.0f + s.phaseDeg(wc);
             gmDb = w180 > 0.0f ? -20.0f * log10f(p * s.at(w180).abs()) : 60.0f;
         }
+    }
+
+    // Запасы контура для PID, которые реально работают (заданы руками,
+    // ползунками simplified_*, дефолты BF): та же модель коптера, что у
+    // deriveTune, но регулятор — P + I/(jω) + D·jω по самим коэффициентам.
+    // Худшее из осей; рысканье с integrated yaw не проверяется.
+    struct LoopCheck
+    {
+        float gainMarginDb = 60.0f;
+        float phaseMarginDeg = 180.0f;
+        float crossoverHz = 0.0f;   // крен/тангаж — меньшая из двух
+    };
+
+    // Запас по усилению меньше — коптер на ошибке модели (до 2×) раскачается.
+    constexpr float MIN_GAIN_MARGIN_DB = 6.0f;
+
+    namespace detail
+    {
+        // Развёртка по частоте (рад/с, по логарифму): срез — где |L| падает
+        // ниже 1, запас по фазе на нём; запас по усилению — где фаза выше
+        // среза впервые доходит до −180°.
+        inline void checkAxis(const LoopShape& s, const AxisGains& g, float dGain, float& gmDb, float& pmDeg, float& wc)
+        {
+            constexpr float toRad = 180.0f / PI_F;   // наши коэффициенты — на °/с
+            const float p = g.p * toRad, i = g.i * toRad, d = dGain * toRad;
+            const auto open = [&](float w) {
+                Cx c = { p, -i / w };
+                if (d > 0.0f) c = c + s.dPath(w, d, 1.0f);
+                return c * s.plant(w) * s.delay(w);
+            };
+            constexpr int STEPS = 400;
+            const float w0 = 1.0f, w1 = 2.0f * PI_F * s.loopHz;
+            const float ratio = powf(w1 / w0, 1.0f / STEPS);
+            float w = w0;
+            Cx l = open(w);
+            float mag = l.abs(), phase = l.arg() * 180.0f / PI_F, prevArg = l.arg();
+            wc = 0.0f;
+            gmDb = 60.0f;
+            pmDeg = 180.0f;
+            for (int k = 1; k <= STEPS; ++k)
+            {
+                const float wn = w * ratio;
+                const Cx ln = open(wn);
+                float da = ln.arg() - prevArg;
+                while (da > PI_F) da -= 2.0f * PI_F;
+                while (da < -PI_F) da += 2.0f * PI_F;
+                prevArg = ln.arg();
+                const float magN = ln.abs(), phaseN = phase + da * 180.0f / PI_F;
+                if (wc == 0.0f && mag >= 1.0f && magN < 1.0f)
+                {
+                    const float f = logf(mag) / (logf(mag) - logf(magN));   // доля шага до |L| = 1
+                    wc = w * powf(ratio, f);
+                    pmDeg = 180.0f + phase + f * (phaseN - phase);
+                }
+                if (wc > 0.0f && phase > -180.0f && phaseN <= -180.0f)
+                {
+                    const float f = (phase + 180.0f) / (phase - phaseN);
+                    gmDb = -20.0f * log10f(mag * powf(magN / mag, f));
+                    return;
+                }
+                w = wn;
+                mag = magN;
+                phase = phaseN;
+            }
+        }
+    }
+
+    inline LoopCheck checkLoop(const CopterTune& t)
+    {
+        LoopCheck r;
+        detail::LoopShape s{ 0.0f, t.motorTauS, 1.5f / t.loopHz + t.escDelayS + 0.0005f, t.gyroLpfHz, t.dtermLpfHz, 0.0f, 0.0f, 0.0f };
+        s.loopHz = t.loopHz;
+        s.notchQ = t.notchQ;
+        notchCenters(t.rotHzHover, t.prop.prop.blades, t.minNotchHz, s.notchHz);
+        const AxisGains* gains[3] = { &t.roll, &t.pitch, &t.yaw };
+        const float k[3] = { t.kRoll, t.kPitch, t.kYaw };
+        r.crossoverHz = 1e9f;
+        for (uint8_t a = 0; a < 3; ++a)
+        {
+            if (a == 2 && t.pid.integratedYaw) continue;
+            s.k = k[a];
+            s.outHz = a == 2 ? t.yawLpfHz : 0.0f;
+            // D на манёвре (d_max) больше D в покое — запас по нему
+            const float d = fmaxf(gains[a]->d, t.pid.dMax[a]);
+            float gm, pm, wc;
+            detail::checkAxis(s, *gains[a], d, gm, pm, wc);
+            r.gainMarginDb = fminf(r.gainMarginDb, gm);
+            r.phaseMarginDeg = fminf(r.phaseMarginDeg, pm);
+            if (a < 2) r.crossoverHz = fminf(r.crossoverHz, wc / (2.0f * PI_F));
+        }
+        if (r.crossoverHz > 1e8f) r.crossoverHz = 0.0f;
+        return r;
     }
 
     // Запас по усилению контура угловой скорости. Модель знает коптер с

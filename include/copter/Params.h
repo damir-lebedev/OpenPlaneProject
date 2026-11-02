@@ -115,6 +115,14 @@ namespace copter
         BETAFLIGHT,   // дефолты Betaflight 4.5
     };
 
+    // simplified_pids_mode: на каких осях работают ползунки PID (как в BF).
+    enum class SimplifiedMode : uint8_t
+    {
+        OFF,
+        RP,
+        RPY,
+    };
+
     // Откуда умолчание настройки.
     enum class ParamDefault : uint8_t
     {
@@ -167,6 +175,19 @@ namespace copter
         PARAM_D_MIN_ROLL,
         PARAM_D_MIN_PITCH,
         PARAM_D_MIN_YAW,
+        PARAM_SIMPLIFIED_PIDS_MODE,
+        PARAM_SIMPLIFIED_MASTER_MULTIPLIER,
+        PARAM_SIMPLIFIED_I_GAIN,
+        PARAM_SIMPLIFIED_D_GAIN,
+        PARAM_SIMPLIFIED_PI_GAIN,
+        PARAM_SIMPLIFIED_DMAX_GAIN,
+        PARAM_SIMPLIFIED_FEEDFORWARD_GAIN,
+        PARAM_SIMPLIFIED_PITCH_D_GAIN,
+        PARAM_SIMPLIFIED_PITCH_PI_GAIN,
+        PARAM_SIMPLIFIED_DTERM_FILTER,
+        PARAM_SIMPLIFIED_DTERM_FILTER_MULTIPLIER,
+        PARAM_SIMPLIFIED_GYRO_FILTER,
+        PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER,
         PARAM_ITERM_RELAX,
         PARAM_ITERM_RELAX_TYPE,
         PARAM_ITERM_RELAX_CUTOFF,
@@ -418,6 +439,7 @@ namespace copter
         static const char* const RESCUE_ALT_MODES[] = { "MAX_ALT", "FIXED_ALT", "CURRENT_ALT" };
         static const char* const RESCUE_SANITY[] = { "OFF", "ON", "FS_ONLY" };
         static const char* const CRASH_RECOVERY[] = { "OFF", "ON", "BEEP", "DISARM" };   // как CrashRecovery
+        static const char* const SIMPLIFIED_MODES[] = { "OFF", "RP", "RPY" };   // как SimplifiedMode
         uint8_t buildCount = 0;
         const char* const* builds = buildIds(buildCount);
         constexpr ParamType kInt = ParamType::INT, kFloat = ParamType::FLOAT, kEnum = ParamType::ENUM,
@@ -462,6 +484,32 @@ namespace copter
               "как в BF 4.5: D тангажа в покое, d_pitch — на резком движении; 0 — нет" },
             { "d_min_yaw", kInt, kPid, kGroupPid, 0, 250, 0, kTune, "BF", nullptr, 0,
               "как в BF 4.5: D рысканья в покое, d_yaw — на резком движении; 0 — нет" },
+            { "simplified_pids_mode", kEnum, kPid, kGroupPid, 0, 2, 2, kTable, "", SIMPLIFIED_MODES, 3,
+              "ползунки PID: RPY — на всех осях, RP — без рысканья, OFF — PID только числами" },
+            { "simplified_master_multiplier", kInt, kPid, kGroupPid, 0, 200, 100, kTable, "%", nullptr, 0,
+              "ползунок «общий»: P, I, D и FF вместе — отзывчивость" },
+            { "simplified_i_gain", kInt, kPid, kGroupPid, 0, 200, 100, kTable, "%", nullptr, 0,
+              "ползунок I: как держит курс при ветре и смещённом центре тяжести" },
+            { "simplified_d_gain", kInt, kPid, kGroupPid, 0, 200, 100, kTable, "%", nullptr, 0,
+              "ползунок D (демпфирование): меньше отскока, но больше шума на моторах" },
+            { "simplified_pi_gain", kInt, kPid, kGroupPid, 0, 200, 100, kTable, "%", nullptr, 0,
+              "ползунок P и I вместе: жёсткость отслеживания" },
+            { "simplified_dmax_gain", kInt, kPid, kGroupPid, 0, 200, 100, kTable, "%", nullptr, 0,
+              "ползунок «D на резком движении»: насколько D растёт от покоя (d_min) к манёвру" },
+            { "simplified_feedforward_gain", kInt, kPid, kGroupPid, 0, 200, 100, kTable, "%", nullptr, 0,
+              "ползунок FF: отклик на стик без ожидания ошибки — резче или мягче" },
+            { "simplified_pitch_d_gain", kInt, kPid, kGroupPid, 0, 200, 100, kTable, "%", nullptr, 0,
+              "D тангажа относительно крена" },
+            { "simplified_pitch_pi_gain", kInt, kPid, kGroupPid, 0, 200, 100, kTable, "%", nullptr, 0,
+              "P и I тангажа относительно крена" },
+            { "simplified_dterm_filter", kEnum, kPid, kGroupFilters, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "ползунок фильтра D: ON — срез ФНЧ D из модели × множитель" },
+            { "simplified_dterm_filter_multiplier", kInt, kPid, kGroupFilters, 10, 200, 100, kTable, "%", nullptr, 0,
+              "фильтр D: больше — меньше задержка, но больше шума на моторах" },
+            { "simplified_gyro_filter", kEnum, kMaster, kGroupFilters, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "ползунок фильтра гироскопа: ON — срез ФНЧ из модели × множитель" },
+            { "simplified_gyro_filter_multiplier", kInt, kMaster, kGroupFilters, 10, 200, 100, kTable, "%", nullptr, 0,
+              "фильтр гироскопа: больше — меньше задержка, но вибрации проходят в PID" },
             { "iterm_relax", kEnum, kPid, kGroupPid, 0, 4, 0, kTune, "", ITERM_RELAX, 5,
               "оси, на которых I ждёт, пока уставка резко меняется (нет отскока после флипа); _INC — только рост" },
             { "iterm_relax_type", kEnum, kPid, kGroupPid, 0, 1, 1, kTable, "", ITERM_RELAX_TYPES, 2,
@@ -1134,13 +1182,40 @@ namespace copter
         }
 
         // ---- значения ----
-        float defaultValue(ParamId id) const { return defaults[id]; }
+        // Умолчание в профиле: у P/I/D/F и d_min оно своё в каждом
+        // PID-профиле (ползунки simplified_* — множители поверх модели/BF).
+        float defaultIn(ParamId id, uint8_t slot) const
+        {
+            const int k = scaledIndex(id);
+            return k >= 0 && slot < PROFILES ? scaledDefaults[k][slot] : defaults[id];
+        }
+        float defaultValue(ParamId id) const { return defaultIn(id, activeSlot(id)); }
+
+        // Множитель ползунков simplified_* для члена PID на оси (1 — не трогают).
+        float simplifiedFactor(uint8_t slot, uint8_t axis, PidTerm term) const
+        {
+            const auto pct = [&](ParamId id) { return valueIn(id, slot) / 100.0f; };
+            const SimplifiedMode mode = static_cast<SimplifiedMode>(static_cast<uint8_t>(valueIn(PARAM_SIMPLIFIED_PIDS_MODE, slot)));
+            if (mode == SimplifiedMode::OFF || (mode == SimplifiedMode::RP && axis == 2)) return 1.0f;
+            const bool pitch = axis == 1;
+            const float master = pct(PARAM_SIMPLIFIED_MASTER_MULTIPLIER);
+            switch (term)
+            {
+                case PidTerm::P: return master * pct(PARAM_SIMPLIFIED_PI_GAIN) * (pitch ? pct(PARAM_SIMPLIFIED_PITCH_PI_GAIN) : 1.0f);
+                case PidTerm::I:
+                    return master * pct(PARAM_SIMPLIFIED_PI_GAIN) * pct(PARAM_SIMPLIFIED_I_GAIN) *
+                           (pitch ? pct(PARAM_SIMPLIFIED_PITCH_PI_GAIN) : 1.0f);
+                case PidTerm::D: return master * pct(PARAM_SIMPLIFIED_D_GAIN) * (pitch ? pct(PARAM_SIMPLIFIED_PITCH_D_GAIN) : 1.0f);
+                case PidTerm::F:
+                default: return master * pct(PARAM_SIMPLIFIED_FEEDFORWARD_GAIN);
+            }
+        }
         bool isSet(ParamId id, uint8_t slot) const
         {
             if (paramInfo(id).type == ParamType::STRING) return text(id, slot)[0] != '\0';
             return slot < PROFILES && (setMask[id] >> slot) & 1u;
         }
-        float valueIn(ParamId id, uint8_t slot) const { return isSet(id, slot) ? values[id][slot] : defaults[id]; }
+        float valueIn(ParamId id, uint8_t slot) const { return isSet(id, slot) ? values[id][slot] : defaultIn(id, slot); }
 
         // auto_profile_cell_count: PID-профиль для батареи из стольких банок; -1 — такого нет.
         int profileForCells(uint8_t cells) const
@@ -1166,7 +1241,7 @@ namespace copter
             const ParamInfo& info = paramInfo(id);
             if (slot >= PROFILES || info.type == ParamType::STRING || !(v >= info.min && v <= info.max)) return false;
             if (info.type != ParamType::FLOAT) v = roundf(v);
-            if (v == defaults[id])
+            if (v == defaultIn(id, slot))
             {
                 setMask[id] &= static_cast<uint8_t>(~(1u << slot));
             }
@@ -1175,7 +1250,7 @@ namespace copter
                 values[id][slot] = v;
                 setMask[id] |= static_cast<uint8_t>(1u << slot);
             }
-            if (id == PARAM_TUNE_SOURCE || id == PARAM_COPTER_BUILD || id == PARAM_BATTERY_CHEMISTRY) refreshDefaults();
+            if (movesDefaults(id)) refreshDefaults();
             return true;
         }
 
@@ -1192,7 +1267,7 @@ namespace copter
             char* s = stringSlot(id, slot);
             if (s) s[0] = '\0';
             if (slot < PROFILES) setMask[id] &= static_cast<uint8_t>(~(1u << slot));
-            if (id == PARAM_TUNE_SOURCE || id == PARAM_COPTER_BUILD || id == PARAM_BATTERY_CHEMISTRY) refreshDefaults();
+            if (movesDefaults(id)) refreshDefaults();
         }
 
         // Всё по умолчанию, профили 0, таблицы пульта пусты (как `defaults`
@@ -1291,7 +1366,7 @@ namespace copter
                 snprintf(out, size, "%s", "");
                 return;
             }
-            formatNumber(info, defaults[id], out, size);
+            formatNumber(info, defaultValue(id), out, size);
         }
 
         static void formatNumber(const ParamInfo& info, float v, char* out, size_t size)
@@ -1330,6 +1405,12 @@ namespace copter
             t.pid.integratedYaw = integrated;
             t.pid.integratedYawRelax = valueIn(PARAM_INTEGRATED_YAW_RELAX, pidIndex);
             if (bf) applyBetaflightBase(t);
+            // ползунки фильтров: срез модели (или BF) × множитель, не выше 0.45 цикла
+            if (value(PARAM_SIMPLIFIED_GYRO_FILTER) > 0.5f)
+                t.gyroLpfHz = fminf(0.45f * t.loopHz, t.gyroLpfHz * value(PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER) / 100.0f);
+            if (valueIn(PARAM_SIMPLIFIED_DTERM_FILTER, pidIndex) > 0.5f)
+                t.dtermLpfHz =
+                    fminf(0.45f * t.loopHz, t.dtermLpfHz * valueIn(PARAM_SIMPLIFIED_DTERM_FILTER_MULTIPLIER, pidIndex) / 100.0f);
             AxisGains* gains[3] = { &t.roll, &t.pitch, &t.yaw };
             for (uint8_t axis = 0; axis < 3; ++axis)
             {
@@ -1342,6 +1423,13 @@ namespace copter
                     {
                         gainTerm(*gains[axis], term) = bfToGain(term, axis, valueIn(id, pidIndex));
                         t.gainsFromModel = false;
+                    }
+                    else
+                    {
+                        // модель без округления до чисел BF, ползунки — поверх
+                        const float f = simplifiedFactor(pidIndex, axis, term);
+                        gainTerm(*gains[axis], term) *= f;
+                        if (f != 1.0f) t.gainsFromModel = false;
                     }
                 }
                 if (axis == betaflight::AXIS_YAW && integrated) integratedYawTerms(t.yaw, model.yaw, bf);
@@ -1599,15 +1687,33 @@ namespace copter
             const AxisGains* gains[3] = { &model.roll, &model.pitch, &model.yaw };
             for (uint8_t axis = 0; axis < 3; ++axis)
             {
+                float baseGain[4];
                 for (uint8_t k = 0; k < 4; ++k)
                 {
                     const PidTerm term = static_cast<PidTerm>(k);
                     const ParamId id = pidParam(axis, term);
-                    const ParamInfo& info = paramInfo(id);
-                    const float v = bf ? betaflight::DEFAULT_PID[axis][k] : roundf(gainToBf(term, axis, gainTerm(*gains[axis], term)));
-                    defaults[id] = fminf(info.max, fmaxf(info.min, v));
+                    baseGain[k] = bf ? betaflight::DEFAULT_PID[axis][k] : gainToBf(term, axis, gainTerm(*gains[axis], term));
+                    defaults[id] = clampTo(id, roundf(baseGain[k]));
                 }
-                defaults[PARAM_D_MIN_ROLL + axis] = bf ? betaflight::DEFAULT_D_MIN[axis] : 0.0f;
+                const float dMin = bf ? betaflight::DEFAULT_D_MIN[axis] : 0.0f;
+                defaults[PARAM_D_MIN_ROLL + axis] = dMin;
+                // ползунки: P, I, F — множитель; D в покое (d_min) — множитель D,
+                // а прибавка D на движении — ещё и simplified_dmax_gain
+                for (uint8_t slot = 0; slot < PROFILES; ++slot)
+                {
+                    for (uint8_t k = 0; k < 4; ++k)
+                    {
+                        const PidTerm term = static_cast<PidTerm>(k);
+                        const ParamId id = pidParam(axis, term);
+                        const float f = simplifiedFactor(slot, axis, term);
+                        float v = baseGain[k] * f;
+                        if (term == PidTerm::D && dMin > 0.0f && dMin < baseGain[k])
+                            v = (dMin + (baseGain[k] - dMin) * valueIn(PARAM_SIMPLIFIED_DMAX_GAIN, slot) / 100.0f) * f;
+                        scaledDefaults[scaledIndex(id)][slot] = clampTo(id, roundf(v));
+                    }
+                    const ParamId dMinId = static_cast<ParamId>(PARAM_D_MIN_ROLL + axis);
+                    scaledDefaults[scaledIndex(dMinId)][slot] = clampTo(dMinId, roundf(dMin * simplifiedFactor(slot, axis, PidTerm::D)));
+                }
                 const RateCurve& r = model.rates[axis];
                 defaults[PARAM_ROLL_RC_RATE + axis] = bf ? betaflight::DEFAULT_RC_RATE : fmaxf(1.0f, roundf(r.centerDps / 10.0f));
                 defaults[PARAM_ROLL_SRATE + axis] = bf ? betaflight::DEFAULT_SRATE : fminf(255.0f, roundf(r.maxDps / 10.0f));
@@ -1647,6 +1753,28 @@ namespace copter
             BuildSpec b = c[index < n ? index : 0];
             if (fileOverrides) fileOverrides(b);
             return b;
+        }
+
+        // P/I/D/F трёх осей и d_min — умолчания по профилям (ползунки).
+        static constexpr uint8_t SCALED_COUNT = 15;
+        static int scaledIndex(ParamId id)
+        {
+            if (id >= PARAM_P_ROLL && id <= PARAM_F_YAW) return id - PARAM_P_ROLL;
+            if (id >= PARAM_D_MIN_ROLL && id <= PARAM_D_MIN_YAW) return 12 + (id - PARAM_D_MIN_ROLL);
+            return -1;
+        }
+
+        static float clampTo(ParamId id, float v)
+        {
+            const ParamInfo& info = paramInfo(id);
+            return fminf(info.max, fmaxf(info.min, v));
+        }
+
+        // От этих настроек зависят умолчания других.
+        static bool movesDefaults(ParamId id)
+        {
+            return id == PARAM_TUNE_SOURCE || id == PARAM_COPTER_BUILD || id == PARAM_BATTERY_CHEMISTRY ||
+                   (id >= PARAM_SIMPLIFIED_PIDS_MODE && id <= PARAM_SIMPLIFIED_PITCH_PI_GAIN);
         }
 
         static bool sameBuild(const BuildSpec& a, const BuildSpec& b)
@@ -1716,6 +1844,7 @@ namespace copter
         RcConfig rcConfig;
         float tableDefaults[PARAM_COUNT] = {};
         float defaults[PARAM_COUNT] = {};
+        float scaledDefaults[SCALED_COUNT][PROFILES] = {};
         float values[PARAM_COUNT][PROFILES];
         uint8_t setMask[PARAM_COUNT];
         char names[2][PROFILES][NAME_LENGTH + 1];

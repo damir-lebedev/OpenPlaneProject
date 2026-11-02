@@ -616,6 +616,14 @@ namespace copter
             }
             dirty = true;
             printValue(id);
+            const ParamGroup g = paramInfo(id).group;
+            if (g == ParamGroup::PID || g == ParamGroup::FILTERS)
+            {
+                const LoopCheck c = checkLoop(params.tune());
+                if (c.gainMarginDb < MIN_GAIN_MARGIN_DB)
+                    print("# внимание: запас по усилению %.1f дБ (меньше %.0f) — коптер может раскачиваться\r\n",
+                          static_cast<double>(c.gainMarginDb), static_cast<double>(MIN_GAIN_MARGIN_DB));
+            }
         }
 
         void cmdGet(const char* args)

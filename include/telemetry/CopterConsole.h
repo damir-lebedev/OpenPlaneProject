@@ -569,8 +569,13 @@ private:
         io.printf("Фильтры: гироскоп %.0f Гц, D %.0f Гц, рысканье %.0f Гц, режекторы от %.0f Гц (Q %.1f)\n", t.gyroLpfHz,
                   t.dtermLpfHz, t.yawLpfHz, t.minNotchHz, t.notchQ);
         io.printf("Контур: срез %.1f Гц (рысканье %.1f), запас по фазе %.0f°, по усилению %.1f дБ%s\n", t.crossoverHzRP,
-                  t.crossoverHzYaw, t.phaseMarginDeg, t.gainMarginDb,
-                  t.gainsFromModel ? "" : " — для PID из модели, а работают другие (запас не проверен)");
+                  t.crossoverHzYaw, t.phaseMarginDeg, t.gainMarginDb, t.gainsFromModel ? "" : " — для PID из модели");
+        if (!t.gainsFromModel)
+        {
+            const copter::LoopCheck c = copter::checkLoop(t);
+            io.printf("Работающие PID: срез %.1f Гц, запас по фазе %.0f°, по усилению %.1f дБ%s\n", c.crossoverHz,
+                      c.phaseMarginDeg, c.gainMarginDb, c.gainMarginDb < copter::MIN_GAIN_MARGIN_DB ? " — МАЛО, раскачается" : "");
+        }
         const char* pidName = params.text(copter::PARAM_PROFILE_NAME, params.pidProfile());
         const char* rateName = params.text(copter::PARAM_RATEPROFILE_NAME, params.rateProfile());
         io.printf("PID: %s, профиль %u%s%s; расходы — профиль %u%s%s\n",

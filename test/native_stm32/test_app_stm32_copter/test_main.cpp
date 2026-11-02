@@ -279,7 +279,8 @@ void test_cli_set_save_and_reboot()
     TEST_ASSERT_TRUE(contains(log, "Несохранённые изменения отменены."));
     TEST_ASSERT_TRUE(contains(log, "PID: из модели, профиль 0; расходы — профиль 0"));
     TEST_ASSERT_TRUE(contains(log, "| BF: P 50 I "));
-    TEST_ASSERT_TRUE(contains(log, "запас не проверен"));
+    TEST_ASSERT_TRUE(contains(log, " — для PID из модели"));
+    TEST_ASSERT_TRUE(contains(log, "Работающие PID: срез "));   // запас для P 50 посчитан заново
 }
 
 namespace
@@ -543,7 +544,7 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE_MESSAGE(isJson(header[0]), header[0].c_str());
     TEST_ASSERT_TRUE(contains(header[0], "\"build\":\"freestyle5\""));
     TEST_ASSERT_TRUE_MESSAGE(contains(header[0], "\"frame\":{\"type\":\"Quad X\",\"motors\":[[-0.71,0.71,\"cw\",false],"), header[0].c_str());
-    TEST_ASSERT_TRUE(contains(header[0], "\"motorTestMax\":30,\"dshotCommands\":false}"));   // сборка теста — MULTISHOT
+    TEST_ASSERT_TRUE(contains(header[0], "\"motorTestMax\":30,\"dshotCommands\":false,\"margin\":{\"gm\":"));   // сборка теста — MULTISHOT
     const auto lines = linesWith(log, "@param ");
     TEST_ASSERT_EQUAL(copter::PARAM_COUNT, static_cast<int>(lines.size()));
     for (const std::string& l : lines) TEST_ASSERT_TRUE_MESSAGE(isJson(l), l.c_str());
@@ -573,7 +574,7 @@ void test_app_protocol_params_set_save()
     host("set p_pitch 47");
     run(rc, 0.05);
     log = takeSerial();
-    TEST_ASSERT_TRUE_MESSAGE(contains(log, "@set {\"name\":\"p_pitch\",\"ok\":true,\"value\":47}\n"), log.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "@set {\"name\":\"p_pitch\",\"ok\":true,\"value\":47,\"margin\":{\"gm\":"), log.c_str());
     TEST_ASSERT_TRUE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_MSP);
     host("set p_pitch = 300");
     host("set nonsense 1");
@@ -600,7 +601,7 @@ void test_app_protocol_params_set_save()
     host("save");
     run(rc, 0.1);
     log = takeSerial();
-    TEST_ASSERT_TRUE_MESSAGE(contains(log, "@save {\"ok\":true,\"stored\":true}"), log.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "@save {\"ok\":true,\"stored\":true,\"margin\":{\"gm\":"), log.c_str());
     TEST_ASSERT_FLOAT_WITHIN(1e-9f, copter::bfToGain(copter::PidTerm::P, 1, 47.0f), copterController.getTune().pitch.p);
     TEST_ASSERT_FALSE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_MSP);
 

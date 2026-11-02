@@ -382,8 +382,10 @@ private:
                 w.add("%s[%.2f,%.2f,\"%s\",%s]", i ? "," : "", p.x, p.y, p.spin == Spin::CW ? "cw" : "ccw",
                       p.bottom ? "true" : "false");
             }
-            w.add("]},\"motorTestMax\":%.0f,\"dshotCommands\":%s}\n", copter::CopterController::MOTOR_TEST_MAX * 100.0f,
+            w.add("]},\"motorTestMax\":%.0f,\"dshotCommands\":%s", copter::CopterController::MOTOR_TEST_MAX * 100.0f,
                   cli.dshotCommandsAvailable() ? "true" : "false");
+            margin(w);
+            w.add("}\n");
             return w.overflow ? 0 : w.length;
         }
         if (step <= PARAM_COUNT) return formatParam(static_cast<ParamId>(step - 1), buffer, capacity);
@@ -537,9 +539,20 @@ private:
             }
             w.add(",\"value\":");
             this->value(w, id, params.activeSlot(id));
+            // PID и фильтры: запас контура заново (полоса под ползунками)
+            const ParamGroup g = paramInfo(id).group;
+            if (ok && (g == ParamGroup::PID || g == ParamGroup::FILTERS)) margin(w);
         }
         w.add("}\n");
         send(w);
+    }
+
+    // ,"margin":{"gm":дБ,"pm":°,"hz":срез} — запасы контура для PID, что работают.
+    void margin(JsonWriter& w) const
+    {
+        const copter::LoopCheck c = copter::checkLoop(params.tune());
+        w.add(",\"margin\":{\"gm\":%.1f,\"pm\":%.0f,\"hz\":%.1f,\"min\":%.0f}", c.gainMarginDb, c.phaseMarginDeg,
+              c.crossoverHz, copter::MIN_GAIN_MARGIN_DB);
     }
 
     void doProfile(const char* cmd, const char* args)
@@ -620,6 +633,7 @@ private:
             w.add(",\"error\":");
             w.str("флеш настроек переполнен");
         }
+        margin(w);   // описание коптера сменилось — модель пересчитана при save
         w.add("}\n");
         send(w);
     }

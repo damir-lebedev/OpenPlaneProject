@@ -1766,6 +1766,124 @@ void test_betaflight_source_takes_bf_45_defaults()
     TEST_ASSERT_EQUAL(static_cast<int>(TpaMode::MODEL), static_cast<int>(p.tune().pid.tpaMode));
 }
 
+// 032: ползунки PID (simplified_*) — множители поверх модели и дефолтов BF;
+// запас контура пересчитывается для того, что реально работает.
+void test_simplified_pid_sliders_scale_gains_and_margin()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    const CopterTune& m = p.modelTune();
+    // проверка контура на модельных PID — те же запасы, что насчитал deriveTune
+    const LoopCheck base = checkLoop(p.tune());
+    TEST_ASSERT_FLOAT_WITHIN(1.5f, m.gainMarginDb, base.gainMarginDb);
+    TEST_ASSERT_FLOAT_WITHIN(5.0f, m.phaseMarginDeg, base.phaseMarginDeg);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f * m.crossoverHzRP, m.crossoverHzRP, base.crossoverHz);
+    TEST_ASSERT_TRUE(p.tune().gainsFromModel);
+
+    // общий ×1.5 — P, I, D, FF ×1.5 на всех осях (RPY), без округления модели
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_MASTER_MULTIPLIER, 0, "150", err, sizeof(err)));
+    CopterTune t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.roll.p * 1.5f, t.roll.p);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.roll.i * 1.5f, t.roll.i);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.roll.d * 1.5f, t.roll.d);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.roll.ff * 1.5f, t.roll.ff);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.yaw.p * 1.5f, t.yaw.p);
+    TEST_ASSERT_FALSE(t.gainsFromModel);
+    // умолчание в таблице PID — уже с ползунком
+    TEST_ASSERT_EQUAL_FLOAT(roundf(gainToBf(PidTerm::P, 0, m.roll.p) * 1.5f), p.defaultValue(PARAM_P_ROLL));
+    // всё ×1.5 — |L| ×1.5 на всех частотах: запас по усилению −3.5 дБ, фаза та же
+    const LoopCheck up = checkLoop(t);
+    TEST_ASSERT_FLOAT_WITHIN(0.15f, base.gainMarginDb - 20.0f * log10f(1.5f), up.gainMarginDb);
+
+    // RP — рысканье не трогается; тангаж — свои P/I и D
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_PIDS_MODE, 0, "RP", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_PITCH_PI_GAIN, 0, "120", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_PITCH_D_GAIN, 0, "80", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_I_GAIN, 0, "50", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.yaw.p, t.yaw.p);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.pitch.p * 1.5f * 1.2f, t.pitch.p);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.pitch.i * 1.5f * 1.2f * 0.5f, t.pitch.i);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.pitch.d * 1.5f * 0.8f, t.pitch.d);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.roll.d * 1.5f, t.roll.d);
+
+    // заданное руками — как задано
+    TEST_ASSERT_TRUE(p.parse(PARAM_P_ROLL, 0, "33", err, sizeof(err)));
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(PidTerm::P, 0, 33.0f), p.tune().roll.p);
+
+    // профили независимы: в профиле 1 ползунков нет
+    TEST_ASSERT_TRUE(p.selectPidProfile(1));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.roll.p, p.tune().roll.p);
+    TEST_ASSERT_EQUAL_FLOAT(roundf(gainToBf(PidTerm::P, 0, m.roll.p)), p.defaultValue(PARAM_P_ROLL));
+    TEST_ASSERT_TRUE(p.selectPidProfile(0));
+
+    // OFF — PID только числами
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_PIDS_MODE, 0, "OFF", err, sizeof(err)));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, m.pitch.p, p.tune().pitch.p);
+
+    // BETAFLIGHT: дефолты BF × ползунки; D на движении растёт от d_min по dmax_gain
+    p.resetAll();
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_MASTER_MULTIPLIER, 0, "120", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_DMAX_GAIN, 0, "0", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(54.0f, p.defaultValue(PARAM_P_ROLL));       // 45 × 1.2
+    TEST_ASSERT_EQUAL_FLOAT(36.0f, p.defaultValue(PARAM_D_MIN_ROLL));   // 30 × 1.2
+    TEST_ASSERT_EQUAL_FLOAT(36.0f, p.defaultValue(PARAM_D_ROLL));       // без прибавки на движении
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_DMAX_GAIN, 0, "100", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(48.0f, p.defaultValue(PARAM_D_ROLL));       // 40 × 1.2
+    TEST_ASSERT_FLOAT_WITHIN(1e-9f, bfToGain(PidTerm::P, 0, 54.0f), p.tune().roll.p);
+}
+
+// 032: CLI предупреждает, если ползунки съели запас по усилению.
+void test_cli_warns_when_gain_margin_is_low()
+{
+    CopterParams& p = five5Params();
+    Bench b;
+    b.ctl.configure(p.tune());
+    CliCapture port;
+    CopterCli cli(p, b.ctl, port);
+    TEST_ASSERT_TRUE(cli.enter());
+    port.take();
+    cli.execute("set simplified_master_multiplier = 110");
+    TEST_ASSERT_FALSE(has(port.take(), "запас по усилению"));
+    cli.execute("set simplified_master_multiplier = 200");   // +6 дБ к 12 — на грани
+    cli.execute("set simplified_d_gain = 200");
+    const std::string out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# внимание: запас по усилению"), out.c_str());
+    TEST_ASSERT_TRUE(checkLoop(p.tune()).gainMarginDb < MIN_GAIN_MARGIN_DB);
+}
+
+// 064: ползунки фильтров — срез модели × множитель; меньше срез — меньше запас по фазе.
+void test_simplified_filter_sliders_scale_cutoffs()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    const CopterTune& m = p.modelTune();
+    const LoopCheck base = checkLoop(p.tune());
+    TEST_ASSERT_EQUAL_FLOAT(m.gyroLpfHz, p.tune().gyroLpfHz);
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER, 0, "50", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_DTERM_FILTER_MULTIPLIER, 0, "50", err, sizeof(err)));
+    CopterTune t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, m.gyroLpfHz * 0.5f, t.gyroLpfHz);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, m.dtermLpfHz * 0.5f, t.dtermLpfHz);
+    const LoopCheck soft = checkLoop(t);
+    TEST_ASSERT_TRUE(soft.phaseMarginDeg < base.phaseMarginDeg - 3.0f);
+    // вверх — не выше 0.45 частоты цикла
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER, 0, "200", err, sizeof(err)));
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, fminf(450.0f, m.gyroLpfHz * 2.0f), p.tune().gyroLpfHz);
+    // OFF — срез модели
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_GYRO_FILTER, 0, "OFF", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_DTERM_FILTER, 0, "OFF", err, sizeof(err)));
+    t = p.tune();
+    TEST_ASSERT_EQUAL_FLOAT(m.gyroLpfHz, t.gyroLpfHz);
+    TEST_ASSERT_EQUAL_FLOAT(m.dtermLpfHz, t.dtermLpfHz);
+    // BETAFLIGHT: от их срезов (PT2 250 Гц у нас вместо пары PT1)
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_GYRO_FILTER, 0, "ON", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER, 0, "80", err, sizeof(err)));
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 200.0f, p.tune().gyroLpfHz);
+}
+
 // 005: профили независимы, переключаются на ходу — и в полёте.
 void test_profiles_are_independent_and_switch_on_the_fly()
 {
@@ -3712,12 +3830,13 @@ void test_cli_pastes_betaflight_diff()
     TEST_ASSERT_TRUE_MESSAGE(has(out, "# пропущено: resource — у нас это заголовок платы"), out.c_str());
     TEST_ASSERT_FALSE_MESSAGE(has(out, "###ОШИБКА: нет команды resource"), out.c_str());
     TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки gyro_lpf1_static_hz###"));   // каждую — видно сразу
-    TEST_ASSERT_TRUE_MESSAGE(has(out, "# вставлено: применено 16 строк; не перенесено 13: board_name, manufacturer_id, mcu_id, "
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# вставлено: применено 17 строк; не перенесено 12: board_name, manufacturer_id, mcu_id, "
                                       "signature, resource, timer, dma, feature, serial, beeper, gyro_lpf1_static_hz, "
-                                      "motor_pwm_protocol, simplified_pids_mode\r\n"),
+                                      "motor_pwm_protocol\r\n"),
                              out.c_str());
     TEST_ASSERT_EQUAL_FLOAT(52.0f, p.value(PARAM_P_ROLL));
     TEST_ASSERT_EQUAL_FLOAT(32.0f, p.value(PARAM_D_MIN_ROLL));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.value(PARAM_SIMPLIFIED_PIDS_MODE));   // ползунки BF выключены — PID числами
     TEST_ASSERT_EQUAL_FLOAT(75.0f, p.value(PARAM_ROLL_SRATE));
     TEST_ASSERT_EQUAL_FLOAT(12.0f, p.value(PARAM_MOTOR_POLES));
     TEST_ASSERT_EQUAL_FLOAT(180.0f, p.value(PARAM_SMALL_ANGLE));
@@ -5448,6 +5567,9 @@ int main()
     RUN_TEST(test_params_survive_flash_and_skip_unknown);
     RUN_TEST(test_pid_in_betaflight_units);
     RUN_TEST(test_betaflight_source_takes_bf_45_defaults);
+    RUN_TEST(test_simplified_pid_sliders_scale_gains_and_margin);
+    RUN_TEST(test_cli_warns_when_gain_margin_is_low);
+    RUN_TEST(test_simplified_filter_sliders_scale_cutoffs);
     RUN_TEST(test_profiles_are_independent_and_switch_on_the_fly);
     RUN_TEST(test_pidsum_limit_per_axis);
     RUN_TEST(test_anti_gravity_boosts_i_and_p_on_throttle_punch);
