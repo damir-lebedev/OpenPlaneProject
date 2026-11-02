@@ -41,7 +41,9 @@
 //   motor N|all % · motor stop — проверка моторов без пропеллеров (до 30 %,
 //                       держится 1 с — приложение повторяет): "@motor {...}";
 //   dshot N|all команда… — команды регуляторам DShot (как dshotprog: 1 —
-//                       пискнуть, 7/8 — направление, 12 — сохранить): "@dshot {...}".
+//                       пискнуть, 7/8 — направление, 12 — сохранить): "@dshot {...}";
+//   beep УСЛОВИЕ       — «послушать», как пищит условие (имя BF: RX_LOST…), без ARM:
+//                       "@beep {...}".
 //
 // Менять — только без ARM и при закрытом CLI; пока изменения не
 // сохранены или не отменены, ARM запрещён (флаг MSP — как при
@@ -128,6 +130,11 @@ public:
         if (strcmp(cmd, "dshot") == 0)
         {
             doDshot(args);
+            return true;
+        }
+        if (strcmp(cmd, "beep") == 0)
+        {
+            doBeep(args);
             return true;
         }
         const bool changes = strcmp(cmd, "set") == 0 || strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0 ||
@@ -479,6 +486,25 @@ private:
         w.add("@dshot {\"ok\":true,\"motor\":%ld,\"commands\":[", index);
         for (uint8_t i = 0; i < n; ++i) w.add(i ? ",%u" : "%u", commands[i]);
         w.add("]}\n");
+        send(w);
+    }
+
+    void doBeep(const char* args)
+    {
+        const copter::BeeperCondition c = copter::beeperConditionByName(args);
+        if (c == copter::BeeperCondition::NONE || c == copter::BeeperCondition::COUNT)
+        {
+            sendError("beep", "beep УСЛОВИЕ (как в beeper list)");
+            return;
+        }
+        if (!cli.previewBeeper(c))
+        {
+            sendError("beep", ctl.isArmed() ? "только без ARM" : "пищалки нет или так не пищит");
+            return;
+        }
+        char line[80];
+        JsonWriter w(line, sizeof(line));
+        w.add("@beep {\"ok\":true,\"name\":\"%s\"}\n", copter::beeperConditionName(c));
         send(w);
     }
 

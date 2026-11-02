@@ -307,6 +307,10 @@ namespace copter
         FailsafeSwitchMode failsafeSwitchMode = FailsafeSwitchMode::STAGE1;
         float minCellVolts = 3.5f;         // ниже (без нагрузки) — не армить: vbat_warning_cell_voltage
         float smallAngleDeg = 25.0f;       // small_angle: наклон больше — не армить; 180 — проверки нет
+        // acc_trim_roll / acc_trim_pitch: «ровно» для ANGLE/HORIZON — столько
+        // вправо и нос вниз (как в BF: летит вперёд — тангаж назад)
+        float levelTrimRollDeg = 0.0f;
+        float levelTrimPitchDeg = 0.0f;
         float autoDisarmS = 5.0f;          // auto_disarm_delay: на земле с газом внизу столько — DISARM; 0 — нет
         // runaway_takeoff_*: «убегает» на взлёте — DISARM; проверка гаснет,
         // когда коптер столько продержался в воздухе спокойно
@@ -1354,6 +1358,8 @@ namespace copter
         // путём, levelGain (°/с) на градус ошибки.
         void levelTo(float rollDeg, float pitchDeg, const Vec3& up, float level[3])
         {
+            rollDeg += set.levelTrimRollDeg;
+            pitchDeg -= set.levelTrimPitchDeg;
             const float tr = rollDeg * PI_F / 180.0f, tp = pitchDeg * PI_F / 180.0f;
             const Vec3 target = { sinf(tp), -sinf(tr) * cosf(tp), -cosf(tr) * cosf(tp) };
             Vec3 axis = cross(target, up);

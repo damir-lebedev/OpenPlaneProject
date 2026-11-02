@@ -204,14 +204,22 @@ namespace msp
         const char dir = error ? '!' : '>';
         if (version == 1)
         {
-            if (len > 255 || capacity < len + 6) return 0;
+            // 255 и больше — «jumbo», как в BF: размер 255, команда, настоящий размер u16
+            const bool jumbo = len >= 255;
+            if (len > 0xFFFF || capacity < len + (jumbo ? 8 : 6)) return 0;
             size_t n = 0;
             out[n++] = '$';
             out[n++] = 'M';
             out[n++] = static_cast<uint8_t>(dir);
-            out[n++] = static_cast<uint8_t>(len);
+            out[n++] = static_cast<uint8_t>(jumbo ? 255 : len);
             out[n++] = static_cast<uint8_t>(cmd);
-            uint8_t check = static_cast<uint8_t>(len ^ static_cast<uint8_t>(cmd));
+            uint8_t check = static_cast<uint8_t>(out[3] ^ static_cast<uint8_t>(cmd));
+            if (jumbo)
+            {
+                out[n++] = static_cast<uint8_t>(len);
+                out[n++] = static_cast<uint8_t>(len >> 8);
+                check ^= static_cast<uint8_t>(len) ^ static_cast<uint8_t>(len >> 8);
+            }
             for (size_t i = 0; i < len; ++i)
             {
                 out[n++] = data[i];

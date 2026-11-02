@@ -44,6 +44,7 @@
 #include "copter/Propulsion.h"
 #include "copter/RateController.h"
 #include "copter/RcSetup.h"
+#include "copter/StickCommands.h"
 #include "copter/Vtx.h"
 
 using namespace copter;
@@ -3533,9 +3534,15 @@ namespace
             TEST_ASSERT_EQUAL_UINT8('M', out[1]);
             TEST_ASSERT_EQUAL_UINT8(cmd, out[4]);
             uint8_t x = static_cast<uint8_t>(out[3] ^ out[4]);
-            payload.assign(out + 5, out + 5 + out[3]);
+            // jumbo (BF): размер 255, затем настоящий u16
+            const bool jumbo = out[3] == 255;
+            const size_t len = jumbo ? static_cast<size_t>(out[5] | out[6] << 8) : out[3];
+            const size_t at = jumbo ? 7 : 5;
+            if (jumbo) x ^= static_cast<uint8_t>(out[5] ^ out[6]);
+            TEST_ASSERT_EQUAL_UINT32(at + len + 1, n);
+            payload.assign(out + at, out + at + len);
             for (uint8_t b : payload) x ^= b;
-            TEST_ASSERT_EQUAL_HEX8(x, out[5 + out[3]]);
+            TEST_ASSERT_EQUAL_HEX8(x, out[at + len]);
             return out[2] == '>';
         }
         std::vector<uint8_t> get(uint8_t cmd)
@@ -3639,6 +3646,8 @@ void test_msp_identity_and_status()
     p = m.get(116);
     const std::string names(p.begin(), p.end());
     TEST_ASSERT_EQUAL(0, names.find("ARM;ANGLE;"));
+    TEST_ASSERT_TRUE(names.size() > 255);   // длиннее кадра v1 — jumbo, как у BF
+    TEST_ASSERT_TRUE(names.find(";STICK COMMANDS DISABLE;") != std::string::npos);
     p = m.get(119);
     TEST_ASSERT_EQUAL_UINT8(BOX_ARM, p[0]);
     TEST_ASSERT_EQUAL_UINT8(BOX_ANGLE, p[1]);
@@ -3875,8 +3884,8 @@ void test_cli_pastes_betaflight_diff()
     TEST_ASSERT_TRUE_MESSAGE(has(out, "# пропущено: resource — у нас это заголовок платы"), out.c_str());
     TEST_ASSERT_FALSE_MESSAGE(has(out, "###ОШИБКА: нет команды resource"), out.c_str());
     TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки gyro_lpf1_static_hz###"));   // каждую — видно сразу
-    TEST_ASSERT_TRUE_MESSAGE(has(out, "# вставлено: применено 17 строк; не перенесено 12: board_name, manufacturer_id, mcu_id, "
-                                      "signature, resource, timer, dma, feature, serial, beeper, gyro_lpf1_static_hz, "
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# вставлено: применено 18 строк; не перенесено 11: board_name, manufacturer_id, mcu_id, "
+                                      "signature, resource, timer, dma, feature, serial, gyro_lpf1_static_hz, "
                                       "motor_pwm_protocol\r\n"),
                              out.c_str());
     TEST_ASSERT_EQUAL_FLOAT(52.0f, p.value(PARAM_P_ROLL));
@@ -3885,6 +3894,7 @@ void test_cli_pastes_betaflight_diff()
     TEST_ASSERT_EQUAL_FLOAT(75.0f, p.value(PARAM_ROLL_SRATE));
     TEST_ASSERT_EQUAL_FLOAT(12.0f, p.value(PARAM_MOTOR_POLES));
     TEST_ASSERT_EQUAL_FLOAT(180.0f, p.value(PARAM_SMALL_ANGLE));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, p.value(PARAM_BEEPER_OFF_FLAGS));   // beeper -GYRO_CALIBRATED
     TEST_ASSERT_EQUAL_STRING("7inch", p.text(PARAM_CRAFT_NAME, 0));
     TEST_ASSERT_EQUAL_UINT8(BOX_ANGLE, p.rc().aux(1).mode);
     TEST_ASSERT_EQUAL(static_cast<int>(RxfailMode::HOLD), static_cast<int>(p.rc().rxfail(4).mode));
@@ -5229,12 +5239,12 @@ void test_beeper_events_and_alarms()
     BeeperInputs quiet;
     TEST_ASSERT_EQUAL_STRING("....", listen(b, quiet, 4).c_str());
 
-    b.event(BeeperEvent::ARMED);   // один длинный — 0.5 с
+    b.event(BeeperCondition::ARMING);   // один длинный — 0.5 с
     const std::string arm = listen(b, quiet, 60);
     TEST_ASSERT_EQUAL(50, static_cast<int>(std::count(arm.begin(), arm.end(), '#')));
     TEST_ASSERT_FALSE(b.busy());
 
-    b.event(BeeperEvent::DISARMED);   // два коротких
+    b.event(BeeperCondition::DISARMING);   // два коротких
     TEST_ASSERT_EQUAL_STRING("############..........############......", listen(b, quiet, 40).c_str());
 
     // батарея: WARNING — короткий раз в 2 с, CRITICAL — часто
@@ -5550,6 +5560,338 @@ void test_dshotprog_cli_and_msp()
     TEST_ASSERT_EQUAL_STRING("только без ARM", m.cli.queueDshot(0, &beep, 1));
 }
 
+// ---- 107/108: условия пищалки как beeper в BF ----
+
+void test_beeper_conditions_like_betaflight()
+{
+    // имена и номера BF: бит = номер − 1, 24 условия
+    TEST_ASSERT_EQUAL(24, BEEPER_CONDITION_COUNT);
+    TEST_ASSERT_EQUAL_STRING("GYRO_CALIBRATED", beeperConditionName(BeeperCondition::GYRO_CALIBRATED));
+    TEST_ASSERT_EQUAL_STRING("ON_USB", beeperConditionName(BeeperCondition::ON_USB));
+    TEST_ASSERT_EQUAL_STRING("ARMING_GPS_NO_FIX", beeperConditionName(BeeperCondition::ARMING_GPS_NO_FIX));
+    TEST_ASSERT_EQUAL_HEX32(1u << 0, beeperBit(BeeperCondition::GYRO_CALIBRATED));
+    TEST_ASSERT_EQUAL_HEX32(1u << 9, beeperBit(BeeperCondition::RX_SET));
+    TEST_ASSERT_EQUAL_HEX32(0x202, DSHOT_BEACON_ALLOWED);   // RX_LOST | RX_SET
+    TEST_ASSERT_EQUAL(static_cast<int>(BeeperCondition::RX_LOST), static_cast<int>(beeperConditionByName("rx_lost")));
+    TEST_ASSERT_EQUAL(static_cast<int>(BeeperCondition::COUNT), static_cast<int>(beeperConditionByName("ALL")));
+    TEST_ASSERT_EQUAL(static_cast<int>(BeeperCondition::NONE), static_cast<int>(beeperConditionByName("RX_LOS")));
+
+    Beeper b;
+    BeeperInputs quiet;
+    // выключенное событие не пищит, включённое — да
+    b.setOffFlags(beeperBit(BeeperCondition::GYRO_CALIBRATED));
+    b.event(BeeperCondition::GYRO_CALIBRATED);
+    TEST_ASSERT_FALSE(b.busy());
+    b.event(BeeperCondition::SYSTEM_INIT);
+    TEST_ASSERT_TRUE(b.busy());
+    // второе событие ждёт первое, ARM — сразу
+    b.event(BeeperCondition::READY_BEEP);
+    TEST_ASSERT_EQUAL(static_cast<int>(BeeperCondition::SYSTEM_INIT), static_cast<int>(b.playing()));
+    listen(b, quiet, 49);
+    TEST_ASSERT_EQUAL(static_cast<int>(BeeperCondition::READY_BEEP), static_cast<int>(b.playing()));
+    b.event(BeeperCondition::ARMING_GPS_FIX);
+    TEST_ASSERT_EQUAL(static_cast<int>(BeeperCondition::ARMING_GPS_FIX), static_cast<int>(b.playing()));
+    listen(b, quiet, 100);
+    TEST_ASSERT_FALSE(b.busy());
+
+    // MULTI_BEEPS: профиль 3 — три коротких
+    b.event(BeeperCondition::MULTI_BEEPS, 3);
+    const std::string three = listen(b, quiet, 80);
+    const std::string want = "#####" + std::string(15, '.') + "#####" + std::string(15, '.') + "#####" + std::string(35, '.');
+    TEST_ASSERT_EQUAL_STRING(want.substr(0, 80).c_str(), three.c_str());
+
+    // нет связи (а была) — RX_LOST; failsafe сажает — RX_LOST_LANDING, другой рисунок
+    BeeperInputs lost;
+    lost.rxLost = true;
+    const std::string rx = listen(b, lost, 120);
+    TEST_ASSERT_EQUAL(static_cast<int>(BeeperCondition::RX_LOST), static_cast<int>(b.playing()));
+    TEST_ASSERT_TRUE(std::count(rx.begin(), rx.end(), '#') >= 70);
+    lost.rxLostLanding = true;
+    listen(b, lost, 1);
+    TEST_ASSERT_EQUAL(static_cast<int>(BeeperCondition::RX_LOST_LANDING), static_cast<int>(b.playing()));
+    // RX_LOST выключили — тревоги нет
+    b.setOffFlags(beeperBit(BeeperCondition::RX_LOST) | beeperBit(BeeperCondition::RX_LOST_LANDING));
+    TEST_ASSERT_EQUAL_STRING("..........", listen(b, lost, 10).c_str());
+    b.setOffFlags(0);
+
+    // ON_USB выключен: без батареи молчит всё, кроме «поиска модели»
+    b.setOffFlags(beeperBit(BeeperCondition::ON_USB));
+    BeeperInputs usb;
+    usb.usbOnly = true;
+    usb.batteryCritical = true;
+    TEST_ASSERT_EQUAL_STRING("..........", listen(b, usb, 10).c_str());
+    usb.usbOnly = false;
+    TEST_ASSERT_TRUE(listen(b, usb, 20).find('#') != std::string::npos);
+    b.setOffFlags(0);
+
+    // 108: режим GPS BEEP SATELLITE COUNT — столько коротких, сколько спутников, пауза 1.5 с
+    BeeperInputs sats;
+    sats.gpsCount = true;
+    sats.gpsFix = true;
+    sats.gpsSats = 7;
+    listen(b, quiet, 30);   // тишина — прошлое отыграло
+    const std::string count = listen(b, sats, 255);
+    int beeps = 0;
+    for (size_t i = 0; i < count.size(); ++i)
+    {
+        if (count[i] == '#' && (i == 0 || count[i - 1] == '.')) ++beeps;
+    }
+    TEST_ASSERT_EQUAL_MESSAGE(7, beeps, count.c_str());
+    TEST_ASSERT_EQUAL_STRING(std::string(130, '.').c_str(), count.substr(125, 130).c_str());
+    sats.gpsSats = 9;   // новое число — со следующего круга
+    listen(b, sats, 5);
+    const std::string nine = listen(b, sats, 255);
+    beeps = 0;
+    for (size_t i = 0; i < nine.size(); ++i)
+    {
+        if (nine[i] == '#' && (i == 0 || nine[i - 1] == '.')) ++beeps;
+    }
+    TEST_ASSERT_EQUAL_MESSAGE(9, beeps, nine.c_str());
+    sats.gpsFix = false;   // без фикса — один длинный
+    listen(b, sats, 250);
+    const std::string noFix = listen(b, sats, 190);
+    TEST_ASSERT_EQUAL(40, static_cast<int>(std::count(noFix.begin(), noFix.end(), '#')));
+
+    // «послушать»: выключенное тоже, тревога — два круга и тишина
+    Beeper p;
+    p.setOffFlags(BEEPER_ALL_MASK);
+    TEST_ASSERT_TRUE(p.preview(BeeperCondition::BAT_LOW));
+    const std::string preview = listen(p, quiet, 450);
+    TEST_ASSERT_EQUAL(20, static_cast<int>(std::count(preview.begin(), preview.end(), '#')));
+    TEST_ASSERT_FALSE(p.busy());
+    TEST_ASSERT_FALSE(p.preview(BeeperCondition::CAM_CONNECTION_OPEN));   // такого писка у нас нет
+}
+
+// 109: DShot-маяк — когда регуляторам «пискни».
+void test_dshot_beacon_timing()
+{
+    DshotBeacon beacon;
+    TEST_ASSERT_FALSE(beacon.enabled(BeeperCondition::RX_LOST));   // как в BF: по умолчанию выключен
+    beacon.configure(0, 3);
+    TEST_ASSERT_TRUE(beacon.enabled(BeeperCondition::RX_SET));
+    TEST_ASSERT_FALSE(beacon.enabled(BeeperCondition::BAT_LOW));
+
+    // летали, DISARM в 10 с, связь пропала: маяк — через 1.2 с, потом раз в 0.5 с
+    uint32_t now = 9000;
+    for (; now < 10000; ++now) TEST_ASSERT_EQUAL(0, beacon.update(now, true, true, false, false));
+    std::vector<uint32_t> sent;
+    for (; now < 13000; ++now)
+    {
+        const uint8_t c = beacon.update(now, false, false, true, false);
+        if (c)
+        {
+            TEST_ASSERT_EQUAL(3, c);   // BEACON3
+            sent.push_back(now);
+        }
+    }
+    TEST_ASSERT_EQUAL(4, static_cast<int>(sent.size()));
+    TEST_ASSERT_EQUAL_UINT32(11200, sent[0]);
+    TEST_ASSERT_EQUAL_UINT32(11700, sent[1]);
+    // ARM отложен 1.2 с после маяка; пилот включил ARM — маяк молчит
+    TEST_ASSERT_TRUE(beacon.holdArm(now));
+    for (int i = 0; i < 1500; ++i, ++now) TEST_ASSERT_EQUAL(0, beacon.update(now, false, true, true, false));
+    TEST_ASSERT_FALSE(beacon.holdArm(now));
+    // связь есть, тумблер BEEPER — тоже маяк; выключили в настройке — нет
+    TEST_ASSERT_EQUAL(3, beacon.update(now, false, false, false, true));
+    beacon.configure(beeperBit(BeeperCondition::RX_SET), 3);
+    now += 1000;
+    TEST_ASSERT_EQUAL(0, beacon.update(now, false, false, false, true));
+    // тон прижат к 1..5
+    beacon.configure(0, 9);
+    TEST_ASSERT_EQUAL(5, beacon.toneCommand());
+}
+
+// ---- 105: команды стиками ----
+
+namespace
+{
+    // Стики в мкс (как в конфигураторе): газ, рыск, тангаж (верх — от себя), крен.
+    CopterRc sticks(int thr, int yaw, int pit, int rol, bool armAssigned = true)
+    {
+        CopterRc rc;
+        rc.linkOk = true;
+        rc.throttle = (thr - 1000) / 1000.0f;
+        rc.yaw = (yaw - 1500) / 500.0f;
+        rc.pitch = -(pit - 1500) / 500.0f;
+        rc.roll = (rol - 1500) / 500.0f;
+        rc.armAssigned = armAssigned;
+        return rc;
+    }
+
+    // Держать положение seconds; первая команда (или NONE).
+    StickCommand hold(StickCommands& s, CopterRc rc, float seconds, bool armed = false, bool level = true,
+                      bool disabled = false, int* count = nullptr)
+    {
+        StickCommand first;
+        for (int i = 0; i < static_cast<int>(seconds * 1000.0f); ++i)
+        {
+            CopterRc r = rc;
+            const StickCommand c = s.update(r, armed, false, level, disabled, 0.001f);
+            if (c.action != StickAction::NONE)
+            {
+                if (first.action == StickAction::NONE) first = c;
+                if (count) ++*count;
+            }
+        }
+        return first;
+    }
+}
+
+void test_stick_commands_like_betaflight()
+{
+    StickCommands s;
+    const int LO = 1000, CE = 1500, HI = 2000;
+    // калибровка гироскопа: газ низ, рыск влево, тангаж на себя
+    int n = 0;
+    StickCommand c = hold(s, sticks(LO, LO, LO, CE), 1.0f, false, true, false, &n);
+    TEST_ASSERT_EQUAL(static_cast<int>(StickAction::CALIBRATE_GYRO), static_cast<int>(c.action));
+    TEST_ASSERT_EQUAL(1, n);   // один раз, пока стик не сдвинули
+    // меньше 50 мс — не команда
+    hold(s, sticks(CE, CE, CE, CE), 0.1f);
+    TEST_ASSERT_EQUAL(static_cast<int>(StickAction::NONE), static_cast<int>(hold(s, sticks(LO, LO, LO, CE), 0.03f).action));
+    // профили PID: крен влево — 1, тангаж от себя — 2, крен вправо — 3
+    hold(s, sticks(CE, CE, CE, CE), 0.1f);
+    c = hold(s, sticks(LO, LO, CE, LO), 0.2f);
+    TEST_ASSERT_EQUAL(static_cast<int>(StickAction::PID_PROFILE), static_cast<int>(c.action));
+    TEST_ASSERT_EQUAL(0, c.value);
+    c = hold(s, sticks(LO, LO, HI, CE), 0.2f);
+    TEST_ASSERT_EQUAL(1, c.value);
+    c = hold(s, sticks(LO, LO, CE, HI), 0.2f);
+    TEST_ASSERT_EQUAL(2, c.value);
+    // save; калибровка акселерометра — газ верх
+    TEST_ASSERT_EQUAL(static_cast<int>(StickAction::SAVE), static_cast<int>(hold(s, sticks(LO, LO, LO, HI), 0.2f).action));
+    TEST_ASSERT_EQUAL(static_cast<int>(StickAction::CALIBRATE_ACC), static_cast<int>(hold(s, sticks(HI, LO, LO, CE), 0.2f).action));
+    // ANGLE: газ верх + тангаж от себя — горизонт носом вниз, с повтором раз в 0.25 с
+    n = 0;
+    c = hold(s, sticks(HI, CE, HI, CE), 1.0f, false, true, false, &n);
+    TEST_ASSERT_EQUAL(static_cast<int>(StickAction::TRIM), static_cast<int>(c.action));
+    TEST_ASSERT_EQUAL(1, c.trimPitch);
+    TEST_ASSERT_EQUAL(0, c.trimRoll);
+    TEST_ASSERT_EQUAL(4, n);
+    c = hold(s, sticks(HI, CE, CE, LO), 0.2f);
+    TEST_ASSERT_EQUAL(-1, c.trimRoll);
+    // ACRO: те же положения — профиль расходов
+    hold(s, sticks(CE, CE, CE, CE), 0.1f);
+    c = hold(s, sticks(HI, CE, CE, LO), 0.2f, false, false);
+    TEST_ASSERT_EQUAL(static_cast<int>(StickAction::RATE_PROFILE), static_cast<int>(c.action));
+    TEST_ASSERT_EQUAL(3, c.value);
+    // ARM, режим STICK COMMANDS DISABLE, нет связи — ничего
+    hold(s, sticks(CE, CE, CE, CE), 0.1f);
+    TEST_ASSERT_EQUAL(0, static_cast<int>(hold(s, sticks(LO, LO, LO, CE), 0.5f, true).action));
+    hold(s, sticks(CE, CE, CE, CE), 0.1f);
+    TEST_ASSERT_EQUAL(0, static_cast<int>(hold(s, sticks(LO, LO, LO, CE), 0.5f, false, true, true).action));
+    CopterRc lost = sticks(LO, LO, LO, CE);
+    lost.linkOk = false;
+    TEST_ASSERT_EQUAL(0, static_cast<int>(hold(s, lost, 0.5f).action));
+    // min_check / max_check: 1100 — уже не «низ», если min_check 1050
+    hold(s, sticks(CE, CE, CE, CE), 0.1f);
+    TEST_ASSERT_EQUAL(0, static_cast<int>(hold(s, sticks(1100, LO, LO, CE), 0.2f).action));
+    s.configure(1150, 1900);
+    TEST_ASSERT_EQUAL(static_cast<int>(StickAction::CALIBRATE_GYRO), static_cast<int>(hold(s, sticks(1100, LO, LO, CE), 0.2f).action));
+}
+
+// ARM стиками, когда ARM нет в таблице режимов: через контроллер со всеми проверками.
+void test_stick_arming_without_arm_switch()
+{
+    Bench b;
+    StickCommands s;
+    auto run = [&](CopterRc rc, float seconds) {
+        for (int i = 0; i < static_cast<int>(seconds * 1000.0f); ++i)
+        {
+            CopterRc r = rc;
+            s.update(r, b.ctl.isArmed(), b.ctl.getStatus().airborne, true, false, 0.001f);
+            b.out = b.ctl.update(b.sens, r);
+        }
+    };
+    const int LO = 1000, CE = 1500, HI = 2000;
+    run(sticks(LO, CE, CE, CE, false), 2.5f);
+    TEST_ASSERT_TRUE(s.usingSticksToArm());
+    TEST_ASSERT_EQUAL_HEX32(0, b.ctl.getStatus().armBlockers);   // не NO_ARM_SWITCH — ARM стиками
+    run(sticks(LO, HI, CE, CE, false), 0.4f);
+    TEST_ASSERT_FALSE(b.ctl.isArmed());   // меньше 0.5 с
+    run(sticks(LO, HI, CE, CE, false), 0.2f);
+    TEST_ASSERT_TRUE(b.ctl.isArmed());
+    run(sticks(LO, CE, CE, CE, false), 0.5f);
+    TEST_ASSERT_TRUE(b.ctl.isArmed());   // отпустили — ARM остался
+    run(sticks(LO, LO, CE, CE, false), 0.6f);
+    TEST_ASSERT_FALSE(b.ctl.isArmed());   // DISARM стиками на земле
+    TEST_ASSERT_TRUE(s.disarmPosition());   // держат — DISARM_REPEAT
+    // газ не внизу — ARM стиками нельзя (это не положение ARM)
+    run(sticks(CE, HI, CE, CE, false), 1.0f);
+    TEST_ASSERT_FALSE(b.ctl.isArmed());
+    // ARM в таблице есть — стики не армят
+    run(sticks(LO, CE, CE, CE, true), 0.2f);
+    run(sticks(LO, HI, CE, CE, true), 1.0f);
+    TEST_ASSERT_FALSE(b.ctl.isArmed());
+    TEST_ASSERT_FALSE(s.usingSticksToArm());
+}
+
+// CLI beeper / beacon как в BF; в diff — строками, а не set.
+void test_cli_beeper_and_beacon()
+{
+    CopterParams& p = five5Params();
+    Bench b;
+    b.ctl.configure(p.tune());
+    CliCapture port;
+    CopterCli cli(p, b.ctl, port);
+    TEST_ASSERT_TRUE(cli.enter());
+    port.take();
+    cli.execute("beeper -RX_LOST");
+    TEST_ASSERT_EQUAL_STRING("beeper -RX_LOST\r\n", port.take().c_str());
+    cli.execute("beeper -on_usb");
+    TEST_ASSERT_EQUAL_FLOAT(static_cast<float>(beeperBit(BeeperCondition::RX_LOST) | beeperBit(BeeperCondition::ON_USB)),
+                            p.value(PARAM_BEEPER_OFF_FLAGS));
+    cli.execute("beeper RX_LOST");
+    TEST_ASSERT_EQUAL_FLOAT(static_cast<float>(beeperBit(BeeperCondition::ON_USB)), p.value(PARAM_BEEPER_OFF_FLAGS));
+    cli.execute("beeper -ALL");
+    TEST_ASSERT_EQUAL_FLOAT(static_cast<float>(BEEPER_ALL_MASK), p.value(PARAM_BEEPER_OFF_FLAGS));
+    cli.execute("beeper ALL");
+    cli.execute("beeper -ON_USB");
+    port.take();
+    cli.execute("beeper NO_SUCH");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: beeper: нет условия NO_SUCH"));
+    cli.execute("beeper");
+    std::string list = port.take();
+    TEST_ASSERT_TRUE(has(list, "beeper GYRO_CALIBRATED\r\n"));
+    TEST_ASSERT_TRUE(has(list, "beeper -ON_USB\r\n"));
+    // маяк: только RX_LOST и RX_SET, по умолчанию оба выключены
+    cli.execute("beacon");
+    TEST_ASSERT_EQUAL_STRING("beacon -RX_LOST\r\nbeacon -RX_SET\r\n", port.take().c_str());
+    cli.execute("beacon BAT_LOW");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: beacon: нет условия BAT_LOW"));
+    cli.execute("beacon RX_LOST");
+    port.take();
+    cli.execute("diff");
+    const std::string diff = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(diff, "\r\n# beeper\r\nbeeper -ON_USB\r\n\r\n# beacon\r\nbeacon RX_LOST\r\n"), diff.c_str());
+    TEST_ASSERT_FALSE(has(diff, "beeper_off_flags"));
+    TEST_ASSERT_FALSE(has(diff, "beacon RX_SET"));
+    // help знает обе
+    cli.execute("help");
+    TEST_ASSERT_TRUE(has(port.take(), "beacon [-]RX_LOST|RX_SET"));
+    p.resetAll();
+}
+
+// MSP_BEEPER_CONFIG / MSP_SET_BEEPER_CONFIG (вкладка конфигуратора BF) и min/max_check в RX_CONFIG.
+void test_msp_beeper_config()
+{
+    MspBench m;
+    std::vector<uint8_t> r = m.get(184);
+    TEST_ASSERT_EQUAL(9, static_cast<int>(r.size()));
+    TEST_ASSERT_EQUAL_HEX32(0, le32(r, 0));
+    TEST_ASSERT_EQUAL_UINT8(1, r[4]);
+    TEST_ASSERT_EQUAL_HEX32(DSHOT_BEACON_ALLOWED, le32(r, 5));
+    std::vector<uint8_t> p;
+    TEST_ASSERT_TRUE(m.ask(185, { 0x05, 0x00, 0x00, 0xFF, 4, 0x00, 0x02, 0x00, 0x00 }, p));
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, m.params.value(PARAM_BEEPER_OFF_FLAGS));   // старший байт — не условия
+    TEST_ASSERT_EQUAL_FLOAT(4.0f, m.params.value(PARAM_BEEPER_DSHOT_BEACON_TONE));
+    TEST_ASSERT_EQUAL_FLOAT(512.0f, m.params.value(PARAM_DSHOT_BEACON_OFF_FLAGS));   // RX_SET выключен, RX_LOST — маяк
+    r = m.get(44);
+    TEST_ASSERT_EQUAL_UINT16(1900, le16(r, 1));
+    TEST_ASSERT_EQUAL_UINT16(1050, le16(r, 5));
+    m.params.resetAll();
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -5681,5 +6023,11 @@ int main()
     RUN_TEST(test_dshot_command_queue);
     RUN_TEST(test_turtle_mode_arms_upside_down);
     RUN_TEST(test_dshotprog_cli_and_msp);
+    RUN_TEST(test_beeper_conditions_like_betaflight);
+    RUN_TEST(test_dshot_beacon_timing);
+    RUN_TEST(test_stick_commands_like_betaflight);
+    RUN_TEST(test_stick_arming_without_arm_switch);
+    RUN_TEST(test_cli_beeper_and_beacon);
+    RUN_TEST(test_msp_beeper_config);
     return UNITY_END();
 }

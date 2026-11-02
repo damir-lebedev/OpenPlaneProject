@@ -85,6 +85,7 @@ namespace copter
         BLACKBOX,
         OSD,
         OTHER,
+        BEEPER,
     };
 
     inline const char* paramGroupName(ParamGroup g)
@@ -105,6 +106,7 @@ namespace copter
             case ParamGroup::BLACKBOX: return "blackbox";
             case ParamGroup::OSD: return "osd";
             case ParamGroup::OTHER: return "other";
+            case ParamGroup::BEEPER: return "beeper";
         }
         return "other";
     }
@@ -391,6 +393,16 @@ namespace copter
         PARAM_OSD_ALT_ALARM,
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
+        PARAM_MIN_CHECK,
+        PARAM_MAX_CHECK,
+        PARAM_ACC_TRIM_ROLL,
+        PARAM_ACC_TRIM_PITCH,
+        PARAM_BEEPER_OFF_FLAGS,
+        PARAM_DSHOT_BEACON_OFF_FLAGS,
+        PARAM_BEEPER_DSHOT_BEACON_TONE,
+        PARAM_BEEPER_INVERSION,
+        PARAM_BEEPER_OD,
+        PARAM_BEEPER_FREQUENCY,
         PARAM_COUNT
     };
 
@@ -897,6 +909,26 @@ namespace copter
               "израсходовано больше — мА·ч на OSD мигают; 0 — нет" },
             { "osd_link_quality_alarm", kInt, kMaster, kGroupOsd, 0, 100, 80, kTable, "%", nullptr, 0,
               "связь хуже — LQ на OSD мигает и предупреждение LINK QUALITY; 0 — нет" },
+            { "min_check", kInt, kMaster, kGroupRx, 750, 2250, 1050, kTable, "мкс", nullptr, 0,
+              "команды стиками: стик ниже — «низ»" },
+            { "max_check", kInt, kMaster, kGroupRx, 750, 2250, 1900, kTable, "мкс", nullptr, 0,
+              "команды стиками: стик выше — «верх»" },
+            { "acc_trim_roll", kInt, kMaster, ParamGroup::OTHER, -300, 300, 0, kTable, "0.1°", nullptr, 0,
+              "подстройка горизонта по крену (+ — правее); стиками: газ верх + крен" },
+            { "acc_trim_pitch", kInt, kMaster, ParamGroup::OTHER, -300, 300, 0, kTable, "0.1°", nullptr, 0,
+              "подстройка горизонта по тангажу (+ — нос ниже); стиками: газ верх + тангаж" },
+            { "beeper_off_flags", kInt, kMaster, ParamGroup::BEEPER, 0, 16777215, 0, kTable, "", nullptr, 0,
+              "выключенные писки (биты условий BF; в CLI — beeper -ИМЯ)" },
+            { "dshot_beacon_off_flags", kInt, kMaster, ParamGroup::BEEPER, 0, 16777215, 514, kTable, "", nullptr, 0,
+              "маяк моторами выключен для (биты RX_LOST, RX_SET; в CLI — beacon ИМЯ)" },
+            { "beeper_dshot_beacon_tone", kInt, kMaster, ParamGroup::BEEPER, 1, 5, 1, kTable, "", nullptr, 0,
+              "тон маяка моторами (команда DShot BEACON1..5)" },
+            { "beeper_inversion", kEnum, kMaster, ParamGroup::BEEPER, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "пищалка пищит высоким уровнем на выводе (ON — через транзистор, как на большинстве плат)" },
+            { "beeper_od", kEnum, kMaster, ParamGroup::BEEPER, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "вывод пищалки — открытый сток" },
+            { "beeper_frequency", kInt, kMaster, ParamGroup::BEEPER, 0, 16000, 0, kTable, "Гц", nullptr, 0,
+              "0 — активная пищалка (сама звучит), иначе — частота для пассивной" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;
@@ -1104,6 +1136,8 @@ namespace copter
         {
             s.minCellVolts = value(PARAM_VBAT_WARNING_CELL_VOLTAGE) * 0.01f;
             s.smallAngleDeg = value(PARAM_SMALL_ANGLE);
+            s.levelTrimRollDeg = value(PARAM_ACC_TRIM_ROLL) * 0.1f;
+            s.levelTrimPitchDeg = value(PARAM_ACC_TRIM_PITCH) * 0.1f;
             s.autoDisarmS = value(PARAM_AUTO_DISARM_DELAY);
             s.runawayPrevention = value(PARAM_RUNAWAY_TAKEOFF_PREVENTION) > 0.5f;
             s.runawayDeactivateS = value(PARAM_RUNAWAY_TAKEOFF_DEACTIVATE_DELAY) * 0.001f;

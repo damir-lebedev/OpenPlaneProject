@@ -39,7 +39,9 @@
 // включённом PREARM. USER1…USER4 — ножки PINIO платы (камера CAM1/CAM2,
 // питание 12 В видеопередатчика…); VTX PIT MODE и VTX CONTROL DISABLE —
 // видеопередатчику (copter/Vtx.h); OSD DISABLE прячет OSD; BEEPER — пищать
-// («поиск модели»), BEEPER MUTE — молчать.
+// («поиск модели»), BEEPER MUTE — молчать, GPS BEEP SATELLITE COUNT —
+// пищать число спутников (copter/Beeper.h); STICK COMMANDS DISABLE — без
+// команд стиками (copter/StickCommands.h).
 //
 //   vtx № канал полоса канал_VTX мощность от до — как `vtx` в BF: пока AUX
 //       «канал» в [от, до), у видеопередатчика эта полоса, канал и уровень
@@ -68,6 +70,7 @@ namespace copter
         BOX_AIRMODE = 28,
         BOX_FLIP_OVER_AFTER_CRASH = 35,
         BOX_PREARM = 36,
+        BOX_GPS_BEEP_SATELLITE_COUNT = 37,
         BOX_VTX_PIT_MODE = 39,
         BOX_USER1 = 40,
         BOX_USER2 = 41,
@@ -78,6 +81,7 @@ namespace copter
         BOX_ACRO_TRAINER = 47,
         BOX_VTX_CONTROL_DISABLE = 48,
         BOX_LAUNCH_CONTROL = 49,
+        BOX_STICK_COMMANDS_DISABLE = 51,
         BOX_BEEPER_MUTE = 52,
         BOX_COUNT = 64,   // номера 0..63
     };
@@ -118,6 +122,8 @@ namespace copter
             { BOX_ACRO_TRAINER, "ACRO TRAINER", true },
             { BOX_LAUNCH_CONTROL, "LAUNCH CONTROL", false },
             { BOX_BEEPER_MUTE, "BEEPER MUTE", true },
+            { BOX_GPS_BEEP_SATELLITE_COUNT, "GPS BEEP SATELLITE COUNT", true },
+            { BOX_STICK_COMMANDS_DISABLE, "STICK COMMANDS DISABLE", true },
         };
         count = sizeof(table) / sizeof(table[0]);
         return table;

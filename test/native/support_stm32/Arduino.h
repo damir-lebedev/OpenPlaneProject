@@ -309,3 +309,27 @@ public:
 
 // Поток DMA для DShot (hal/stm32/Stm32Dshot.h).
 #include "dshot_dma_fake.h"
+
+// Пассивная пищалка (beeper_frequency) и открытый сток (beeper_od), как в STM32duino.
+#ifndef OUTPUT_OPEN_DRAIN
+#define OUTPUT_OPEN_DRAIN 0x13
+#endif
+namespace fake
+{
+    // Частота tone() на пине, 0 — тихо.
+    inline std::map<uint32_t, unsigned>& toneHz()
+    {
+        static std::map<uint32_t, unsigned> m;
+        return m;
+    }
+}
+inline void tone(uint8_t pin, unsigned int frequency, unsigned long duration = 0)
+{
+    (void)duration;
+    fake::toneHz()[pin] = frequency;
+}
+inline void noTone(uint8_t pin, bool destruct = false)
+{
+    (void)destruct;
+    fake::toneHz()[pin] = 0;
+}

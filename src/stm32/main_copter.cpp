@@ -32,6 +32,7 @@
 #include "config/CopterConfig.h"
 #include "copter/Battery.h"
 #include "copter/Beeper.h"
+#include "copter/StickCommands.h"
 #include "copter/CopterController.h"
 #include "copter/CrsfTelemetry.h"
 #include "copter/GpsHome.h"
@@ -165,11 +166,21 @@ copter::OsdScreen osdScreen;
 copter::OsdStats osdStats;
 static uint32_t armedMs = 0;   // время в полёте (заармлен), для OSD
 
-// Пищалка — copter/Beeper.h.
+// Пищалка — copter/Beeper.h; маяк моторами и команды стиками — там же и в
+// copter/StickCommands.h.
 copter::Beeper beeper;
+copter::DshotBeacon dshotBeacon;
+copter::StickCommands stickCommands;
 static bool wasArmedForBeeper = false;
 static bool readyBeeped = false;
 static uint32_t lastBeeperMs = 0;
+static bool buzzerActiveHigh = Config::BOARD_BEEPER_ACTIVE_HIGH;   // beeper_inversion
+static bool buzzerOpenDrain = false;                               // beeper_od
+static uint16_t buzzerHz = 0;                                      // beeper_frequency: 0 — активная
+static bool buzzerOn = false;
+static bool rcSeen = false;     // связь с пультом хоть раз была (RX_LOST — только после)
+static bool rcLinkOk = false;
+static uint32_t lastStickUs = 0;
 
 // Части цикла для `tasks` (TaskStats::add — по порядку).
 enum : uint8_t
@@ -195,6 +206,41 @@ static copter::CopterRc readRc()
     return rc;
 }
 
+// Вывод пищалки: beeper_inversion (пищит высоким), beeper_od (открытый
+// сток), beeper_frequency (пассивной — меандр этой частоты).
+static void writeBuzzer(bool on)
+{
+    if (Config::PIN_BUZZER < 0) return;
+    const uint32_t pin = static_cast<uint32_t>(Config::PIN_BUZZER);
+    if (buzzerHz > 0)
+    {
+        if (on != buzzerOn)
+        {
+            if (on) tone(static_cast<uint8_t>(pin), buzzerHz);
+            else noTone(static_cast<uint8_t>(pin));
+        }
+        buzzerOn = on;
+        return;
+    }
+    buzzerOn = on;
+    digitalWrite(pin, on == buzzerActiveHigh ? HIGH : LOW);
+}
+
+static void configureBuzzer()
+{
+    if (Config::PIN_BUZZER < 0) return;
+    const uint32_t pin = static_cast<uint32_t>(Config::PIN_BUZZER);
+    const bool od = copterParams.value(copter::PARAM_BEEPER_OD) > 0.5f;
+    const uint16_t hz = static_cast<uint16_t>(copterParams.value(copter::PARAM_BEEPER_FREQUENCY));
+    if (buzzerHz > 0 && buzzerOn) noTone(static_cast<uint8_t>(pin));
+    if (od != buzzerOpenDrain) pinMode(pin, od ? OUTPUT_OPEN_DRAIN : OUTPUT);
+    buzzerOpenDrain = od;
+    buzzerHz = hz;
+    buzzerActiveHigh = copterParams.value(copter::PARAM_BEEPER_INVERSION) > 0.5f;
+    buzzerOn = true;
+    writeBuzzer(false);   // тихо
+}
+
 // Настройки пульта и описание коптера — в работу (при включении, после
 // save и отмены в CLI или приложении).
 static void applySettings()
@@ -214,6 +260,12 @@ static void applySettings()
     }
     vtx.setMaxPowerMw(static_cast<uint16_t>(copterParams.value(copter::PARAM_VTX_MAX_POWER_MW)));
     gpsHome.setMinimumSats(static_cast<uint8_t>(copterParams.value(copter::PARAM_GPS_MINIMUM_SATS)));
+    beeper.setOffFlags(static_cast<uint32_t>(copterParams.value(copter::PARAM_BEEPER_OFF_FLAGS)));
+    dshotBeacon.configure(static_cast<uint32_t>(copterParams.value(copter::PARAM_DSHOT_BEACON_OFF_FLAGS)),
+                          static_cast<uint8_t>(copterParams.value(copter::PARAM_BEEPER_DSHOT_BEACON_TONE)));
+    stickCommands.configure(static_cast<uint16_t>(copterParams.value(copter::PARAM_MIN_CHECK)),
+                            static_cast<uint16_t>(copterParams.value(copter::PARAM_MAX_CHECK)));
+    configureBuzzer();
     crsfTelemetryOn = copterParams.value(copter::PARAM_CRSF_TELEMETRY) > 0.5f &&
                       rcReceiver.getProtocol() == Config::RxProtocol::CRSF;
     // другая рама — выходы на моторы настраиваются только при включении
@@ -372,29 +424,123 @@ static void sendTelemetry()
     if (n) board.rcUart().write(frame, n);
 }
 
-// Пищалка раз в 10 мс: ARM/DISARM/готов, батарея, failsafe, режим BEEPER.
+// ARM: с GPS — свой писк, есть ли фикс (ARMING_GPS_FIX / ARMING_GPS_NO_FIX), как в BF.
+static copter::BeeperCondition armingBeep()
+{
+    if (!gps.isAvailable()) return copter::BeeperCondition::ARMING;
+    return gpsHome.good(gpsHome.fix()) ? copter::BeeperCondition::ARMING_GPS_FIX : copter::BeeperCondition::ARMING_GPS_NO_FIX;
+}
+
+// Пищалка раз в 10 мс (copter/Beeper.h): ARM/DISARM/готов, батарея, связь,
+// режимы BEEPER, BEEPER MUTE, GPS BEEP SATELLITE COUNT; что выключено — beeper_off_flags.
 static void updateBeeper()
 {
     if (Config::PIN_BUZZER < 0) return;
+    const copter::CopterStatus& st = copterController.getStatus();
     const bool armed = copterController.isArmed();
-    if (armed != wasArmedForBeeper) beeper.event(armed ? copter::BeeperEvent::ARMED : copter::BeeperEvent::DISARMED);
+    if (armed != wasArmedForBeeper) beeper.event(armed ? armingBeep() : copter::BeeperCondition::DISARMING);
     wasArmedForBeeper = armed;
-    if (!readyBeeped && !armed && copterController.getStatus().armBlockers == 0)
+    if (!readyBeeped && !armed && st.armBlockers == 0)
     {
         readyBeeped = true;
-        beeper.event(copter::BeeperEvent::READY);
+        beeper.event(copter::BeeperCondition::READY_BEEP);
     }
     copter::BeeperInputs in;
     in.batteryWarning = armed && battery.alertState() == copter::BatteryState::WARNING;     // use_vbat_alerts
     in.batteryCritical = armed && battery.alertState() == copter::BatteryState::CRITICAL;
-    in.failsafe = copterController.getStatus().state == copter::CopterState::FAILSAFE;
-    in.crashRecovery = copterController.getStatus().crashRecovery &&
-                       copterController.getTune().pid.crashRecovery == copter::CrashRecovery::BEEP;
-    in.crashFlip = copterController.getStatus().turtle;
+    in.rxLost = rcSeen && !rcLinkOk;
+    in.rxLostLanding = st.failsafeStage == 2;
+    in.crashRecovery = st.crashRecovery && copterController.getTune().pid.crashRecovery == copter::CrashRecovery::BEEP;
+    in.crashFlip = st.turtle;
     in.findMe = rxInput.isActive(copter::BOX_BEEPER);
     in.muted = rxInput.isActive(copter::BOX_BEEPER_MUTE);
-    const bool on = beeper.tick(in);
-    digitalWrite(static_cast<uint32_t>(Config::PIN_BUZZER), on == Config::BOARD_BEEPER_ACTIVE_HIGH ? HIGH : LOW);
+    in.gpsCount = rxInput.isActive(copter::BOX_GPS_BEEP_SATELLITE_COUNT);
+    in.gpsFix = gpsHome.fix().valid;
+    in.gpsSats = gpsHome.fix().satellites;
+    in.disarmRepeat = stickCommands.disarmPosition();
+    in.usbOnly = battery.state() == copter::BatteryState::NOT_PRESENT;
+    writeBuzzer(beeper.tick(in));
+}
+
+// «Послушать» из приложения и события консоли (стёрт ящик).
+static bool beepFromConsole(copter::BeeperCondition c, bool preview)
+{
+    if (Config::PIN_BUZZER < 0) return false;
+    if (preview) return beeper.preview(c);
+    beeper.event(c);
+    return true;
+}
+
+// Команда стиками (copter/StickCommands.h) — сделать; подтверждение — писком.
+static void runStickCommand(const copter::StickCommand& c)
+{
+    using namespace copter;
+    switch (c.action)
+    {
+        case StickAction::NONE: return;
+        case StickAction::CALIBRATE_GYRO:
+            imuSensor.calibrate();
+            if (baroSensor.isAvailable()) baroSensor.calibrateAltitude();
+            beeper.event(BeeperCondition::GYRO_CALIBRATED);
+            return;
+        case StickAction::CALIBRATE_ACC:
+        {
+            // горизонт = как стоит сейчас: acc_trim_* так, чтобы ANGLE держал этот наклон
+            const CopterStatus& st = copterController.getStatus();
+            if (fabsf(st.roll) > 25.0f || fabsf(st.pitch) > 25.0f)
+            {
+                beeper.event(BeeperCondition::ACC_CALIBRATION_FAIL);
+                return;
+            }
+            copterParams.setValue(PARAM_ACC_TRIM_ROLL, 0, roundf(st.roll * 10.0f));
+            copterParams.setValue(PARAM_ACC_TRIM_PITCH, 0, roundf(-st.pitch * 10.0f));
+            copterConsole.saveSettings();
+            beeper.event(BeeperCondition::ACC_CALIBRATION);
+            return;
+        }
+        case StickAction::PID_PROFILE:
+        case StickAction::RATE_PROFILE:
+        {
+            const bool rate = c.action == StickAction::RATE_PROFILE;
+            if (!(rate ? copterParams.selectRateProfile(c.value) : copterParams.selectPidProfile(c.value))) return;
+            copterConsole.saveSettings();
+            beeper.event(BeeperCondition::MULTI_BEEPS, static_cast<uint8_t>(c.value + 1));
+            return;
+        }
+        case StickAction::SAVE:
+            copterConsole.saveSettings();
+            beeper.event(BeeperCondition::MULTI_BEEPS, 1);
+            return;
+        case StickAction::TRIM:
+        {
+            const float roll = fminf(300.0f, fmaxf(-300.0f, copterParams.value(PARAM_ACC_TRIM_ROLL) + c.trimRoll));
+            const float pitch = fminf(300.0f, fmaxf(-300.0f, copterParams.value(PARAM_ACC_TRIM_PITCH) + c.trimPitch));
+            copterParams.setValue(PARAM_ACC_TRIM_ROLL, 0, roll);
+            copterParams.setValue(PARAM_ACC_TRIM_PITCH, 0, pitch);
+            copterConsole.saveSettings();
+            beeper.event(BeeperCondition::MULTI_BEEPS, 1);
+            return;
+        }
+    }
+}
+
+// Стики до контроллера: ARM стиками (ARM нет в таблице), команды стиками,
+// ARM после DShot-маяка — через 1.2 с (как в BF). Возвращает тумблер ARM
+// пилота (до отсрочки) — маяк молчит, пока пилот армится.
+static bool handleSticks(copter::CopterRc& rc)
+{
+    using namespace copter;
+    const uint32_t now = micros();
+    const float dt = lastStickUs ? fminf(0.1f, (now - lastStickUs) * 1e-6f) : 0.001f;
+    lastStickUs = now;
+    const bool armed = copterController.isArmed();
+    const bool disabled = rxInput.isActive(BOX_STICK_COMMANDS_DISABLE) || copterConsole.cliActive();
+    const StickCommand cmd = stickCommands.update(rc, armed, copterController.getStatus().airborne,
+                                                  rc.mode != CopterMode::ACRO, disabled, dt);
+    const bool armSwitch = rc.armSwitch;
+    if (!armed && dshotBeacon.holdArm(millis())) rc.armSwitch = false;
+    runStickCommand(cmd);
+    return armSwitch;
 }
 
 // Первый код BF причины, почему не армится (для OSD), или nullptr.
@@ -530,7 +676,10 @@ static void flightTask(void*)
             t = lap(TASK_BATTERY, t);
         }
         rcReceiver.update();
-        const copter::CopterRc rc = readRc();
+        copter::CopterRc rc = readRc();
+        rcLinkOk = rc.linkOk;
+        rcSeen = rcSeen || rc.linkOk;
+        const bool pilotArmSwitch = handleSticks(rc);
         switchMode = rc.mode;
         sticksUp = rc.linkOk && (rc.throttle > 0.9f || rc.pitch > 0.9f);
         t = lap(TASK_RX, t);
@@ -580,6 +729,14 @@ static void flightTask(void*)
         if (copterController.isArmed() && !armedLastLoop) motors.dshotOutput().clearCommands();
         armedLastLoop = copterController.isArmed();
         motors.dshotOutput().setReversed(out.reversed);
+        // DShot-маяк: нет связи / режим BEEPER — регуляторы пищат (без ARM)
+        if (motors.dshotOutput().commandsAvailable())
+        {
+            const uint8_t beacon = dshotBeacon.update(millis(), copterController.isArmed(), pilotArmSwitch, rcSeen && !rc.linkOk,
+                                                      rxInput.isActive(copter::BOX_BEEPER));
+            if (beacon && !copterController.motorTestActive() && motors.dshotOutput().commandsFree() > 0)
+                motors.dshotOutput().queueCommand(copter::dshot::CommandQueue::ALL, beacon);
+        }
         motors.write(out.motor, out.spinning);
         t = lap(TASK_MOTORS, t);
 
@@ -649,6 +806,7 @@ static void setupCopter(KeyValueStore& store)
     }
 
     copterParams.setTableDefault(copter::PARAM_SERIALRX_PROVIDER, static_cast<uint8_t>(Config::RX_PROTOCOL));
+    copterParams.setTableDefault(copter::PARAM_BEEPER_INVERSION, Config::BOARD_BEEPER_ACTIVE_HIGH ? 1.0f : 0.0f);
     copterParams.setTableDefault(copter::PARAM_VBAT_SCALE, roundf(Config::BLACKBOX_VBAT_DIVIDER * 10.0f));
     copterParams.setTableDefault(copter::PARAM_CURRENT_METER, Config::PIN_CURRENT_ADC >= 0 ? 1.0f : 0.0f);
     copterParams.setTableDefault(copter::PARAM_BATTERY_METER, Config::PIN_VBAT_ADC >= 0 ? 1.0f : 0.0f);
@@ -885,6 +1043,7 @@ void setup()
     copterConsole.setRebootHook([]() { NVIC_SystemReset(); });
 #endif
     copterConsole.setApplyHook(applySettings);
+    copterConsole.setBeepHook(beepFromConsole);
     copterConsole.setRxInput(&rxInput);
     copterConsole.setBattery(&battery);
     copterConsole.setVtx(&vtx);
@@ -902,6 +1061,8 @@ void setup()
     setupBlackBox();   // последним: задача записи начинает готовить место
 #endif
     copterConsole.printHint();
+    beeper.event(copter::BeeperCondition::GYRO_CALIBRATED);   // гироскоп откалиброван при включении
+    beeper.event(copter::BeeperCondition::SYSTEM_INIT);
 
     Rtos::startTask(flightTask, "flight", 16384, nullptr, Rtos::PRIORITY_FLIGHT);
     Rtos::startTask(storageTask, "storage", 2048, nullptr, Rtos::PRIORITY_BACKGROUND);

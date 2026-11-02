@@ -1673,6 +1673,20 @@ void test_failsafe_rescue_returns_control_by_stick()
     TEST_ASSERT_EQUAL(static_cast<int>(CopterState::ARMED), static_cast<int>(h.ctl.getStatus().state));
 }
 
+// 105: acc_trim_roll / acc_trim_pitch — ANGLE со стиками в центре держит
+// наклон на величину подстройки (+ — вправо и нос вниз, как в BF).
+void test_level_trim_shifts_angle_hover()
+{
+    CopterSettings s;
+    s.levelTrimRollDeg = 5.0f;
+    s.levelTrimPitchDeg = 3.0f;
+    QuadHarness h(five(), QuadPerturb(), 31, EscProtocol::DSHOT600, 1000.0f, s);
+    TEST_ASSERT_TRUE(h.takeoffTo(5.0));
+    h.run(2.0);
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 5.0f, h.ctl.getStatus().roll);
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, -3.0f, h.ctl.getStatus().pitch);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -1719,5 +1733,6 @@ int main()
     RUN_TEST(test_gps_rescue_without_compass_aligns_heading);
     RUN_TEST(test_gps_rescue_gps_loss_lands_in_place);
     RUN_TEST(test_gps_rescue_switch_and_arming_check);
+    RUN_TEST(test_level_trim_shifts_angle_hover);
     return UNITY_END();
 }

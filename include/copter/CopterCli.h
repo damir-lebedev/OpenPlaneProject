@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "copter/Beeper.h"
 #include "copter/CopterController.h"
 #include "copter/Params.h"
 #include "storage/KeyValueStore.h"
@@ -29,6 +30,8 @@
 //   rc_smoothing_info      — частота кадров приёмника и срезы сглаживания стиков
 //   dshotprog № команда…   — команды регулятору DShot (255 — всем): 1 — пискнуть,
 //                            7/8 — направление обычное/обратное, 12 — сохранить
+//   beeper [-]УСЛОВИЕ      — что пищит (как в BF: beeper -GYRO_CALIBRATED, ALL —
+//                            все); beacon [-]RX_LOST|RX_SET — маяк моторами
 //   save                   — во флеш, настройка пересчитана, выход из CLI
 //   defaults [nosave]      — всё по умолчанию (и сохранить)
 //   status, tasks, version, help, exit (несохранённое отменяется)
@@ -63,6 +66,12 @@ namespace copter
         virtual void printDshotTelemetry() {}   // команда dshot_telemetry_info
         virtual void printFlashInfo() {}        // команда flash_info
         virtual void flashErase() {}            // команда flash_erase
+        // «послушать» писк условия (приложение); false — пищалки нет
+        virtual bool beeperPreview(BeeperCondition c)
+        {
+            (void)c;
+            return false;
+        }
     };
 
     class CopterCli
@@ -87,6 +96,8 @@ namespace copter
         // Регуляторы DShot (main_copter.cpp); нет — dshotprog недоступна.
         void setEscCommands(IEscCommands* e) { esc = e; }
         bool dshotCommandsAvailable() const { return esc && esc->commandsAvailable(); }
+        // Писк условия пищалки «послушать» — только без ARM.
+        bool previewBeeper(BeeperCondition c) { return !ctl.isArmed() && port.beeperPreview(c); }
 
         // Команды DShot мотору (255 — всем) в очередь — и CLI, и приложение,
         // и MSP2_SEND_DSHOT_COMMAND. Только без ARM и без проверки моторов,
@@ -213,6 +224,8 @@ namespace copter
             else if (is(cmd, "rxrange")) cmdRxrange(args);
             else if (is(cmd, "rxfail")) cmdRxfail(args);
             else if (is(cmd, "vtx")) cmdVtx(args);
+            else if (is(cmd, "beeper")) cmdBeeper(args, false);
+            else if (is(cmd, "beacon")) cmdBeeper(args, true);
             else if (is(cmd, "motor")) cmdMotor(args);
             else if (is(cmd, "dshotprog")) cmdDshotprog(args);
             else if (is(cmd, "rc_smoothing_info")) cmdRcSmoothingInfo();
@@ -277,6 +290,7 @@ namespace copter
             print("dshot_telemetry_info — обороты моторов и ошибки ответа (dshot_bidir)\r\n");
             print("flash_info · flash_erase — флеш чёрного ящика: что за микросхема и полёты · стереть всё\r\n");
             print("vtx [№ канал полоса канал_VTX мощность от до] · vtx_info — видеопередатчик с тумблера · что он ответил\r\n");
+            print("beeper [list | [-]УСЛОВИЕ | [-]ALL] — что пищит (- — выключить) · beacon [-]RX_LOST|RX_SET — маяк моторами\r\n");
             print("rc_smoothing_info — частота кадров приёмника и сглаживание стиков\r\n");
             print("save — сохранить и пересчитать настройку · defaults [nosave] — всё по умолчанию\r\n");
             print("status · tasks · version · exit (несохранённое отменяется)\r\n");
@@ -536,7 +550,41 @@ namespace copter
             print("%s\r\n", row);
         }
 
-        // diff/dump: map, aux, rxrange, vtx, rxfail — как в BF, перед # master.
+        // ---- пищалка и маяк (BF: beeper / beacon) ----
+
+        void cmdBeeper(const char* args, bool beacon)
+        {
+            const ParamId id = beacon ? PARAM_DSHOT_BEACON_OFF_FLAGS : PARAM_BEEPER_OFF_FLAGS;
+            const uint32_t allowed = beacon ? DSHOT_BEACON_ALLOWED : BEEPER_ALL_MASK;
+            uint32_t off = static_cast<uint32_t>(params.value(id));
+            const char* what = beacon ? "beacon" : "beeper";
+            if (*args == '\0' || is(args, "list"))
+            {
+                const bool list = *args != '\0';
+                for (uint8_t i = 1; i <= BEEPER_CONDITION_COUNT; ++i)
+                {
+                    const BeeperCondition c = static_cast<BeeperCondition>(i);
+                    if (!(beeperBit(c) & allowed)) continue;
+                    if (list) print("%s\r\n", beeperConditionName(c));
+                    else print("%s %s%s\r\n", what, (off & beeperBit(c)) ? "-" : "", beeperConditionName(c));
+                }
+                return;
+            }
+            const bool disable = *args == '-';
+            const BeeperCondition c = beeperConditionByName(disable ? args + 1 : args);
+            const uint32_t bits = c == BeeperCondition::COUNT ? allowed : beeperBit(c) & allowed;
+            if (!bits)
+            {
+                printError("%s: нет условия %s (%s list — список)", what, disable ? args + 1 : args, what);
+                return;
+            }
+            off = disable ? off | bits : off & ~bits;
+            params.setValue(id, 0, static_cast<float>(off));
+            dirty = true;
+            print("%s %s%s\r\n", what, disable ? "-" : "", c == BeeperCondition::COUNT ? "ALL" : beeperConditionName(c));
+        }
+
+        // diff/dump: map, aux, rxrange, vtx, rxfail, beeper, beacon — как в BF, перед # master.
         void dumpTables(bool onlyChanged)
         {
             const RcConfig& rc = params.rc();
@@ -581,6 +629,24 @@ namespace copter
                 header = true;
                 rc.formatRxfail(i, row, sizeof(row));
                 print("%s\r\n", row);
+            }
+            dumpBeeper(PARAM_BEEPER_OFF_FLAGS, "beeper", BEEPER_ALL_MASK, onlyChanged);
+            dumpBeeper(PARAM_DSHOT_BEACON_OFF_FLAGS, "beacon", DSHOT_BEACON_ALLOWED, onlyChanged);
+        }
+
+        // Как в BF: diff — только то, что не как по умолчанию.
+        void dumpBeeper(ParamId id, const char* what, uint32_t allowed, bool onlyChanged)
+        {
+            const uint32_t off = static_cast<uint32_t>(params.value(id));
+            const uint32_t def = static_cast<uint32_t>(params.defaultValue(id));
+            bool header = false;
+            for (uint8_t i = 1; i <= BEEPER_CONDITION_COUNT; ++i)
+            {
+                const uint32_t bit = beeperBit(static_cast<BeeperCondition>(i));
+                if (!(bit & allowed) || (onlyChanged && (off & bit) == (def & bit))) continue;
+                if (!header) print("\r\n# %s\r\n", what);
+                header = true;
+                print("%s %s%s\r\n", what, (off & bit) ? "-" : "", beeperConditionName(static_cast<BeeperCondition>(i)));
             }
         }
 
@@ -698,6 +764,7 @@ namespace copter
             {
                 const ParamId id = static_cast<ParamId>(i);
                 if (paramInfo(id).scope != scope) continue;
+                if (id == PARAM_BEEPER_OFF_FLAGS || id == PARAM_DSHOT_BEACON_OFF_FLAGS) continue;   // строками beeper / beacon
                 if (onlyChanged && !changed(id, slot)) continue;
                 char value[48];
                 params.format(id, slot, value, sizeof(value));
@@ -883,7 +950,7 @@ namespace copter
         static bool isBfHardware(const char* cmd)
         {
             static const char* const LIST[] = { "board_name", "manufacturer_id", "mcu_id", "signature", "resource", "timer",
-                                                "dma", "serial", "feature", "beeper", "beacon", "mixer", "mmix", "smix",
+                                                "dma", "serial", "feature", "mixer", "mmix", "smix",
                                                 "led", "color", "mode_color", "adjrange", "vtxtable", "servo", "dshot_prog" };
             for (const char* name : LIST)
             {

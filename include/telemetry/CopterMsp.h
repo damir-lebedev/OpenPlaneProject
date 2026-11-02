@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "copter/Battery.h"
+#include "copter/Beeper.h"
 #include "copter/CopterCli.h"
 #include "copter/CopterController.h"
 #include "copter/Params.h"
@@ -49,6 +50,7 @@ namespace copter
             PID_ADVANCED = 94, SET_PID_ADVANCED = 95, SET_ARMING_DISABLED = 99,
             STATUS = 101, RAW_IMU = 102, MOTOR = 104, RC = 105, ATTITUDE = 108, ALTITUDE = 109, ANALOG = 110,
             RC_TUNING = 111, PID = 112, BOXNAMES = 116, BOXIDS = 119, BATTERY_STATE = 130, MOTOR_CONFIG = 131,
+            BEEPER_CONFIG = 184, SET_BEEPER_CONFIG = 185,
             STATUS_EX = 150, UID = 160, SET_RAW_RC = 200, SET_PID = 202, SET_RC_TUNING = 204, SELECT_SETTING = 210,
             SET_MOTOR = 214, SET_MOTOR_CONFIG = 222, EEPROM_WRITE = 250,
             SEND_DSHOT_COMMAND = 0x3003,   // MSP2: мастер направления моторов конфигуратора
@@ -197,6 +199,11 @@ namespace copter
                 case RX_CONFIG: rxConfig(w); return true;
                 case RX_MAP: rxMap(w); return true;
                 case RXFAIL_CONFIG: rxfailConfig(w); return true;
+                case BEEPER_CONFIG:
+                    w.u32(static_cast<uint32_t>(params.value(PARAM_BEEPER_OFF_FLAGS)));
+                    w.u8(static_cast<uint8_t>(params.value(PARAM_BEEPER_DSHOT_BEACON_TONE)));
+                    w.u32(static_cast<uint32_t>(params.value(PARAM_DSHOT_BEACON_OFF_FLAGS)));
+                    return true;
 
                 case SET_ARMING_DISABLED:
                     armingDisabled = r.u8() != 0;
@@ -290,6 +297,11 @@ namespace copter
                     if (!params.rc().setRxfail(ch, letter, us, error, sizeof(error))) return false;
                     break;
                 }
+                case SET_BEEPER_CONFIG:
+                    set(PARAM_BEEPER_OFF_FLAGS, static_cast<float>(r.u32() & BEEPER_ALL_MASK));
+                    if (r.remaining() >= 1) set(PARAM_BEEPER_DSHOT_BEACON_TONE, r.u8());
+                    if (r.remaining() >= 4) set(PARAM_DSHOT_BEACON_OFF_FLAGS, static_cast<float>(r.u32() & DSHOT_BEACON_ALLOWED));
+                    break;
                 case SET_FEATURE_CONFIG: r.u32(); return true;   // features у нас нет — ничего не меняется
                 case SELECT_SETTING:
                 {
@@ -889,9 +901,9 @@ namespace copter
         void rxConfig(msp::Writer& w)
         {
             w.u8(bfProvider(static_cast<uint8_t>(params.value(PARAM_SERIALRX_PROVIDER))));
-            w.u16(1900);
+            w.u16(static_cast<uint16_t>(params.value(PARAM_MAX_CHECK)));
             w.u16(1500);
-            w.u16(1050);
+            w.u16(static_cast<uint16_t>(params.value(PARAM_MIN_CHECK)));
             w.u8(0);
             w.u16(static_cast<uint32_t>(params.value(PARAM_RX_MIN_USEC)));
             w.u16(static_cast<uint32_t>(params.value(PARAM_RX_MAX_USEC)));
@@ -920,9 +932,9 @@ namespace copter
             if (bf == 7) set(PARAM_SERIALRX_PROVIDER, 0);
             else if (bf == 2) set(PARAM_SERIALRX_PROVIDER, 1);
             else if (bf == 9) set(PARAM_SERIALRX_PROVIDER, 2);
+            set(PARAM_MAX_CHECK, r.u16());
             r.u16();
-            r.u16();
-            r.u16();
+            set(PARAM_MIN_CHECK, r.u16());
             r.u8();
             if (r.remaining() >= 4)
             {

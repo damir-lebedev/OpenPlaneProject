@@ -61,6 +61,8 @@ public:
     // Куда CLI сохраняет настройки (save); без него — только до перезагрузки.
     void setStore(KeyValueStore* store) { cli.setStore(store); }
     bool cliActive() const { return cli.active(); }
+    // Сохранить и применить (команды стиками: профиль, save, горизонт) — как save.
+    copter::CopterCli::SaveResult saveSettings() { return cli.saveAndApply(); }
     // Приложение поменяло настройки и не сохранило — ARM нельзя.
     bool appUnsaved() const { return link.hasUnsaved() || msp.hasUnsaved(); }
     // Конфигуратор BF запретил ARM (MSP_SET_ARMING_DISABLED) и ещё на связи — флаг MSP.
@@ -77,6 +79,9 @@ public:
     // Вызывается после save и отмены в CLI и в приложении: приёмник,
     // выходы — по новым настройкам (main_copter.cpp).
     void setApplyHook(void (*hook)()) { applyHook = hook; }
+    // Пищалка (main_copter.cpp): «послушать» из приложения (preview) и
+    // события консоли (стёрт ящик — BLACKBOX_ERASE). false — пищалки нет.
+    void setBeepHook(bool (*hook)(copter::BeeperCondition c, bool preview)) { beepHook = hook; }
     void setTaskStats(const TaskStats* stats) { tasks = stats; }
     void setMotorTelemetry(const copter::IMotorTelemetry* t) { motorTelemetry = t; }
     // Регуляторы DShot: dshotprog в CLI, «dshot» приложения, MSP2_SEND_DSHOT_COMMAND.
@@ -328,8 +333,13 @@ public:
             return;
         }
         io.println("Erasing, please wait ... ");
-        io.println(recorder->eraseAll() ? "Done." : "###ОШИБКА: идёт запись или заармлен — не стёрто###");
+        const bool erased = recorder->eraseAll();
+        io.println(erased ? "Done." : "###ОШИБКА: идёт запись или заармлен — не стёрто###");
+        if (erased && beepHook) beepHook(copter::BeeperCondition::BLACKBOX_ERASE, false);
     }
+
+    // CliPort: «послушать» писк из приложения.
+    bool beeperPreview(copter::BeeperCondition c) override { return beepHook && beepHook(c, true); }
 
     // CliPort: tasks — части полётного цикла, как в Betaflight.
     void printTasks() override
@@ -702,6 +712,7 @@ private:
     IFlightRecorder* recorder = nullptr;
     void (*bootloaderHook)() = nullptr;
     void (*applyHook)() = nullptr;
+    bool (*beepHook)(copter::BeeperCondition c, bool preview) = nullptr;
     uint32_t loopAvgUs = 0, loopMaxUs = 0, loopHz = 0;
     uint32_t rxRateHz = 0, rxFramesAtWindow = 0, rxWindowMs = 0;
     bool hostLine = false;
