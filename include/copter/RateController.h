@@ -1,6 +1,7 @@
 #pragma once
 #include <math.h>
 
+#include "copter/FilterChain.h"
 #include "copter/Filters.h"
 #include "copter/Presets.h"
 
@@ -101,7 +102,8 @@ namespace copter
             gains = g;
             limit = iLimit;
             dt = dtS;
-            dLpf.configure(dtermLpfHz, dtS);
+            const LpfStage d1{ LpfType::PT1, dtermLpfHz };
+            dLpf.configure(d1, LpfStage{}, DynLpf{}, &noNotch, dtS);
             outLpf.configure(outLpfHz, dtS);
             ffLpf.configure(25.0f, dtS);
             ffShapedLpf.configure(25.0f, dtS);
@@ -143,6 +145,12 @@ namespace copter
 
         // Расход при полном стике, °/с (feedforward_max_rate_limit).
         void setMaxRate(float dps) { maxRate = fabsf(dps); }
+
+        // Фильтры D как в BF (dterm_lpf1/2_*, dterm_notch_*) — после configure().
+        void configureDterm(const FilterSpec& f) { dLpf.configure(f.dterm1, f.dterm2, f.dtermDyn, &f.dtermNotch, dt); }
+
+        // Газ 0..1 — срез динамического ФНЧ D (dterm_lpf1_dyn_*).
+        void setThrottle(float throttle) { dLpf.setThrottle(throttle); }
 
         // ФНЧ выхода (yaw_lowpass_hz) на ходу: 0 — без фильтра.
         void setOutputLpf(float hz) { outLpf.configure(hz, dt); }
@@ -409,7 +417,9 @@ namespace copter
         float dMax = 0.0f, dMaxGain = 37.0f, dMaxAdvance = 20.0f;
         bool relaxOn = true, relaxIncOnly = false, relaxGyro = false, relaxError = true;
         float relaxCutoffHz = 10.0f;
-        Pt1 dLpf, outLpf, ffLpf, ffShapedLpf, boostLpf, relaxLpf, spTrack;
+        AxisChain<1> dLpf;
+        NotchSpec noNotch;
+        Pt1 outLpf, ffLpf, ffShapedLpf, boostLpf, relaxLpf, spTrack;
         // feedforward_*
         float ffTransition = 0.0f, ffSmooth = 0.0f, ffJitter = 0.0f, ffBoost = 0.0f;
         uint8_t ffAveraging = 1;

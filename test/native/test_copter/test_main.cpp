@@ -1956,24 +1956,25 @@ void test_simplified_filter_sliders_scale_cutoffs()
     char err[96];
     const CopterTune& m = p.modelTune();
     const LoopCheck base = checkLoop(p.tune());
-    TEST_ASSERT_EQUAL_FLOAT(m.gyroLpfHz, p.tune().gyroLpfHz);
+    // срезы — целые Гц, как настройки BF
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, m.gyroLpfHz, p.tune().gyroLpfHz);
     TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER, 0, "50", err, sizeof(err)));
     TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_DTERM_FILTER_MULTIPLIER, 0, "50", err, sizeof(err)));
     CopterTune t = p.tune();
-    TEST_ASSERT_FLOAT_WITHIN(1e-3f, m.gyroLpfHz * 0.5f, t.gyroLpfHz);
-    TEST_ASSERT_FLOAT_WITHIN(1e-3f, m.dtermLpfHz * 0.5f, t.dtermLpfHz);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, m.gyroLpfHz * 0.5f, t.gyroLpfHz);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, m.dtermLpfHz * 0.5f, t.dtermLpfHz);
     const LoopCheck soft = checkLoop(t);
     TEST_ASSERT_TRUE(soft.phaseMarginDeg < base.phaseMarginDeg - 3.0f);
     // вверх — не выше 0.45 частоты цикла
     TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER, 0, "200", err, sizeof(err)));
-    TEST_ASSERT_FLOAT_WITHIN(1e-3f, fminf(450.0f, m.gyroLpfHz * 2.0f), p.tune().gyroLpfHz);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, fminf(450.0f, m.gyroLpfHz * 2.0f), p.tune().gyroLpfHz);
     // OFF — срез модели
     TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_GYRO_FILTER, 0, "OFF", err, sizeof(err)));
     TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_DTERM_FILTER, 0, "OFF", err, sizeof(err)));
     t = p.tune();
-    TEST_ASSERT_EQUAL_FLOAT(m.gyroLpfHz, t.gyroLpfHz);
-    TEST_ASSERT_EQUAL_FLOAT(m.dtermLpfHz, t.dtermLpfHz);
-    // BETAFLIGHT: от их срезов (PT2 250 Гц у нас вместо пары PT1)
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, m.gyroLpfHz, t.gyroLpfHz);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, m.dtermLpfHz, t.dtermLpfHz);
+    // BETAFLIGHT: от их срезов (динамический PT1 250–500 Гц — нижний срез)
     TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
     TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_GYRO_FILTER, 0, "ON", err, sizeof(err)));
     TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER, 0, "80", err, sizeof(err)));
@@ -3905,7 +3906,7 @@ void test_cli_pastes_betaflight_diff()
         "# rxfail",
         "rxfail 4 h",
         "# master",
-        "set gyro_lpf1_static_hz = 0",
+        "set gyro_hardware_lpf = NORMAL",
         "set dshot_bidir = ON",
         "set motor_pwm_protocol = DSHOT300",
         "set motor_poles = 12",
@@ -3933,9 +3934,9 @@ void test_cli_pastes_betaflight_diff()
     }
     TEST_ASSERT_TRUE_MESSAGE(has(out, "# пропущено: resource — у нас это заголовок платы"), out.c_str());
     TEST_ASSERT_FALSE_MESSAGE(has(out, "###ОШИБКА: нет команды resource"), out.c_str());
-    TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки gyro_lpf1_static_hz###"));   // каждую — видно сразу
+    TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки gyro_hardware_lpf###"));   // каждую — видно сразу
     TEST_ASSERT_TRUE_MESSAGE(has(out, "# вставлено: применено 18 строк; не перенесено 11: board_name, manufacturer_id, mcu_id, "
-                                      "signature, resource, timer, dma, feature, serial, gyro_lpf1_static_hz, "
+                                      "signature, resource, timer, dma, feature, serial, gyro_hardware_lpf, "
                                       "motor_pwm_protocol\r\n"),
                              out.c_str());
     TEST_ASSERT_EQUAL_FLOAT(52.0f, p.value(PARAM_P_ROLL));
@@ -6656,6 +6657,102 @@ void test_osd_menu_by_sticks()
     TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::Exit::DISCARD), static_cast<int>(last));
 }
 
+namespace
+{
+    // Амплитуда синуса hz после фильтра (установившаяся), частота отсчётов fs.
+    template <typename F>
+    float sineGain(F&& filter, float hz, float fs = 1000.0f)
+    {
+        float peak = 0.0f;
+        const int n = static_cast<int>(fs * 2.0f);
+        for (int i = 0; i < n; ++i)
+        {
+            const float y = filter(sinf(2.0f * PI_F * hz * i / fs));
+            if (i > n / 2) peak = fmaxf(peak, fabsf(y));
+        }
+        return peak;
+    }
+}
+
+// 054–059: ФНЧ всех типов BF, динамический срез по газу, режекторы, настройки и MSP.
+void test_filter_chain_like_betaflight()
+{
+    // −3 дБ на срезе у каждого типа (PT2/PT3 — с поправкой частоты звена)
+    const LpfType types[] = { LpfType::PT1, LpfType::BIQUAD, LpfType::PT2, LpfType::PT3 };
+    float above[4];
+    for (int i = 0; i < 4; ++i)
+    {
+        Lowpass f;
+        f.configure(types[i], 100.0f, 0.001f);
+        TEST_ASSERT_FLOAT_WITHIN(0.06f, 0.707f, sineGain([&](float x) { return f.apply(x); }, 100.0f));
+        f.configure(types[i], 100.0f, 0.001f);
+        above[i] = sineGain([&](float x) { return f.apply(x); }, 300.0f);
+    }
+    // выше среза: порядок выше — срезает круче
+    TEST_ASSERT_TRUE(above[2] < above[0] && above[3] < above[2]);
+    Lowpass off;
+    off.configure(LpfType::PT2, 0.0f, 0.001f);
+    TEST_ASSERT_EQUAL_FLOAT(0.3f, off.apply(0.3f));
+
+    // динамический срез: газ 0 — min, 1 — max, 0.5 при expo 5 — 62.5 % пути
+    const DynLpf dyn{ 250.0f, 450.0f, 5 };
+    TEST_ASSERT_EQUAL_FLOAT(250.0f, dynLpfHz(dyn, 0.0f));
+    TEST_ASSERT_EQUAL_FLOAT(450.0f, dynLpfHz(dyn, 1.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 375.0f, dynLpfHz(dyn, 0.5f));
+    FilterSpec spec;
+    spec.valid = true;
+    spec.gyro1 = { LpfType::PT1, 250.0f };
+    spec.gyroDyn = dyn;
+    spec.gyroNotch[0] = { 200.0f, 160.0f };   // Q = 200·160 / (200² − 160²) ≈ 2.2
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 2.222f, spec.gyroNotch[0].q());
+    GyroFilter g;
+    g.configure(1000.0f, 150.0f, 4.0f, 3, 80.0f);
+    g.configureChain(spec);
+    TEST_ASSERT_EQUAL_FLOAT(250.0f, g.lpf1Hz());
+    g.setThrottle(1.0f);
+    TEST_ASSERT_EQUAL_FLOAT(450.0f, g.lpf1Hz());
+    // режектор: на центре гасит в разы сильнее, чем ФНЧ сам по себе
+    g.setThrottle(0.0f);
+    const float withNotch = sineGain([&](float x) { float r[3] = { x, 0, 0 }; g.apply(r); return r[0]; }, 200.0f);
+    TEST_ASSERT_TRUE(withNotch < 0.15f);
+
+    // настройки: модель — PT2 на её срезе без динамики; BF — PT1 250–450 (не выше 0.45 цикла) + PT1 450
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_EQUAL_FLOAT(static_cast<float>(LpfType::PT2), p.value(PARAM_GYRO_LPF1_TYPE));
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, p.modelTune().gyroLpfHz, p.value(PARAM_GYRO_LPF1_STATIC_HZ));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.value(PARAM_GYRO_LPF1_DYN_MIN_HZ));
+    const LoopCheck base = checkLoop(p.tune());
+    TEST_ASSERT_TRUE(p.parse(PARAM_GYRO_LPF1_TYPE, 0, "PT3", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_GYRO_NOTCH1_HZ, 0, "90", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_GYRO_NOTCH1_CUTOFF, 0, "60", err, sizeof(err)));
+    CopterTune t = p.tune();
+    TEST_ASSERT_EQUAL(static_cast<int>(LpfType::PT3), static_cast<int>(t.filters.gyro1.type));
+    TEST_ASSERT_TRUE(t.filters.gyroNotch[0].on());
+    // режектор у полосы контура съедает запас по фазе — модель это видит
+    TEST_ASSERT_TRUE(checkLoop(t).phaseMarginDeg < base.phaseMarginDeg - 3.0f);
+    TEST_ASSERT_TRUE(p.parse(PARAM_TUNE_SOURCE, 0, "BETAFLIGHT", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(250.0f, p.value(PARAM_GYRO_LPF1_DYN_MIN_HZ));
+    TEST_ASSERT_EQUAL_FLOAT(450.0f, p.value(PARAM_GYRO_LPF1_DYN_MAX_HZ));
+    TEST_ASSERT_EQUAL_FLOAT(75.0f, p.value(PARAM_DTERM_LPF1_DYN_MIN_HZ));
+    TEST_ASSERT_EQUAL_FLOAT(150.0f, p.value(PARAM_DTERM_LPF2_STATIC_HZ));
+    // ползунок D — в своём профиле: профиль 2 с множителем 50 — срезы вдвое ниже, профиль 1 как был
+    TEST_ASSERT_TRUE(p.selectPidProfile(1));
+    TEST_ASSERT_TRUE(p.parse(PARAM_SIMPLIFIED_DTERM_FILTER_MULTIPLIER, 1, "50", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_FLOAT(38.0f, p.value(PARAM_DTERM_LPF1_DYN_MIN_HZ));
+    TEST_ASSERT_EQUAL_FLOAT(75.0f, p.valueIn(PARAM_DTERM_LPF1_DYN_MIN_HZ, 0));
+    TEST_ASSERT_EQUAL_FLOAT(38.0f, p.tune().dtermLpfHz);
+    p.selectPidProfile(0);
+
+    // контроллер: срез гироскопа идёт за газом и в полёте
+    CopterParams& q = five5Params();
+    TEST_ASSERT_TRUE(q.parse(PARAM_GYRO_LPF1_DYN_MIN_HZ, 0, "150", err, sizeof(err)));
+    TEST_ASSERT_TRUE(q.parse(PARAM_GYRO_LPF1_DYN_MAX_HZ, 0, "300", err, sizeof(err)));
+    CopterTune qt = q.tune();
+    TEST_ASSERT_TRUE(qt.filters.gyroDyn.on());
+    TEST_ASSERT_EQUAL_FLOAT(150.0f, qt.gyroLpfHz);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -6802,5 +6899,6 @@ int main()
     RUN_TEST(test_msp_beeper_config);
     RUN_TEST(test_crsf_msp_from_radio);
     RUN_TEST(test_osd_menu_by_sticks);
+    RUN_TEST(test_filter_chain_like_betaflight);
     return UNITY_END();
 }

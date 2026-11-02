@@ -220,9 +220,10 @@ Betaflight; таймер каждого мотора — тот же, что в�
   65 % от газа 1350, на малом газе −20 % до взлёта; `iterm_limit` 400;
   сумма PID 500 (рысканье 400); anti-gravity 80, 5 Гц, P 100;
   `throttle_boost` 5; ANGLE 5 °/с на градус, до 60°;
-  `yaw_lowpass_hz` 100; фильтры — в пересчёте на нашу цепочку (гироскоп
-  PT2 250 Гц, D — PT1 60 Гц: то же запаздывание у полосы контура). Режекторы
-  по оборотам остаются наши.
+  `yaw_lowpass_hz` 100; фильтры как в BF 4.5: гироскоп — PT1 динамический
+  250–500 Гц + PT1 500 Гц, D — PT1 динамический 75–150 Гц + PT1 150 Гц
+  (срезы не выше 0.45 частоты цикла: на цикле 1 кГц — 450). Режекторы по
+  оборотам остаются наши.
 - Во флеше — только заданное руками (и выбранные профили); перепрошивка их
   не стирает, `defaults` — стирает. `exit` без `save` — отмена.
 
@@ -265,6 +266,14 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `simplified_pitch_pi_gain` · `simplified_pitch_d_gain` | PID-профиль | 0–200 % | 100 | P/I и D тангажа относительно крена |
 | `simplified_gyro_filter` · `simplified_gyro_filter_multiplier` | общая | `OFF`, `ON` · 10–200 % | `ON` · 100 | срез ФНЧ гироскопа из модели (или BF) × множитель, не выше 0.45 частоты цикла |
 | `simplified_dterm_filter` · `simplified_dterm_filter_multiplier` | PID-профиль | `OFF`, `ON` · 10–200 % | `ON` · 100 | то же для ФНЧ D |
+| `gyro_lpf1_type` · `gyro_lpf2_type` | общая | `PT1`, `BIQUAD`, `PT2`, `PT3` | модель: `PT2` · `PT1`; BF: `PT1` · `PT1` | тип ступеней ФНЧ гироскопа: порядок выше — круче срез и больше задержка |
+| `gyro_lpf1_static_hz` · `gyro_lpf2_static_hz` | общая | 0–1000 Гц | модель: её срез · 0; BF: 250 · 500 | срезы ступеней (× ползунок фильтра гироскопа); 0 — ступень выключена |
+| `gyro_lpf1_dyn_min_hz` · `gyro_lpf1_dyn_max_hz` · `gyro_lpf1_dyn_expo` | общая | 0–1000 Гц · 0–10 | модель: 0 · 0; BF: 250 · 500; 5 | динамический 1-й ФНЧ: срез растёт с газом от min до max (expo — изгиб); min 0 — срез постоянный |
+| `gyro_notch1_hz` · `gyro_notch1_cutoff` · `gyro_notch2_hz` · `gyro_notch2_cutoff` | общая | 0–1000 Гц | 0 | статические режекторы гироскопа: центр и нижний край полосы (резонанс рамы) |
+| `dterm_lpf1_type` · `dterm_lpf2_type` | PID-профиль | `PT1`, `BIQUAD`, `PT2`, `PT3` | `PT1` | тип ступеней ФНЧ D |
+| `dterm_lpf1_static_hz` · `dterm_lpf2_static_hz` | PID-профиль | 0–1000 Гц | модель: её срез · 0; BF: 75 · 150 | срезы ФНЧ D (× ползунок фильтра D своего профиля) |
+| `dterm_lpf1_dyn_min_hz` · `dterm_lpf1_dyn_max_hz` · `dterm_lpf1_dyn_expo` | PID-профиль | 0–1000 Гц · 0–10 | модель: 0 · 0; BF: 75 · 150; 5 | динамический ФНЧ D по газу |
+| `dterm_notch_hz` · `dterm_notch_cutoff` | PID-профиль | 0–1000 Гц | 0 | статический режектор D |
 | `iterm_relax` | PID-профиль | `OFF`, `RP`, `RPY`, `RP_INC`, `RPY_INC` | `RPY`; BF: `RP` | на каких осях I ждёт, пока уставка резко меняется (нет отскока после флипа); `_INC` — придерживается только рост |
 | `iterm_relax_type` | PID-профиль | `GYRO`, `SETPOINT` | `SETPOINT` | `SETPOINT` — I копится медленнее; `GYRO` — I к сглаженной уставке, рядом с ней — ноль |
 | `iterm_relax_cutoff` | PID-профиль | 1–50 Гц | 10; BF: 15 | сглаживание уставки для relax: меньше — дольше ждёт |
@@ -717,7 +726,7 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 | Вход и плата | `API_VERSION`, `FC_VARIANT`, `FC_VERSION`, `BOARD_INFO`, `BUILD_INFO`, `UID`, `NAME`/`SET_NAME` | имя — `craft_name` |
 | Живые данные | `STATUS`, `STATUS_EX`, `RAW_IMU`, `ATTITUDE`, `ALTITUDE`, `ANALOG`, `BATTERY_STATE`, `RC`, `MOTOR`, `BOXNAMES`, `BOXIDS` | флаги запрета ARM — номерами BF (`status`), режимы — наша таблица |
 | PID, расходы | `PID`, `RC_TUNING`, `PID_ADVANCED` и `SET_*` | в реестр, единицы BF; тип расходов — `ACTUAL` (наша кривая), LEVEL и MAG — дефолты BF, не меняются |
-| Фильтры | `FILTER_CONFIG`, `SET_FILTER_CONFIG` | показываются фильтры из модели; записать можно только `yaw_lowpass_hz` |
+| Фильтры | `FILTER_CONFIG`, `SET_FILTER_CONFIG` | ФНЧ гироскопа и D (типы, срезы, динамика по газу), статические режекторы, `yaw_lowpass_hz` — как в BF; динамический режектор и RPM — после пунктов 060–062 |
 | Режимы, приёмник | `MODE_RANGES`, `SET_MODE_RANGE`, `RX_CONFIG`, `RX_MAP`, `RXFAIL_CONFIG` и `SET_*` | таблицы `aux`, `map`, `rxfail`, `serialrx_provider`, `rx_min/max_usec` |
 | Моторы, безопасность, батарея | `MOTOR_CONFIG`, `ADVANCED_CONFIG`, `FAILSAFE_CONFIG`, `ARMING_CONFIG`, `BATTERY_CONFIG`, `MIXER_CONFIG`, `FEATURE_CONFIG` и `SET_*` | `motor_poles`, `dshot_bidir`, `failsafe_*`, `small_angle`, `auto_disarm_delay`, `vbat_*`; протокол регуляторов — сборкой, features — только показываются |
 | Профили, сохранение, перезагрузка | `SELECT_SETTING`, `EEPROM_WRITE`, `REBOOT` (0 — плата, 1 — DFU), `SET_ARMING_DISABLED` | как `save` в CLI |

@@ -762,27 +762,34 @@ namespace copter
             }
         }
 
+        uint32_t pv(ParamId id) const { return static_cast<uint32_t>(lroundf(params.value(id))); }
+
+        // Поля MSP_FILTER_CONFIG — порядок как в BF 4.5.
         void filterConfig(msp::Writer& w)
         {
-            const CopterTune& t = ctl.getTune();
-            const uint32_t gyro = static_cast<uint32_t>(lroundf(t.gyroLpfHz));
-            const uint32_t dterm = static_cast<uint32_t>(lroundf(t.dtermLpfHz));
+            const uint32_t gyro = pv(PARAM_GYRO_LPF1_STATIC_HZ);
             w.u8(gyro > 255 ? 255 : gyro);
-            w.u16(dterm);
-            w.u16(static_cast<uint32_t>(params.value(PARAM_YAW_LOWPASS_HZ)));
-            for (int i = 0; i < 4; ++i) w.u16(0);   // notch 1, d-term notch
-            w.u16(0);
-            w.u16(0);
-            w.u8(0);    // dterm_lpf1_type PT1
+            w.u16(pv(PARAM_DTERM_LPF1_STATIC_HZ));
+            w.u16(pv(PARAM_YAW_LOWPASS_HZ));
+            w.u16(pv(PARAM_GYRO_NOTCH1_HZ));
+            w.u16(pv(PARAM_GYRO_NOTCH1_CUTOFF));
+            w.u16(pv(PARAM_DTERM_NOTCH_HZ));
+            w.u16(pv(PARAM_DTERM_NOTCH_CUTOFF));
+            w.u16(pv(PARAM_GYRO_NOTCH2_HZ));
+            w.u16(pv(PARAM_GYRO_NOTCH2_CUTOFF));
+            w.u8(pv(PARAM_DTERM_LPF1_TYPE));
             w.u8(0);    // gyro_hardware_lpf
             w.u8(0);
             w.u16(gyro);
-            w.u16(0);   // gyro_lpf2
-            w.u8(2);    // gyro_lpf1_type PT2
-            w.u8(0);
-            w.u16(0);   // dterm_lpf2
-            w.u8(0);
-            for (int i = 0; i < 4; ++i) w.u16(0);   // dyn lpf
+            w.u16(pv(PARAM_GYRO_LPF2_STATIC_HZ));
+            w.u8(pv(PARAM_GYRO_LPF1_TYPE));
+            w.u8(pv(PARAM_GYRO_LPF2_TYPE));
+            w.u16(pv(PARAM_DTERM_LPF2_STATIC_HZ));
+            w.u8(pv(PARAM_DTERM_LPF2_TYPE));
+            w.u16(pv(PARAM_GYRO_LPF1_DYN_MIN_HZ));
+            w.u16(pv(PARAM_GYRO_LPF1_DYN_MAX_HZ));
+            w.u16(pv(PARAM_DTERM_LPF1_DYN_MIN_HZ));
+            w.u16(pv(PARAM_DTERM_LPF1_DYN_MAX_HZ));
             w.u8(0);
             w.u8(0);
             w.u16(0);   // dyn notch q
@@ -790,15 +797,59 @@ namespace copter
             w.u8(0);    // rpm_filter_harmonics (наши режекторы по оборотам — из модели)
             w.u8(0);
             w.u16(0);
-            w.u8(0);
+            w.u8(pv(PARAM_DTERM_LPF1_DYN_EXPO));
             w.u8(0);    // dyn_notch_count
         }
 
+        // Как BF: старые конфигураторы шлют начало кадра — что пришло, то и задаём.
         void setFilterConfig(msp::Reader& r)
         {
-            r.u8();
-            r.u16();
-            set(PARAM_YAW_LOWPASS_HZ, r.u16());   // остальное у нас — из модели
+            r.u8();   // gyro_lpf1_static_hz u8 (старое поле, полное — ниже)
+            if (r.remaining() >= 4)
+            {
+                set(PARAM_DTERM_LPF1_STATIC_HZ, r.u16());
+                set(PARAM_YAW_LOWPASS_HZ, r.u16());
+            }
+            if (r.remaining() >= 8)
+            {
+                set(PARAM_GYRO_NOTCH1_HZ, r.u16());
+                set(PARAM_GYRO_NOTCH1_CUTOFF, r.u16());
+                set(PARAM_DTERM_NOTCH_HZ, r.u16());
+                set(PARAM_DTERM_NOTCH_CUTOFF, r.u16());
+            }
+            if (r.remaining() >= 4)
+            {
+                set(PARAM_GYRO_NOTCH2_HZ, r.u16());
+                set(PARAM_GYRO_NOTCH2_CUTOFF, r.u16());
+            }
+            if (r.remaining() >= 1) set(PARAM_DTERM_LPF1_TYPE, r.u8());
+            if (r.remaining() >= 10)
+            {
+                r.u8();   // gyro_hardware_lpf
+                r.u8();
+                set(PARAM_GYRO_LPF1_STATIC_HZ, r.u16());
+                set(PARAM_GYRO_LPF2_STATIC_HZ, r.u16());
+                set(PARAM_GYRO_LPF1_TYPE, r.u8());
+                set(PARAM_GYRO_LPF2_TYPE, r.u8());
+                set(PARAM_DTERM_LPF2_STATIC_HZ, r.u16());
+            }
+            if (r.remaining() >= 1) set(PARAM_DTERM_LPF2_TYPE, r.u8());
+            if (r.remaining() >= 8)
+            {
+                set(PARAM_GYRO_LPF1_DYN_MIN_HZ, r.u16());
+                set(PARAM_GYRO_LPF1_DYN_MAX_HZ, r.u16());
+                set(PARAM_DTERM_LPF1_DYN_MIN_HZ, r.u16());
+                set(PARAM_DTERM_LPF1_DYN_MAX_HZ, r.u16());
+            }
+            // dyn notch, rpm — пункты 060–062; dterm_lpf1_dyn_expo — после них
+            if (r.remaining() >= 10)
+            {
+                for (int i = 0; i < 2; ++i) r.u8();
+                for (int i = 0; i < 2; ++i) r.u16();
+                for (int i = 0; i < 2; ++i) r.u8();
+                r.u16();
+            }
+            if (r.remaining() >= 1) set(PARAM_DTERM_LPF1_DYN_EXPO, r.u8());
         }
 
         // motorPwmProtocol BF: PWM 0, ONESHOT125 1, ONESHOT42 2, MULTISHOT 3, DSHOT150 5, 300 6, 600 7.

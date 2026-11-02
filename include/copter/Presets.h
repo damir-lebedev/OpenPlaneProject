@@ -285,6 +285,7 @@ namespace copter
         float gyroLpfHz = 0, dtermLpfHz = 0, yawLpfHz = 0;
         float notchQ = 4.0f;
         float minNotchHz = 80.0f;       // ниже режекторы не опускаются (запас по фазе)
+        FilterSpec filters;             // ФНЧ и статические режекторы как в BF (gyro_lpf*, dterm_lpf*, *_notch*)
         float levelGain = 8.0f;         // (°/с) на градус ошибки угла
         float maxAngleDeg = 50.0f;
         RateCurve rates[3];
@@ -380,12 +381,59 @@ namespace copter
             float arg() const { return atan2f(im, re); }
         };
 
+        // Частотная характеристика ступени ФНЧ (непрерывная модель), 1 — выключена.
+        inline Cx lowpassAt(LpfType type, float hz, float w)
+        {
+            const Cx one = { 1.0f, 0.0f };
+            if (hz <= 0.0f) return one;
+            const float wc = 2.0f * PI_F * hz;
+            if (type == LpfType::BIQUAD)
+            {
+                const float x = w / wc;
+                return one / Cx{ 1.0f - x * x, x / 0.70710678f };
+            }
+            const uint8_t n = type == LpfType::PT3 ? 3 : type == LpfType::PT2 ? 2 : 1;
+            const Cx s = one / (one + Cx{ 0.0f, w / (wc * ptnCorrection(n)) });
+            Cx r = s;
+            for (uint8_t i = 1; i < n; ++i) r = r * s;
+            return r;
+        }
+
+        inline Cx notchAt(float centerHz, float q, float w)
+        {
+            if (centerHz <= 0.0f) return { 1.0f, 0.0f };
+            const float x = w / (2.0f * PI_F * centerHz);
+            const float re = 1.0f - x * x;
+            return Cx{ re, 0.0f } / Cx{ re, x / q };
+        }
+
+        // Динамический ФНЧ — по нижнему срезу: там задержка больше всего.
+        inline float worstLpf1Hz(const LpfStage& s, const DynLpf& d) { return d.on() ? d.minHz : s.hz; }
+
+        inline Cx gyroChainAt(const FilterSpec& f, float w)
+        {
+            Cx r = lowpassAt(f.gyro1.type, worstLpf1Hz(f.gyro1, f.gyroDyn), w) * lowpassAt(f.gyro2.type, f.gyro2.hz, w);
+            for (const NotchSpec& n : f.gyroNotch)
+            {
+                if (n.on()) r = r * notchAt(n.hz, n.q(), w);
+            }
+            return r;
+        }
+
+        inline Cx dtermChainAt(const FilterSpec& f, float w)
+        {
+            Cx r = lowpassAt(f.dterm1.type, worstLpf1Hz(f.dterm1, f.dtermDyn), w) * lowpassAt(f.dterm2.type, f.dterm2.hz, w);
+            if (f.dtermNotch.on()) r = r * notchAt(f.dtermNotch.hz, f.dtermNotch.q(), w);
+            return r;
+        }
+
         struct LoopShape
         {
             float k, tauM, delayS, gyroHz, dtermHz, outHz, dRatio, iRatio;
             float loopHz = 1000.0f;
             float notchHz[NOTCH_HARMONICS] = {};
             float notchQ = 4.0f;
+            const FilterSpec* chain = nullptr;   // цепочка BF вместо PT2 gyroHz и PT1 dtermHz
 
             // Разомкнутый контур при P = 1: C(jω)·K/(jω(1+jωτ))·e^(−jωT)·фильтры.
             Cx at(float w) const
@@ -404,7 +452,8 @@ namespace copter
                 const float wd = 2.0f * PI_F * dtermHz;
                 const float half = 0.5f / loopHz;
                 const Cx dDelay = { cosf(-w * half), sinf(-w * half) };
-                return (Cx{ 0.0f, w * a * b } / (one + Cx{ 0.0f, w / wd })) * dDelay;
+                const Cx lpf = chain ? dtermChainAt(*chain, w) : one / (one + Cx{ 0.0f, w / wd });
+                return Cx{ 0.0f, w * a * b } * lpf * dDelay;
             }
 
             Cx delay(float w) const { return { cosf(-w * delayS), sinf(-w * delayS) }; }
@@ -415,9 +464,16 @@ namespace copter
                 const Cx jw = { 0.0f, w };
                 const Cx one = { 1.0f, 0.0f };
                 Cx plant = Cx{ k, 0.0f } / (jw * (one + Cx{ 0.0f, w * tauM }));
-                const float wg = 2.0f * PI_F * gyroHz * 1.553774f;
-                const Cx g = one + Cx{ 0.0f, w / wg };
-                plant = plant / (g * g);
+                if (chain)
+                {
+                    plant = plant * gyroChainAt(*chain, w);
+                }
+                else
+                {
+                    const float wg = 2.0f * PI_F * gyroHz * 1.553774f;
+                    const Cx g = one + Cx{ 0.0f, w / wg };
+                    plant = plant / (g * g);
+                }
                 for (uint8_t h = 0; h < NOTCH_HARMONICS; ++h)
                 {
                     if (notchHz[h] <= 0.0f) continue;
@@ -568,6 +624,7 @@ namespace copter
         detail::LoopShape s{ 0.0f, t.motorTauS, 1.5f / t.loopHz + t.escDelayS + 0.0005f, t.gyroLpfHz, t.dtermLpfHz, 0.0f, 0.0f, 0.0f };
         s.loopHz = t.loopHz;
         s.notchQ = t.notchQ;
+        s.chain = t.filters.valid ? &t.filters : nullptr;
         notchCenters(t.rotHzHover, t.prop.prop.blades, t.minNotchHz, s.notchHz);
         const AxisGains* gains[3] = { &t.roll, &t.pitch, &t.yaw };
         const float k[3] = { t.kRoll, t.kPitch, t.kYaw };
@@ -677,6 +734,10 @@ namespace copter
         t.gyroLpfHz = fminf(0.4f * loopHz, fmaxf(60.0f, 1.3f * t.rotHzHover));
         t.dtermLpfHz = fminf(0.3f * loopHz, fmaxf(40.0f, 0.75f * t.gyroLpfHz));
         t.yawLpfHz = fminf(100.0f, fmaxf(30.0f, 0.5f * t.gyroLpfHz));
+        t.filters = FilterSpec{};
+        t.filters.valid = true;
+        t.filters.gyro1 = { LpfType::PT2, t.gyroLpfHz };
+        t.filters.dterm1 = { LpfType::PT1, t.dtermLpfHz };
 
         // контур угловой скорости
         // цикл (выборка + расчёт) + регулятор + фильтр в самом чипе гироскопа (~0.5 мс)
@@ -853,6 +914,11 @@ namespace copter
         constexpr uint8_t DEFAULT_FF_MAX_RATE_LIMIT = 90, DEFAULT_YAW_LOWPASS_HZ = 100, DEFAULT_THRUST_LINEAR = 0;
         // ANGLE BF 4.5: angle_limit 60, angle_p_gain 50, angle_feedforward 50
         constexpr uint8_t DEFAULT_ANGLE_FEEDFORWARD = 50;
+        // фильтры BF 4.5: гироскоп PT1 динамический 250–500 + PT1 500,
+        // D — PT1 динамический 75–150 + PT1 150, expo 5, режекторы выключены
+        constexpr uint16_t DEFAULT_GYRO_LPF1_HZ = 250, DEFAULT_GYRO_LPF1_DYN_MAX_HZ = 500, DEFAULT_GYRO_LPF2_HZ = 500;
+        constexpr uint16_t DEFAULT_DTERM_LPF1_HZ = 75, DEFAULT_DTERM_LPF1_DYN_MAX_HZ = 150, DEFAULT_DTERM_LPF2_HZ = 150;
+        constexpr uint8_t DEFAULT_LPF_DYN_EXPO = 5;
 
         // Газ в мкс (1000–2000) -> доля 0..1 и обратно.
         inline float throttleFromUs(float us) { return fminf(1.0f, fmaxf(0.0f, (us - 1000.0f) / 1000.0f)); }
@@ -919,11 +985,28 @@ namespace copter
     //     (d_min) — из реестра настроек (Params.h), там же их дефолты BF.
     // Режекторы по оборотам остаются наши (у BF на их месте RPM-фильтр по
     // телеметрии DShot и динамический режектор по спектру).
+    inline FilterSpec betaflightFilters()
+    {
+        namespace bf = betaflight;
+        FilterSpec f;
+        f.valid = true;
+        f.gyro1 = { LpfType::PT1, static_cast<float>(bf::DEFAULT_GYRO_LPF1_HZ) };
+        f.gyroDyn = { static_cast<float>(bf::DEFAULT_GYRO_LPF1_HZ), static_cast<float>(bf::DEFAULT_GYRO_LPF1_DYN_MAX_HZ),
+                      bf::DEFAULT_LPF_DYN_EXPO };
+        f.gyro2 = { LpfType::PT1, static_cast<float>(bf::DEFAULT_GYRO_LPF2_HZ) };
+        f.dterm1 = { LpfType::PT1, static_cast<float>(bf::DEFAULT_DTERM_LPF1_HZ) };
+        f.dtermDyn = { static_cast<float>(bf::DEFAULT_DTERM_LPF1_HZ), static_cast<float>(bf::DEFAULT_DTERM_LPF1_DYN_MAX_HZ),
+                       bf::DEFAULT_LPF_DYN_EXPO };
+        f.dterm2 = { LpfType::PT1, static_cast<float>(bf::DEFAULT_DTERM_LPF2_HZ) };
+        return f;
+    }
+
     inline void applyBetaflightBase(CopterTune& t)
     {
         namespace bf = betaflight;
-        t.gyroLpfHz = fminf(0.4f * t.loopHz, 250.0f);
-        t.dtermLpfHz = fminf(0.3f * t.loopHz, 60.0f);
+        t.filters = betaflightFilters();
+        t.gyroLpfHz = t.filters.gyroDyn.minHz;
+        t.dtermLpfHz = t.filters.dtermDyn.minHz;
         t.yawLpfHz = bf::DEFAULT_YAW_LOWPASS_HZ;
         t.thrustLinear = bf::DEFAULT_THRUST_LINEAR / 100.0f;
         t.iLimit = bf::DEFAULT_ITERM_LIMIT / bf::MIXER_SCALING;

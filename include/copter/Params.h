@@ -219,6 +219,26 @@ namespace copter
         PARAM_FEEDFORWARD_BOOST,
         PARAM_FEEDFORWARD_MAX_RATE_LIMIT,
         PARAM_YAW_LOWPASS_HZ,
+        PARAM_GYRO_LPF1_TYPE,
+        PARAM_GYRO_LPF1_STATIC_HZ,
+        PARAM_GYRO_LPF1_DYN_MIN_HZ,
+        PARAM_GYRO_LPF1_DYN_MAX_HZ,
+        PARAM_GYRO_LPF1_DYN_EXPO,
+        PARAM_GYRO_LPF2_TYPE,
+        PARAM_GYRO_LPF2_STATIC_HZ,
+        PARAM_GYRO_NOTCH1_HZ,
+        PARAM_GYRO_NOTCH1_CUTOFF,
+        PARAM_GYRO_NOTCH2_HZ,
+        PARAM_GYRO_NOTCH2_CUTOFF,
+        PARAM_DTERM_LPF1_TYPE,
+        PARAM_DTERM_LPF1_STATIC_HZ,   // ┐ четыре подряд: умолчание в каждом PID-профиле своё
+        PARAM_DTERM_LPF1_DYN_MIN_HZ,  // │ (× simplified_dterm_filter_multiplier профиля)
+        PARAM_DTERM_LPF1_DYN_MAX_HZ,  // │
+        PARAM_DTERM_LPF2_STATIC_HZ,   // ┘
+        PARAM_DTERM_LPF1_DYN_EXPO,
+        PARAM_DTERM_LPF2_TYPE,
+        PARAM_DTERM_NOTCH_HZ,
+        PARAM_DTERM_NOTCH_CUTOFF,
         PARAM_USE_INTEGRATED_YAW,
         PARAM_INTEGRATED_YAW_RELAX,
         PARAM_ABS_CONTROL_GAIN,
@@ -465,6 +485,7 @@ namespace copter
         static const char* const ITERM_RELAX_TYPES[] = { "GYRO", "SETPOINT" };
         static const char* const TPA_MODES[] = { "PD", "D", "MODEL" };   // как TpaMode
         static const char* const FF_AVERAGING[] = { "OFF", "2_POINT", "3_POINT", "4_POINT" };
+        static const char* const LPF_TYPES[] = { "PT1", "BIQUAD", "PT2", "PT3" };   // как LpfType
         // порядок — как в BF (SERIAL у нас нет — пишет только на свой носитель)
         static const char* const BLACKBOX_DEVICES[] = { "NONE", "SPIFLASH", "SDCARD", "SERIAL" };
         static const char* const BLACKBOX_MODES[] = { "NORMAL", "MOTOR_TEST", "ALWAYS" };
@@ -601,6 +622,46 @@ namespace copter
               "уставка у такой доли наибольшего расхода — упреждение гаснет: нет перелёта на флипе; 0 — выкл" },
             { "yaw_lowpass_hz", kInt, kPid, kGroupFilters, 0, 500, 0, kTune, "Гц", nullptr, 0,
               "ФНЧ выхода PID рысканья: меньше — тише моторы, но рысканье мягче; 0 — без фильтра" },
+            { "gyro_lpf1_type", kEnum, kMaster, kGroupFilters, 0, 3, 0, kTune, "", LPF_TYPES, 4,
+              "тип 1-го ФНЧ гироскопа: PT1 мягкий, PT2/PT3 круче срезают шум, BIQUAD — резче всех, но задержка больше" },
+            { "gyro_lpf1_static_hz", kInt, kMaster, kGroupFilters, 0, 1000, 0, kTune, "Гц", nullptr, 0,
+              "срез 1-го ФНЧ гироскопа: ниже — тише моторы, но больше задержка; 0 — выключен" },
+            { "gyro_lpf1_dyn_min_hz", kInt, kMaster, kGroupFilters, 0, 1000, 0, kTune, "Гц", nullptr, 0,
+              "динамический ФНЧ гироскопа: срез на холостых (растёт с газом до max); 0 — срез постоянный" },
+            { "gyro_lpf1_dyn_max_hz", kInt, kMaster, kGroupFilters, 0, 1000, 0, kTune, "Гц", nullptr, 0,
+              "динамический ФНЧ гироскопа: срез на полном газе" },
+            { "gyro_lpf1_dyn_expo", kInt, kMaster, kGroupFilters, 0, 10, 5, kTable, "", nullptr, 0,
+              "изгиб кривой «срез от газа»: больше — срез растёт раньше" },
+            { "gyro_lpf2_type", kEnum, kMaster, kGroupFilters, 0, 3, 0, kTable, "", LPF_TYPES, 4,
+              "тип 2-го ФНЧ гироскопа" },
+            { "gyro_lpf2_static_hz", kInt, kMaster, kGroupFilters, 0, 1000, 0, kTune, "Гц", nullptr, 0,
+              "срез 2-го ФНЧ гироскопа; 0 — выключен" },
+            { "gyro_notch1_hz", kInt, kMaster, kGroupFilters, 0, 1000, 0, kTable, "Гц", nullptr, 0,
+              "режектор 1 гироскопа: центр (резонанс рамы); 0 — выключен" },
+            { "gyro_notch1_cutoff", kInt, kMaster, kGroupFilters, 0, 1000, 0, kTable, "Гц", nullptr, 0,
+              "режектор 1: нижний край полосы (ближе к центру — уже)" },
+            { "gyro_notch2_hz", kInt, kMaster, kGroupFilters, 0, 1000, 0, kTable, "Гц", nullptr, 0,
+              "режектор 2 гироскопа: центр; 0 — выключен" },
+            { "gyro_notch2_cutoff", kInt, kMaster, kGroupFilters, 0, 1000, 0, kTable, "Гц", nullptr, 0,
+              "режектор 2: нижний край полосы" },
+            { "dterm_lpf1_type", kEnum, kPid, kGroupFilters, 0, 3, 0, kTable, "", LPF_TYPES, 4,
+              "тип 1-го ФНЧ D" },
+            { "dterm_lpf1_static_hz", kInt, kPid, kGroupFilters, 0, 1000, 0, kTune, "Гц", nullptr, 0,
+              "срез 1-го ФНЧ D: ниже — моторы холоднее, но D запаздывает; 0 — выключен" },
+            { "dterm_lpf1_dyn_min_hz", kInt, kPid, kGroupFilters, 0, 1000, 0, kTune, "Гц", nullptr, 0,
+              "динамический ФНЧ D: срез на холостых; 0 — срез постоянный" },
+            { "dterm_lpf1_dyn_max_hz", kInt, kPid, kGroupFilters, 0, 1000, 0, kTune, "Гц", nullptr, 0,
+              "динамический ФНЧ D: срез на полном газе" },
+            { "dterm_lpf2_static_hz", kInt, kPid, kGroupFilters, 0, 1000, 0, kTune, "Гц", nullptr, 0,
+              "срез 2-го ФНЧ D; 0 — выключен" },
+            { "dterm_lpf1_dyn_expo", kInt, kPid, kGroupFilters, 0, 10, 5, kTable, "", nullptr, 0,
+              "изгиб кривой «срез D от газа»" },
+            { "dterm_lpf2_type", kEnum, kPid, kGroupFilters, 0, 3, 0, kTable, "", LPF_TYPES, 4,
+              "тип 2-го ФНЧ D" },
+            { "dterm_notch_hz", kInt, kPid, kGroupFilters, 0, 1000, 0, kTable, "Гц", nullptr, 0,
+              "режектор D: центр; 0 — выключен" },
+            { "dterm_notch_cutoff", kInt, kPid, kGroupFilters, 0, 1000, 0, kTable, "Гц", nullptr, 0,
+              "режектор D: нижний край полосы" },
             { "use_integrated_yaw", kEnum, kPid, kGroupPid, 0, 1, 0, kTable, "", OFF_ON, 2,
               "рысканье через интеграл суммы PID — для больших винтов; PID рысканья из модели пересчитываются" },
             { "integrated_yaw_relax", kInt, kPid, kGroupPid, 0, 255, 200, kTable, "", nullptr, 0,
@@ -1539,12 +1600,7 @@ namespace copter
             t.pid.integratedYaw = integrated;
             t.pid.integratedYawRelax = valueIn(PARAM_INTEGRATED_YAW_RELAX, pidIndex);
             if (bf) applyBetaflightBase(t);
-            // ползунки фильтров: срез модели (или BF) × множитель, не выше 0.45 цикла
-            if (value(PARAM_SIMPLIFIED_GYRO_FILTER) > 0.5f)
-                t.gyroLpfHz = fminf(0.45f * t.loopHz, t.gyroLpfHz * value(PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER) / 100.0f);
-            if (valueIn(PARAM_SIMPLIFIED_DTERM_FILTER, pidIndex) > 0.5f)
-                t.dtermLpfHz =
-                    fminf(0.45f * t.loopHz, t.dtermLpfHz * valueIn(PARAM_SIMPLIFIED_DTERM_FILTER_MULTIPLIER, pidIndex) / 100.0f);
+            filtersTo(t);
             AxisGains* gains[3] = { &t.roll, &t.pitch, &t.yaw };
             for (uint8_t axis = 0; axis < 3; ++axis)
             {
@@ -1917,6 +1973,64 @@ namespace copter
             defaults[PARAM_ANGLE_LIMIT] = fminf(90.0f, fmaxf(10.0f, roundf(pidBase.maxAngleDeg)));
             defaults[PARAM_ANGLE_P_GAIN] = fminf(200.0f, roundf(pidBase.levelGain * 10.0f));
             defaults[PARAM_ANGLE_FEEDFORWARD] = roundf(pidBase.pid.angleFf * 100.0f);
+            filterDefaults(bf);
+        }
+
+        // Умолчания фильтров: цепочка модели (или BF) × ползунок фильтров
+        // (как simplified_*_filter в BF: множитель — к срезам ФНЧ), не выше 0.45 цикла.
+        void filterDefaults(bool bf)
+        {
+            const FilterSpec base = bf ? betaflightFilters() : model.filters;
+            const float cap = 0.45f * model.loopHz;
+            auto scaled = [cap](float hz, float mul) { return hz > 0.0f ? fminf(cap, roundf(hz * mul)) : 0.0f; };
+            const float g = value(PARAM_SIMPLIFIED_GYRO_FILTER) > 0.5f ? value(PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER) / 100.0f : 1.0f;
+            defaults[PARAM_GYRO_LPF1_TYPE] = static_cast<float>(base.gyro1.type);
+            defaults[PARAM_GYRO_LPF1_STATIC_HZ] = scaled(base.gyro1.hz, g);
+            defaults[PARAM_GYRO_LPF1_DYN_MIN_HZ] = scaled(base.gyroDyn.minHz, g);
+            defaults[PARAM_GYRO_LPF1_DYN_MAX_HZ] = scaled(base.gyroDyn.maxHz, g);
+            defaults[PARAM_GYRO_LPF2_STATIC_HZ] = scaled(base.gyro2.hz, g);
+            const float dBase[4] = { base.dterm1.hz, base.dtermDyn.minHz, base.dtermDyn.maxHz, base.dterm2.hz };
+            for (uint8_t i = 0; i < 4; ++i)
+            {
+                const ParamId id = static_cast<ParamId>(PARAM_DTERM_LPF1_STATIC_HZ + i);
+                defaults[id] = dBase[i];
+                for (uint8_t slot = 0; slot < PROFILES; ++slot)
+                {
+                    const float d = valueIn(PARAM_SIMPLIFIED_DTERM_FILTER, slot) > 0.5f
+                                        ? valueIn(PARAM_SIMPLIFIED_DTERM_FILTER_MULTIPLIER, slot) / 100.0f
+                                        : 1.0f;
+                    scaledDefaults[scaledIndex(id)][slot] = scaled(dBase[i], d);
+                }
+            }
+        }
+
+        // Цепочка фильтров из настроек (в своём PID-профиле), срезы не выше 0.45 цикла.
+        void filtersTo(CopterTune& t) const
+        {
+            const float cap = 0.45f * t.loopHz;
+            auto hz = [this, cap](ParamId id, uint8_t slot) {
+                const float v = valueIn(id, slot);
+                return v > 0.0f ? fminf(cap, v) : 0.0f;
+            };
+            auto type = [this](ParamId id, uint8_t slot) { return static_cast<LpfType>(static_cast<uint8_t>(valueIn(id, slot))); };
+            FilterSpec& f = t.filters;
+            f = FilterSpec{};
+            f.valid = true;
+            f.gyro1 = { type(PARAM_GYRO_LPF1_TYPE, 0), hz(PARAM_GYRO_LPF1_STATIC_HZ, 0) };
+            f.gyroDyn = { hz(PARAM_GYRO_LPF1_DYN_MIN_HZ, 0), hz(PARAM_GYRO_LPF1_DYN_MAX_HZ, 0),
+                          static_cast<uint8_t>(valueIn(PARAM_GYRO_LPF1_DYN_EXPO, 0)) };
+            f.gyro2 = { type(PARAM_GYRO_LPF2_TYPE, 0), hz(PARAM_GYRO_LPF2_STATIC_HZ, 0) };
+            f.gyroNotch[0] = { valueIn(PARAM_GYRO_NOTCH1_HZ, 0), valueIn(PARAM_GYRO_NOTCH1_CUTOFF, 0) };
+            f.gyroNotch[1] = { valueIn(PARAM_GYRO_NOTCH2_HZ, 0), valueIn(PARAM_GYRO_NOTCH2_CUTOFF, 0) };
+            const uint8_t s = pidIndex;
+            f.dterm1 = { type(PARAM_DTERM_LPF1_TYPE, s), hz(PARAM_DTERM_LPF1_STATIC_HZ, s) };
+            f.dtermDyn = { hz(PARAM_DTERM_LPF1_DYN_MIN_HZ, s), hz(PARAM_DTERM_LPF1_DYN_MAX_HZ, s),
+                           static_cast<uint8_t>(valueIn(PARAM_DTERM_LPF1_DYN_EXPO, s)) };
+            f.dterm2 = { type(PARAM_DTERM_LPF2_TYPE, s), hz(PARAM_DTERM_LPF2_STATIC_HZ, s) };
+            f.dtermNotch = { valueIn(PARAM_DTERM_NOTCH_HZ, s), valueIn(PARAM_DTERM_NOTCH_CUTOFF, s) };
+            // для журнала, MSP и старых проверок — срез первой ступени (динамический — нижний)
+            t.gyroLpfHz = f.gyroDyn.on() ? f.gyroDyn.minHz : f.gyro1.hz;
+            t.dtermLpfHz = f.dtermDyn.on() ? f.dtermDyn.minHz : f.dterm1.hz;
         }
 
         // Сборка каталога с поправками прошивки (для сборки прошивки — она сама).
@@ -1931,11 +2045,12 @@ namespace copter
         }
 
         // P/I/D/F трёх осей и d_min — умолчания по профилям (ползунки).
-        static constexpr uint8_t SCALED_COUNT = 15;
+        static constexpr uint8_t SCALED_COUNT = 19;
         static int scaledIndex(ParamId id)
         {
             if (id >= PARAM_P_ROLL && id <= PARAM_F_YAW) return id - PARAM_P_ROLL;
             if (id >= PARAM_D_MIN_ROLL && id <= PARAM_D_MIN_YAW) return 12 + (id - PARAM_D_MIN_ROLL);
+            if (id >= PARAM_DTERM_LPF1_STATIC_HZ && id <= PARAM_DTERM_LPF2_STATIC_HZ) return 15 + (id - PARAM_DTERM_LPF1_STATIC_HZ);
             return -1;
         }
 
@@ -1949,7 +2064,7 @@ namespace copter
         static bool movesDefaults(ParamId id)
         {
             return id == PARAM_TUNE_SOURCE || id == PARAM_COPTER_BUILD || id == PARAM_BATTERY_CHEMISTRY ||
-                   (id >= PARAM_SIMPLIFIED_PIDS_MODE && id <= PARAM_SIMPLIFIED_PITCH_PI_GAIN);
+                   (id >= PARAM_SIMPLIFIED_PIDS_MODE && id <= PARAM_SIMPLIFIED_GYRO_FILTER_MULTIPLIER);
         }
 
         static bool sameBuild(const BuildSpec& a, const BuildSpec& b)

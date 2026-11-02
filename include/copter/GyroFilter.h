@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdint.h>
 
+#include "copter/FilterChain.h"
 #include "copter/Filters.h"
 
 // ============================================================
@@ -14,7 +15,8 @@
 // доля тяги и напряжение -> частота вращения). Датчика оборотов не
 // нужно (двунаправленный DShot даст точные — тогда центр берётся из
 // него, setRotationHz). Дальше — ФНЧ второго порядка: всё, что выше
-// полосы контура, но мимо режекторов.
+// полосы контура, но мимо режекторов. Настройки BF (gyro_lpf1/2_*,
+// динамический срез по газу, gyro_notch1/2_*) — configureChain.
 //
 // Режектор не опускается ниже minNotchHz: у больших винтов вращение
 // медленное, и режектор у полосы контура съел бы запас по фазе.
@@ -45,19 +47,36 @@ namespace copter
             q = notchQ;
             bladeCount = blades;
             minHz = minNotchHz;
+            FilterSpec f;
+            f.gyro1 = { LpfType::PT2, lpfHz };
             for (int a = 0; a < 3; ++a)
             {
-                lpf[a].configure(lpfHz, 1.0f / loopHz);
                 for (int h = 0; h < NOTCH_HARMONICS; ++h) notch[a][h].notch(0.0f, loopHz, q);
             }
+            configureChain(f);
+        }
+
+        // ФНЧ и статические режекторы как в BF — после configure().
+        void configureChain(const FilterSpec& f)
+        {
+            for (int a = 0; a < 3; ++a) chain[a].configure(f.gyro1, f.gyro2, f.gyroDyn, f.gyroNotch, 1.0f / fs);
             reset();
         }
+
+        // Газ 0..1 — срез динамического ФНЧ (gyro_lpf1_dyn_*).
+        void setThrottle(float throttle)
+        {
+            for (int a = 0; a < 3; ++a) chain[a].setThrottle(throttle);
+        }
+
+        // Срез первой ступени сейчас (динамический — по газу), Гц.
+        float lpf1Hz() const { return chain[0].lpf1Hz(); }
 
         void reset()
         {
             for (int a = 0; a < 3; ++a)
             {
-                lpf[a].reset();
+                chain[a].reset();
                 for (int h = 0; h < NOTCH_HARMONICS; ++h) notch[a][h].reset();
             }
         }
@@ -79,14 +98,14 @@ namespace copter
             {
                 float v = rates[a];
                 for (int h = 0; h < NOTCH_HARMONICS; ++h) v = notch[a][h].apply(v);
-                rates[a] = lpf[a].apply(v);
+                rates[a] = chain[a].apply(v);
             }
         }
 
         float notchCenter(uint8_t harmonic) const { return harmonic < NOTCH_HARMONICS ? centers[harmonic] : 0.0f; }
 
     private:
-        Pt2 lpf[3];
+        AxisChain<2> chain[3];
         Biquad notch[3][NOTCH_HARMONICS];
         float centers[NOTCH_HARMONICS] = {};
         float fs = 1000.0f, q = 3.0f, minHz = 80.0f;

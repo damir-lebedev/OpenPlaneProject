@@ -413,6 +413,7 @@ namespace copter
             axes[0].configure(t.roll, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[1].configure(t.pitch, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[2].configure(t.yaw, t.dtermLpfHz, t.yawLpfHz, t.iLimit, dt);
+            configureFilterChain(t.filters);
             for (uint8_t a = 0; a < 3; ++a)
             {
                 axes[a].setExtras(t.pid, a);
@@ -449,6 +450,24 @@ namespace copter
 
         void applyProfile(const CopterTune& t)
         {
+            // фильтры — только если поменялись: перенастройка сбрасывает их состояние
+            if (!sameFilters(t.filters, tune.filters))
+            {
+                tune.filters = t.filters;
+                tune.gyroLpfHz = t.gyroLpfHz;
+                tune.dtermLpfHz = t.dtermLpfHz;
+                if (t.filters.valid) configureFilterChain(t.filters);
+                else
+                {
+                    gyroFilter.configure(tune.loopHz, t.gyroLpfHz, tune.notchQ, tune.prop.prop.blades, tune.minNotchHz);
+                    for (uint8_t a = 0; a < 3; ++a)
+                    {
+                        FilterSpec legacy;
+                        legacy.dterm1 = { LpfType::PT1, t.dtermLpfHz };
+                        axes[a].configureDterm(legacy);
+                    }
+                }
+            }
             tune.roll = t.roll;
             tune.pitch = t.pitch;
             tune.yaw = t.yaw;
@@ -556,6 +575,9 @@ namespace copter
             }
             status.rotationHz = rotHz;
             if (set.rpmNotches) gyroFilter.setRotationHz(rotHz);
+            // динамические ФНЧ гироскопа и D — по газу (как в BF)
+            gyroFilter.setThrottle(status.throttle);
+            for (uint8_t a = 0; a < 3; ++a) axes[a].setThrottle(status.throttle);
             gyroFilter.apply(rates);
             // акселерометр на коптере трясётся на 1–2 g от моторов: для
             // горизонта и высоты нужно только медленное
@@ -849,6 +871,14 @@ namespace copter
         }
 
     private:
+        // ФНЧ и режекторы как в BF поверх простых PT2/PT1 из configure().
+        void configureFilterChain(const FilterSpec& f)
+        {
+            if (!f.valid) return;
+            gyroFilter.configureChain(f);
+            for (uint8_t a = 0; a < 3; ++a) axes[a].configureDterm(f);
+        }
+
         static constexpr float FAILSAFE_HOLD_S = 0.3f;        // провал связи короче — последние ручки (как в BF)
         static constexpr float FAILSAFE_KILL_LOCK_S = 1.0f;   // после KILL с тумблера ARM не раньше
         // runaway takeoff: сумма PID оси больше доли хода моторов, а гироскоп
