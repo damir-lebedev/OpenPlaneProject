@@ -27,6 +27,8 @@
 //   vtx [№ канал полоса канал_VTX мощность от до] — видеопередатчик с тумблера;
 //   vtx_info               — что ответил видеопередатчик, его таблица мощностей
 //   rc_smoothing_info      — частота кадров приёмника и срезы сглаживания стиков
+//   dshotprog № команда…   — команды регулятору DShot (255 — всем): 1 — пискнуть,
+//                            7/8 — направление обычное/обратное, 12 — сохранить
 //   save                   — во флеш, настройка пересчитана, выход из CLI
 //   defaults [nosave]      — всё по умолчанию (и сохранить)
 //   status, tasks, version, help, exit (несохранённое отменяется)
@@ -81,6 +83,28 @@ namespace copter
         }
 
         void setStore(KeyValueStore* store) { kv = store; }
+        // Регуляторы DShot (main_copter.cpp); нет — dshotprog недоступна.
+        void setEscCommands(IEscCommands* e) { esc = e; }
+        bool dshotCommandsAvailable() const { return esc && esc->commandsAvailable(); }
+
+        // Команды DShot мотору (255 — всем) в очередь — и CLI, и приложение,
+        // и MSP2_SEND_DSHOT_COMMAND. Только без ARM и без проверки моторов,
+        // все или ни одной. nullptr — ушло, иначе — почему нет.
+        const char* queueDshot(uint8_t motor, const uint16_t* commands, uint8_t count)
+        {
+            if (!esc || !esc->commandsAvailable()) return "регуляторы не DShot";
+            if (ctl.isArmed()) return "только без ARM";
+            if (ctl.motorTestActive()) return "идёт проверка моторов";
+            if (motor != 255 && motor >= ctl.getTune().frame.count) return "нет такого мотора";
+            if (count == 0) return "нет команды";
+            for (uint8_t i = 0; i < count; ++i)
+            {
+                if (commands[i] == 0 || commands[i] >= dshot::MIN_THROTTLE) return "команда — 1…47";
+            }
+            if (esc->commandsFree() < count) return "очередь команд полна";
+            for (uint8_t i = 0; i < count; ++i) esc->queueCommand(motor, commands[i]);
+            return nullptr;
+        }
         void setVersion(const char* text) { version = text; }
 
         bool active() const { return open; }
@@ -189,6 +213,7 @@ namespace copter
             else if (is(cmd, "rxfail")) cmdRxfail(args);
             else if (is(cmd, "vtx")) cmdVtx(args);
             else if (is(cmd, "motor")) cmdMotor(args);
+            else if (is(cmd, "dshotprog")) cmdDshotprog(args);
             else if (is(cmd, "rc_smoothing_info")) cmdRcSmoothingInfo();
             else if (is(cmd, "vtx_info")) port.printVtxInfo();
             else if (is(cmd, "dshot_telemetry_info")) port.printDshotTelemetry();
@@ -247,6 +272,7 @@ namespace copter
             print("map [AETR1234] · rxrange [0-3 мин макс] — порядок каналов · концы стиков\r\n");
             print("rxfail [канал a|h|s [значение]] — канал без связи: a — авто, h — держать, s — задать (AUX)\r\n");
             print("motor [№|255 значение] — мотор без пропеллеров: 1000 стоп … 2000 (у нас до 30 %%), 5 с; 255 — все\r\n");
+            print("dshotprog №|255 команда… — регулятору DShot: 1 пискнуть, 7/8 направление обычное/обратное, 12 сохранить\r\n");
             print("dshot_telemetry_info — обороты моторов и ошибки ответа (dshot_bidir)\r\n");
             print("flash_info · flash_erase — флеш чёрного ящика: что за микросхема и полёты · стереть всё\r\n");
             print("vtx [№ канал полоса канал_VTX мощность от до] · vtx_info — видеопередатчик с тумблера · что он ответил\r\n");
@@ -285,6 +311,38 @@ namespace copter
             }
             print("motor %ld: %ld (5 с; не выше %ld)\r\n", index, value,
                   lroundf(1000.0f + CopterController::MOTOR_TEST_MAX * 1000.0f));
+        }
+
+        // ---- команды регуляторам (BF: dshotprog <index> <command>+) ----
+
+        void cmdDshotprog(const char* args)
+        {
+            char* end = nullptr;
+            const long index = strtol(args, &end, 10);
+            uint16_t commands[8];
+            uint8_t n = 0;
+            const char* p = end;
+            while (end != args && n < 8)
+            {
+                char* next = nullptr;
+                const long c = strtol(p, &next, 10);
+                if (next == p) break;
+                commands[n++] = static_cast<uint16_t>(c < 0 || c > 0xFFFF ? 0 : c);
+                p = next;
+            }
+            if (end == args || index < 0 || index > 255 || n == 0)
+            {
+                const uint8_t count = ctl.getTune().frame.count;
+                printError("dshotprog №(0-%u или 255 — все) команда [команда…]", count ? count - 1 : 0);
+                return;
+            }
+            const char* error = queueDshot(static_cast<uint8_t>(index), commands, n);
+            if (error)
+            {
+                printError("%s", error);
+                return;
+            }
+            for (uint8_t i = 0; i < n; ++i) print("Command Sent: %u\r\n", commands[i]);
         }
 
         // ---- режимы на тумблерах ----
@@ -862,6 +920,7 @@ namespace copter
         CopterController& ctl;
         CliPort& port;
         KeyValueStore* kv = nullptr;
+        IEscCommands* esc = nullptr;
         const char* version = "OpenPlane copter";
         bool open = false;
         bool dirty = false;

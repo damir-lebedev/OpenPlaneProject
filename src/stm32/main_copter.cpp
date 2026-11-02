@@ -125,6 +125,7 @@ Stm32VtxPort vtxPort(Config::BOARD_VTX_PIN);
 copter::VtxController vtx(vtxPort);
 static copter::VtxProtocol vtxProtocol = copter::VtxProtocol::NONE;
 static bool everArmed = false;
+static bool armedLastLoop = false;   // ARM в прошлом цикле: новый ARM — очередь команд DShot прочь
 static uint8_t pinioLevels = 0;
 copter::GpsHome gpsHome;
 static uint32_t lastGpsStamp = 0;
@@ -363,7 +364,8 @@ static void sendTelemetry()
     d.satellites = f.satellites;
     const copter::CopterMode mode = copterController.isArmed() ? s.mode : switchMode;
     const bool rescue = s.rescuePhase != copter::RescuePhase::IDLE && s.rescuePhase != copter::RescuePhase::ABORT;
-    copter::CrsfTelemetry::modeName(d.mode, sizeof(d.mode), rescue ? "RTH" : crsfModeName(mode), copterController.isArmed(),
+    const char* name = s.turtle ? "TURT" : rescue ? "RTH" : crsfModeName(mode);   // turtle mode — как OSD BF
+    copter::CrsfTelemetry::modeName(d.mode, sizeof(d.mode), name, copterController.isArmed(),
                                     s.state == copter::CopterState::FAILSAFE && !rescue);
     uint8_t frame[copter::CrsfTelemetry::MAX_FRAME];
     const uint8_t n = crsfTelemetry.next(d, frame);
@@ -388,6 +390,7 @@ static void updateBeeper()
     in.failsafe = copterController.getStatus().state == copter::CopterState::FAILSAFE;
     in.crashRecovery = copterController.getStatus().crashRecovery &&
                        copterController.getTune().pid.crashRecovery == copter::CrashRecovery::BEEP;
+    in.crashFlip = copterController.getStatus().turtle;
     in.findMe = rxInput.isActive(copter::BOX_BEEPER);
     in.muted = rxInput.isActive(copter::BOX_BEEPER_MUTE);
     const bool on = beeper.tick(in);
@@ -417,7 +420,7 @@ static void composeOsd()
     copter::OsdData d;
     d.armed = copterController.isArmed();
     d.failsafe = s.state == copter::CopterState::FAILSAFE;
-    d.mode = crsfModeName(d.armed ? s.mode : switchMode);
+    d.mode = s.turtle ? "TURT" : crsfModeName(d.armed ? s.mode : switchMode);
     d.rescue = s.rescuePhase != copter::RescuePhase::IDLE && s.rescuePhase != copter::RescuePhase::ABORT;
     d.rescueAbort = s.rescuePhase == copter::RescuePhase::ABORT;
     d.linkQuality = rcReceiver.getLinkQuality();
@@ -572,6 +575,11 @@ static void flightTask(void*)
 
         const copter::CopterOutputs out = copterController.update(sens, rc);
         t = lap(TASK_PID, t);
+        // ARM — недосланные команды (пищалка, настройки) отменяются; turtle
+        // mode — регуляторам «наоборот», и моторы стоят, пока команда не уйдёт
+        if (copterController.isArmed() && !armedLastLoop) motors.dshotOutput().clearCommands();
+        armedLastLoop = copterController.isArmed();
+        motors.dshotOutput().setReversed(out.reversed);
         motors.write(out.motor, out.spinning);
         t = lap(TASK_MOTORS, t);
 
@@ -667,6 +675,7 @@ static void setupCopter(KeyValueStore& store)
     const copter::CopterTune tune = copterParams.tune();
     copter::CopterSettings settings = CopterConfig::settings();
     copterParams.applyTo(settings);
+    settings.turtleAvailable = copter::isDshot(CopterConfig::ESC_PROTOCOL);   // реверс — командой DShot
     copterController.configure(tune, settings);
     copterBuild = copterParams.buildSpec();
 
@@ -699,6 +708,7 @@ static void setupCopter(KeyValueStore& store)
         configOk = false;
     }
     copterConsole.setMotorTelemetry(&motors.dshotOutput());
+    if (copter::isDshot(CopterConfig::ESC_PROTOCOL)) copterConsole.setEscCommands(&motors.dshotOutput());
     outputsAtBoot = tune.frame.count;
 
     Serial.printf("Коптер: %s (%s), %s, регуляторы %s, цикл %.0f Гц.\n", copterBuild.id, copterBuild.title,

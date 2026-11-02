@@ -96,6 +96,20 @@ namespace copter
         virtual float telemetryErrorPercent(uint8_t i) const = 0;
     };
 
+    // Команды регуляторам DShot (пищалка, направление, сохранить) — для
+    // консоли, приложения и MSP; реализация — hal/stm32/Stm32Dshot.h.
+    // Уходят, только пока моторы стоят.
+    class IEscCommands
+    {
+    public:
+        virtual ~IEscCommands() = default;
+        virtual bool commandsAvailable() const = 0;   // регуляторы DShot
+        // motor — номер (0xFF — всем); false — не команда, очередь полна, нет DShot.
+        virtual bool queueCommand(uint8_t motor, uint16_t command) = 0;
+        virtual bool commandsPending() const = 0;
+        virtual uint8_t commandsFree() const = 0;     // сколько ещё влезет в очередь
+    };
+
     // ---------------- DShot ----------------
 
     namespace dshot
@@ -108,23 +122,132 @@ namespace copter
         enum Command : uint16_t
         {
             BEEP1 = 1,
+            BEEP5 = 5,
             ESC_INFO = 6,
-            SPIN_DIRECTION_1 = 7,        // обычное направление
+            SPIN_DIRECTION_1 = 7,        // обычное направление (запомнить — SAVE_SETTINGS)
             SPIN_DIRECTION_2 = 8,        // обратное
             MODE_3D_OFF = 9,
             MODE_3D_ON = 10,
             SAVE_SETTINGS = 12,
             EXTENDED_TELEMETRY_ON = 13,
-            SPIN_DIRECTION_NORMAL = 20,
-            SPIN_DIRECTION_REVERSED = 21,
+            EXTENDED_TELEMETRY_OFF = 14,
+            SPIN_DIRECTION_NORMAL = 20,  // до выключения питания: как сохранено
+            SPIN_DIRECTION_REVERSED = 21,  // до выключения питания: наоборот (turtle mode)
             LED0_ON = 22,
         };
 
-        // Команда 0..1 -> значение кадра (0 — мотор стоит).
+        // Сколько кадров подряд слать команду: настройки регулятор берёт только
+        // повторённые (BLHeli_32 — не меньше 6), пищалку и светодиоды — с одного.
+        inline uint8_t commandRepeats(uint16_t c)
+        {
+            return (c >= SPIN_DIRECTION_1 && c <= EXTENDED_TELEMETRY_OFF) || c == SPIN_DIRECTION_NORMAL ||
+                           c == SPIN_DIRECTION_REVERSED
+                       ? 10
+                       : 1;
+        }
+
+        // Пауза после команды (кадры «стоп»), мкс: регулятор пищит (~260 мс),
+        // отвечает сведениями по проводу телеметрии, пишет настройки во флеш.
+        inline uint32_t commandGapUs(uint16_t c)
+        {
+            if (c >= BEEP1 && c <= BEEP5) return 260000;
+            if (c == ESC_INFO) return 12000;
+            if (c == SAVE_SETTINGS) return 50000;
+            return 1000;
+        }
+
+        // Очередь команд DShot (dshotprog, мастер направления, turtle mode).
+        // Команда за командой: каждая — commandRepeats кадров подряд, потом
+        // commandGapUs кадров «стоп». Только пока моторы стоят и уже
+        // START_DELAY_US: регулятору, который только что крутил, нужно
+        // увидеть «стоп». Крутятся — отсчёт заново, недосланная команда
+        // начнётся сначала.
+        class CommandQueue
+        {
+        public:
+            static constexpr uint8_t CAPACITY = 16;
+            static constexpr uint8_t ALL = 0xFF;
+            static constexpr uint32_t START_DELAY_US = 10000;
+
+            // Мотору motor (ALL — всем). false — не команда (0, газ) или очередь полна.
+            bool push(uint8_t motor, uint16_t command)
+            {
+                if (command == STOP || command >= MIN_THROTTLE || count >= CAPACITY) return false;
+                items[(head + count) % CAPACITY] = { motor, command };
+                ++count;
+                return true;
+            }
+
+            void clear()
+            {
+                count = 0;
+                left = 0;
+                current = { ALL, STOP };
+                quietUntil = lastNow;
+            }
+
+            // Ещё что-то не ушло (или идёт пауза после команды) — моторы держать.
+            bool pending() const { return pendingAt(lastNow); }
+            bool pendingAt(uint32_t nowUs) const
+            {
+                return count > 0 || left > 0 || static_cast<int32_t>(quietUntil - nowUs) > 0;
+            }
+            uint8_t freeSlots() const { return CAPACITY - count; }
+
+            // Очередной кадр. stopped — моторы стоят. Возвращает команду этого
+            // кадра (STOP — нет), motor — кому (ALL — всем).
+            uint16_t step(uint32_t nowUs, bool stopped, uint8_t& motor)
+            {
+                lastNow = nowUs;
+                motor = ALL;
+                if (!started)
+                {
+                    started = true;
+                    stoppedSince = nowUs;
+                }
+                if (!stopped)
+                {
+                    stoppedSince = nowUs;
+                    if (left > 0) left = commandRepeats(current.command);
+                    return STOP;
+                }
+                if (nowUs - stoppedSince < START_DELAY_US) return STOP;
+                if (left == 0)
+                {
+                    if (static_cast<int32_t>(quietUntil - nowUs) > 0 || count == 0) return STOP;
+                    current = items[head];
+                    head = static_cast<uint8_t>((head + 1) % CAPACITY);
+                    --count;
+                    left = commandRepeats(current.command);
+                }
+                --left;
+                if (left == 0) quietUntil = nowUs + commandGapUs(current.command);
+                motor = current.motor;
+                return current.command;
+            }
+
+        private:
+            struct Item
+            {
+                uint8_t motor;
+                uint16_t command;
+            };
+            Item items[CAPACITY] = {};
+            Item current = { ALL, STOP };
+            uint8_t head = 0;
+            uint8_t count = 0;
+            uint8_t left = 0;   // кадров текущей команды осталось
+            bool started = false;
+            uint32_t stoppedSince = 0;
+            uint32_t quietUntil = 0;
+            uint32_t lastNow = 0;
+        };
+
+        // Команда 0..1 -> значение кадра (0 — мотор стоит). Меньше нуля —
+        // этот мотор стоит, хотя остальные крутятся (turtle mode).
         inline uint16_t throttleValue(float command, bool running)
         {
-            if (!running) return STOP;
-            if (command < 0.0f) command = 0.0f;
+            if (!running || command < 0.0f) return STOP;
             if (command > 1.0f) command = 1.0f;
             return static_cast<uint16_t>(MIN_THROTTLE + command * (MAX_THROTTLE - MIN_THROTTLE) + 0.5f);
         }

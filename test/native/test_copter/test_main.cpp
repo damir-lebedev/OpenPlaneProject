@@ -5097,6 +5097,295 @@ void test_beeper_events_and_alarms()
     TEST_ASSERT_EQUAL_STRING("..........", listen(b, muted, 10).c_str());
 }
 
+// 086: turtle mode — какая сторона рамы крутится от стика.
+void test_turtle_mix_picks_side()
+{
+    const Frame f = buildFrame(FrameType::QUAD_X);   // 1 задний правый, 2 передний правый, 3 задний левый, 4 передний левый
+    TurtleSettings s;
+    s.expo = 0.0f;
+    s.otherMotors = 0.0f;
+    float m[MAX_MOTORS];
+    auto spins = [&](bool a, bool b, bool c, bool d) {
+        const bool want[4] = { a, b, c, d };
+        for (int i = 0; i < 4; ++i)
+        {
+            if (want[i]) TEST_ASSERT_TRUE_MESSAGE(m[i] > 0.9f, "этот мотор должен крутиться");
+            else TEST_ASSERT_EQUAL_FLOAT_MESSAGE(MOTOR_STOP, m[i], "этот мотор должен стоять");
+        }
+    };
+    TEST_ASSERT_FALSE(turtleMix(f, 0.1f, 0.0f, 0.0f, s, m));   // мёртвая зона
+    spins(false, false, false, false);
+    TEST_ASSERT_TRUE(turtleMix(f, 1.0f, 0.0f, 0.0f, s, m));    // крен вправо — правые
+    spins(true, true, false, false);
+    turtleMix(f, -1.0f, 0.0f, 0.0f, s, m);                     // влево — левые
+    spins(false, false, true, true);
+    turtleMix(f, 0.0f, -1.0f, 0.0f, s, m);                     // от себя — передние
+    spins(false, true, false, true);
+    turtleMix(f, 0.0f, 1.0f, 0.0f, s, m);                      // на себя — задние
+    spins(true, false, true, false);
+    turtleMix(f, 0.7f, -0.7f, 0.0f, s, m);                     // вперёд-вправо — один угол
+    spins(false, true, false, false);
+    turtleMix(f, 0.985f, -0.174f, 0.0f, s, m);                 // 10° от крена — ещё ось
+    spins(true, true, false, false);
+    // рысканье сильнее — пара моторов одного вращения (по диагонали), другой знак — другая пара
+    turtleMix(f, 0.2f, 0.0f, 1.0f, s, m);
+    const bool pairA = m[0] > 0.0f;
+    TEST_ASSERT_TRUE(pairA == (m[3] > 0.0f) && pairA != (m[1] > 0.0f) && pairA != (m[2] > 0.0f));
+    turtleMix(f, 0.0f, 0.0f, -1.0f, s, m);
+    TEST_ASSERT_TRUE((m[0] > 0.0f) != pairA && (m[1] > 0.0f) == pairA);
+    // экспо: полстика — заметно меньше трети силы
+    s.expo = 0.35f;
+    turtleMix(f, 0.5f, 0.0f, 0.0f, s, m);
+    const float x = (0.5f - TURTLE_STICK_DEADBAND) / (1.0f - TURTLE_STICK_DEADBAND);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.65f * x + 0.35f * x * x * x, m[0]);
+    // crashflip_motor_percent — остальные крутятся с этой долей
+    s.expo = 0.0f;
+    s.otherMotors = 0.5f;
+    turtleMix(f, 1.0f, 0.0f, 0.0f, s, m);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, m[2]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, m[3]);
+    // кадр DShot мотору, который стоит в turtle mode, — «стоп», а не холостые
+    TEST_ASSERT_EQUAL_UINT16(dshot::STOP, dshot::throttleValue(MOTOR_STOP, true));
+    TEST_ASSERT_EQUAL_UINT16(dshot::MIN_THROTTLE, dshot::throttleValue(0.0f, true));
+}
+
+// 083: очередь команд DShot — повтор, пауза после, только при стоящих моторах.
+void test_dshot_command_queue()
+{
+    using Q = dshot::CommandQueue;
+    Q q;
+    uint8_t who = 0;
+    TEST_ASSERT_FALSE(q.push(0, 0));
+    TEST_ASSERT_FALSE(q.push(0, dshot::MIN_THROTTLE));
+    TEST_ASSERT_TRUE(q.push(Q::ALL, dshot::SPIN_DIRECTION_2));
+    TEST_ASSERT_TRUE(q.push(1, dshot::SAVE_SETTINGS));
+    TEST_ASSERT_TRUE(q.push(2, dshot::BEEP1));
+    TEST_ASSERT_EQUAL_UINT8(Q::CAPACITY - 3, q.freeSlots());
+    uint32_t t = 1000;
+    TEST_ASSERT_EQUAL_UINT16(dshot::STOP, q.step(t, false, who));   // крутятся — ждёт
+    t += 5000;
+    TEST_ASSERT_EQUAL_UINT16(dshot::STOP, q.step(t, true, who));    // стоят только 5 мс
+    t += 5000;
+    for (int k = 0; k < 10; ++k, t += 125)
+    {
+        TEST_ASSERT_EQUAL_UINT16(dshot::SPIN_DIRECTION_2, q.step(t, true, who));
+        TEST_ASSERT_EQUAL_UINT8(Q::ALL, who);
+    }
+    TEST_ASSERT_EQUAL_UINT16(dshot::STOP, q.step(t, true, who));    // пауза 1 мс
+    t += 1000;
+    int saves = 0;
+    for (; saves < 20 && q.step(t, true, who) == dshot::SAVE_SETTINGS; t += 125)
+    {
+        ++saves;
+        TEST_ASSERT_EQUAL_UINT8(1, who);   // только мотору 2 (№ 1)
+    }
+    TEST_ASSERT_EQUAL(10, saves);
+    // после «сохранить» — 50 мс тишины (регулятор пишет флеш)
+    t += 40000;
+    TEST_ASSERT_EQUAL_UINT16(dshot::STOP, q.step(t, true, who));
+    t += 11000;
+    TEST_ASSERT_EQUAL_UINT16(dshot::BEEP1, q.step(t, true, who));   // пищалка — один кадр
+    TEST_ASSERT_EQUAL_UINT8(2, who);
+    TEST_ASSERT_EQUAL_UINT16(dshot::STOP, q.step(t + 125, true, who));
+    TEST_ASSERT_TRUE(q.pending());                                  // пищит — 260 мс
+    q.step(t + 261000, true, who);
+    TEST_ASSERT_FALSE(q.pending());
+
+    // моторы закрутились посреди команды — потом она уходит целиком заново
+    t += 300000;
+    q.push(Q::ALL, dshot::SPIN_DIRECTION_NORMAL);
+    for (int k = 0; k < 3; ++k, t += 125) TEST_ASSERT_EQUAL_UINT16(dshot::SPIN_DIRECTION_NORMAL, q.step(t, true, who));
+    TEST_ASSERT_EQUAL_UINT16(dshot::STOP, q.step(t, false, who));
+    t += Q::START_DELAY_US;
+    int n = 0;
+    for (; n < 20 && q.step(t, true, who) == dshot::SPIN_DIRECTION_NORMAL; t += 125) ++n;
+    TEST_ASSERT_EQUAL(10, n);
+    // очистка
+    q.push(Q::ALL, dshot::BEEP1);
+    q.clear();
+    TEST_ASSERT_FALSE(q.pending());
+    TEST_ASSERT_EQUAL_UINT8(Q::CAPACITY, q.freeSlots());
+    for (int k = 0; k < Q::CAPACITY; ++k) TEST_ASSERT_TRUE(q.push(0, dshot::BEEP1));
+    TEST_ASSERT_FALSE(q.push(0, dshot::BEEP1));   // полна
+    TEST_ASSERT_EQUAL_UINT8(10, dshot::commandRepeats(dshot::SPIN_DIRECTION_REVERSED));
+    TEST_ASSERT_EQUAL_UINT8(1, dshot::commandRepeats(dshot::BEEP1));
+}
+
+// 086: ARM на спине — только с режимом FLIP OVER AFTER CRASH и регуляторами
+// DShot; моторы наоборот, стик выбирает сторону; ни удара, ни автодисарма;
+// выход — DISARM; без связи — DISARM.
+void test_turtle_mode_arms_upside_down()
+{
+    CopterSettings s;
+    s.turtleAvailable = true;
+    Bench b(s);
+    b.sens.accel[2] = -1.0f;   // лежит на спине
+    b.run(2.5f);
+    b.rc.armSwitch = true;
+    b.run(0.01f);
+    TEST_ASSERT_FALSE(b.ctl.isArmed());
+    TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_TILT);
+    b.rc.armSwitch = false;
+    b.rc.flipOverAfterCrash = true;
+    b.run(0.01f);
+    TEST_ASSERT_EQUAL_HEX32(0, b.ctl.getStatus().armBlockers);
+    b.rc.armSwitch = true;
+    b.run(0.01f);
+    TEST_ASSERT_TRUE(b.ctl.isArmed());
+    TEST_ASSERT_TRUE(b.ctl.getStatus().turtle);
+    TEST_ASSERT_TRUE(b.out.spinning);
+    TEST_ASSERT_TRUE(b.out.reversed);
+    for (int i = 0; i < 4; ++i) TEST_ASSERT_EQUAL_FLOAT(MOTOR_STOP, b.out.motor[i]);   // стик в центре
+    b.rc.roll = 1.0f;
+    b.run(0.01f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.0f, b.out.motor[0]);   // правые — в полную силу
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.0f, b.out.motor[1]);
+    TEST_ASSERT_EQUAL_FLOAT(MOTOR_STOP, b.out.motor[2]);
+    b.rc.roll = 0.3f;
+    b.run(0.01f);
+    TEST_ASSERT_TRUE(b.out.motor[0] > b.ctl.getTune().idle && b.out.motor[0] < 0.3f);
+    b.rc.roll = 0.0f;
+    b.run(6.0f);   // лежит дольше автодисарма и проверки «вверх ногами»
+    TEST_ASSERT_TRUE(b.ctl.isArmed());
+    TEST_ASSERT_FALSE(b.ctl.getStatus().crashed);
+    TEST_ASSERT_FALSE(b.ctl.getStatus().runawayCheck);
+    b.rc.flipOverAfterCrash = false;   // режим запомнен при ARM
+    b.run(0.01f);
+    TEST_ASSERT_TRUE(b.ctl.getStatus().turtle);
+    b.rc.armSwitch = false;
+    b.run(0.01f);
+    TEST_ASSERT_FALSE(b.ctl.isArmed());
+    TEST_ASSERT_FALSE(b.ctl.getStatus().turtle);
+    TEST_ASSERT_FALSE(b.out.reversed);
+    // связь пропала — DISARM (как на земле)
+    b.rc.flipOverAfterCrash = true;
+    b.rc.armSwitch = true;
+    b.run(0.01f);
+    TEST_ASSERT_TRUE(b.ctl.getStatus().turtle);
+    b.rc.linkOk = false;
+    b.run(0.5f);
+    TEST_ASSERT_FALSE(b.ctl.isArmed());
+
+    // без DShot тумблер ничего не даёт: на спине не армится
+    Bench plain;
+    plain.sens.accel[2] = -1.0f;
+    plain.rc.flipOverAfterCrash = true;
+    plain.run(2.5f);
+    TEST_ASSERT_TRUE(plain.ctl.getStatus().armBlockers & ARM_BLOCK_TILT);
+    // стоит ровно и армится с режимом без DShot — обычный полёт
+    Bench upright;
+    upright.rc.flipOverAfterCrash = true;
+    TEST_ASSERT_TRUE(upright.armAfterBoot());
+    TEST_ASSERT_FALSE(upright.ctl.getStatus().turtle);
+    TEST_ASSERT_FALSE(upright.out.reversed);
+
+    // режим 35 с тумблера; пищалка в turtle mode
+    RcConfig cfg;
+    char err[64];
+    TEST_ASSERT_TRUE(cfg.parseAux("0 35 1 1700 2100 0 0", err, sizeof(err)));
+    TEST_ASSERT_TRUE(findBox(BOX_FLIP_OVER_AFTER_CRASH)->works);
+    RxInput in;
+    in.configure(cfg, 885, 2115);
+    uint16_t ch[8] = { 1500, 1500, 1000, 1500, 1000, 2000, 1000, 1000 };
+    TEST_ASSERT_TRUE(in.read(ch, 8, true).flipOverAfterCrash);
+    ch[5] = 1000;
+    TEST_ASSERT_FALSE(in.read(ch, 8, true).flipOverAfterCrash);
+    Beeper beeper;
+    BeeperInputs flip;
+    flip.crashFlip = true;
+    const std::string tune = listen(beeper, flip, 100);
+    TEST_ASSERT_EQUAL(16, static_cast<int>(std::count(tune.begin(), tune.end(), '#')));
+}
+
+namespace
+{
+    struct FakeEsc : public IEscCommands
+    {
+        std::vector<std::pair<uint8_t, uint16_t>> sent;
+        bool dshot = true;
+        bool commandsAvailable() const override { return dshot; }
+        bool queueCommand(uint8_t m, uint16_t c) override
+        {
+            sent.push_back({ m, c });
+            return true;
+        }
+        bool commandsPending() const override { return !sent.empty(); }
+        uint8_t commandsFree() const override { return static_cast<uint8_t>(16 - sent.size()); }
+    };
+
+    // Кадр MSP v2 ('$X<'): флаг, команда u16, размер u16, данные, CRC-8 DVB-S2.
+    std::vector<uint8_t> mspV2Request(uint16_t cmd, const std::vector<uint8_t>& data)
+    {
+        std::vector<uint8_t> f = { '$', 'X', '<', 0, static_cast<uint8_t>(cmd & 0xFF), static_cast<uint8_t>(cmd >> 8),
+                                   static_cast<uint8_t>(data.size() & 0xFF), static_cast<uint8_t>(data.size() >> 8) };
+        f.insert(f.end(), data.begin(), data.end());
+        uint8_t crc = 0;
+        for (size_t i = 3; i < f.size(); ++i) crc = msp::crc8DvbS2(crc, f[i]);
+        f.push_back(crc);
+        return f;
+    }
+}
+
+// 083/084: команды регуляторам — dshotprog в CLI (как в BF) и
+// MSP2_SEND_DSHOT_COMMAND (мастер направления моторов конфигуратора BF):
+// только DShot, без ARM, без проверки моторов, все команды или ни одной.
+void test_dshotprog_cli_and_msp()
+{
+    MspBench m;
+    FakeEsc esc;
+    m.bench.run(2.5f);
+    m.cli.execute("#");
+    m.port.take();
+    m.cli.execute("dshotprog 0 1");
+    TEST_ASSERT_TRUE(has(m.port.take(), "регуляторы не DShot"));
+    m.cli.setEscCommands(&esc);
+    TEST_ASSERT_TRUE(m.cli.dshotCommandsAvailable());
+    m.cli.execute("dshotprog 2 8 12");
+    std::string out = m.port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "Command Sent: 8") && has(out, "Command Sent: 12"), out.c_str());
+    TEST_ASSERT_EQUAL(2, static_cast<int>(esc.sent.size()));
+    TEST_ASSERT_EQUAL_UINT8(2, esc.sent[0].first);
+    TEST_ASSERT_EQUAL_UINT16(dshot::SPIN_DIRECTION_2, esc.sent[0].second);
+    TEST_ASSERT_EQUAL_UINT16(dshot::SAVE_SETTINGS, esc.sent[1].second);
+    m.cli.execute("dshotprog 255 1");
+    TEST_ASSERT_EQUAL_UINT8(255, esc.sent[2].first);
+    m.cli.execute("dshotprog 7 1");   // у квадро моторы 0–3
+    TEST_ASSERT_TRUE(has(m.port.take(), "нет такого мотора"));
+    m.cli.execute("dshotprog 0 1 60");   // 60 — газ: не уходит ничего
+    TEST_ASSERT_TRUE(has(m.port.take(), "команда — 1…47"));
+    m.cli.execute("dshotprog");
+    TEST_ASSERT_TRUE(has(m.port.take(), "dshotprog №(0-3 или 255 — все)"));
+    TEST_ASSERT_EQUAL(3, static_cast<int>(esc.sent.size()));
+    m.cli.execute("motor 0 1100");
+    m.cli.execute("dshotprog 0 1");
+    TEST_ASSERT_TRUE(has(m.port.take(), "идёт проверка моторов"));
+    m.bench.ctl.stopMotorTest();
+    m.cli.execute("exit");
+
+    // MSP2_SEND_DSHOT_COMMAND: тип, мотор, число команд, команды
+    const std::vector<uint8_t> req = mspV2Request(0x3003, { 0, 1, 2, dshot::SPIN_DIRECTION_1, dshot::SAVE_SETTINGS });
+    bool done = false;
+    for (uint8_t c : req) done = m.parser.feed(c);
+    TEST_ASSERT_TRUE(done);
+    uint8_t reply[64];
+    size_t n = m.msp.handle(m.parser, reply, sizeof(reply), m.nowMs);
+    TEST_ASSERT_TRUE(n >= 9);
+    TEST_ASSERT_EQUAL_UINT8('>', reply[2]);
+    TEST_ASSERT_EQUAL(5, static_cast<int>(esc.sent.size()));
+    TEST_ASSERT_EQUAL_UINT8(1, esc.sent[3].first);
+    TEST_ASSERT_EQUAL_UINT16(dshot::SPIN_DIRECTION_1, esc.sent[3].second);
+    // заармлен — отказ
+    m.bench.rc.armSwitch = true;
+    m.bench.run(0.01f);
+    TEST_ASSERT_TRUE(m.bench.ctl.isArmed());
+    for (uint8_t c : req) done = m.parser.feed(c);
+    n = m.msp.handle(m.parser, reply, sizeof(reply), m.nowMs);
+    TEST_ASSERT_EQUAL_UINT8('!', reply[2]);
+    TEST_ASSERT_EQUAL(5, static_cast<int>(esc.sent.size()));
+    const uint16_t beep = dshot::BEEP1;
+    TEST_ASSERT_EQUAL_STRING("только без ARM", m.cli.queueDshot(0, &beep, 1));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -5220,5 +5509,9 @@ int main()
     RUN_TEST(test_osd_stats_after_flight);
     RUN_TEST(test_osd_chip_driver);
     RUN_TEST(test_beeper_events_and_alarms);
+    RUN_TEST(test_turtle_mix_picks_side);
+    RUN_TEST(test_dshot_command_queue);
+    RUN_TEST(test_turtle_mode_arms_upside_down);
+    RUN_TEST(test_dshotprog_cli_and_msp);
     return UNITY_END();
 }

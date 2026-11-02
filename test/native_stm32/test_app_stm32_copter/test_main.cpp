@@ -543,7 +543,7 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE_MESSAGE(isJson(header[0]), header[0].c_str());
     TEST_ASSERT_TRUE(contains(header[0], "\"build\":\"freestyle5\""));
     TEST_ASSERT_TRUE_MESSAGE(contains(header[0], "\"frame\":{\"type\":\"Quad X\",\"motors\":[[-0.71,0.71,\"cw\",false],"), header[0].c_str());
-    TEST_ASSERT_TRUE(contains(header[0], "\"motorTestMax\":30}"));
+    TEST_ASSERT_TRUE(contains(header[0], "\"motorTestMax\":30,\"dshotCommands\":false}"));   // сборка теста — MULTISHOT
     const auto lines = linesWith(log, "@param ");
     TEST_ASSERT_EQUAL(copter::PARAM_COUNT, static_cast<int>(lines.size()));
     for (const std::string& l : lines) TEST_ASSERT_TRUE_MESSAGE(isJson(l), l.c_str());
@@ -639,6 +639,11 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE(contains(log, "\"m\":[0.0,0.0,0.0,0.0]"));
     TEST_ASSERT_TRUE(contains(log, "@error {\"cmd\":\"motor\""));
     TEST_ASSERT_FALSE(copterController.motorTestActive());
+    // команды регуляторам — только DShot
+    host("dshot 0 1");
+    run(rc, 0.05);
+    log = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "@error {\"cmd\":\"dshot\",\"error\":\"регуляторы не DShot\"}"), log.c_str());
 
     // заармленному менять нельзя
     run(rc, 2.5);
@@ -782,9 +787,10 @@ void test_dshot_frames_on_timer_dma()
     TEST_ASSERT_EQUAL_UINT16(2047, out.dshotOutput().value(1));
 }
 
-// Команды DShot — 10 кадров с битом телеметрии, только пока моторы стоят;
-// поток DMA занят (цикл короче кадра) — кадр пропускается; у таймера нет
-// потока DMA — его моторы не выходы.
+// Команды DShot — очередью: 10 кадров с битом телеметрии, только пока
+// моторы стоят (и уже 10 мс), потом пауза; turtle mode — смена направления
+// всем, моторы стоят, пока команда не ушла. Поток DMA занят (цикл короче
+// кадра) — кадр пропускается; у таймера нет потока DMA — его моторы не выходы.
 void test_dshot_commands_skips_and_missing_dma()
 {
     fake::dshotDmaReset();
@@ -793,23 +799,64 @@ void test_dshot_commands_skips_and_missing_dma()
     const float zero[4] = {};
     const float hover[4] = { 0.3f, 0.3f, 0.3f, 0.3f };
 
-    d.sendCommand(0xFF, copter::dshot::SPIN_DIRECTION_2);
-    d.sendCommand(0, 0);    // не команда — ничего
-    d.sendCommand(0, 60);   // это газ, не команда
+    TEST_ASSERT_TRUE(d.sendCommand(0xFF, copter::dshot::SPIN_DIRECTION_2));
+    TEST_ASSERT_FALSE(d.sendCommand(0, 0));    // не команда — ничего
+    TEST_ASSERT_FALSE(d.sendCommand(0, 60));   // это газ, не команда
+    TEST_ASSERT_FALSE(d.sendCommand(4, 1));    // мотора 5 нет
     TEST_ASSERT_TRUE(d.commandPending());
-    d.write(hover, true);   // крутятся — команда ждёт
-    TEST_ASSERT_EQUAL_UINT16(copter::dshot::throttleValue(0.3f, true), d.value(0));
-    for (int i = 0; i < Stm32Dshot::COMMAND_REPEATS; ++i)
+    TEST_ASSERT_TRUE(d.commandsAvailable());
+    TEST_ASSERT_EQUAL_UINT8(copter::dshot::CommandQueue::CAPACITY - 1, d.commandsFree());
+    d.write(hover, false);   // после включения — сначала 10 мс «стоп»
+    fake::advanceUs(5000);
+    d.write(zero, false);
+    TEST_ASSERT_EQUAL_UINT16(0, d.value(1));
+    fake::advanceUs(5000);
+    for (int i = 0; i < 10; ++i)
     {
         d.write(zero, false);
+        fake::advanceUs(125);
         const uint16_t f = sentFrame(d, 1, 0, 0);
         TEST_ASSERT_EQUAL_UINT16(copter::dshot::SPIN_DIRECTION_2, f >> 5);
         TEST_ASSERT_EQUAL_UINT16(1, (f >> 4) & 1);   // бит телеметрии
         TEST_ASSERT_TRUE(copter::dshot::frameValid(f, false));
     }
-    TEST_ASSERT_FALSE(d.commandPending());
     d.write(zero, false);
     TEST_ASSERT_EQUAL_HEX16(copter::dshot::frame(0, false, false), sentFrame(d, 2, 1, 1));
+    fake::advanceUs(1000);
+    d.write(zero, false);
+    TEST_ASSERT_FALSE(d.commandPending());
+
+    // turtle mode: «наоборот» всем, и пока команда не ушла — моторы стоят
+    fake::advanceUs(20000);
+    d.setReversed(true);
+    TEST_ASSERT_TRUE(d.isReversed());
+    d.write(hover, true);
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::SPIN_DIRECTION_REVERSED, d.value(0));
+    for (int i = 0; i < 12; ++i)
+    {
+        fake::advanceUs(125);
+        d.write(hover, true);
+    }
+    TEST_ASSERT_EQUAL_UINT16(0, d.value(2));     // пауза после команды — ещё «стоп»
+    fake::advanceUs(1000);
+    d.write(hover, true);
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::throttleValue(0.3f, true), d.value(2));
+    const float turtle[4] = { 0.5f, 0.5f, copter::MOTOR_STOP, copter::MOTOR_STOP };
+    d.write(turtle, true);
+    TEST_ASSERT_EQUAL_UINT16(0, d.value(3));     // мотор другой стороны стоит
+    d.setReversed(false);                        // DISARM — обратно
+    d.write(zero, false);
+    fake::advanceUs(10000);
+    d.write(zero, false);
+    TEST_ASSERT_EQUAL_UINT16(copter::dshot::SPIN_DIRECTION_NORMAL, d.value(1));
+    for (int i = 0; i < 12; ++i)
+    {
+        fake::advanceUs(125);
+        d.write(zero, false);
+    }
+    fake::advanceUs(1000);
+    d.write(zero, false);
+    TEST_ASSERT_FALSE(d.commandPending());
 
     // поток занят прошлым кадром — новый пропускается, буфер не трогается
     fake::dshotDmaSlow() = true;

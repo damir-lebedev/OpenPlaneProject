@@ -188,6 +188,13 @@ public:
         if (index >= 0 && index < par.frame.count) failed[index] = true;
     }
 
+    // Регуляторы крутят наоборот (turtle mode, команда DShot): тяга и
+    // реактивный момент — с другим знаком, винт задом наперёд тянет хуже
+    // (REVERSED_THRUST). Лёжа на спине обратная тяга поднимает свою сторону:
+    // рама поворачивается вокруг ребра на земле (groundFlip).
+    void setReversed(bool on) { reversed = on; }
+    static constexpr double REVERSED_THRUST = 0.6;
+
     // Внешний момент на раму (порыв на несимметричную раму, удар), в
     // угловом ускорении по осям рамы, рад/с² — крен, тангаж, рысканье.
     void setDisturbance(double roll, double pitch, double yaw) { disturb = { roll, pitch, yaw }; }
@@ -285,6 +292,7 @@ private:
         }
 
         double totalI = 0, fz = 0, tx = 0, ty = 0, tz = 0;
+        const double dir = reversed ? -REVERSED_THRUST : 1.0;
         for (int i = 0; i < n; ++i)
         {
             const auto& m = par.motor[i];
@@ -296,13 +304,14 @@ private:
             rotor[i] = std::fmax(0.0, rotor[i] + wdot * dt);
             if (duty > 0.0) totalI += std::fmax(0.0, I) * duty;
 
-            const double T = failed[i] ? 0.0 : m.kT * rotor[i] * rotor[i];
+            const double T = failed[i] ? 0.0 : dir * m.kT * rotor[i] * rotor[i];
             const double rx = par.frame.place[i].x * par.armM - par.cgX;
             const double ry = par.frame.place[i].y * par.armM - par.cgY;
+            thrustN[i] = T;
             fz -= T;
             tx += -ry * T;
             ty += rx * T;
-            const double spin = static_cast<double>(static_cast<int8_t>(par.frame.place[i].spin));
+            const double spin = static_cast<double>(static_cast<int8_t>(par.frame.place[i].spin)) * (reversed ? -1.0 : 1.0);
             tz += spin * (load + m.J * wdot);
         }
         current = totalI;
@@ -335,8 +344,9 @@ private:
         const Vec fE = toEarth(fB);
         Vec acc = { fE.x / par.massKg, fE.y / par.massKg, fE.z / par.massKg + g };
 
-        // земля
-        if (pos.z >= 0.0 && (vel.z >= 0.0 || onGround) && acc.z >= 0.0)
+        // земля (лёжа на боку или спине — не взлетает, а поворачивается вокруг ребра)
+        const bool lying = onGround && tiltDeg() >= 60.0;
+        if (pos.z >= 0.0 && (vel.z >= 0.0 || onGround) && (acc.z >= 0.0 || lying))
         {
             onGround = true;
             pos.z = 0.0;
@@ -349,6 +359,11 @@ private:
                 // встаёт на ноги, курс сохраняется
                 const double yaw = yawDeg();
                 setAttitude(0, 0, yaw);
+                flipAxis = -1;
+            }
+            else
+            {
+                groundFlip();
             }
         }
         else
@@ -437,6 +452,84 @@ private:
         time += dt;
     }
 
+    // Лежит на спине: поворот вокруг ребра рамы (ось крена или тангажа) —
+    // моменты подъёма (тяга вверх по миру, т. е. по +Z рамы) относительно
+    // ребра против веса: (J + m·r²)·φ'' = Σ Tᵢ·(плечо от ребра) − m·g·r·cos φ.
+    // φ = 0 — плашмя на спине; φ > 120° — тильт < 60°: встаёт на ноги.
+    void groundFlip()
+    {
+        const int n = par.frame.count;
+        const double g = 9.80665;
+        double ry = 0, rx = 0;
+        for (int i = 0; i < n; ++i)
+        {
+            ry = std::fmax(ry, std::fabs(par.frame.place[i].y) * par.armM);
+            rx = std::fmax(rx, std::fabs(par.frame.place[i].x) * par.armM);
+        }
+        // момент подъёма стороны side (+1 — правая/передняя) вокруг противоположного ребра
+        auto lift = [&](int axis, double side) {
+            double t = 0;
+            const double r = axis == 0 ? ry : rx;
+            for (int i = 0; i < n; ++i)
+            {
+                const double c = (axis == 0 ? par.frame.place[i].y : par.frame.place[i].x) * par.armM;
+                t += thrustN[i] * -1.0 * (side * c + r);   // −T: тяга по +Z рамы (вверх, раз на спине)
+            }
+            return t;
+        };
+        if (flipAxis < 0)
+        {
+            double best = 0;
+            for (int axis = 0; axis < 2; ++axis)
+            {
+                for (double side : { 1.0, -1.0 })
+                {
+                    const double r = axis == 0 ? ry : rx;
+                    const double net = lift(axis, side) - par.massKg * g * r;
+                    if (net > best)
+                    {
+                        best = net;
+                        flipAxis = axis;
+                        flipSide = side;
+                    }
+                }
+            }
+            if (flipAxis < 0) return;
+            flipAngle = flipRate = 0;
+            fq[0] = qw;
+            fq[1] = qx;
+            fq[2] = qy;
+            fq[3] = qz;
+        }
+        const double r = flipAxis == 0 ? ry : rx;
+        const double inertia = (flipAxis == 0 ? par.jx : par.jy) + par.massKg * r * r;
+        const double acc = (lift(flipAxis, flipSide) - par.massKg * g * r * std::cos(flipAngle)) / inertia;
+        flipRate += acc * dt;
+        flipAngle += flipRate * dt;
+        if (flipAngle <= 0)
+        {
+            flipAngle = 0;
+            flipRate = 0;
+            flipAxis = -1;
+            qw = fq[0];
+            qx = fq[1];
+            qy = fq[2];
+            qz = fq[3];
+            return;
+        }
+        // крен +: правая сторона (+Y) к +Z рамы — вверх у лежащего на спине;
+        // тангаж +: нос (+X) к −Z — вниз, поэтому для подъёма носа знак другой
+        const double a = (flipAxis == 0 ? flipSide : -flipSide) * flipAngle;
+        const double ca = std::cos(0.5 * a), sa = std::sin(0.5 * a);
+        const double bx = flipAxis == 0 ? sa : 0, by = flipAxis == 1 ? sa : 0;
+        qw = fq[0] * ca - fq[1] * bx - fq[2] * by;
+        qx = fq[0] * bx + fq[1] * ca - fq[3] * by;
+        qy = fq[0] * by + fq[2] * ca + fq[3] * bx;
+        qz = fq[3] * ca + fq[1] * by - fq[2] * bx;
+        const double w = (flipAxis == 0 ? flipSide : -flipSide) * flipRate;
+        omega = { flipAxis == 0 ? w : 0.0, flipAxis == 1 ? w : 0.0, 0.0 };
+    }
+
     QuadSimParams par;
     std::mt19937 rng;
     std::normal_distribution<double> gauss;
@@ -451,6 +544,11 @@ private:
     double rotor[copter::MAX_MOTORS] = {};
     bool failed[copter::MAX_MOTORS] = {};
     bool onGround = true;
+    bool reversed = false;
+    double thrustN[copter::MAX_MOTORS] = {};   // тяга мотора, Н (минус — обратная)
+    int flipAxis = -1;                         // переворот на земле: 0 — крен, 1 — тангаж
+    double flipSide = 1, flipAngle = 0, flipRate = 0;
+    double fq[4] = { 1, 0, 0, 0 };             // ориентация в начале переворота
     Vec specific;
     Vec aaf1, aaf2, aafA1, aafA2;
     Vec vibDir[copter::MAX_MOTORS][3];

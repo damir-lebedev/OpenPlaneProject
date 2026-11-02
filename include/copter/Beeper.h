@@ -9,7 +9,8 @@
 //   failsafe     — тревожный, пока длится;
 //   режим BEEPER — «поиск модели»: громко и часто (работает и без ARM, и
 //                  без связи — тумблер держит последнее значение);
-//   готов к ARM  — после включения, когда все проверки прошли, — короткий.
+//   готов к ARM  — после включения, когда все проверки прошли, — короткий;
+//   turtle mode  — два коротких раз в секунду, пока заармлен.
 //
 // Мелодия — строка «длительностей» по 10 мс: нечётные места — звук,
 // чётные — пауза, 0 — конец (повторяющиеся — с начала). Тревоги главнее
@@ -34,6 +35,7 @@ namespace copter
         bool batteryCritical = false;
         bool failsafe = false;
         bool crashRecovery = false;   // crash_recovery = BEEP: выравнивается после удара
+        bool crashFlip = false;       // turtle mode: заармлен, моторы наоборот (BF CRASH_FLIP)
         bool findMe = false;    // режим BEEPER
         bool muted = false;     // режим BEEPER MUTE
     };
@@ -60,6 +62,7 @@ namespace copter
             const uint8_t* alarm = in.findMe            ? FIND_ME_TUNE
                                    : in.failsafe        ? FAILSAFE_TUNE
                                    : in.crashRecovery   ? CRASH_TUNE
+                                   : in.crashFlip       ? CRASH_FLIP_TUNE
                                    : in.batteryCritical ? CRITICAL_TUNE
                                    : in.batteryWarning  ? WARNING_TUNE
                                                         : nullptr;
@@ -113,6 +116,7 @@ namespace copter
         static constexpr uint8_t FAILSAFE_TUNE[] = { 30, 10, 10, 10, 0 };
         static constexpr uint8_t FIND_ME_TUNE[] = { 20, 10, 20, 50, 0 };
         static constexpr uint8_t CRASH_TUNE[] = { 5, 5, 0 };
+        static constexpr uint8_t CRASH_FLIP_TUNE[] = { 8, 8, 8, 76, 0 };
 
         const uint8_t* tune = nullptr;
         bool repeat = false;

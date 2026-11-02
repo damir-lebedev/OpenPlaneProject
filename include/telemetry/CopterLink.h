@@ -39,7 +39,9 @@
 //   revert            — отменить несохранённое: "@revert {...}";
 //   live · live 0     — "@live {...}" 20 раз в секунду ещё 3 с / хватит;
 //   motor N|all % · motor stop — проверка моторов без пропеллеров (до 30 %,
-//                       держится 1 с — приложение повторяет): "@motor {...}".
+//                       держится 1 с — приложение повторяет): "@motor {...}";
+//   dshot N|all команда… — команды регуляторам DShot (как dshotprog: 1 —
+//                       пискнуть, 7/8 — направление, 12 — сохранить): "@dshot {...}".
 //
 // Менять — только без ARM и при закрытом CLI; пока изменения не
 // сохранены или не отменены, ARM запрещён (флаг MSP — как при
@@ -121,6 +123,11 @@ public:
         if (strcmp(cmd, "motor") == 0)
         {
             doMotor(args);
+            return true;
+        }
+        if (strcmp(cmd, "dshot") == 0)
+        {
+            doDshot(args);
             return true;
         }
         const bool changes = strcmp(cmd, "set") == 0 || strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0 ||
@@ -293,6 +300,7 @@ public:
         JsonWriter w(buffer, capacity);
         w.add("@live {\"t\":%lu,\"arm\":%s,\"state\":\"%s\",\"mode\":\"%s\"", static_cast<unsigned long>(nowMs),
               ctl.isArmed() ? "true" : "false", stateName(s.state), copterModeName(s.mode));
+        if (s.turtle) w.add(",\"turtle\":true");   // моторы наоборот (FLIP OVER AFTER CRASH)
         w.add(",\"rx\":\"%s\"", rc.isFrameTimeout() ? "lost" : rc.isFailsafeReported() ? "fs" : "ok");
         if (rc.getLinkQuality() >= 0) w.add(",\"lq\":%d", static_cast<int>(rc.getLinkQuality()));
         w.add(",\"rxhz\":%.0f,\"rcsp\":%.0f,\"rcth\":%.0f", s.rcFrameHz, s.rcSetpointCutoffHz, s.rcThrottleCutoffHz);
@@ -374,7 +382,8 @@ private:
                 w.add("%s[%.2f,%.2f,\"%s\",%s]", i ? "," : "", p.x, p.y, p.spin == Spin::CW ? "cw" : "ccw",
                       p.bottom ? "true" : "false");
             }
-            w.add("]},\"motorTestMax\":%.0f}\n", copter::CopterController::MOTOR_TEST_MAX * 100.0f);
+            w.add("]},\"motorTestMax\":%.0f,\"dshotCommands\":%s}\n", copter::CopterController::MOTOR_TEST_MAX * 100.0f,
+                  cli.dshotCommandsAvailable() ? "true" : "false");
             return w.overflow ? 0 : w.length;
         }
         if (step <= PARAM_COUNT) return formatParam(static_cast<ParamId>(step - 1), buffer, capacity);
@@ -423,6 +432,49 @@ private:
         {
             w.add(i ? ",%.1f" : "%.1f", ctl.motorTestValue(i) * 100.0f);
         }
+        w.add("]}\n");
+        send(w);
+    }
+
+    // «dshot N|all команда…» — команды регуляторам (мастер направления
+    // моторов, «пискнуть»): только без ARM, при закрытом CLI и без проверки моторов.
+    void doDshot(char* args)
+    {
+        if (cli.active())
+        {
+            sendError("dshot", "открыт CLI");
+            return;
+        }
+        char* end = nullptr;
+        const bool all = strncmp(args, "all", 3) == 0;
+        const long index = all ? 255 : strtol(args, &end, 10);
+        if (all) end = args + 3;
+        uint16_t commands[8];
+        uint8_t n = 0;
+        const char* p = end;
+        while (end != args && n < 8)
+        {
+            char* next = nullptr;
+            const long c = strtol(p, &next, 10);
+            if (next == p) break;
+            commands[n++] = static_cast<uint16_t>(c < 0 || c > 0xFFFF ? 0 : c);
+            p = next;
+        }
+        if (end == args || index < 0 || index > 255)
+        {
+            sendError("dshot", "dshot N|all команда [команда…]");
+            return;
+        }
+        const char* error = cli.queueDshot(static_cast<uint8_t>(index), commands, n);
+        if (error)
+        {
+            sendError("dshot", error);
+            return;
+        }
+        char line[96];
+        JsonWriter w(line, sizeof(line));
+        w.add("@dshot {\"ok\":true,\"motor\":%ld,\"commands\":[", index);
+        for (uint8_t i = 0; i < n; ++i) w.add(i ? ",%u" : "%u", commands[i]);
         w.add("]}\n");
         send(w);
     }

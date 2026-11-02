@@ -79,6 +79,8 @@ public:
     void setApplyHook(void (*hook)()) { applyHook = hook; }
     void setTaskStats(const TaskStats* stats) { tasks = stats; }
     void setMotorTelemetry(const copter::IMotorTelemetry* t) { motorTelemetry = t; }
+    // Регуляторы DShot: dshotprog в CLI, «dshot» приложения, MSP2_SEND_DSHOT_COMMAND.
+    void setEscCommands(copter::IEscCommands* e) { cli.setEscCommands(e); }
     // SPI-флеш ящика (F405) — для flash_info.
     void setFlashChip(const SpiNorFlash* f) { flashChip = f; }
     // Чёрный ящик: 'k' и команды ПК "bb …" (telemetry/CopterBlackBox.h).

@@ -27,6 +27,8 @@
 // протокол регуляторов (выбирается сборкой), тип расходов (наша кривая —
 // ACTUAL), features (у нас нет такого механизма). MSP_SET_MOTOR (вкладка
 // «Моторы» конфигуратора) — до 30 % тяги, пока конфигуратор на связи.
+// MSP2_SEND_DSHOT_COMMAND (мастер направления моторов) — в очередь команд
+// DShot, как dshotprog (CopterCli::queueDshot).
 //
 // Без Arduino — тесты на ПК (test_copter).
 // ============================================================
@@ -49,6 +51,7 @@ namespace copter
             RC_TUNING = 111, PID = 112, BOXNAMES = 116, BOXIDS = 119, BATTERY_STATE = 130, MOTOR_CONFIG = 131,
             STATUS_EX = 150, UID = 160, SET_RAW_RC = 200, SET_PID = 202, SET_RC_TUNING = 204, SELECT_SETTING = 210,
             SET_MOTOR = 214, SET_MOTOR_CONFIG = 222, EEPROM_WRITE = 250,
+            SEND_DSHOT_COMMAND = 0x3003,   // MSP2: мастер направления моторов конфигуратора
         };
     }
 
@@ -213,6 +216,19 @@ namespace copter
                     if (motorTestOn) holdMotorTest();
                     else ctl.stopMotorTest();
                     return true;
+                case SEND_DSHOT_COMMAND:
+                {
+                    // тип (0 — в потоке кадров, 1 — блокирующий: у нас один
+                    // путь — очередь), мотор (255 — все), число команд, команды
+                    if (cli.active() || r.remaining() < 3) return false;
+                    r.u8();
+                    const uint8_t motor = r.u8();
+                    const uint8_t n = r.u8();
+                    uint16_t commands[8];
+                    if (n == 0 || n > 8 || r.remaining() < n) return false;
+                    for (uint8_t i = 0; i < n; ++i) commands[i] = r.u8();
+                    return cli.queueDshot(motor, commands, n) == nullptr;
+                }
                 case REBOOT:
                     rebootMode = r.remaining() ? r.u8() : 0;
                     if (rebootMode > 1 || armed) return false;

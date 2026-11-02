@@ -62,6 +62,7 @@ public:
         lastSens = s;
         float motor[copter::MAX_MOTORS] = {};
         for (uint8_t i = 0; i < out.count; ++i) motor[wiring[i]] = out.motor[i];
+        sim.setReversed(out.reversed);
         sim.step(motor, out.spinning);
 
         // статистика

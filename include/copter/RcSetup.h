@@ -112,7 +112,7 @@ namespace copter
             { BOX_OSD, "OSD DISABLE", true },
             { BOX_TELEMETRY, "TELEMETRY", false },
             { BOX_BLACKBOX, "BLACKBOX", false },
-            { BOX_FLIP_OVER_AFTER_CRASH, "FLIP OVER AFTER CRASH", false },
+            { BOX_FLIP_OVER_AFTER_CRASH, "FLIP OVER AFTER CRASH", true },
             { BOX_PARALYZE, "PARALYZE", false },
             { BOX_GPS_RESCUE, "GPS RESCUE", true },
             { BOX_ACRO_TRAINER, "ACRO TRAINER", true },
@@ -838,6 +838,7 @@ namespace copter
             rc.acroTrainer = isActive(BOX_ACRO_TRAINER);
             rc.gpsRescue = isActive(BOX_GPS_RESCUE);
             rc.failsafeSwitch = isActive(BOX_FAILSAFE);
+            rc.flipOverAfterCrash = isActive(BOX_FLIP_OVER_AFTER_CRASH);
             rc.prearm = !cfg.hasMode(BOX_PREARM) || isActive(BOX_PREARM);
             rc.armAssigned = cfg.hasMode(BOX_ARM);
             return rc;

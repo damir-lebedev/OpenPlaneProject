@@ -420,6 +420,54 @@ void test_upside_down_crash_disarms()
     TEST_ASSERT_FALSE(h.ctl.getStatus().crashed);
 }
 
+// 086: лежит на спине — turtle mode переворачивает обратно: крен (правые
+// моторы, рама встаёт через левое ребро), тангаж от себя (передние), крен
+// влево. Без стика моторы стоят и коптер лежит; после — обычный ARM.
+void test_turtle_mode_flips_back_over()
+{
+    CopterSettings set;
+    set.turtleAvailable = true;
+    const float sticks[3][2] = { { 1.0f, 0.0f }, { 0.0f, -1.0f }, { -1.0f, 0.0f } };
+    for (int k = 0; k < 3; ++k)
+    {
+        QuadHarness h(five(), QuadPerturb(), 40 + k, EscProtocol::DSHOT600, 1000.0f, set);
+        h.sim.setAttitude(180, 0, 30);
+        h.rc.mode = CopterMode::ANGLE;
+        h.rc.throttle = 0.0f;
+        h.run(2.5);
+        TEST_ASSERT_TRUE(h.sim.tiltDeg() > 170.0);
+        h.rc.armSwitch = true;
+        h.run(0.05);
+        TEST_ASSERT_FALSE(h.ctl.isArmed());   // на спине без режима — нет
+        h.rc.armSwitch = false;
+        h.rc.flipOverAfterCrash = true;
+        h.run(0.05);
+        h.rc.armSwitch = true;
+        h.run(0.05);
+        TEST_ASSERT_TRUE(h.ctl.getStatus().turtle);
+        h.run(1.5);   // стик в центре — лежит, моторы стоят
+        TEST_ASSERT_TRUE(h.sim.tiltDeg() > 170.0);
+        TEST_ASSERT_TRUE(h.ctl.isArmed());
+        h.rc.roll = sticks[k][0];
+        h.rc.pitch = sticks[k][1];
+        const double t0 = h.sim.now();
+        while (h.sim.tiltDeg() > 60.0 && h.sim.now() - t0 < 3.0) h.step();
+        char msg[64];
+        snprintf(msg, sizeof(msg), "стик %d: переворот за %.2f с", k, h.sim.now() - t0);
+        TEST_ASSERT_TRUE_MESSAGE(h.sim.tiltDeg() < 10.0, msg);
+        TEST_ASSERT_TRUE_MESSAGE(h.sim.now() - t0 < 1.5, msg);
+        h.rc.roll = h.rc.pitch = 0.0f;
+        h.rc.armSwitch = false;
+        h.rc.flipOverAfterCrash = false;
+        h.run(3.0);
+        h.rc.armSwitch = true;
+        h.run(0.05);
+        TEST_ASSERT_TRUE_MESSAGE(h.ctl.isArmed(), msg);
+        TEST_ASSERT_FALSE(h.ctl.getStatus().turtle);
+        TEST_ASSERT_FALSE(h.out.reversed);
+    }
+}
+
 // Отказал мотор: коптер не держит горизонт (крутится и валится набок) —
 // через 2 с моторы стоп, а не молотят винтами по земле после падения.
 void test_motor_failure_in_angle_mode_disarms()
@@ -1642,6 +1690,7 @@ int main()
     RUN_TEST(test_whoop_on_fast_loop);
     RUN_TEST(test_link_glitch_and_recovery_in_flight);
     RUN_TEST(test_upside_down_crash_disarms);
+    RUN_TEST(test_turtle_mode_flips_back_over);
     RUN_TEST(test_motor_failure_in_angle_mode_disarms);
     RUN_TEST(test_motor_test_spins_one_motor);
     RUN_TEST(test_battery_sag_is_seen);

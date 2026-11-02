@@ -38,8 +38,10 @@
 // буфер перед запуском выгружается в память.
 //
 // Пока коптер не заармлен — кадры «стоп» (0): регулятор взводится по ним.
-// Команды DShot (sendCommand: направление, пищалка, сохранение) — только
-// при остановленных моторах, с битом телеметрии, повтором (как в BF).
+// Команды DShot (sendCommand: направление, пищалка, сохранение) — очередью
+// (copter::dshot::CommandQueue), только при остановленных моторах, с битом
+// телеметрии, повтором и паузой после (как в BF). setReversed — направление
+// всех моторов для turtle mode: пока команда не ушла, моторы стоят.
 //
 // Двунаправленный DShot (setBidirectional, dshot_bidir): линия инвертирована
 // (покой — высокий), CRC кадра инвертирован, после кадра регулятор отвечает
@@ -245,12 +247,11 @@ public:
 };
 #endif   // ARDUINO_ARCH_STM32 (на ПК — фейки из test/native/support_stm32)
 
-class Stm32Dshot : public copter::IMotorTelemetry
+class Stm32Dshot : public copter::IMotorTelemetry, public copter::IEscCommands
 {
 public:
     static constexpr uint8_t MAX_MOTORS = 8;
     static constexpr uint8_t MAX_TIMERS = 4;
-    static constexpr uint8_t COMMAND_REPEATS = 10;     // как в BF: команду — 10 кадров подряд
     static constexpr uint16_t TELEMETRY_WINDOW = 1000;  // ошибки телеметрии — доля за столько кадров
 
     // Двунаправленный DShot — до begin().
@@ -274,6 +275,8 @@ public:
             grp.ok = grp.captureOk = grp.armed = false;
         }
         for (uint8_t i = 0; i < MAX_MOTORS; ++i) motors[i] = Motor();
+        queue = copter::dshot::CommandQueue();
+        reversed = false;
         if (!copter::isDshot(esc)) return 0;
         for (uint8_t i = 0; i < motorCount; ++i)
         {
@@ -285,21 +288,24 @@ public:
         return attachedCount;
     }
 
-    // Раз в цикл: команды 0..1 (CopterOutputs::motor); spinning = false — «стоп»
-    // (или команда из очереди sendCommand).
-    void write(const float* commands, bool spinning)
+    // Раз в цикл: команды 0..1 (CopterOutputs::motor, меньше нуля — этот мотор
+    // стоит); spinning = false — «стоп» (или команда из очереди). Пока очередь
+    // не ушла (смена направления перед turtle mode) — моторы стоят.
+    void write(const float* commands, bool spinning, uint32_t nowUs = micros())
     {
         if (bidir) collectTelemetry();
+        if (queue.pendingAt(nowUs)) spinning = false;
+        uint8_t who = copter::dshot::CommandQueue::ALL;
+        const uint16_t command = queue.step(nowUs, !spinning, who);
         for (uint8_t i = 0; i < motorCount; ++i)
         {
             Motor& m = motors[i];
             bool telemetry = false;
             uint16_t value;
-            if (!spinning && m.commandLeft > 0)
+            if (command != copter::dshot::STOP && (who == copter::dshot::CommandQueue::ALL || who == i))
             {
-                value = m.command;
+                value = command;
                 telemetry = true;   // команды BLHeli_32/Bluejay принимают только с битом телеметрии
-                --m.commandLeft;
             }
             else
             {
@@ -347,27 +353,35 @@ public:
         }
     }
 
-    // Команда DShot (1..47) мотору index (0xFF — всем), повтор COMMAND_REPEATS
-    // кадров; уходит, пока моторы стоят (write с spinning = false).
-    void sendCommand(uint8_t index, uint16_t command, uint8_t repeats = COMMAND_REPEATS)
+    // Команда DShot (1..47) мотору index (0xFF — всем) в очередь: уходит
+    // повтором, пока моторы стоят (copter::dshot::CommandQueue).
+    bool sendCommand(uint8_t index, uint16_t command)
     {
-        if (command == 0 || command >= copter::dshot::MIN_THROTTLE) return;
-        for (uint8_t i = 0; i < motorCount; ++i)
-        {
-            if (index != 0xFF && i != index) continue;
-            motors[i].command = command;
-            motors[i].commandLeft = repeats;
-        }
+        if (index != copter::dshot::CommandQueue::ALL && index >= motorCount) return false;
+        return attachedCount > 0 && queue.push(index, command);
     }
 
-    bool commandPending() const
+    bool commandPending() const { return queue.pending(); }
+
+    // Направление всех моторов до выключения питания (turtle mode): смена —
+    // команда SPIN_DIRECTION_REVERSED / NORMAL всем; прочая очередь
+    // (пищалка, настройки) отменяется, моторы стоят, пока команда не уйдёт.
+    void setReversed(bool on)
     {
-        for (uint8_t i = 0; i < motorCount; ++i)
-        {
-            if (motors[i].commandLeft) return true;
-        }
-        return false;
+        if (on == reversed) return;
+        reversed = on;
+        queue.clear();
+        queue.push(copter::dshot::CommandQueue::ALL,
+                   on ? copter::dshot::SPIN_DIRECTION_REVERSED : copter::dshot::SPIN_DIRECTION_NORMAL);
     }
+    bool isReversed() const { return reversed; }
+    void clearCommands() { queue.clear(); }
+
+    // copter::IEscCommands
+    bool commandsAvailable() const override { return attachedCount > 0; }
+    bool queueCommand(uint8_t motor, uint16_t command) override { return sendCommand(motor, command); }
+    bool commandsPending() const override { return queue.pending(); }
+    uint8_t commandsFree() const override { return queue.freeSlots(); }
 
     uint8_t attached() const { return attachedCount; }
     bool isAttached(uint8_t i) const { return i < motorCount && motors[i].attached; }
@@ -405,8 +419,6 @@ private:
         bool attached = false;
         uint16_t value = 0;
         uint16_t frame = 0;
-        uint16_t command = 0;
-        uint8_t commandLeft = 0;
         // телеметрия
         bool telemetryValid = false;
         uint32_t erpm = 0;
@@ -576,5 +588,7 @@ private:
     uint8_t attachedCount = 0;
     uint32_t sent = 0, skipped = 0;
     bool bidir = false;
+    bool reversed = false;
+    copter::dshot::CommandQueue queue;
     copter::EscProtocol protocol = copter::EscProtocol::DSHOT600;
 };

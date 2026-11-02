@@ -10,6 +10,7 @@
 #include "copter/Presets.h"
 #include "copter/RateController.h"
 #include "copter/RcSmoothing.h"
+#include "copter/Turtle.h"
 
 // ============================================================
 // Мультикоптер целиком: датчики и ручки пульта -> команды моторам.
@@ -59,6 +60,11 @@
 //     с уставкой больше чем на 200 °/с дольше 1.5 с (волчок на трёх
 //     моторах) — моторы стоп (а не молотят винтами по земле), повторный
 //     ARM — после выключения тумблера.
+//
+// Turtle mode: ARM с режимом FLIP OVER AFTER CRASH (только DShot) —
+// регуляторы крутят наоборот, стик выбирает сторону переворота
+// (copter/Turtle.h); наклон при ARM не проверяется, PID и защиты от удара,
+// runaway и автодисарм не работают. Выход — DISARM.
 // ============================================================
 
 namespace copter
@@ -260,6 +266,7 @@ namespace copter
         bool acroTrainer = false;      // режим ACRO TRAINER: в ACRO наклон не больше acro_trainer_angle_limit
         bool gpsRescue = false;        // режим GPS RESCUE: возврат домой с тумблера
         bool failsafeSwitch = false;   // режим FAILSAFE: как потеря связи
+        bool flipOverAfterCrash = false;   // режим FLIP OVER AFTER CRASH: ARM — turtle mode (copter/Turtle.h)
         bool prearm = true;            // PREARM включён или его нет в таблице
         bool armAssigned = true;       // ARM есть в таблице режимов
         uint32_t frame = 0;            // счётчик кадров приёмника; 0 — неизвестно (кадр — раз в 1/FF_NOMINAL_FRAME_HZ)
@@ -277,6 +284,7 @@ namespace copter
         float motor[MAX_MOTORS] = {};   // команда регулятору 0..1 (0 — стоп)
         uint8_t count = 0;
         bool spinning = false;          // false — все моторы стоят
+        bool reversed = false;          // turtle mode: регуляторы крутят наоборот (команда DShot)
     };
 
     struct CopterSettings
@@ -306,6 +314,8 @@ namespace copter
         float runawayDeactivateS = 0.5f;
         float runawayDeactivateThrottle = 0.2f;
         bool crashDetection = true;
+        bool turtleAvailable = false;      // регуляторы DShot: реверс командой есть — turtle mode работает
+        TurtleSettings turtle;             // crashflip_*
         AltitudeController::Settings alt;
         GpsRescueSettings rescue;          // gps_rescue_*
     };
@@ -333,6 +343,7 @@ namespace copter
         float rcThrottleCutoffHz = 0;  // и газа
         bool runaway = false;          // DISARM защитой runaway takeoff (до выключения тумблера)
         bool runawayCheck = false;     // проверка runaway takeoff ещё работает (после ARM, до уверенного взлёта)
+        bool turtle = false;           // заармлен в turtle mode: моторы наоборот, стик — какой стороной переворачиваться
         uint8_t failsafeStage = 0;     // 0 — нет, 1 — ровно и держит высоту, 2 — процедура
         RescuePhase rescuePhase = RescuePhase::IDLE;   // возврат домой: этап
         RescueFail rescueFail = RescueFail::NONE;      // и почему прерван
@@ -533,8 +544,8 @@ namespace copter
             trackFrames(rc.frame);
             const bool rcValid = handleLink(rc);
             handleArming(rc, sens, rcValid);
-            if (status.state == CopterState::ARMED) autoDisarm(rc);
-            if (status.state != CopterState::DISARMED) detectCrash();
+            if (status.state == CopterState::ARMED && !status.turtle) autoDisarm(rc);
+            if (status.state != CopterState::DISARMED && !status.turtle) detectCrash();
 
             if (status.state == CopterState::DISARMED)
             {
@@ -553,6 +564,7 @@ namespace copter
                 status.throttle = 0.0f;
                 return out;
             }
+            if (status.turtle) return turtleOutputs(sens, rc);
 
             // ---- уставки ----
             const bool failsafe = status.state == CopterState::FAILSAFE;
@@ -771,6 +783,7 @@ namespace copter
             status.airborne = false;
             status.failsafeStage = 0;
             status.runawayCheck = false;
+            status.turtle = false;
         }
 
     private:
@@ -850,6 +863,28 @@ namespace copter
         }
 
         bool spinning() const { return status.state != CopterState::DISARMED; }
+
+        // Turtle mode (FLIP OVER AFTER CRASH): PID, удержание, проверки
+        // удара, runaway и автодисарма не работают — коптер лежит на спине,
+        // а моторы стороны, выбранной стиком, крутят наоборот (газ не нужен).
+        // Связи нет — DISARM (на земле, handleLink). Выйти — DISARM.
+        CopterOutputs turtleOutputs(const CopterSensors& sens, const CopterRc& rc)
+        {
+            resetFlight(sens);
+            CopterOutputs out;
+            out.count = tune.frame.count;
+            float cmd[MAX_MOTORS];
+            turtleMix(tune.frame, rc.roll, rc.pitch, rc.yaw, set.turtle, cmd);
+            for (uint8_t i = 0; i < out.count && i < MAX_MOTORS; ++i)
+            {
+                out.motor[i] = cmd[i] < 0.0f ? MOTOR_STOP : Mixer::withIdle(cmd[i], tune.idle, tune.motorOutputLimit);
+            }
+            out.spinning = true;
+            out.reversed = true;
+            avgThrust = 0.0f;
+            status.throttle = 0.0f;
+            return out;
+        }
 
         // Кадры приёмника: пришёл ли новый в этом цикле и их период
         // (сглаженный — кадры приходят неровно, иногда два за цикл).
@@ -1020,7 +1055,7 @@ namespace copter
             if (!throttleLow(rc)) b |= ARM_BLOCK_THROTTLE;
             if (!sens.imuOk) b |= ARM_BLOCK_IMU;
             if (uptime < 2.0f || !attitude.isInitialized()) b |= ARM_BLOCK_SETTLING;
-            else if (set.smallAngleDeg < 180.0f && attitude.tiltDeg() > set.smallAngleDeg) b |= ARM_BLOCK_TILT;
+            else if (set.smallAngleDeg < 180.0f && attitude.tiltDeg() > set.smallAngleDeg && !turtleWanted(rc)) b |= ARM_BLOCK_TILT;
             if (motionTimer < 0.3f) b |= ARM_BLOCK_MOVING;
             if (status.volts > 1.0f && tune.volts > 1.0f)
             {
@@ -1040,6 +1075,10 @@ namespace copter
             if (!switchSeenOff) b |= forcedOff ? ARM_BLOCK_NOT_DISARMED : ARM_BLOCK_SWITCH;
             return b;
         }
+
+        // ARM в turtle mode: режим включён и регуляторы DShot (иначе тумблер
+        // ничего не делает — как в BF). Лежит на спине — это и нужно: наклон не проверяется.
+        bool turtleWanted(const CopterRc& rc) const { return rc.flipOverAfterCrash && set.turtleAvailable; }
 
         void handleArming(const CopterRc& rc, const CopterSensors& sens, bool rcValid)
         {
@@ -1070,7 +1109,8 @@ namespace copter
                 status.mode = rc.mode;
                 ++status.armCount;
                 stopMotorTest();
-                status.runawayCheck = set.runawayPrevention;
+                status.turtle = turtleWanted(rc);
+                status.runawayCheck = set.runawayPrevention && !status.turtle;
                 runawayTimer = runawayFlown = 0.0f;
                 groundIdleTimer = lowThrottleTimer = 0.0f;
                 attitude.setGrounded(true);

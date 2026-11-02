@@ -279,6 +279,8 @@ namespace copter
         PARAM_FAILSAFE_SWITCH_MODE,
         PARAM_MOTOR_POLES,
         PARAM_DSHOT_BIDIR,
+        PARAM_CRASHFLIP_MOTOR_PERCENT,
+        PARAM_CRASHFLIP_EXPO,
         PARAM_CRAFT_NAME,
         PARAM_VBAT_SAG_COMPENSATION,
         PARAM_ANGLE_LIMIT,
@@ -667,6 +669,10 @@ namespace copter
               "магнитов в роторе мотора (у 2207 — 14): обороты = eRPM x 2 / motor_poles" },
             { "dshot_bidir", kEnum, kMaster, kGroupMotors, 0, 1, 0, kTable, "", OFF_ON, 2,
               "двунаправленный DShot: регулятор отвечает оборотами (Bluejay, BLHeli_32, AM32); меняется после перезагрузки" },
+            { "crashflip_motor_percent", kInt, kMaster, kGroupMotors, 0, 100, 0, kTable, "%", nullptr, 0,
+              "turtle mode: моторы другой стороны крутятся с такой долей силы (0 — стоят)" },
+            { "crashflip_expo", kInt, kMaster, kGroupMotors, 0, 100, 35, kTable, "%", nullptr, 0,
+              "turtle mode: экспо стика — у центра мягче, переворот без рывка" },
             { "craft_name", kText, kMaster, ParamGroup::OTHER, 0, 16, 0, kTable, "", nullptr, 0,
               "имя коптера: в OSD, конфигураторе BF (MSP_NAME) и журнале" },
             { "vbat_sag_compensation", kInt, kPid, kGroupPid, 0, 150, 100, kTable, "%", nullptr, 0,
@@ -1065,6 +1071,8 @@ namespace copter
             s.failsafeProcedure = static_cast<FailsafeProcedure>(static_cast<uint8_t>(value(PARAM_FAILSAFE_PROCEDURE)));
             s.failsafeSwitchMode = static_cast<FailsafeSwitchMode>(static_cast<uint8_t>(value(PARAM_FAILSAFE_SWITCH_MODE)));
             s.airmodeStartThrottle = value(PARAM_AIRMODE_START_THROTTLE_PERCENT) * 0.01f;
+            s.turtle.otherMotors = value(PARAM_CRASHFLIP_MOTOR_PERCENT) * 0.01f;
+            s.turtle.expo = value(PARAM_CRASHFLIP_EXPO) * 0.01f;
             RcSmoothingSettings& rs = s.rcSmoothing;
             rs.enabled = value(PARAM_RC_SMOOTHING) > 0.5f;
             rs.autoFactor = static_cast<uint8_t>(value(PARAM_RC_SMOOTHING_AUTO_FACTOR));
