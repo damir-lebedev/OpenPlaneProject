@@ -173,7 +173,7 @@ Para que o roteiro não pareça marketing, registramos à parte o que ainda não
 - O horizonte para a estabilização é a posição da aeronave ao ligar (a IMU é calibrada a cada partida), ou a calibração da instalação a partir de três posições.
 - A conexão física de um servo não é visível para o software; só se vê que o pulso realmente sai no pino (uma autoverificação pelo console).
 - A pinagem da ESP32 comum de 38 pinos foi escolhida pela documentação do chip e não foi verificada no hardware.
-- A licença é a [OpenPlane License](LICENSE.md): MIT com atribuição obrigatória do autor e com proibições do uso militar e do dano intencional a pessoas e bens sem o consentimento deles. Por causa dessas proibições, ela não é considerada “de código aberto” no sentido da OSI.
+- A licença é a [OpenPlane License 2.0](LICENSE.md): gratuita para uso não comercial com atribuição obrigatória ao autor (Damir Lebedev); uso comercial somente com licença paga do autor, uso militar somente mediante contrato entre um Estado e o autor assinado com antecedência; é proibido causar dano intencional a pessoas ou bens sem o consentimento delas.
 
 ## 8. Questões em aberto — um convite à discussão
 
@@ -189,7 +189,7 @@ Se algo disso for importante para você como possível parceiro, o lugar certo p
 
 O único canal oficial do projeto hoje é o repositório no GitHub:
 [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject)
-(ramo `main`). Não existem outros contatos (e-mail, redes sociais, pessoa jurídica) no momento, e eles não são indicados aqui de propósito, para não induzir a erro.
+(ramo `main`). Licenças comerciais, contratos e parcerias: diretamente com o autor em dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com, Telegram [t.me/lisnmylife](https://t.me/lisnmylife).
 
 - **Issues** — relatar um bug, propor uma mudança técnica concreta, informar os resultados de um teste em voo na sua própria cópia do protótipo.
 - **Discussions** — discutir o roteiro, a parceria, o uso em uma tarefa concreta (entrega, busca e salvamento, agricultura), as questões de licenciamento e de financiamento da seção 8.

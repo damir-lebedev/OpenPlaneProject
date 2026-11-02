@@ -1094,10 +1094,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # kontrollera att al
   flygning.
 - **Prototypens mekanik:** den första prototypen flög, ett svagt motorfäste och
   otillräcklig styvhet i vingen upptäcktes.
-- **Licensen är OpenPlane License** ([LICENSE](LICENSE.md)): MIT med
-  obligatorisk angivelse av upphovspersonen, förbud mot militär användning och förbud mot avsiktlig skada på människor och
-  egendom utan deras skriftliga medgivande. Lägg inte till andra licenshuvuden
-  i filerna och ta inte bort upphovspersonens namn.
+- Licensen är [OpenPlane License 2.0](LICENSE.md): gratis för icke-kommersiell användning med obligatorisk angivelse av upphovspersonen (Damir Lebedev); kommersiell användning endast med betald licens från upphovspersonen, militär användning endast enligt ett i förväg undertecknat avtal mellan en stat och upphovspersonen; att avsiktligt skada människor eller egendom utan deras medgivande är förbjudet. Lägg inte till andra licenshuvuden i filerna och ta inte bort upphovspersonens namn. Genom att skicka en pull request tillåter du upphovspersonen att licensiera ditt bidrag på valfria villkor, även kommersiella (avsnitt 9 i licensen).
 
 ---
 

@@ -1082,11 +1082,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # verificar se todas
   voo.
 - **Mecânica do protótipo:** o primeiro protótipo voou, e foram constatadas
   uma fixação fraca do motor e rigidez insuficiente da asa.
-- **A licença é a OpenPlane License** ([LICENSE](LICENSE.md)): MIT com
-  atribuição obrigatória do autor, proibição do uso militar e proibição de dano
-  intencional a pessoas e bens sem o seu consentimento por escrito. Não
-  adicione outros cabeçalhos de licença aos arquivos e não remova o nome do
-  autor.
+- A licença é a [OpenPlane License 2.0](LICENSE.md): gratuita para uso não comercial com atribuição obrigatória ao autor (Damir Lebedev); uso comercial somente com licença paga do autor, uso militar somente mediante contrato entre um Estado e o autor assinado com antecedência; é proibido causar dano intencional a pessoas ou bens sem o consentimento delas. Não adicione outros cabeçalhos de licença aos arquivos e não remova o nome do autor. Ao enviar um pull request, você permite que o autor licencie a sua contribuição em quaisquer termos, inclusive comerciais (seção 9 da licença).
 
 ---
 

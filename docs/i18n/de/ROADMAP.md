@@ -173,7 +173,7 @@ Damit die Roadmap nicht wie Marketing wirkt, halten wir gesondert fest, was noch
 - Der Horizont für die Stabilisierung ist die Lage des Fluggeräts beim Einschalten (die IMU kalibriert sich bei jedem Start) oder die Einbaukalibrierung aus drei Lagen.
 - Der physische Anschluss eines Servos ist für die Software nicht sichtbar; sichtbar ist nur, dass der Impuls tatsächlich am Pin ausgegeben wird (ein Selbsttest über die Konsole).
 - Die Pinbelegung des gewöhnlichen ESP32 mit 38 Pins wurde nach der Dokumentation des Chips gewählt und nicht auf der Hardware geprüft.
-- Die Lizenz ist die [OpenPlane License](LICENSE.md): MIT mit verpflichtender Nennung des Autors und Verboten der militärischen Nutzung sowie der vorsätzlichen Schädigung von Menschen und Sachen ohne deren Einwilligung. Wegen dieser Verbote gilt sie im Sinne der OSI nicht als „Open Source“.
+- Die Lizenz ist die [OpenPlane License 2.0](LICENSE.md): kostenlos für nichtkommerzielle Nutzung mit verpflichtender Nennung des Autors (Damir Lebedev); kommerzielle Nutzung nur mit kostenpflichtiger Lizenz des Autors, militärische Nutzung nur aufgrund eines vorab unterzeichneten Vertrags zwischen einem Staat und dem Autor; vorsätzliche Schädigung von Menschen und Sachen ohne deren Einwilligung ist verboten.
 
 ## 8. Offene Fragen – eine Einladung zur Diskussion
 
@@ -189,7 +189,7 @@ Wenn Ihnen etwas davon als potenziellem Partner wichtig ist, ist der richtige Or
 
 Der einzige offizielle Kanal des Projekts ist heute das Repository auf GitHub:
 [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject)
-(Branch `main`). Andere Kontakte (E-Mail, soziale Netzwerke, eine juristische Person) gibt es derzeit nicht, und sie sind hier bewusst nicht angegeben, um nicht in die Irre zu führen.
+(Branch `main`). Kommerzielle Lizenzen, Verträge und Partnerschaften: direkt beim Autor unter dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com, Telegram [t.me/lisnmylife](https://t.me/lisnmylife).
 
 - **Issues** – einen Fehler melden, eine konkrete technische Änderung vorschlagen, über die Ergebnisse eines Flugtests an der eigenen Kopie des Prototyps berichten.
 - **Discussions** – die Roadmap, eine Partnerschaft, den Einsatz bei einer konkreten Aufgabe (Lieferung, Suche und Rettung, Landwirtschaft) sowie die Lizenz- und Finanzierungsfragen aus Abschnitt 8 besprechen.

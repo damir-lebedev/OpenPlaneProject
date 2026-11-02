@@ -173,7 +173,7 @@ Para que la hoja de ruta no parezca marketing, dejamos constancia aparte de lo q
 - El horizonte de la estabilización es la posición de la aeronave al encender (la IMU se calibra en cada arranque), o bien la calibración del montaje a partir de tres posiciones.
 - La conexión física de un servo no es visible para el software; solo se ve que el pulso sale de verdad por el pin (una autocomprobación desde la consola).
 - La distribución de pines de la ESP32 corriente de 38 pines se eligió a partir de la documentación del chip y no se ha comprobado en hardware.
-- La licencia es la [OpenPlane License](LICENSE.md): MIT con atribución obligatoria del autor y con prohibiciones del uso militar y del daño intencionado a personas y bienes sin su consentimiento. Por estas prohibiciones no se considera «de código abierto» en el sentido de la OSI.
+- La licencia es la [OpenPlane License 2.0](LICENSE.md): gratis para uso no comercial con atribución obligatoria al autor (Damir Lebedev); uso comercial solo con licencia de pago del autor, uso militar solo mediante un contrato entre un Estado y el autor firmado de antemano; está prohibido dañar intencionadamente a personas o bienes sin su consentimiento.
 
 ## 8. Preguntas abiertas: una invitación a debatir
 
@@ -189,7 +189,7 @@ Si algo de esto es importante para ti como posible socio, el lugar adecuado para
 
 El único canal oficial del proyecto hoy es el repositorio de GitHub:
 [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject)
-(rama `main`). No existen otros contactos (correo, redes sociales, entidad jurídica) por el momento, y no se indican aquí a propósito, para no inducir a error.
+(rama `main`). Licencias comerciales, contratos y alianzas: directamente con el autor en dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com, Telegram [t.me/lisnmylife](https://t.me/lisnmylife).
 
 - **Issues**: comunicar un fallo, proponer un cambio técnico concreto, informar de los resultados de una prueba de vuelo en tu propia copia del prototipo.
 - **Discussions**: hablar de la hoja de ruta, de una alianza, de su uso en una tarea concreta (entrega, búsqueda y rescate, agricultura), de las cuestiones de licencia y de financiación de la sección 8.

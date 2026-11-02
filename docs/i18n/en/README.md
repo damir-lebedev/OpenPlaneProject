@@ -51,7 +51,7 @@
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
   <img src="https://img.shields.io/badge/STM32H743-flies%20from%20the%20RC-39d0ff?style=for-the-badge&logo=stmicroelectronics&logoColor=white" alt="STM32H743: flown from the transmitter">
   <img src="https://img.shields.io/badge/MAVLink-QGroundControl-a371f7?style=for-the-badge" alt="MAVLink">
-  <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-OpenPlane%20License-f0883e?style=for-the-badge" alt="OpenPlane License: MIT with conditions — credit the author, no military use"></a>
+  <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-OpenPlane%20License%202.0-f0883e?style=for-the-badge" alt="OpenPlane License 2.0: free for non-commercial use, commercial use under the author's license"></a>
 </p>
 
 <h3 align="center">Switch off the transmitter — and the plane flies home on its own and circles above you.</h3>
@@ -385,14 +385,20 @@ We need hands and heads: aerodynamics and aeromodelling, 3D printing and structu
 
 ## 📜 License
 
-The [OpenPlane License](../../../LICENSE) is a license based on MIT with additional conditions. The code, the documentation and the model files may be used, copied, modified and sold, including in commercial products. The conditions are:
+The [OpenPlane License 2.0](../../../LICENSE) keeps the project open and public: the code, the documentation, the schematics and the airframe model may be read, copied, modified, and your improvements published, **free of charge for non-commercial use**. Making money with the project requires a paid license from the author.
 
-1. **Credit the author — Damir Lebedev (Damn / Проклятый).** The name must appear where the users of your product will see it: in the documentation, the README or an "About" page. Keep the license text together with the code.
-2. **Military use is prohibited.** The project must not be used by armies and paramilitary organizations, in war, or to create weapons, munitions, and delivery or targeting systems.
-3. **Do not intentionally harm people or property without their prior written consent to that harm.** You may break your own equipment if it threatens no one: for example, shooting your own drone with an air pistol. Maiming and killing people is not allowed.
-4. **Follow the safety rules and the law** when building, testing and flying.
+**Free, no permission needed:** personal and hobby use: build it, modify it, fly it; your own modifications and forks, published free of charge under this same license; teaching and research at non-profit educational and research institutions, clubs and competitions; non-profit organizations, including volunteer search and rescue; videos, streams and articles about the project, even with ads and donations; an individual selling their own used aircraft or boards built for themselves, no more than two a year.
 
-If the conditions are violated, the permission to use the project ends. Because of the bans on certain kinds of use, this is not an "open" license in the OSI sense: the code is available to read, copy and modify, but formally the project is source-available, not open source.
+**Paid license only:** selling boards, flight controllers, kits, ready-to-fly aircraft and any products that contain this firmware or are built from these drawings; paid services based on it (delivery, filming, mapping, inspection, agriculture, flashing and setup for money); use in a company and in its products; paid courses. Contact the author: dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com, Telegram [t.me/lisnmylife](https://t.me/lisnmylife).
+
+For everyone, commercial licensees included:
+
+1. **Credit the author — Damir Lebedev (Damn / Проклятый)** where the users of your result will see it, for example: "Based on OpenPlane by Damir Lebedev". Keep the license text with the code; a modified version must not be passed off as the original.
+2. **Military use only under a written agreement between a state and the author**, signed before the use begins. Military use by non-state groups, private companies and individuals without such an agreement with a state is prohibited.
+3. **Do not intentionally harm people or property without their prior written consent**, unless an agreement under item 2 expressly says otherwise. Breaking your own equipment is fine as long as it endangers no one.
+4. **Follow safety rules and the law** when building, testing and flying.
+
+By sending a pull request you allow the author to distribute your contribution on any terms, including commercial licenses; you keep the copyright in your contribution. If the conditions are violated, the permission to use the project ends. This is a source-available license, not open source in the OSI sense. Version 2.0 applies to all versions published on or after 3 November 2026.
 
 Only the English text in the [LICENSE](../../../LICENSE) file has legal force: translations of the license into other languages are provided for convenience.
 

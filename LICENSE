@@ -1,48 +1,141 @@
-OpenPlane License
-(based on the MIT License, with attribution and use restrictions)
+OpenPlane License, version 2.0
+(source-available, free for non-commercial use, with attribution and use
+restrictions; commercial use requires a separate paid license)
 
 Copyright (c) 2026 Damir Lebedev (Damn / Проклятый), https://github.com/damir-lebedev
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and the associated documentation, design files (including
-hardware and airframe models) and other materials in this repository (the
-"Software"), to use, copy, modify, merge, publish, distribute, sublicense,
-and/or sell copies of the Software, and to permit persons to whom the
-Software is furnished to do so, subject to the following conditions:
+Commercial licensing and questions:
+  dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com,
+  Telegram https://t.me/lisnmylife
 
-1. Attribution. The above copyright notice and this permission notice shall
-   be included in all copies or substantial portions of the Software. Any use
-   of the Software, in source or binary form, including derivative works and
-   products built with it, must credit the original author, Damir Lebedev, in
-   a place where users of the result can see it (documentation, README,
-   "about" page or equivalent).
+This version of the license applies to every version of the Software
+published on or after 3 November 2026.
 
-2. No military use. The Software, derivative works and products built with or
-   incorporating it must not be used for military purposes. This includes use
-   by or for armed forces or other military or paramilitary organizations;
-   use in warfare, combat or other hostilities; and use in the development,
-   production, testing or operation of weapons, munitions, or weapon-delivery
-   or targeting systems.
+0. Definitions.
+   "Author" means Damir Lebedev, the copyright holder.
+   "Software" means the source code, binaries, documentation, design files
+   (including hardware, circuit board and airframe models) and all other
+   materials in this repository.
+   "Derivative Work" means any modified version of the Software, any work
+   that contains the Software or a substantial portion of it, and any device,
+   aircraft or other product that is built from the Software's design files
+   or that runs or is programmed with the Software.
+   "You" means the person or organization exercising rights under this
+   license.
 
-3. No harm to people or property without consent. The Software, derivative
-   works and products built with or incorporating it must not be used to
-   intentionally injure or kill any person, or to intentionally damage or
-   destroy any property, unless every person who would be harmed and every
-   owner of the property that would be damaged has given prior written consent
-   to that specific harm. Harm to your own property, or to property whose
-   owner has given such consent, is not a violation as long as it endangers no
-   one else. For example, shooting at your own drone with an air pistol is
-   allowed.
+1. Permission. Subject to the conditions below, the Author grants You, free
+   of charge, a worldwide, non-exclusive permission to use, copy, modify,
+   merge, publish and distribute the Software and Derivative Works, for
+   Non-Commercial purposes only.
 
-4. Safety and law. You must observe all applicable safety rules and
+2. Non-commercial only. Any Commercial Use requires a separate written
+   license from the Author (section 3). "Commercial Use" means any use, copy,
+   modification or distribution made for payment or other compensation, or
+   intended for commercial advantage, including:
+   a) selling, renting or leasing the Software, a Derivative Work, or any
+      flight controller, circuit board, kit, aircraft, ready-to-fly model or
+      other product that contains, runs or is built from the Software;
+   b) offering paid services that rely on the Software, such as delivery,
+      aerial photography or filming, surveying, mapping, inspection,
+      agriculture, fleet operation, or paid installation, flashing, setup,
+      tuning or repair;
+   c) incorporating the Software into a product, service or platform of a
+      business, or using it within a business or other for-profit
+      organization for that organization's activities;
+   d) paid training courses and paid workshops based on the Software;
+   e) using the Software to develop, test or improve a commercial product.
+
+   The following are Non-Commercial and allowed without a separate license,
+   as long as all other conditions are met:
+   a) personal, hobby and recreational use, including building, modifying
+      and flying Your own aircraft;
+   b) modifying the Software and publishing Your modifications free of
+      charge under this license;
+   c) research, teaching and study at schools, universities and other
+      non-profit or public educational and research institutions, and use by
+      non-profit clubs, including entering competitions and receiving
+      prizes;
+   d) use by non-profit organizations, including volunteer search and
+      rescue, for their non-commercial activities;
+   e) publishing videos, streams, articles and posts about the Software or
+      about aircraft that use it, even if that content earns money from
+      advertising, donations or sponsorship of the content itself;
+   f) accepting voluntary donations for Your own non-commercial work on a
+      Derivative Work;
+   g) an individual's occasional, non-business sale of no more than two
+      used aircraft or devices per calendar year that the individual built
+      for their own personal use.
+
+3. Commercial license. The Author may grant licenses for Commercial Use by a
+   separate written agreement, on terms and for fees set by the Author.
+   Unless that agreement expressly says otherwise, conditions 4 to 8 also
+   apply to every commercial licensee. Nothing in this license obliges the
+   Author to grant a commercial license.
+
+4. Attribution. This copyright notice and this license must be included in
+   all copies and substantial portions of the Software. Any use of the
+   Software, in source or binary form, including Derivative Works, must
+   credit the original author, Damir Lebedev, in a place where users of the
+   result can see it (documentation, README, "about" page, product
+   description or equivalent), for example: "Based on OpenPlane by Damir
+   Lebedev, https://github.com/damir-lebedev". Do not remove or alter the
+   Author's name or copyright notices.
+
+5. Military use only by prior agreement with a state. "Military Use"
+   means use by or for armed forces or other military or paramilitary
+   organizations; use in warfare, combat or other hostilities; and use in
+   the development, production, testing or operation of weapons, munitions,
+   or weapon-delivery or targeting systems. Military Use of the Software
+   and Derivative Works is prohibited unless, before that use begins, the
+   government of a state, acting through its authorized body, and the
+   Author personally have signed a written agreement that permits that
+   specific use. The agreement sets the terms and fees. Such an agreement
+   can only be made with a state: Military Use by or for a non-state group,
+   private company or individual without such an agreement with a state is
+   never permitted.
+
+6. No harm to people or property without consent. The Software and
+   Derivative Works must not be used to intentionally injure or kill any
+   person, or to intentionally damage or destroy any property, unless every
+   person who would be harmed and every owner of the property that would be
+   damaged has given prior written consent to that specific harm, or an
+   agreement under condition 5 expressly provides otherwise. Harm to
+   your own property, or to property whose owner has given such consent, is
+   not a violation as long as it endangers no one else. For example,
+   shooting at your own drone with an air pistol is allowed.
+
+7. Safety and law. You must observe all applicable safety rules and
    precautions (including those for aircraft, radio equipment and batteries)
    and comply with all applicable laws when building, testing and operating
    anything that uses the Software. Nothing in this license permits unlawful
-   conduct, and consent given under condition 3 does not make an unlawful act
+   conduct, and consent given under condition 6 does not make an unlawful act
    lawful.
 
-5. Compliance. If you do not comply with these conditions, you have no
-   permission to use, copy, modify or distribute the Software.
+8. Same license for copies and Derivative Works. When You distribute or
+   publish the Software or a Derivative Work, You must do so under this
+   license, include its full text, and not impose any further restrictions.
+   Modified versions must say that they were modified and must not be
+   presented as the original Software or as endorsed by the Author. This
+   license grants no right to use the names "OpenPlane", "OpenPlane Studio"
+   or the Author's name to promote a product, except for the credit
+   required by condition 4.
+
+9. Contributions. If You submit a contribution (pull request, patch, code,
+   design file, documentation or other material) to the Author's
+   repositories, You confirm that You have the right to do so, and You grant
+   the Author a perpetual, worldwide, non-exclusive, royalty-free and
+   irrevocable license to use, modify, sublicense and relicense Your
+   contribution under any terms, including commercial licenses. Your
+   contribution is also made available to everyone under this license. You
+   keep the copyright in Your contribution.
+
+10. Termination. If You do not comply with these conditions, You have no
+    permission to use, copy, modify or distribute the Software, and any
+    permission You had ends automatically. The Author may restore it in
+    writing.
+
+11. Language. Only this English text is legally binding. Translations are
+    provided for convenience only.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

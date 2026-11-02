@@ -173,7 +173,7 @@ Pour que la feuille de route ne ressemble pas à du marketing, nous consignons �
 - L’horizon pour la stabilisation est l’attitude de l’appareil à la mise sous tension (l’IMU s’étalonne à chaque démarrage), ou l’étalonnage du montage à partir de trois positions.
 - Le branchement physique d’un servo n’est pas visible du logiciel ; on voit seulement que l’impulsion sort réellement sur la broche (un autotest depuis la console).
 - Le brochage de l’ESP32 ordinaire à 38 broches a été choisi d’après la documentation de la puce et n’a pas été vérifié sur le matériel.
-- La licence est l’[OpenPlane License](LICENSE.md) : MIT avec mention obligatoire de l’auteur et interdictions de l’usage militaire et du préjudice intentionnel aux personnes et aux biens sans leur consentement. À cause de ces interdictions, elle n’est pas considérée comme « libre » au sens de l’OSI.
+- La licence est l’[OpenPlane License 2.0](LICENSE.md) : gratuite pour un usage non commercial avec mention obligatoire de l’auteur (Damir Lebedev) ; usage commercial uniquement sous licence payante de l’auteur, usage militaire uniquement en vertu d’un contrat entre un État et l’auteur signé à l’avance ; il est interdit de nuire intentionnellement aux personnes ou aux biens sans leur consentement.
 
 ## 8. Questions ouvertes — une invitation à en discuter
 
@@ -189,7 +189,7 @@ Si l’un de ces points est important pour vous en tant que partenaire potentiel
 
 Le seul canal officiel du projet aujourd’hui est le dépôt GitHub :
 [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject)
-(branche `main`). Il n’existe pour l’instant aucun autre contact (e-mail, réseaux sociaux, personne morale), et ils ne sont pas indiqués ici à dessein, pour ne pas induire en erreur.
+(branche `main`). Licences commerciales, contrats et partenariats : directement auprès de l’auteur, dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com, Telegram [t.me/lisnmylife](https://t.me/lisnmylife).
 
 - **Issues** — signaler un bogue, proposer une modification technique précise, rendre compte des résultats d’un essai en vol sur votre propre exemplaire du prototype.
 - **Discussions** — discuter de la feuille de route, du partenariat, de l’usage pour une tâche précise (livraison, recherche et sauvetage, agriculture), des questions de licence et de financement de la section 8.

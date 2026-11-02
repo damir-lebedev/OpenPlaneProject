@@ -582,6 +582,6 @@ Para que as expectativas sejam honestas:
 - **A bancada com a esp32-s3 está montada com todos os sensores** (GY-521 com um MPU6500, BMP388 por I2C, GY-273 com um QMC5883P, OLED): todos respondem, e o laço roda a 500 Hz. Os modos do piloto automático foram verificados na mesa, mas **ainda não foram testados em voo**.
 - O barômetro padrão agora é o BMP581 (o BMP388 da bancada foi verificado ao vivo; o BMP581 ainda não foi testado no hardware). A altitude é relativa ao ponto de ligação. A altitude absoluta acima do mar vem da atmosfera padrão, sem correção para o tempo.
 - A bússola QMC5883P precisa de calibração (`m` no console) já no avião montado: perto do motor e dos fios, os desvios são diferentes dos da protoboard. O rumo ainda não tem compensação de inclinação e não é usado por nenhum modo.
-- A licença é a OpenPlane License: MIT com atribuição obrigatória ao autor (Damir Lebedev), proibição de uso militar e proibição de causar dano intencional a pessoas e bens sem o consentimento delas, veja [LICENSE](LICENSE.md).
+- A licença é a [OpenPlane License 2.0](LICENSE.md): gratuita para uso não comercial com atribuição obrigatória ao autor (Damir Lebedev); uso comercial somente com licença paga do autor, uso militar somente mediante contrato entre um Estado e o autor assinado com antecedência; é proibido causar dano intencional a pessoas ou bens sem o consentimento delas.
 
 Se você estiver montando a sua própria aeronave com este guia, voe primeiro com controle manual (MANUAL) e só depois passe ao piloto automático.

@@ -170,7 +170,7 @@ JSON 中的 `attached`/`available` 字段始终存在——仪表盘会如实地
 - 增稳所用的地平线是开机时飞机的姿态（IMU 每次启动都会校准），或者是按三个姿态做的安装校准。
 - 舵机的物理连接无法由软件看出；能看到的只是脉冲确实从引脚输出（可在控制台中自检）。
 - 普通 ESP32 38 针版的引脚分配是依据芯片文档选定的，没有在硬件上验证过。
-- 许可证是 [OpenPlane License](LICENSE.md)：在 MIT 基础上要求必须署名作者，并禁止军事用途，以及未经当事人同意而故意危害人员和财产。由于这些禁止条款，它不被视为 OSI 意义上的“开源”许可证。
+- 许可证是 [OpenPlane License 2.0](LICENSE.md)：在注明作者（Damir Lebedev）的前提下非商业用途免费；商业用途须获得作者的付费许可，军事用途仅限国家与作者事先签署协议的情况；禁止未经同意故意伤害他人或损坏财产。
 
 ## 8. 悬而未决的问题——邀请讨论
 
@@ -186,7 +186,7 @@ JSON 中的 `attached`/`available` 字段始终存在——仪表盘会如实地
 
 目前项目唯一的官方渠道是 GitHub 仓库：
 [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject)
-（分支 `main`）。目前不存在其他联系方式（邮箱、社交网络、法人实体），为避免误导，这里也有意没有列出。
+（分支 `main`）。商业许可、协议与合作请直接联系作者：dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com, Telegram [t.me/lisnmylife](https://t.me/lisnmylife)。
 
 - **Issues**——报告 bug，提出具体的技术修改建议，汇报你在自己那份原型上做飞行测试的结果。
 - **Discussions**——讨论路线图、合作、在具体任务中的应用（配送、搜索与救援、农业），以及第 8 节中的许可和融资问题。

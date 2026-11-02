@@ -46,4 +46,4 @@ Git behandlar filerna `.stl`, `.f3d`, `.f3z`, `.step`, `.stp` och `.3mf` i den h
 
 ## Licens
 
-Modellen distribueras på samma villkor som hela projektet: under [OpenPlane License](../LICENSE.md), det vill säga MIT med obligatorisk angivelse av upphovspersonen, förbud mot militär användning och förbud mot att avsiktligt skada människor eller egendom utan deras medgivande. Inom dessa villkor får du skriva ut, ändra och förbättra den, men du måste ange upphovspersonen, Damir Lebedev (Damn / Проклятый).
+Modellen distribueras på samma villkor som hela projektet: under [OpenPlane License 2.0](../LICENSE.md). Att skriva ut, ändra och flyga den för eget bruk är gratis, med angivelse av upphovspersonen, Damir Lebedev (Damn / Проклятый). Att sälja modellen, delar som skrivits ut efter den eller färdiga flygplan kräver en betald licens från upphovspersonen.

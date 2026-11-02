@@ -582,6 +582,6 @@ To keep expectations honest:
 - **The esp32-s3 bench is built with all the sensors** (GY-521 with an MPU6500, a BMP388 on I2C, a GY-273 with a QMC5883P, an OLED) — all of them respond, and the loop runs at 500 Hz. The autopilot modes have been verified on the table but **have not yet been tested in flight**.
 - The default barometer is now the BMP581 (the bench BMP388 was verified live; the BMP581 has not been tested on hardware yet). Altitude is relative to the power-up point. Absolute altitude above sea level is computed from the standard atmosphere, without a weather correction.
 - The QMC5883P compass needs calibration (`m` in the console) on the assembled airplane — next to the motor and wires the offsets differ from those on the breadboard. The heading has no tilt compensation yet and is not used by any mode.
-- The license is the OpenPlane License: MIT with mandatory credit to the author (Damir Lebedev), a ban on military use, and a ban on intentionally harming people or property without their consent, see [LICENSE](../../../LICENSE).
+- The license is the [OpenPlane License 2.0](../../../LICENSE): free for non-commercial use with mandatory credit to the author (Damir Lebedev); commercial use only under a paid license from the author, military use only under an agreement between a state and the author signed in advance; intentional harm to people or property without their consent is prohibited.
 
 If you are building your own aircraft from this guide, fly it first under manual control (MANUAL), and only then move on to the autopilot.

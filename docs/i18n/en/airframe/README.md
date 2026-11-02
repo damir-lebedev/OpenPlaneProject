@@ -46,4 +46,4 @@ Git treats `.stl`, `.f3d`, `.f3z`, `.step`, `.stp` and `.3mf` files in this fold
 
 ## License
 
-The model is distributed under the same terms as the whole project: the [OpenPlane License](../../../../LICENSE), that is, MIT with mandatory credit to the author, a ban on military use, and a ban on intentionally harming people or property without their consent. You may print, modify and improve it within these terms, but you must credit the author, Damir Lebedev (Damn / Проклятый).
+The model is distributed under the same terms as the whole project, the [OpenPlane License 2.0](../../../../LICENSE). Printing it, modifying it and flying it for yourself is free, with credit to the author, Damir Lebedev (Damn / Проклятый). Selling the model, parts printed from it or finished aircraft requires a paid license from the author.

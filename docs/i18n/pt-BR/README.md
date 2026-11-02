@@ -51,7 +51,7 @@
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
   <img src="https://img.shields.io/badge/STM32H743-flies%20from%20the%20RC-39d0ff?style=for-the-badge&logo=stmicroelectronics&logoColor=white" alt="STM32H743: pilotada pelo rádio">
   <img src="https://img.shields.io/badge/MAVLink-QGroundControl-a371f7?style=for-the-badge" alt="MAVLink">
-  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-OpenPlane%20License-f0883e?style=for-the-badge" alt="OpenPlane License: MIT com condições — creditar o autor e sem uso militar"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-OpenPlane%20License%202.0-f0883e?style=for-the-badge" alt="OpenPlane License 2.0: gratuita para uso não comercial, uso comercial só com licença do autor"></a>
 </p>
 
 <h3 align="center">Desligue o rádio — o avião volta sozinho para casa e fica circulando sobre você.</h3>
@@ -385,16 +385,22 @@ Precisamos de mãos e cabeças: aerodinâmica e aeromodelismo, impressão 3D e r
 
 ## 📜 Licença
 
-A [OpenPlane License](LICENSE.md) é uma licença baseada na MIT com condições adicionais. O código, a documentação e os arquivos do modelo podem ser usados, copiados, modificados e vendidos, inclusive em produtos comerciais. As condições são estas:
+A [OpenPlane License 2.0](LICENSE.md) mantém o projeto aberto e público: o código, a documentação, os esquemas e o modelo do avião podem ser lidos, copiados, modificados, e as suas melhorias podem ser publicadas, **gratuitamente para uso não comercial**. Para ganhar dinheiro com o projeto é preciso uma licença paga do autor.
 
-1. **Credite o autor — Damir Lebedev (Damn / Проклятый).** O nome deve aparecer onde os usuários do seu produto possam vê-lo: na documentação, no README ou em uma página "Sobre". Mantenha o texto da licença junto com o código.
-2. **O uso militar é proibido.** O projeto não pode ser usado por exércitos e organizações paramilitares, na guerra, nem para criar armas, munições e sistemas de lançamento ou de mira.
-3. **Não cause dano intencional a pessoas ou bens sem que eles tenham consentido previamente, por escrito, com esse dano.** Você pode quebrar o seu próprio equipamento se isso não ameaçar ninguém: por exemplo, atirar com uma pistola de pressão no seu próprio drone. Mutilar e matar pessoas não é permitido.
-4. **Respeite as normas de segurança e a lei** ao montar, testar e voar.
+**Grátis e sem pedir permissão:** uso pessoal e de hobby: montar, modificar, voar; suas próprias modificações e forks publicados gratuitamente sob esta mesma licença; ensino e pesquisa em instituições de ensino e pesquisa sem fins lucrativos, clubes e competições; organizações sem fins lucrativos, inclusive busca e salvamento voluntários; vídeos, lives e artigos sobre o projeto, mesmo com anúncios e doações; a venda, por uma pessoa física, dos próprios aviões ou placas usados, montados para si, no máximo dois por ano.
 
-Se as condições forem descumpridas, a permissão de uso do projeto deixa de valer. Por causa das proibições a certos tipos de uso, esta não é uma licença "aberta" no sentido da OSI: o código está disponível para leitura, cópia e modificação, mas formalmente o projeto é source-available, e não open source.
+**Somente com licença paga:** venda de placas, controladoras de voo, kits, aviões prontos para voar e de qualquer produto com este firmware ou construído a partir destes desenhos; serviços pagos baseados nele (entrega, filmagem, mapeamento, inspeção, agricultura, gravação de firmware e configuração por dinheiro); uso em uma empresa e em seus produtos; cursos pagos. Contato com o autor: dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com, Telegram [t.me/lisnmylife](https://t.me/lisnmylife).
 
-Somente o texto em inglês do arquivo [LICENSE](LICENSE.md) tem validade jurídica: as traduções da licença para outros idiomas são oferecidas para sua conveniência.
+Para todos, inclusive titulares de licença comercial:
+
+1. **Dê o crédito ao autor, Damir Lebedev (Damn / Проклятый),** onde os usuários do seu resultado o vejam, por exemplo: "Based on OpenPlane by Damir Lebedev". Mantenha o texto da licença junto com o código; uma versão modificada não pode ser apresentada como a original.
+2. **Uso militar somente mediante contrato escrito entre um Estado e o autor**, assinado antes do início do uso. Grupos não estatais, empresas privadas e pessoas físicas sem esse contrato com um Estado estão proibidos de fazer uso militar.
+3. **Não cause dano intencional a pessoas ou bens sem o consentimento prévio por escrito delas**, salvo se um contrato nos termos do item 2 disser expressamente o contrário. Quebrar o seu próprio equipamento é permitido, desde que não coloque ninguém em risco.
+4. **Siga as regras de segurança e a lei** ao montar, testar e voar.
+
+Ao enviar um pull request, você permite que o autor distribua a sua contribuição em quaisquer termos, inclusive licenças comerciais; os direitos autorais da sua contribuição continuam sendo seus. Se as condições forem violadas, a permissão de uso termina. Esta é uma licença source-available, não open source no sentido da OSI. A versão 2.0 vale para todas as versões publicadas a partir de 3 de novembro de 2026.
+
+Somente o texto em inglês do arquivo [LICENSE](LICENSE.md) tem validade jurídica: as traduções da licença para outros idiomas são fornecidas por conveniência.
 
 O firmware controla uma aeronave e não é certificado. Tudo o que você fizer com ele é por sua conta e risco; o autor não assume responsabilidade alguma.
 

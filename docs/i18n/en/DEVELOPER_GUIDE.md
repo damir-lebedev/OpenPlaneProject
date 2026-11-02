@@ -1095,10 +1095,7 @@ pio run -e esp32-s3 -e esp32-c3 -e esp32-dev -e stm32h743   # check that all the
   flight.
 - **Prototype mechanics:** the first prototype flew, a weak motor mount and
   insufficient wing stiffness were found.
-- **The license is the OpenPlane License** ([LICENSE](../../../LICENSE)): MIT with mandatory attribution of the
-  author, a ban on military use and a ban on intentional harm to people and
-  property without their written consent. Do not add other license headers
-  to the files and do not remove the author's name.
+- The license is the [OpenPlane License 2.0](../../../LICENSE): free for non-commercial use with mandatory credit to the author (Damir Lebedev); commercial use only under a paid license from the author, military use only under an agreement between a state and the author signed in advance; intentional harm to people or property without their consent is prohibited. Do not add other license headers to files and do not remove the author's name. By sending a pull request you allow the author to license your contribution on any terms, including commercial ones (section 9 of the license).
 
 ---
 

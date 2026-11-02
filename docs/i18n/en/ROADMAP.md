@@ -261,7 +261,7 @@ So that the roadmap does not read like marketing, we record separately what has 
 - The horizon for stabilization is the attitude of the aircraft at power-on (the IMU calibrates at every start), or the mounting calibration from three poses.
 - The physical connection of a servo is not visible to the software; all that can be seen is that the pulse really comes out on the pin (a self-check from the console).
 - The pinout of the ordinary 38-pin ESP32 was chosen from the chip's documentation and has not been verified on hardware.
-- The license is the [OpenPlane License](../../../LICENSE): MIT with mandatory attribution of the author and prohibitions on military use and on intentional harm to people and property without their consent. Because of these prohibitions it is not considered “open source” in the OSI sense.
+- The license is the [OpenPlane License 2.0](../../../LICENSE): free for non-commercial use with mandatory credit to the author (Damir Lebedev); commercial use only under a paid license from the author, military use only under an agreement between a state and the author signed in advance; intentional harm to people or property without their consent is prohibited.
 
 ## 8. Open questions — an invitation to discuss
 
@@ -277,7 +277,7 @@ If any of this matters to you as a potential partner, the right place to talk ab
 
 The only official channel of the project today is the GitHub repository:
 [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject)
-(branch `main`). There are no other contacts (email, social networks, a legal entity) at the moment, and they are deliberately not listed here so as not to mislead.
+(branch `main`). Commercial licenses, agreements and partnership: contact the author directly at dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com, Telegram [t.me/lisnmylife](https://t.me/lisnmylife).
 
 - **Issues** — report a bug, propose a specific technical change, report the results of a flight test on your own copy of the prototype.
 - **Discussions** — discuss the roadmap, partnership, use in a specific task (delivery, search and rescue, agriculture), and the licensing and funding questions from section 8.

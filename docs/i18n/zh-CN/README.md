@@ -51,7 +51,7 @@
   <img src="https://img.shields.io/badge/ESP32--S3%20·%20ESP32%20·%20C3-supported-39d0ff?style=for-the-badge&logo=espressif&logoColor=white" alt="ESP32">
   <img src="https://img.shields.io/badge/STM32H743-flies%20from%20the%20RC-39d0ff?style=for-the-badge&logo=stmicroelectronics&logoColor=white" alt="STM32H743：可用遥控器操控">
   <img src="https://img.shields.io/badge/MAVLink-QGroundControl-a371f7?style=for-the-badge" alt="MAVLink">
-  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-OpenPlane%20License-f0883e?style=for-the-badge" alt="OpenPlane License：附加条件的 MIT 许可证——须署名作者，禁止军事用途"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-OpenPlane%20License%202.0-f0883e?style=for-the-badge" alt="OpenPlane License 2.0：非商业用途免费，商业用途须获作者许可"></a>
 </p>
 
 <h3 align="center">关掉遥控器——飞机会自己飞回家，并在你头顶盘旋。</h3>
@@ -385,16 +385,22 @@ DevEBox：板子上没有 BOOT0 按钮——第一次烧录前，把 BT0 引脚�
 
 ## 📜 许可证
 
-[OpenPlane License](LICENSE.md) 是一份以 MIT 为基础、附加了若干条件的许可证。代码、文档和模型文件可以使用、复制、修改和出售，包括用于商业产品。条件如下：
+[OpenPlane License 2.0](LICENSE.md) 让项目保持开放和公开：代码、文档、电路图和机体模型可以阅读、复制、修改，也可以发布你自己的改进，**非商业用途完全免费**。想用本项目赚钱，需要向作者购买付费许可。
 
-1. **请注明作者——Damir Lebedev (Damn / Проклятый)。** 署名必须出现在你的产品用户能看到的地方：文档、README 或“关于”页面。请把许可证文本与代码放在一起。
-2. **禁止军事用途。** 不得将本项目用于军队和准军事组织、战争，或用于制造武器、弹药以及投送和瞄准系统。
-3. **未经当事人事先书面同意，不得故意伤害人员或损坏财产。** 只要不危及任何人，你可以弄坏自己的设备：例如，用气手枪射击自己的无人机。伤害或杀死他人则不被允许。
-4. **请遵守安全规程和法律**：组装、测试和飞行时均需如此。
+**免费，无需申请：** 个人和业余用途：组装、改装、飞行；按同一许可免费发布的你自己的修改和分支；非营利教育和科研机构中的教学与研究、俱乐部和比赛；非营利组织，包括志愿搜救；关于本项目的视频、直播和文章，即使带广告和打赏；个人出售为自己制作的二手飞机或电路板，每年不超过两件。
 
-如果违反这些条件，使用本项目的许可即告终止。由于对部分用途有禁止性规定，这并不是 OSI 意义上的“开放”许可证：代码可以阅读、复制和修改，但从形式上说，本项目属于源码可用（source-available），而不是开源（open source）。
+**仅限付费许可：** 销售装有本固件或按这些图纸制造的电路板、飞控、套件、成品飞机及任何产品；基于本项目的付费服务（配送、拍摄、测绘、巡检、农业、收费刷写和调试）；在公司内部及公司产品中使用；付费课程。联系作者：dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com, Telegram [t.me/lisnmylife](https://t.me/lisnmylife)。
 
-只有 [LICENSE](LICENSE.md) 文件中的英文文本具有法律效力：其他语言的许可证译文仅供参考。
+对所有人（包括商业被许可人）适用的条件：
+
+1. **注明作者 Damir Lebedev（Damn / Проклятый）**，写在你的成果的用户能看到的地方，例如：“Based on OpenPlane by Damir Lebedev”。许可证文本须随代码保留；修改版不得冒充原版。
+2. **军事用途仅限国家与作者在使用开始前签署书面协议的情况。** 未与国家签订此类协议的非国家团体、私营公司和个人禁止军事使用。
+3. **未经事先书面同意，不得故意伤害他人或损坏财产**，除非第 2 条所述协议明确另有约定。只要不危及他人，损坏自己的设备是允许的。
+4. 组装、测试和飞行时**遵守安全规程和法律**。
+
+提交 pull request 即表示你允许作者以任何条款（包括商业许可）分发你的贡献；你的贡献的著作权仍归你所有。违反条件即终止使用许可。这是 source-available 许可证，而不是 OSI 意义上的开源许可证。2.0 版适用于 2026 年 11 月 3 日及以后发布的所有版本。
+
+只有 [LICENSE](LICENSE.md) 文件中的英文文本具有法律效力：其他语言的许可证译文仅为方便阅读而提供。
 
 固件控制的是飞行器，未经任何认证。你用它做的一切都由你自行承担风险；作者不承担任何责任。
 

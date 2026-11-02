@@ -261,7 +261,7 @@ För att färdplanen inte ska läsas som marknadsföring redovisar vi separat va
 - Horisonten för stabiliseringen är farkostens attityd vid start (IMU:n kalibreras vid varje start), eller monteringskalibreringen från tre positioner.
 - Den fysiska anslutningen av ett servo syns inte för mjukvaran; det enda som syns är att pulsen verkligen kommer ut på stiftet (en självkontroll från konsolen).
 - Stiftbeläggningen för den vanliga ESP32 med 38 stift valdes utifrån kretsens dokumentation och har inte verifierats på hårdvara.
-- Licensen är [OpenPlane License](LICENSE.md): MIT med obligatorisk angivelse av upphovspersonen och förbud mot militär användning och mot avsiktlig skada på människor och egendom utan deras medgivande. På grund av dessa förbud räknas den inte som ”open source” i OSI:s mening.
+- Licensen är [OpenPlane License 2.0](LICENSE.md): gratis för icke-kommersiell användning med obligatorisk angivelse av upphovspersonen (Damir Lebedev); kommersiell användning endast med betald licens från upphovspersonen, militär användning endast enligt ett i förväg undertecknat avtal mellan en stat och upphovspersonen; att avsiktligt skada människor eller egendom utan deras medgivande är förbjudet.
 
 ## 8. Öppna frågor – en inbjudan till diskussion
 
@@ -277,7 +277,7 @@ Om något av detta är viktigt för dig som potentiell partner är rätt ställe
 
 Projektets enda officiella kanal i dag är GitHub-repositoryt:
 [github.com/damir-lebedev/OpenPlaneProject](https://github.com/damir-lebedev/OpenPlaneProject)
-(gren `main`). Det finns för närvarande inga andra kontaktvägar (e-post, sociala nätverk, en juridisk person), och de anges avsiktligt inte här för att inte vilseleda.
+(gren `main`). Kommersiella licenser, avtal och partnerskap: direkt till upphovspersonen via dam.lebedev2018@yandex.ru, dam.lebedev2020@gmail.com, Telegram [t.me/lisnmylife](https://t.me/lisnmylife).
 
 - **Issues** – rapportera ett fel, föreslå en konkret teknisk ändring, rapportera resultaten av ett flygprov med ditt eget exemplar av prototypen.
 - **Discussions** – diskutera färdplanen, partnerskap, användning i en specifik uppgift (leverans, sök och räddning, jordbruk) samt licens- och finansieringsfrågorna från avsnitt 8.

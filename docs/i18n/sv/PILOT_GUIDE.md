@@ -581,6 +581,6 @@ För att hålla förväntningarna ärliga:
 - **esp32-s3-bänken är byggd med alla sensorer** (GY-521 med en MPU6500, en BMP388 på I2C, en GY-273 med en QMC5883P, en OLED) – alla svarar, och slingan går på 500 Hz. Autopilotlägena har verifierats på bordet men **har ännu inte provats under flygning**.
 - Standardbarometern är nu BMP581 (bänkens BMP388 verifierades live; BMP581 har ännu inte provats på hårdvara). Höjden är relativ till startpunkten. Absolut höjd över havet räknas fram ur standardatmosfären, utan väderkorrigering.
 - QMC5883P-kompassen behöver kalibreras (`m` i konsolen) på det monterade flygplanet – bredvid motorn och trådarna skiljer sig offseten från dem på kopplingsdäcket. Kursen har ännu ingen lutningskompensation och används inte av något läge.
-- Licensen är OpenPlane License: MIT med obligatorisk angivelse av upphovspersonen (Damir Lebedev), förbud mot militär användning och förbud mot att avsiktligt skada människor eller egendom utan deras medgivande, se [LICENSE](LICENSE.md).
+- Licensen är [OpenPlane License 2.0](LICENSE.md): gratis för icke-kommersiell användning med obligatorisk angivelse av upphovspersonen (Damir Lebedev); kommersiell användning endast med betald licens från upphovspersonen, militär användning endast enligt ett i förväg undertecknat avtal mellan en stat och upphovspersonen; att avsiktligt skada människor eller egendom utan deras medgivande är förbjudet.
 
 Om du bygger ditt eget plan efter den här handboken, flyg det först med manuell styrning (MANUAL) och gå först därefter vidare till autopiloten.
