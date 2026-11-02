@@ -510,7 +510,7 @@ void test_battery_sag_is_seen()
     TEST_ASSERT_TRUE(h.ctl.getStatus().volts < hoverVolts - 1.0f);
 }
 
-// ---------------- тонкости PID (PLAN_COPTER 011–015) ----------------
+// ---------------- тонкости PID (PID-профиль, пункты 011–015) ----------------
 
 namespace
 {
@@ -640,7 +640,7 @@ void test_bf_iterm_relax_on_sluggish_hexa()
     }
 }
 
-// ---------------- газ и TPA (PLAN_COPTER 016–020) ----------------
+// ---------------- газ и TPA (газ и TPA, пункты 016–020) ----------------
 
 namespace
 {
