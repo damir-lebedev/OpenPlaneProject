@@ -62,6 +62,7 @@ public:
     }
 
     void setBattery(const copter::BatteryMonitor* b) { battery = b; }
+    void setGuard(const copter::EscGuard* g) { guard = g; }
     void setGps(const GpsSensor* g, const copter::GpsHome* h)
     {
         gps = g;
@@ -245,6 +246,7 @@ private:
     LoopStats& loopStats;
     RcReceiver& rx;
     const copter::BatteryMonitor* battery = nullptr;
+    const copter::EscGuard* guard = nullptr;
     const GpsSensor* gps = nullptr;
     const copter::GpsHome* home = nullptr;
     const ImuSensor* imu = nullptr;
@@ -270,6 +272,7 @@ private:
         bool crashed = false;
         bool linkLost = false;
         uint8_t battery = 0xFF;
+        uint8_t overload = 0;
         uint8_t pidProfile = 0xFF, rateProfile = 0xFF;
         bool armSwitch = false;
         uint8_t gpsFix = 0xFF;
@@ -394,6 +397,26 @@ private:
             if (!first) event("батарея: %s, %.2f В", copter::batteryStateName(battery->state()), static_cast<double>(battery->volts()));
             seen.battery = static_cast<uint8_t>(battery->state());
         }
+        if (guard && static_cast<uint8_t>(guard->state()) != seen.overload)
+        {
+            const copter::Overload o = guard->state();
+            if (o != copter::Overload::NONE)
+            {
+                const copter::EscGuardConfig& c = guard->config();
+                if (o == copter::Overload::ESC)
+                    event("перегрузка: регулятор, до %.1f А на мотор (длительный %.0f А, пиковый %.0f А)",
+                          static_cast<double>(guard->flightStats().maxMotorA), static_cast<double>(c.escContinuousA),
+                          static_cast<double>(c.burstA()));
+                else
+                    event("перегрузка: батарея, %.1f А при пределе %.0f А (%.0fC)", static_cast<double>(battery ? battery->amps() : 0.0f),
+                          static_cast<double>(c.batteryMaxA()), static_cast<double>(c.batteryC));
+            }
+            else
+            {
+                event("перегрузка: кончилась");
+            }
+            seen.overload = static_cast<uint8_t>(o);
+        }
         if (params.pidProfile() != seen.pidProfile || params.rateProfile() != seen.rateProfile)
         {
             if (!first) event("профиль PID %u, профиль расходов %u", params.pidProfile() + 1u, params.rateProfile() + 1u);
@@ -458,6 +481,7 @@ private:
         if (battery && battery->state() == copter::BatteryState::CRITICAL) f |= F::BAT_CRIT;
         if (ctl.motorTestActive()) f |= F::MOTOR_TEST;
         if (manualRecording) f |= F::MANUAL;
+        if (guard && guard->state() != copter::Overload::NONE) f |= F::OVERLOAD;
         return f;
     }
 

@@ -159,6 +159,7 @@ namespace copter
         OSD_STAT_USED_MAH,
         OSD_STAT_MAX_CURR,
         OSD_STAT_MIN_LINK_QUALITY,
+        OSD_STAT_OVERLOAD,   // своё: перегрузки по току за полёт (copter/EscGuard.h)
         OSD_STAT_COUNT
     };
 
@@ -181,6 +182,7 @@ namespace copter
             { "used_mah", true, "израсходовано мА·ч" },
             { "max_curr", true, "наибольший ток" },
             { "min_link_quality", true, "наименьшее качество связи" },
+            { "overload", true, "перегрузки по току: сколько раз регулятор и батарея (если были)" },
         };
         return table[s < OSD_STAT_COUNT ? s : 0];
     }
@@ -194,6 +196,7 @@ namespace copter
         OSD_WARN_BATT_CRITICAL,
         OSD_WARN_FAIL_SAFE,
         OSD_WARN_LINK_QUALITY,
+        OSD_WARN_OVERLOAD,   // своё: ESC OVERLOAD, BATT OVERLOAD (copter/EscGuard.h)
         OSD_WARN_COUNT
     };
 
@@ -206,6 +209,7 @@ namespace copter
             { "batt_critical", true, "BATT CRITICAL" },
             { "fail_safe", true, "FAILSAFE и RXLOSS" },
             { "link_quality", true, "связь хуже osd_link_quality_alarm (LINK QUALITY)" },
+            { "overload", true, "перегрузка по току: ESC OVERLOAD, BATT OVERLOAD" },
         };
         return table[w < OSD_WARN_COUNT ? w : 0];
     }
@@ -269,6 +273,8 @@ namespace copter
         const char* craftName = nullptr;
         bool blink = true;                  // фаза мигания (2 Гц): false — тревожные значения гаснут
         bool exitStats = false;             // газ или тангаж вверх — убрать статистику
+        const char* overload = nullptr;     // ESC OVERLOAD / BATT OVERLOAD (copter/EscGuard.h) или nullptr
+        uint16_t escOverloads = 0, batteryOverloads = 0;   // за этот полёт
     };
 
     // Статистика полёта для экрана после DISARM.
@@ -292,6 +298,8 @@ namespace copter
                 mah = d.mahDrawn;
                 if (d.hasCurrent) maxAmps = fmaxf(maxAmps, d.amps);
                 if (d.linkQuality >= 0) minLq = minLq < 0 ? d.linkQuality : (d.linkQuality < minLq ? d.linkQuality : minLq);
+                escOverloads = d.escOverloads;
+                batteryOverloads = d.batteryOverloads;
             }
             else if (wasArmed && flightSeconds >= MIN_FLIGHT_S)
             {
@@ -314,6 +322,7 @@ namespace copter
         float minVolts = 0.0f, endVolts = 0.0f;
         float mah = 0.0f, maxAmps = 0.0f;
         int16_t minLq = -1;
+        uint16_t escOverloads = 0, batteryOverloads = 0;
         bool hasCurrent = false;
 
     private:
@@ -398,6 +407,7 @@ namespace copter
             if (l.warn(OSD_WARN_FAIL_SAFE) && d.failsafe) return "FAILSAFE";
             if (l.warn(OSD_WARN_FAIL_SAFE) && d.linkLost) return "RXLOSS";
             if (l.warn(OSD_WARN_BATT_CRITICAL) && d.batteryState == 3) return "BATT CRITICAL";
+            if (l.warn(OSD_WARN_OVERLOAD) && d.armed && d.overload) return d.overload;
             if (l.warn(OSD_WARN_BATT_WARNING) && d.batteryState == 2) return "LOW BATTERY";
             if (l.warn(OSD_WARN_LINK_QUALITY) && d.armed && d.linkQuality >= 0 && l.linkQualityAlarm > 0 &&
                 d.linkQuality < l.linkQualityAlarm)
@@ -582,6 +592,13 @@ namespace copter
             {
                 snprintf(s, sizeof(s), "%d", st.minLq);
                 line("MIN LINK", s);
+            }
+            if (l.stat(OSD_STAT_OVERLOAD) && (st.escOverloads || st.batteryOverloads))
+            {
+                if (st.escOverloads && st.batteryOverloads) snprintf(s, sizeof(s), "ESC%u BAT%u", static_cast<unsigned>(st.escOverloads), static_cast<unsigned>(st.batteryOverloads));
+                else if (st.escOverloads) snprintf(s, sizeof(s), "ESC %uX", static_cast<unsigned>(st.escOverloads));
+                else snprintf(s, sizeof(s), "BATT %uX", static_cast<unsigned>(st.batteryOverloads));
+                line("OVERLOAD", s);
             }
         }
 

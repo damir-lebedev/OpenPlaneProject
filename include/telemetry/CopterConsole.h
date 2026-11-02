@@ -101,6 +101,9 @@ public:
         link.setOutputs(out);
         msp.setOutputs(out);
     }
+    // Перегрузка по току (copter/EscGuard.h) — в живые кадры.
+    void setGuard(const copter::EscGuard* g) { link.setGuard(g); }
+
     void setBattery(const copter::BatteryMonitor* monitor)
     {
         battery = monitor;

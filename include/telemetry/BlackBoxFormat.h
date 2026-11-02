@@ -283,9 +283,10 @@ namespace BlackBoxFormat
         constexpr uint16_t BAT_CRIT   = 1u << 12;
         constexpr uint16_t MOTOR_TEST = 1u << 13;
         constexpr uint16_t MANUAL     = 1u << 14;   // запись включена вручную
+        constexpr uint16_t OVERLOAD   = 1u << 15;   // перегрузка по току (copter/EscGuard.h)
         constexpr const char* NAMES =
             "armed airborne saturated crashed failsafe rx_lost airmode imu_ok baro_ok gps_fix home "
-            "bat_warn bat_crit motor_test manual";
+            "bat_warn bat_crit motor_test manual overload";
     }
 
     struct CopterGyroRecord

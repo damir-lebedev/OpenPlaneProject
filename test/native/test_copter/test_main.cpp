@@ -5099,6 +5099,151 @@ void test_osd_layout_from_bf_positions()
     TEST_ASSERT_TRUE(has(row(12), "SEVEN"));
 }
 
+// Защита по току (copter/EscGuard.h): регулятор 45 А длительно / 55 А пик на
+// мотор, 4 мотора, батарея 1300 мА·ч 100C (130 А), 5 с выше длительного.
+void test_esc_guard_overload()
+{
+    EscGuardConfig c;
+    c.escContinuousA = 45.0f;
+    c.escBurstA = 55.0f;
+    c.overloadS = 5.0f;
+    c.batteryC = 100.0f;
+    c.batteryMah = 1300.0f;
+    c.motors = 4;
+    TEST_ASSERT_EQUAL_FLOAT(130.0f, c.batteryMaxA());
+    EscGuard g;
+    g.configure(c);
+    g.resetFlight();
+    const float dt = 0.01f;
+    auto run = [&](float amps, float seconds) {
+        for (int i = 0; i < static_cast<int>(lroundf(seconds / dt)); ++i) g.update(true, true, amps, dt);
+    };
+    // 50 А на мотор (200 А общий) — выше длительного: 4.9 с ещё можно
+    run(200.0f, 4.9f);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::NONE), static_cast<int>(g.state()));
+    run(200.0f, 0.2f);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::ESC), static_cast<int>(g.state()));
+    TEST_ASSERT_EQUAL_STRING("ESC OVERLOAD", overloadText(g.state()));
+    // ток упал — предупреждение держится 2 с, потом гаснет
+    run(40.0f, 1.5f);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::ESC), static_cast<int>(g.state()));
+    run(40.0f, 0.6f);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::NONE), static_cast<int>(g.state()));
+    TEST_ASSERT_EQUAL_UINT16(1, g.flightStats().escEvents);
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, g.flightStats().maxMotorA);
+    // выше пикового (60 А на мотор): не от одного выброса, а через 0.3 с
+    run(240.0f, 0.1f);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::NONE), static_cast<int>(g.state()));
+    run(40.0f, 0.1f);
+    run(240.0f, 0.35f);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::ESC), static_cast<int>(g.state()));
+    TEST_ASSERT_EQUAL_UINT16(2, g.flightStats().escEvents);
+    run(40.0f, 2.5f);
+    // батарея: 150 А > 130 А, а на мотор 37.5 А — регулятору нормально
+    run(150.0f, 5.1f);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::BATTERY), static_cast<int>(g.state()));
+    TEST_ASSERT_EQUAL_STRING("BATT OVERLOAD", overloadText(g.state()));
+    // первая перегрузка (200 А) была и батареи тоже — регулятор показывался первым
+    TEST_ASSERT_EQUAL_UINT16(2, g.flightStats().batteryEvents);
+    TEST_ASSERT_TRUE(g.flightStats().batterySeconds > 0.0f && g.flightStats().batterySeconds < 0.4f);
+    // ток по мотору известен (EDT) — берётся он, а не среднее
+    run(40.0f, 2.5f);
+    for (int i = 0; i < 40; ++i) g.update(true, true, 120.0f, dt, 70.0f);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::ESC), static_cast<int>(g.state()));
+    TEST_ASSERT_EQUAL_FLOAT(70.0f, g.flightStats().maxMotorA);
+    // DISARM или нет датчика тока — молчит; ARM — статистика с нуля
+    g.update(false, true, 400.0f, dt);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::NONE), static_cast<int>(g.state()));
+    for (int i = 0; i < 1000; ++i) g.update(true, false, 400.0f, dt);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::NONE), static_cast<int>(g.state()));
+    g.resetFlight();
+    TEST_ASSERT_EQUAL_UINT16(0, g.flightStats().escEvents);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, g.flightStats().maxMotorA);
+    // не задано — не следит; пиковый по умолчанию — 1.25 × длительного
+    EscGuard off;
+    for (int i = 0; i < 1000; ++i) off.update(true, true, 1000.0f, dt);
+    TEST_ASSERT_EQUAL(static_cast<int>(Overload::NONE), static_cast<int>(off.state()));
+    EscGuardConfig noBurst;
+    noBurst.escContinuousA = 40.0f;
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, noBurst.burstA());
+    TEST_ASSERT_FALSE(noBurst.watchesBattery());
+}
+
+// Настройки защиты по току, OSD-предупреждение и строка статистики.
+void test_esc_guard_params_and_osd()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    EscGuardConfig c = p.escGuardConfig(4);
+    TEST_ASSERT_FALSE(c.watchesEsc());   // по умолчанию не следит: тока регулятора не знаем
+    TEST_ASSERT_FALSE(c.watchesBattery());
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, c.overloadS);
+    TEST_ASSERT_TRUE(p.parse(PARAM_ESC_CURRENT_A, 0, "45", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ESC_OVERLOAD_TIME, 0, "30", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_BATTERY_C_RATING, 0, "100", err, sizeof(err)));
+    c = p.escGuardConfig(4);
+    TEST_ASSERT_EQUAL_FLOAT(45.0f, c.escContinuousA);
+    TEST_ASSERT_EQUAL_FLOAT(56.25f, c.burstA());
+    TEST_ASSERT_EQUAL_FLOAT(3.0f, c.overloadS);
+    TEST_ASSERT_EQUAL_FLOAT(p.value(PARAM_BATTERY_MAH) * 0.1f, c.batteryMaxA());
+    TEST_ASSERT_EQUAL_STRING("copter", paramGroupName(paramInfo(PARAM_ESC_CURRENT_A).group));
+    TEST_ASSERT_FALSE(p.parse(PARAM_ESC_CURRENT_A, 0, "900", err, sizeof(err)));
+    p.parse(PARAM_ESC_CURRENT_A, 0, "0", err, sizeof(err));
+    p.parse(PARAM_ESC_OVERLOAD_TIME, 0, "50", err, sizeof(err));
+    p.parse(PARAM_BATTERY_C_RATING, 0, "0", err, sizeof(err));
+
+    // OSD: важнее LOW BATTERY, но не важнее BATT CRITICAL; только в ARM
+    OsdData d;
+    d.armed = true;
+    d.batteryState = 2;
+    d.overload = overloadText(Overload::ESC);
+    TEST_ASSERT_EQUAL_STRING("ESC OVERLOAD", OsdScreen::warningText(d));
+    d.batteryState = 3;
+    TEST_ASSERT_EQUAL_STRING("BATT CRITICAL", OsdScreen::warningText(d));
+    d.batteryState = 1;
+    OsdLayout l = osdLayoutFrom(p);
+    TEST_ASSERT_TRUE(l.warn(OSD_WARN_OVERLOAD));
+    TEST_ASSERT_TRUE(p.parse(PARAM_OSD_WARN_OVERLOAD, 0, "OFF", err, sizeof(err)));
+    l = osdLayoutFrom(p);
+    TEST_ASSERT_NULL(OsdScreen::warningText(d, l));
+    p.parse(PARAM_OSD_WARN_OVERLOAD, 0, "ON", err, sizeof(err));
+    d.armed = false;
+    TEST_ASSERT_EQUAL_STRING("DISARMED", OsdScreen::warningText(d));
+
+    // после посадки: сколько раз было
+    OsdStats st;
+    OsdData f;
+    f.armed = true;
+    f.flightSeconds = 30;
+    f.escOverloads = 2;
+    f.batteryOverloads = 1;
+    st.update(f, 0);
+    f.armed = false;
+    st.update(f, 100);
+    TEST_ASSERT_TRUE(st.isShowing());
+    OsdScreen s;
+    s.setRows(16);
+    s.compose(f, OsdLayout(), &st);
+    std::string t;
+    for (uint8_t r = 0; r < 16; ++r)
+        for (uint8_t col = 0; col < OsdScreen::COLS; ++col) t += static_cast<char>(s.at(r, col));
+    TEST_ASSERT_TRUE(has(t, "OVERLOAD"));
+    TEST_ASSERT_TRUE(has(t, "ESC2 BAT1"));
+    // без перегрузок строки нет
+    OsdStats clean;
+    OsdData q;
+    q.armed = true;
+    q.flightSeconds = 30;
+    clean.update(q, 0);
+    q.armed = false;
+    clean.update(q, 100);
+    s.compose(q, OsdLayout(), &clean);
+    t.clear();
+    for (uint8_t r = 0; r < 16; ++r)
+        for (uint8_t col = 0; col < OsdScreen::COLS; ++col) t += static_cast<char>(s.at(r, col));
+    TEST_ASSERT_FALSE(has(t, "OVERLOAD"));
+}
+
 // Статистика после полёта: копится в ARM, показывается после DISARM, уходит по стику.
 void test_osd_stats_after_flight()
 {
@@ -6000,6 +6145,8 @@ int main()
     RUN_TEST(test_battery_voltage_current_and_mah);
     RUN_TEST(test_battery_warning_critical_hysteresis_and_sag);
     RUN_TEST(test_battery_chemistry_params);
+    RUN_TEST(test_esc_guard_overload);
+    RUN_TEST(test_esc_guard_params_and_osd);
     RUN_TEST(test_battery_betaflight_settings);
     RUN_TEST(test_battery_params_like_betaflight);
     RUN_TEST(test_throttle_limit_scales_stick_throttle);

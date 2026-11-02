@@ -75,6 +75,7 @@ public:
 
     void setRxInput(const copter::RxInput* input) { rxInput = input; }
     void setBattery(const copter::BatteryMonitor* monitor) { battery = monitor; }
+    void setGuard(const copter::EscGuard* g) { guard = g; }
     void setVtx(const copter::VtxController* controller) { vtx = controller; }
     void setGps(const GpsSensor* sensor, const copter::GpsHome* home)
     {
@@ -319,6 +320,13 @@ public:
         {
             w.add(",\"bat\":\"%s\",\"cell\":%.2f", copter::batteryStateName(battery->state()), battery->cellVolts());
             if (battery->hasCurrent()) w.add(",\"amps\":%.1f,\"mah\":%.0f", battery->amps(), battery->mahDrawn());
+        }
+        if (guard && battery && battery->hasCurrent())
+        {
+            // перегрузка сейчас (ESC, BATT или пусто) и наибольший ток на мотор за полёт
+            const copter::Overload o = guard->state();
+            w.add(",\"ovl\":\"%s\",\"mma\":%.1f", o == copter::Overload::ESC ? "ESC" : o == copter::Overload::BATTERY ? "BATT" : "",
+                  guard->flightStats().maxMotorA);
         }
         if (vtx)
         {
@@ -804,6 +812,7 @@ private:
     RcReceiver& rc;
     const copter::RxInput* rxInput = nullptr;
     const copter::BatteryMonitor* battery = nullptr;
+    const copter::EscGuard* guard = nullptr;   // перегрузка по току (ovl, mma)
     const copter::VtxController* vtx = nullptr;
     const GpsSensor* gps = nullptr;
     const copter::GpsHome* gpsHome = nullptr;

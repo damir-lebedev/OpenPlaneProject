@@ -122,6 +122,9 @@ static bool rebootRequired = false;
 static bool bidirAtBoot = false;   // dshot_bidir при включении (меняется после перезагрузки)
 static uint8_t outputsAtBoot = 0;   // выходов на моторы настроено при включении
 copter::BatteryMonitor battery;
+// Перегрузка регулятора и батареи по току — copter/EscGuard.h.
+copter::EscGuard escGuard;
+static bool wasArmedForGuard = false;
 Stm32VtxPort vtxPort(Config::BOARD_VTX_PIN);
 copter::VtxController vtx(vtxPort);
 static copter::VtxProtocol vtxProtocol = copter::VtxProtocol::NONE;
@@ -252,6 +255,7 @@ static void applySettings()
     rcReceiver.setProtocol(static_cast<Config::RxProtocol>(static_cast<uint8_t>(copterParams.value(copter::PARAM_SERIALRX_PROVIDER))));
     copterBuild = copterParams.buildSpec();
     battery.configure(copterParams.batteryConfig());
+    escGuard.configure(copterParams.escGuardConfig(copterController.getTune().frame.count));
     const auto protocol = static_cast<copter::VtxProtocol>(static_cast<uint8_t>(copterParams.value(copter::PARAM_VTX_PROTOCOL)));
     if (protocol != vtxProtocol || !vtxPort.isConnected())
     {
@@ -446,7 +450,8 @@ static void updateBeeper()
         beeper.event(copter::BeeperCondition::READY_BEEP);
     }
     copter::BeeperInputs in;
-    in.batteryWarning = armed && battery.alertState() == copter::BatteryState::WARNING;     // use_vbat_alerts
+    // перегрузка по току (copter/EscGuard.h) пищит как LOW BATTERY
+    in.batteryWarning = armed && (battery.alertState() == copter::BatteryState::WARNING || escGuard.state() != copter::Overload::NONE);
     in.batteryCritical = armed && battery.alertState() == copter::BatteryState::CRITICAL;
     in.rxLost = rcSeen && !rcLinkOk;
     in.rxLostLanding = st.failsafeStage == 2;
@@ -598,6 +603,9 @@ static void composeOsd()
     d.craftName = copterParams.text(copter::PARAM_CRAFT_NAME, 0);
     d.blink = (millis() / 250) % 2 == 0;
     d.exitStats = sticksUp;
+    d.overload = copter::overloadText(escGuard.state());
+    d.escOverloads = escGuard.flightStats().escEvents;
+    d.batteryOverloads = escGuard.flightStats().batteryEvents;
     osdStats.update(d, millis());
     osdScreen.setRows(osdChip.rows());
     osdScreen.compose(d, copter::osdLayoutFrom(copterParams), &osdStats);
@@ -650,6 +658,10 @@ static void readBattery()
         return pin < 0 ? 0.0f : static_cast<float>(analogRead(static_cast<uint32_t>(pin))) * 3300.0f / 4095.0f;
     };
     battery.update(pinMv(Config::PIN_VBAT_ADC), pinMv(Config::PIN_CURRENT_ADC), 0.01f);
+    const bool armed = copterController.isArmed();
+    if (armed && !wasArmedForGuard) escGuard.resetFlight();
+    wasArmedForGuard = armed;
+    escGuard.update(armed, battery.hasCurrent(), battery.amps(), 0.01f);
     autoProfile();
 }
 
@@ -897,6 +909,7 @@ static void setupBlackBox()
                       Fat32::describe(blackBoxFile.begin()));
     }
     copterBlackBox.setBattery(&battery);
+    copterBlackBox.setGuard(&escGuard);
     copterBlackBox.setGps(&gps, &gpsHome);
     copterBlackBox.setSensors(&imuSensor, &baroSensor);
     copterBlackBox.begin();
@@ -936,6 +949,7 @@ static void setupBlackBox()
     }
     copterBlackBox.setMinFreeBytes(blackBoxFlash.size() / 2);
     copterBlackBox.setBattery(&battery);
+    copterBlackBox.setGuard(&escGuard);
     copterBlackBox.setGps(&gps, &gpsHome);
     copterBlackBox.setSensors(&imuSensor, &baroSensor);
 #if defined(ARDUINO_ARCH_STM32)
@@ -1046,6 +1060,7 @@ void setup()
     copterConsole.setBeepHook(beepFromConsole);
     copterConsole.setRxInput(&rxInput);
     copterConsole.setBattery(&battery);
+    copterConsole.setGuard(&escGuard);
     copterConsole.setVtx(&vtx);
     copterConsole.setGps(&gps, &gpsHome);
     copterConsole.setCompass(compass);

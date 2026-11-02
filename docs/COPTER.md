@@ -309,6 +309,9 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `battery_cells` `battery_mah` | общая | 1–14 S, 50–50000 мА·ч | из сборки | батарея |
 | `props_out` | общая | `OFF`, `ON` | `PROPS_OUT` | пропеллеры наружу: все моторы крутятся наоборот |
 | `battery_chemistry` | общая | `LIPO`, `LIHV`, `LIION` | из сборки (Li-Po) | химия: пороги банки и напряжение под нагрузкой для модели тяги (3.75 / 3.85 / 3.5 В) |
+| `esc_current_a` · `esc_burst_current_a` | общая | 0–500 А · 0–600 А | 0 · 0 | регулятор: длительный и пиковый ток на мотор (своё, в BF нет); 0 — не следить · пиковый = 1.25 × длительного. Выше — `ESC OVERLOAD` (раздел «Защиты») |
+| `battery_c_rating` | общая | 0–300 C | 0 | батарея: длительная токоотдача; ток выше C × ёмкость — `BATT OVERLOAD`; 0 — не следить |
+| `esc_overload_time` | общая | 1–600 (×0.1 с) | 50 | сколько можно выше длительного тока регулятора или C батареи до предупреждения |
 | `vbat_min_cell_voltage` `vbat_warning_cell_voltage` `vbat_max_cell_voltage` | общая | 100–500 (×0.01 В) | по химии: Li-Po 330/350/430, Li-HV 330/350/440, Li-ion 280/310/425 | банка: пуста (CRITICAL) · пора домой (WARNING; ниже без нагрузки — не армить) · полная |
 | `vbat_full_cell_voltage` | общая | 100–500 (×0.01 В) | по химии: Li-Po 410, Li-HV 425, Li-ion 410 | банка выше при подключении — батарея полная; иначе в OSD без ARM `BATT < FULL` |
 | `vbat_scale` · `vbat_divider` · `vbat_multiplier` | общая | 0–255 · 1–255 · 1–255 | делитель платы (110 · 10 · 1 — 1:11; F405 — из дампа платы) | вольты = мВ пина × `vbat_scale` / (1000 × `vbat_divider` × `vbat_multiplier`), как в BF |
@@ -328,8 +331,8 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `vtx_max_power_mw` | общая | 0–10000 мВт | 0 (нет) | **потолок**: выше не уйдёт ни с тумблера, ни кнопкой на передатчике |
 | `vtx_low_power_disarm` | общая | `OFF`, `ON`, `UNTIL_FIRST_ARM` | `OFF` | без ARM — самый слабый уровень |
 | `osd_<элемент>_pos` | общая | 0–16383 | как в BF: LQ 1,0 · режим 13,0 · спутники 24,0 · VTX 23,1 · прицел 14,6 · предупреждения 9,9 · ток 1,10 · мА·ч 8,10 · стрелка и расстояние домой 1,11 и 2,11 · высота 23,11 · батарея 1,12 · банка 8,12 · время 22,12 (показаны); газ, скорость, вариометр, имя, мощность, широта, долгота — спрятаны | позиция элемента OSD: x + 32·y, +2048 — показан. Элементы: `link_quality`, `flymode`, `gps_sats`, `vtx_channel`, `crosshairs`, `warnings`, `current`, `mah_drawn`, `home_dir`, `home_dist`, `altitude`, `vbat`, `avg_cell_voltage`, `tim_2`, `throttle`, `gps_speed`, `vario_num`, `craft_name`, `power`, `gps_lat`, `gps_lon` |
-| `osd_stat_<строка>` | общая | `OFF`, `ON` | `ON`, кроме `endbatt` | статистика после посадки: `tim_2`, `max_alt`, `max_spd`, `max_dist`, `min_batt`, `endbatt`, `used_mah`, `max_curr`, `min_link_quality` |
-| `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality` |
+| `osd_stat_<строка>` | общая | `OFF`, `ON` | `ON`, кроме `endbatt` | статистика после посадки: `tim_2`, `max_alt`, `max_spd`, `max_dist`, `min_batt`, `endbatt`, `used_mah`, `max_curr`, `min_link_quality`, `overload` (своё: перегрузки по току, если были) |
+| `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality`, `overload` (своё: `ESC OVERLOAD`, `BATT OVERLOAD`) |
 | `osd_alt_alarm` · `osd_cap_alarm` · `osd_link_quality_alarm` | общая | 0–10000 м · 0–20000 мА·ч · 0–100 % | 100 · 2200 · 80 | за порогом значение мигает (LQ — и предупреждение LINK QUALITY); 0 — нет |
 | `gps_minimum_sats` | общая | 4–50 | 8 | дом ставится при ARM, если спутников не меньше |
 | `crsf_telemetry` | общая | `OFF`, `ON` | `ON` | телеметрия в пульт по CRSF |
@@ -809,6 +812,20 @@ CRSF, видеопередатчик с потолком мощности, ту�
   считается (`crash_setpoint_threshold`).
 - **На земле интеграл не копится** — коптер не подпрыгивает и не
   заваливается при взлёте.
+- **«Регулятор может сгореть»** (`copter/EscGuard.h`, своё — в BF нет):
+  прошивка знает ток регулятора на мотор (`esc_current_a`, пиковый
+  `esc_burst_current_a`) и C батареи (`battery_c_rating`) — их вписывают в
+  Studio на вкладке «Что подключено» — и меряет ток (`current_meter = ADC`;
+  на мотор — общий ÷ число моторов, потом — по мотору из EDT). Выше
+  длительного дольше `esc_overload_time` (5 с) или выше пикового дольше
+  0.3 с — `ESC OVERLOAD` в очках (`osd_warn_overload`), писк как LOW
+  BATTERY, событие и флаг `overload` в чёрном ящике, после посадки — строка
+  `OVERLOAD ESC 2X` в статистике (`osd_stat_overload`); то же для батареи —
+  ток выше C × ёмкость дольше `esc_overload_time` — `BATT OVERLOAD`.
+  Предупреждение держится 2 с после конца. Газ не отнимается — лучше
+  предупредить, чем лишить тяги в воздухе. Studio заранее, по модели
+  тяги, пишет, хватит ли регулятора и батареи на полный газ; в живых
+  кадрах — `ovl` (ESC, BATT) и `mma` (наибольший ток на мотор за полёт).
 
 ## Что внутри — коротко
 
@@ -864,7 +881,7 @@ CRSF, видеопередатчик с потолком мощности, ту�
 порывами, failsafe без барометра, обычные PWM-регуляторы, провал и возврат
 связи, этапы failsafe и процедуры DROP / GPS-RESCUE, тумблер FAILSAFE
 (STAGE2, KILL), перепутанные провода моторов (runaway takeoff), падение
-на спину, отказ мотора, проверка моторов, просадка батареи. В `test_copter` — каждый блок по отдельности (108 тестов, среди
+на спину, отказ мотора, проверка моторов, просадка батареи. В `test_copter` — каждый блок по отдельности (136 тестов, среди
 них реестр настроек, единицы BF, профили, CLI и вставка diff из BF, MSP, батарея, DShot и ответ регулятора), в
 `native_stm32/test_app_stm32_copter` — прошивка целиком на фейках Matek
 H743: импульсы «стоп» до ARM, калибровка установки, холостые после ARM,

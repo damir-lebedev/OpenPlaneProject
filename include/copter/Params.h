@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "copter/Battery.h"
+#include "copter/EscGuard.h"
 #include "copter/Osd.h"
 #include "copter/Presets.h"
 #include "copter/RateController.h"
@@ -251,6 +252,10 @@ namespace copter
         PARAM_BATTERY_MAH,
         PARAM_PROPS_OUT,
         PARAM_BATTERY_CHEMISTRY,
+        PARAM_ESC_CURRENT_A,
+        PARAM_ESC_BURST_CURRENT_A,
+        PARAM_ESC_OVERLOAD_TIME,
+        PARAM_BATTERY_C_RATING,
         PARAM_VBAT_MIN_CELL_VOLTAGE,
         PARAM_VBAT_WARNING_CELL_VOLTAGE,
         PARAM_VBAT_MAX_CELL_VOLTAGE,
@@ -384,12 +389,14 @@ namespace copter
         PARAM_OSD_STAT_USED_MAH,
         PARAM_OSD_STAT_MAX_CURR,
         PARAM_OSD_STAT_MIN_LINK_QUALITY,
+        PARAM_OSD_STAT_OVERLOAD,
         PARAM_OSD_WARN_ARMING_DISABLE,
         PARAM_OSD_WARN_BATT_NOT_FULL,
         PARAM_OSD_WARN_BATT_WARNING,
         PARAM_OSD_WARN_BATT_CRITICAL,
         PARAM_OSD_WARN_FAIL_SAFE,
         PARAM_OSD_WARN_LINK_QUALITY,
+        PARAM_OSD_WARN_OVERLOAD,
         PARAM_OSD_ALT_ALARM,
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
@@ -628,6 +635,14 @@ namespace copter
               "пропеллеры наружу: все моторы крутятся наоборот" },
             { "battery_chemistry", kEnum, kMaster, kGroupCopter, 0, 2, 0, kBuild, "", CHEMISTRIES, 3,
               "химия батареи: пороги банки и напряжение под нагрузкой для модели тяги" },
+            { "esc_current_a", kInt, kMaster, kGroupCopter, 0, 500, 0, kTable, "А", nullptr, 0,
+              "регулятор: длительный ток на мотор; выше дольше esc_overload_time — ESC OVERLOAD (0 — не следить)" },
+            { "esc_burst_current_a", kInt, kMaster, kGroupCopter, 0, 600, 0, kTable, "А", nullptr, 0,
+              "регулятор: пиковый ток на мотор, выше — ESC OVERLOAD сразу (0 — 1.25 × длительного)" },
+            { "esc_overload_time", kInt, kMaster, kGroupPower, 1, 600, 50, kTable, "0.1 с", nullptr, 0,
+              "сколько можно выше длительного тока регулятора или C батареи до предупреждения" },
+            { "battery_c_rating", kInt, kMaster, kGroupCopter, 0, 300, 0, kTable, "C", nullptr, 0,
+              "батарея: длительная токоотдача; ток выше C × ёмкость — BATT OVERLOAD (0 — не следить)" },
             { "vbat_min_cell_voltage", kInt, kMaster, kGroupPower, 100, 500, 0, kBattery, "x0.01 В", nullptr, 0,
               "банка ниже — батарея пуста: тревога CRITICAL" },
             { "vbat_warning_cell_voltage", kInt, kMaster, kGroupPower, 100, 500, 0, kBattery, "x0.01 В", nullptr, 0,
@@ -891,6 +906,8 @@ namespace copter
               "статистика после полёта: наибольший ток" },
             { "osd_stat_min_link_quality", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "статистика после полёта: наименьшее качество связи" },
+            { "osd_stat_overload", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "статистика после полёта: перегрузки регулятора и батареи по току (если были)" },
             { "osd_warn_arming_disable", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "предупреждение OSD: без ARM — почему не армится (код BF)" },
             { "osd_warn_batt_not_full", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
@@ -903,6 +920,8 @@ namespace copter
               "предупреждение OSD: FAILSAFE и RXLOSS" },
             { "osd_warn_link_quality", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "предупреждение OSD: связь хуже osd_link_quality_alarm (LINK QUALITY)" },
+            { "osd_warn_overload", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: перегрузка по току — ESC OVERLOAD, BATT OVERLOAD" },
             { "osd_alt_alarm", kInt, kMaster, kGroupOsd, 0, 10000, 100, kTable, "м", nullptr, 0,
               "выше — высота на OSD мигает; 0 — нет" },
             { "osd_cap_alarm", kInt, kMaster, kGroupOsd, 0, 20000, 2200, kTable, "мА·ч", nullptr, 0,
@@ -1098,6 +1117,20 @@ namespace copter
         }
 
         // Батарея: масштабы, пороги, банки и ёмкость — монитору (Battery.h).
+        // Защита по току (copter/EscGuard.h); моторов — из рамы.
+        EscGuardConfig escGuardConfig(uint8_t motors) const
+        {
+            EscGuardConfig c;
+            c.escContinuousA = value(PARAM_ESC_CURRENT_A);
+            c.escBurstA = value(PARAM_ESC_BURST_CURRENT_A);
+            c.overloadS = value(PARAM_ESC_OVERLOAD_TIME) * 0.1f;
+            c.batteryC = value(PARAM_BATTERY_C_RATING);
+            const float capacity = value(PARAM_BAT_CAPACITY);
+            c.batteryMah = capacity > 0.0f ? capacity : value(PARAM_BATTERY_MAH);
+            c.motors = motors;
+            return c;
+        }
+
         BatteryConfig batteryConfig() const
         {
             BatteryConfig c;
@@ -1927,8 +1960,8 @@ namespace copter
     };
 
     static_assert(PARAM_OSD_GPS_LON_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
-    static_assert(PARAM_OSD_STAT_MIN_LINK_QUALITY - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
-    static_assert(PARAM_OSD_WARN_LINK_QUALITY - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
+    static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
+    static_assert(PARAM_OSD_WARN_OVERLOAD - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 
     // Раскладка OSD из настроек osd_* (copter/Osd.h).
     inline OsdLayout osdLayoutFrom(const CopterParams& p)
