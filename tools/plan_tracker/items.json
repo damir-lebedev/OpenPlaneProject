@@ -95,21 +95,6 @@
    "tab": ""
   },
   {
-   "id": "190",
-   "section": 1,
-   "title": "Studio: режимы «Новичок» и «Профи»",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "what": "переключатель в шапке коптера. «Новичок»: мастер по шагам (рама и винты → пульт и режимы → моторы без винтов → failsafe и возврат → батарея → OSD и видео → «можно лететь») и одна страница «Настройка полёта» с 5–6 ползунками (отзывчивость, плавность, фильтры, расходы, предел наклона) — без единого имени настройки. «Профи»: все вкладки и все настройки как сейчас, поиск по имени.",
-   "files": "src/components/CopterView.tsx, новый src/components/copter/Wizard.tsx, core/copterParams.ts",
-   "test": "vitest: новичок не видит профи-вкладок; мастер доходит до «можно лететь» на фейковой плате",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
    "id": "191",
    "section": 1,
    "title": "Studio: переход с Betaflight — имена BF и поиск",
@@ -264,32 +249,6 @@
    "what": "то же после 183: таблица «мы против BF», что поменялось по журналам.",
    "settings": [],
    "tab": ""
-  },
-  {
-   "id": "032",
-   "section": 3,
-   "title": "Упрощённая настройка — ползунки",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`simplified_pids_mode`, `simplified_master_multiplier`, `simplified_i_gain`, `simplified_d_gain`, `simplified_pi_gain`, `simplified_dmax_gain`, `simplified_feedforward_gain`, `simplified_pitch_d_gain`, `simplified_pitch_pi_gain`",
-   "what": "множители поверх модели/BF-дефолтов — ровно как ползунки BF; запас по усилению пересчитывать и предупреждать, если < 6 дБ.",
-   "files": "copter/Presets.h, copter/Params.h",
-   "test": "test_copter: master ×1.5 → P,I,D,F ×1.5; предупреждение запаса",
-   "ui": "вкладка «PID»: ползунки + полоса «запас устойчивости» из модели (зелёная/жёлтая/красная)",
-   "settings": [
-    "simplified_pids_mode",
-    "simplified_master_multiplier",
-    "simplified_i_gain",
-    "simplified_d_gain",
-    "simplified_pi_gain",
-    "simplified_dmax_gain",
-    "simplified_feedforward_gain",
-    "simplified_pitch_d_gain",
-    "simplified_pitch_pi_gain"
-   ],
-   "tab": "PID"
   },
   {
    "id": "037",
@@ -735,26 +694,6 @@
    "test": "test_copter_sim: манёвр — шум моторов ниже, время цикла в норме",
    "ui": "«Фильтры»",
    "settings": [],
-   "tab": "Фильтры"
-  },
-  {
-   "id": "064",
-   "section": 5,
-   "title": "Упрощённые ползунки фильтров",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`simplified_gyro_filter`, `simplified_gyro_filter_multiplier`, `simplified_dterm_filter`, `simplified_dterm_filter_multiplier`",
-   "files": "copter/Presets.h",
-   "test": "test_copter",
-   "ui": "«Фильтры»: два ползунка + запас контура",
-   "settings": [
-    "simplified_gyro_filter",
-    "simplified_gyro_filter_multiplier",
-    "simplified_dterm_filter",
-    "simplified_dterm_filter_multiplier"
-   ],
    "tab": "Фильтры"
   },
   {

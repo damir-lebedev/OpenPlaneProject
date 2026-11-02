@@ -75,7 +75,7 @@
 Готовый пункт **удаляется** из плана (строка в сводку ниже), частично
 сделанный — `[~]` и строка «Ход: сделано… осталось…».
 
-Сделано и проверено (из плана убрано, подробности — `git log`, docs/COPTER.md): 001 Реестр настроек коптера, 002 CLI как в Betaflight, 003 PID в единицах Betaflight, 004 Дефолты Betaflight 4.5 как источник настройки, 005 Профили PID и расходов, 006 Режимы на тумблерах как в BF, 007 Карта каналов и диапазон приёмника, 008 status и tasks как в BF, 009 Описание коптера, 010 Машинный протокол параметров для приложения, 097 Угол для ARM и автодисарм, 099 Runaway takeoff prevention, 101 Флаги запрета ARM как в BF, 102 Failsafe: этапы и задержки, 103 Failsafe: процедура, 104 Значения каналов при потере связи, 124 Напряжения банки, 125 Делитель и датчик тока, 126 Ёмкость и предупреждения, 080 DShot: кадры на таймере с DMA (F405 и H743), 081 DShot: несколько таймеров и пины F405 / H743, 087 Двунаправленный DShot: приём ответа (GCR), 088 Обороты: число полюсов и проверка, 177 Чёрный ящик на SPI-флеше (F405, 16 МБ), 139 Формат журнала Betaflight (.BFL), 158 MSP: транспорт и базовые сообщения, 159 MSP: чтение и запись настроек, 163 Импорт diff из Betaflight, 011 d_max (d_min), 012 iterm_relax, 013 iterm_rotation, 014 iterm_windup, 015 iterm_limit, 016 pidsum_limit, pidsum_limit_yaw, 017 anti_gravity, 018 throttle_boost, 019 TPA как в BF, 020 tpa_low, 021 feedforward_transition, 022 feedforward_averaging, 023 feedforward_smooth_factor, 024 feedforward_jitter_factor, 025 feedforward_boost, 026 feedforward_max_rate_limit, 027 yaw_lowpass_hz, 028 integrated yaw, 029 absolute control, 030 thrust_linear, motor_output_limit, 031 vbat_sag_compensation (%), 033 auto_profile_cell_count, 034 Режим ANGLE как в BF 4.5, 035 Режим HORIZON как в BF 4.5, 036 Acro trainer, 038 Crash recovery, 079 Проверка моторов из CLI, 098 Airmode с порогом газа, 100 PREARM, 111 RC smoothing как в BF, 112 Мёртвые зоны, 118 Телеметрия CRSF (ExpressLRS), 129 GPS для коптера, 133 GPS Rescue: набор высоты и разворот, 134 GPS Rescue: полёт домой, 135 GPS Rescue: снижение и посадка, 136 GPS Rescue: проверки, 138 Чёрный ящик коптера, 144 Studio: вкладка «Чёрный ящик», 148 OSD: элементы навигации, 150 OSD: предупреждения и статистика после полёта, 153 VTX: SmartAudio и Tramp, 083 DShot: команды, 084 Направление моторов командой DShot, 086 Turtle mode.
+Сделано и проверено (из плана убрано, подробности — `git log`, docs/COPTER.md): 001 Реестр настроек коптера, 002 CLI как в Betaflight, 003 PID в единицах Betaflight, 004 Дефолты Betaflight 4.5 как источник настройки, 005 Профили PID и расходов, 006 Режимы на тумблерах как в BF, 007 Карта каналов и диапазон приёмника, 008 status и tasks как в BF, 009 Описание коптера, 010 Машинный протокол параметров для приложения, 097 Угол для ARM и автодисарм, 099 Runaway takeoff prevention, 101 Флаги запрета ARM как в BF, 102 Failsafe: этапы и задержки, 103 Failsafe: процедура, 104 Значения каналов при потере связи, 124 Напряжения банки, 125 Делитель и датчик тока, 126 Ёмкость и предупреждения, 080 DShot: кадры на таймере с DMA (F405 и H743), 081 DShot: несколько таймеров и пины F405 / H743, 087 Двунаправленный DShot: приём ответа (GCR), 088 Обороты: число полюсов и проверка, 177 Чёрный ящик на SPI-флеше (F405, 16 МБ), 139 Формат журнала Betaflight (.BFL), 158 MSP: транспорт и базовые сообщения, 159 MSP: чтение и запись настроек, 163 Импорт diff из Betaflight, 011 d_max (d_min), 012 iterm_relax, 013 iterm_rotation, 014 iterm_windup, 015 iterm_limit, 016 pidsum_limit, pidsum_limit_yaw, 017 anti_gravity, 018 throttle_boost, 019 TPA как в BF, 020 tpa_low, 021 feedforward_transition, 022 feedforward_averaging, 023 feedforward_smooth_factor, 024 feedforward_jitter_factor, 025 feedforward_boost, 026 feedforward_max_rate_limit, 027 yaw_lowpass_hz, 028 integrated yaw, 029 absolute control, 030 thrust_linear, motor_output_limit, 031 vbat_sag_compensation (%), 033 auto_profile_cell_count, 034 Режим ANGLE как в BF 4.5, 035 Режим HORIZON как в BF 4.5, 036 Acro trainer, 038 Crash recovery, 079 Проверка моторов из CLI, 098 Airmode с порогом газа, 100 PREARM, 111 RC smoothing как в BF, 112 Мёртвые зоны, 118 Телеметрия CRSF (ExpressLRS), 129 GPS для коптера, 133 GPS Rescue: набор высоты и разворот, 134 GPS Rescue: полёт домой, 135 GPS Rescue: снижение и посадка, 136 GPS Rescue: проверки, 138 Чёрный ящик коптера, 144 Studio: вкладка «Чёрный ящик», 148 OSD: элементы навигации, 150 OSD: предупреждения и статистика после полёта, 153 VTX: SmartAudio и Tramp, 083 DShot: команды, 084 Направление моторов командой DShot, 086 Turtle mode, 190 Studio: режимы «Новичок» и «Профи», 032 Упрощённая настройка — ползунки, 064 Упрощённые ползунки фильтров.
 
 ---
 
@@ -94,12 +94,6 @@
 - **Что:** всё, что поменялось в русских COPTER.md и README с прошлых переводов, — в docs/i18n/<lang>/ на 11 языков.
 
 ---
-
-### [ ] 190 · Studio: режимы «Новичок» и «Профи» — Репо: studio
-- **Что:** переключатель в шапке коптера. «Новичок»: мастер по шагам (рама и винты → пульт и режимы → моторы без винтов → failsafe и возврат → батарея → OSD и видео → «можно лететь») и одна страница «Настройка полёта» с 5–6 ползунками (отзывчивость, плавность, фильтры, расходы, предел наклона) — без единого имени настройки. «Профи»: все вкладки и все настройки как сейчас, поиск по имени.
-- **Файлы:** src/components/CopterView.tsx, новый src/components/copter/Wizard.tsx, core/copterParams.ts
-- **Тест:** vitest: новичок не видит профи-вкладок; мастер доходит до «можно лететь» на фейковой плате
-- **UI:** сам пункт
 
 ### [ ] 191 · Studio: переход с Betaflight — имена BF и поиск — Репо: studio
 - **Что:** у каждой строки настройки — понятное название крупно и имя BF мелко (`p_roll`); поиск сверху по имени BF или по-русски («газ висения», `dyn_notch`) — переход на нужную вкладку с подсветкой; страница «Я с Betaflight»: какая вкладка BF где у нас, что сделано иначе и почему (наши отличия: AUTO-LAND по умолчанию, посадка вместо DISARM в GPS Rescue, airmode в воздухе…), импорт diff — уже есть.
@@ -154,13 +148,6 @@
 ---
 
 ## 3. Регулятор (PID-профиль)
-
-### [ ] 032 · Упрощённая настройка — ползунки
-- **BF:** `simplified_pids_mode`, `simplified_master_multiplier`, `simplified_i_gain`, `simplified_d_gain`, `simplified_pi_gain`, `simplified_dmax_gain`, `simplified_feedforward_gain`, `simplified_pitch_d_gain`, `simplified_pitch_pi_gain`
-- **Что:** множители поверх модели/BF-дефолтов — ровно как ползунки BF; запас по усилению пересчитывать и предупреждать, если < 6 дБ.
-- **Файлы:** copter/Presets.h, copter/Params.h
-- **Тест:** test_copter: master ×1.5 → P,I,D,F ×1.5; предупреждение запаса
-- **UI:** вкладка «PID»: ползунки + полоса «запас устойчивости» из модели (зелёная/жёлтая/красная)
 
 ### [ ] 037 · Launch control
 - **BF:** `launch_control_mode` (NORMAL/PITCHONLY/FULL), `launch_trigger_allow_reset`, `launch_trigger_throttle_percent`, `launch_angle_limit`, `launch_control_gain`, режим LAUNCH CONTROL
@@ -307,10 +294,6 @@
 - **Файлы:** copter/GyroFilter.h, copter/CopterController.h
 - **Тест:** test_copter_sim: манёвр — шум моторов ниже, время цикла в норме
 - **UI:** «Фильтры»
-
-### [ ] 064 · Упрощённые ползунки фильтров
-- **BF:** `simplified_gyro_filter`, `simplified_gyro_filter_multiplier`, `simplified_dterm_filter`, `simplified_dterm_filter_multiplier`
-- **Файлы:** copter/Presets.h · **Тест:** test_copter · **UI:** «Фильтры»: два ползунка + запас контура
 
 ### [ ] 065 · Фильтр в чипе гироскопа
 - **BF:** `gyro_hardware_lpf` (NORMAL/OPTION_1/OPTION_2/EXPERIMENTAL)
