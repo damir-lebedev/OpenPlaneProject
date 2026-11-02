@@ -172,8 +172,9 @@ namespace copter
             return RescueFail::NONE;
         }
 
-        // Начать возврат; failsafe — по потере связи (для sanity FS_ONLY).
-        void start(float altM, bool failsafe)
+        // Начать возврат; failsafe — по потере связи (для sanity FS_ONLY);
+        // ceilingM — выше не подниматься (учебный потолок; 0 — нет).
+        void start(float altM, bool failsafe, float ceilingM = 0.0f)
         {
             byFailsafe = failsafe;
             integral = 0.0f;
@@ -196,6 +197,7 @@ namespace copter
                 case RescueAltMode::MAX_ALT:
                 default: targetAlt = fmaxf(maxAltM, altM) + set.initialClimbM; break;
             }
+            if (ceilingM > 0.0f) targetAlt = fminf(targetAlt, ceilingM);
             returnAlt = targetAlt;
             phase_ = dist < set.minStartDistM ? RescuePhase::LAND : RescuePhase::CLIMB;
         }
@@ -208,6 +210,13 @@ namespace copter
         bool landing() const { return phase_ == RescuePhase::LAND; }
         float targetAltitude() const { return targetAlt; }
         float distanceHome() const { return distance(last); }
+        float groundSpeed() const { return sqrtf(last.velN * last.velN + last.velE * last.velE); }
+        // скорость от дома (по радиусу), м/с; < 0 — к дому
+        float outwardSpeed() const
+        {
+            const float d = distance(last);
+            return d > 1.0f ? (last.northM * last.velN + last.eastM * last.velE) / d : 0.0f;
+        }
         float headingCorrection() const { return headingOffset; }
 
         // Один цикл возврата: altM и climb — высота над точкой ARM и скорость

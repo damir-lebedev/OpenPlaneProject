@@ -336,7 +336,7 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `vtx_low_power_disarm` | общая | `OFF`, `ON`, `UNTIL_FIRST_ARM` | `OFF` | без ARM — самый слабый уровень |
 | `osd_<элемент>_pos` | общая | 0–16383 | как в BF: LQ 1,0 · режим 13,0 · спутники 24,0 · VTX 23,1 · прицел 14,6 · предупреждения 9,9 · ток 1,10 · мА·ч 8,10 · стрелка и расстояние домой 1,11 и 2,11 · высота 23,11 · батарея 1,12 · банка 8,12 · время 22,12, перед полётом 1,8 (показаны); газ, скорость, вариометр, имя, мощность, широта, долгота — спрятаны | позиция элемента OSD: x + 32·y, +2048 — показан. Элементы: `link_quality`, `flymode`, `gps_sats`, `vtx_channel`, `crosshairs`, `warnings`, `current`, `mah_drawn`, `home_dir`, `home_dist`, `altitude`, `vbat`, `avg_cell_voltage`, `tim_2`, `throttle`, `gps_speed`, `vario_num`, `craft_name`, `power`, `gps_lat`, `gps_lon`, `preflight` (своё: до ARM одной строкой — `BATT OK  GPS OK  RX OK`, что не готово — словом: `NOT FULL`, `BATT LOW`, `GPS WAIT`, `NO RADIO`) |
 | `osd_stat_<строка>` | общая | `OFF`, `ON` | `ON`, кроме `endbatt` | статистика после посадки: `tim_2`, `max_alt`, `max_spd`, `max_dist`, `min_batt`, `endbatt`, `used_mah`, `max_curr`, `min_link_quality`, `overload` (своё: перегрузки по току, если были) |
-| `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality`, `overload` (своё: `ESC OVERLOAD`, `BATT OVERLOAD`, `CURRENT LIMIT`), `vtx_hot` (своё: `VTX HOT` — без ARM передатчик греется) |
+| `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality`, `overload` (своё: `ESC OVERLOAD`, `BATT OVERLOAD`, `CURRENT LIMIT`), `vtx_hot` (своё: `VTX HOT` — без ARM передатчик греется), `training` (своё: `ALT LIMIT`, `FENCE`, `FENCE RETURN`, `SPEED LIMIT`) |
 | `osd_alt_alarm` · `osd_cap_alarm` · `osd_link_quality_alarm` | общая | 0–10000 м · 0–20000 мА·ч · 0–100 % | 100 · 2200 · 80 | за порогом значение мигает (LQ — и предупреждение LINK QUALITY); 0 — нет |
 | `gps_minimum_sats` | общая | 4–50 | 8 | дом ставится при ARM, если спутников не меньше |
 | `crsf_telemetry` | общая | `OFF`, `ON` | `ON` | телеметрия в пульт по CRSF |
@@ -366,6 +366,11 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `failsafe_recovery_delay` | общая | 1–200 (×0.1 с) | 5 | связь держится столько — управление пилоту (этап 2) и снова можно ARM после DISARM failsafe'ом |
 | `failsafe_stick_threshold` | общая | 0–50 % | 30 | GPS-RESCUE: связь вернулась — управление пилоту, когда стик отклонён дальше |
 | `failsafe_switch_mode` | общая | `STAGE1`, `KILL`, `STAGE2` | `STAGE1` | режим FAILSAFE с тумблера: как потеря связи · моторы стоп сразу (ARM через 1 с) · сразу этап 2 |
+| `training_limits` | общая | `OFF`, `ON` | `OFF` | учебные ограничения новичка (своё, в BF нет; Studio включает новичку): пределы ниже |
+| `training_max_alt` | общая | 0–500 м | 50 | потолок над точкой ARM: выше газ не пустит (нужен барометр); 0 — нет |
+| `training_max_dist` | общая | 0–5000 м | 150 | круг от дома: не успевает остановиться до края — сам назад (GPS Rescue) до 80 % радиуса; 0 — нет |
+| `training_max_angle` | общая | 0–80° | 30 | наклон стиком в ANGLE и ALT_HOLD не больше; 0 — как `angle_limit` |
+| `training_max_speed` | общая | 0–200 км/ч | 40 | быстрее по GPS — наклон плавно меньше; 0 — нет |
 | `gps_rescue_min_start_dist` | общая | 10–30 м | 15 | ближе к дому — возврата нет, сразу посадка на месте |
 | `gps_rescue_alt_mode` | общая | `MAX_ALT`, `FIXED_ALT`, `CURRENT_ALT` | `MAX_ALT` | высота возврата: наибольшая за полёт + `initial_climb` · `return_alt` · текущая + `initial_climb` |
 | `gps_rescue_initial_climb` · `gps_rescue_return_alt` | общая | 0–100 м · 5–1000 м | 10 · 30 | запас над высотой полёта · высота в `FIXED_ALT` |
@@ -841,6 +846,17 @@ CRSF, видеопередатчик с потолком мощности, ту�
   обдувает — дольше минуты выше 25 мВт и не в PIT — `VTX HOT` в очках
   (`osd_warn_vtx_hot`); Tramp сообщает температуру — выше 70 °C сразу.
   Лечится `vtx_low_power_disarm = ON` или режимом VTX PIT MODE.
+- **Учебные ограничения** (`copter/TrainingLimits.h`, своё, `training_limits`):
+  для новичка. Высота — подъём не быстрее, чем успеет затормозить к
+  `training_max_alt` (√(2·a·d)): газ срезается, вниз — всегда можно; только с
+  барометром. Круг `training_max_dist` — по скорости от дома (компас не
+  нужен): летит наружу быстрее тормозного пути — наклон меньше; у края (90 %)
+  `FENCE`; не успевает остановиться до края — возврат автоматом GPS Rescue
+  (`FENCE RETURN`, не выше потолка) до 80 % радиуса, дальше снова пилот.
+  Наклон в ANGLE — не больше `training_max_angle`; быстрее
+  `training_max_speed` — наклон плавно уменьшается (`SPEED LIMIT`). В очках —
+  `osd_warn_training`. Симулятор: потолок 20 м на полном газе — 20,5 м; круг
+  60 м со стиком вперёд минуту — дальше 66 м не ушёл; 20 км/ч — 27 вместо 50.
 
 ## Что внутри — коротко
 

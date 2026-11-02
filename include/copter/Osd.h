@@ -200,6 +200,7 @@ namespace copter
         OSD_WARN_LINK_QUALITY,
         OSD_WARN_OVERLOAD,   // своё: ESC OVERLOAD, BATT OVERLOAD, CURRENT LIMIT (copter/EscGuard.h)
         OSD_WARN_VTX_HOT,    // своё: VTX без ARM и обдува греется (copter/Vtx.h, VtxHeatWatch)
+        OSD_WARN_TRAINING,   // своё: учебные ограничения (copter/TrainingLimits.h)
         OSD_WARN_COUNT
     };
 
@@ -214,6 +215,7 @@ namespace copter
             { "link_quality", true, "связь хуже osd_link_quality_alarm (LINK QUALITY)" },
             { "overload", true, "перегрузка по току: ESC OVERLOAD, BATT OVERLOAD, CURRENT LIMIT" },
             { "vtx_hot", true, "VTX без ARM греется на полной мощности (VTX HOT)" },
+            { "training", true, "учебные ограничения: ALT LIMIT, FENCE, FENCE RETURN, SPEED LIMIT" },
         };
         return table[w < OSD_WARN_COUNT ? w : 0];
     }
@@ -223,7 +225,7 @@ namespace copter
     {
         uint16_t pos[OSD_ELEMENT_COUNT];
         uint16_t stats = 0;            // биты OsdStat
-        uint8_t warnings = 0;          // биты OsdWarn
+        uint16_t warnings = 0;         // биты OsdWarn
         uint16_t altAlarmM = 100;      // osd_alt_alarm: выше — высота мигает (0 — нет)
         uint16_t capAlarmMah = 2200;   // osd_cap_alarm: больше — мА·ч мигают (0 — нет)
         uint8_t linkQualityAlarm = 80; // osd_link_quality_alarm: ниже — LQ мигает и предупреждение
@@ -237,7 +239,7 @@ namespace copter
             }
             for (uint8_t w = 0; w < OSD_WARN_COUNT; ++w)
             {
-                if (osdWarnInfo(w).def) warnings = static_cast<uint8_t>(warnings | (1u << w));
+                if (osdWarnInfo(w).def) warnings = static_cast<uint16_t>(warnings | (1u << w));
             }
         }
 
@@ -278,6 +280,7 @@ namespace copter
         bool blink = true;                  // фаза мигания (2 Гц): false — тревожные значения гаснут
         bool exitStats = false;             // газ или тангаж вверх — убрать статистику
         const char* overload = nullptr;     // ESC OVERLOAD / BATT OVERLOAD / CURRENT LIMIT (copter/EscGuard.h) или nullptr
+        const char* training = nullptr;     // учебные ограничения: ALT LIMIT, FENCE… (copter/TrainingLimits.h) или nullptr
         bool vtxHot = false;                // VTX без ARM греется (copter/Vtx.h, VtxHeatWatch)
         uint16_t escOverloads = 0, batteryOverloads = 0;   // за этот полёт
     };
@@ -413,6 +416,7 @@ namespace copter
             if (l.warn(OSD_WARN_FAIL_SAFE) && d.linkLost) return "RXLOSS";
             if (l.warn(OSD_WARN_BATT_CRITICAL) && d.batteryState == 3) return "BATT CRITICAL";
             if (l.warn(OSD_WARN_OVERLOAD) && d.armed && d.overload) return d.overload;
+            if (l.warn(OSD_WARN_TRAINING) && d.armed && d.training) return d.training;
             if (l.warn(OSD_WARN_BATT_WARNING) && d.batteryState == 2) return "LOW BATTERY";
             if (l.warn(OSD_WARN_LINK_QUALITY) && d.armed && d.linkQuality >= 0 && l.linkQualityAlarm > 0 &&
                 d.linkQuality < l.linkQualityAlarm)

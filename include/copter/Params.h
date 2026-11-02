@@ -306,6 +306,11 @@ namespace copter
         PARAM_FAILSAFE_STICK_THRESHOLD,
         PARAM_FAILSAFE_PROCEDURE,
         PARAM_FAILSAFE_SWITCH_MODE,
+        PARAM_TRAINING_LIMITS,
+        PARAM_TRAINING_MAX_ALT,
+        PARAM_TRAINING_MAX_DIST,
+        PARAM_TRAINING_MAX_ANGLE,
+        PARAM_TRAINING_MAX_SPEED,
         PARAM_MOTOR_POLES,
         PARAM_DSHOT_BIDIR,
         PARAM_CRASHFLIP_MOTOR_PERCENT,
@@ -400,6 +405,7 @@ namespace copter
         PARAM_OSD_WARN_LINK_QUALITY,
         PARAM_OSD_WARN_OVERLOAD,
         PARAM_OSD_WARN_VTX_HOT,
+        PARAM_OSD_WARN_TRAINING,
         PARAM_OSD_ALT_ALARM,
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
@@ -745,6 +751,16 @@ namespace copter
               "этап 2: AUTO-LAND — ровно и снижение, DROP — моторы стоп, GPS-RESCUE — пока как AUTO-LAND" },
             { "failsafe_switch_mode", kEnum, kMaster, kGroupSafety, 0, 2, 0, kTable, "", FS_SWITCH_MODES, 3,
               "режим FAILSAFE с тумблера: STAGE1 — как потеря связи, STAGE2 — сразу процедура, KILL — моторы стоп" },
+            { "training_limits", kEnum, kMaster, kGroupSafety, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "учебные ограничения новичка: высота, круг от дома, наклон и скорость в ANGLE (своё, в BF нет)" },
+            { "training_max_alt", kInt, kMaster, kGroupSafety, 0, 500, 50, kTable, "м", nullptr, 0,
+              "учебный потолок над точкой ARM: выше газ не пустит (нужен барометр); 0 — нет" },
+            { "training_max_dist", kInt, kMaster, kGroupSafety, 0, 5000, 150, kTable, "м", nullptr, 0,
+              "учебный круг от дома: за краем — сам назад (GPS Rescue) до 80 % радиуса; 0 — нет" },
+            { "training_max_angle", kInt, kMaster, kGroupSafety, 0, 80, 30, kTable, "°", nullptr, 0,
+              "учебный наклон в ANGLE: стик даёт не больше; 0 — как angle_limit" },
+            { "training_max_speed", kInt, kMaster, kGroupSafety, 0, 200, 40, kTable, "км/ч", nullptr, 0,
+              "учебная скорость по GPS: быстрее — наклон в ANGLE плавно меньше; 0 — нет" },
             { "motor_poles", kInt, kMaster, kGroupMotors, 4, 255, 14, kTable, "", nullptr, 0,
               "магнитов в роторе мотора (у 2207 — 14): обороты = eRPM x 2 / motor_poles" },
             { "dshot_bidir", kEnum, kMaster, kGroupMotors, 0, 1, 0, kTable, "", OFF_ON, 2,
@@ -931,6 +947,8 @@ namespace copter
               "предупреждение OSD: перегрузка по току — ESC OVERLOAD, BATT OVERLOAD, CURRENT LIMIT" },
             { "osd_warn_vtx_hot", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "предупреждение OSD: VTX без ARM греется на полной мощности — VTX HOT" },
+            { "osd_warn_training", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: учебные ограничения — ALT LIMIT, FENCE, FENCE RETURN, SPEED LIMIT" },
             { "osd_alt_alarm", kInt, kMaster, kGroupOsd, 0, 10000, 100, kTable, "м", nullptr, 0,
               "выше — высота на OSD мигает; 0 — нет" },
             { "osd_cap_alarm", kInt, kMaster, kGroupOsd, 0, 20000, 2200, kTable, "мА·ч", nullptr, 0,
@@ -1193,6 +1211,11 @@ namespace copter
             s.failsafeStickThreshold = value(PARAM_FAILSAFE_STICK_THRESHOLD) * 0.01f;
             s.failsafeProcedure = static_cast<FailsafeProcedure>(static_cast<uint8_t>(value(PARAM_FAILSAFE_PROCEDURE)));
             s.failsafeSwitchMode = static_cast<FailsafeSwitchMode>(static_cast<uint8_t>(value(PARAM_FAILSAFE_SWITCH_MODE)));
+            s.training.enabled = value(PARAM_TRAINING_LIMITS) > 0.5f;
+            s.training.maxAltM = value(PARAM_TRAINING_MAX_ALT);
+            s.training.maxDistM = value(PARAM_TRAINING_MAX_DIST);
+            s.training.maxAngleDeg = value(PARAM_TRAINING_MAX_ANGLE);
+            s.training.maxSpeedMs = value(PARAM_TRAINING_MAX_SPEED) / 3.6f;
             s.airmodeStartThrottle = value(PARAM_AIRMODE_START_THROTTLE_PERCENT) * 0.01f;
             s.turtle.otherMotors = value(PARAM_CRASHFLIP_MOTOR_PERCENT) * 0.01f;
             s.turtle.expo = value(PARAM_CRASHFLIP_EXPO) * 0.01f;
@@ -1971,7 +1994,7 @@ namespace copter
 
     static_assert(PARAM_OSD_PREFLIGHT_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
     static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
-    static_assert(PARAM_OSD_WARN_VTX_HOT - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
+    static_assert(PARAM_OSD_WARN_TRAINING - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 
     // Раскладка OSD из настроек osd_* (copter/Osd.h).
     inline OsdLayout osdLayoutFrom(const CopterParams& p)
@@ -1989,7 +2012,7 @@ namespace copter
         l.warnings = 0;
         for (uint8_t w = 0; w < OSD_WARN_COUNT; ++w)
         {
-            if (p.value(static_cast<ParamId>(PARAM_OSD_WARN_ARMING_DISABLE + w)) > 0.5f) l.warnings = static_cast<uint8_t>(l.warnings | (1u << w));
+            if (p.value(static_cast<ParamId>(PARAM_OSD_WARN_ARMING_DISABLE + w)) > 0.5f) l.warnings = static_cast<uint16_t>(l.warnings | (1u << w));
         }
         l.altAlarmM = static_cast<uint16_t>(p.value(PARAM_OSD_ALT_ALARM));
         l.capAlarmMah = static_cast<uint16_t>(p.value(PARAM_OSD_CAP_ALARM));

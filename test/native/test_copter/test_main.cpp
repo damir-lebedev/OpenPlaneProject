@@ -6196,6 +6196,95 @@ void test_msp_beeper_config()
     m.params.resetAll();
 }
 
+// P09: учебные ограничения — настройки, логика, OSD.
+void test_training_limits_params_and_logic()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    CopterSettings s;
+    p.applyTo(s);
+    TEST_ASSERT_FALSE(s.training.enabled);   // по умолчанию выключены: включает Studio новичку
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, s.training.maxAltM);
+    TEST_ASSERT_EQUAL_FLOAT(150.0f, s.training.maxDistM);
+    TEST_ASSERT_TRUE(p.parse(PARAM_TRAINING_LIMITS, 0, "ON", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_TRAINING_MAX_SPEED, 0, "36", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_TRAINING_MAX_ANGLE, 0, "90", err, sizeof(err)));
+    p.applyTo(s);
+    TEST_ASSERT_TRUE(s.training.enabled);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 10.0f, s.training.maxSpeedMs);
+    p.resetAll();
+
+    TrainingSettings t;
+    t.enabled = true;
+    t.maxAltM = 20.0f;
+    t.maxDistM = 100.0f;
+    t.maxAngleDeg = 30.0f;
+    t.maxSpeedMs = 10.0f;
+    TrainingLimits l;
+    l.configure(t);
+    const float dt = 0.001f;
+
+    // наклон: не больше предела; быстрее предела скорости — плавно меньше
+    l.update(5.0f, true, 10.0f, 0.0f, true, 5.0f, true, dt);
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, l.angleCap(60.0f));
+    TEST_ASSERT_EQUAL_FLOAT(25.0f, l.angleCap(25.0f));
+    for (int i = 0; i < 1000; ++i) l.update(5.0f, true, 10.0f, 0.0f, true, 15.0f, true, dt);
+    TEST_ASSERT_TRUE(l.flags() & TRAINING_SPEED);
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 30.0f * TrainingLimits::SPEED_MIN_K, l.angleCap(60.0f));
+    for (int i = 0; i < 1000; ++i) l.update(5.0f, true, 10.0f, 0.0f, true, 5.0f, true, dt);
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, l.angleCap(60.0f));
+
+    // высота: далеко от потолка — газ не трогаем; у потолка на подъёме — срезан;
+    // вниз — можно всегда; без барометра — предела нет
+    TEST_ASSERT_EQUAL_FLOAT(0.9f, l.limitThrust(0.9f, 2.0f, 0.3f, 1.0f));
+    l.update(19.0f, true, 10.0f, 0.0f, true, 0.0f, true, dt);
+    TEST_ASSERT_TRUE(l.flags() & TRAINING_ALT);
+    TEST_ASSERT_TRUE(l.limitThrust(0.9f, 3.0f, 0.3f, 1.0f) < 0.3f);
+    TEST_ASSERT_EQUAL_FLOAT(0.1f, l.limitThrust(0.1f, 3.0f, 0.3f, 1.0f));
+    TEST_ASSERT_TRUE(l.limitClimb(5.0f) < 1.5f);
+    TEST_ASSERT_EQUAL_FLOAT(-2.0f, l.limitClimb(-2.0f));
+    l.update(19.0f, false, 10.0f, 0.0f, true, 0.0f, true, dt);
+    TEST_ASSERT_EQUAL_FLOAT(0.9f, l.limitThrust(0.9f, 3.0f, 0.3f, 1.0f));
+    TEST_ASSERT_FALSE(l.flags() & TRAINING_ALT);
+    TEST_ASSERT_EQUAL_FLOAT(20.0f, l.rescueCeilingM());
+
+    // круг: у края — FENCE; не успеет остановиться — возврат; назад до 80 %
+    // и не наружу — пилот; без дома — круга нет
+    l.update(5.0f, true, 92.0f, 0.0f, true, 0.0f, true, dt);
+    TEST_ASSERT_EQUAL_STRING("FENCE", trainingText(l.flags()));
+    TEST_ASSERT_FALSE(l.wantReturn());
+    l.update(5.0f, true, 70.0f, 12.0f, true, 12.0f, true, dt);   // 70 + 144/8 = 88 — успеет
+    TEST_ASSERT_FALSE(l.wantReturn());
+    l.update(5.0f, true, 85.0f, 12.0f, true, 12.0f, true, dt);   // 85 + 18 > 100
+    TEST_ASSERT_TRUE(l.wantReturn());
+    TEST_ASSERT_EQUAL_STRING("FENCE RETURN", trainingText(l.flags()));
+    l.update(5.0f, true, 75.0f, 2.0f, true, 2.0f, true, dt);
+    TEST_ASSERT_TRUE(l.wantReturn());   // внутри, но ещё летит наружу
+    l.update(5.0f, true, 75.0f, -5.0f, true, 5.0f, true, dt);
+    TEST_ASSERT_FALSE(l.wantReturn());
+    l.update(5.0f, true, 150.0f, 5.0f, false, 5.0f, false, dt);
+    TEST_ASSERT_FALSE(l.wantReturn());
+
+    // выключены — ничего не держат
+    t.enabled = false;
+    l.configure(t);
+    l.update(30.0f, true, 300.0f, 10.0f, true, 30.0f, true, dt);
+    TEST_ASSERT_EQUAL(0, l.flags());
+    TEST_ASSERT_EQUAL_FLOAT(60.0f, l.angleCap(60.0f));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, l.rescueCeilingM());
+
+    // OSD: в полёте, важнее LOW BATTERY; выключается osd_warn_training
+    OsdData d;
+    d.armed = true;
+    d.training = "FENCE RETURN";
+    d.batteryState = 2;
+    TEST_ASSERT_EQUAL_STRING("FENCE RETURN", OsdScreen::warningText(d));
+    TEST_ASSERT_TRUE(osdLayoutFrom(p).warn(OSD_WARN_TRAINING));
+    TEST_ASSERT_TRUE(p.parse(PARAM_OSD_WARN_TRAINING, 0, "OFF", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("LOW BATTERY", OsdScreen::warningText(d, osdLayoutFrom(p)));
+    p.resetAll();
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -6299,6 +6388,7 @@ int main()
     RUN_TEST(test_acro_trainer_box);
     RUN_TEST(test_gps_rescue_logic);
     RUN_TEST(test_gps_rescue_params);
+    RUN_TEST(test_training_limits_params_and_logic);
     RUN_TEST(test_cli_pastes_betaflight_diff);
     RUN_TEST(test_vbat_sag_compensation_percent);
     RUN_TEST(test_battery_voltage_current_and_mah);

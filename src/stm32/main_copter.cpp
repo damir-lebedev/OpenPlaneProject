@@ -606,6 +606,7 @@ static void composeOsd()
     d.exitStats = sticksUp;
     d.overload = copter::overloadText(escGuard.state());
     if (!d.overload && escGuard.limiting()) d.overload = "CURRENT LIMIT";
+    d.training = copter::trainingText(s.trainingFlags);
     vtxHeat.update(d.armed, vtx.state(), millis());
     d.vtxHot = vtxHeat.warn();
     d.escOverloads = escGuard.flightStats().escEvents;

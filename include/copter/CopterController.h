@@ -10,6 +10,7 @@
 #include "copter/Presets.h"
 #include "copter/RateController.h"
 #include "copter/RcSmoothing.h"
+#include "copter/TrainingLimits.h"
 #include "copter/Turtle.h"
 
 // ============================================================
@@ -363,6 +364,7 @@ namespace copter
         TurtleSettings turtle;             // crashflip_*
         AltitudeController::Settings alt;
         GpsRescueSettings rescue;          // gps_rescue_*
+        TrainingSettings training;         // training_* (copter/TrainingLimits.h)
     };
 
     struct CopterStatus
@@ -393,6 +395,7 @@ namespace copter
         RescuePhase rescuePhase = RescuePhase::IDLE;   // возврат домой: этап
         RescueFail rescueFail = RescueFail::NONE;      // и почему прерван
         float rescueHeadingFix = 0.0f;                  // без компаса: поправка курса гироскопа по GPS, °
+        uint8_t trainingFlags = 0;     // учебные ограничения: биты TrainingFlag (что сейчас держит)
         uint32_t armCount = 0;
         uint32_t loops = 0;
     };
@@ -428,6 +431,7 @@ namespace copter
             vertical.configure(2.5f);
             altCtl.configure(s.alt, t.hoverThrust);
             rescue.configure(s.rescue);
+            training.configure(s.training);
             hover = t.hoverThrust;
             disarm();
             status = CopterStatus();
@@ -614,6 +618,11 @@ namespace copter
             }
             if (status.turtle) return turtleOutputs(sens, rc);
 
+            // ---- учебные ограничения (copter/TrainingLimits.h) ----
+            training.update(vertical.altitude(), vertical.baroUsed(), rescue.distanceHome(), rescue.outwardSpeed(),
+                            rescue.ready() == RescueFail::NONE, rescue.groundSpeed(), rescue.gpsOk(), dt);
+            status.trainingFlags = training.flags();
+
             // ---- уставки ----
             const bool failsafe = status.state == CopterState::FAILSAFE;
             // этап 2 с failsafe_throttle — ровно на постоянном газе, как в BF
@@ -621,8 +630,9 @@ namespace copter
             // этап 1 с rxfail газа HOLD — ровно на последнем газе, как в BF
             // возврат домой: этап 2 failsafe с GPS-RESCUE или режим GPS RESCUE в воздухе
             const bool wantRescue = (failsafe && status.failsafeStage >= 2 && set.failsafeProcedure == FailsafeProcedure::GPS_RESCUE) ||
-                                    (rc.gpsRescue && status.state == CopterState::ARMED && status.airborne);
-            if (wantRescue && !rescue.active()) rescue.start(vertical.altitude(), failsafe);
+                                    ((rc.gpsRescue || training.wantReturn()) && status.state == CopterState::ARMED &&
+                                     status.airborne);
+            if (wantRescue && !rescue.active()) rescue.start(vertical.altitude(), failsafe, training.rescueCeilingM());
             if (!wantRescue && rescue.active()) rescue.stop();
             RescueCommand rescueCmd;
             if (rescue.active()) rescueCmd = rescue.update(vertical.altitude(), status.yaw, dt);
@@ -696,6 +706,7 @@ namespace copter
                     const float dead = 0.08f;
                     if (s > dead) climb = (s - dead) / (0.5f - dead) * set.alt.maxClimb;
                     if (s < -dead) climb = (s + dead) / (0.5f - dead) * set.alt.maxDescent;
+                    climb = training.limitClimb(climb);
                 }
                 altCtl.setHover(hover);
                 thrust = altCtl.update(vertical.altitude(), vertical.climbRate(), climb, vertical.baroUsed(), cosTilt, dt);
@@ -704,6 +715,7 @@ namespace copter
             else
             {
                 thrust = fixedThrottle ? set.failsafeThrottle : sticks[3] * (failsafe ? 1.0f : throttleLimit);
+                if (!failsafe) thrust = training.limitThrust(thrust, vertical.climbRate(), hover, cosTilt);
                 status.altTarget = vertical.altitude();
             }
 
@@ -983,6 +995,8 @@ namespace copter
             vertical.reset(sens.baroOk ? sens.baroAltM - baroHome : 0.0f);
             altCtl.reset(0.0f, 0.0f);
             rescue.resetFlight();
+            training.reset();
+            status.trainingFlags = 0;
         }
 
         // Возвращает false, если ручкам пульта верить нельзя (связи нет).
@@ -1362,7 +1376,7 @@ namespace copter
             }
 
             // ANGLE: целевой угол стиком; упреждение — по его скорости
-            const float maxA = tune.maxAngleDeg;
+            const float maxA = training.angleCap(tune.maxAngleDeg);   // учебный предел наклона и скорости
             float target[2] = { sticks[0] * maxA, sticks[1] * maxA };
             if (rescueCmd)
             {
@@ -1443,6 +1457,7 @@ namespace copter
         RateAxis axes[3];
         AbsoluteControl absCtl[3];
         GpsRescue rescue;
+        TrainingLimits training;
         RcSmoothing rcSmooth;
         Pt1 throttleHpLpf;               // anti-gravity
         Pt1 throttleBoostLpf;            // throttle_boost

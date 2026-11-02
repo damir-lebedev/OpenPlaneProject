@@ -337,6 +337,7 @@ public:
                   v.frequencyMhz, v.powerMw, v.pit ? "true" : "false", vtx->levelMw(vtx->topAllowedLevel()));
         }
         w.add(",\"hdg\":%.0f", headingDeg);
+        if (const char* tl = copter::trainingText(s.trainingFlags)) w.add(",\"train\":\"%s\"", tl);
         if (s.rescuePhase != RescuePhase::IDLE)
         {
             w.add(",\"rescue\":\"%s\"", rescuePhaseName(s.rescuePhase));

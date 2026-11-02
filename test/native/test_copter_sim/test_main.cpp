@@ -1687,6 +1687,107 @@ void test_level_trim_shifts_angle_hover()
     TEST_ASSERT_FLOAT_WITHIN(1.0f, -3.0f, h.ctl.getStatus().pitch);
 }
 
+// P09: учебные ограничения в симуляторе.
+namespace
+{
+    CopterSettings trainingSettings()
+    {
+        CopterSettings s;
+        s.training.enabled = true;
+        s.training.maxAltM = 20.0f;
+        s.training.maxDistM = 60.0f;
+        s.training.maxAngleDeg = 30.0f;
+        s.training.maxSpeedMs = 0.0f;
+        return s;
+    }
+}
+
+// Потолок: новичок в ANGLE держит газ в полный — коптер упирается в
+// training_max_alt и висит под ним; вниз — по стику, как обычно.
+void test_training_ceiling_holds_full_throttle()
+{
+    QuadHarness h(five(), QuadPerturb(), 71, EscProtocol::DSHOT600, 1000.0f, trainingSettings());
+    TEST_ASSERT_TRUE(h.armOnGround(CopterMode::ANGLE));
+    h.rc.throttle = 1.0f;
+    double top = 0;
+    bool flagged = false;
+    for (int i = 0; i < 20000; ++i)   // 20 с
+    {
+        h.step();
+        top = std::fmax(top, h.sim.height());
+        flagged = flagged || (h.ctl.getStatus().trainingFlags & TRAINING_ALT);
+    }
+    const double held = h.sim.height();
+    h.rc.throttle = 0.1f;
+    h.run(4.0);
+    char line[160];
+    snprintf(line, sizeof(line), "training ceiling 20 m, full throttle in ANGLE: top %.1f m, after 20 s %.1f m, throttle down -> %.1f m",
+             top, held, h.sim.height());
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE(flagged);
+    TEST_ASSERT_TRUE_MESSAGE(top < 23.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(held > 15.0, line);   // не падает: висит у потолка
+    TEST_ASSERT_TRUE_MESSAGE(h.sim.height() < held - 3.0, line);
+    TEST_ASSERT_TRUE(h.ctl.isArmed());
+}
+
+// Круг: стик вперёд до упора и держать — за краем коптер сам летит назад,
+// внутри 80 % радиуса управление снова у пилота; дальше края не уходит.
+void test_training_fence_turns_back()
+{
+    QuadHarness h(five(), QuadPerturb(), 72, EscProtocol::DSHOT600, 1000.0f, trainingSettings());
+    h.gpsOn = true;
+    TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+    h.rc.pitch = -1.0f;
+    double far = 0, high = 0;
+    bool returned = false;
+    for (int i = 0; i < 60000; ++i)   // минута стика вперёд
+    {
+        h.step();
+        far = std::fmax(far, homeDistance(h));
+        high = std::fmax(high, h.sim.height());
+        returned = returned || (h.ctl.getStatus().trainingFlags & TRAINING_RETURN);
+    }
+    h.rc.pitch = 0.0f;
+    h.run(25.0);
+    char line[180];
+    snprintf(line, sizeof(line), "training fence 60 m, stick forward for 60 s: farthest %.0f m, highest %.0f m, after release %.0f m, phase %s",
+             far, high, homeDistance(h), rescuePhaseName(h.ctl.getStatus().rescuePhase));
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE(returned);
+    TEST_ASSERT_TRUE_MESSAGE(far < 75.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(homeDistance(h) < 60.0, line);
+    TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(RescuePhase::IDLE), static_cast<int>(h.ctl.getStatus().rescuePhase), line);
+    TEST_ASSERT_TRUE(h.ctl.isArmed());
+    TEST_ASSERT_TRUE(h.sim.height() < 23.0);   // и возврат — не выше потолка
+}
+
+// Скорость: в ANGLE полный стик вперёд — с пределом 20 км/ч наклон
+// уменьшается, коптер разгоняется вдвое меньше, чем без него.
+void test_training_speed_limit()
+{
+    double speeds[2];
+    for (int k = 0; k < 2; ++k)
+    {
+        CopterSettings s = trainingSettings();
+        s.training.maxAltM = 0.0f;
+        s.training.maxDistM = 0.0f;
+        s.training.maxSpeedMs = k ? 20.0f / 3.6f : 0.0f;
+        QuadHarness h(five(), QuadPerturb(), 73, EscProtocol::DSHOT600, 1000.0f, s);
+        h.gpsOn = true;
+        TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+        h.rc.pitch = -1.0f;
+        h.run(15.0);
+        speeds[k] = std::hypot(h.sim.velocity().x, h.sim.velocity().y);
+    }
+    char line[140];
+    snprintf(line, sizeof(line), "ANGLE full stick 15 s, tilt 30 deg: %.1f km/h free, %.1f km/h with 20 km/h limit",
+             speeds[0] * 3.6, speeds[1] * 3.6);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(speeds[1] * 3.6 < 28.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(speeds[1] < 0.7 * speeds[0], line);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -1734,5 +1835,8 @@ int main()
     RUN_TEST(test_gps_rescue_gps_loss_lands_in_place);
     RUN_TEST(test_gps_rescue_switch_and_arming_check);
     RUN_TEST(test_level_trim_shifts_angle_hover);
+    RUN_TEST(test_training_ceiling_holds_full_throttle);
+    RUN_TEST(test_training_fence_turns_back);
+    RUN_TEST(test_training_speed_limit);
     return UNITY_END();
 }
