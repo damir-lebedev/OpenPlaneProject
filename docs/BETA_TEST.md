@@ -19,7 +19,7 @@
 | Полётник | F405 с гироскопом ICM-42688-P и барометром SPL06 или DPS310 (прошивается из-под Betaflight, распиновка берётся из дампа BF), Matek H743-WING V3 или DevEBox H743. Других плат пока нет |
 | Регуляторы | DShot (BLHeli_S / Bluejay / AM32) или обычный PWM/OneShot |
 | Приёмник | CRSF (ELRS, Crossfire) |
-| Приложение | OpenPlane Studio (свежая сборка от автора, не v0.2.0) |
+| Приложение | OpenPlane Studio 0.3.0 или новее — [скачать](https://github.com/damir-lebedev/openplane-studio/releases/latest); дальше обновляется само при запуске |
 | Пульт | Mode 2; ARM — тумблер на CH5 (SwA), он же сразу выключает моторы; режим — CH7 (SwC: вверх ANGLE, середина ALT_HOLD, вниз ACRO). Другая раскладка — `map` и `aux` в CLI, см. [COPTER.md](COPTER.md#пульт-и-режимы) |
 
 Дрон, на котором тест не страшен: недорогой 3–5", а не 7" с камерой за полцены дрона.
