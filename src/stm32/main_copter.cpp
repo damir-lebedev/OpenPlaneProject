@@ -555,7 +555,7 @@ static const char* firstArmBlock()
     const uint32_t b = copterController.getStatus().armBlockers;
     for (uint32_t bit = 1; bit <= copter::ARM_BLOCK_LAST; bit <<= 1)
     {
-        if (b & bit) return copter::armBlockCode(bit);
+        if (b & bit) return copter::armBlockWord(bit);
     }
     return nullptr;
 }

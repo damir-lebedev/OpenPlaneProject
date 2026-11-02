@@ -913,7 +913,7 @@ namespace copter
             { "osd_stat_overload", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "статистика после полёта: перегрузки регулятора и батареи по току (если были)" },
             { "osd_warn_arming_disable", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
-              "предупреждение OSD: без ARM — почему не армится (код BF)" },
+              "предупреждение OSD: без ARM — почему не армится, словом (NO RADIO, THR DOWN…)" },
             { "osd_warn_batt_not_full", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "предупреждение OSD: подключили не полную батарею (BATT < FULL)" },
             { "osd_warn_batt_warning", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,

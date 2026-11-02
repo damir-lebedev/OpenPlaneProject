@@ -179,6 +179,47 @@ namespace copter
         return "?";
     }
 
+    // Слово для очков (P10): что сделать, а не код BF; до 11 знаков, шрифт OSD.
+    // Те же слова — в приложении рядом с кнопкой «исправить» (core/armWhy.ts).
+    inline const char* armBlockWord(uint32_t bit)
+    {
+        switch (bit)
+        {
+            case ARM_BLOCK_IMU: return "NO GYRO";
+            case ARM_BLOCK_FAILSAFE: return "WAIT LINK";
+            case ARM_BLOCK_NO_LINK: return "NO RADIO";
+            case ARM_BLOCK_NOT_DISARMED: return "ARM SW OFF";
+            case ARM_BLOCK_FAILSAFE_SWITCH: return "FS SWITCH";
+            case ARM_BLOCK_RUNAWAY: return "RUNAWAY";
+            case ARM_BLOCK_CRASH: return "CRASH";
+            case ARM_BLOCK_THROTTLE: return "THR DOWN";
+            case ARM_BLOCK_TILT: return "NOT LEVEL";
+            case ARM_BLOCK_BOOT_GRACE: return "WAIT";
+            case ARM_BLOCK_NO_PREARM: return "PREARM";
+            case ARM_BLOCK_LOAD: return "CPU LOAD";
+            case ARM_BLOCK_SETTLING: return "WAIT GYRO";
+            case ARM_BLOCK_CLI: return "CLI OPEN";
+            case ARM_BLOCK_CMS: return "MENU OPEN";
+            case ARM_BLOCK_BST: return "BST";
+            case ARM_BLOCK_MSP: return "NOT SAVED";
+            case ARM_BLOCK_PARALYZE: return "PARALYZE";
+            case ARM_BLOCK_GPS: return "NO GPS";
+            case ARM_BLOCK_RESCUE_SWITCH: return "RESCUE SW";
+            case ARM_BLOCK_RPM_FILTER: return "NO RPM";
+            case ARM_BLOCK_REBOOT: return "REBOOT";
+            case ARM_BLOCK_DSHOT_BITBANG: return "DSHOT FAIL";
+            case ARM_BLOCK_NO_ACC_CAL: return "CALIBRATE";
+            case ARM_BLOCK_MOTOR_PROTOCOL: return "MOTOR PROTO";
+            case ARM_BLOCK_SWITCH: return "ARM SW OFF";
+            case ARM_BLOCK_MOVING: return "MOVING";
+            case ARM_BLOCK_BATTERY: return "LOW BATT";
+            case ARM_BLOCK_MOTOR_TEST: return "MOTOR TEST";
+            case ARM_BLOCK_NO_ARM_SWITCH: return "NO ARM SW";
+            case ARM_BLOCK_CONFIG: return "CONFIG";
+        }
+        return "?";
+    }
+
     // Код как в `status` Betaflight; наши проверки — своими словами.
     inline const char* armBlockCode(uint32_t bit)
     {

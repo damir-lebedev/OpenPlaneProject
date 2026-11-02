@@ -204,7 +204,7 @@ namespace copter
     inline const OsdNamedFlag& osdWarnInfo(uint8_t w)
     {
         static const OsdNamedFlag table[OSD_WARN_COUNT] = {
-            { "arming_disable", true, "без ARM — почему не армится (код BF)" },
+            { "arming_disable", true, "без ARM — почему не армится, словом (NO RADIO, THR DOWN…)" },
             { "batt_not_full", true, "подключили не полную батарею (BATT < FULL)" },
             { "batt_warning", true, "LOW BATTERY" },
             { "batt_critical", true, "BATT CRITICAL" },
@@ -271,7 +271,7 @@ namespace copter
         float homeDistanceM = 0.0f, homeRelativeDeg = 0.0f;
         uint16_t vtxMw = 0;                 // 0 — нет VTX
         bool vtxPit = false;
-        const char* armBlock = nullptr;     // код BF, почему не армится (только без ARM)
+        const char* armBlock = nullptr;     // слово (armBlockWord), почему не армится (только без ARM)
         const char* craftName = nullptr;
         bool blink = true;                  // фаза мигания (2 Гц): false — тревожные значения гаснут
         bool exitStats = false;             // газ или тангаж вверх — убрать статистику

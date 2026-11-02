@@ -1200,7 +1200,13 @@ void test_arm_blockers()
     {
         TEST_ASSERT_NOT_EQUAL(0, strcmp("?", armBlockText(bit)));
         TEST_ASSERT_NOT_EQUAL(0, strcmp("?", armBlockCode(bit)));
+        // слово для очков влезает в строку предупреждения
+        TEST_ASSERT_NOT_EQUAL(0, strcmp("?", armBlockWord(bit)));
+        TEST_ASSERT_LESS_OR_EQUAL(11, strlen(armBlockWord(bit)));
     }
+    TEST_ASSERT_EQUAL_STRING("NO RADIO", armBlockWord(ARM_BLOCK_NO_LINK));
+    TEST_ASSERT_EQUAL_STRING("THR DOWN", armBlockWord(ARM_BLOCK_THROTTLE));
+    TEST_ASSERT_EQUAL_STRING("NOT SAVED", armBlockWord(ARM_BLOCK_MSP));
     TEST_ASSERT_EQUAL_STRING("?", armBlockText(0));
     TEST_ASSERT_EQUAL_STRING("RXLOSS", armBlockCode(ARM_BLOCK_NO_LINK));
     TEST_ASSERT_EQUAL_STRING("ANGLE", armBlockCode(ARM_BLOCK_TILT));
