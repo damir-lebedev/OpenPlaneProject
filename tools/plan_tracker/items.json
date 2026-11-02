@@ -993,40 +993,6 @@
    "tab": "Моторы"
   },
   {
-   "id": "083",
-   "section": 6,
-   "title": "DShot: команды",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`dshotprog`, команды BEEP, ESC_INFO, SPIN_DIRECTION, 3D, SAVE, LED",
-   "what": "очередь команд (повтор 6–10 раз, только при остановленных моторах).",
-   "files": "hal/stm32/Stm32Dshot.h, copter/EscProtocol.h",
-   "test": "test_app_stm32_copter",
-   "ui": "«Моторы»: кнопки «пискнуть», «направление»",
-   "settings": [
-    "dshotprog"
-   ],
-   "tab": "Моторы"
-  },
-  {
-   "id": "084",
-   "section": 6,
-   "title": "Направление моторов командой DShot",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "мастер Motor Direction конфигуратора",
-   "what": "сменить направление мотора из консоли/приложения без конфигуратора ESC.",
-   "files": "telemetry/CopterConsole.h",
-   "test": "test_app_stm32_copter",
-   "ui": "«Моторы»: клик по мотору на схеме — сменить направление",
-   "settings": [],
-   "tab": "Моторы"
-  },
-  {
    "id": "085",
    "section": 6,
    "title": "3D-режим (реверс)",
@@ -1040,25 +1006,6 @@
    "ui": "«Моторы»",
    "settings": [],
    "tab": "Моторы"
-  },
-  {
-   "id": "086",
-   "section": 6,
-   "title": "Turtle mode (переворот после падения)",
-   "fileStatus": "doing",
-   "bench": false,
-   "repo": "firmware",
-   "docs": false,
-   "bf": "`crashflip_motor_percent`, `crashflip_expo`, режим FLIP OVER AFTER CRASH",
-   "what": "нужен DShot-реверс; лёг на спину → переворот моторами.",
-   "files": "copter/CopterController.h",
-   "test": "test_copter_sim: на спине — перевернулся",
-   "ui": "режим на вкладке «Режимы»",
-   "settings": [
-    "crashflip_motor_percent",
-    "crashflip_expo"
-   ],
-   "tab": "Режимы"
   },
   {
    "id": "090",
