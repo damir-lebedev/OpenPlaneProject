@@ -9,6 +9,7 @@
 #include "copter/CopterController.h"
 #include "copter/Params.h"
 #include "copter/RcSetup.h"
+#include "copter/Vtx.h"
 #include "telemetry/Msp.h"
 
 // ============================================================
@@ -31,6 +32,10 @@
 // MSP2_SEND_DSHOT_COMMAND (мастер направления моторов) — в очередь команд
 // DShot, как dshotprog (CopterCli::queueDshot).
 //
+// Те же команды приходят с пульта — MSP через CRSF (copter/CrsfMsp.h):
+// Lua-скрипты Betaflight на EdgeTX (PID, расходы, VTX) и VTX Admin
+// ExpressLRS (MSP_SET_VTX_CONFIG + MSP_EEPROM_WRITE).
+//
 // Без Arduino — тесты на ПК (test_copter).
 // ============================================================
 
@@ -45,12 +50,13 @@ namespace copter
             BATTERY_CONFIG = 32, SET_BATTERY_CONFIG = 33, MODE_RANGES = 34, SET_MODE_RANGE = 35,
             FEATURE_CONFIG = 36, SET_FEATURE_CONFIG = 37, MIXER_CONFIG = 42, RX_CONFIG = 44, SET_RX_CONFIG = 45,
             ARMING_CONFIG = 61, SET_ARMING_CONFIG = 62, RX_MAP = 64, SET_RX_MAP = 65, REBOOT = 68,
+            VTX_CONFIG = 88, SET_VTX_CONFIG = 89,
             FAILSAFE_CONFIG = 75, SET_FAILSAFE_CONFIG = 76, RXFAIL_CONFIG = 77, SET_RXFAIL_CONFIG = 78,
             ADVANCED_CONFIG = 90, SET_ADVANCED_CONFIG = 91, FILTER_CONFIG = 92, SET_FILTER_CONFIG = 93,
             PID_ADVANCED = 94, SET_PID_ADVANCED = 95, SET_ARMING_DISABLED = 99,
             STATUS = 101, RAW_IMU = 102, MOTOR = 104, RC = 105, ATTITUDE = 108, ALTITUDE = 109, ANALOG = 110,
             RC_TUNING = 111, PID = 112, BOXNAMES = 116, BOXIDS = 119, BATTERY_STATE = 130, MOTOR_CONFIG = 131,
-            BEEPER_CONFIG = 184, SET_BEEPER_CONFIG = 185,
+            BEEPER_CONFIG = 184, SET_BEEPER_CONFIG = 185, SET_TX_INFO = 186, TX_INFO = 187, SET_RTC = 246,
             STATUS_EX = 150, UID = 160, SET_RAW_RC = 200, SET_PID = 202, SET_RC_TUNING = 204, SELECT_SETTING = 210,
             SET_MOTOR = 214, SET_MOTOR_CONFIG = 222, EEPROM_WRITE = 250,
             SEND_DSHOT_COMMAND = 0x3003,   // MSP2: мастер направления моторов конфигуратора
@@ -102,21 +108,34 @@ namespace copter
         void setLoad(uint16_t percent) { loadPercent = percent; }
         void setLinkQuality(int16_t lq) { linkQuality = lq; }
         void setRssi(int16_t percent) { rssiPercent = percent; }
+        // Видеопередатчик (MSP_VTX_CONFIG): что он сказал о себе и сколько уровней мощности.
+        void setVtx(const VtxState* st, uint8_t levels)
+        {
+            vtx = st;
+            vtxLevels = levels;
+        }
 
         // Кадр пришёл — ответ в out (кадр целиком). 0 — отвечать нечем (не влезло).
         size_t handle(const msp::Parser& in, uint8_t* out, size_t capacity, uint32_t nowMs)
+        {
+            msp::Writer w;
+            const bool ok = process(in, w, nowMs);
+            return msp::frame(out, capacity, in.version, in.cmd, !ok, w.buf, ok ? w.length : 0);
+        }
+
+        // Ответ без обёртки MSP — в w (для CRSF, где своя нарезка). false — ошибка («!»).
+        bool process(const msp::Parser& in, msp::Writer& w, uint32_t nowMs)
         {
             lastFrameMs = nowMs;
             seen = true;
             // Проверка моторов из конфигуратора держится, пока он на связи (он
             // всё время что-то спрашивает): замолчал — моторы встают за 1 с.
             if (motorTestOn) holdMotorTest();
-            msp::Writer w;
             msp::Reader r(in.payload, in.size);
             const bool ok = command(in.cmd, r, w) && !w.overflow;
             ++frames;
             if (!ok) ++errors;
-            return msp::frame(out, capacity, in.version, in.cmd, !ok, w.buf, ok ? w.length : 0);
+            return ok;
         }
 
         // Конфигуратор запретил ARM (MSP_SET_ARMING_DISABLED) и ещё на связи,
@@ -205,6 +224,13 @@ namespace copter
                     w.u8(static_cast<uint8_t>(params.value(PARAM_BEEPER_DSHOT_BEACON_TONE)));
                     w.u32(static_cast<uint32_t>(params.value(PARAM_DSHOT_BEACON_OFF_FLAGS)));
                     return true;
+                case VTX_CONFIG: vtxConfig(w); return true;
+                case TX_INFO:
+                    w.u8(0);   // RSSI не из MSP
+                    w.u8(1);   // часы не нужны — Lua не шлёт MSP_SET_RTC
+                    return true;
+                case SET_RTC:
+                case SET_TX_INFO: return true;   // часов и RSSI с пульта у нас нет — молча принять
 
                 case SET_ARMING_DISABLED:
                     armingDisabled = r.u8() != 0;
@@ -302,6 +328,9 @@ namespace copter
                     set(PARAM_BEEPER_OFF_FLAGS, static_cast<float>(r.u32() & BEEPER_ALL_MASK));
                     if (r.remaining() >= 1) set(PARAM_BEEPER_DSHOT_BEACON_TONE, r.u8());
                     if (r.remaining() >= 4) set(PARAM_DSHOT_BEACON_OFF_FLAGS, static_cast<float>(r.u32() & DSHOT_BEACON_ALLOWED));
+                    break;
+                case SET_VTX_CONFIG:
+                    if (!setVtxConfig(r)) return false;
                     break;
                 case SET_FEATURE_CONFIG: r.u32(); return true;   // features у нас нет — ничего не меняется
                 case SELECT_SETTING:
@@ -974,6 +1003,77 @@ namespace copter
             }
         }
 
+        // MSP_VTX_CONFIG (BF 4.5): тип, полоса, канал, уровень, PIT, частота,
+        // готов, vtx_low_power_disarm, частота PIT, таблица (нет), полос, каналов, уровней.
+        void vtxConfig(msp::Writer& w)
+        {
+            const VtxProtocol proto = static_cast<VtxProtocol>(static_cast<uint8_t>(params.value(PARAM_VTX_PROTOCOL)));
+            const bool online = vtx && vtx->online;
+            uint8_t type = 0xFF;   // VTXDEV_UNKNOWN: ищем
+            if (proto == VtxProtocol::NONE) type = 0;   // VTXDEV_UNSUPPORTED
+            else if (online) type = vtx->protocol == VtxProtocol::TRAMP ? 4 : 3;
+            const uint8_t band = static_cast<uint8_t>(params.value(PARAM_VTX_BAND));
+            const uint8_t channel = static_cast<uint8_t>(params.value(PARAM_VTX_CHANNEL));
+            const uint16_t freq = band ? vtxFrequency(band, channel) : static_cast<uint16_t>(params.value(PARAM_VTX_FREQ));
+            w.u8(type);
+            w.u8(band);
+            w.u8(channel);
+            w.u8(static_cast<uint8_t>(params.value(PARAM_VTX_POWER)));
+            w.u8(online && vtx->pit ? 1 : 0);
+            w.u16(freq);
+            w.u8(online ? 1 : 0);
+            w.u8(static_cast<uint8_t>(params.value(PARAM_VTX_LOW_POWER_DISARM)));
+            w.u16(0);
+            w.u8(0);
+            w.u8(VTX_BANDS);
+            w.u8(VTX_CHANNELS);
+            w.u8(vtxLevels);
+        }
+
+        // MSP_SET_VTX_CONFIG: частота или номер (полоса−1)·8 + канал−1; дальше по
+        // желанию — уровень, PIT (не храним: он с тумблера), low_power_disarm,
+        // частота PIT, полоса/канал/частота числами (перекрывают первое).
+        bool setVtxConfig(msp::Reader& r)
+        {
+            if (r.remaining() < 2) return false;
+            const uint16_t first = r.u16();
+            if (first < VTX_BANDS * VTX_CHANNELS)
+            {
+                set(PARAM_VTX_BAND, first / VTX_CHANNELS + 1);
+                set(PARAM_VTX_CHANNEL, first % VTX_CHANNELS + 1);
+            }
+            else if (first <= 6200)
+            {
+                set(PARAM_VTX_BAND, 0);
+                set(PARAM_VTX_FREQ, first);
+            }
+            else return false;
+            if (r.remaining() >= 2)
+            {
+                const uint8_t level = r.u8();
+                if (level) set(PARAM_VTX_POWER, level);
+                r.u8();
+            }
+            if (r.remaining() >= 1) set(PARAM_VTX_LOW_POWER_DISARM, r.u8());
+            if (r.remaining() >= 2) r.u16();
+            if (r.remaining() >= 4)
+            {
+                const uint8_t band = r.u8(), channel = r.u8();
+                const uint16_t freq = r.u16();
+                if (band && vtxFrequency(band, channel))
+                {
+                    set(PARAM_VTX_BAND, band);
+                    set(PARAM_VTX_CHANNEL, channel);
+                }
+                else if (!band && freq)
+                {
+                    set(PARAM_VTX_BAND, 0);
+                    set(PARAM_VTX_FREQ, freq);
+                }
+            }
+            return true;
+        }
+
         // Число из конфигуратора -> настройка (прижать к её границам).
         void set(ParamId id, float v)
         {
@@ -996,6 +1096,8 @@ namespace copter
         uint16_t loadPercent = 0;
         int16_t linkQuality = -1;
         int16_t rssiPercent = -1;
+        const VtxState* vtx = nullptr;
+        uint8_t vtxLevels = 0;
         bool armingDisabled = false, unsaved = false, seen = false, rebootPending = false;
         float motorTest[8] = {};
         bool motorTestOn = false;

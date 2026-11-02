@@ -34,6 +34,7 @@
 #include "copter/Beeper.h"
 #include "copter/StickCommands.h"
 #include "copter/CopterController.h"
+#include "copter/CrsfMsp.h"
 #include "copter/CrsfTelemetry.h"
 #include "copter/GpsHome.h"
 #include "copter/Osd.h"
@@ -138,6 +139,7 @@ copter::GpsHome gpsHome;
 static uint32_t lastGpsStamp = 0;
 static uint32_t lastGpsMs = 0, lastTelemetryMs = 0;
 copter::CrsfTelemetry crsfTelemetry;
+copter::CrsfMsp crsfMsp;   // настройка с пульта: Lua-скрипты BF, VTX Admin ELRS
 static bool crsfTelemetryOn = false;
 static copter::CopterMode switchMode = copter::CopterMode::ACRO;   // режим на тумблерах (без ARM — для пульта)
 static volatile bool sticksUp = false;   // газ или тангаж вверх — убрать статистику OSD
@@ -432,6 +434,28 @@ static void sendTelemetry()
     if (n) board.rcUart().write(frame, n);
 }
 
+// MSP с пульта (CRSF 0x7A/0x7C): собрать запрос, ответить через CopterMsp.
+// Ответ уходит кусками вместо кадров телеметрии (sendCrsfMsp).
+static void pollCrsfMsp()
+{
+    uint8_t frame[copter::CrsfMsp::MAX_FRAME];
+    uint8_t n;
+    while ((n = rcReceiver.takeMsp(frame)) != 0)
+    {
+        if (!crsfMsp.feed(frame, n)) continue;
+        msp::Writer w;
+        const bool ok = copterConsole.mspHandler().process(crsfMsp.request(), w, millis());
+        if (crsfMsp.wantsReply() && crsfTelemetryOn) crsfMsp.reply(ok, w.buf, w.length);
+    }
+}
+
+static void sendCrsfMsp()
+{
+    uint8_t frame[copter::CrsfMsp::MAX_FRAME];
+    const uint8_t n = crsfMsp.next(frame);
+    if (n) board.rcUart().write(frame, n);
+}
+
 // ARM: с GPS — свой писк, есть ли фикс (ARMING_GPS_FIX / ARMING_GPS_NO_FIX), как в BF.
 static copter::BeeperCondition armingBeep()
 {
@@ -698,6 +722,7 @@ static void flightTask(void*)
             t = lap(TASK_BATTERY, t);
         }
         rcReceiver.update();
+        pollCrsfMsp();
         copter::CopterRc rc = readRc();
         rssi.update(rcReceiver.getState().data(), Config::RC_CHANNELS, rcReceiver.getRssiDbm(), rcReceiver.getGoodFrameCount(),
                     rcReceiver.getBadFrameCount(), !rcReceiver.isSignalLost(), millis());
@@ -777,14 +802,18 @@ static void flightTask(void*)
         updatePinio(false);
         vtx.request(vtxRequest());
         vtx.update(millis());
+        copterConsole.mspHandler().setVtx(&vtx.state(), vtx.levelCount());
         copterConsole.setOutputs(out);
         copterConsole.setHeading(headingDeg());
         copterConsole.update(millis());
         t = lap(TASK_CONSOLE, t);
-        if (crsfTelemetryOn && millis() - lastTelemetryMs >= 50)
+        // ответ MSP пульту — вне очереди и чаще (20 мс), телеметрия — раз в 50 мс
+        const bool mspReply = crsfTelemetryOn && crsfMsp.pending();
+        if (crsfTelemetryOn && millis() - lastTelemetryMs >= (mspReply ? 20u : 50u))
         {
             lastTelemetryMs = millis();
-            sendTelemetry();
+            if (mspReply) sendCrsfMsp();
+            else sendTelemetry();
             lap(TASK_TELEMETRY, t);
         }
 

@@ -29,6 +29,7 @@
 #include "copter/Attitude.h"
 #include "copter/CopterCli.h"
 #include "copter/CopterController.h"
+#include "copter/CrsfMsp.h"
 #include "copter/CrsfTelemetry.h"
 #include "copter/GpsHome.h"
 #include "copter/Osd.h"
@@ -6317,6 +6318,154 @@ void test_msp_beeper_config()
     m.params.resetAll();
 }
 
+namespace
+{
+    // Кадр CRSF с пульта: 0xC8 длина тип 0xC8 0xEA состояние данные… CRC.
+    std::vector<uint8_t> crsfMspFrame(uint8_t type, uint8_t status, const std::vector<uint8_t>& data)
+    {
+        std::vector<uint8_t> f = { CRSF_ADDRESS_FC, static_cast<uint8_t>(data.size() + 5), type, CRSF_ADDRESS_FC,
+                                   CRSF_ADDRESS_RADIO, status };
+        f.insert(f.end(), data.begin(), data.end());
+        f.push_back(crsfCrc(f.data() + 2, static_cast<uint8_t>(f.size() - 2)));
+        return f;
+    }
+
+    // Все куски ответа: проверить кадры, склеить MSP-часть (без байтов состояния).
+    std::vector<uint8_t> crsfMspReply(CrsfMsp& c, std::vector<uint8_t>& statuses)
+    {
+        std::vector<uint8_t> msg;
+        uint8_t f[CrsfMsp::MAX_FRAME];
+        uint8_t n;
+        while ((n = c.next(f)) != 0)
+        {
+            TEST_ASSERT_TRUE(n <= CrsfMsp::MAX_FRAME);
+            TEST_ASSERT_EQUAL_UINT8(n - 2, f[1]);
+            TEST_ASSERT_EQUAL_HEX8(CRSF_FRAME_MSP_RESP, f[2]);
+            TEST_ASSERT_EQUAL_HEX8(CRSF_ADDRESS_RADIO, f[3]);
+            TEST_ASSERT_EQUAL_HEX8(CRSF_ADDRESS_FC, f[4]);
+            TEST_ASSERT_EQUAL_HEX8(crsfCrc(f + 2, static_cast<uint8_t>(n - 3)), f[n - 1]);
+            statuses.push_back(f[5]);
+            msg.insert(msg.end(), f + 6, f + n - 1);
+        }
+        return msg;
+    }
+
+    bool crsfFeed(CrsfMsp& c, const std::vector<uint8_t>& f) { return c.feed(f.data(), static_cast<uint8_t>(f.size())); }
+}
+
+// 188: MSP через CRSF — запрос с пульта, ответ кусками, запись с пульта, VTX Admin.
+void test_crsf_msp_from_radio()
+{
+    MspBench m;
+    CrsfMsp c;
+    msp::Writer w;
+
+    // MSP_API_VERSION, v1, один кусок: состояние = первый (0x10) | v1 (0x20) | номер 0
+    TEST_ASSERT_TRUE(crsfFeed(c, crsfMspFrame(CRSF_FRAME_MSP_REQ, 0x30, { 0, 1, 1 })));   // + xor в конце
+    TEST_ASSERT_TRUE(c.wantsReply());
+    TEST_ASSERT_EQUAL_UINT16(1, c.request().cmd);
+    TEST_ASSERT_TRUE(m.msp.process(c.request(), w, m.nowMs));
+    c.reply(true, w.buf, w.length);
+    std::vector<uint8_t> st;
+    std::vector<uint8_t> r = crsfMspReply(c, st);
+    TEST_ASSERT_EQUAL(1, static_cast<int>(st.size()));
+    TEST_ASSERT_EQUAL_HEX8(0x30, st[0] & 0xF0);
+    TEST_ASSERT_EQUAL(6, static_cast<int>(r.size()));   // размер, команда, 3 байта, xor
+    TEST_ASSERT_EQUAL_UINT8(3, r[0]);
+    TEST_ASSERT_EQUAL_UINT8(1, r[1]);
+    TEST_ASSERT_EQUAL_UINT8(46, r[4]);
+    TEST_ASSERT_EQUAL_HEX8(3 ^ 1 ^ 0 ^ 1 ^ 46, r[5]);
+
+    // длинный ответ (BOXNAMES) — несколькими кусками, «первый» только у первого, номера подряд
+    TEST_ASSERT_TRUE(crsfFeed(c, crsfMspFrame(CRSF_FRAME_MSP_REQ, 0x31, { 0, 116 })));
+    w = msp::Writer();
+    TEST_ASSERT_TRUE(m.msp.process(c.request(), w, m.nowMs));
+    TEST_ASSERT_TRUE(w.length > 2 * CrsfMsp::CHUNK);
+    c.reply(true, w.buf, w.length);
+    st.clear();
+    r = crsfMspReply(c, st);
+    TEST_ASSERT_TRUE(st.size() >= 3);
+    TEST_ASSERT_TRUE((st[0] & 0x10) != 0);
+    for (size_t i = 1; i < st.size(); ++i)
+    {
+        TEST_ASSERT_EQUAL_HEX8(0, st[i] & 0x10);
+        TEST_ASSERT_EQUAL_UINT8((st[i - 1] + 1) & 0x0F, st[i] & 0x0F);
+    }
+    TEST_ASSERT_EQUAL_UINT8(255, r[0]);   // длиннее 254 — jumbo: 255, команда, размер u16
+    TEST_ASSERT_EQUAL_UINT16(w.length, le16(r, 2));
+    TEST_ASSERT_EQUAL(static_cast<int>(w.length) + 5, static_cast<int>(r.size()));
+    TEST_ASSERT_EQUAL_MEMORY(w.buf, r.data() + 4, w.length);
+
+    // запись PID с пульта кусками по 8 байт (так шлёт Lua): 15 байт + xor
+    std::vector<uint8_t> pid = m.get(112);
+    pid[0] = 61;
+    std::vector<uint8_t> body = { static_cast<uint8_t>(pid.size()), 202 };
+    body.insert(body.end(), pid.begin(), pid.end());
+    uint8_t x = 0;
+    for (uint8_t b : body) x ^= b;
+    body.push_back(x);
+    bool done = false;
+    uint8_t seq = 5;
+    for (size_t at = 0; at < body.size(); at += 7, seq = static_cast<uint8_t>((seq + 1) & 0x0F))
+    {
+        const std::vector<uint8_t> part(body.begin() + static_cast<long>(at),
+                                        body.begin() + static_cast<long>(std::min(body.size(), at + 7)));
+        TEST_ASSERT_FALSE(done);
+        done = crsfFeed(c, crsfMspFrame(CRSF_FRAME_MSP_REQ, static_cast<uint8_t>(0x20 | (at ? 0 : 0x10) | seq), part));
+    }
+    TEST_ASSERT_TRUE(done);
+    w = msp::Writer();
+    TEST_ASSERT_TRUE(m.msp.process(c.request(), w, m.nowMs));
+    TEST_ASSERT_EQUAL_FLOAT(61.0f, m.params.value(PARAM_P_ROLL));
+
+    // кусок пропал — запрос не собирается, ждём новый первый
+    const uint32_t dropped = c.dropped;
+    TEST_ASSERT_FALSE(crsfFeed(c, crsfMspFrame(CRSF_FRAME_MSP_REQ, 0x30, { 15, 202, 1, 2, 3 })));
+    TEST_ASSERT_FALSE(crsfFeed(c, crsfMspFrame(CRSF_FRAME_MSP_REQ, 0x02, { 4, 5, 6 })));
+    TEST_ASSERT_EQUAL_UINT32(dropped + 1, c.dropped);
+
+    // незнакомая команда — ответ с битом ошибки
+    TEST_ASSERT_TRUE(crsfFeed(c, crsfMspFrame(CRSF_FRAME_MSP_REQ, 0x30, { 0, 199 })));
+    w = msp::Writer();
+    c.reply(m.msp.process(c.request(), w, m.nowMs), w.buf, w.length);
+    st.clear();
+    crsfMspReply(c, st);
+    TEST_ASSERT_EQUAL_HEX8(0x80, st[0] & 0x80);
+
+    // VTX Admin ELRS: запись 0x7C без ответа — R3 (номер 4·8+2), уровень 2
+    TEST_ASSERT_TRUE(crsfFeed(c, crsfMspFrame(CRSF_FRAME_MSP_WRITE, 0x30, { 4, 89, 34, 0, 2, 0 })));
+    TEST_ASSERT_FALSE(c.wantsReply());
+    w = msp::Writer();
+    TEST_ASSERT_TRUE(m.msp.process(c.request(), w, m.nowMs));
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, m.params.value(PARAM_VTX_BAND));
+    TEST_ASSERT_EQUAL_FLOAT(3.0f, m.params.value(PARAM_VTX_CHANNEL));
+    TEST_ASSERT_EQUAL_FLOAT(2.0f, m.params.value(PARAM_VTX_POWER));
+    TEST_ASSERT_TRUE(m.msp.blocksArming(m.nowMs));   // до MSP_EEPROM_WRITE — ARM нельзя
+    VtxState vs;
+    vs.online = true;
+    vs.protocol = VtxProtocol::TRAMP;
+    m.msp.setVtx(&vs, 5);
+    std::vector<uint8_t> v = m.get(88);
+    TEST_ASSERT_EQUAL_UINT8(0, v[0]);   // vtx_protocol = NONE — «не поддерживается»
+    m.params.setValue(PARAM_VTX_PROTOCOL, 0, 0.0f);
+    v = m.get(88);
+    TEST_ASSERT_EQUAL(15, static_cast<int>(v.size()));
+    TEST_ASSERT_EQUAL_UINT8(4, v[0]);   // Tramp
+    TEST_ASSERT_EQUAL_UINT8(5, v[1]);
+    TEST_ASSERT_EQUAL_UINT8(3, v[2]);
+    TEST_ASSERT_EQUAL_UINT8(2, v[3]);
+    TEST_ASSERT_EQUAL_UINT16(5732, le16(v, 5));
+    TEST_ASSERT_EQUAL_UINT8(5, v[14]);
+    // частота числом
+    TEST_ASSERT_TRUE(m.ask(89, { 0xA8, 0x16 }, v));   // 5800
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, m.params.value(PARAM_VTX_BAND));
+    TEST_ASSERT_EQUAL_FLOAT(5800.0f, m.params.value(PARAM_VTX_FREQ));
+    TEST_ASSERT_FALSE(m.ask(89, { 0xFF, 0xFF }, v));
+    TEST_ASSERT_TRUE(m.ask(250, {}, v));
+    TEST_ASSERT_FALSE(m.msp.blocksArming(m.nowMs));
+    m.params.resetAll();
+}
+
 // P09: учебные ограничения — настройки, логика, OSD.
 void test_training_limits_params_and_logic()
 {
@@ -6550,5 +6699,6 @@ int main()
     RUN_TEST(test_stick_arming_without_arm_switch);
     RUN_TEST(test_cli_beeper_and_beacon);
     RUN_TEST(test_msp_beeper_config);
+    RUN_TEST(test_crsf_msp_from_radio);
     return UNITY_END();
 }

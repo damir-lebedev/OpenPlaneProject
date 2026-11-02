@@ -342,7 +342,7 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality`, `overload` (своё: `ESC OVERLOAD`, `BATT OVERLOAD`, `CURRENT LIMIT`), `vtx_hot` (своё: `VTX HOT` — без ARM передатчик греется), `training` (своё: `ALT LIMIT`, `FENCE`, `FENCE RETURN`, `SPEED LIMIT`), `rssi` (`RSSI LOW`) |
 | `osd_alt_alarm` · `osd_cap_alarm` · `osd_link_quality_alarm` · `osd_rssi_alarm` | общая | 0–10000 м · 0–20000 мА·ч · 0–100 % · 0–100 % | 100 · 2200 · 80 · 20 | за порогом значение мигает (LQ и RSSI — и предупреждения LINK QUALITY, RSSI LOW); 0 — нет |
 | `gps_minimum_sats` | общая | 4–50 | 8 | дом ставится при ARM, если спутников не меньше |
-| `crsf_telemetry` | общая | `OFF`, `ON` | `ON` | телеметрия в пульт по CRSF |
+| `crsf_telemetry` | общая | `OFF`, `ON` | `ON` | телеметрия в пульт по CRSF; без неё не работает и настройка с пульта (ответы MSP) |
 | `min_check` · `max_check` | общая | 750–2250 мкс | 1050 · 1900 | команды стиками: ниже — «низ», выше — «верх» |
 | `acc_trim_roll` · `acc_trim_pitch` | общая | −300…300 (0.1°) | 0 | подстройка горизонта ANGLE/HORIZON: + — правее и нос ниже (как в BF); стиками — газ верх + крен/тангаж |
 | `beeper_off_flags` | общая | 0–16777215 | 0 (всё пищит) | выключенные писки — в CLI и diff строками `beeper -ИМЯ`, как в BF |
@@ -712,6 +712,8 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 | Моторы, безопасность, батарея | `MOTOR_CONFIG`, `ADVANCED_CONFIG`, `FAILSAFE_CONFIG`, `ARMING_CONFIG`, `BATTERY_CONFIG`, `MIXER_CONFIG`, `FEATURE_CONFIG` и `SET_*` | `motor_poles`, `dshot_bidir`, `failsafe_*`, `small_angle`, `auto_disarm_delay`, `vbat_*`; протокол регуляторов — сборкой, features — только показываются |
 | Профили, сохранение, перезагрузка | `SELECT_SETTING`, `EEPROM_WRITE`, `REBOOT` (0 — плата, 1 — DFU), `SET_ARMING_DISABLED` | как `save` в CLI |
 | Команды регуляторам | `MSP2_SEND_DSHOT_COMMAND` | мастер направления моторов: в ту же очередь, что `dshotprog` |
+| Видеопередатчик | `VTX_CONFIG`, `SET_VTX_CONFIG` | `vtx_band`/`vtx_channel` или `vtx_freq`, `vtx_power`, `vtx_low_power_disarm`; PIT — только тумблером |
+| Пульт | `TX_INFO`, `SET_TX_INFO`, `SET_RTC` | принимаются и пропускаются (Lua-скриптам BF не нужно) |
 
 Записи (`SET_*`) меняют настройки в памяти, `EEPROM_WRITE` — сохраняет и
 применяет; до него ARM запрещён (флаг `MSP`), как и пока конфигуратор держит
@@ -720,6 +722,20 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 `SET_MOTOR` (1000 — стоп, 2000 — полный, у нас не выше 30 % тяги) держится,
 пока конфигуратор на связи, — замолчал, и через 1 с моторы встают. Как
 конфигуратор всё это покажет — пункт 160 плана (стенд).
+
+### Настройка с пульта (MSP через CRSF)
+
+Те же команды приходят с пульта через приёмник ExpressLRS/Crossfire — кадрами
+CRSF `0x7A` (запрос), `0x7C` (запись без ответа), ответ — `0x7B` кусками по
+57 байт (`copter/CrsfMsp.h`; разбор — тот же `CopterMsp`). Работают
+**Lua-скрипты Betaflight** на EdgeTX (SYS → Tools → Betaflight setup: PID,
+расходы, фильтры, VTX) и **VTX Administrator** в Lua ExpressLRS. Нужно:
+`serialrx_provider = CRSF` и `crsf_telemetry = ON` — ответ уходит вместо
+очередного кадра телеметрии (раз в 20 мс, пока не уйдёт весь). Правила те же:
+только без ARM, до `EEPROM_WRITE` («Save» в скрипте) ARM запрещён. Studio:
+«Приёмник» → «Настройка с пульта» — шаги, кнопка «Скачать на SD пульта»
+(последний выпуск betaflight-tx-lua-scripts с их GitHub — в `SCRIPTS` на
+карте пульта, подключённого как USB-накопитель).
 
 ## Связь с приложением
 
@@ -886,6 +902,7 @@ CRSF, видеопередатчик с потолком мощности, ту�
 | `hal/stm32/Stm32MotorOutput.h` · `hal/stm32/Stm32Dshot.h` | регуляторы: импульсы (PWM, OneShot, Multishot) · DShot на таймере с DMA, ответ регулятора |
 | `telemetry/CopterBlackBox.h` · `hal/SpiNorFlash.h` · `telemetry/BflEncoder.h` | чёрный ящик · SPI-флеш F405 · формат Betaflight (.BFL) |
 | `telemetry/Msp.h` · `telemetry/CopterMsp.h` | MSP: кадры v1/v2 · ответы конфигуратору Betaflight |
+| `copter/CrsfMsp.h` | MSP с пульта: Lua-скрипты BF, VTX Admin ELRS |
 | `src/stm32/main_copter.cpp` | точка входа на STM32 |
 
 ## Как это проверено

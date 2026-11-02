@@ -114,6 +114,12 @@ public:
         }
     }
 
+    // Кадр MSP с пульта (CRSF 0x7A/0x7C) — CrsfParser::takeMsp; 0 — нет.
+    uint8_t takeMsp(uint8_t* out)
+    {
+        return protocol == Config::RxProtocol::CRSF ? crsf.takeMsp(out) : 0;
+    }
+
     const RcChannelState& getState() const
     {
         return state;

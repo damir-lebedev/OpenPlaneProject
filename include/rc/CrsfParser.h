@@ -13,6 +13,8 @@
 //   0x16 — каналы: 16 по 11 бит, как в SBUS (Packed11);
 //   0x14 — статистика связи: RSSI антенн 1 и 2 (−dBm), качество связи
 //          (LQ, %), SNR, активная антенна…
+// И кадры MSP с пульта (0x7A запрос, 0x7C запись) — их копим целиком
+// (до MSP_QUEUE штук), разбирает copter/CrsfMsp.h: настройка с пульта.
 //
 // Потеря связи: ExpressLRS по умолчанию просто перестаёт слать каналы
 // (RcReceiver видит таймаут кадров); в режиме «последние значения» или
@@ -25,7 +27,10 @@ public:
     static constexpr uint8_t ADDRESS_FLIGHT_CONTROLLER = 0xC8;
     static constexpr uint8_t TYPE_LINK_STATISTICS = 0x14;
     static constexpr uint8_t TYPE_RC_CHANNELS = 0x16;
+    static constexpr uint8_t TYPE_MSP_REQ = 0x7A;
+    static constexpr uint8_t TYPE_MSP_WRITE = 0x7C;
     static constexpr uint8_t MAX_FRAME = 64;
+    static constexpr uint8_t MSP_QUEUE = 4;
 
     // Байт из UART; true — пришли каналы (кадр 0x16 с верной CRC).
     bool feed(uint8_t value)
@@ -68,6 +73,17 @@ public:
 
     uint32_t badFrames() const { return bad; }
 
+    // Следующий кадр MSP с пульта (целиком, с 0xC8 и CRC) в out[MAX_FRAME]; длина, 0 — нет.
+    uint8_t takeMsp(uint8_t* out)
+    {
+        if (mspHead == mspTail) return 0;
+        const uint8_t* f = mspFrames[mspTail];
+        const uint8_t length = static_cast<uint8_t>(f[1] + 2);
+        memcpy(out, f, length);
+        mspTail = static_cast<uint8_t>((mspTail + 1) % MSP_QUEUE);
+        return length;
+    }
+
     static uint8_t crc8(const uint8_t* data, uint8_t length)
     {
         uint8_t crc = 0;
@@ -92,6 +108,8 @@ private:
     uint8_t rssi = 0;                                    // −dBm
     bool statsSeen = false;
     uint32_t bad = 0;
+    uint8_t mspFrames[MSP_QUEUE][MAX_FRAME] = {};
+    uint8_t mspHead = 0, mspTail = 0;
 
     bool decode()
     {
@@ -116,6 +134,15 @@ private:
             quality = payload[2];                        // uplink LQ, %
             rssi = (payloadLength >= 5 && payload[4]) ? payload[1] : payload[0];
             statsSeen = true;
+        }
+        if (type == TYPE_MSP_REQ || type == TYPE_MSP_WRITE)
+        {
+            const uint8_t next = static_cast<uint8_t>((mspHead + 1) % MSP_QUEUE);
+            if (next != mspTail)   // очередь полна — кадр теряем, Lua повторит запрос
+            {
+                memcpy(mspFrames[mspHead], frame, static_cast<size_t>(length) + 2);
+                mspHead = next;
+            }
         }
         return false;
     }
