@@ -95,21 +95,6 @@
    "tab": ""
   },
   {
-   "id": "191",
-   "section": 1,
-   "title": "Studio: переход с Betaflight — имена BF и поиск",
-   "fileStatus": "todo",
-   "bench": false,
-   "repo": "studio",
-   "docs": false,
-   "what": "у каждой строки настройки — понятное название крупно и имя BF мелко (`p_roll`); поиск сверху по имени BF или по-русски («газ висения», `dyn_notch`) — переход на нужную вкладку с подсветкой; страница «Я с Betaflight»: какая вкладка BF где у нас, что сделано иначе и почему (наши отличия: AUTO-LAND по умолчанию, посадка вместо DISARM в GPS Rescue, airmode в воздухе…), импорт diff — уже есть.",
-   "files": "src/components/copter/common.tsx, новый src/components/copter/Search.tsx",
-   "test": "vitest: поиск по имени BF открывает вкладку",
-   "ui": "сам пункт",
-   "settings": [],
-   "tab": "Приложение"
-  },
-  {
    "id": "192",
    "section": 1,
    "title": "Хранилище настроек больше 2 КБ",
