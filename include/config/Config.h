@@ -842,6 +842,24 @@ namespace Config
     constexpr uint8_t CAL_SWITCH_FLIPS = 3;
     constexpr uint32_t CAL_SWITCH_WINDOW_MS = 4000;
 
+    // Калибровка ГИРОСКОПА с пульта, без компьютера (control/GyroStickCalibration.h):
+    // без ARM газ вниз, рысканье влево, тангаж вниз (стик на себя), элероны
+    // в центре — подержать STICK_GYRO_CAL_HOLD_MS. Ответ кивками рулей:
+    // 2 — готово, 3 — самолёт двигали, ноль не принят.
+    constexpr bool STICK_GYRO_CAL = true;
+    constexpr uint32_t STICK_GYRO_CAL_HOLD_MS = 1000;  // @range(300, 5000)
+
+    // Предполётная проверка IMU — двигали ли самолёт, пока мерился ноль
+    // гироскопа (при включении, 'i', с пульта). Если да — ноль не принят,
+    // ARM со стабилизацией запрещён. Два признака:
+    //   • УХОД — среднее гироскопа по четвертям калибровки разошлось больше
+    //     GYRO_CAL_DRIFT_DPS. Рука, держащая самолёт, всегда даёт медленный
+    //     уход; ровная вибрация (гудящие сервы, стол) — нет: у LSM6DSV в
+    //     самолёте отсчёты гуляют на ±2 °/с, а среднее стоит до 0.02 °/с.
+    //   • РАЗБРОС отсчётов больше GYRO_CAL_NOISE_DPS — грубая тряска.
+    constexpr float GYRO_CAL_DRIFT_DPS = 0.5f;  // @range(0.1, 5)
+    constexpr float GYRO_CAL_NOISE_DPS = 8.0f;  // @range(1, 30)
+
     constexpr uint32_t CAL_STILL_MS = 2000;
     constexpr float CAL_STILL_DPS = 3.0f;
     constexpr float CAL_STILL_G = 0.15f;

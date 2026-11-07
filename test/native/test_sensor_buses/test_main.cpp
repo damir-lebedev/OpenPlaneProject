@@ -7,6 +7,8 @@
 #include <Arduino.h>
 #include <unity.h>
 
+#include "control/ControlMixer.h"
+#include "control/GyroStickCalibration.h"
 #include "control/ThrottleRamp.h"
 #include "hal/RegisterDevice.h"
 #include "helpers/TestSupport.h"
@@ -213,6 +215,44 @@ void test_board_lists_all_buses_preferred_first_with_the_one_behind_the_imu()
     TEST_ASSERT_EQUAL_PTR(&behindImu, list.bus[2]);
 }
 
+// ------------------------------------------------------------
+// Калибровка гироскопа стиками
+// ------------------------------------------------------------
+
+void test_gyro_stick_command_fires_once_after_the_hold()
+{
+    ControlMixer mixer;
+    GyroStickCalibration cmd;
+    RcChannelState rc;
+    rc.set(Channels::THROTTLE, 1000);
+    rc.set(Channels::AILERON, 1500);
+    // рысканье влево и тангаж «на себя» — в знаках команды: нос влево, нос вверх
+    ControlCommand sticks;
+    sticks.yaw = static_cast<int16_t>(-Config::RUDDER_MAX_US);
+    sticks.pitch = static_cast<int16_t>(Config::ELEVATOR_MAX_US);
+    TEST_ASSERT_FALSE(cmd.update(rc, sticks, 0));
+    TEST_ASSERT_FALSE(cmd.update(rc, sticks, Config::STICK_GYRO_CAL_HOLD_MS - 1));
+    TEST_ASSERT_TRUE(cmd.update(rc, sticks, Config::STICK_GYRO_CAL_HOLD_MS));
+    TEST_ASSERT_FALSE(cmd.update(rc, sticks, Config::STICK_GYRO_CAL_HOLD_MS + 5000));   // держат дальше — повтора нет
+
+    ControlCommand released;
+    TEST_ASSERT_FALSE(cmd.update(rc, released, 7000));
+    TEST_ASSERT_FALSE(cmd.update(rc, sticks, 8000));
+    TEST_ASSERT_TRUE(cmd.update(rc, sticks, 8000 + Config::STICK_GYRO_CAL_HOLD_MS));
+
+    // газ не внизу или крен не в центре — не считается
+    GyroStickCalibration other;
+    rc.set(Channels::THROTTLE, 1500);
+    other.update(rc, sticks, 0);
+    TEST_ASSERT_FALSE(other.update(rc, sticks, 10000));
+    rc.set(Channels::THROTTLE, 1000);
+    ControlCommand rolled = sticks;
+    rolled.roll = static_cast<int16_t>(Config::AILERON_MAX_US);
+    other.update(rc, rolled, 20000);
+    TEST_ASSERT_FALSE(other.update(rc, rolled, 30000));
+    (void)mixer;
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -224,5 +264,6 @@ int main()
     RUN_TEST(test_chain_takes_the_first_chip_that_answers_in_order);
     RUN_TEST(test_chain_with_nothing_found_or_nothing_chosen);
     RUN_TEST(test_board_lists_all_buses_preferred_first_with_the_one_behind_the_imu);
+    RUN_TEST(test_gyro_stick_command_fires_once_after_the_hold);
     return UNITY_END();
 }

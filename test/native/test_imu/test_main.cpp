@@ -224,15 +224,32 @@ void test_preflight_detects_motion_during_calibration()
 {
     Mpu mpu;
     mpu.sensor.begin();
-    bool flip = false;
+    int reads = 0;
     mpu.rig.chip.beforeRead = [&](uint8_t reg, size_t) {
         if (reg != 0x3B) return;
-        flip = !flip;
-        setMpu(mpu.rig.chip, 0, 0, 1, flip ? 3.0f : -3.0f, 0, 0);   // самолёт качают
+        ++reads;
+        // самолёт медленно качают руками: полсекунды в одну сторону, полсекунды в другую
+        setMpu(mpu.rig.chip, 0, 0, 1, (reads / 50) % 2 ? 2.0f : -2.0f, 0, 0);
     };
     mpu.sensor.calibrate();
     TEST_ASSERT_TRUE(contains(mpu.sensor.getPreflightProblem(), "двигали"));
     TEST_ASSERT_TRUE(contains(takeSerial(), "ПРЕДПОЛЁТНАЯ ПРОВЕРКА НЕ ПРОЙДЕНА"));
+}
+
+// Ровная вибрация (гудят сервы) — не «двигали»: среднее стоит на месте.
+void test_preflight_ignores_steady_vibration()
+{
+    Mpu mpu;
+    mpu.sensor.begin();
+    bool flip = false;
+    mpu.rig.chip.beforeRead = [&](uint8_t reg, size_t) {
+        if (reg != 0x3B) return;
+        flip = !flip;
+        setMpu(mpu.rig.chip, 0, 0, 1, flip ? 2.5f : -2.5f, 0, 0);
+    };
+    mpu.sensor.calibrate();
+    TEST_ASSERT_NULL(mpu.sensor.getPreflightProblem());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "предполётная проверка пройдена"));
 }
 
 void test_preflight_detects_wrong_gravity_and_upside_down_board()
@@ -560,6 +577,7 @@ int main()
     RUN_TEST(test_set_yaw_seeds_heading);
     RUN_TEST(test_bus_errors_keep_last_data_and_flip_availability);
     RUN_TEST(test_preflight_detects_motion_during_calibration);
+    RUN_TEST(test_preflight_ignores_steady_vibration);
     RUN_TEST(test_preflight_detects_wrong_gravity_and_upside_down_board);
     RUN_TEST(test_preflight_reports_not_responding_calibration);
     RUN_TEST(test_orientation_calibration_learns_and_persists_mounting);

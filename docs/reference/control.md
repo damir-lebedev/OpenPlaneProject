@@ -99,6 +99,21 @@ ESC её вместе с `motorReverse` переводит `FlightOutputs` (че
 
 ---
 
+## `GyroStickCalibration`
+
+**Файл:** `control/GyroStickCalibration.h` · **Зависит от:** `Config`, `Channels`, `ControlCommand`
+
+Калибровка гироскопа с пульта, как в Betaflight: без ARM газ вниз, рысканье
+влево, тангаж вниз (стик на себя), элероны в центре — `STICK_GYRO_CAL_HOLD_MS`.
+Стики — в знаках `ControlCommand` (реверс каналов учтён). Срабатывает один раз на
+удержание. `FlightController` зовёт `imu->calibrate()` (~2 с) и играет сигнал:
+2 — ноль принят, 3 — самолёт двигали.
+
+| Метод | Описание |
+|---|---|
+| `bool update(rc, sticks, nowMs)` | true — жест удержан (один раз) |
+| `void forget()` | связь пропала или ARM — заново |
+
 ## `ThrottleRamp`
 
 **Файл:** `control/ThrottleRamp.h` · **Зависит от:** `Config`

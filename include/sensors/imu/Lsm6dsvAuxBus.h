@@ -17,8 +17,8 @@
 // шинам (IBoard::setAuxI2c()), и компас ищется на нём так же, как на
 // остальных (I2cRegisterDevice) — драйвер QMC6309 не меняется.
 //
-//   • Запись регистра — разовая (write once через SLV0): мастер пишет
-//     байт в первом же цикле. Только при настройке датчика.
+//   • Запись регистра — один цикл мастера с SLV0 на запись (не WRITE_ONCE:
+//     после него мастер переставал заканчивать чтения). Только при настройке.
 //   • Чтение — разовое: SLV0 настраивается на адрес/регистр/длину,
 //     мастер включается на один цикл, данные — в SENSOR_HUB_1..
 //     Ждать цикл ~2 мс: годится для опознания и настройки.
@@ -115,11 +115,9 @@ private:
     static constexpr uint8_t STATUS_MASTER = 0x22;
 
     static constexpr uint8_t MASTER_ON = 0x04;
-    static constexpr uint8_t WRITE_ONCE = 0x40;
     static constexpr uint8_t SHUB_ODR_480HZ = 0xC0;    // SLV0_CONFIG[7:5] = 110
     static constexpr uint8_t STATUS_ENDOP = 0x01;
     static constexpr uint8_t STATUS_SLV0_NACK = 0x08;
-    static constexpr uint8_t STATUS_WR_ONCE_DONE = 0x80;
 
     static constexpr uint8_t MAX_SLOTS = 4;
     static constexpr uint8_t MAX_BLOCK = 7;            // SLVn_CONFIG.numop — 3 бита
@@ -235,8 +233,12 @@ private:
                   imu.writeRegister(SLV0_ADD + 1, reg) &&
                   imu.writeRegister(SLV0_ADD + 2, SHUB_ODR_480HZ) &&
                   imu.writeRegister(DATAWRITE_SLV0, value);
-        const int status = ok ? runCycle(static_cast<uint8_t>(MASTER_ON | WRITE_ONCE), STATUS_WR_ONCE_DONE) : -1;
-        ok = status >= 0 && (status & STATUS_WR_ONCE_DONE) && !(status & STATUS_SLV0_NACK);
+        // Без WRITE_ONCE: после записи в этом режиме мастер больше не
+        // заканчивал ни одного чтения (до снятия питания — SW_RESET LSM6DSV
+        // банк sensor hub не сбрасывает). Обычный цикл пишет так же, а
+        // повтор записи регистра настройки безвреден.
+        const int status = ok ? runCycle(MASTER_ON, STATUS_ENDOP) : -1;
+        ok = status >= 0 && (status & STATUS_ENDOP) && !(status & STATUS_SLV0_NACK);
         leaveBank();
         resumeMirror();
         return ok;

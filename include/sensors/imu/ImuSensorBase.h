@@ -98,6 +98,8 @@ public:
 
         float sum[6] = {};
         float gyroSquares[3] = {};
+        float quarterSum[4][3] = {};
+        int quarterCount[4] = {};
         int samples = 0;
 
         for (int i = 0; i < CALIBRATION_SAMPLES; i++)
@@ -106,11 +108,14 @@ public:
             if (readSample(s))
             {
                 const int16_t gyro[3] = { s.gyroX, s.gyroY, s.gyroZ };
+                const int quarter = i * 4 / CALIBRATION_SAMPLES;
                 for (uint8_t axis = 0; axis < 3; ++axis)
                 {
                     sum[axis] += gyro[axis];
                     gyroSquares[axis] += float(gyro[axis]) * gyro[axis];
+                    quarterSum[quarter][axis] += gyro[axis];
                 }
+                quarterCount[quarter]++;
                 sum[3] += s.accelX; sum[4] += s.accelY; sum[5] += s.accelZ;
                 samples++;
             }
@@ -125,13 +130,23 @@ public:
             return;
         }
 
-        // Шум гироскопа за время калибровки — двигали ли самолёт.
+        // Двигали ли самолёт: уход среднего по четвертям и разброс отсчётов.
         float gyroNoiseDps = 0;
+        float gyroDriftDps = 0;
         for (uint8_t axis = 0; axis < 3; ++axis)
         {
             gyroOffset[axis] = sum[axis] / samples;
             const float variance = gyroSquares[axis] / samples - gyroOffset[axis] * gyroOffset[axis];
             gyroNoiseDps = max(gyroNoiseDps, sqrtf(max(variance, 0.0f)) / gyroLsbPerDps());
+            float lo = 1e9f, hi = -1e9f;
+            for (uint8_t q = 0; q < 4; ++q)
+            {
+                if (quarterCount[q] == 0) continue;
+                const float mean = quarterSum[q][axis] / quarterCount[q];
+                lo = min(lo, mean);
+                hi = max(hi, mean);
+            }
+            if (hi >= lo) gyroDriftDps = max(gyroDriftDps, (hi - lo) / gyroLsbPerDps());
         }
 
         const float accelScale = accelLsbPerG();
@@ -155,14 +170,16 @@ public:
 
         calibrated = true;
         estimator.reset();
-        runPreflightCheck(gyroNoiseDps, chipUp);
+        runPreflightCheck(gyroNoiseDps, gyroDriftDps, chipUp);
 
         Serial.print(name);
         Serial.print(": калибровка завершена, смещение гироскопа=");
         Serial.print(gyroOffset[0]); Serial.print(",");
         Serial.print(gyroOffset[1]); Serial.print(",");
         Serial.print(gyroOffset[2]);
-        Serial.print(", шум=");
+        Serial.print(", уход=");
+        Serial.print(gyroDriftDps, 2);
+        Serial.print(" °/с, разброс=");
         Serial.print(gyroNoiseDps, 2);
         Serial.println(" °/с");
         printPreflightResult();
@@ -413,9 +430,7 @@ private:
     // ~0.1 с подряд без ответа при цикле 2 мс -> датчик недоступен.
     static constexpr uint8_t MAX_CONSECUTIVE_ERRORS = 50;
 
-    // Предполётная проверка. Шум гироскопа неподвижной платы ~0.05-0.1
-    // °/с; самолёт в руках или стол, который трогают, — больше 0.5.
-    static constexpr float STILL_GYRO_NOISE_DPS = 0.5f;
+    // Предполётная проверка: порог разброса гироскопа — Config::GYRO_CAL_NOISE_DPS.
     static constexpr float ONE_G_TOLERANCE = 0.2f;
     // "Верх" при включении дальше этого от сохранённого — плату
     // переставили (самолёт на хвостовом колесе или на склоне — ~15°).
@@ -529,11 +544,11 @@ private:
         prefs.end();
     }
 
-    void runPreflightCheck(float gyroNoiseDps, const float chipUp[3])
+    void runPreflightCheck(float gyroNoiseDps, float gyroDriftDps, const float chipUp[3])
     {
         preflightProblem = PreflightProblem::None;
 
-        if (gyroNoiseDps > STILL_GYRO_NOISE_DPS)
+        if (gyroDriftDps > Config::GYRO_CAL_DRIFT_DPS || gyroNoiseDps > Config::GYRO_CAL_NOISE_DPS)
         {
             preflightProblem = PreflightProblem::Moved;
             return;

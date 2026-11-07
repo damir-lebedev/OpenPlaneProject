@@ -13,6 +13,7 @@
 #include "control/FlightOutputState.h"
 #include "control/FlightOutputs.h"
 #include "control/GroundCalibration.h"
+#include "control/GyroStickCalibration.h"
 #include "control/MotorReverse.h"
 #include "control/SignalPlayer.h"
 #include "control/ThrottleManager.h"
@@ -237,6 +238,7 @@ private:
     GroundCalibration calibration;
     SignalPlayer signals;
     ThrottleRamp throttleRamp;
+    GyroStickCalibration gyroStick;
     bool armSwitchWasOn = false;
     bool cancelledByArmSwitch = false;
     PilotInputs noInputs;
@@ -321,11 +323,20 @@ private:
         if (receiverFailsafe || armed)
         {
             calibration.forgetSwitch();
+            gyroStick.forget();
         }
         else if (calibration.watchSwitch(rc, nowMs))
         {
             if (calibration.isActive()) calibration.cancel("с пульта");
             else calibration.start(imu, nowMs, "пульт");
+        }
+        else if (imu && !calibration.isActive() && gyroStick.update(rc, mixer.fromSticks(rc), nowMs))
+        {
+            // Ноль гироскопа заново (~2 с, цикл ждёт — самолёт на земле без ARM).
+            Serial.println("Гироскоп: калибровка с пульта — самолёт неподвижно");
+            imu->calibrate();
+            nowMs = millis();
+            signals.play(imu->getPreflightProblem() ? 3 : 2, nowMs, !armed);
         }
 
         calibration.update(imu, armed, signals.isBusy(nowMs), nowMs);
