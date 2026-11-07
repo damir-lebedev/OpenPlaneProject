@@ -96,7 +96,7 @@ void test_boot_finds_sensors_on_board_and_compass_on_external_bus()
     TEST_ASSERT_TRUE(contains(log, "ICM42688: подключён"));
     TEST_ASSERT_TRUE(contains(log, "DPS310: подключён"));
     TEST_ASSERT_TRUE(contains(log, "QMC6309: подключён"));
-    TEST_ASSERT_TRUE(imuSensor.isAvailable() && baroSensor.isAvailable() && magSensor.isAvailable());
+    TEST_ASSERT_TRUE(imuSensor.isAvailable() && baroSensor.isAvailable() && magnetometer->isAvailable());
 
     // SPI1 и обе шины I2C — на пинах Matek; шины экрана нет.
     TEST_ASSERT_EQUAL(PA5, SPI.stm32Pins[0]);
@@ -104,7 +104,7 @@ void test_boot_finds_sensors_on_board_and_compass_on_external_bus()
     TEST_ASSERT_EQUAL(PD7, SPI.stm32Pins[2]);
     TEST_ASSERT_EQUAL(PB11, Wire.sdaPin());
     TEST_ASSERT_TRUE(fake::wireWithSda(PB7)->isStarted());
-    TEST_ASSERT_NULL(board.displayI2c());
+    TEST_ASSERT_NULL(board.secondI2c());
 
     // Плата на 8 МГц кварца — такты в src/stm32/clock_matek.cpp, здесь
     // их нет; а вот проверка установки IMU — есть.
@@ -118,7 +118,7 @@ void test_app_scan_shows_the_external_bus_separately()
     const std::string scan = takeSerial();
     TEST_ASSERT_TRUE_MESSAGE(contains(scan, "@scan {\"sensor\":[{\"a\":118,"), scan.c_str());
     TEST_ASSERT_TRUE_MESSAGE(contains(scan, "\"ext\":[{\"a\":124,"), scan.c_str());
-    TEST_ASSERT_TRUE(contains(scan, "\"screen\":null}"));
+    TEST_ASSERT_TRUE(contains(scan, "\"screen\":null,\"names\":{"));
 
     // Паспорт для приложения — плата matek-h743, а не общий stm32h743.
     Serial.pushRx("\x02" "id\n");

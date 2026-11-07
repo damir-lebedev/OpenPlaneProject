@@ -316,13 +316,12 @@ void test_qmc6309_waits_for_nvm_and_reads_field()
     TEST_ASSERT_TRUE(qmc.begin());
     TEST_ASSERT_EQUAL_STRING("QMC6309", qmc.getSensorType());
 
-    // Сброс: 1, затем 0; потом CTRL2 (ODR 200 Гц, ±8 Гс), режим последним.
+    // Без программного сброса (за LSM6DSV он вешал шину): сразу CTRL2
+    // (ODR 200 Гц, ±8 Гс), режим последним.
     std::vector<uint8_t> ctrl2;
     for (const auto& w : rig.chip.writes) if (w.first == 0x0B) ctrl2.push_back(w.second);
-    TEST_ASSERT_EQUAL(3u, ctrl2.size());
-    TEST_ASSERT_EQUAL_HEX8(0x80, ctrl2[0]);
-    TEST_ASSERT_EQUAL_HEX8(0x00, ctrl2[1]);
-    TEST_ASSERT_EQUAL_HEX8(0x48, ctrl2[2]);
+    TEST_ASSERT_EQUAL(1u, ctrl2.size());
+    TEST_ASSERT_EQUAL_HEX8(0x48, ctrl2[0]);
     TEST_ASSERT_EQUAL_HEX8(0x81, rig.chip.lastWrite(0x0A));   // LPF 16, OSR ×8, normal
     TEST_ASSERT_EQUAL_HEX8(0x0B, rig.chip.writes[rig.chip.writes.size() - 2].first);
 

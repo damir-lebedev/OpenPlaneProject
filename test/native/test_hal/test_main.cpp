@@ -318,12 +318,12 @@ void test_board_begin_brings_up_buses_on_configured_pins()
     TEST_ASSERT_TRUE(Wire1.isStarted());   // у S3 вторая шина — под OLED
     TEST_ASSERT_EQUAL(Config::PIN_I2C2_SDA, Wire1.sdaPin());
     TEST_ASSERT_EQUAL(Config::PIN_I2C2_SCL, Wire1.sclPin());
-    TEST_ASSERT_NOT_NULL(board.displayI2c());
+    TEST_ASSERT_NOT_NULL(board.secondI2c());
 
     TEST_ASSERT_TRUE(SPI.isStarted());
     TEST_ASSERT_EQUAL(Config::PIN_SENSOR_SPI_SCK, SPI.sckPin());
 
-    TEST_ASSERT_TRUE(&board.i2c() != board.displayI2c());
+    TEST_ASSERT_TRUE(&board.i2c() != board.secondI2c());
     board.spi().beginTransaction(1000000, 0);
     TEST_ASSERT_TRUE(SPI.isInTransaction());
     board.spi().endTransaction();

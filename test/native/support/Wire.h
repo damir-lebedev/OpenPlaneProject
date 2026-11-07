@@ -174,6 +174,12 @@ public:
         return true;
     }
 
+    void end()
+    {
+        started = false;
+        endCalls++;
+    }
+
     bool setClock(uint32_t frequencyHz)
     {
         frequency = frequencyHz;
@@ -197,6 +203,12 @@ public:
         (void)sendStop;
         transmitting = false;
         transactions++;
+        if (forcedError)
+        {
+            const uint8_t e = forcedError;
+            forcedError = 0;
+            return e;
+        }
         fake::I2cDevice* device = find(txAddress);
         if (!device) return 2;
         if (!device->onWrite(txBuffer.data(), txBuffer.size())) return txBuffer.empty() ? 2 : 3;
@@ -248,6 +260,8 @@ public:
     uint32_t clockHz() const { return frequency; }
     bool isStarted() const { return started; }
     unsigned beginCount() const { return beginCalls; }
+    unsigned endCount() const { return endCalls; }
+    uint8_t forcedError = 0;   // код, который вернёт следующий endTransmission (4 — сбой шины)
     uint32_t transactionCount() const { return transactions; }
 
     void resetFake()
@@ -262,6 +276,8 @@ public:
         timeout = 50;
         started = false;
         beginCalls = 0;
+        endCalls = 0;
+        forcedError = 0;
         transactions = 0;
     }
 
@@ -280,6 +296,7 @@ private:
     uint16_t timeout = 50;
     bool started = false;
     unsigned beginCalls = 0;
+    unsigned endCalls = 0;
     uint32_t transactions = 0;
 
     fake::I2cDevice* find(uint8_t address)

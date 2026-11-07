@@ -102,7 +102,7 @@ void test_boot_finds_every_chip_of_the_kit()
     TEST_ASSERT_TRUE(contains(log, "OLED: подключён (SSD1306)"));
     TEST_ASSERT_TRUE(contains(log, "SwC (CH7): MANUAL / STABILIZE / AUTO_TAKEOFF"));
     TEST_ASSERT_TRUE(imuSensor.isAvailable());
-    TEST_ASSERT_TRUE(magSensor.isAvailable());
+    TEST_ASSERT_TRUE(magnetometer->isAvailable());
     TEST_ASSERT_TRUE(baroSensor.isAvailable());
     TEST_ASSERT_TRUE(pitotBaro.isAvailable());
 }
@@ -219,7 +219,7 @@ void test_console_bus_scan_names_the_chips()
     TEST_ASSERT_TRUE(contains(out, "0x6A  LSM6DSV"));
     TEST_ASSERT_TRUE(contains(out, "0x76  BME280/BMP388/SPL06/DPS310"));
     TEST_ASSERT_TRUE(contains(out, "0x7C  QMC6309"));
-    TEST_ASSERT_TRUE(contains(out, "I2C экрана"));
+    TEST_ASSERT_TRUE(contains(out, "I2C вторая"));
     TEST_ASSERT_TRUE(contains(out, "0x3C  OLED"));
 }
 

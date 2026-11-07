@@ -70,7 +70,7 @@
 | Руль направления + рулевое колесо | PD14 |
 | Приёмник (RX): iBUS, SBUS, CRSF | PE7 |
 | I2C датчиков SDA / SCL (MPU, BMP581, компас) | PB11 / PB10 |
-| I2C OLED SDA / SCL (отдельная шина) | PB9 / PB8 |
+| I2C вторая шина SDA / SCL (экран и/или датчики) | PB9 / PB8 |
 | GPS: RX (← TX GPS) / TX (→ RX GPS) | PD9 / PD8 |
 | Телеметрия MAVLink (радиомодем): RX / TX | PD0 / PD1 |
 | AUX1 / AUX2 (сервы), пищалка | PD15 / PE9, PE15 |

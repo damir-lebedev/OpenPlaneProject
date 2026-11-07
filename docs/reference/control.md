@@ -99,6 +99,23 @@ ESC её вместе с `motorReverse` переводит `FlightOutputs` (че
 
 ---
 
+## `ThrottleRamp`
+
+**Файл:** `control/ThrottleRamp.h` · **Зависит от:** `Config`
+
+Плавный спад газа на выходе ESC: газ падает не быстрее, чем 100 % за
+`THROTTLE_DOWN_RAMP_MS`, прибавка — сразу. Регулятор с активным торможением
+(двунаправленный BLHeli) на резкий сброс газа тормозит винт обмотками — мотор
+встаёт рывком, энергия винта скачком тока уходит в батарею (бывало, плата
+перезагружалась). `FlightController` пропускает через рампу газ и стика, и
+автопилота, и потери связи; DISARM и `MOTOR_KILL` режут мимо неё (`reset()`).
+
+| Метод | Описание |
+|---|---|
+| `uint16_t apply(targetUs, nowMs, rampMs = THROTTLE_DOWN_RAMP_MS)` | Газ на ESC (PWM_MIN..PWM_MAX) к цели `targetUs`; `rampMs` = 0 — без рампы |
+| `void reset()` | Мотор остановлен мгновенно — рампа с нуля |
+| `uint16_t currentUs() const` | Текущий газ рампы |
+
 ## `EscSignal`
 
 **Файл:** `control/EscSignal.h` · **Вид:** namespace · **Зависит от:** `Config`

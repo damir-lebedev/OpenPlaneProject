@@ -518,14 +518,23 @@ private:
             Serial.println("Консоль: опрос шин недоступен в этой сборке");
             return;
         }
-        scanBus("I2C датчиков", board->i2c());
-        if (&board->externalI2c() != &board->i2c()) scanBus("I2C внешнего разъёма", board->externalI2c());
-        if (II2CBus* display = board->displayI2c()) scanBus("I2C экрана", *display);
+        static const char* const titles[IBoard::I2C_BUS_COUNT] = { "I2C основная", "I2C вторая", "I2C внешнего разъёма", "I2C за IMU (sensor hub)" };
+        for (uint8_t i = 0; i < IBoard::I2C_BUS_COUNT; ++i)
+        {
+            II2CBus* bus = board->i2cBus(i);
+            if (!bus) continue;
+            char title[48];
+            if (i == 3) snprintf(title, sizeof(title), "%s", titles[i]);
+            else snprintf(title, sizeof(title), "%s (SDA/SCL %s)", titles[i], bus->name());
+            scanBus(title, *bus);
+        }
     }
 
-    // "@scan {"sensor":[{"a":104,"g":"..."}],"screen":[...]}" — для приложения;
-    // "ext":[...] — шина внешнего разъёма, если она отдельная (Matek H743).
-    // Опрос блокирует цикл на доли секунды — при ARM не делается.
+    // "@scan {"sensor":[{"a":104,"g":"..."}],"screen":[...]}" — для приложения:
+    // "sensor" — основная шина, "screen" — вторая (имя ключа — с тех пор, как
+    // она была только под экран; датчики теперь ищутся и на ней), "ext" —
+    // шина внешнего разъёма, если она отдельная (Matek H743); "names" — пины
+    // этих шин. Опрос блокирует цикл на доли секунды — при ARM не делается.
     void printScanJson() const
     {
         if (!board || controller.isArmed())
@@ -541,9 +550,23 @@ private:
             printBusJson(board->externalI2c());
         }
         Serial.print(",\"screen\":");
-        if (II2CBus* display = board->displayI2c()) printBusJson(*display);
+        if (II2CBus* second = board->secondI2c()) printBusJson(*second);
         else Serial.print("null");
-        Serial.println("}");
+        Serial.print(",\"names\":{");
+        static const char* const keys[IBoard::I2C_BUS_COUNT] = { "sensor", "screen", "ext", "aux" };
+        bool first = true;
+        for (uint8_t i = 0; i < IBoard::I2C_BUS_COUNT; ++i)
+        {
+            II2CBus* bus = board->i2cBus(i);
+            if (!bus) continue;
+            if (!first) Serial.print(',');
+            first = false;
+            Serial.print('"');
+            Serial.print(keys[i]);
+            Serial.print("\":");
+            FirmwareIdentity::printJsonString(bus->name());
+        }
+        Serial.println("}}");
     }
 
     static void printBusJson(II2CBus& bus)
@@ -552,7 +575,7 @@ private:
         bool first = true;
         for (uint8_t address = 0x08; address <= 0x7F; ++address)
         {
-            if (!bus.probe(address)) continue;
+            if (address == I3C_BROADCAST || !bus.probe(address)) continue;
             if (!first) Serial.print(',');
             first = false;
             Serial.print("{\"a\":");
@@ -564,16 +587,31 @@ private:
         Serial.print(']');
     }
 
+    // 0x7E — широковещательный адрес I3C: на него отвечают чипы с I3C
+    // (LSM6DSV), и лишний раз будить их I3C не стоит — не опрашиваем.
+    static constexpr uint8_t I3C_BROADCAST = 0x7E;
+
     static void scanBus(const char* name, II2CBus& bus)
     {
         Serial.print(name);
         Serial.println(':');
+        if (!bus.linesHigh())
+        {
+            Serial.print("  линия SDA или SCL на земле (никого нет и подтяжек нет — или шина зависла), освобождаю: ");
+            Serial.println(bus.recover() ? "отпустило" : "всё ещё прижата (замыкание, нет подтяжек или питания модуля)");
+        }
+        if (bus.recoveries())
+        {
+            Serial.print("  шину уже освобождали после зависания: ");
+            Serial.print(static_cast<unsigned long>(bus.recoveries()));
+            Serial.println(" раз (помехи на проводах? короче провода, подтяжки 2.2-4.7 кОм)");
+        }
         uint8_t found = 0;
         // До 0x7F, а не до обычных 0x77: QMC6309 сидит на 0x7C (в
         // диапазоне, зарезервированном стандартом под 10-битные адреса).
         for (uint8_t address = 0x08; address <= 0x7F; ++address)
         {
-            if (!bus.probe(address)) continue;
+            if (address == I3C_BROADCAST || !bus.probe(address)) continue;
             Serial.print("  0x");
             if (address < 0x10) Serial.print('0');
             Serial.print(address, HEX);

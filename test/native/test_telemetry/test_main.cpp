@@ -518,7 +518,7 @@ void test_console_scans_i2c_buses()
     TEST_ASSERT_TRUE(contains(out, "0x7C  QMC6309"));
     TEST_ASSERT_TRUE(contains(out, "0x47  BMP581"));
     TEST_ASSERT_TRUE(contains(out, "0x77  BME280/BMP388/SPL06/DPS310"));
-    TEST_ASSERT_TRUE(contains(out, "I2C экрана"));
+    TEST_ASSERT_TRUE(contains(out, "I2C вторая"));
     TEST_ASSERT_TRUE(contains(out, "0x3C  OLED"));
 
     // Пункт меню 7 и пустая шина.
@@ -755,7 +755,7 @@ void test_console_scan_and_actions_for_the_app()
     withBoard.update();
     const std::string scan = takeSerial();
     TEST_ASSERT_TRUE_MESSAGE(contains(scan, "@scan {\"sensor\":[{\"a\":104,\"g\":\"MPU6050/6500, ICM-42688/45686\"},{\"a\":118,"), scan.c_str());
-    TEST_ASSERT_TRUE(contains(scan, "\"screen\":[{\"a\":60,\"g\":\"OLED SSD1306\"}]}"));
+    TEST_ASSERT_TRUE_MESSAGE(contains(scan, "\"screen\":[{\"a\":60,\"g\":\"OLED SSD1306\"}],\"names\":{\"sensor\":\"I2C\",\"screen\":\"I2C\"}}"), scan.c_str());
     TEST_ASSERT_TRUE(contains(c.type("\x02" "scan\n"), "@scan {\"error\":\"unsupported\"}"));   // без платы
 
     // act X — горячая клавиша от приложения; при ARM блокирующие запрещены.

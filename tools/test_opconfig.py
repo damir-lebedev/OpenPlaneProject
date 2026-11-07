@@ -187,6 +187,36 @@ class OpconfigTest(unittest.TestCase):
         self.apply(self.config("esp32-s3", params={"PIN_AUX1": 14}))
         self.assertEqual(14, self.param("PIN_AUX1", board="BOARD_ESP32_S3")["value"])
 
+    def test_apply_sensors_with_spare_chips(self):
+        kits = {k["id"]: k["sensors"] for k in self.manifest["sensors"]["kits"] if k["sensors"]}
+        original = read(self.tmp, opconfig.FILES["sensors"])
+        # Основной + запасные поверх набора: набор остаётся, запасные — строками _2/_3.
+        spares = dict(kits["SENSOR_KIT_LSM6DSV_PITOT"],
+                      imu=["SENSOR_IMU_LSM6DSV", "SENSOR_IMU_MPU6050", "SENSOR_IMU_ICM45686"],
+                      mag=["SENSOR_MAG_QMC6309", "SENSOR_MAG_QMC5883P"])
+        self.apply(self.config(sensors=spares))
+        text = read(self.tmp, opconfig.FILES["sensors"])
+        self.assertIn("#define SENSOR_KIT SENSOR_KIT_LSM6DSV_PITOT", text)
+        for line in ("#define SENSOR_IMU_2 SENSOR_IMU_MPU6050", "#define SENSOR_IMU_3 SENSOR_IMU_ICM45686",
+                     "#define SENSOR_MAG_2 SENSOR_MAG_QMC5883P"):
+            self.assertIn(line, text)
+        self.assertEqual({"imu": ["SENSOR_IMU_MPU6050", "SENSOR_IMU_ICM45686"], "mag": ["SENSOR_MAG_QMC5883P"]},
+                         opconfig.parse_sensors(opconfig.Source(self.tmp).files["sensors"])["spares"])
+
+        # «Нет» барометра — вариант SENSOR_BARO_NONE; пустой список — то же.
+        self.apply(self.config(sensors=dict(kits["SENSOR_KIT_LSM6DSV_PITOT"], baro=[])))
+        text = read(self.tmp, opconfig.FILES["sensors"])
+        self.assertIn("#define SENSOR_BARO SENSOR_BARO_NONE", text)
+        self.assertNotIn("SENSOR_IMU_2 SENSOR_IMU_MPU6050", text)
+
+        self.apply(self.config(sensors=self.manifest["current"]["sensors"]))
+        self.assertEqual(original, read(self.tmp, opconfig.FILES["sensors"]))
+        base = kits["SENSOR_KIT_LSM6DSV_PITOT"]
+        self.assert_rejected(self.config(sensors=dict(base, imu=["SENSOR_IMU_LSM6DSV"] * 2)), "дважды")
+        self.assert_rejected(self.config(sensors=dict(base, gps=["SENSOR_GPS_UBLOX_M10", "SENSOR_GPS_NONE", "SENSOR_GPS_UBLOX_M10"])), "не больше 1")
+        self.assert_rejected(self.config(sensors=dict(base, imu=["SENSOR_IMU_LSM6DSV", "SENSOR_IMU_MPU6050",
+                                                                 "SENSOR_IMU_ICM45686", "SENSOR_IMU_ICM42688"])), "не больше 3")
+
     def test_apply_rejects_bad_values_and_writes_nothing(self):
         cases = [
             ({"NO_SUCH_PARAM": 1}, "такого параметра нет"),

@@ -3,6 +3,7 @@
 #include <Wire.h>
 
 #include "hal/II2CBus.h"
+#include "hal/Rtos.h"
 
 // ============================================================
 // Реализация II2CBus для ESP32 (Arduino core) — тонкая обёртка
@@ -30,6 +31,8 @@ public:
 
     void begin() override
     {
+        mutex.create();
+        snprintf(label, sizeof(label), "GPIO%d/%d", sda, scl);   // SDA/SCL
         wire.begin(sda, scl, frequency);
         wire.setTimeOut(TIMEOUT_MS);
     }
@@ -49,6 +52,10 @@ public:
     int available() override { return wire.available(); }
     int read() override { return wire.read(); }
 
+    void lock() override { mutex.take(); }
+    void unlock() override { mutex.give(); }
+    const char* name() const override { return label; }
+
 
 private:
 
@@ -58,4 +65,6 @@ private:
     int8_t sda;
     int8_t scl;
     uint32_t frequency;
+    Rtos::RecursiveMutex mutex;
+    char label[16] = "I2C";
 };

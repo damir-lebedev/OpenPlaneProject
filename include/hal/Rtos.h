@@ -89,6 +89,40 @@ namespace Rtos
 #endif
     };
 
+    // Рекурсивный мьютекс (шина I2C, общая у задач экрана и полёта).
+    // create() — один раз, до задач. На STM32 до запуска планировщика
+    // (setup()) задача одна — take()/give() там ничего не делают.
+    class RecursiveMutex
+    {
+    public:
+        void create()
+        {
+            if (!handle) handle = xSemaphoreCreateRecursiveMutex();
+        }
+
+        void take()
+        {
+            if (handle && running()) xSemaphoreTakeRecursive(handle, portMAX_DELAY);
+        }
+
+        void give()
+        {
+            if (handle && running()) xSemaphoreGiveRecursive(handle);
+        }
+
+    private:
+        SemaphoreHandle_t handle = nullptr;
+
+        static bool running()
+        {
+#if defined(OP_STM32)
+            return xTaskGetSchedulerState() == taskSCHEDULER_RUNNING;
+#else
+            return true;
+#endif
+        }
+    };
+
     // Свободная куча, байт — для строки состояния в логе.
     inline uint32_t freeHeapBytes()
     {

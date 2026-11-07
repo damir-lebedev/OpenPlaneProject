@@ -29,9 +29,9 @@ class Esp32Board : public IBoard
 public:
 
     Esp32Board()
-        : i2cBus(Wire, Config::PIN_I2C_SDA, Config::PIN_I2C_SCL),
+        : i2cBus(Wire, Config::PIN_I2C_SDA, Config::PIN_I2C_SCL, Config::I2C_CLOCK_KHZ * 1000UL),
 #if SOC_I2C_NUM > 1
-          displayBus(Wire1, Config::PIN_I2C2_SDA, Config::PIN_I2C2_SCL),
+          secondBus(Wire1, Config::PIN_I2C2_SDA, Config::PIN_I2C2_SCL, Config::I2C_CLOCK_KHZ * 1000UL),
 #endif
           spiBus(Config::PIN_SENSOR_SPI_SCK, Config::PIN_SENSOR_SPI_MISO, Config::PIN_SENSOR_SPI_MOSI),
           rcSerial(1),
@@ -63,9 +63,9 @@ public:
         }
 
 #if SOC_I2C_NUM > 1
-        if (hasDisplayBus())
+        if (hasSecondBus())
         {
-            displayBus.begin();
+            secondBus.begin();
         }
 #endif
     }
@@ -73,10 +73,10 @@ public:
     II2CBus& i2c() override { return i2cBus; }
     ISpiBus& spi() override { return spiBus; }
 
-    II2CBus* displayI2c() override
+    II2CBus* secondI2c() override
     {
 #if SOC_I2C_NUM > 1
-        return hasDisplayBus() ? &displayBus : nullptr;
+        return hasSecondBus() ? &secondBus : nullptr;
 #else
         return nullptr;
 #endif
@@ -97,7 +97,7 @@ private:
 
     Esp32I2CBus i2cBus;
 #if SOC_I2C_NUM > 1
-    Esp32I2CBus displayBus;
+    Esp32I2CBus secondBus;
 #endif
     Esp32SpiBus spiBus;
 
@@ -110,9 +110,9 @@ private:
 
 #if SOC_I2C_NUM > 1
     // Вторая шина есть, только если у чипа два контроллера I2C
-    // (у ESP32-C3 — один, там этой функции и поля displayBus нет) и
+    // (у ESP32-C3 — один, там этой функции и поля secondBus нет) и
     // для неё заданы пины в Config.h.
-    static constexpr bool hasDisplayBus()
+    static constexpr bool hasSecondBus()
     {
         return Config::PIN_I2C2_SDA >= 0 && Config::PIN_I2C2_SCL >= 0;
     }

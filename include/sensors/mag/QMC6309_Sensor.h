@@ -44,7 +44,15 @@ public:
     {
         device.begin();
 
-        const int chipId = device.readRegister(REG_CHIP_ID);
+        int chipId = device.readRegister(REG_CHIP_ID);
+        if (chipId != CHIP_ID_VALUE)
+        {
+            // Сброс прошлого запуска мог не закончиться (SOFT_RST не снят —
+            // чип в сбросе и не отвечает): снять и спросить ещё раз.
+            device.writeRegister(REG_CONTROL2, 0x00);
+            delay(RESET_SETTLE_MS);
+            chipId = device.readRegister(REG_CHIP_ID);
+        }
         if (chipId != CHIP_ID_VALUE)
         {
             Serial.print("QMC6309: не отвечает (chip ID ");
@@ -54,12 +62,14 @@ public:
             return false;
         }
 
-        device.writeRegister(REG_CONTROL2, CTRL2_SOFT_RST);
-        device.writeRegister(REG_CONTROL2, 0x00);
+        // Программного сброса (CONTROL2.SOFT_RST) нет: за LSM6DSV (sensor
+        // hub) чип посреди сброса повесил вспомогательную шину до
+        // передёргивания питания. Он и не нужен: режим и диапазон ниже
+        // переписываются целиком, а NVM после включения уже загружена.
 
         if (!waitNvmReady())
         {
-            Serial.println("QMC6309: NVM не загрузилась после сброса");
+            Serial.println("QMC6309: NVM не загрузилась");
             setAvailable(false);
             return false;
         }
@@ -106,7 +116,6 @@ private:
     static constexpr int CHIP_ID_VALUE = 0x90;
 
     static constexpr uint8_t STATUS_NVM_READY = 0x18;  // NVM_RDY | NVM_LOAD_DONE
-    static constexpr uint8_t CTRL2_SOFT_RST   = 0x80;
 
     static constexpr uint8_t MODE_NORMAL   = 0x01;
     static constexpr uint8_t OSR_8         = 0x00;
@@ -116,6 +125,7 @@ private:
     static constexpr uint8_t ODR_200HZ     = 0x04;
 
     static constexpr uint8_t NVM_POLL_TRIES = 50;
+    static constexpr uint32_t RESET_SETTLE_MS = 5;
 
     IRegisterDevice& device;
 

@@ -50,13 +50,30 @@ HAL — единственный слой, которому разрешено �
 | `virtual void begin()` | Разовая инициализация шин I2C/SPI. UART открывают их владельцы (`RcReceiver`, GPS) со своей скоростью, PWM — `FlightOutputs::begin()` |
 | `virtual II2CBus& i2c()` | Шина датчиков |
 | `virtual ISpiBus& spi()` | Шина SPI |
-| `virtual II2CBus* displayI2c()` | Вторая шина I2C только для экрана; `nullptr`, если её нет |
-| `virtual II2CBus& externalI2c()` | Шина внешнего разъёма: компас, трубка Пито. По умолчанию — `i2c()`; у Matek H743 — отдельная I2C1 |
+| `virtual II2CBus* secondI2c()` | Вторая шина I2C (`PIN_I2C2_*`): экран и/или датчики; `nullptr`, если её нет |
+| `virtual II2CBus& externalI2c()` | Шина внешнего разъёма. По умолчанию — `i2c()`; у Matek H743 — отдельная I2C1 |
+| `II2CBus* i2cBus(index)` | Все шины по номеру: 0 — основная, 1 — вторая, 2 — внешний разъём (если отдельный), 3 — за IMU; `nullptr` — нет (`I2C_BUS_COUNT` = 4) |
+| `I2cBusList i2cBuses(preferred)` | Все шины, начиная с `preferred`, — список, на котором `I2cRegisterDevice` ищет чип |
+| `void setAuxI2c(II2CBus*)` | Шина за IMU (`ImuSensor::auxI2c()`, LSM6DSV sensor hub) — её ставит `SelectedSensors` |
 | `virtual IUartPort& rcUart()` | UART приёмника пульта: iBUS, SBUS или CRSF |
 | `virtual IUartPort& gpsUart()` | UART GPS |
 | `virtual IUartPort* telemetryUart()` | UART радиомодема MAVLink; по умолчанию `nullptr` (у ESP32 свободного UART нет) |
 | `virtual IServoOutput& servo(uint8_t channel)` | PWM-выход по индексу `ServoChannel::*` |
 | `virtual void setBuzzer(bool on)` | пищалка `PIN_BUZZER`; по умолчанию ничего |
+
+### Замок и восстановление шины I2C
+
+Одну шину могут делить задачи (экран рисует своя задача, датчики читает
+полётная), поэтому у `II2CBus` есть `lock()`/`unlock()` — у плат рекурсивный
+мьютекс FreeRTOS (`Rtos::RecursiveMutex`). Помощники `readRegisters`,
+`writeRegister(s)`, `probe` захватывают шину сами (`II2CBus::Guard`), экран
+держит замок на каждую передачу U8g2 (кусок в десяток байт). `name()` — пины
+шины для консоли (`"PB11/PB10"`).
+
+`recover()` (STM32): ведомый держит SDA посреди байта — до 16 ручных тактов SCL,
+STOP, контроллер заново. Вызывается сам на ошибке шины (код 4 `TwoWire`, не
+чаще раза в 20 мс) и из консоли (`b`, если линия прижата); `recoveries()` —
+сколько раз понадобилось, `linesHigh()` — свободны ли линии.
 
 ---
 
@@ -258,10 +275,10 @@ sd-prepare`) и заполненный `0xFF`. Файл только **нахо�
 
 | Метод | Описание |
 |---|---|
-| `begin()` | `i2cBus.begin()`, `spiBus.begin()`, затем `displayBus.begin()`, если вторая шина есть; пин пищалки |
+| `begin()` | `i2cBus.begin()`, `spiBus.begin()`, затем `secondBus.begin()`, если вторая шина есть; пин пищалки |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)`, если пин разведён |
-| `displayI2c()` | `&displayBus`, если `hasDisplayBus()`, иначе `nullptr` |
-| `static constexpr bool hasDisplayBus()` | Оба пина второй шины ≥ 0. Существует (как и поле `displayBus`) только при `SOC_I2C_NUM > 1` — у C3 один контроллер I2C |
+| `secondI2c()` | `&secondBus`, если `hasSecondBus()`, иначе `nullptr` |
+| `static constexpr bool hasSecondBus()` | Оба пина второй шины ≥ 0. Существует (как и поле `secondBus`) только при `SOC_I2C_NUM > 1` — у C3 один контроллер I2C |
 | остальные | Возвращают соответствующие поля |
 
 ---
@@ -359,9 +376,9 @@ STM32duino). На плате DevEBox **без датчиков** провере�
 
 | Поле | Тип | Что это |
 |---|---|---|
-| `displayWire` | `TwoWire` | Второй контроллер I2C (глобальный `Wire` занят датчиками). Объявлен раньше `displayBus`, который хранит ссылку на него |
-| `i2cBus` | `Stm32I2CBus` | `Wire` на `PIN_I2C_SDA/SCL` (I2C2: PB11/PB10), 400 кГц |
-| `displayBus` | `Stm32I2CBus` | `displayWire` на `PIN_I2C2_SDA/SCL` (I2C1: PB9/PB8) — вторая шина есть всегда |
+| `secondWire` | `TwoWire` | Второй контроллер I2C (глобальный `Wire` занят основной шиной). Объявлен раньше `secondBus`, который хранит ссылку на него |
+| `i2cBus` | `Stm32I2CBus` | `Wire` на `PIN_I2C_SDA/SCL` (I2C2: PB11/PB10), `I2C_CLOCK_KHZ` |
+| `secondBus` | `Stm32I2CBus` | `secondWire` на `PIN_I2C2_SDA/SCL` (I2C1: PB9/PB8): экран и/или датчики |
 | `spiBus` | `Stm32SpiBus` | Глобальный `SPI` на `PIN_SENSOR_SPI_*` (SPI2) |
 | `rcSerial`, `rcPort` | `Uart`, `Stm32UartPort` | приёмник: UART7, RX `PIN_RC_RX` (PE7), TX `PIN_RC_TX` (PE8, резерв под телеметрию в пульт) |
 | `gpsSerial`, `gpsPort` | `Uart`, `Stm32UartPort` | GPS: USART3, `PIN_GPS_RX/TX` (PD9/PD8) |
@@ -370,10 +387,10 @@ STM32duino). На плате DevEBox **без датчиков** провере�
 
 | Метод | Описание |
 |---|---|
-| `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `displayBus.begin()`, пин пищалки |
+| `begin()` | `i2cBus.begin()`, `spiBus.begin()`, `secondBus.begin()`, пин пищалки |
 | `telemetryUart()` | `&telemetryPort` |
 | `setBuzzer(on)` | `digitalWrite(PIN_BUZZER)` |
-| `displayI2c()` | `&displayBus`, если заданы пины экрана (`PIN_I2C2_*` ≥ 0), иначе `nullptr` (у Matek H743 экрана нет) |
+| `secondI2c()` | `&secondBus`, если заданы пины второй шины (`PIN_I2C2_*` ≥ 0), иначе `nullptr` (у Matek H743 её нет) |
 | `externalI2c()` | `&externalBus` (I2C1), если заданы `PIN_I2C_EXT_*`, иначе шина датчиков |
 | `static constexpr pin_size_t pinOf(int16_t)` | Перевод пина из `Config.h` в тип API ядра |
 | остальные | Возвращают соответствующие поля |

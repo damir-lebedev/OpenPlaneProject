@@ -384,6 +384,7 @@ namespace fake
     {
         bool taken = false;
         uint32_t takes = 0;
+        uint32_t depth = 0;   // рекурсивный захват
     };
 }
 
@@ -409,6 +410,29 @@ inline BaseType_t xSemaphoreGive(SemaphoreHandle_t mutex)
 {
     if (!mutex || !mutex->taken) return pdFALSE;
     mutex->taken = false;
+    return pdTRUE;
+}
+
+// Рекурсивный мьютекс: счётчик захватов той же (единственной) задачи.
+inline SemaphoreHandle_t xSemaphoreCreateRecursiveMutex()
+{
+    return xSemaphoreCreateMutex();
+}
+
+inline BaseType_t xSemaphoreTakeRecursive(SemaphoreHandle_t mutex, TickType_t ticks)
+{
+    (void)ticks;
+    if (!mutex) return pdFALSE;
+    mutex->taken = true;
+    mutex->takes++;
+    mutex->depth++;
+    return pdTRUE;
+}
+
+inline BaseType_t xSemaphoreGiveRecursive(SemaphoreHandle_t mutex)
+{
+    if (!mutex || mutex->depth == 0) return pdFALSE;
+    if (--mutex->depth == 0) mutex->taken = false;
     return pdTRUE;
 }
 

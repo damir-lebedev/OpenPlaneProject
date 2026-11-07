@@ -69,6 +69,10 @@ NEED_TOKENS = {
     "esc3d": "двунаправленный ESC",
 }
 SENSOR_CATEGORIES = ("imu", "baro", "mag", "airspeed", "gps", "camera")
+# Типы, у которых можно выбрать несколько чипов (основной + запасные
+# SENSOR_<ТИП>_2/_3, sensors/SensorChain.h); у остальных — один.
+SPARE_CATEGORIES = ("imu", "baro", "mag")
+MAX_CHIPS = 3
 BOARD_TAG_KEYS = {"blackbox": ("flash", "sd", "none"), "telemetry": ("wifi", "mavlink", "none")}
 
 INT_LIMITS = {
@@ -542,7 +546,7 @@ def parse_sensors(tf):
             header.append(re.sub(r"[ 	]{2,}", " ", text.strip()[1:].strip()))
 
     options = {c: [] for c in SENSOR_CATEGORIES}
-    kits, kit_map, current_kit, explicit = [], {}, None, {}
+    kits, kit_map, current_kit, explicit, spare_lines = [], {}, None, {}, {}
     kit_block = None
     for i, raw in enumerate(lines):
         line = raw.strip()
@@ -585,10 +589,19 @@ def parse_sensors(tf):
         m = re.match(r"#define SENSOR_(IMU|BARO|MAG|AIRSPEED|GPS|CAMERA)\s+(SENSOR_(?:IMU|BARO|MAG|AIRSPEED|GPS|CAMERA)_\w+)", line)
         if m:
             explicit.setdefault(m.group(1).lower(), m.group(2))   # первая строка (блок приложения) главнее
+            continue
+        m = re.match(r"#define SENSOR_(IMU|BARO|MAG)_([23])\s+(SENSOR_(?:IMU|BARO|MAG)_\w+)", line)
+        if m:
+            spare_lines.setdefault((m.group(1).lower(), int(m.group(2))), m.group(3))
     for kit in kits:
         kit["sensors"] = kit_map.get(kit["id"], {})
     current = {c: explicit.get(c, kit_map.get(current_kit, {}).get(c)) for c in SENSOR_CATEGORIES}
-    return {"options": options, "kits": kits, "currentKit": current_kit, "current": current, "explicit": explicit}
+    spares = {}
+    for (cat, n), ident in sorted(spare_lines.items()):
+        if not ident.endswith("_NONE"):
+            spares.setdefault(cat, []).append(ident)
+    return {"options": options, "kits": kits, "currentKit": current_kit, "current": current, "explicit": explicit,
+            "spares": spares}
 
 
 def board_sensors(info, board_kit):
@@ -964,18 +977,47 @@ def apply_bindings(tf, bindings, errors):
         tf.lines[start + 1:end] = new_body
 
 
+def requested_chips(cat, value, valid, errors):
+    """Выбор типа датчика — строка или список (основной, запасные) — в
+    список id без повторов; пусто — SENSOR_<ТИП>_NONE. None — ошибка."""
+    none_id = "SENSOR_{}_NONE".format(cat.upper())
+    chips = [v for v in (value if isinstance(value, list) else [value]) if v != none_id]
+    limit = MAX_CHIPS if cat in SPARE_CATEGORIES else 1
+    if len(chips) > limit:
+        errors.append("Датчики: для {} можно выбрать не больше {}".format(cat, limit))
+        return None
+    if len(set(chips)) != len(chips):
+        errors.append("Датчики: {} выбран дважды".format(cat))
+        return None
+    if not chips:
+        chips = [none_id]
+    for v in chips:
+        if v not in valid:
+            errors.append("Датчики: нет варианта {} для {}".format(v, cat))
+            return None
+    return chips
+
+
 def apply_sensors(tf, requested, manifest, errors, board_kit=None):
     info = parse_sensors(tf)
     current = board_sensors(info, board_kit)
-    wanted = {}
+    wanted, spares = {}, {}
     for cat in SENSOR_CATEGORIES:
-        value = requested.get(cat, current.get(cat))
         valid = {o["id"] for o in info["options"][cat]}
-        if value not in valid:
-            errors.append("Датчики: нет варианта {} для {}".format(value, cat))
+        chips = requested_chips(cat, requested.get(cat, current.get(cat)), valid, errors)
+        if chips is None:
             return
-        wanted[cat] = value
-    if wanted == current:
+        wanted[cat] = chips[0]
+        if len(chips) > 1:
+            spares[cat] = chips[1:]
+    # Запасные чипы — строки SENSOR_<ТИП>_2/_3 в блоке приложения, поверх
+    # набора или своих строк.
+    spare_block = []
+    for cat in SPARE_CATEGORIES:
+        for n, ident in enumerate(spares.get(cat, []), start=2):
+            macro = "SENSOR_{}_{}".format(cat.upper(), n)
+            spare_block += ["#ifndef " + macro, "#define {} {}".format(macro, ident), "#endif"]
+    if wanted == current and spares == info["spares"]:
         return
     lines = tf.lines
     # убрать прежний блок приложения
@@ -987,7 +1029,7 @@ def apply_sensors(tf, requested, manifest, errors, board_kit=None):
     if board_kit:
         # Набор задан флагом окружения, строка SENSOR_KIT для этой платы не
         # действует: свои датчики — только строками SENSOR_*.
-        if wanted == board_sensors(dict(info, explicit={}), board_kit):
+        if wanted == board_sensors(dict(info, explicit={}), board_kit) and not spare_block:
             return
     else:
         # камеры в наборах нет: набор подбирается по остальным датчикам,
@@ -996,15 +1038,18 @@ def apply_sensors(tf, requested, manifest, errors, board_kit=None):
         kit = next((k["id"] for k in info["kits"] if k["sensors"] and k["sensors"] == plain), None)
         if kit:
             lines[guard + 1] = "#define SENSOR_KIT " + kit
+            extra = list(spare_block)
             if wanted.get("camera", "SENSOR_CAMERA_NONE") != "SENSOR_CAMERA_NONE":
-                block = [STUDIO_BEGIN, "#ifndef SENSOR_CAMERA", "#define SENSOR_CAMERA " + wanted["camera"], "#endif", STUDIO_END]
-                lines[guard + 3:guard + 3] = block
+                extra += ["#ifndef SENSOR_CAMERA", "#define SENSOR_CAMERA " + wanted["camera"], "#endif"]
+            if extra:
+                lines[guard + 3:guard + 3] = [STUDIO_BEGIN] + extra + [STUDIO_END]
             return
         lines[guard + 1] = "#define SENSOR_KIT SENSOR_KIT_CUSTOM"
     block = [STUDIO_BEGIN]
     for cat in SENSOR_CATEGORIES:
         macro = "SENSOR_" + cat.upper()
         block += ["#ifndef " + macro, "#define {} {}".format(macro, wanted[cat]), "#endif"]
+    block += spare_block
     block.append(STUDIO_END)
     endif = guard + 2
     lines[endif + 1:endif + 1] = block

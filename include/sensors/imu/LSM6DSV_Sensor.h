@@ -3,6 +3,7 @@
 
 #include "hal/RegisterDevice.h"
 #include "sensors/imu/ImuSensorBase.h"
+#include "sensors/imu/Lsm6dsvAuxBus.h"
 
 // ============================================================
 // LSM6DSV / LSM6DSV16X / LSM6DSV32X (ST) — гироскоп + акселерометр
@@ -55,9 +56,13 @@ public:
 
     explicit LSM6DSV_Sensor(IRegisterDevice& registerDevice)
         : ImuSensorBase("LSM6DSV", "imu_lsm6dsv"),
-          device(registerDevice)
+          device(registerDevice),
+          aux(registerDevice)
     {
     }
+
+    // Вспомогательная шина (компас за LSM6DSV) — sensors/imu/Lsm6dsvAuxBus.h.
+    II2CBus* auxI2c() override { return &aux; }
 
     bool begin() override
     {
@@ -72,11 +77,13 @@ public:
             return fail();
         }
 
+        keepAntispikeFilters();
         if (!softReset())
         {
             Serial.println("LSM6DSV: чип не вышел из сброса");
             return fail();
         }
+        keepAntispikeFilters();   // сброс вернул IF_CFG к умолчанию
 
         const int ctrl8 = device.readRegister(REG_CTRL8);
         if (ctrl8 < 0) return fail();
@@ -138,6 +145,7 @@ protected:
 
 private:
 
+    static constexpr uint8_t REG_IF_CFG     = 0x03;
     static constexpr uint8_t REG_WHO_AM_I   = 0x0F;
     static constexpr uint8_t REG_CTRL1      = 0x10;
     static constexpr uint8_t REG_CTRL2      = 0x11;
@@ -150,6 +158,7 @@ private:
 
     static constexpr int WHO_AM_I_VALUE = 0x70;
 
+    static constexpr uint8_t IF_CFG_ASF_CTRL = 0x20;
     static constexpr uint8_t CTRL3_SW_RESET = 0x01;
     static constexpr uint8_t CTRL3_IF_INC   = 0x04;
     static constexpr uint8_t CTRL3_BDU      = 0x40;
@@ -173,12 +182,26 @@ private:
     static constexpr uint8_t RESET_POLL_TRIES = 50;
 
     IRegisterDevice& device;
+    Lsm6dsvAuxBus aux;
     bool is32x = false;
 
     bool fail()
     {
         setAvailable(false);
         return false;
+    }
+
+    // Чип умеет I3C. По умолчанию фильтры коротких импульсов на SDA/SCL
+    // «ведёт протокол», и помеха на проводах может сойти за I3C: чип
+    // перестаёт отвечать по своему I2C-адресу до передёргивания питания
+    // (так и было на стенде с модулем на проводах). ASF_CTRL = 1 — фильтры
+    // включены всегда (IF_CFG, lsm6dsv_reg.h: asf_ctrl). Бит 0 того же
+    // регистра (I2C_I3C_disable) НЕ трогаем: он выключает и I2C.
+    void keepAntispikeFilters()
+    {
+        if (!device.isI2c()) return;
+        const int cfg = device.readRegister(REG_IF_CFG);
+        if (cfg >= 0) device.writeRegister(REG_IF_CFG, static_cast<uint8_t>(cfg | IF_CFG_ASF_CTRL));
     }
 
     // SW_RESET сбрасывается чипом сам, когда сброс завершён.

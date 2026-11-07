@@ -59,7 +59,7 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `PIN_RUDDER` | PD14 | TIM4_CH3 |
 | `PIN_RC_RX` / `PIN_RC_TX` | PE7 / PE8 | UART7 (TX — резерв под телеметрию в пульт) |
 | `PIN_I2C_SDA` / `PIN_I2C_SCL` | PB11 / PB10 | I2C2 — датчики |
-| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — экран (на WeAct — разъём камеры) |
+| `PIN_I2C2_SDA` / `PIN_I2C2_SCL` | PB9 / PB8 | I2C1 — вторая шина: экран и/или датчики (на WeAct — разъём камеры) |
 | `PIN_SENSOR_SPI_SCK` / `MISO` / `MOSI` | PB13 / PB14 / PB15 | SPI2 |
 | `PIN_SPI_CS_IMU` / `PIN_SPI_CS_BARO` | PB12 / PD10 | GPIO |
 | `PIN_GPS_RX` / `PIN_GPS_TX` | PD9 / PD8 | USART3 |
@@ -128,6 +128,8 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `ESC_NEUTRAL_US` | 1500 | Нейтраль двунаправленного ESC: мотор стоит; выше — вперёд, ниже — назад |
 | `REVERSE_THROTTLE_LIMIT_PCT` | 50 | Предел газа назад, % (и не больше `THROTTLE_LIMIT_PCT`): винт назад тянет плохо, а ток берёт полный |
 | `REVERSE_SETTLE_MS` | 3000 | После смены направления ARM запрещён столько времени — мотор, снятый с ARM на газу, успевает остановиться |
+| `THROTTLE_DOWN_RAMP_MS` | 800 | Плавный спад газа: от 100 % до нуля не быстрее, чем за столько мс (прибавка — сразу). Резкий сброс двунаправленный ESC гасит торможением — рывок мотора и скачок тока в батарею. DISARM и `MOTOR_KILL` — мгновенно. 0 — без рампы |
+| `I2C_CLOCK_KHZ` | 400 | Частота всех шин I2C платы, кГц; 100 — надёжнее на длинных проводах к модулю |
 
 ### Закрылки (флапероны)
 

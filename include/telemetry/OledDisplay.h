@@ -8,6 +8,7 @@
 #include "control/FlightController.h"
 #include "control/FlightOutputState.h"
 #include "control/GroundCalibration.h"
+#include "hal/IBoard.h"
 #include "hal/II2CBus.h"
 #include "hal/Rtos.h"
 #include "sensors/SensorInterface.h"
@@ -17,9 +18,11 @@
 // ============================================================
 // OLED DISPLAY (SSD1306 128x64, I2C 0x3C)
 //
-// Отладочный экран состояния на отдельной шине I2C
-// (IBoard::displayI2c()), чтобы отрисовка кадра (~25 мс на 400 кГц)
-// не задерживала опрос датчиков. Рисуется в своей FreeRTOS-задаче
+// Отладочный экран состояния. Висит на любой шине I2C платы — findBus()
+// ищет его сначала на второй шине (PIN_I2C2_*), потом на остальных.
+// Лучше отдельная шина: кадр (~25 мс на 400 кГц) идёт кусками по
+// десятку байт, каждый — под замком шины (II2CBus::lock()), и на общей
+// шине датчик ждёт конец куска (доли мс). Рисуется в своей FreeRTOS-задаче
 // раз в REFRESH_MS (ESP32 — ядро 0; STM32 — низкий приоритет, полётная
 // задача её вытесняет, см. hal/Rtos.h); данные только читает
 // (FlightController/Autopilot/LoopStats), ничего в них не меняет.
@@ -54,7 +57,19 @@ public:
     {
     }
 
-    // bus == nullptr (на плате нет второй шины) — экрана просто нет.
+    // Шина, где ответил экран: вторая, основная, внешняя; nullptr — нигде.
+    static II2CBus* findBus(IBoard& board)
+    {
+        static const uint8_t order[] = { 1, 0, 2 };   // за IMU (3) экрана не бывает
+        for (uint8_t index : order)
+        {
+            II2CBus* bus = board.i2cBus(index);
+            if (bus && bus->probe(I2C_ADDRESS)) return bus;
+        }
+        return nullptr;
+    }
+
+    // bus == nullptr (экран не нашёлся ни на одной шине) — экрана просто нет.
     bool begin(II2CBus* displayBus)
     {
         if (!displayBus)
@@ -77,7 +92,8 @@ public:
 
         Rtos::startTask(displayTask, "oled", 4096, this, Rtos::PRIORITY_BACKGROUND);
 
-        Serial.println("OLED: подключён (SSD1306)");
+        Serial.print("OLED: подключён (SSD1306), I2C ");
+        Serial.println(displayBus->name());
         return true;
     }
 
@@ -115,10 +131,12 @@ private:
                 bus->write(static_cast<const uint8_t*>(argPtr), argInt);
                 break;
             case U8X8_MSG_BYTE_START_TRANSFER:
+                bus->lock();   // шина может быть общей с датчиками
                 bus->beginTransmission(u8x8_GetI2CAddress(u8x8) >> 1);
                 break;
             case U8X8_MSG_BYTE_END_TRANSFER:
                 bus->endTransmission();
+                bus->unlock();
                 break;
             case U8X8_MSG_BYTE_INIT:      // шину уже подняла плата (IBoard::begin())
             case U8X8_MSG_BYTE_SET_DC:

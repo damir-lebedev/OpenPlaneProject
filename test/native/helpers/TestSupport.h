@@ -358,7 +358,7 @@ public:
     void begin() override { beginCalls++; }
     II2CBus& i2c() override { return sensorBus; }
     ISpiBus& spi() override { return spiBus; }
-    II2CBus* displayI2c() override { return hasScreen ? &screenBus : nullptr; }
+    II2CBus* secondI2c() override { return hasScreen ? &screenBus : nullptr; }
     IUartPort& rcUart() override { return rc; }
     IUartPort& gpsUart() override { return gps; }
     IUartPort* telemetryUart() override { return hasTelemetry ? &telemetry : nullptr; }

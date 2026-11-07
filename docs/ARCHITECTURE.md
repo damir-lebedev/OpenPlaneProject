@@ -288,7 +288,8 @@ classDiagram
         +begin()
         +i2c() II2CBus&
         +spi() ISpiBus&
-        +displayI2c() II2CBus*
+        +secondI2c() II2CBus*
+        +i2cBus(index) II2CBus*
         +rcUart() IUartPort&
         +gpsUart() IUartPort&
         +servo(uint8_t) IServoOutput&

@@ -98,7 +98,7 @@ void test_boot_on_38pin_board_with_icm45686_kit()
     TEST_ASSERT_EQUAL(Config::PIN_ESC, fake::ledc().channel[ServoChannel::ESC].pin);
     TEST_ASSERT_EQUAL(Config::PIN_I2C_SDA, Wire.sdaPin());
     TEST_ASSERT_EQUAL(Config::PIN_I2C_SCL, Wire.sclPin());
-    TEST_ASSERT_TRUE(imuSensor.isAvailable() && magSensor.isAvailable() && baroSensor.isAvailable());
+    TEST_ASSERT_TRUE(imuSensor.isAvailable() && magnetometer->isAvailable() && baroSensor.isAvailable());
 }
 
 void test_icm45686_filters_were_programmed()

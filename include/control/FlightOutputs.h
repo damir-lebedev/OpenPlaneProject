@@ -170,7 +170,9 @@ public:
     // у двунаправленного ESC это импульс 1500, не 1000).
     // Груз и камера остаются как были: потеря связи не должна
     // сбрасывать груз.
-    void setFailsafe()
+    // throttle — газ (0..100 % = PWM_MIN..PWM_MAX): при потере связи на
+    // лету мотор не останавливается рывком, а спадает (ThrottleRamp).
+    void setFailsafe(uint16_t throttle = Config::FAILSAFE_THROTTLE)
     {
         FlightOutputState safe;
 
@@ -180,7 +182,7 @@ public:
         safe.aileronRight = Config::FAILSAFE_AILERON;
         safe.elevator = Config::FAILSAFE_ELEVATOR;
         safe.rudder = Config::FAILSAFE_RUDDER;
-        safe.throttle = Config::FAILSAFE_THROTTLE;
+        safe.throttle = throttle;
 
         write(safe);
     }

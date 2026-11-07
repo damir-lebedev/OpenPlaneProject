@@ -608,6 +608,7 @@ void test_armed_but_still_on_the_ground_stops_after_landed_timeout()
     rig.rc.set(Channels::THROTTLE, 1500);
     rig.shake(5000);
     rig.rc.set(Channels::THROTTLE, 1000);
+    rig.run(Config::THROTTLE_DOWN_RAMP_MS);   // газ спадает по рампе
 
     // Сел: мотор стоит, всё неподвижно; DISARM забыли.
     rig.run(Config::BLACKBOX_LANDED_STOP_MS - 1000);

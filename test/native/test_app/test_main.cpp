@@ -190,7 +190,8 @@ void test_link_loss_in_air_cuts_motor_and_glides()
     fly(rc, 3);
     TEST_ASSERT_UINT32_WITHIN(2, escUs(cappedThrottleUs(1700)), pulseUs(ServoChannel::ESC));
 
-    for (int i = 0; i < 300; ++i) loop();   // 600 мс без кадров
+    // 600 мс без кадров, потом газ спадает по рампе (THROTTLE_DOWN_RAMP_MS).
+    for (uint32_t i = 0; i < 300 + Config::THROTTLE_DOWN_RAMP_MS / 2; ++i) loop();
     TEST_ASSERT_TRUE(flightController.isReceiverFailsafe());
     TEST_ASSERT_TRUE(autopilot.isFailsafeGliding());
     TEST_ASSERT_UINT32_WITHIN(2, escUs(1000), pulseUs(ServoChannel::ESC));

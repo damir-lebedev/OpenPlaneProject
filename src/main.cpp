@@ -59,21 +59,16 @@ Esp32Board board;
 // ------------------------------------------------------------
 // Датчики. Какой чип и на какой шине — sensors/SensorSelection.h.
 // Не ответил — isAvailable() == false, автопилот не даёт коррекций.
+// По типу может быть выбрано несколько чипов (основной и запасные):
+// работает первый ответивший, искать его — на всех шинах I2C платы
+// (sensors/SensorChain.h). Не ответил ни один — isAvailable() == false,
+// автопилот не даёт коррекций.
 // ------------------------------------------------------------
 
-auto imuDevice = SELECTED_IMU_DEVICE(board);
-SelectedImu imuSensor(imuDevice);
-
-auto baroDevice = SELECTED_BARO_DEVICE(board);
-SelectedBaro baroSensor(baroDevice);
-
-#if SENSOR_MAG != SENSOR_MAG_NONE
-auto magDevice = SELECTED_MAG_DEVICE(board);
-SelectedMag magSensor(magDevice);
-MagnetometerSensor* const magnetometer = &magSensor;
-#else
-MagnetometerSensor* const magnetometer = nullptr;
-#endif
+SelectedSensors<Esp32Board> sensors(board);
+ImuChain& imuSensor = sensors.imu;
+BaroChain& baroSensor = sensors.baro;
+MagnetometerSensor* const magnetometer = sensors.magnetometer();
 
 #if SENSOR_GPS != SENSOR_GPS_NONE
 SelectedGps gpsSensor(board.gpsUart());
@@ -163,17 +158,15 @@ static void setupSensors()
         baroSensor.calibrateAltitude();
     }
 
-#if SENSOR_MAG != SENSOR_MAG_NONE
     // Калибровка компаса хранится в NVS (пересчитать — 'm' в консоли).
     // Первый отсчёт задаёт начальный курс вместо произвольного 0 —
     // дальше рысканье ведёт гироскоп.
-    if (magSensor.begin())
+    if (magnetometer && magnetometer->begin())
     {
         delay(25);
-        magSensor.update();
-        imuSensor.setYaw(magSensor.getMagData().headingDegrees);
+        magnetometer->update();
+        imuSensor.setYaw(magnetometer->getMagData().headingDegrees);
     }
-#endif
 
 #if SENSOR_GPS != SENSOR_GPS_NONE
     gpsSensor.begin();
@@ -210,7 +203,7 @@ void setup()
 
     flightController.begin();    // приёмник пульта
 
-    oledDisplay.begin(board.displayI2c());
+    oledDisplay.begin(OledDisplay::findBus(board));
     webDebugServer.begin();
 
     // Последним: задача записи начинает стирать место под полёт, а

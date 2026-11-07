@@ -185,7 +185,7 @@ src/stm32/main.cpp  — прошивка STM32H743 (задачи FreeRTOS, MAVLi
 
 | Файл | Отвечает за |
 |---|---|
-| `IBoard.h` | Точка входа в железо: `i2c()`, `displayI2c()` (вторая шина под экран, может быть `nullptr`), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()` (MAVLink, может быть `nullptr`), `servo(ServoChannel::*)` (7 выходов с AUX1/AUX2), `setBuzzer()`, `externalI2c()` (шина внешнего разъёма: по умолчанию та же `i2c()`, у Matek H743 — своя) |
+| `IBoard.h` | Точка входа в железо: `i2c()`, `secondI2c()` (вторая шина: экран и/или датчики, может быть `nullptr`), `i2cBus(n)`/`i2cBuses()` (все шины — на них ищутся датчики и экран), `setAuxI2c()` (шина за IMU), `spi()`, `rcUart()`, `gpsUart()`, `telemetryUart()` (MAVLink, может быть `nullptr`), `servo(ServoChannel::*)` (7 выходов с AUX1/AUX2), `setBuzzer()`, `externalI2c()` (шина внешнего разъёма: по умолчанию та же `i2c()`, у Matek H743 — своя) |
 | `Rtos.h` | Задачи FreeRTOS одинаково на ESP32 (ядро 0) и STM32 (приоритеты), свободная куча |
 | `II2CBus.h` | Шина I2C: примитивы в форме `Wire` + помощники `writeRegister()`, `readRegisters()` (проверяет, что пришло ровно `count` байт), `readRegister()`, `probe()` |
 | `ISpiBus.h`, `IUartPort.h`, `IServoOutput.h` | SPI, UART, один PWM-выход (`measurePulseUs()` — диагностика реального импульса) |
@@ -709,7 +709,7 @@ STM32H743VIT6 (Cortex-M7 480 МГц, 2 МБ флеша, 1 МБ ОЗУ) — **п�
 | AUX1 (груз) / AUX2 (камера) | PD15 / PE9 | TIM4_CH4 / TIM1_CH1 |
 | RC RX (TX — резерв) | PE7 (PE8) | UART7 |
 | I2C датчиков SDA / SCL | PB11 / PB10 | I2C2 |
-| I2C OLED SDA / SCL | PB9 / PB8 | I2C1 |
+| I2C вторая шина SDA / SCL (экран, датчики) | PB9 / PB8 | I2C1 |
 | SPI SCK / MISO / MOSI | PB13 / PB14 / PB15 | SPI2 |
 | SPI CS IMU / барометра | PB12 / PD10 | GPIO |
 | GPS RX / TX | PD9 / PD8 | USART3 |

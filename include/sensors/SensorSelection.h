@@ -9,12 +9,18 @@
 // main.cpp работает через SelectedImu/SelectedBaro/SelectedMag/
 // SelectedGps/SelectedPitotBaro и не знает, какой класс за ними стоит.
 //
-// Для каждого датчика здесь же задано, на какой шине он висит:
-// SELECTED_*_DEVICE(board) создаёт регистровое устройство
-// (I2cRegisterDevice с адресом или SpiRegisterDevice с CS-пином,
-// см. hal/RegisterDevice.h), которое main.cpp передаёт драйверу.
-// Драйверы шины не различают — один и тот же BMP581_Sensor
-// работает и по I2C, и по SPI.
+// Несколько чипов одного типа: SENSOR_IMU — основной, SENSOR_IMU_2 и
+// SENSOR_IMU_3 — запасные (так же у барометра и компаса). Прошивка
+// опознаёт их по порядку и берёт первый ответивший
+// (sensors/SensorChain.h) — одна прошивка летает с любым из выбранных.
+//
+// Шина: датчик на I2C ищется на ВСЕХ шинах платы (IBoard::i2cBuses():
+// основная PIN_I2C_*, вторая PIN_I2C2_*, внешний разъём) — какой модуль
+// на какую шину повесить, всё равно; пины шин — в Config.h. Для SPI
+// задан CS-пин (Config::PIN_SPI_CS_*). Устройство создаёт
+// <Тип>Chip<id>::device(board) (I2cRegisterDevice или SpiRegisterDevice,
+// см. hal/RegisterDevice.h). Драйверы шины не различают — один и тот же
+// BMP581_Sensor работает и по I2C, и по SPI.
 //
 // ПОДДЕРЖИВАЕМЫЕ ДАТЧИКИ:
 //   IMU (гироскоп + акселерометр):
@@ -28,8 +34,9 @@
 //     • SPL06-001                 — I2C 0x76 или 0x77 (сам находит), или SPI
 //     • BMP581                    — I2C 0x46 (0x47 — если нет трубки Пито), или SPI
 //     • DPS310                    — I2C 0x76 или 0x77 (сам находит); на плате Matek H743 — 0x76
-//   Компас и трубка Пито висят на шине внешнего разъёма (board.externalI2c()):
-//   у самодельных плат это та же шина датчиков, у Matek H743 — I2C1.
+//   Компас и трубка Пито ищутся сначала на шине внешнего разъёма
+//   (board.externalI2c(): у самодельных плат это шина датчиков, у
+//   Matek H743 — I2C1), потом на остальных.
 //   Магнитометр:
 //     • QMC5883P (GY-273)         — I2C 0x2C
 //     • QMC5883L                  — I2C 0x0D
@@ -53,6 +60,7 @@
 #include "config/Config.h"          // IWYU pragma: export
 #include "hal/RegisterDevice.h"     // IWYU pragma: export
 
+#define SENSOR_IMU_NONE          0   // только для запасных SENSOR_IMU_2/3
 #define SENSOR_IMU_MPU6050       1
 #define SENSOR_IMU_ICM42688      2   // SPI
 #define SENSOR_IMU_LSM6DSV       3   // I2C
@@ -60,6 +68,7 @@
 #define SENSOR_IMU_ICM45686      5   // I2C
 #define SENSOR_IMU_ICM45686_SPI  6
 
+#define SENSOR_BARO_NONE        0
 #define SENSOR_BARO_BME280      1
 #define SENSOR_BARO_BMP388      2   // SPI
 #define SENSOR_BARO_BMP388_I2C  3
@@ -166,6 +175,26 @@
 #define SENSOR_GPS  KIT_GPS
 #endif
 
+// Запасные чипы (SensorChain): опрашиваются, если основной не ответил.
+#ifndef SENSOR_IMU_2
+#define SENSOR_IMU_2 SENSOR_IMU_NONE
+#endif
+#ifndef SENSOR_IMU_3
+#define SENSOR_IMU_3 SENSOR_IMU_NONE
+#endif
+#ifndef SENSOR_BARO_2
+#define SENSOR_BARO_2 SENSOR_BARO_NONE
+#endif
+#ifndef SENSOR_BARO_3
+#define SENSOR_BARO_3 SENSOR_BARO_NONE
+#endif
+#ifndef SENSOR_MAG_2
+#define SENSOR_MAG_2 SENSOR_MAG_NONE
+#endif
+#ifndef SENSOR_MAG_3
+#define SENSOR_MAG_3 SENSOR_MAG_NONE
+#endif
+
 // Камеры в наборах нет: ставится этой строкой (или флагом сборки).
 #ifndef SENSOR_CAMERA
 #define SENSOR_CAMERA SENSOR_CAMERA_NONE
@@ -177,101 +206,235 @@
 
 // ============================================================
 // РАЗРЕШЕНИЕ В КОНКРЕТНЫЕ ТИПЫ (менять не нужно, кроме адресов/пинов)
+//
+// ImuChip<id>, BaroChip<id>, MagChip<id>: класс драйвера (Type) и где
+// искать чип (device(board)). Неизвестный id — ошибка сборки.
+// Подключены все драйверы: класс, который не выбран, в прошивку не
+// попадает (всё в заголовках, код — только у используемых).
 // ============================================================
 
-#if SENSOR_IMU == SENSOR_IMU_MPU6050
-    #include "sensors/imu/MPU6050_Sensor.h"
-    using SelectedImu = MPU6050_Sensor;
-    #define SELECTED_IMU_DEVICE(board) I2cRegisterDevice((board).i2c(), 0x68)
-#elif SENSOR_IMU == SENSOR_IMU_ICM42688
-    #include "sensors/imu/ICM42688_Sensor.h"
-    using SelectedImu = ICM42688_Sensor;
-    #define SELECTED_IMU_DEVICE(board) ICM42688_Sensor::spiDevice((board).spi(), Config::PIN_SPI_CS_IMU)
-#elif SENSOR_IMU == SENSOR_IMU_LSM6DSV
-    #include "sensors/imu/LSM6DSV_Sensor.h"
-    using SelectedImu = LSM6DSV_Sensor;
-    #define SELECTED_IMU_DEVICE(board) I2cRegisterDevice((board).i2c(), LSM6DSV_Sensor::DEFAULT_ADDRESS, LSM6DSV_Sensor::ALTERNATE_ADDRESS)
-#elif SENSOR_IMU == SENSOR_IMU_LSM6DSV_SPI
-    #include "sensors/imu/LSM6DSV_Sensor.h"
-    using SelectedImu = LSM6DSV_Sensor;
-    #define SELECTED_IMU_DEVICE(board) LSM6DSV_Sensor::spiDevice((board).spi(), Config::PIN_SPI_CS_IMU)
-#elif SENSOR_IMU == SENSOR_IMU_ICM45686
-    #include "sensors/imu/ICM45686_Sensor.h"
-    using SelectedImu = ICM45686_Sensor;
-    #define SELECTED_IMU_DEVICE(board) I2cRegisterDevice((board).i2c(), ICM45686_Sensor::DEFAULT_ADDRESS, ICM45686_Sensor::ALTERNATE_ADDRESS)
-#elif SENSOR_IMU == SENSOR_IMU_ICM45686_SPI
-    #include "sensors/imu/ICM45686_Sensor.h"
-    using SelectedImu = ICM45686_Sensor;
-    #define SELECTED_IMU_DEVICE(board) ICM45686_Sensor::spiDevice((board).spi(), Config::PIN_SPI_CS_IMU)
-#else
-    #error "SensorSelection.h: не задан SENSOR_IMU"
-#endif
+#include <utility>
 
-#if SENSOR_BARO == SENSOR_BARO_BME280
-    #include "sensors/baro/BME280_Sensor.h"
-    using SelectedBaro = BME280_Sensor;
-    #define SELECTED_BARO_DEVICE(board) I2cRegisterDevice((board).i2c(), 0x76)
-#elif SENSOR_BARO == SENSOR_BARO_BMP388
-    #include "sensors/baro/BMP388_Sensor.h"
-    using SelectedBaro = BMP388_Sensor;
-    #define SELECTED_BARO_DEVICE(board) BMP388_Sensor::spiDevice((board).spi(), Config::PIN_SPI_CS_BARO)
-#elif SENSOR_BARO == SENSOR_BARO_BMP388_I2C
-    #include "sensors/baro/BMP388_Sensor.h"
-    using SelectedBaro = BMP388_Sensor;
-    #define SELECTED_BARO_DEVICE(board) I2cRegisterDevice((board).i2c(), 0x76)
-#elif SENSOR_BARO == SENSOR_BARO_SPL06
-    #include "sensors/baro/SPL06_Sensor.h"
-    using SelectedBaro = SPL06_Sensor;
-    #define SELECTED_BARO_DEVICE(board) I2cRegisterDevice((board).i2c(), SPL06_Sensor::DEFAULT_ADDRESS, SPL06_Sensor::ALTERNATE_ADDRESS)
-#elif SENSOR_BARO == SENSOR_BARO_SPL06_SPI
-    #include "sensors/baro/SPL06_Sensor.h"
-    using SelectedBaro = SPL06_Sensor;
-    #define SELECTED_BARO_DEVICE(board) SPL06_Sensor::spiDevice((board).spi(), Config::PIN_SPI_CS_BARO)
-#elif SENSOR_BARO == SENSOR_BARO_BMP581
-    #include "sensors/baro/BMP581_Sensor.h"
-    using SelectedBaro = BMP581_Sensor;
-    // С трубкой Пито на BMP581 адрес 0x47 занят ею — основной только 0x46.
-    #if SENSOR_AIRSPEED == SENSOR_AIRSPEED_PITOT_BMP581
-        #define SELECTED_BARO_DEVICE(board) I2cRegisterDevice((board).i2c(), BMP581_Sensor::DEFAULT_ADDRESS)
-    #else
-        #define SELECTED_BARO_DEVICE(board) I2cRegisterDevice((board).i2c(), BMP581_Sensor::DEFAULT_ADDRESS, BMP581_Sensor::ALTERNATE_ADDRESS)
-    #endif
-#elif SENSOR_BARO == SENSOR_BARO_BMP581_SPI
-    #include "sensors/baro/BMP581_Sensor.h"
-    using SelectedBaro = BMP581_Sensor;
-    #define SELECTED_BARO_DEVICE(board) BMP581_Sensor::spiDevice((board).spi(), Config::PIN_SPI_CS_BARO)
-#elif SENSOR_BARO == SENSOR_BARO_DPS310
-    #include "sensors/baro/DPS310_Sensor.h"
-    using SelectedBaro = DPS310_Sensor;
-    #define SELECTED_BARO_DEVICE(board) I2cRegisterDevice((board).i2c(), SPL06_Sensor::DEFAULT_ADDRESS, SPL06_Sensor::ALTERNATE_ADDRESS)
-#else
-    #error "SensorSelection.h: не задан SENSOR_BARO"
-#endif
+#include "sensors/SensorChain.h"
+#include "sensors/baro/BME280_Sensor.h"
+#include "sensors/baro/BMP388_Sensor.h"
+#include "sensors/baro/BMP581_Sensor.h"
+#include "sensors/baro/DPS310_Sensor.h"
+#include "sensors/baro/SPL06_Sensor.h"
+#include "sensors/imu/ICM42688_Sensor.h"
+#include "sensors/imu/ICM45686_Sensor.h"
+#include "sensors/imu/LSM6DSV_Sensor.h"
+#include "sensors/imu/MPU6050_Sensor.h"
+#include "sensors/mag/QMC5883L_Sensor.h"
+#include "sensors/mag/QMC5883P_Sensor.h"
+#include "sensors/mag/QMC6309_Sensor.h"
 
-#if SENSOR_MAG == SENSOR_MAG_QMC5883P
-    #include "sensors/mag/QMC5883P_Sensor.h"
-    using SelectedMag = QMC5883P_Sensor;
-    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).externalI2c(), QMC5883P_Sensor::DEFAULT_ADDRESS)
-#elif SENSOR_MAG == SENSOR_MAG_QMC5883L
-    #include "sensors/mag/QMC5883L_Sensor.h"
-    using SelectedMag = QMC5883L_Sensor;
-    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).externalI2c(), QMC5883L_Sensor::DEFAULT_ADDRESS)
-#elif SENSOR_MAG == SENSOR_MAG_QMC6309
-    #include "sensors/mag/QMC6309_Sensor.h"
-    using SelectedMag = QMC6309_Sensor;
-    #define SELECTED_MAG_DEVICE(board) I2cRegisterDevice((board).externalI2c(), QMC6309_Sensor::DEFAULT_ADDRESS)
-#elif SENSOR_MAG == SENSOR_MAG_NONE
-    // main.cpp оборачивает создание компаса в #if SENSOR_MAG != SENSOR_MAG_NONE.
+template <int Id> struct ImuChip;
+template <int Id> struct BaroChip;
+template <int Id> struct MagChip;
+
+// IMU и барометр — сначала на шине датчиков, компас и трубка — сначала
+// на шине внешнего разъёма; потом на всех остальных шинах платы.
+#define OP_SENSOR_BUSES(board) (board).i2cBuses((board).i2c())
+#define OP_EXTERNAL_BUSES(board) (board).i2cBuses((board).externalI2c())
+
+template <> struct ImuChip<SENSOR_IMU_MPU6050>
+{
+    using Type = MPU6050_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b) { return I2cRegisterDevice(OP_SENSOR_BUSES(b), 0x68); }
+};
+template <> struct ImuChip<SENSOR_IMU_ICM42688>
+{
+    using Type = ICM42688_Sensor;
+    template <class B> static SpiRegisterDevice device(B& b) { return ICM42688_Sensor::spiDevice(b.spi(), Config::PIN_SPI_CS_IMU); }
+};
+template <> struct ImuChip<SENSOR_IMU_LSM6DSV>
+{
+    using Type = LSM6DSV_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b)
+    {
+        return I2cRegisterDevice(OP_SENSOR_BUSES(b), LSM6DSV_Sensor::DEFAULT_ADDRESS, LSM6DSV_Sensor::ALTERNATE_ADDRESS);
+    }
+};
+template <> struct ImuChip<SENSOR_IMU_LSM6DSV_SPI>
+{
+    using Type = LSM6DSV_Sensor;
+    template <class B> static SpiRegisterDevice device(B& b) { return LSM6DSV_Sensor::spiDevice(b.spi(), Config::PIN_SPI_CS_IMU); }
+};
+template <> struct ImuChip<SENSOR_IMU_ICM45686>
+{
+    using Type = ICM45686_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b)
+    {
+        return I2cRegisterDevice(OP_SENSOR_BUSES(b), ICM45686_Sensor::DEFAULT_ADDRESS, ICM45686_Sensor::ALTERNATE_ADDRESS);
+    }
+};
+template <> struct ImuChip<SENSOR_IMU_ICM45686_SPI>
+{
+    using Type = ICM45686_Sensor;
+    template <class B> static SpiRegisterDevice device(B& b) { return ICM45686_Sensor::spiDevice(b.spi(), Config::PIN_SPI_CS_IMU); }
+};
+
+template <> struct BaroChip<SENSOR_BARO_BME280>
+{
+    using Type = BME280_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b) { return I2cRegisterDevice(OP_SENSOR_BUSES(b), 0x76); }
+};
+template <> struct BaroChip<SENSOR_BARO_BMP388>
+{
+    using Type = BMP388_Sensor;
+    template <class B> static SpiRegisterDevice device(B& b) { return BMP388_Sensor::spiDevice(b.spi(), Config::PIN_SPI_CS_BARO); }
+};
+template <> struct BaroChip<SENSOR_BARO_BMP388_I2C>
+{
+    using Type = BMP388_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b) { return I2cRegisterDevice(OP_SENSOR_BUSES(b), 0x76); }
+};
+template <> struct BaroChip<SENSOR_BARO_SPL06>
+{
+    using Type = SPL06_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b)
+    {
+        return I2cRegisterDevice(OP_SENSOR_BUSES(b), SPL06_Sensor::DEFAULT_ADDRESS, SPL06_Sensor::ALTERNATE_ADDRESS);
+    }
+};
+template <> struct BaroChip<SENSOR_BARO_SPL06_SPI>
+{
+    using Type = SPL06_Sensor;
+    template <class B> static SpiRegisterDevice device(B& b) { return SPL06_Sensor::spiDevice(b.spi(), Config::PIN_SPI_CS_BARO); }
+};
+template <> struct BaroChip<SENSOR_BARO_BMP581>
+{
+    using Type = BMP581_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b)
+    {
+#if SENSOR_AIRSPEED == SENSOR_AIRSPEED_PITOT_BMP581
+        // С трубкой Пито на BMP581 адрес 0x47 занят ею — основной только 0x46.
+        return I2cRegisterDevice(OP_SENSOR_BUSES(b), BMP581_Sensor::DEFAULT_ADDRESS);
 #else
-    #error "SensorSelection.h: не задан SENSOR_MAG"
+        return I2cRegisterDevice(OP_SENSOR_BUSES(b), BMP581_Sensor::DEFAULT_ADDRESS, BMP581_Sensor::ALTERNATE_ADDRESS);
+#endif
+    }
+};
+template <> struct BaroChip<SENSOR_BARO_BMP581_SPI>
+{
+    using Type = BMP581_Sensor;
+    template <class B> static SpiRegisterDevice device(B& b) { return BMP581_Sensor::spiDevice(b.spi(), Config::PIN_SPI_CS_BARO); }
+};
+template <> struct BaroChip<SENSOR_BARO_DPS310>
+{
+    using Type = DPS310_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b)
+    {
+        return I2cRegisterDevice(OP_SENSOR_BUSES(b), SPL06_Sensor::DEFAULT_ADDRESS, SPL06_Sensor::ALTERNATE_ADDRESS);
+    }
+};
+
+template <> struct MagChip<SENSOR_MAG_QMC5883P>
+{
+    using Type = QMC5883P_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b) { return I2cRegisterDevice(OP_EXTERNAL_BUSES(b), QMC5883P_Sensor::DEFAULT_ADDRESS); }
+};
+template <> struct MagChip<SENSOR_MAG_QMC5883L>
+{
+    using Type = QMC5883L_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b) { return I2cRegisterDevice(OP_EXTERNAL_BUSES(b), QMC5883L_Sensor::DEFAULT_ADDRESS); }
+};
+template <> struct MagChip<SENSOR_MAG_QMC6309>
+{
+    using Type = QMC6309_Sensor;
+    template <class B> static I2cRegisterDevice device(B& b) { return I2cRegisterDevice(OP_EXTERNAL_BUSES(b), QMC6309_Sensor::DEFAULT_ADDRESS); }
+};
+
+// Один выбранный чип: устройство на шине + драйвер. Id = 0 (NONE) —
+// пустое место в цепочке.
+template <template <int> class Chip, int Id, class Board>
+struct SensorSlot
+{
+    decltype(Chip<Id>::device(std::declval<Board&>())) device;
+    typename Chip<Id>::Type sensor;
+
+    explicit SensorSlot(Board& board)
+        : device(Chip<Id>::device(board)),
+          sensor(device)
+    {
+    }
+
+    SensorChainCore::Entry entry() { return SensorChainCore::Entry(&sensor, &device); }
+    II2CBus* aux() { return sensor.auxI2c(); }
+};
+
+template <template <int> class Chip, class Board>
+struct SensorSlot<Chip, 0, Board>
+{
+    explicit SensorSlot(Board&) {}
+    SensorChainCore::Entry entry() { return SensorChainCore::Entry(); }
+    II2CBus* aux() { return nullptr; }
+};
+
+// Все выбранные IMU, барометры и компасы платы — по цепочке на тип.
+// main.cpp создаёт один объект и отдаёт автопилоту imu/baro/magnetometer().
+template <class Board>
+struct SelectedSensors
+{
+    SensorSlot<ImuChip, SENSOR_IMU, Board> imu1;
+    SensorSlot<ImuChip, SENSOR_IMU_2, Board> imu2;
+    SensorSlot<ImuChip, SENSOR_IMU_3, Board> imu3;
+    // Шина за IMU (компас за LSM6DSV) — к шинам платы, до барометров и
+    // компасов: их устройства берут список шин при создании.
+    bool auxRegistered;
+    SensorSlot<BaroChip, SENSOR_BARO, Board> baro1;
+    SensorSlot<BaroChip, SENSOR_BARO_2, Board> baro2;
+    SensorSlot<BaroChip, SENSOR_BARO_3, Board> baro3;
+    SensorSlot<MagChip, SENSOR_MAG, Board> mag1;
+    SensorSlot<MagChip, SENSOR_MAG_2, Board> mag2;
+    SensorSlot<MagChip, SENSOR_MAG_3, Board> mag3;
+
+    ImuChain imu;
+    BaroChain baro;
+    MagChain mag;
+
+    explicit SelectedSensors(Board& board)
+        : imu1(board), imu2(board), imu3(board),
+          auxRegistered(registerAux(board)),
+          baro1(board), baro2(board), baro3(board),
+          mag1(board), mag2(board), mag3(board),
+          imu(imu1.entry(), imu2.entry(), imu3.entry()),
+          baro(baro1.entry(), baro2.entry(), baro3.entry()),
+          mag(mag1.entry(), mag2.entry(), mag3.entry())
+    {
+    }
+
+    bool registerAux(Board& board)
+    {
+        II2CBus* aux = imu1.aux() ? imu1.aux() : imu2.aux() ? imu2.aux() : imu3.aux();
+        if (aux) board.setAuxI2c(aux);
+        return aux != nullptr;
+    }
+
+    // Компаса не выбрано — nullptr (автопилот так и понимает «компаса нет»).
+    MagnetometerSensor* magnetometer() { return mag.chain().configuredCount() ? &mag : nullptr; }
+};
+
+// Основной чип типа — для сборок с одним датчиком (коптер, тесты).
+#if SENSOR_IMU != SENSOR_IMU_NONE
+using SelectedImu = ImuChip<SENSOR_IMU>::Type;
+#define SELECTED_IMU_DEVICE(board) ImuChip<SENSOR_IMU>::device(board)
+#endif
+#if SENSOR_BARO != SENSOR_BARO_NONE
+using SelectedBaro = BaroChip<SENSOR_BARO>::Type;
+#define SELECTED_BARO_DEVICE(board) BaroChip<SENSOR_BARO>::device(board)
+#endif
+#if SENSOR_MAG != SENSOR_MAG_NONE
+using SelectedMag = MagChip<SENSOR_MAG>::Type;
+#define SELECTED_MAG_DEVICE(board) MagChip<SENSOR_MAG>::device(board)
 #endif
 
 #if SENSOR_AIRSPEED == SENSOR_AIRSPEED_PITOT_BMP581
     #include "sensors/airspeed/PitotDualBaroAirspeed.h"
-    #include "sensors/baro/BMP581_Sensor.h"
     using SelectedPitotBaro = BMP581_Sensor;
     // Трубка — всегда 0x47 (SDO на VDD), чтобы не спутать её с основным BMP581.
-    #define SELECTED_PITOT_DEVICE(board) I2cRegisterDevice((board).externalI2c(), BMP581_Sensor::ALTERNATE_ADDRESS)
+    #define SELECTED_PITOT_DEVICE(board) I2cRegisterDevice(OP_EXTERNAL_BUSES(board), BMP581_Sensor::ALTERNATE_ADDRESS)
 #elif SENSOR_AIRSPEED == SENSOR_AIRSPEED_NONE
     // main.cpp оборачивает создание трубки в #if SENSOR_AIRSPEED != SENSOR_AIRSPEED_NONE.
 #else

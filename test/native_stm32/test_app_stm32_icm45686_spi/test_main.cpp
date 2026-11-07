@@ -131,7 +131,7 @@ void test_boot_with_spi_sensors_and_broken_flash()
     TEST_ASSERT_EQUAL(PB14, SPI.stm32Pins[1]);
     TEST_ASSERT_EQUAL(PB15, SPI.stm32Pins[2]);
     TEST_ASSERT_NULL(autopilot.getAirspeedSensor());
-    TEST_ASSERT_TRUE(imuSensor.isAvailable() && baroSensor.isAvailable() && magSensor.isAvailable());
+    TEST_ASSERT_TRUE(imuSensor.isAvailable() && baroSensor.isAvailable() && magnetometer->isAvailable());
 }
 
 void test_alt_hold_from_ground_station_holds_height()

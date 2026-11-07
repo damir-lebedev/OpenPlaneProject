@@ -157,6 +157,9 @@ void test_link_loss_in_air_glides_with_motor_off()
 
     TEST_ASSERT_TRUE(plane.autopilot.isFailsafeGliding());
     TEST_ASSERT_TRUE(plane.controller.isArmed());   // ARM не сбрасывается
+    // Мотор не встаёт рывком: газ спадает по рампе и доходит до нуля.
+    TEST_ASSERT_TRUE(plane.controller.getOutputState().throttle > Config::FAILSAFE_THROTTLE + 500);
+    for (uint32_t i = 0; i < Config::THROTTLE_DOWN_RAMP_MS / 2; ++i) plane.tick(lost);
     TEST_ASSERT_EQUAL_UINT16(escUs(Config::FAILSAFE_THROTTLE), plane.pwm(ServoChannel::ESC));
     // Коррекция крена влево: левый элерон вверх (закрылки убраны).
     const uint16_t left = plane.pwm(ServoChannel::AILERON_LEFT);
@@ -375,6 +378,7 @@ void test_motor_reverse_ignores_autopilot_throttle_and_stops_on_link_loss()
     lost.set(Channels::THROTTLE, 900);
     plane.tick(lost);
     TEST_ASSERT_TRUE(plane.controller.isReceiverFailsafe());
+    for (uint32_t i = 0; i < Config::THROTTLE_DOWN_RAMP_MS / 2; ++i) plane.tick(lost);   // назад тоже спадает по рампе
     TEST_ASSERT_EQUAL_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));
 }
 
@@ -396,7 +400,15 @@ void test_throttle_limit_knob_stretches_allowed_throttle_over_the_stick()
     FlightController controller{ receiver, mixer, throttle, arming, outputs, &autopilot, &selector };
     outputs.begin();
     controller.begin();
-    auto tick = [&](const RcChannels& rc) { board.rc.push(ibusFrame(rc)); fake::advanceMs(2); controller.update(); };
+    // Сброс газа идёт по рампе — после каждого шага даём ей дойти.
+    auto tick = [&](const RcChannels& rc) {
+        for (uint32_t i = 0; i < Config::THROTTLE_DOWN_RAMP_MS / 2 + 1; ++i)
+        {
+            board.rc.push(ibusFrame(rc));
+            fake::advanceMs(2);
+            controller.update();
+        }
+    };
     auto thr = [&]() { return controller.getOutputState().throttle; };
 
     RcChannels rc;

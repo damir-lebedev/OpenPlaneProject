@@ -14,6 +14,12 @@
 // один раз, когда конкретная реализация (например Esp32I2CBus)
 // создаётся платой (IBoard) — так шина инициализируется ровно
 // один раз, даже если её использует несколько датчиков.
+//
+// Одну шину могут делить задачи (экран рисует своя задача, датчики
+// читает полётная): каждая транзакция — под lock()/unlock()
+// (рекурсивный мьютекс у реализаций для плат). Помощники ниже
+// захватывают шину сами; кто зовёт примитивы напрямую (экран),
+// держит I2cLock на всю транзакцию.
 // ============================================================
 
 class II2CBus
@@ -33,6 +39,22 @@ public:
     virtual int available() = 0;
     virtual int read() = 0;
 
+    // Захват шины на одну транзакцию; повторный захват той же задачей
+    // разрешён. По умолчанию (фейки, одна задача) — ничего.
+    virtual void lock() {}
+    virtual void unlock() {}
+
+    // Имя для консоли и приложения: пины, например "PB11/PB10".
+    virtual const char* name() const { return "I2C"; }
+
+    // Освободить зависшую шину (ведомый держит SDA) и поднять контроллер
+    // заново; true — линии свободны. Сколько раз это уже понадобилось и
+    // свободны ли линии сейчас — для консоли ('b'). Реализации без
+    // восстановления (ESP32: ядро чистит шину само, фейки) — ничего.
+    virtual bool recover() { return true; }
+    virtual uint32_t recoveries() const { return 0; }
+    virtual bool linesHigh() const { return true; }
+
     // --------------------------------------------------------
     // Общие помощники поверх примитивов выше — регистровый доступ,
     // одинаковый у всех I2C-датчиков проекта. Возвращают false, если
@@ -44,6 +66,7 @@ public:
 
     bool writeRegister(uint8_t address, uint8_t reg, uint8_t value)
     {
+        Guard guard(*this);
         beginTransmission(address);
         write(reg);
         write(value);
@@ -54,6 +77,7 @@ public:
     // адреса регистра — у всех датчиков проекта он включён).
     bool writeRegisters(uint8_t address, uint8_t reg, const uint8_t* data, uint8_t count)
     {
+        Guard guard(*this);
         beginTransmission(address);
         write(reg);
         write(data, count);
@@ -62,6 +86,7 @@ public:
 
     bool readRegisters(uint8_t address, uint8_t reg, uint8_t* buffer, uint8_t count)
     {
+        Guard guard(*this);
         beginTransmission(address);
         write(reg);
         if (endTransmission(false) != 0) return false;
@@ -84,7 +109,45 @@ public:
 
     bool probe(uint8_t address)
     {
+        Guard guard(*this);
         beginTransmission(address);
         return endTransmission() == 0;
+    }
+
+    // Шина захвачена, пока жив объект.
+    class Guard
+    {
+    public:
+        explicit Guard(II2CBus& i2cBus) : bus(i2cBus) { bus.lock(); }
+        ~Guard() { bus.unlock(); }
+        Guard(const Guard&) = delete;
+        Guard& operator=(const Guard&) = delete;
+
+    private:
+        II2CBus& bus;
+    };
+};
+
+
+// Шины, на которых искать I2C-устройство, — по порядку предпочтения
+// (I2cRegisterDevice). Одна и та же шина дважды не попадает.
+struct I2cBusList
+{
+    static constexpr uint8_t MAX = 4;
+
+    II2CBus* bus[MAX] = {};
+    uint8_t count = 0;
+
+    I2cBusList() = default;
+    explicit I2cBusList(II2CBus& only) { add(&only); }
+
+    void add(II2CBus* candidate)
+    {
+        if (!candidate || count >= MAX) return;
+        for (uint8_t i = 0; i < count; ++i)
+        {
+            if (bus[i] == candidate) return;
+        }
+        bus[count++] = candidate;
     }
 };
