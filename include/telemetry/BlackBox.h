@@ -837,6 +837,7 @@ private:
         info("cfg.CHANNEL_REVERSED=%s", reversedChannels().c_str());
         BB_CFG_INT(ESC_BIDIRECTIONAL);
         BB_CFG_INT(REVERSE_THROTTLE_LIMIT_PCT);
+        BB_CFG_INT(THROTTLE_DOWN_RAMP_MS);
         BB_CFG_INT(FLAPS_DEPLOYED_US);
         BB_CFG_INT(AIRBRAKE_US);
         BB_CFG_INT(IMU_ROTATION_CW_DEG);

@@ -353,6 +353,41 @@ void test_motor_reverse_switches_only_when_disarmed()
     takeSerial();
 }
 
+// Сброс газа с полного стика спадает за THROTTLE_DOWN_RAMP_MS в обе
+// стороны: назад полный стик — это REVERSE_THROTTLE_LIMIT_PCT, и спадать
+// он должен так же плавно, а не вдвое быстрее.
+void test_throttle_cut_takes_the_same_time_forward_and_in_reverse()
+{
+    if (Config::THROTTLE_DOWN_RAMP_MS < 100) return;   // рампа выключена или слишком короткая
+
+    for (int back = 0; back < 2; ++back)
+    {
+        Plane plane;
+        RcChannels rc;
+        rc.set(Channels::SWD, back ? 2000 : 1000);
+        plane.tick(rc);
+        fake::advanceMs(Config::REVERSE_SETTLE_MS);
+        plane.tick(rc);
+        rc.set(Channels::ARM, 2000);   // ARM — только с газом внизу
+        plane.tick(rc);
+        TEST_ASSERT_TRUE(plane.controller.isArmed());
+        rc.set(Channels::THROTTLE, 2000);
+        plane.tick(rc);
+        TEST_ASSERT_EQUAL(back == 1, plane.controller.getOutputState().motorReverse);
+        const int top = plane.controller.getOutputState().throttle - Config::PWM_MIN;
+
+        rc.set(Channels::THROTTLE, 1000);   // стик вниз разом
+        for (uint32_t t = 0; t < Config::THROTTLE_DOWN_RAMP_MS / 2; t += 2) plane.tick(rc);
+        const int half = plane.controller.getOutputState().throttle - Config::PWM_MIN;
+        TEST_ASSERT_INT_WITHIN(top / 50 + 2, top / 2, half);   // полпути за полвремени
+
+        for (uint32_t t = 0; t < Config::THROTTLE_DOWN_RAMP_MS / 2 + 4; t += 2) plane.tick(rc);
+        TEST_ASSERT_EQUAL_UINT16(Config::PWM_MIN, plane.controller.getOutputState().throttle);
+        TEST_ASSERT_EQUAL_UINT16(Config::ESC_NEUTRAL_US, plane.pwm(ServoChannel::ESC));
+    }
+    takeSerial();
+}
+
 // В реверсе газ только от пилота: автопилот видит мотор выключенным,
 // а при потере связи мотор глохнет, даже если автопилот ведёт домой.
 void test_motor_reverse_ignores_autopilot_throttle_and_stops_on_link_loss()
@@ -660,6 +695,7 @@ int main()
     RUN_TEST(test_throttle_limit_knob_stretches_allowed_throttle_over_the_stick);
     RUN_TEST(test_motor_reverse_switches_only_when_disarmed);
     RUN_TEST(test_motor_reverse_ignores_autopilot_throttle_and_stops_on_link_loss);
+    RUN_TEST(test_throttle_cut_takes_the_same_time_forward_and_in_reverse);
     RUN_TEST(test_switch_gesture_starts_calibration_with_motor_and_surface_signal);
     RUN_TEST(test_full_ground_calibration_from_transmitter_enables_tail_wheel_takeoff);
     RUN_TEST(test_takeoff_refusal_nods_surfaces_but_leaves_esc_alone);

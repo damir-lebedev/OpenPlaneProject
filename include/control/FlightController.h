@@ -155,9 +155,10 @@ public:
             output.throttle = capThrottle(output.throttle, throttleLimitPct(in));
         }
 
-        // Сброс газа — плавно (Config::THROTTLE_DOWN_RAMP_MS): резкий
-        // ESC гасит торможением, скачком тока в батарею.
-        output.throttle = throttleRamp.apply(output.throttle, nowMs);
+        // Сброс газа — плавно (Config::THROTTLE_DOWN_RAMP_MS от полного
+        // стика до нуля, в обе стороны): резкий ESC гасит торможением,
+        // скачком тока в батарею.
+        output.throttle = throttleRamp.apply(output.throttle, nowMs, rampTopUs());
 
         // ARM реально блокирует газ (см. ArmingManager) — ставим ПОСЛЕ
         // автопилота и рампы, чтобы ни один режим не мог протащить газ
@@ -281,6 +282,17 @@ private:
         return min(static_cast<float>(Config::REVERSE_THROTTLE_LIMIT_PCT), throttleLimitPct(in));
     }
 
+    // Газ на полном стике в текущем направлении — от него рампа
+    // считает время спада (одно и то же вперёд и назад). Только пределы
+    // Config, без крутилки: убавили её на лету при большом газе — спад
+    // не должен растянуться на секунды.
+    uint16_t rampTopUs() const
+    {
+        const float forward = Config::THROTTLE_LIMIT_PCT;
+        const float back = min(static_cast<float>(Config::REVERSE_THROTTLE_LIMIT_PCT), forward);
+        return capThrottle(Config::PWM_MAX, reverse.isReversed() ? back : forward);
+    }
+
     // Разрешённое растягивается на весь ход: PWM_MIN..PWM_MAX ->
     // PWM_MIN..(PWM_MIN + pct% хода), стик остаётся пропорциональным —
     // просто верх ниже.
@@ -393,13 +405,13 @@ private:
         {
             if (!signals.isBusy(nowMs))
             {
-                outputs.setFailsafe(throttleRamp.apply(Config::FAILSAFE_THROTTLE, nowMs));
+                outputs.setFailsafe(throttleRamp.apply(Config::FAILSAFE_THROTTLE, nowMs, rampTopUs()));
                 return;
             }
             ControlCommand nod;
             addNod(nod, nowMs);
             FlightOutputState safe = mixer.mix(nod);
-            safe.throttle = throttleRamp.apply(Config::FAILSAFE_THROTTLE, nowMs);
+            safe.throttle = throttleRamp.apply(Config::FAILSAFE_THROTTLE, nowMs, rampTopUs());
             safe.escPulsesOff = !arming.isArmed() && signals.escPulsesOff(nowMs);
             safe.aux1 = outputs.getLastState().aux1;
             safe.aux2 = outputs.getLastState().aux2;
@@ -417,7 +429,7 @@ private:
         // Назад автопилот мотором не ведёт — домой только планированием
         // (газ спадает по рампе); MOTOR_KILL — мгновенно.
         if (output.motorReverse) output.throttle = Config::PWM_MIN;
-        output.throttle = throttleRamp.apply(output.throttle, nowMs);
+        output.throttle = throttleRamp.apply(output.throttle, nowMs, rampTopUs());
         if (in.has(Feature::MOTOR_KILL))
         {
             output.throttle = Config::PWM_MIN;

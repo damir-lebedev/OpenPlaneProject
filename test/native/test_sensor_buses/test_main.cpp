@@ -24,22 +24,34 @@ void tearDown() {}
 void test_ramp_adds_throttle_at_once_and_cuts_it_slowly()
 {
     ThrottleRamp ramp;
-    TEST_ASSERT_EQUAL_UINT16(1800, ramp.apply(1800, 0, 1000));   // прибавка — сразу
-    TEST_ASSERT_EQUAL_UINT16(1700, ramp.apply(1000, 100, 1000));  // 100 мс = 10 % хода
-    TEST_ASSERT_EQUAL_UINT16(1200, ramp.apply(1000, 600, 1000));
-    TEST_ASSERT_EQUAL_UINT16(1000, ramp.apply(1000, 900, 1000));  // не ниже цели
-    TEST_ASSERT_EQUAL_UINT16(1500, ramp.apply(1500, 910, 1000));
+    TEST_ASSERT_EQUAL_UINT16(1800, ramp.apply(1800, 0, 2000, 1000));   // прибавка — сразу
+    TEST_ASSERT_EQUAL_UINT16(1700, ramp.apply(1000, 100, 2000, 1000));  // 100 мс = 10 % хода
+    TEST_ASSERT_EQUAL_UINT16(1200, ramp.apply(1000, 600, 2000, 1000));
+    TEST_ASSERT_EQUAL_UINT16(1000, ramp.apply(1000, 900, 2000, 1000));  // не ниже цели
+    TEST_ASSERT_EQUAL_UINT16(1500, ramp.apply(1500, 910, 2000, 1000));
+}
+
+// Время спада — от полного стика (topUs), а не от 100 % хода: газ назад
+// с пределом 50 % спадает за то же время, что и вперёд с 100 %.
+void test_ramp_time_is_from_the_top_of_allowed_throttle()
+{
+    ThrottleRamp ramp;
+    TEST_ASSERT_EQUAL_UINT16(1500, ramp.apply(1500, 0, 1500, 1000));
+    TEST_ASSERT_EQUAL_UINT16(1250, ramp.apply(1000, 500, 1500, 1000));  // половина времени — половина
+    TEST_ASSERT_EQUAL_UINT16(1001, ramp.apply(1000, 998, 1500, 1000));
+    TEST_ASSERT_EQUAL_UINT16(1000, ramp.apply(1000, 1000, 1500, 1000));
+    TEST_ASSERT_EQUAL_UINT16(1000, ramp.apply(1000, 1002, 1000, 1000)); // верх = ноль — не делит на ноль
 }
 
 void test_ramp_zero_means_no_ramp_and_reset_stops_at_once()
 {
     ThrottleRamp ramp;
-    ramp.apply(2000, 0, 0);
-    TEST_ASSERT_EQUAL_UINT16(1000, ramp.apply(1000, 2, 0));
-    ramp.apply(2000, 4, 1000);
+    ramp.apply(2000, 0, 2000, 0);
+    TEST_ASSERT_EQUAL_UINT16(1000, ramp.apply(1000, 2, 2000, 0));
+    ramp.apply(2000, 4, 2000, 1000);
     ramp.reset();   // DISARM / MOTOR_KILL
     TEST_ASSERT_EQUAL_UINT16(1000, ramp.currentUs());
-    TEST_ASSERT_EQUAL_UINT16(1000, ramp.apply(1000, 6, 1000));
+    TEST_ASSERT_EQUAL_UINT16(1000, ramp.apply(1000, 6, 2000, 1000));
 }
 
 // ------------------------------------------------------------
@@ -258,6 +270,7 @@ int main()
     UNITY_BEGIN();
     RUN_TEST(test_ramp_adds_throttle_at_once_and_cuts_it_slowly);
     RUN_TEST(test_ramp_zero_means_no_ramp_and_reset_stops_at_once);
+    RUN_TEST(test_ramp_time_is_from_the_top_of_allowed_throttle);
     RUN_TEST(test_device_finds_its_chip_on_any_bus_and_alternate_address);
     RUN_TEST(test_device_steps_to_the_next_bus_with_the_same_address);
     RUN_TEST(test_device_with_nobody_answering_stays_on_the_first_place);
