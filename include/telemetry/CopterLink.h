@@ -14,6 +14,7 @@
 #include "hal/Platform.h"
 #include "rc/RcReceiver.h"
 #include "telemetry/FirmwareIdentity.h"
+#include "copter/DisplayPort.h"
 #include "telemetry/JsonWriter.h"
 
 // ============================================================
@@ -79,6 +80,8 @@ public:
     void setGuard(const copter::EscGuard* g) { guard = g; }
     void setRssi(const copter::Rssi* r) { rssi = r; }
     void setVtx(const copter::VtxController* controller) { vtx = controller; }
+    // Куда рисуется OSD и что на порту очков (copter/DisplayPort.h) — в живые кадры.
+    void setOsdOutput(const copter::OsdOutputStatus* status) { osdOut = status; }
     void setGps(const GpsSensor* sensor, const copter::GpsHome* home)
     {
         gps = sensor;
@@ -342,6 +345,16 @@ public:
             const copter::VtxState& v = vtx->state();
             w.add(",\"vtx\":{\"on\":%s,\"mhz\":%u,\"mw\":%u,\"pit\":%s,\"cap\":%u}", v.online ? "true" : "false",
                   v.frequencyMhz, v.powerMw, v.pit ? "true" : "false", vtx->levelMw(vtx->topAllowedLevel()));
+        }
+        if (osdOut && (osdOut->port || osdOut->chip))
+        {
+            // OSD: чип и/или очки по MSP, экран (столбцы × строки, HD), порт очков:
+            // есть ли он, спрашивают ли по нему, кто сказал размер, VTX на MSP
+            const copter::OsdOutputStatus& o = *osdOut;
+            w.add(",\"osd\":{\"chip\":%s,\"msp\":%s,\"c\":%u,\"r\":%u,\"hd\":%s,\"port\":%s,\"dev\":%s,\"devc\":%s,\"vtx\":%s,\"req\":%lu}",
+                  o.chip ? "true" : "false", o.msp ? "true" : "false", o.cols, o.rows, o.hd ? "true" : "false",
+                  o.port ? "true" : "false", o.deviceAlive ? "true" : "false", o.deviceCanvas ? "true" : "false",
+                  o.mspVtx ? "true" : "false", static_cast<unsigned long>(o.requests));
         }
         w.add(",\"hdg\":%.0f", headingDeg);
         spectrum(w);
@@ -855,6 +868,7 @@ private:
     const copter::EscGuard* guard = nullptr;   // перегрузка по току (ovl, mma)
     const copter::Rssi* rssi = nullptr;        // сила сигнала пульта (rssi, rssisrc)
     const copter::VtxController* vtx = nullptr;
+    const copter::OsdOutputStatus* osdOut = nullptr;
     const GpsSensor* gps = nullptr;
     const copter::GpsHome* gpsHome = nullptr;
     float headingDeg = 0.0f;

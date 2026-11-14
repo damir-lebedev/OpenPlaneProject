@@ -30,7 +30,11 @@ namespace msp
     }
 
     // Входящие кадры по байту. feed() -> true — кадр целиком и верен.
-    class Parser
+    // CAPACITY — сколько данных запроса помещается: кадр длиннее (но в
+    // пределах MAX_PAYLOAD) проглатывается целиком и считается ошибкой —
+    // поток не сбивается. Порту очков хватает сотни байт (telemetry/MspPort.h).
+    template <uint16_t CAPACITY>
+    class BasicParser
     {
     public:
         bool feed(uint8_t b)
@@ -65,13 +69,14 @@ namespace msp
                     state = size ? State::V1Data : State::V1Check;
                     return false;
                 case State::V1Data:
-                    payload[received++] = b;
+                    if (received < CAPACITY) payload[received] = b;
+                    ++received;
                     check ^= b;
                     if (received >= size) state = State::V1Check;
                     return false;
                 case State::V1Check:
                     state = State::Idle;
-                    if (b != check)
+                    if (b != check || size > CAPACITY)
                     {
                         ++errors;
                         return false;
@@ -99,13 +104,14 @@ namespace msp
                     state = size ? State::V2Data : State::V2Check;
                     return false;
                 case State::V2Data:
-                    payload[received++] = b;
+                    if (received < CAPACITY) payload[received] = b;
+                    ++received;
                     crc = crc8DvbS2(crc, b);
                     if (received >= size) state = State::V2Check;
                     return false;
                 case State::V2Check:
                     state = State::Idle;
-                    if (b != crc)
+                    if (b != crc || size > CAPACITY)
                     {
                         ++errors;
                         return false;
@@ -122,7 +128,7 @@ namespace msp
         uint16_t cmd = 0;
         uint16_t size = 0;
         uint8_t flag = 0;
-        uint8_t payload[MAX_PAYLOAD] = {};
+        uint8_t payload[CAPACITY] = {};
         uint32_t errors = 0;
 
     private:
@@ -133,6 +139,9 @@ namespace msp
         uint8_t head = 0;
         uint16_t received = 0;
     };
+
+    // Обычный разборщик: запрос любой длины до MAX_PAYLOAD (USB, CRSF).
+    using Parser = BasicParser<MAX_PAYLOAD>;
 
     // Поля ответа (младший байт первым). Не влезло — overflow.
     class Writer

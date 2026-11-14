@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "helpers/ChipEmulators.h"
+#include "helpers/DisplayPortGoggles.h"
 #include "helpers/TestSupport.h"
 
 void setUp() {}
@@ -704,6 +705,144 @@ void test_msp_over_usb_console()
     takeSerial();
 }
 
+// 154 / 161: цифровые очки на UART «MSP» платы (Matek H743: UART7, RX PE7,
+// TX PE8). Чипа аналогового OSD в этой сборке нет — экран идёт только в очки
+// по MSP DisplayPort, как только они начали опрашивать полётник.
+void test_osd_in_digital_goggles_over_msp()
+{
+    TEST_ASSERT_TRUE_MESSAGE(contains(bootLog, "Порт MSP для очков и видеопередатчика: 115200"), bootLog.c_str());
+    HardwareSerial& wire = port(PE7);
+    TEST_ASSERT_EQUAL_UINT32(115200, wire.baudRate());
+    const fake::TaskRecord* osd = fake::findTask("osd");
+    TEST_ASSERT_NOT_NULL_MESSAGE(osd, "задача OSD не запущена, хотя порт очков есть");
+
+    DisplayPortGoggles goggles;
+    RcChannels rc;
+    // полётный цикл каждый такт, задача OSD — раз в 50 тактов; всё, что ушло в UART, — в очки
+    auto spin = [&](double seconds) {
+        for (int i = 0; i < static_cast<int>(seconds * 1000); ++i)
+        {
+            if (i % 50 == 0) fake::runTask(*osd, 1);
+            tick(&rc);
+            goggles.feed(wire.takeTx());
+        }
+    };
+    auto ask = [&](uint8_t cmd, const std::vector<uint8_t>& data = {}) {
+        const std::vector<uint8_t> f = DisplayPortGoggles::request(cmd, data);
+        wire.pushRx(f.data(), f.size());
+    };
+    auto sameAsFirmwareScreen = [&]() {
+        for (uint8_t r = 0; r < osdScreen.rowCount(); ++r)
+        {
+            std::string row;
+            for (uint8_t c = 0; c < osdScreen.colCount(); ++c) row += static_cast<char>(osdScreen.at(r, c));
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(row.c_str(), goggles.row(r).c_str(), "в очках не тот экран, что собрала прошивка");
+        }
+    };
+
+    // osd_displayport_device = AUTO: пока на порту тихо, полётник молчит
+    wire.clearTx();
+    spin(0.3);
+    TEST_ASSERT_EQUAL(0, goggles.frames);
+    TEST_ASSERT_EQUAL(0, goggles.stray);
+    TEST_ASSERT_FALSE(osdOutput.msp);
+    TEST_ASSERT_TRUE(osdOutput.port);
+
+    // очки включились: спросили ARM — OSD пошёл, размер пока аналоговый 30 × 16
+    ask(101);
+    spin(0.3);
+    TEST_ASSERT_TRUE_MESSAGE(goggles.clean(), goggles.text().c_str());
+    TEST_ASSERT_EQUAL(1, goggles.replyCount[101]);
+    TEST_ASSERT_TRUE(goggles.draws >= 2);
+    TEST_ASSERT_TRUE(osdOutput.msp);
+    TEST_ASSERT_EQUAL_UINT8(30, osdOutput.cols);
+    sameAsFirmwareScreen();
+    TEST_ASSERT_TRUE_MESSAGE(contains(goggles.text(), "ANGL"), goggles.text().c_str());   // режим полёта на месте
+
+    // очки сообщили свой экран 53 × 20 — дальше рисуем под него (HD), настройки при этом не тронуты
+    goggles.resize(53, 20);
+    ask(188, { 53, 20 });
+    spin(0.3);
+    TEST_ASSERT_TRUE_MESSAGE(goggles.clean(), goggles.text().c_str());
+    TEST_ASSERT_EQUAL(1, goggles.replyCount[188]);
+    TEST_ASSERT_EQUAL_UINT8(53, osdOutput.cols);
+    TEST_ASSERT_EQUAL_UINT8(20, osdOutput.rows);
+    TEST_ASSERT_TRUE(osdOutput.hd);
+    TEST_ASSERT_EQUAL_UINT8(53, osdScreen.colCount());
+    sameAsFirmwareScreen();
+    TEST_ASSERT_FALSE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_MSP);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, copterParams.value(copter::PARAM_VCD_VIDEO_SYSTEM));
+    ask(189);
+    spin(0.05);
+    TEST_ASSERT_EQUAL_UINT8(53, goggles.replies[189][0]);
+    TEST_ASSERT_EQUAL_UINT8(20, goggles.replies[189][1]);
+
+    // элемент у правого края большого экрана доходит до очков
+    const float timerWas = copterParams.value(copter::PARAM_OSD_TIM_2_POS);
+    copterParams.setValue(copter::PARAM_OSD_TIM_2_POS, 0, static_cast<float>(copter::osdPos(46, 19)));
+    spin(0.3);
+    sameAsFirmwareScreen();
+    TEST_ASSERT_EQUAL_HEX8(copter::osdsym::FLY_TIME, static_cast<uint8_t>(goggles.row(19)[46]));
+    TEST_ASSERT_EQUAL_STRING("00:", goggles.row(19).substr(47, 3).c_str());
+    copterParams.setValue(copter::PARAM_OSD_TIM_2_POS, 0, timerWas);
+
+    // приложению — в живом кадре: куда рисуем, какой экран, кто на порту
+    takeSerial();
+    host("live");
+    spin(0.2);
+    host("live 0");
+    spin(0.05);
+    const std::string log = takeSerial();
+    const auto live = linesWith(log, "@live ");
+    TEST_ASSERT_TRUE(live.size() >= 1);
+    TEST_ASSERT_TRUE_MESSAGE(isJson(live.back()), live.back().c_str());
+    TEST_ASSERT_TRUE_MESSAGE(contains(live.back(), "\"osd\":{\"chip\":false,\"msp\":true,\"c\":53,\"r\":20,\"hd\":true,"
+                                                   "\"port\":true,\"dev\":true,\"devc\":true,\"vtx\":false,\"req\":"),
+                             live.back().c_str());
+
+    // передатчик на MSP (HDZero, Walksnail): спросил свои настройки — получает их и дальше при каждой смене
+    ask(88);
+    spin(0.1);   // статус для приложения обновляет задача OSD — дать ей пройти ещё раз
+    TEST_ASSERT_EQUAL(2, goggles.replyCount[88]);            // ответ и первый кадр без запроса
+    TEST_ASSERT_EQUAL_UINT8(5, goggles.replies[88][0]);      // VTXDEV_MSP
+    TEST_ASSERT_EQUAL_UINT8(1, goggles.replies[88][7]);      // готов
+    TEST_ASSERT_TRUE(osdOutput.mspVtx);
+    const float channelWas = copterParams.value(copter::PARAM_VTX_CHANNEL);
+    const uint8_t channelNew = channelWas > 5.5f ? 2 : 6;
+    copterParams.setValue(copter::PARAM_VTX_CHANNEL, 0, channelNew);   // как VTX Admin с пульта
+    spin(0.05);
+    TEST_ASSERT_EQUAL(3, goggles.replyCount[88]);
+    TEST_ASSERT_EQUAL_UINT8(channelNew, goggles.replies[88][2]);
+    spin(0.3);
+    TEST_ASSERT_EQUAL(3, goggles.replyCount[88]);            // без изменений — без лишних кадров
+    copterParams.setValue(copter::PARAM_VTX_CHANNEL, 0, channelWas);
+    spin(0.05);
+
+    // osd_displayport_device = MAX7456: экран отдан очкам (RELEASE, один раз) и тишина
+    copterParams.setValue(copter::PARAM_OSD_DISPLAYPORT_DEVICE, 0, 2.0f);
+    applySettings();
+    spin(0.3);
+    TEST_ASSERT_EQUAL(1, goggles.releases);
+    TEST_ASSERT_TRUE(goggles.released);
+    const int drawsBefore = goggles.draws;
+    spin(0.3);
+    TEST_ASSERT_EQUAL(drawsBefore, goggles.draws);
+    TEST_ASSERT_FALSE(osdOutput.msp);
+    // на запросы порт отвечает по-прежнему
+    ask(101);
+    spin(0.05);
+    TEST_ASSERT_EQUAL(2, goggles.replyCount[101]);
+    // вернули AUTO — рисует снова
+    copterParams.setValue(copter::PARAM_OSD_DISPLAYPORT_DEVICE, 0, 1.0f);
+    applySettings();
+    spin(0.3);
+    TEST_ASSERT_TRUE(goggles.draws > drawsBefore);
+    TEST_ASSERT_FALSE(goggles.released);
+    TEST_ASSERT_TRUE_MESSAGE(goggles.clean(), goggles.text().c_str());
+    sameAsFirmwareScreen();
+    takeSerial();
+}
+
 // 080: DShot на таймере с DMA. Моторы Matek H743 S1–S4 (TIM1 CH2/CH3, TIM2
 // CH1/CH2) и S7/S8 (TIM4 CH1/CH2): три таймера, у каждого свой burst.
 // Буфер, что ушёл бы в TIMx_DMAR, расшифровывается обратно в кадры:
@@ -1059,6 +1198,7 @@ int main()
     RUN_TEST(test_copter_build_from_cli);
     RUN_TEST(test_app_protocol_params_set_save);
     RUN_TEST(test_msp_over_usb_console);
+    RUN_TEST(test_osd_in_digital_goggles_over_msp);
     RUN_TEST(test_dshot_frames_on_timer_dma);
     RUN_TEST(test_dshot_commands_skips_and_missing_dma);
     RUN_TEST(test_dshot_eight_motors_timers_and_af);

@@ -7,7 +7,9 @@
 
 // ============================================================
 // OSD коптера — что рисуется поверх картинки камеры (чип AT7456E/MAX7456,
-// hal/Max7456.h): экран 30 столбцов × 16 строк (PAL) или 13 (NTSC).
+// hal/Max7456.h): экран 30 столбцов × 16 строк (PAL) или 13 (NTSC). В
+// цифровых очках (MSP DisplayPort, copter/DisplayPort.h) экран больше — до
+// 60 × 22: размер задаёт setCanvas(), позиции элементов — те же настройки.
 //
 // Шрифт в чипе — шрифт Betaflight (его зашивает производитель полётника):
 // латиница, цифры и значки (батарея, спутники, стрелки). Поэтому надписи —
@@ -355,22 +357,34 @@ namespace copter
     class OsdScreen
     {
     public:
-        static constexpr uint8_t COLS = 30;
-        static constexpr uint8_t MAX_ROWS = 16;
+        static constexpr uint8_t COLS = 30;        // аналог: 30 столбцов
+        static constexpr uint8_t SD_ROWS = 16;     // PAL; у NTSC — 13
+        static constexpr uint8_t MAX_COLS = 60;    // цифровые очки: до 60 × 22 (DJI с WTFOS)
+        static constexpr uint8_t MAX_ROWS = 22;
         static constexpr uint8_t WARNING_FIELD = 12;   // поле предупреждений BF
 
         OsdScreen() { clear(); }
 
+        // Строк на экране в 30 столбцов (аналог) — столбцы не трогает.
         void setRows(uint8_t n) { rows = n > MAX_ROWS ? MAX_ROWS : n; }
+        // Размер экрана: аналог 30 × 16/13, очки — что сказали они или настройки.
+        void setCanvas(uint8_t c, uint8_t r)
+        {
+            cols = c < 1 ? 1 : c > MAX_COLS ? MAX_COLS : c;
+            rows = r < 1 ? 1 : r > MAX_ROWS ? MAX_ROWS : r;
+        }
         uint8_t rowCount() const { return rows; }
-        uint8_t at(uint8_t row, uint8_t col) const { return row < MAX_ROWS && col < COLS ? cells[row][col] : ' '; }
+        uint8_t colCount() const { return cols; }
+        // Отступ слева для блока в 30 столбцов (меню, статистика) — по центру экрана.
+        uint8_t centerOffset() const { return cols > COLS ? static_cast<uint8_t>((cols - COLS) / 2) : 0; }
+        uint8_t at(uint8_t row, uint8_t col) const { return row < MAX_ROWS && col < MAX_COLS ? cells[row][col] : ' '; }
 
         void clear() { memset(cells, ' ', sizeof(cells)); }
 
         // Текст — заглавными (в шрифте только они).
         void print(uint8_t row, uint8_t col, const char* text)
         {
-            for (; *text && col < COLS && row < rows; ++text, ++col)
+            for (; *text && col < cols && row < rows; ++text, ++col)
             {
                 cells[row][col] = static_cast<uint8_t>(toupper(static_cast<unsigned char>(*text)));
             }
@@ -378,7 +392,7 @@ namespace copter
 
         void put(uint8_t row, uint8_t col, uint8_t symbol)
         {
-            if (row < rows && col < COLS) cells[row][col] = symbol;
+            if (row < rows && col < cols) cells[row][col] = symbol;
         }
 
         // Весь экран из данных: раскладка по умолчанию, без статистики.
@@ -403,7 +417,7 @@ namespace copter
                 const uint16_t p = l.pos[e];
                 if (!osdPosVisible(p)) continue;
                 const uint8_t x = osdPosX(p), y = osdPosY(p);
-                if (y >= rows || x >= COLS) continue;   // NTSC: строки 13–15 не видны
+                if (y >= rows || x >= cols) continue;   // NTSC: строки 13–15 не видны
                 drawElement(static_cast<OsdElement>(e), x, y, d, l, s, sizeof(s));
             }
         }
@@ -582,12 +596,14 @@ namespace copter
         void composeStats(const OsdStats& st, const OsdLayout& l)
         {
             char s[24];
-            uint8_t row = rows > 13 ? 2 : 1;
-            print(row++, 8, "--- STATS ---");
+            // блок в 30 столбцов и 12 строк: на большом экране очков — по центру
+            const uint8_t ox = centerOffset();
+            uint8_t row = rows > SD_ROWS ? static_cast<uint8_t>((rows - 12) / 2) : rows > 13 ? 2 : 1;
+            print(row++, static_cast<uint8_t>(ox + 8), "--- STATS ---");
             auto line = [&](const char* label, const char* value) {
                 if (row >= rows) return;
-                print(row, 2, label);
-                print(row, 18, value);
+                print(row, static_cast<uint8_t>(ox + 2), label);
+                print(row, static_cast<uint8_t>(ox + 18), value);
                 ++row;
             };
             if (l.stat(OSD_STAT_TIM_2))
@@ -662,7 +678,8 @@ namespace copter
             else snprintf(out, size, "%.1fKM", static_cast<double>(m / 1000.0f));
         }
 
-        uint8_t cells[MAX_ROWS][COLS];
-        uint8_t rows = MAX_ROWS;
+        uint8_t cells[MAX_ROWS][MAX_COLS];
+        uint8_t rows = SD_ROWS;
+        uint8_t cols = COLS;
     };
 }

@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "hal/Max7456.h"
+#include "helpers/DisplayPortGoggles.h"
 #include "helpers/Osd7456Emulator.h"
 #include "helpers/VtxEmulator.h"
 
@@ -31,6 +32,7 @@
 #include "copter/CopterController.h"
 #include "copter/CrsfMsp.h"
 #include "copter/CrsfTelemetry.h"
+#include "copter/DisplayPort.h"
 #include "copter/GpsHome.h"
 #include "copter/Osd.h"
 #include "copter/OsdMenu.h"
@@ -42,6 +44,7 @@
 #include "copter/Params.h"
 #include "telemetry/CopterMsp.h"
 #include "telemetry/Msp.h"
+#include "telemetry/MspPort.h"
 #include "copter/Presets.h"
 #include "copter/Propulsion.h"
 #include "copter/RateController.h"
@@ -3558,6 +3561,7 @@ namespace
         CopterMsp msp{ bench.ctl, params, cli };
         msp::Parser parser;
         uint32_t nowMs = 1000;
+        bool fromDevice = false;   // запрос с порта очков («тихий», см. CopterMsp.h)
 
         MspBench()
         {
@@ -3579,7 +3583,7 @@ namespace
             for (uint8_t b : req) done = parser.feed(b);
             TEST_ASSERT_TRUE_MESSAGE(done, "кадр запроса не собрался");
             uint8_t out[600];
-            const size_t n = msp.handle(parser, out, sizeof(out), nowMs);
+            const size_t n = msp.handle(parser, out, sizeof(out), nowMs, fromDevice);
             TEST_ASSERT_TRUE(n >= 6);
             TEST_ASSERT_EQUAL_UINT8('$', out[0]);
             TEST_ASSERT_EQUAL_UINT8('M', out[1]);
@@ -6959,6 +6963,853 @@ void test_msp_filter_config_dyn_notch_and_rpm()
 }
 
 
+// ---- OSD в цифровых очках: MSP DisplayPort (copter/DisplayPort.h, telemetry/MspPort.h) ----
+
+namespace
+{
+    // UART порта очков: что «пришло» — из rx; что полётник записал — в буфер
+    // передачи (capacity байт, как SERIAL_TX_BUFFER_SIZE), оттуда drain() — на
+    // провод (tx). capacity = −1 — порт не говорит, сколько места: всё сразу на провод.
+    struct WireUart : public IUartPort
+    {
+        std::vector<uint8_t> rx;
+        size_t rxAt = 0;
+        std::vector<uint8_t> tx;
+        std::vector<uint8_t> buffer;
+        int capacity = -1;
+        uint32_t baud = 0;
+
+        void begin(uint32_t b) override { baud = b; }
+        int available() override { return static_cast<int>(rx.size() - rxAt); }
+        int read() override { return rxAt < rx.size() ? rx[rxAt++] : -1; }
+        size_t write(uint8_t v) override { return write(&v, 1); }
+        size_t write(const uint8_t* b, size_t n) override
+        {
+            std::vector<uint8_t>& to = capacity < 0 ? tx : buffer;
+            to.insert(to.end(), b, b + n);
+            return n;
+        }
+        int availableForWrite() override { return capacity < 0 ? -1 : capacity - static_cast<int>(buffer.size()); }
+        void push(const std::vector<uint8_t>& bytes) { rx.insert(rx.end(), bytes.begin(), bytes.end()); }
+        // UART передал ещё n байт из буфера
+        void drain(size_t n)
+        {
+            if (n > buffer.size()) n = buffer.size();
+            tx.insert(tx.end(), buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(n));
+            buffer.erase(buffer.begin(), buffer.begin() + static_cast<std::ptrdiff_t>(n));
+        }
+        std::vector<uint8_t> take()
+        {
+            std::vector<uint8_t> t;
+            t.swap(tx);
+            return t;
+        }
+    };
+
+    // Приёмник пачки DisplayPort без UART: room()/queue(), как у MspPort.
+    struct BatchSink
+    {
+        std::vector<uint8_t> bytes;
+        size_t space = 100000;
+        int frames = 0;
+        size_t room() const { return space; }
+        bool queue(const uint8_t* f, size_t n)
+        {
+            if (n > space) return false;
+            bytes.insert(bytes.end(), f, f + n);
+            space -= n;
+            ++frames;
+            return true;
+        }
+    };
+
+    std::string screenRow(const OsdScreen& s, uint8_t row)
+    {
+        std::string t;
+        for (uint8_t c = 0; c < s.colCount(); ++c) t += static_cast<char>(s.at(row, c));
+        return t;
+    }
+
+    // Экран дошёл до очков символ в символ.
+    void assertShown(const OsdScreen& s, const DisplayPortGoggles& g)
+    {
+        TEST_ASSERT_EQUAL_UINT8(s.colCount(), g.cols);
+        TEST_ASSERT_EQUAL_UINT8(s.rowCount(), g.rows);
+        for (uint8_t r = 0; r < s.rowCount(); ++r)
+        {
+            TEST_ASSERT_EQUAL_STRING_MESSAGE(screenRow(s, r).c_str(), g.row(r).c_str(), "строка экрана в очках не та");
+        }
+    }
+
+    // Экран -> пачка -> очки, одним махом.
+    void showOnGoggles(DisplayPort& dp, const OsdScreen& s, DisplayPortGoggles& g, uint32_t nowMs)
+    {
+        BatchSink sink;
+        TEST_ASSERT_TRUE(dp.render(s, nowMs));
+        dp.drain(sink);
+        TEST_ASSERT_FALSE(dp.pending());
+        g.feed(sink.bytes);
+    }
+
+    OsdData flyingData()
+    {
+        OsdData d;
+        d.armed = true;
+        d.mode = "ANGL";
+        d.linkQuality = 99;
+        d.volts = 24.6f;
+        d.cellVolts = 4.1f;
+        d.hasCurrent = true;
+        d.amps = 12.3f;
+        d.mahDrawn = 456.0f;
+        d.flightSeconds = 133;
+        d.altitudeM = 42.0f;
+        d.gpsPresent = true;
+        d.gpsFix = true;
+        d.satellites = 14;
+        d.home = true;
+        d.homeDistanceM = 125.0f;
+        d.homeRelativeDeg = 90.0f;
+        d.vtxMw = 400;
+        return d;
+    }
+}
+
+// Записанные кадры — побайтно по описанию протокола (документация BF,
+// «DisplayPort MSP Extensions»): MSP v1 от полётника, команда 182.
+void test_displayport_frames_on_the_wire()
+{
+    OsdScreen s;
+    s.setCanvas(30, 16);
+    s.print(1, 2, "AB");
+    DisplayPort dp;
+    dp.configure(0, 0, 12);
+    TEST_ASSERT_TRUE(dp.render(s, 1000));
+    const uint8_t first[] = {
+        '$', 'M', '>', 1, 182, 0, 0xB7,                       // HEARTBEAT
+        '$', 'M', '>', 1, 182, 2, 0xB5,                       // CLEAR_SCREEN
+        '$', 'M', '>', 6, 182, 3, 1, 2, 0, 'A', 'B', 0xB3,    // WRITE_STRING: строка 1, столбец 2, атрибут 0, «AB» без нуля в конце
+        '$', 'M', '>', 1, 182, 4, 0xB3,                       // DRAW_SCREEN
+    };
+    TEST_ASSERT_EQUAL_UINT32(sizeof(first), dp.batchLength());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(first, dp.batchData(), sizeof(first));
+
+    // пока пачка не ушла в порт — следующая не собирается
+    TEST_ASSERT_TRUE(dp.pending());
+    TEST_ASSERT_FALSE(dp.render(s, 1200));
+    BatchSink sink;
+    dp.drain(sink);
+    TEST_ASSERT_FALSE(dp.pending());
+    TEST_ASSERT_EQUAL(4, sink.frames);
+    TEST_ASSERT_EQUAL_UINT32(4, dp.frames);
+    TEST_ASSERT_EQUAL_UINT32(1, dp.batches);
+
+    // osd_framerate_hz = 12: раньше 83 мс — рано; HEARTBEAT — раз в секунду, не в каждой пачке
+    TEST_ASSERT_FALSE(dp.render(s, 1050));
+    TEST_ASSERT_TRUE(dp.render(s, 1100));
+    const uint8_t next[] = {
+        '$', 'M', '>', 1, 182, 2, 0xB5,
+        '$', 'M', '>', 6, 182, 3, 1, 2, 0, 'A', 'B', 0xB3,
+        '$', 'M', '>', 1, 182, 4, 0xB3,
+    };
+    TEST_ASSERT_EQUAL_UINT32(sizeof(next), dp.batchLength());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(next, dp.batchData(), sizeof(next));
+    dp.drain(sink);
+    TEST_ASSERT_TRUE(dp.render(s, 2000));
+    TEST_ASSERT_EQUAL_HEX8(0, dp.batchData()[5]);   // снова HEARTBEAT первым
+    dp.drain(sink);
+
+    // пустой экран (режим OSD DISABLE): стереть и показать пустое
+    OsdScreen empty;
+    TEST_ASSERT_TRUE(dp.render(empty, 2200));
+    const uint8_t blank[] = { '$', 'M', '>', 1, 182, 2, 0xB5, '$', 'M', '>', 1, 182, 4, 0xB3 };
+    TEST_ASSERT_EQUAL_UINT32(sizeof(blank), dp.batchLength());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(blank, dp.batchData(), sizeof(blank));
+    dp.drain(sink);
+
+    // экран больше не наш — RELEASE, один раз
+    TEST_ASSERT_TRUE(dp.release());
+    const uint8_t released[] = { '$', 'M', '>', 1, 182, 1, 0xB6 };
+    TEST_ASSERT_EQUAL_UINT32(sizeof(released), dp.batchLength());
+    TEST_ASSERT_EQUAL_HEX8_ARRAY(released, dp.batchData(), sizeof(released));
+    dp.drain(sink);
+    TEST_ASSERT_TRUE(dp.release());
+    TEST_ASSERT_FALSE(dp.pending());   // второй раз слать нечего
+    // вернули — рисуем сразу, с HEARTBEAT
+    TEST_ASSERT_TRUE(dp.render(s, 2210));
+    TEST_ASSERT_EQUAL_HEX8(0, dp.batchData()[5]);
+
+    // медленный порт: 1 Гц
+    DisplayPort slow;
+    slow.configure(0, 0, 1);
+    TEST_ASSERT_TRUE(slow.render(s, 0));
+    slow.drain(sink);
+    TEST_ASSERT_FALSE(slow.render(s, 900));
+    TEST_ASSERT_TRUE(slow.render(s, 1000));
+}
+
+// Тот же экран, что собрал Osd.h, виден в очках — аналоговый размер и HD.
+void test_displayport_shows_the_same_screen_in_goggles()
+{
+    const OsdData d = flyingData();
+    const uint8_t canvases[][2] = { { 30, 16 }, { 30, 13 }, { 50, 18 }, { 53, 20 }, { 60, 22 } };
+    for (const auto& canvas : canvases)
+    {
+        const uint8_t cols = canvas[0], rows = canvas[1];
+        OsdLayout l;
+        if (cols > 30)
+        {
+            // раскладка под большой экран: позиции правее 31-го столбца — шестой бит x (0x0400)
+            l.pos[OSD_ALTITUDE] = osdPos(static_cast<uint8_t>(cols - 8), static_cast<uint8_t>(rows - 2));
+            l.pos[OSD_FLYTIME] = osdPos(static_cast<uint8_t>(cols - 7), static_cast<uint8_t>(rows - 1));
+            l.pos[OSD_GPS_SATS] = osdPos(static_cast<uint8_t>(cols - 6), 0);
+        }
+        OsdScreen s;
+        s.setCanvas(cols, rows);
+        s.compose(d, l, nullptr);
+        DisplayPort dp;
+        DisplayPortGoggles g;
+        g.resize(cols, rows);
+        showOnGoggles(dp, s, g, 0);
+        assertShown(s, g);
+        TEST_ASSERT_TRUE_MESSAGE(g.clean(), g.text().c_str());
+        TEST_ASSERT_EQUAL(1, g.clears);
+        TEST_ASSERT_EQUAL(1, g.draws);
+        TEST_ASSERT_EQUAL(1, g.heartbeats);
+        TEST_ASSERT_TRUE(g.longestString <= 30);
+        if (cols > 30)
+        {
+            // элемент у правого края большого экрана дошёл
+            TEST_ASSERT_EQUAL_HEX8(osdsym::FLY_TIME, static_cast<uint8_t>(g.row(static_cast<uint8_t>(rows - 1))[cols - 7]));
+            TEST_ASSERT_EQUAL_STRING("02:13", g.row(static_cast<uint8_t>(rows - 1)).substr(cols - 6, 5).c_str());
+        }
+    }
+
+    // статистика после полёта и меню — посередине большого экрана
+    OsdStats stats;
+    OsdData flown = flyingData();
+    stats.update(flown, 0);
+    flown.armed = false;
+    stats.update(flown, 1000);
+    TEST_ASSERT_TRUE(stats.isShowing());
+    OsdScreen hd;
+    hd.setCanvas(53, 20);
+    hd.compose(flown, OsdLayout(), &stats);
+    TEST_ASSERT_EQUAL_UINT8(11, hd.centerOffset());
+    TEST_ASSERT_EQUAL_STRING("--- STATS ---", screenRow(hd, 4).substr(11 + 8, 13).c_str());
+    TEST_ASSERT_EQUAL_STRING("FLY TIME", screenRow(hd, 5).substr(11 + 2, 8).c_str());
+    DisplayPort dp;
+    DisplayPortGoggles g;
+    g.resize(53, 20);
+    showOnGoggles(dp, hd, g, 0);
+    assertShown(hd, g);
+    TEST_ASSERT_TRUE(g.clean());
+
+    // самый плотный экран 60 × 22 помещается в пачку целиком
+    OsdScreen full;
+    full.setCanvas(60, 22);
+    for (uint8_t r = 0; r < 22; ++r)
+    {
+        for (uint8_t c = 0; c < 60; ++c) full.put(r, c, static_cast<uint8_t>('A' + (r + c) % 26));
+    }
+    DisplayPort big;
+    DisplayPortGoggles wide;
+    wide.resize(60, 22);
+    showOnGoggles(big, full, wide, 0);
+    TEST_ASSERT_TRUE(big.batchLength() <= DisplayPort::BATCH_SIZE);
+    assertShown(full, wide);
+    TEST_ASSERT_TRUE(wide.clean());
+    TEST_ASSERT_EQUAL(44, wide.strings);   // 22 строки по два кадра в 30 символов
+}
+
+// Как строка экрана режется на кадры: пробелы в хвосте не передаются,
+// короткий пропуск — внутри кадра, длинный — новый кадр, значки шрифта — как есть.
+void test_displayport_strings_and_adjust()
+{
+    OsdScreen s;
+    s.setCanvas(53, 20);
+    s.print(0, 1, "LQ99");
+    s.print(0, 8, "ANGL");        // пропуск 3 — тем же кадром
+    s.print(0, 40, "SAT12");      // пропуск 28 — новый кадр
+    s.put(2, 5, 0x01);            // значки шрифта BF — любые байты, кроме нуля
+    s.put(2, 6, 0x9C);
+    s.put(2, 7, 0xFF);
+    DisplayPort dp;
+    DisplayPortGoggles g;
+    g.resize(53, 20);
+    showOnGoggles(dp, s, g, 0);
+    assertShown(s, g);
+    TEST_ASSERT_EQUAL(3, g.strings);
+    TEST_ASSERT_EQUAL_UINT32(11, g.longestString);   // «LQ99   ANGL»
+    TEST_ASSERT_TRUE(g.clean());
+    // кадры: heartbeat 7 + clear 7 + (10+11) + (10+5) + (10+3) + draw 7
+    TEST_ASSERT_EQUAL_UINT32(7 + 7 + 21 + 15 + 13 + 7, dp.batchLength());
+
+    // displayport_msp_col_adjust / _row_adjust: сдвиг влево и вверх; что вышло за край — не шлётся
+    OsdScreen t;
+    t.setCanvas(30, 16);
+    t.print(0, 5, "TOP");         // уйдёт за верхний край
+    t.print(3, 1, "HELLO");       // первая буква уйдёт за левый край
+    t.print(5, 10, "MID");
+    DisplayPort shifted;
+    shifted.configure(-2, -1, 12);
+    DisplayPortGoggles sg;
+    showOnGoggles(shifted, t, sg, 0);
+    TEST_ASSERT_TRUE(sg.clean());
+    TEST_ASSERT_EQUAL(2, sg.strings);
+    TEST_ASSERT_EQUAL_STRING("ELLO", sg.row(2).substr(0, 4).c_str());
+    TEST_ASSERT_EQUAL_STRING("MID", sg.row(4).substr(8, 3).c_str());
+    TEST_ASSERT_EQUAL_STRING(std::string(30, ' ').c_str(), sg.row(0).c_str());
+}
+
+// Куда рисовать: osd_displayport_device, чип на плате и что сказали очки.
+void test_osd_route_chip_goggles_and_canvas()
+{
+    OsdRouteInput in;
+    in.chipPresent = true;
+    in.chipRows = 13;   // камера NTSC
+    in.portPresent = true;
+    // AUTO: чип есть, на порту тихо — только чип, экран по камере
+    OsdRoute r = osdRoute(in);
+    TEST_ASSERT_TRUE(r.chip);
+    TEST_ASSERT_FALSE(r.msp);
+    TEST_ASSERT_EQUAL_UINT8(30, r.canvas.cols);
+    TEST_ASSERT_EQUAL_UINT8(13, r.canvas.rows);
+    TEST_ASSERT_FALSE(r.canvas.hd);
+    // на порту кто-то спросил — рисуем и туда; размер ещё аналоговый
+    in.deviceSeen = true;
+    r = osdRoute(in);
+    TEST_ASSERT_TRUE(r.chip);
+    TEST_ASSERT_TRUE(r.msp);
+    TEST_ASSERT_EQUAL_UINT8(13, r.canvas.rows);
+    // очки сказали свой размер — HD, что бы ни стояло в настройках
+    in.deviceCols = 53;
+    in.deviceRows = 20;
+    r = osdRoute(in);
+    TEST_ASSERT_TRUE(r.canvas.hd);
+    TEST_ASSERT_EQUAL_UINT8(53, r.canvas.cols);
+    TEST_ASSERT_EQUAL_UINT8(20, r.canvas.rows);
+    // больше, чем умеем, — прижать к 60 × 22
+    in.deviceCols = 80;
+    in.deviceRows = 40;
+    r = osdRoute(in);
+    TEST_ASSERT_EQUAL_UINT8(OsdScreen::MAX_COLS, r.canvas.cols);
+    TEST_ASSERT_EQUAL_UINT8(OsdScreen::MAX_ROWS, r.canvas.rows);
+
+    // MSP: только очки, даже если чип на плате есть и никто не спрашивал
+    OsdRouteInput msp;
+    msp.device = OsdDevice::MSP;
+    msp.chipPresent = true;
+    msp.portPresent = true;
+    r = osdRoute(msp);
+    TEST_ASSERT_FALSE(r.chip);
+    TEST_ASSERT_TRUE(r.msp);
+    TEST_ASSERT_EQUAL_UINT8(30, r.canvas.cols);
+    TEST_ASSERT_EQUAL_UINT8(16, r.canvas.rows);
+    // vcd_video_system = HD: размер из osd_canvas_width / osd_canvas_height
+    msp.video = VideoSystem::HD;
+    msp.canvasCols = 50;
+    msp.canvasRows = 18;
+    r = osdRoute(msp);
+    TEST_ASSERT_TRUE(r.canvas.hd);
+    TEST_ASSERT_EQUAL_UINT8(50, r.canvas.cols);
+    TEST_ASSERT_EQUAL_UINT8(18, r.canvas.rows);
+    msp.video = VideoSystem::NTSC;
+    r = osdRoute(msp);
+    TEST_ASSERT_FALSE(r.canvas.hd);
+    TEST_ASSERT_EQUAL_UINT8(13, r.canvas.rows);
+    // порта для очков на плате нет — слать некуда
+    msp.portPresent = false;
+    TEST_ASSERT_FALSE(osdRoute(msp).msp);
+
+    // MAX7456: только чип, очки не трогаем, хоть они и спрашивают; HD к чипу не относится
+    OsdRouteInput chip;
+    chip.device = OsdDevice::MAX7456;
+    chip.video = VideoSystem::HD;
+    chip.chipPresent = true;
+    chip.portPresent = true;
+    chip.deviceSeen = true;
+    chip.deviceCols = 53;
+    chip.deviceRows = 20;
+    r = osdRoute(chip);
+    TEST_ASSERT_TRUE(r.chip);
+    TEST_ASSERT_FALSE(r.msp);
+    TEST_ASSERT_EQUAL_UINT8(30, r.canvas.cols);
+    TEST_ASSERT_EQUAL_UINT8(16, r.canvas.rows);
+    // NONE — никуда
+    chip.device = OsdDevice::NONE;
+    r = osdRoute(chip);
+    TEST_ASSERT_FALSE(r.chip);
+    TEST_ASSERT_FALSE(r.msp);
+    // AUTO без чипа и без очков — ничего не шлём, пока не объявятся
+    OsdRouteInput bare;
+    bare.portPresent = true;
+    r = osdRoute(bare);
+    TEST_ASSERT_FALSE(r.chip);
+    TEST_ASSERT_FALSE(r.msp);
+}
+
+// Экран больше аналогового: чип показывает свои 30 × 16, гасится, когда OSD ушёл в очки.
+void test_osd_big_canvas_and_chip()
+{
+    OsdScreen s;
+    TEST_ASSERT_EQUAL_UINT8(30, s.colCount());
+    TEST_ASSERT_EQUAL_UINT8(16, s.rowCount());
+    s.setCanvas(53, 20);
+    s.print(19, 45, "RIGHT");
+    s.print(0, 3, "ANGL");
+    TEST_ASSERT_EQUAL_UINT8('R', s.at(19, 45));
+    s.print(19, 50, "TOOLONG");   // за правым краем — обрезается
+    TEST_ASSERT_EQUAL_UINT8('O', s.at(19, 52));
+    TEST_ASSERT_EQUAL_UINT8(' ', s.at(19, 53));
+    s.setCanvas(200, 200);
+    TEST_ASSERT_EQUAL_UINT8(OsdScreen::MAX_COLS, s.colCount());
+    TEST_ASSERT_EQUAL_UINT8(OsdScreen::MAX_ROWS, s.rowCount());
+    s.setCanvas(53, 20);
+
+    Osd7456Emulator chip;
+    Max7456 osd(chip, 10);
+    TEST_ASSERT_TRUE(osd.begin());
+    for (int i = 0; i < 20; ++i) osd.flush(s, 40);
+    TEST_ASSERT_EQUAL_STRING("   ANGL                       ", chip.row(0).c_str());
+    TEST_ASSERT_EQUAL_STRING(std::string(30, ' ').c_str(), chip.row(15).c_str());
+
+    // OSD ушёл в очки (osd_displayport_device = MSP) — чип пуст; вернули — рисует снова
+    const int before = chip.charWrites;
+    osd.blank();
+    osd.blank();
+    TEST_ASSERT_EQUAL(before, chip.charWrites);
+    TEST_ASSERT_EQUAL_UINT8(0, chip.memory[3]);
+    for (int i = 0; i < 20; ++i) osd.flush(s, 40);
+    TEST_ASSERT_EQUAL_STRING("   ANGL                       ", chip.row(0).c_str());
+
+    // vcd_video_system: NTSC насильно при камере PAL, затем снова по камере
+    TEST_ASSERT_TRUE(osd.isPal());
+    osd.forceStandard(2);
+    osd.check();
+    TEST_ASSERT_FALSE(osd.isPal());
+    TEST_ASSERT_EQUAL_UINT8(13, osd.rows());
+    osd.forceStandard(0);
+    osd.check();
+    TEST_ASSERT_TRUE(osd.isPal());
+    chip.palSignal = false;
+    osd.forceStandard(1);
+    osd.check();
+    TEST_ASSERT_TRUE(osd.isPal());
+
+    // меню — блок в 30 столбцов посередине большого экрана
+    CopterParams& p = five5Params();
+    OsdMenu menu;
+    const CopterRc open = sticks(1500, 1000, 2000, 1500);   // газ в центре, рыск влево, тангаж от себя
+    for (int i = 0; i < 100 && !menu.isOpen(); ++i) menu.update(open, false, 0.01f, p);
+    TEST_ASSERT_TRUE(menu.isOpen());
+    OsdScreen hd;
+    hd.setCanvas(53, 20);
+    menu.draw(hd, p);
+    const std::string title = screenRow(hd, 0);
+    const size_t at = title.find("MENU");
+    TEST_ASSERT_TRUE(at != std::string::npos);
+    TEST_ASSERT_TRUE_MESSAGE(at >= 11 && at < 11 + 30, title.c_str());
+    TEST_ASSERT_EQUAL_UINT8('>', hd.at(2, 12));
+    TEST_ASSERT_EQUAL_STRING("PITCH MOVE  ROLL SET  YAW BACK", screenRow(hd, 19).substr(11, 30).c_str());
+}
+
+// Порт очков: отвечает на их опрос, кадры OSD не рвутся и не мешаются с
+// ответами даже на медленном UART.
+void test_msp_port_answers_goggles_and_never_tears_frames()
+{
+    MspBench m;
+    m.bench.run(2.5f);
+    WireUart uart;
+    MspPort port(uart);
+    uint32_t now = 0;
+    auto answer = [&](const msp::Parser& in, uint8_t* out, size_t capacity) { return m.msp.handle(in, out, capacity, now, true); };
+
+    // до begin() порт молчит и ничего не читает
+    uart.push(DisplayPortGoggles::request(101));
+    port.poll(now, answer);
+    TEST_ASSERT_FALSE(port.seen());
+    TEST_ASSERT_TRUE(uart.tx.empty());
+    uart.rx.clear();
+    uart.rxAt = 0;
+
+    port.begin();
+    TEST_ASSERT_EQUAL_UINT32(115200, uart.baud);
+    TEST_ASSERT_FALSE(port.seen());
+
+    OsdScreen s;
+    s.setCanvas(53, 20);
+    OsdLayout l;
+    l.pos[OSD_FLYTIME] = osdPos(45, 19);
+    s.compose(flyingData(), l, nullptr);
+    DisplayPort dp;
+    DisplayPortGoggles g;
+    g.resize(53, 20);
+
+    uart.capacity = 1024;   // буфер передачи UART, как на плате; уходит по 9 байт за такт
+    for (int tick = 0; tick < 3000; ++tick, ++now)
+    {
+        if (tick % 50 == 0) dp.render(s, now);
+        if (tick % 100 == 3) uart.push(DisplayPortGoggles::request(101));   // MSP_STATUS — ARM
+        if (tick % 250 == 7) uart.push(DisplayPortGoggles::request(130));   // MSP_BATTERY_STATE
+        if (tick == 500) uart.push({ 0x00, 0xFF, '$', 'M', '<', 0, 101, 0x33 });   // мусор и битая сумма — мимо
+        port.poll(now, answer);
+        dp.drain(port);
+        uart.drain(9);
+        g.feed(uart.take());
+    }
+    TEST_ASSERT_TRUE_MESSAGE(g.clean(), g.text().c_str());
+    assertShown(s, g);
+    TEST_ASSERT_TRUE(g.draws >= 20);
+    TEST_ASSERT_TRUE(g.heartbeats >= 2);
+    TEST_ASSERT_EQUAL(30, g.replyCount[101]);
+    TEST_ASSERT_EQUAL(12, g.replyCount[130]);
+    TEST_ASSERT_EQUAL(0, static_cast<int>(g.errorCount.size()));
+    TEST_ASSERT_EQUAL_UINT32(42, port.requests);
+    TEST_ASSERT_EQUAL_UINT32(1, port.parseErrors());
+    TEST_ASSERT_EQUAL_UINT32(0, port.dropped);
+    TEST_ASSERT_EQUAL_UINT32(42, m.msp.deviceFrames);
+    TEST_ASSERT_EQUAL_UINT32(0, m.msp.frames);   // «конфигуратор на связи» не считается
+    TEST_ASSERT_TRUE(port.seen());
+    TEST_ASSERT_TRUE(port.alive(now));
+    TEST_ASSERT_FALSE(port.alive(now + MspPort::ALIVE_MS + 1000));
+
+    // тесный и медленный UART (буфер 48 байт, 4 байта за такт): что не влезло
+    // целиком — не пишется вовсе; на проводе по-прежнему только целые кадры
+    uart.capacity = 48;
+    const int drawsBefore = g.draws;
+    for (int tick = 0; tick < 4000; ++tick, ++now)
+    {
+        if (tick % 50 == 0) dp.render(s, now);
+        if (tick % 10 == 3) uart.push(DisplayPortGoggles::request(101));
+        port.poll(now, answer);
+        dp.drain(port);
+        uart.drain(4);
+        g.feed(uart.take());
+    }
+    TEST_ASSERT_TRUE_MESSAGE(g.clean(), g.text().c_str());
+    TEST_ASSERT_TRUE(port.dropped > 0);           // часть ответов не влезла — очки спросят ещё раз
+    TEST_ASSERT_TRUE(g.replyCount[101] > 30);     // но часть дошла
+    TEST_ASSERT_TRUE(g.draws > drawsBefore);      // и экран, хоть и реже, обновляется
+    assertShown(s, g);
+}
+
+void test_msp_port_queue_and_rx_budget()
+{
+    WireUart uart;
+    MspPort port(uart);
+    const std::vector<uint8_t> frame(60, 0x55);
+    // порт не открыт — писать некуда
+    TEST_ASSERT_EQUAL_UINT32(0, port.room());
+    TEST_ASSERT_FALSE(port.queue(frame.data(), frame.size()));
+    port.begin();
+    TEST_ASSERT_EQUAL_UINT32(MspPort::UNLIMITED, port.room());   // UART не говорит, сколько места
+    // кадр — целиком или никак: очередью служит буфер передачи UART
+    uart.capacity = 100;
+    TEST_ASSERT_EQUAL_UINT32(100, port.room());
+    TEST_ASSERT_TRUE(port.queue(frame.data(), frame.size()));
+    TEST_ASSERT_EQUAL_UINT32(40, port.room());
+    TEST_ASSERT_FALSE(port.queue(frame.data(), frame.size()));   // 60 в 40 не влезет — не пишется и куском
+    TEST_ASSERT_EQUAL_UINT32(60, uart.buffer.size());
+    uart.drain(30);
+    TEST_ASSERT_TRUE(port.queue(frame.data(), frame.size()));
+    TEST_ASSERT_EQUAL_UINT32(120, port.sentBytes);
+    uart.drain(1000);
+    TEST_ASSERT_EQUAL_UINT32(120, uart.take().size());
+
+    // за такт читается не больше RX_PER_POLL байт — остальное в следующий
+    uart.capacity = -1;
+    for (int i = 0; i < 40; ++i) uart.push(DisplayPortGoggles::request(1));   // 240 байт запросов
+    int answered = 0;
+    uint16_t lastSize = 0;
+    auto count = [&](const msp::Parser& in, uint8_t* out, size_t capacity) {
+        ++answered;
+        lastSize = in.size;
+        const uint8_t one = in.size ? in.payload[in.size - 1] : 7;
+        return msp::frame(out, capacity, in.version, in.cmd, false, &one, 1);
+    };
+    port.poll(0, count);
+    TEST_ASSERT_EQUAL(16, answered);   // 96 байт = 16 запросов по 6
+    port.poll(1, count);
+    port.poll(2, count);
+    TEST_ASSERT_EQUAL(40, answered);
+    TEST_ASSERT_EQUAL_UINT16(1, port.lastCommand);
+    TEST_ASSERT_EQUAL_UINT32(40 * 7, uart.take().size());
+
+    // запрос с данными доходит до обработчика целиком (до REQUEST_MAX байт)
+    std::vector<uint8_t> data(MspPort::REQUEST_MAX);
+    for (size_t i = 0; i < data.size(); ++i) data[i] = static_cast<uint8_t>(i + 1);
+    uart.push(DisplayPortGoggles::request(45, data));
+    for (int i = 0; i < 3; ++i) port.poll(3 + i, count);
+    TEST_ASSERT_EQUAL(41, answered);
+    TEST_ASSERT_EQUAL_UINT16(MspPort::REQUEST_MAX, lastSize);
+    const std::vector<uint8_t> echoed = uart.take();
+    TEST_ASSERT_EQUAL_UINT32(7, echoed.size());
+    TEST_ASSERT_EQUAL_UINT8(MspPort::REQUEST_MAX, echoed[5]);   // последний байт данных — не обрезан
+    // длиннее — кадр проглатывается целиком (ошибка), следующий запрос разбирается как ни в чём не бывало
+    data.assign(200, '$');   // данные, похожие на начало кадра, поток не сбивают
+    uart.push(DisplayPortGoggles::request(45, data));
+    uart.push(DisplayPortGoggles::request(2));
+    for (int i = 0; i < 4; ++i) port.poll(10 + i, count);
+    TEST_ASSERT_EQUAL(42, answered);
+    TEST_ASSERT_EQUAL_UINT32(1, port.parseErrors());
+    TEST_ASSERT_EQUAL_UINT16(2, port.lastCommand);
+    TEST_ASSERT_EQUAL_UINT32(42, port.requests);
+
+    // UART занят — ответ не ждёт и не рвётся: пропадает целиком, счётчик растёт
+    uart.take();
+    uart.capacity = 10;
+    uart.buffer.assign(8, 0);
+    uart.push(DisplayPortGoggles::request(1));
+    port.poll(20, count);
+    TEST_ASSERT_EQUAL(43, answered);
+    TEST_ASSERT_EQUAL_UINT32(1, port.dropped);
+    TEST_ASSERT_EQUAL_UINT32(8, uart.buffer.size());
+}
+
+// Что очки спрашивают у полётника и что им нельзя.
+void test_msp_from_goggles_canvas_gps_and_safety()
+{
+    MspBench m;
+    m.bench.run(2.5f);
+    std::vector<uint8_t> p;
+
+    // размер экрана очков — не настройка: в «несохранённые» не попадает, ARM не запрещает
+    m.fromDevice = true;
+    TEST_ASSERT_EQUAL_UINT8(0, m.msp.deviceCanvasCols());
+    TEST_ASSERT_TRUE(m.ask(188, { 53, 20 }, p));
+    TEST_ASSERT_EQUAL_UINT8(53, m.msp.deviceCanvasCols());
+    TEST_ASSERT_EQUAL_UINT8(20, m.msp.deviceCanvasRows());
+    TEST_ASSERT_FALSE(m.msp.hasUnsaved());
+    TEST_ASSERT_FALSE(m.msp.blocksArming(m.nowMs));
+    TEST_ASSERT_FALSE(m.ask(188, { 0, 20 }, p));
+    TEST_ASSERT_FALSE(m.ask(188, { 53 }, p));
+    TEST_ASSERT_EQUAL_UINT8(53, m.msp.deviceCanvasCols());
+    // MSP_OSD_CANVAS — экран, который сейчас рисуется
+    p = m.get(189);
+    TEST_ASSERT_EQUAL_UINT32(2, p.size());
+    TEST_ASSERT_EQUAL_UINT8(30, p[0]);
+    TEST_ASSERT_EQUAL_UINT8(16, p[1]);
+    m.msp.setOsdCanvas(53, 20);
+    p = m.get(189);
+    TEST_ASSERT_EQUAL_UINT8(53, p[0]);
+    TEST_ASSERT_EQUAL_UINT8(20, p[1]);
+
+    // ARM очки узнают из MSP_STATUS: первый флаг режимов — ARM
+    uint8_t boxes = 0;
+    TEST_ASSERT_EQUAL(static_cast<int>(BOX_ARM), static_cast<int>(boxTable(boxes)[0].id));
+    p = m.get(101);
+    TEST_ASSERT_EQUAL_UINT32(0, le32(p, 6) & 1u);
+    m.bench.rc.armSwitch = true;
+    m.bench.run(0.05f);
+    TEST_ASSERT_TRUE(m.bench.ctl.isArmed());
+    p = m.get(101);
+    TEST_ASSERT_EQUAL_UINT32(1, le32(p, 6) & 1u);
+    m.bench.rc.armSwitch = false;
+    m.bench.run(0.05f);
+    TEST_ASSERT_FALSE(m.bench.ctl.isArmed());
+
+    // GPS: MSP_RAW_GPS и MSP_COMP_GPS по раскладке BF
+    p = m.get(106);
+    TEST_ASSERT_EQUAL_UINT32(18, p.size());
+    TEST_ASSERT_EQUAL_UINT8(0, p[0]);   // GPS не подключён — фикса нет
+    GpsHome home;
+    GpsFix fix;
+    fix.valid = true;
+    fix.satellites = 14;
+    fix.latitude = 55.7558;
+    fix.longitude = -37.6173;
+    fix.altitudeM = 156.0f;
+    fix.speedMs = 12.5f;
+    fix.courseDeg = 271.5f;
+    fix.accuracyM = 1.2f;
+    home.update(fix, true);            // ARM — дом здесь
+    fix.latitude += 0.001;             // 111 м на север
+    home.update(fix, true);
+    m.msp.setGps(&home);
+    p = m.get(106);
+    TEST_ASSERT_EQUAL_UINT8(1, p[0]);
+    TEST_ASSERT_EQUAL_UINT8(14, p[1]);
+    TEST_ASSERT_INT32_WITHIN(2, 557568000, static_cast<int32_t>(le32(p, 2)));
+    TEST_ASSERT_INT32_WITHIN(2, -376173000, static_cast<int32_t>(le32(p, 6)));
+    TEST_ASSERT_EQUAL_UINT16(156, le16(p, 10));
+    TEST_ASSERT_EQUAL_UINT16(1250, le16(p, 12));
+    TEST_ASSERT_EQUAL_UINT16(2715, le16(p, 14));
+    TEST_ASSERT_EQUAL_UINT16(24, le16(p, 16));
+    p = m.get(107);
+    TEST_ASSERT_EQUAL_UINT32(5, p.size());
+    TEST_ASSERT_UINT16_WITHIN(2, 111, le16(p, 0));
+    TEST_ASSERT_EQUAL_UINT16(180, le16(p, 2));   // дом на юге
+    TEST_ASSERT_EQUAL_UINT8(1, p[4]);
+
+    // с порта очков нельзя: крутить моторы, слать команды DShot, запрещать ARM, перезагружать
+    std::vector<uint8_t> spin;
+    for (int i = 0; i < 8; ++i)
+    {
+        spin.push_back(1100 & 0xFF);
+        spin.push_back(1100 >> 8);
+    }
+    TEST_ASSERT_FALSE(m.ask(214, spin, p));
+    TEST_ASSERT_FALSE(m.bench.ctl.motorTestActive());
+    TEST_ASSERT_FALSE(m.ask(99, { 1 }, p));
+    TEST_ASSERT_FALSE(m.msp.blocksArming(m.nowMs));
+    TEST_ASSERT_FALSE(m.ask(68, { 0 }, p));
+    uint8_t mode = 9;
+    TEST_ASSERT_FALSE(m.msp.takeReboot(mode));
+
+    // конфигуратор запустил проверку моторов и пропал — очки своим опросом её не держат
+    m.fromDevice = false;
+    TEST_ASSERT_TRUE(m.ask(214, spin, p));
+    m.bench.run(0.1f);
+    TEST_ASSERT_TRUE(m.bench.ctl.motorTestActive());
+    m.fromDevice = true;
+    for (int k = 0; k < 4; ++k)
+    {
+        m.get(101);
+        m.bench.run(0.5f);
+    }
+    TEST_ASSERT_FALSE(m.bench.ctl.motorTestActive());
+    // и запрет ARM от конфигуратора снимается, когда тот замолчал, хоть очки и спрашивают
+    m.fromDevice = false;
+    TEST_ASSERT_TRUE(m.ask(99, { 1 }, p));
+    TEST_ASSERT_TRUE(m.msp.blocksArming(m.nowMs));
+    m.fromDevice = true;
+    m.nowMs += CopterMsp::ARMING_HOLD_MS + 500;
+    m.get(101);
+    TEST_ASSERT_FALSE(m.msp.blocksArming(m.nowMs));
+}
+
+// Передатчик на MSP (HDZero, Walksnail): читает MSP_VTX_CONFIG с порта очков.
+void test_msp_vtx_follows_the_request()
+{
+    MspBench m;
+    m.bench.run(2.5f);
+    m.params.setValue(PARAM_VTX_BAND, 0, 5.0f);       // R
+    m.params.setValue(PARAM_VTX_CHANNEL, 0, 1.0f);
+    m.params.setValue(PARAM_VTX_POWER, 0, 3.0f);
+    m.params.setValue(PARAM_VTX_LOW_POWER_DISARM, 0, 1.0f);
+    std::vector<uint8_t> p;
+
+    // передатчика нет (vtx_protocol = NONE) — как раньше: «не поддерживается», не готов
+    p = m.get(88);
+    TEST_ASSERT_EQUAL_HEX8(0, p[0]);
+    TEST_ASSERT_EQUAL_UINT8(0, p[7]);
+
+    MspVtxLink link;
+    VtxRequest want;
+    want.band = 5;
+    want.channel = 3;                 // тумблером выбрали R3
+    want.frequencyMhz = vtxFrequency(5, 3);
+    want.powerLevel = 1;              // без ARM — слабее (vtx_low_power_disarm)
+    want.pit = true;
+    TEST_ASSERT_FALSE(link.online());
+    TEST_ASSERT_FALSE(link.changed(want, 1));   // его ещё нет — слать некому
+    link.polled();                              // спросил MSP_VTX_CONFIG
+    TEST_ASSERT_TRUE(link.online());
+    TEST_ASSERT_TRUE(link.changed(want, 1));    // первый раз — послать
+    TEST_ASSERT_FALSE(link.changed(want, 1));   // ничего не менялось
+    m.msp.setMspVtx(link.online(), want);
+
+    // самому передатчику (порт очков) — что нужно сейчас
+    m.fromDevice = true;
+    p = m.get(88);
+    TEST_ASSERT_EQUAL_UINT8(5, p[0]);           // VTXDEV_MSP
+    TEST_ASSERT_EQUAL_UINT8(5, p[1]);
+    TEST_ASSERT_EQUAL_UINT8(3, p[2]);
+    TEST_ASSERT_EQUAL_UINT8(1, p[3]);
+    TEST_ASSERT_EQUAL_UINT8(1, p[4]);           // PIT
+    TEST_ASSERT_EQUAL_UINT16(vtxFrequency(5, 3), le16(p, 5));
+    TEST_ASSERT_EQUAL_UINT8(1, p[7]);           // готов
+    TEST_ASSERT_EQUAL_UINT8(1, p[8]);           // vtx_low_power_disarm
+    // конфигуратору и пульту — что записано в настройках (иначе Lua сохранил бы «слабее» насовсем)
+    m.fromDevice = false;
+    p = m.get(88);
+    TEST_ASSERT_EQUAL_UINT8(5, p[0]);
+    TEST_ASSERT_EQUAL_UINT8(1, p[2]);
+    TEST_ASSERT_EQUAL_UINT8(3, p[3]);
+    TEST_ASSERT_EQUAL_UINT8(1, p[4]);
+
+    // кадр без запроса — тот же ответ, MSP v1 '>'
+    uint8_t frame[48];
+    const size_t n = m.msp.vtxConfigFrame(frame, sizeof(frame));
+    TEST_ASSERT_TRUE(n > 6);
+    DisplayPortGoggles vtxDevice;
+    vtxDevice.feed(frame, n);
+    TEST_ASSERT_TRUE(vtxDevice.clean());
+    TEST_ASSERT_EQUAL(1, vtxDevice.replyCount[88]);
+    TEST_ASSERT_EQUAL_UINT8(3, vtxDevice.replies[88][2]);
+    TEST_ASSERT_EQUAL_UINT8(1, vtxDevice.replies[88][4]);
+
+    // сменили канал / сняли PIT / заармили (мощность) — каждый раз новый кадр
+    want.channel = 4;
+    want.frequencyMhz = vtxFrequency(5, 4);
+    TEST_ASSERT_TRUE(link.changed(want, 1));
+    want.pit = false;
+    TEST_ASSERT_TRUE(link.changed(want, 1));
+    want.powerLevel = 3;
+    TEST_ASSERT_TRUE(link.changed(want, 1));
+    TEST_ASSERT_TRUE(link.changed(want, 0));    // vtx_low_power_disarm выключили
+    TEST_ASSERT_FALSE(link.changed(want, 0));
+    // режим VTX CONTROL DISABLE — не трогаем
+    want.control = false;
+    want.channel = 8;
+    TEST_ASSERT_FALSE(link.changed(want, 0));
+
+    // VTX Admin ExpressLRS: канал с пульта (MSP_SET_VTX_CONFIG) — в настройки, как и раньше
+    m.fromDevice = false;
+    TEST_ASSERT_TRUE(m.ask(89, { 34, 0, 2, 0 }, p));   // (5−1)·8 + (3−1) = 34 → R3, уровень 2
+    TEST_ASSERT_EQUAL_FLOAT(5.0f, m.params.value(PARAM_VTX_BAND));
+    TEST_ASSERT_EQUAL_FLOAT(3.0f, m.params.value(PARAM_VTX_CHANNEL));
+    TEST_ASSERT_EQUAL_FLOAT(2.0f, m.params.value(PARAM_VTX_POWER));
+}
+
+// Настройки вывода OSD — имена и значения как в BF.
+void test_osd_output_params()
+{
+    CopterParams& p = five5Params();
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, p.value(PARAM_OSD_DISPLAYPORT_DEVICE));   // AUTO
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.value(PARAM_VCD_VIDEO_SYSTEM));         // AUTO
+    TEST_ASSERT_EQUAL_FLOAT(53.0f, p.value(PARAM_OSD_CANVAS_WIDTH));
+    TEST_ASSERT_EQUAL_FLOAT(20.0f, p.value(PARAM_OSD_CANVAS_HEIGHT));
+    TEST_ASSERT_EQUAL_FLOAT(12.0f, p.value(PARAM_OSD_FRAMERATE_HZ));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.value(PARAM_DISPLAYPORT_MSP_COL_ADJUST));
+    TEST_ASSERT_EQUAL_STRING("osd_displayport_device", paramInfo(PARAM_OSD_DISPLAYPORT_DEVICE).name);
+    TEST_ASSERT_EQUAL_STRING("vcd_video_system", paramInfo(PARAM_VCD_VIDEO_SYSTEM).name);
+    TEST_ASSERT_EQUAL_STRING("osd_canvas_width", paramInfo(PARAM_OSD_CANVAS_WIDTH).name);
+    TEST_ASSERT_EQUAL_STRING("osd_canvas_height", paramInfo(PARAM_OSD_CANVAS_HEIGHT).name);
+    TEST_ASSERT_EQUAL_STRING("displayport_msp_col_adjust", paramInfo(PARAM_DISPLAYPORT_MSP_COL_ADJUST).name);
+    TEST_ASSERT_EQUAL_STRING("displayport_msp_row_adjust", paramInfo(PARAM_DISPLAYPORT_MSP_ROW_ADJUST).name);
+    TEST_ASSERT_EQUAL_STRING("osd_framerate_hz", paramInfo(PARAM_OSD_FRAMERATE_HZ).name);
+    // номера значений — как в BF: 0 NONE, 1 AUTO, 2 MAX7456, 3 MSP; 0 AUTO, 1 PAL, 2 NTSC, 3 HD
+    TEST_ASSERT_EQUAL(3, static_cast<int>(OsdDevice::MSP));
+    TEST_ASSERT_EQUAL(2, static_cast<int>(OsdDevice::MAX7456));
+    TEST_ASSERT_EQUAL(3, static_cast<int>(VideoSystem::HD));
+
+    // строки diff из BF для цифровых очков принимаются как есть
+    Bench bench;
+    CliCapture port;
+    CopterCli cli(p, bench.ctl, port);
+    cli.execute("#");
+    cli.execute("set osd_displayport_device = MSP");
+    cli.execute("set vcd_video_system = HD");
+    cli.execute("set osd_canvas_width = 50");
+    cli.execute("set osd_canvas_height = 18");
+    cli.execute("set displayport_msp_col_adjust = -2");
+    port.take();
+    TEST_ASSERT_EQUAL_FLOAT(3.0f, p.value(PARAM_OSD_DISPLAYPORT_DEVICE));
+    TEST_ASSERT_EQUAL_FLOAT(3.0f, p.value(PARAM_VCD_VIDEO_SYSTEM));
+    TEST_ASSERT_EQUAL_FLOAT(50.0f, p.value(PARAM_OSD_CANVAS_WIDTH));
+    TEST_ASSERT_EQUAL_FLOAT(18.0f, p.value(PARAM_OSD_CANVAS_HEIGHT));
+    TEST_ASSERT_EQUAL_FLOAT(-2.0f, p.value(PARAM_DISPLAYPORT_MSP_COL_ADJUST));
+    cli.execute("get osd_displayport_device");
+    const std::string out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "osd_displayport_device = MSP"), out.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "NONE, AUTO, MAX7456, MSP"), out.c_str());
+    cli.execute("exit");
+    port.take();
+    five5Params();   // вернуть умолчания для следующих тестов
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -7112,5 +7963,15 @@ int main()
     RUN_TEST(test_rpm_filter_per_motor);
     RUN_TEST(test_dyn_notch_and_rpm_filter_params);
     RUN_TEST(test_msp_filter_config_dyn_notch_and_rpm);
+    RUN_TEST(test_displayport_frames_on_the_wire);
+    RUN_TEST(test_displayport_shows_the_same_screen_in_goggles);
+    RUN_TEST(test_displayport_strings_and_adjust);
+    RUN_TEST(test_osd_route_chip_goggles_and_canvas);
+    RUN_TEST(test_osd_big_canvas_and_chip);
+    RUN_TEST(test_msp_port_answers_goggles_and_never_tears_frames);
+    RUN_TEST(test_msp_port_queue_and_rx_budget);
+    RUN_TEST(test_msp_from_goggles_canvas_gps_and_safety);
+    RUN_TEST(test_msp_vtx_follows_the_request);
+    RUN_TEST(test_osd_output_params);
     return UNITY_END();
 }

@@ -7,6 +7,7 @@
 #include "copter/Beeper.h"
 #include "copter/CopterCli.h"
 #include "copter/CopterController.h"
+#include "copter/GpsHome.h"
 #include "copter/Params.h"
 #include "copter/RcSetup.h"
 #include "copter/Vtx.h"
@@ -36,6 +37,15 @@
 // Lua-скрипты Betaflight на EdgeTX (PID, расходы, VTX) и VTX Admin
 // ExpressLRS (MSP_SET_VTX_CONFIG + MSP_EEPROM_WRITE).
 //
+// И с порта очков (telemetry/MspPort.h): цифровые очки и передатчики сами
+// опрашивают полётник — ARM и режимы (MSP_STATUS), батарея, GPS, имя,
+// канал VTX — и сообщают размер своего экрана (MSP_SET_OSD_CANVAS). Этот
+// порт «тихий» (passive): его опрос не считается связью с конфигуратором
+// (иначе проверка моторов не остановилась бы, когда конфигуратор закрыли),
+// а крутить моторы, слать команды DShot, запрещать ARM и перезагружать с
+// него нельзя. MSP_VTX_CONFIG ему отдаёт то, что нужно сейчас (с учётом
+// тумблеров и PIT), — по нему настраивается сам передатчик.
+//
 // Без Arduino — тесты на ПК (test_copter).
 // ============================================================
 
@@ -50,6 +60,7 @@ namespace copter
             BATTERY_CONFIG = 32, SET_BATTERY_CONFIG = 33, MODE_RANGES = 34, SET_MODE_RANGE = 35,
             FEATURE_CONFIG = 36, SET_FEATURE_CONFIG = 37, MIXER_CONFIG = 42, RX_CONFIG = 44, SET_RX_CONFIG = 45,
             ARMING_CONFIG = 61, SET_ARMING_CONFIG = 62, RX_MAP = 64, SET_RX_MAP = 65, REBOOT = 68,
+            RAW_GPS = 106, COMP_GPS = 107, DISPLAYPORT = 182, SET_OSD_CANVAS = 188, OSD_CANVAS = 189,
             VTX_CONFIG = 88, SET_VTX_CONFIG = 89,
             FAILSAFE_CONFIG = 75, SET_FAILSAFE_CONFIG = 76, RXFAIL_CONFIG = 77, SET_RXFAIL_CONFIG = 78,
             ADVANCED_CONFIG = 90, SET_ADVANCED_CONFIG = 91, FILTER_CONFIG = 92, SET_FILTER_CONFIG = 93,
@@ -114,24 +125,65 @@ namespace copter
             vtx = st;
             vtxLevels = levels;
         }
+        // Передатчик на MSP (HDZero, Walksnail…): он читает MSP_VTX_CONFIG с порта
+        // очков; request — что от него нужно сейчас (copter/DisplayPort.h, MspVtxLink).
+        void setMspVtx(bool online, const VtxRequest& request)
+        {
+            mspVtxOnline = online;
+            mspVtxRequest = request;
+        }
+        void setGps(const GpsHome* home) { gpsHome = home; }
 
-        // Кадр пришёл — ответ в out (кадр целиком). 0 — отвечать нечем (не влезло).
-        size_t handle(const msp::Parser& in, uint8_t* out, size_t capacity, uint32_t nowMs)
+        // Экран OSD сейчас (столбцы × строки) — ответ на MSP_OSD_CANVAS.
+        void setOsdCanvas(uint8_t cols, uint8_t rows)
+        {
+            canvasCols = cols;
+            canvasRows = rows;
+        }
+        // Что прислали очки в MSP_SET_OSD_CANVAS; 0 — не присылали.
+        uint8_t deviceCanvasCols() const { return deviceCols; }
+        uint8_t deviceCanvasRows() const { return deviceRows; }
+
+        // MSP_VTX_CONFIG без запроса — передатчику на MSP, когда настройки поменялись.
+        size_t vtxConfigFrame(uint8_t* out, size_t capacity)
         {
             msp::Writer w;
-            const bool ok = process(in, w, nowMs);
+            passive = true;
+            vtxConfig(w);
+            passive = false;
+            return msp::frame(out, capacity, 1, mspcmd::VTX_CONFIG, false, w.buf, w.length);
+        }
+
+        // Кадр пришёл — ответ в out (кадр целиком). 0 — отвечать нечем (не влезло).
+        // fromDevice — запрос с порта очков (см. шапку): «тихий».
+        size_t handle(const msp::Parser& in, uint8_t* out, size_t capacity, uint32_t nowMs, bool fromDevice = false)
+        {
+            msp::Writer w;
+            const bool ok = process(in, w, nowMs, fromDevice);
             return msp::frame(out, capacity, in.version, in.cmd, !ok, w.buf, ok ? w.length : 0);
         }
 
         // Ответ без обёртки MSP — в w (для CRSF, где своя нарезка). false — ошибка («!»).
-        bool process(const msp::Parser& in, msp::Writer& w, uint32_t nowMs)
+        bool process(const msp::Parser& in, msp::Writer& w, uint32_t nowMs, bool fromDevice = false)
         {
+            using namespace mspcmd;
+            msp::Reader r(in.payload, in.size);
+            if (fromDevice)
+            {
+                // очки спрашивают всё время — это не «конфигуратор на связи»
+                const bool refused = in.cmd == SET_MOTOR || in.cmd == SEND_DSHOT_COMMAND || in.cmd == SET_ARMING_DISABLED ||
+                                     in.cmd == REBOOT;
+                passive = true;
+                const bool ok = !refused && command(in.cmd, r, w) && !w.overflow;
+                passive = false;
+                ++deviceFrames;
+                return ok;
+            }
             lastFrameMs = nowMs;
             seen = true;
             // Проверка моторов из конфигуратора держится, пока он на связи (он
             // всё время что-то спрашивает): замолчал — моторы встают за 1 с.
             if (motorTestOn) holdMotorTest();
-            msp::Reader r(in.payload, in.size);
             const bool ok = command(in.cmd, r, w) && !w.overflow;
             ++frames;
             if (!ok) ++errors;
@@ -158,6 +210,7 @@ namespace copter
         }
 
         uint32_t frames = 0, errors = 0;
+        uint32_t deviceFrames = 0;   // запросов с порта очков
 
     private:
         bool command(uint16_t cmd, msp::Reader& r, msp::Writer& w)
@@ -191,6 +244,8 @@ namespace copter
                     w.u32(static_cast<uint32_t>(lroundf(ctl.getStatus().altitude * 100.0f)));
                     w.u16(static_cast<uint16_t>(static_cast<int16_t>(lroundf(ctl.getStatus().climbRate * 100.0f))));
                     return true;
+                case RAW_GPS: rawGps(w); return true;
+                case COMP_GPS: compGps(w); return true;
                 case ANALOG: analog(w); return true;
                 case BATTERY_STATE: batteryState(w); return true;
                 case RC: rc(w); return true;
@@ -231,6 +286,21 @@ namespace copter
                     return true;
                 case SET_RTC:
                 case SET_TX_INFO: return true;   // часов и RSSI с пульта у нас нет — молча принять
+                case OSD_CANVAS:
+                    w.u8(canvasCols);
+                    w.u8(canvasRows);
+                    return true;
+                case SET_OSD_CANVAS:
+                {
+                    // очки говорят размер своего экрана — не настройка: в флеш не
+                    // пишется, ARM не запрещает (очки шлют это при каждом включении)
+                    if (r.remaining() < 2) return false;
+                    const uint8_t cols = r.u8(), rows = r.u8();
+                    if (cols == 0 || rows == 0) return false;
+                    deviceCols = cols;
+                    deviceRows = rows;
+                    return true;
+                }
 
                 case SET_ARMING_DISABLED:
                     armingDisabled = r.u8() != 0;
@@ -448,6 +518,31 @@ namespace copter
             float yaw = fmodf(s.yaw, 360.0f);
             if (yaw < 0) yaw += 360.0f;
             w.u16(static_cast<uint16_t>(lroundf(yaw)));
+        }
+
+        // MSP_RAW_GPS (BF): фикс, спутники, широта и долгота (1e-7°), высота (м),
+        // скорость (см/с), курс (0.1°), точность (HDOP × 100 — у нас из оценки в метрах).
+        void rawGps(msp::Writer& w)
+        {
+            GpsFix f;
+            if (gpsHome) f = gpsHome->fix();
+            w.u8(f.valid ? 1 : 0);
+            w.u8(f.satellites);
+            w.u32(static_cast<uint32_t>(static_cast<int32_t>(llround(f.latitude * 1.0e7))));
+            w.u32(static_cast<uint32_t>(static_cast<int32_t>(llround(f.longitude * 1.0e7))));
+            w.u16(static_cast<uint16_t>(fmaxf(0.0f, fminf(65535.0f, f.altitudeM))));
+            w.u16(static_cast<uint16_t>(fmaxf(0.0f, fminf(65535.0f, f.speedMs * 100.0f))));
+            w.u16(static_cast<uint16_t>(lroundf(fmodf(f.courseDeg + 360.0f, 360.0f) * 10.0f)));
+            w.u16(static_cast<uint16_t>(fmaxf(0.0f, fminf(9999.0f, f.accuracyM * 20.0f))));
+        }
+
+        // MSP_COMP_GPS: до дома (м), направление на дом (°), «данные свежие».
+        void compGps(msp::Writer& w)
+        {
+            const bool home = gpsHome && gpsHome->hasHome();
+            w.u16(home ? static_cast<uint16_t>(fmaxf(0.0f, fminf(65535.0f, gpsHome->distanceM()))) : 0);
+            w.u16(home ? static_cast<uint16_t>(lroundf(fmodf(gpsHome->bearingHomeDeg() + 360.0f, 360.0f))) : 0);
+            w.u8(gpsHome && gpsHome->fix().valid ? 1 : 0);
         }
 
         void analog(msp::Writer& w)
@@ -1063,25 +1158,40 @@ namespace copter
         {
             const VtxProtocol proto = static_cast<VtxProtocol>(static_cast<uint8_t>(params.value(PARAM_VTX_PROTOCOL)));
             const bool online = vtx && vtx->online;
+            // передатчик на MSP (читает этот ответ с порта очков), SmartAudio/Tramp нет
+            const bool viaMsp = mspVtxOnline && !online;
             uint8_t type = 0xFF;   // VTXDEV_UNKNOWN: ищем
-            if (proto == VtxProtocol::NONE) type = 0;   // VTXDEV_UNSUPPORTED
+            if (viaMsp) type = 5;                            // VTXDEV_MSP
+            else if (proto == VtxProtocol::NONE) type = 0;   // VTXDEV_UNSUPPORTED
             else if (online) type = vtx->protocol == VtxProtocol::TRAMP ? 4 : 3;
-            const uint8_t band = static_cast<uint8_t>(params.value(PARAM_VTX_BAND));
-            const uint8_t channel = static_cast<uint8_t>(params.value(PARAM_VTX_CHANNEL));
-            const uint16_t freq = band ? vtxFrequency(band, channel) : static_cast<uint16_t>(params.value(PARAM_VTX_FREQ));
+            uint8_t band = static_cast<uint8_t>(params.value(PARAM_VTX_BAND));
+            uint8_t channel = static_cast<uint8_t>(params.value(PARAM_VTX_CHANNEL));
+            uint16_t freq = band ? vtxFrequency(band, channel) : static_cast<uint16_t>(params.value(PARAM_VTX_FREQ));
+            uint8_t power = static_cast<uint8_t>(params.value(PARAM_VTX_POWER));
+            bool pit = online && vtx->pit;
+            if (viaMsp && passive)
+            {
+                // самому передатчику — что нужно сейчас: с тумблерами, PIT и «без ARM — слабее»;
+                // конфигуратору и пульту (не passive) — что записано в настройках
+                band = mspVtxRequest.band;
+                channel = mspVtxRequest.channel;
+                freq = mspVtxRequest.frequencyMhz;
+                power = mspVtxRequest.powerLevel;
+            }
+            if (viaMsp) pit = mspVtxRequest.pit;
             w.u8(type);
             w.u8(band);
             w.u8(channel);
-            w.u8(static_cast<uint8_t>(params.value(PARAM_VTX_POWER)));
-            w.u8(online && vtx->pit ? 1 : 0);
+            w.u8(power);
+            w.u8(pit ? 1 : 0);
             w.u16(freq);
-            w.u8(online ? 1 : 0);
+            w.u8(online || viaMsp ? 1 : 0);
             w.u8(static_cast<uint8_t>(params.value(PARAM_VTX_LOW_POWER_DISARM)));
             w.u16(0);
             w.u8(0);
             w.u8(VTX_BANDS);
             w.u8(VTX_CHANNELS);
-            w.u8(vtxLevels);
+            w.u8(viaMsp ? static_cast<uint8_t>(paramInfo(PARAM_VTX_POWER).max) : vtxLevels);
         }
 
         // MSP_SET_VTX_CONFIG: частота или номер (полоса−1)·8 + канал−1; дальше по
@@ -1152,6 +1262,12 @@ namespace copter
         int16_t rssiPercent = -1;
         const VtxState* vtx = nullptr;
         uint8_t vtxLevels = 0;
+        bool mspVtxOnline = false;
+        VtxRequest mspVtxRequest;
+        const GpsHome* gpsHome = nullptr;
+        uint8_t canvasCols = 30, canvasRows = 16;   // экран OSD сейчас
+        uint8_t deviceCols = 0, deviceRows = 0;     // MSP_SET_OSD_CANVAS от очков
+        bool passive = false;                       // сейчас обрабатывается запрос с порта очков
         bool armingDisabled = false, unsaved = false, seen = false, rebootPending = false;
         float motorTest[8] = {};
         bool motorTestOn = false;

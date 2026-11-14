@@ -37,6 +37,7 @@
 #include "copter/CopterController.h"
 #include "copter/CrsfMsp.h"
 #include "copter/CrsfTelemetry.h"
+#include "copter/DisplayPort.h"
 #include "copter/GpsHome.h"
 #include "copter/Osd.h"
 #include "copter/Params.h"
@@ -57,6 +58,7 @@
 #include "sensors/mag/QMC5883P_Sensor.h"
 #include "telemetry/CopterConsole.h"
 #include "telemetry/LoopStats.h"
+#include "telemetry/MspPort.h"
 #include "telemetry/TaskStats.h"
 
 // Чёрный ящик: H743 — на SD-карту по SDMMC (Matek H743, DevEBox); F405 — на
@@ -182,6 +184,17 @@ copter::DshotBeacon dshotBeacon;
 copter::StickCommands stickCommands;
 // Меню настроек в очках стиками (CMS, copter/OsdMenu.h).
 copter::OsdMenu osdMenu;
+
+// Цифровые очки и видеопередатчики (DJI, Walksnail, HDZero) — на UART «MSP»
+// платы (PIN_TELEM_*): OSD по MSP DisplayPort и ответы на их опрос
+// (copter/DisplayPort.h, telemetry/MspPort.h). Экран собирает задача OSD,
+// в порт пишет полётный цикл.
+MspPort devicePort(*board.telemetryUart());
+copter::DisplayPort displayPort;
+copter::MspVtxLink mspVtx;
+copter::OsdOutputStatus osdOutput;
+static copter::OsdRouteInput osdRouteIn;        // настройки osd_displayport_device, vcd_video_system, osd_canvas_*
+static volatile bool osdToDevice = false;       // задача OSD решила: шлём в очки
 static bool wasArmedForBeeper = false;
 static bool readyBeeped = false;
 static uint32_t lastBeeperMs = 0;
@@ -280,6 +293,15 @@ static void applySettings()
                             static_cast<uint16_t>(copterParams.value(copter::PARAM_MAX_CHECK)));
     osdMenu.configure(static_cast<uint16_t>(copterParams.value(copter::PARAM_MIN_CHECK)),
                       static_cast<uint16_t>(copterParams.value(copter::PARAM_MAX_CHECK)));
+    // куда и каким размером рисовать OSD
+    osdRouteIn.device = static_cast<copter::OsdDevice>(static_cast<uint8_t>(copterParams.value(copter::PARAM_OSD_DISPLAYPORT_DEVICE)));
+    osdRouteIn.video = static_cast<copter::VideoSystem>(static_cast<uint8_t>(copterParams.value(copter::PARAM_VCD_VIDEO_SYSTEM)));
+    osdRouteIn.canvasCols = static_cast<uint8_t>(copterParams.value(copter::PARAM_OSD_CANVAS_WIDTH));
+    osdRouteIn.canvasRows = static_cast<uint8_t>(copterParams.value(copter::PARAM_OSD_CANVAS_HEIGHT));
+    displayPort.configure(static_cast<int8_t>(copterParams.value(copter::PARAM_DISPLAYPORT_MSP_COL_ADJUST)),
+                          static_cast<int8_t>(copterParams.value(copter::PARAM_DISPLAYPORT_MSP_ROW_ADJUST)),
+                          static_cast<uint8_t>(copterParams.value(copter::PARAM_OSD_FRAMERATE_HZ)));
+    osdChip.forceStandard(osdRouteIn.video == copter::VideoSystem::PAL ? 1 : osdRouteIn.video == copter::VideoSystem::NTSC ? 2 : 0);
     configureBuzzer();
     crsfTelemetryOn = copterParams.value(copter::PARAM_CRSF_TELEMETRY) > 0.5f &&
                       rcReceiver.getProtocol() == Config::RxProtocol::CRSF;
@@ -461,6 +483,32 @@ static void sendCrsfMsp()
     if (n) board.rcUart().write(frame, n);
 }
 
+// Порт очков: ответить на их запросы (ARM, батарея, канал VTX, размер
+// экрана), отдать готовые кадры OSD и новые настройки передатчику на MSP.
+// Ничего не ждёт: что не влезло в UART — в следующий такт.
+static void pollDevicePort(const copter::VtxRequest& vtxWanted)
+{
+    if (!devicePort.isOpen()) return;
+    const uint32_t nowMs = millis();
+    copterConsole.mspHandler().setMspVtx(mspVtx.online(), vtxWanted);
+    devicePort.poll(nowMs, [nowMs, &vtxWanted](const msp::Parser& in, uint8_t* out, size_t capacity) {
+        // передатчик на MSP узнаётся по тому, что спрашивает свои настройки
+        if (in.cmd == copter::mspcmd::VTX_CONFIG || in.cmd == copter::mspcmd::SET_VTX_CONFIG)
+        {
+            mspVtx.polled();
+            copterConsole.mspHandler().setMspVtx(true, vtxWanted);   // уже первый ответ — как передатчику
+        }
+        return copterConsole.answerDeviceMsp(in, out, capacity, nowMs);
+    });
+    if (mspVtx.changed(vtxWanted, static_cast<uint8_t>(copterParams.value(copter::PARAM_VTX_LOW_POWER_DISARM))))
+    {
+        uint8_t frame[48];
+        const size_t n = copterConsole.mspHandler().vtxConfigFrame(frame, sizeof(frame));
+        if (n) devicePort.queue(frame, n);
+    }
+    if (osdToDevice || displayPort.pending()) displayPort.drain(devicePort);
+}
+
 // ARM: с GPS — свой писк, есть ли фикс (ARMING_GPS_FIX / ARMING_GPS_NO_FIX), как в BF.
 static copter::BeeperCondition armingBeep()
 {
@@ -605,9 +653,9 @@ static const char* firstArmBlock()
 // Экран OSD из того, что знает прошивка (copter/Osd.h).
 static void composeOsd()
 {
+    osdScreen.setCanvas(osdOutput.cols, osdOutput.rows);
     if (osdMenu.isOpen())
     {
-        osdScreen.setRows(osdChip.rows());
         osdMenu.draw(osdScreen, copterParams);
         return;
     }
@@ -661,19 +709,50 @@ static void composeOsd()
     d.escOverloads = escGuard.flightStats().escEvents;
     d.batteryOverloads = escGuard.flightStats().batteryEvents;
     osdStats.update(d, millis());
-    osdScreen.setRows(osdChip.rows());
     osdScreen.compose(d, copter::osdLayoutFrom(copterParams), &osdStats);
 }
 
-// Фоновая задача OSD: 20 раз в секунду экран — в чип (только изменения), раз
-// в секунду — проверить, не сменилась ли камера (PAL/NTSC).
+// Куда рисовать сейчас: настройки + чип на плате + что сказали очки
+// (copter/DisplayPort.h, osdRoute). Итог — в osdOutput (экран, живой кадр).
+static copter::OsdRoute routeOsd()
+{
+    copter::OsdRouteInput in = osdRouteIn;
+    in.chipPresent = osdChip.isPresent();
+    in.chipRows = osdChip.rows();
+    in.portPresent = devicePort.isOpen();
+    in.deviceSeen = devicePort.seen();
+    in.deviceCols = copterConsole.mspHandler().deviceCanvasCols();
+    in.deviceRows = copterConsole.mspHandler().deviceCanvasRows();
+    const copter::OsdRoute route = copter::osdRoute(in);
+    osdOutput.port = in.portPresent;
+    osdOutput.chip = route.chip;
+    osdOutput.msp = route.msp;
+    osdOutput.cols = route.canvas.cols;
+    osdOutput.rows = route.canvas.rows;
+    osdOutput.hd = route.canvas.hd;
+    osdOutput.deviceAlive = devicePort.alive(millis());
+    osdOutput.deviceCanvas = route.msp && in.deviceCols && in.deviceRows;
+    osdOutput.mspVtx = mspVtx.online();
+    osdOutput.requests = devicePort.requests;
+    copterConsole.mspHandler().setOsdCanvas(route.canvas.cols, route.canvas.rows);
+    return route;
+}
+
+// Фоновая задача OSD: 20 раз в секунду экран — в чип (только изменения) и
+// в очки по MSP (целиком, osd_framerate_hz раз в секунду); раз в секунду —
+// проверить, не сменилась ли камера (PAL/NTSC).
 static void osdTask(void*)
 {
     uint32_t lastCheckMs = 0;
     for (;;)
     {
+        const copter::OsdRoute route = routeOsd();
         composeOsd();
-        osdChip.flush(osdScreen, 60);
+        if (route.chip) osdChip.flush(osdScreen, 60);
+        else osdChip.blank();
+        if (route.msp) displayPort.render(osdScreen, millis());
+        else displayPort.release();   // экран отдан очкам (один раз, если до того рисовали)
+        osdToDevice = route.msp;
         if (millis() - lastCheckMs >= 1000)
         {
             lastCheckMs = millis();
@@ -833,8 +912,10 @@ static void flightTask(void*)
             updateBeeper();
         }
         updatePinio(false);
-        vtx.request(vtxRequest());
+        const copter::VtxRequest vtxWanted = vtxRequest();
+        vtx.request(vtxWanted);
         vtx.update(millis());
+        pollDevicePort(vtxWanted);
         copterConsole.mspHandler().setVtx(&vtx.state(), vtx.levelCount());
         copterConsole.setOutputs(out);
         copterConsole.setHeading(headingDeg());
@@ -1146,6 +1227,13 @@ void setup()
         Serial.printf("OSD: %s\n", osdChip.begin() ? (osdChip.isPal() ? "AT7456E/MAX7456, PAL" : "AT7456E/MAX7456, NTSC")
                                                      : "чип не отвечает");
     }
+    // порт очков: слушаем всегда (на опрос MSP отвечаем), OSD шлём по osd_displayport_device
+    if (Config::PIN_TELEM_TX >= 0)
+    {
+        devicePort.begin();
+        Serial.println("Порт MSP для очков и видеопередатчика: 115200");
+    }
+    copterConsole.setOsdOutput(&osdOutput);
     copterConsole.setTaskStats(&taskStats);
 #if defined(COPTER_BLACKBOX)
     setupBlackBox();   // последним: задача записи начинает готовить место
@@ -1154,9 +1242,15 @@ void setup()
     beeper.event(copter::BeeperCondition::GYRO_CALIBRATED);   // гироскоп откалиброван при включении
     beeper.event(copter::BeeperCondition::SYSTEM_INIT);
 
-    Rtos::startTask(flightTask, "flight", 16384, nullptr, Rtos::PRIORITY_FLIGHT);
-    Rtos::startTask(storageTask, "storage", 2048, nullptr, Rtos::PRIORITY_BACKGROUND);
-    if (osdChip.isPresent()) Rtos::startTask(osdTask, "osd", 3072, nullptr, Rtos::PRIORITY_BACKGROUND);
+    // Стеки задач берутся из остатка ОЗУ: не хватило — сказать прямо, а не молчать
+    // (на F405 его мало; без задачи OSD нет экрана, без flight не летает ничего).
+    bool tasksOk = Rtos::startTask(flightTask, "flight", 16384, nullptr, Rtos::PRIORITY_FLIGHT);
+    tasksOk = Rtos::startTask(storageTask, "storage", 2048, nullptr, Rtos::PRIORITY_BACKGROUND) && tasksOk;
+    if (osdChip.isPresent() || devicePort.isOpen())
+    {
+        tasksOk = Rtos::startTask(osdTask, "osd", 3072, nullptr, Rtos::PRIORITY_BACKGROUND) && tasksOk;
+    }
+    if (!tasksOk) Serial.println("ОШИБКА: не хватило памяти на задачи (flight / storage / osd) — прошивка работает не полностью");
     vTaskStartScheduler();   // не возвращается
 
     Serial.println("FreeRTOS не запустился (мало памяти?)");

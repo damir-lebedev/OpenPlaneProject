@@ -51,6 +51,18 @@ public:
     bool isPal() const { return pal; }
     uint8_t rows() const { return pal ? 16 : 13; }
 
+    // vcd_video_system: 0 — стандарт по камере (как было), 1 — всегда PAL,
+    // 2 — всегда NTSC (камера без сигнала на стенде, «прыгающая» картинка).
+    void forceStandard(uint8_t mode) { forced = mode > 2 ? 0 : mode; }
+
+    // Погасить: экран чипа пуст, пока снова не позовут flush() (OSD ушёл в очки по MSP).
+    void blank()
+    {
+        if (!present || blanked) return;
+        clearChip();
+        blanked = true;
+    }
+
     // Раз в секунду: стандарт видео поменялся — перенастроить и стереть.
     void check()
     {
@@ -67,12 +79,13 @@ public:
     uint16_t flush(const copter::OsdScreen& screen, uint16_t maxChars)
     {
         if (!present) return 0;
+        blanked = false;
         uint16_t written = 0;
         for (uint16_t i = 0; i < CELLS && written < maxChars; ++i)
         {
             const uint16_t pos = static_cast<uint16_t>((cursor + i) % CELLS);
-            const uint8_t row = static_cast<uint8_t>(pos / copter::OsdScreen::COLS);
-            const uint8_t col = static_cast<uint8_t>(pos % copter::OsdScreen::COLS);
+            const uint8_t row = static_cast<uint8_t>(pos / CHIP_COLS);
+            const uint8_t col = static_cast<uint8_t>(pos % CHIP_COLS);
             if (row >= rows()) continue;
             const uint8_t c = screen.at(row, col);
             if (shadow[pos] == c) continue;
@@ -89,7 +102,9 @@ public:
 private:
     static constexpr uint8_t VM0 = 0x00, DMM = 0x04, DMAH = 0x05, DMAL = 0x06, DMDI = 0x07, OSDBL = 0x6C;
     static constexpr uint8_t OSDBL_READ = 0xEC, STAT = 0xA0;
-    static constexpr uint16_t CELLS = copter::OsdScreen::COLS * copter::OsdScreen::MAX_ROWS;
+    // память чипа — 30 × 16, каким бы ни был экран (у очков он больше — чип покажет левый верхний угол)
+    static constexpr uint8_t CHIP_COLS = 30, CHIP_ROWS = 16;
+    static constexpr uint16_t CELLS = CHIP_COLS * CHIP_ROWS;
 
     uint8_t vm0() const { return static_cast<uint8_t>((pal ? 0x40 : 0x00) | 0x08); }
 
@@ -98,6 +113,8 @@ private:
     // Нет сигнала — оставить, что было (по умолчанию PAL: у Ratel и большинства камер так).
     bool detectPal(bool fallback)
     {
+        if (forced == 1) return true;
+        if (forced == 2) return false;
         const uint8_t stat = readRegister(STAT);
         if (stat & 0x01) return true;
         if (stat & 0x02) return false;
@@ -138,6 +155,8 @@ private:
     int16_t cs;
     bool present = false;
     bool pal = true;
+    uint8_t forced = 0;      // 0 — по камере, 1 — PAL, 2 — NTSC
+    bool blanked = false;
     uint16_t cursor = 0;
     uint8_t shadow[CELLS] = {};
 };

@@ -100,9 +100,11 @@ namespace copter
         {
             s.clear();
             if (!open) return;
+            // меню — блок в 30 столбцов: на большом экране очков — по центру
+            const uint8_t ox = s.centerOffset();
             char title[OsdScreen::COLS + 1];
             pageTitle(params, title, sizeof(title));
-            s.print(0, static_cast<uint8_t>((OsdScreen::COLS - strlen(title)) / 2), title);
+            s.print(0, static_cast<uint8_t>(ox + (OsdScreen::COLS - strlen(title)) / 2), title);
 
             const uint8_t visible = visibleRows(s.rowCount());
             const uint8_t n = itemCount(page);
@@ -110,19 +112,19 @@ namespace copter
             {
                 const uint8_t row = static_cast<uint8_t>(FIRST_ROW + i);
                 const Item& it = items(page)[top + i];
-                if (top + i == cursor) s.print(row, 1, ">");
-                s.print(row, 2, it.label);
+                if (top + i == cursor) s.print(row, static_cast<uint8_t>(ox + 1), ">");
+                s.print(row, static_cast<uint8_t>(ox + 2), it.label);
                 char v[12];
                 if (valueText(it, params, v, sizeof(v)))
                 {
-                    s.print(row, static_cast<uint8_t>(OsdScreen::COLS - 1 - strlen(v)), v);
+                    s.print(row, static_cast<uint8_t>(ox + OsdScreen::COLS - 1 - strlen(v)), v);
                 }
             }
-            if (top > 0) s.print(FIRST_ROW - 1, OsdScreen::COLS - 2, "^");
-            if (top + visible < n) s.print(static_cast<uint8_t>(FIRST_ROW + visible), OsdScreen::COLS - 2, "v");
+            if (top > 0) s.print(FIRST_ROW - 1, static_cast<uint8_t>(ox + OsdScreen::COLS - 2), "^");
+            if (top + visible < n) s.print(static_cast<uint8_t>(FIRST_ROW + visible), static_cast<uint8_t>(ox + OsdScreen::COLS - 2), "v");
             if (s.rowCount() > FIRST_ROW + visible + 1)
             {
-                s.print(static_cast<uint8_t>(s.rowCount() - 1), 0, "PITCH MOVE  ROLL SET  YAW BACK");
+                s.print(static_cast<uint8_t>(s.rowCount() - 1), ox, "PITCH MOVE  ROLL SET  YAW BACK");
             }
         }
 

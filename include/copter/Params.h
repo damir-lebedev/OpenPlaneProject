@@ -448,6 +448,14 @@ namespace copter
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
         PARAM_OSD_RSSI_ALARM,
+        // куда и каким размером рисовать OSD (copter/DisplayPort.h)
+        PARAM_OSD_DISPLAYPORT_DEVICE,
+        PARAM_VCD_VIDEO_SYSTEM,
+        PARAM_OSD_CANVAS_WIDTH,
+        PARAM_OSD_CANVAS_HEIGHT,
+        PARAM_DISPLAYPORT_MSP_COL_ADJUST,
+        PARAM_DISPLAYPORT_MSP_ROW_ADJUST,
+        PARAM_OSD_FRAMERATE_HZ,
         PARAM_MIN_CHECK,
         PARAM_MAX_CHECK,
         PARAM_ACC_TRIM_ROLL,
@@ -490,6 +498,9 @@ namespace copter
         // порядок — как VtxProtocol
         static const char* const VTX_PROTOCOLS[] = { "AUTO", "SMARTAUDIO", "TRAMP", "NONE" };
         static const char* const LOW_POWER_DISARM[] = { "OFF", "ON", "UNTIL_FIRST_ARM" };
+        // порядок — как OsdDevice и VideoSystem (copter/DisplayPort.h) и в BF
+        static const char* const OSD_DEVICES[] = { "NONE", "AUTO", "MAX7456", "MSP" };
+        static const char* const VIDEO_SYSTEMS[] = { "AUTO", "PAL", "NTSC", "HD" };
         // порядок — как ItermRelax и ItermRelaxType (Presets.h)
         static const char* const ITERM_RELAX[] = { "OFF", "RP", "RPY", "RP_INC", "RPY_INC" };
         static const char* const ITERM_RELAX_TYPES[] = { "GYRO", "SETPOINT" };
@@ -1071,6 +1082,22 @@ namespace copter
               "связь хуже — LQ на OSD мигает и предупреждение LINK QUALITY; 0 — нет" },
             { "osd_rssi_alarm", kInt, kMaster, kGroupOsd, 0, 100, 20, kTable, "%", nullptr, 0,
               "сигнал слабее — RSSI на OSD мигает и предупреждение RSSI LOW; 0 — нет" },
+            { "osd_displayport_device", kEnum, kMaster, kGroupOsd, 0, 3, 1, kTable, "", OSD_DEVICES, 4,
+              "куда рисовать OSD: AUTO — чип на плате и очки на порту MSP, когда они объявились; MAX7456 — только чип; "
+              "MSP — только цифровые очки (DJI, Walksnail, HDZero); NONE — никуда" },
+            { "vcd_video_system", kEnum, kMaster, kGroupOsd, 0, 3, 0, kTable, "", VIDEO_SYSTEMS, 4,
+              "экран OSD: AUTO — по камере (30 × 16 PAL или 13 NTSC), HD — большой экран очков "
+              "(osd_canvas_width × osd_canvas_height); очки, сообщившие свой размер, включают HD сами" },
+            { "osd_canvas_width", kInt, kMaster, kGroupOsd, 30, 60, 53, kTable, "симв.", nullptr, 0,
+              "столбцов на экране очков при vcd_video_system = HD: DJI O3/O4 и Walksnail — 53, HDZero — 50, DJI с WTFOS — 60" },
+            { "osd_canvas_height", kInt, kMaster, kGroupOsd, 13, 22, 20, kTable, "строк", nullptr, 0,
+              "строк на экране очков при vcd_video_system = HD: DJI O3/O4 и Walksnail — 20, HDZero — 18, DJI с WTFOS — 22" },
+            { "displayport_msp_col_adjust", kInt, kMaster, kGroupOsd, -6, 0, 0, kTable, "симв.", nullptr, 0,
+              "сдвиг OSD в очках влево, если правый край не помещается" },
+            { "displayport_msp_row_adjust", kInt, kMaster, kGroupOsd, -3, 0, 0, kTable, "строк", nullptr, 0,
+              "сдвиг OSD в очках вверх, если нижние строки не помещаются" },
+            { "osd_framerate_hz", kInt, kMaster, kGroupOsd, 1, 60, 12, kTable, "Гц", nullptr, 0,
+              "сколько раз в секунду экран уходит в очки по MSP (не чаще 20; чип на плате обновляется сам)" },
             { "min_check", kInt, kMaster, kGroupRx, 750, 2250, 1050, kTable, "мкс", nullptr, 0,
               "команды стиками: стик ниже — «низ»" },
             { "max_check", kInt, kMaster, kGroupRx, 750, 2250, 1900, kTable, "мкс", nullptr, 0,

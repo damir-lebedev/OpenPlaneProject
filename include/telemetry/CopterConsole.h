@@ -71,6 +71,15 @@ public:
     bool mspBlocksArming(uint32_t nowMs) const { return msp.blocksArming(nowMs); }
     // MSP конфигуратора Betaflight (telemetry/CopterMsp.h): плата, датчики — main_copter.cpp.
     copter::CopterMsp& mspHandler() { return msp; }
+    void setOsdOutput(const copter::OsdOutputStatus* status) { link.setOsdOutput(status); }
+
+    // Запрос с порта очков (telemetry/MspPort.h): ответ — кадром в out. Этот
+    // порт «тихий»: не держит проверку моторов и запрет ARM конфигуратора.
+    size_t answerDeviceMsp(const msp::Parser& in, uint8_t* out, size_t capacity, uint32_t nowMs)
+    {
+        refreshMsp();
+        return msp.handle(in, out, capacity, nowMs, true);
+    }
     // MSP_REBOOT 0 — перезагрузка платы.
     void setRebootHook(void (*hook)()) { rebootHook = hook; }
 
@@ -128,6 +137,7 @@ public:
         gps = sensor;
         gpsHome = home;
         link.setGps(sensor, home);
+        msp.setGps(home);
     }
     void setCompass(MagnetometerSensor* sensor) { compass = sensor; }
     // Курс носа, 0 — север (компас, GPS или гироскоп — main_copter.cpp).
@@ -380,13 +390,19 @@ public:
     }
 
 private:
-    void answerMsp(uint32_t nowMs)
+    // Что MSP отдаёт «как сейчас»: датчики, загрузка, связь.
+    void refreshMsp()
     {
         const ImuData& d = imu.getImuData();
         msp.setImu(d.gyroX, d.gyroY, d.gyroZ, d.accelX, d.accelY, d.accelZ);
         msp.setLoad(static_cast<uint16_t>(cpuPercent()));
         msp.setLinkQuality(rc.getLinkQuality());
         msp.setRssi(rssi ? rssi->percent() : -1);
+    }
+
+    void answerMsp(uint32_t nowMs)
+    {
+        refreshMsp();
         static uint8_t out[msp::MAX_PAYLOAD + 16];
         const size_t n = msp.handle(mspParser, out, sizeof(out), nowMs);
         if (n) io.write(out, n);
