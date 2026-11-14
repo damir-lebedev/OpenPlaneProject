@@ -406,7 +406,7 @@ namespace bfl
         }
 
         // Режим, failsafe, связь — кадром S, когда поменялись. Флаги режимов —
-        // как у BF: ANGLE 1, HORIZON 2, ALTHOLD 8; фаза failsafe — этап.
+        // как у BF: ANGLE 1, HORIZON 2, ALTHOLD 8, POSHOLD 32; фаза failsafe — этап.
         void slowIfChanged()
         {
             if (!haveState) return;
@@ -415,6 +415,7 @@ namespace bfl
             if (state.mode == 2) modes |= 1u;        // ANGLE (copter::CopterMode)
             else if (state.mode == 1) modes |= 2u;   // HORIZON
             else if (state.mode == 3) modes |= 8u;   // ALT_HOLD
+            else if (state.mode == 4) modes |= 8u | 32u;   // POS_HOLD (с ним и высота)
             const uint32_t phase = state.state == 2 ? 1u : 0u;   // FAILSAFE
             const bool rxOk = (state.flags & CopterFlag::RX_LOST) == 0;
             const uint32_t key = modes | (phase << 8) | (rxOk ? 1u << 12 : 0u);

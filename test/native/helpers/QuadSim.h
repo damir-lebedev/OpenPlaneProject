@@ -254,6 +254,8 @@ public:
     bool grounded() const { return onGround; }
     double now() const { return time; }
     const QuadSimParams& params() const { return par; }
+    // шум барометра, м (СКО): поток винтов и ветер на корпусе дают до 0.3–0.5 м
+    void setBaroNoise(double m) { par.baroNoiseM = m; }
 
 private:
     static constexpr int MAX_DELAY = 8;

@@ -38,6 +38,7 @@
 #include "copter/CrsfMsp.h"
 #include "copter/CrsfTelemetry.h"
 #include "copter/DisplayPort.h"
+#include "copter/Compass.h"
 #include "copter/GpsHome.h"
 #include "copter/Osd.h"
 #include "copter/Params.h"
@@ -105,6 +106,8 @@ QMC5883L_Sensor magL(magLDevice);
 I2cRegisterDevice magPDevice(board.externalI2c(), QMC5883P_Sensor::DEFAULT_ADDRESS);
 QMC5883P_Sensor magP(magPDevice);
 MagnetometerSensor* compass = nullptr;
+copter::Compass copterCompass;   // калибровка, установка, наклон, склонение (copter/Compass.h)
+static uint32_t lastMagStamp = 0;
 
 RcReceiver rcReceiver(board.rcUart());
 Stm32MotorOutput motors;
@@ -286,6 +289,7 @@ static void applySettings()
     }
     vtx.setMaxPowerMw(static_cast<uint16_t>(copterParams.value(copter::PARAM_VTX_MAX_POWER_MW)));
     gpsHome.setMinimumSats(static_cast<uint8_t>(copterParams.value(copter::PARAM_GPS_MINIMUM_SATS)));
+    copterCompass.configure(copterParams.compassSettings());
     beeper.setOffFlags(static_cast<uint32_t>(copterParams.value(copter::PARAM_BEEPER_OFF_FLAGS)));
     dshotBeacon.configure(static_cast<uint32_t>(copterParams.value(copter::PARAM_DSHOT_BEACON_OFF_FLAGS)),
                           static_cast<uint8_t>(copterParams.value(copter::PARAM_BEEPER_DSHOT_BEACON_TONE)));
@@ -388,11 +392,33 @@ static void updateGps()
     gpsHome.update(f, copterController.isArmed());
 }
 
-// Курс носа, 0 — север: по компасу (если откалиброван), на скорости — по
-// GPS, иначе — то, что насчитал гироскоп (от точки включения).
+// Компас: новый отсчёт датчика -> курс с поправкой на наклон (copter/Compass.h).
+static void updateCompass()
+{
+    if (!compass) return;
+    compass->update();   // сам — 50 Гц
+    if (!compass->isAvailable())
+    {
+        copterCompass.lost();
+        return;
+    }
+    const MagData& m = compass->getMagData();
+    if (m.timestamp == lastMagStamp) return;
+    lastMagStamp = m.timestamp;
+    const float raw[3] = { m.magX, m.magY, m.magZ };
+    copterCompass.update(raw, copterController.getAttitude());
+}
+
+static bool compassTrusted() { return compass && compass->isAvailable() && copterCompass.trusted(); }
+
+// Курс носа, 0 — север: оценка контроллера (компас или курс по полёту —
+// copter/PositionEstimator.h), на скорости — курс GPS, иначе — то, что
+// насчитал гироскоп (от точки включения).
 static float headingDeg()
 {
-    if (compass && compass->isAvailable() && compass->isCalibrated()) return compass->getMagData().headingDegrees;
+    const copter::CopterStatus& s = copterController.getStatus();
+    if (s.headingSource != copter::HeadingSource::NONE) return s.heading;
+    if (compassTrusted()) return copterCompass.headingDeg(s.yaw);
     const copter::GpsFix& f = gpsHome.fix();
     if (f.valid && f.speedMs > 3.0f) return f.courseDeg;
     float yaw = copterController.getStatus().yaw;
@@ -413,8 +439,8 @@ static void fillGps(copter::GpsInput& g)
     const float course = f.courseDeg * 0.017453293f;
     g.velN = f.speedMs * cosf(course);
     g.velE = f.speedMs * sinf(course);
-    g.headingTrusted = compass && compass->isAvailable() && compass->isCalibrated();
-    g.headingDeg = headingDeg();
+    g.headingTrusted = compassTrusted();
+    g.headingDeg = g.headingTrusted ? copterCompass.headingDeg(copterController.getStatus().yaw) : headingDeg();
 }
 
 // Режим для пульта, как пишет Betaflight (4 буквы, без ARM — «*»).
@@ -425,6 +451,7 @@ static const char* crsfModeName(copter::CopterMode m)
         case copter::CopterMode::ANGLE: return "ANGL";
         case copter::CopterMode::HORIZON: return "HOR";
         case copter::CopterMode::ALT_HOLD: return "ALTH";
+        case copter::CopterMode::POS_HOLD: return "POSH";
         case copter::CopterMode::ACRO:
         default: return "ACRO";
     }
@@ -702,6 +729,7 @@ static void composeOsd()
     d.blink = (millis() / 250) % 2 == 0;
     d.exitStats = sticksUp;
     d.overload = copter::overloadText(escGuard.state());
+    d.posHold = copter::posHoldFailText(s.posHoldFail);
     if (!d.overload && escGuard.limiting()) d.overload = "CURRENT LIMIT";
     d.training = copter::trainingText(s.trainingFlags);
     vtxHeat.update(d.armed, vtx.state(), millis());
@@ -837,7 +865,7 @@ static void flightTask(void*)
             lastGpsMs = millis();
             gps.update();
             updateGps();
-            if (compass) compass->update();   // сам — 50 Гц
+            updateCompass();
             t = lap(TASK_GPS, t);
         }
 
@@ -1219,7 +1247,7 @@ void setup()
     copterConsole.setRssi(&rssi);
     copterConsole.setVtx(&vtx);
     copterConsole.setGps(&gps, &gpsHome);
-    copterConsole.setCompass(compass);
+    copterConsole.setCompass(compass, &copterCompass);
     setupMsp();
     if (Config::BOARD_OSD_CS >= 0)
     {

@@ -62,6 +62,7 @@ namespace copter
         BOX_ANTIGRAVITY = 4,
         BOX_MAG = 5,
         BOX_HEADFREE = 6,
+        BOX_POSHOLD = 11,   // BF 2025: POS HOLD (раньше — GPS HOLD)
         BOX_BEEPER = 13,
         BOX_OSD = 19,
         BOX_TELEMETRY = 20,
@@ -100,6 +101,7 @@ namespace copter
             { BOX_ANGLE, "ANGLE", true },
             { BOX_HORIZON, "HORIZON", true },
             { BOX_ALTHOLD, "ALTHOLD", true },
+            { BOX_POSHOLD, "POS HOLD", true },
             { BOX_AIRMODE, "AIR MODE", true },
             { BOX_FAILSAFE, "FAILSAFE", true },
             { BOX_PREARM, "PREARM", true },
@@ -147,6 +149,7 @@ namespace copter
             case CopterMode::ANGLE: return BOX_ANGLE;
             case CopterMode::HORIZON: return BOX_HORIZON;
             case CopterMode::ALT_HOLD: return BOX_ALTHOLD;
+            case CopterMode::POS_HOLD: return BOX_POSHOLD;
             case CopterMode::ACRO:
             default: return BOX_COUNT;   // ACRO — когда ни один не включён
         }
@@ -836,7 +839,8 @@ namespace copter
             rc.stickHold = cfg.stickHoldMask();
 
             rc.armSwitch = isActive(BOX_ARM);
-            if (isActive(BOX_ALTHOLD)) rc.mode = CopterMode::ALT_HOLD;
+            if (isActive(BOX_POSHOLD)) rc.mode = CopterMode::POS_HOLD;
+            else if (isActive(BOX_ALTHOLD)) rc.mode = CopterMode::ALT_HOLD;
             else if (isActive(BOX_ANGLE)) rc.mode = CopterMode::ANGLE;
             else if (isActive(BOX_HORIZON)) rc.mode = CopterMode::HORIZON;
             else rc.mode = CopterMode::ACRO;

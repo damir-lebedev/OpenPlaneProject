@@ -19,6 +19,12 @@
 // подвесили камеру, просела батарея — контур сам найдёт газ висения.
 // На наклоне тяга делится на косинус крена: высота не теряется в
 // повороте.
+//
+// Настройки — как у ALTHOLD Betaflight 2025 (alt_hold_*, autopilot_altitude_*,
+// autopilot_throttle_*): усиления P/I/D/F в единицах BF, 15 — наши расчётные.
+// Отличия: середина зоны удержания — центр стика газа (у BF — газ висения),
+// газ внизу — снижение (у BF — висение); газ висения берётся из описания
+// коптера и уточняется в полёте (autopilot_hover_throttle — только если задан).
 // ============================================================
 
 namespace copter
@@ -92,9 +98,15 @@ namespace copter
             float posGain = 1.2f;        // (м/с) на метр ошибки высоты
             float velGain = 2.5f;        // (м/с²) на м/с ошибки скорости
             float hoverIGain = 0.1f;     // доля газа висения на (м/с ошибки)·с
-            float maxClimb = 3.0f;       // м/с
-            float maxDescent = 2.0f;     // м/с
+            float ffGain = 1.0f;         // упреждение: доля ускорения заданной скорости (autopilot_altitude_F)
+            float maxClimb = 5.0f;       // м/с при газе до упора (alt_hold_adjust_rate)
+            float maxDescent = 3.0f;     // м/с: в собственном потоке винтов — не быстрее 60 % набора
             float maxAccel = 5.0f;       // м/с², ограничение запроса вверх/вниз
+            float deadband = 0.10f;      // alt_hold_deadband: столько хода газа в обе стороны от центра — держать
+            // autopilot_throttle_min/max — доля тяги; не выше четверти и не ниже 1.4
+            // газа висения: иначе коптер не сядет или не удержит высоту
+            float throttleMin = 0.10f;
+            float throttleMax = 0.70f;
         };
 
         void configure(const Settings& s, float hoverThrust)
@@ -111,9 +123,17 @@ namespace copter
             // интеграл подхватывает текущий газ: без рывка при включении
             iHover = hover > 0.01f ? currentThrust / hover - 1.0f : 0.0f;
             iHover = clampHover(iHover);
+            lastCmd = 0.0f;
+            ffAccel = 0.0f;
+            braking = true;
+            brakeTimer = 0.0f;
         }
 
-        void setTarget(float altitude) { target = altitude; }
+        void setTarget(float altitude)
+        {
+            target = altitude;
+            braking = false;
+        }
         float getTarget() const { return target; }
 
         // Новая оценка газа висения: выученная интегралом поправка
@@ -136,25 +156,45 @@ namespace copter
             float vTarget;
             if (holdAltitude && fabsf(climbCmd) < 0.01f)
             {
+                // стик отпустили на скорости (или удержание включили в наборе):
+                // сначала остановиться, высоту запомнить там, где встал, — иначе
+                // коптер проскочит точку и будет к ней возвращаться с перелётом
+                if (braking)
+                {
+                    brakeTimer += dt;
+                    target = altitude;
+                    if (fabsf(climbRate) < BRAKE_DONE_MS || brakeTimer > BRAKE_MAX_S) braking = false;
+                }
                 vTarget = set.posGain * (target - altitude);
             }
             else
             {
                 vTarget = climbCmd;
-                // цель едет с пилотом; отпустил стик — держится, где был
+                // цель едет с пилотом; отпустил стик — тормозит и держится, где встал
                 target = altitude;
+                braking = true;
+                brakeTimer = 0.0f;
             }
             vTarget = fminf(set.maxClimb, fmaxf(-set.maxDescent, vTarget));
             lastClimbTarget = vTarget;
 
+            // упреждение: стик газа двинули — тяга меняется сразу, не дожидаясь ошибки скорости
+            const float cmd = fabsf(climbCmd) < 0.01f ? 0.0f : fminf(set.maxClimb, fmaxf(-set.maxDescent, climbCmd));
+            if (dt > 0.0f) ffAccel += ((cmd - lastCmd) / dt - ffAccel) * fminf(1.0f, dt / FF_SMOOTH_S);
+            lastCmd = cmd;
+            const float ff = set.ffGain * fminf(0.5f * set.maxAccel, fmaxf(-0.5f * set.maxAccel, ffAccel));
+
             const float err = vTarget - climbRate;
-            const float accel = fminf(set.maxAccel, fmaxf(-set.maxAccel, set.velGain * err));
+            const float accel = fminf(set.maxAccel, fmaxf(-set.maxAccel, set.velGain * err + ff));
             const float c = fmaxf(0.5f, cosTilt);
-            const float raw = hover * (1.0f + iHover) * (1.0f + accel / 9.80665f) / c;
-            // интеграл не копится в сторону упора (газ 0 или 1)
-            const bool stuck = (raw >= 1.0f && err > 0.0f) || (raw <= 0.0f && err < 0.0f);
+            const float learned = hover * (1.0f + iHover);
+            const float raw = learned * (1.0f + accel / 9.80665f) / c;
+            const float lo = fmaxf(0.0f, fminf(set.throttleMin, 0.25f * learned));
+            const float hi = fminf(1.0f, fmaxf(set.throttleMax, 1.4f * learned));
+            // интеграл не копится в сторону упора
+            const bool stuck = (raw >= hi && err > 0.0f) || (raw <= lo && err < 0.0f);
             if (!stuck) iHover = clampHover(iHover + set.hoverIGain * err * dt);
-            return fminf(1.0f, fmaxf(0.0f, raw));
+            return fminf(hi, fmaxf(lo, raw));
         }
 
         // Газ висения с поправкой интеграла (что контур выучил).
@@ -164,8 +204,15 @@ namespace copter
     private:
         // −60 %…+100 % от расчётного висения: легче/мощнее или вдвое тяжелее
         static float clampHover(float v) { return fminf(1.0f, fmaxf(-0.6f, v)); }
+        static constexpr float FF_SMOOTH_S = 0.1f;
 
         Settings set;
+        float lastCmd = 0.0f;
+        float ffAccel = 0.0f;
+        bool braking = false;        // стик отпущен, скорость ещё гасится — цель не запомнена
+        float brakeTimer = 0.0f;
+        static constexpr float BRAKE_DONE_MS = 0.3f;   // м/с
+        static constexpr float BRAKE_MAX_S = 3.0f;
         float hover = 0.4f;
         float target = 0.0f;
         float iHover = 0.0f;

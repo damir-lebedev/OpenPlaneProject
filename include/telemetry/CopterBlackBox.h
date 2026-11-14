@@ -634,7 +634,7 @@ private:
         static const char* const MODES[] = { "NORMAL", "MOTOR_TEST", "ALWAYS" };
         info("blackbox_mode=%s", MODES[static_cast<uint8_t>(mode) % 3]);
         info("bits.flags=%s", BlackBoxFormat::CopterFlag::NAMES);
-        info("names.mode=ACRO HORIZON ANGLE ALT_HOLD");
+        info("names.mode=ACRO HORIZON ANGLE ALT_HOLD POS_HOLD");
         info("names.state=DISARMED ARMED FAILSAFE");
         // всё одной записью не влезает (255 байт): флаги BF — биты 0–25, наши — с 26-го
         char codes[240];

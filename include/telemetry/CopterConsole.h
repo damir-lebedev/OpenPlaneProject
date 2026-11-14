@@ -139,7 +139,12 @@ public:
         link.setGps(sensor, home);
         msp.setGps(home);
     }
-    void setCompass(MagnetometerSensor* sensor) { compass = sensor; }
+    void setCompass(MagnetometerSensor* sensor, const copter::Compass* calibrated = nullptr)
+    {
+        compass = sensor;
+        magCal = calibrated;
+        link.setCompass(calibrated, sensor != nullptr);
+    }
     // Курс носа, 0 — север (компас, GPS или гироскоп — main_copter.cpp).
     void setHeading(float deg)
     {
@@ -446,7 +451,9 @@ private:
                     io.println("Компаса нет (QMC5883L/P на I2C модуля GPS не ответил).");
                     return;
                 }
-                compass->calibrate();
+                // калибровка — настройками mag_zero_* / mag_scale_* / align_mag: их считает мастер
+                // в приложении по точкам на сфере (здесь коптер 15 с без присмотра никто не крутит)
+                io.println("Калибровка компаса — в OpenPlane Studio: Подготовка -> Компас (или set mag_zero_x/y/z, mag_scale_x/y/z, align_mag).");
                 break;
             case 'o':
                 if (refuseArmed()) return;
@@ -511,8 +518,11 @@ private:
             io.println("Компас: нет");
             return;
         }
+        const bool cal = magCal && magCal->calibrated();
         io.printf("Компас: %s, курс %.0f°%s\n", compass->isAvailable() ? "есть" : "не отвечает", headingDeg,
-                  compass->isCalibrated() ? "" : " — не откалиброван ('c')");
+                  !cal ? " — не откалиброван (приложение: Подготовка -> Компас)"
+                       : magCal->trusted() ? "" : " — полю не верим (помеха или не та калибровка)");
+        if (magCal && magCal->hasSample()) io.printf("  поле %.0f мкТл (Земля — 25…65)\n", magCal->fieldUT());
     }
 
     void printVtxLine()
@@ -736,6 +746,7 @@ private:
     const GpsSensor* gps = nullptr;
     const copter::GpsHome* gpsHome = nullptr;
     MagnetometerSensor* compass = nullptr;
+    const copter::Compass* magCal = nullptr;
     float headingDeg = 0.0f;
     const TaskStats* tasks = nullptr;
     IFlightRecorder* recorder = nullptr;

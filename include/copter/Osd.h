@@ -206,6 +206,7 @@ namespace copter
         OSD_WARN_VTX_HOT,    // своё: VTX без ARM и обдува греется (copter/Vtx.h, VtxHeatWatch)
         OSD_WARN_TRAINING,   // своё: учебные ограничения (copter/TrainingLimits.h)
         OSD_WARN_RSSI,
+        OSD_WARN_POSHOLD,    // своё: POS HOLD включён, а держать нечем (copter/PositionHold.h)
         OSD_WARN_COUNT
     };
 
@@ -222,6 +223,7 @@ namespace copter
             { "vtx_hot", true, "VTX без ARM греется на полной мощности (VTX HOT)" },
             { "training", true, "учебные ограничения: ALT LIMIT, FENCE, FENCE RETURN, SPEED LIMIT" },
             { "rssi", true, "сигнал пульта слабее osd_rssi_alarm (RSSI LOW)" },
+            { "poshold", true, "POS HOLD не держит место: POSHOLD NO GPS, POSHOLD NO MAG, POSHOLD FAIL — летит как ALTHOLD" },
         };
         return table[w < OSD_WARN_COUNT ? w : 0];
     }
@@ -259,7 +261,7 @@ namespace copter
     {
         bool armed = false;
         bool failsafe = false;
-        const char* mode = "ACRO";          // ACRO, ANGL, HOR, ALTH
+        const char* mode = "ACRO";          // ACRO, ANGL, HOR, ALTH, POSH
         bool rescue = false;                // GPS Rescue летит домой — режим RESC, как в BF
         bool rescueAbort = false;           // возврат невозможен — садится на месте
         int16_t linkQuality = -1;           // %, −1 — неизвестно
@@ -288,6 +290,7 @@ namespace copter
         bool blink = true;                  // фаза мигания (2 Гц): false — тревожные значения гаснут
         bool exitStats = false;             // газ или тангаж вверх — убрать статистику
         const char* overload = nullptr;     // ESC OVERLOAD / BATT OVERLOAD / CURRENT LIMIT (copter/EscGuard.h) или nullptr
+        const char* posHold = nullptr;      // POSHOLD NO GPS / NO MAG / FAIL (copter/PositionHold.h) или nullptr
         const char* training = nullptr;     // учебные ограничения: ALT LIMIT, FENCE… (copter/TrainingLimits.h) или nullptr
         bool vtxHot = false;                // VTX без ARM греется (copter/Vtx.h, VtxHeatWatch)
         uint16_t escOverloads = 0, batteryOverloads = 0;   // за этот полёт
@@ -435,6 +438,7 @@ namespace copter
             if (l.warn(OSD_WARN_FAIL_SAFE) && d.failsafe) return "FAILSAFE";
             if (l.warn(OSD_WARN_FAIL_SAFE) && d.linkLost) return "RXLOSS";
             if (l.warn(OSD_WARN_BATT_CRITICAL) && d.batteryState == 3) return "BATT CRITICAL";
+            if (l.warn(OSD_WARN_POSHOLD) && d.armed && d.posHold) return d.posHold;
             if (l.warn(OSD_WARN_OVERLOAD) && d.armed && d.overload) return d.overload;
             if (l.warn(OSD_WARN_TRAINING) && d.armed && d.training) return d.training;
             if (l.warn(OSD_WARN_BATT_WARNING) && d.batteryState == 2) return "LOW BATTERY";

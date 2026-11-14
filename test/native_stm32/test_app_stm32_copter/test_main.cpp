@@ -621,6 +621,10 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE(contains(live[0], "\"state\":\"DISARMED\",\"mode\":\"ANGLE\""));
     TEST_ASSERT_TRUE(contains(live[0], "\"motors\":[0.000,0.000,0.000,0.000]"));
     TEST_ASSERT_TRUE(contains(live[0], "\"modes\":[1]"));
+    // курс: источника нет (компас не подключён, полёта не было) — ни "mag", ни "pos" в кадре
+    TEST_ASSERT_TRUE(contains(live[0], "\"hsrc\":\"NONE\""));
+    TEST_ASSERT_FALSE(contains(live[0], "\"mag\":"));
+    TEST_ASSERT_FALSE(contains(live[0], "\"pos\":"));
 
     // проверка моторов: ползунок держится, пока приложение повторяет
     host("motor 1 12");

@@ -7,6 +7,8 @@
 #include <string.h>
 
 #include "copter/Battery.h"
+#include "copter/Compass.h"
+#include "copter/CopterController.h"
 #include "copter/EscGuard.h"
 #include "copter/Osd.h"
 #include "copter/Presets.h"
@@ -88,6 +90,7 @@ namespace copter
         OSD,
         OTHER,
         BEEPER,
+        AUTOPILOT,
     };
 
     inline const char* paramGroupName(ParamGroup g)
@@ -109,6 +112,7 @@ namespace copter
             case ParamGroup::OSD: return "osd";
             case ParamGroup::OTHER: return "other";
             case ParamGroup::BEEPER: return "beeper";
+            case ParamGroup::AUTOPILOT: return "autopilot";
         }
         return "other";
     }
@@ -383,6 +387,32 @@ namespace copter
         PARAM_GPS_RESCUE_VELOCITY_P,
         PARAM_GPS_RESCUE_VELOCITY_I,
         PARAM_GPS_RESCUE_VELOCITY_D,
+        PARAM_ALT_HOLD_ADJUST_RATE,
+        PARAM_ALT_HOLD_DEADBAND,
+        PARAM_POS_HOLD_ADJUST_RATE,
+        PARAM_POS_HOLD_DEADBAND,
+        PARAM_POS_HOLD_WITHOUT_MAG,
+        PARAM_AUTOPILOT_HOVER_THROTTLE,
+        PARAM_AUTOPILOT_THROTTLE_MIN,
+        PARAM_AUTOPILOT_THROTTLE_MAX,
+        PARAM_AUTOPILOT_ALTITUDE_P,
+        PARAM_AUTOPILOT_ALTITUDE_I,
+        PARAM_AUTOPILOT_ALTITUDE_D,
+        PARAM_AUTOPILOT_ALTITUDE_F,
+        PARAM_AUTOPILOT_POSITION_P,
+        PARAM_AUTOPILOT_POSITION_I,
+        PARAM_AUTOPILOT_POSITION_D,
+        PARAM_AUTOPILOT_POSITION_A,
+        PARAM_AUTOPILOT_POSITION_CUTOFF,
+        PARAM_AUTOPILOT_MAX_ANGLE,
+        PARAM_ALIGN_MAG,
+        PARAM_MAG_DECLINATION,
+        PARAM_MAG_ZERO_X,
+        PARAM_MAG_ZERO_Y,
+        PARAM_MAG_ZERO_Z,
+        PARAM_MAG_SCALE_X,
+        PARAM_MAG_SCALE_Y,
+        PARAM_MAG_SCALE_Z,
         PARAM_AIRMODE_START_THROTTLE_PERCENT,
         PARAM_RC_SMOOTHING,
         PARAM_RC_SMOOTHING_AUTO_FACTOR,
@@ -444,6 +474,7 @@ namespace copter
         PARAM_OSD_WARN_VTX_HOT,
         PARAM_OSD_WARN_TRAINING,
         PARAM_OSD_WARN_RSSI,
+        PARAM_OSD_WARN_POSHOLD,
         PARAM_OSD_ALT_ALARM,
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
@@ -517,6 +548,8 @@ namespace copter
         // порядок — как RescueAltMode и RescueSanity (GpsRescue.h) и в BF
         static const char* const RESCUE_ALT_MODES[] = { "MAX_ALT", "FIXED_ALT", "CURRENT_ALT" };
         static const char* const RESCUE_SANITY[] = { "OFF", "ON", "FS_ONLY" };
+        // порядок — как MagAlign (copter/Compass.h) и align_mag в BF
+        static const char* const MAG_ALIGN[] = { "DEFAULT", "CW0", "CW90", "CW180", "CW270", "CW0FLIP", "CW90FLIP", "CW180FLIP", "CW270FLIP" };
         static const char* const CRASH_RECOVERY[] = { "OFF", "ON", "BEEP", "DISARM" };   // как CrashRecovery
         static const char* const SIMPLIFIED_MODES[] = { "OFF", "RP", "RPY" };   // как SimplifiedMode
         uint8_t buildCount = 0;
@@ -528,7 +561,8 @@ namespace copter
                              kGroupCopter = ParamGroup::COPTER, kGroupPower = ParamGroup::POWER,
                              kGroupVtx = ParamGroup::VTX, kGroupGps = ParamGroup::GPS, kGroupBlackbox = ParamGroup::BLACKBOX,
                              kGroupFilters = ParamGroup::FILTERS, kGroupMotors = ParamGroup::MOTORS,
-                             kGroupSafety = ParamGroup::SAFETY, kGroupOsd = ParamGroup::OSD;
+                             kGroupSafety = ParamGroup::SAFETY, kGroupOsd = ParamGroup::OSD,
+                             kGroupAuto = ParamGroup::AUTOPILOT;
         constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD,
                                kBattery = ParamDefault::BATTERY;
         static const ParamInfo table[] = {
@@ -954,6 +988,58 @@ namespace copter
               "скорость домой: I (ветер в лоб)" },
             { "gps_rescue_velocity_d", kInt, kMaster, kGroupGps, 0, 200, 12, kTable, "", nullptr, 0,
               "скорость домой: D" },
+            { "alt_hold_adjust_rate", kInt, kMaster, kGroupAuto, 5, 200, 50, kTable, "0.1 м/с", nullptr, 0,
+              "удержание высоты: набор при газе до упора (снижение — 60 % от него)" },
+            { "alt_hold_deadband", kInt, kMaster, kGroupAuto, 5, 50, 20, kTable, "%", nullptr, 0,
+              "удержание высоты: зона хода газа вокруг центра стика, где высота держится" },
+            { "pos_hold_adjust_rate", kInt, kMaster, kGroupAuto, 5, 200, 50, kTable, "0.1 м/с", nullptr, 0,
+              "удержание позиции: скорость при стике до упора (своё: в BF стик задаёт наклон)" },
+            { "pos_hold_deadband", kInt, kMaster, kGroupAuto, 0, 50, 5, kTable, "%", nullptr, 0,
+              "удержание позиции: зона стика у центра, где коптер стоит; 0 — стики не действуют" },
+            { "pos_hold_without_mag", kEnum, kMaster, kGroupAuto, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "удержание позиции без компаса (или когда он врёт): курс — по полёту, после разгона или торможения" },
+            { "autopilot_hover_throttle", kInt, kMaster, kGroupAuto, 0, 1700, 0, kTable, "", nullptr, 0,
+              "газ висения до обучения в полёте, 1100–1700 как в BF; 0 — из описания коптера" },
+            { "autopilot_throttle_min", kInt, kMaster, kGroupAuto, 1050, 1400, 1100, kTable, "", nullptr, 0,
+              "удержание высоты: газ не ниже (и не выше четверти газа висения — иначе не сядет)" },
+            { "autopilot_throttle_max", kInt, kMaster, kGroupAuto, 1400, 2000, 1700, kTable, "", nullptr, 0,
+              "удержание высоты: газ не выше (и не ниже 1.4 газа висения)" },
+            { "autopilot_altitude_p", kInt, kMaster, kGroupAuto, 0, 200, 15, kTable, "", nullptr, 0,
+              "высота: P — скорость на метр ошибки (15 — расчётное)" },
+            { "autopilot_altitude_i", kInt, kMaster, kGroupAuto, 0, 200, 15, kTable, "", nullptr, 0,
+              "высота: I — как быстро уточняется газ висения" },
+            { "autopilot_altitude_d", kInt, kMaster, kGroupAuto, 0, 200, 15, kTable, "", nullptr, 0,
+              "высота: D — тяга на ошибку вертикальной скорости" },
+            { "autopilot_altitude_f", kInt, kMaster, kGroupAuto, 0, 200, 15, kTable, "", nullptr, 0,
+              "высота: упреждение по движению стика газа" },
+            { "autopilot_position_p", kInt, kMaster, kGroupAuto, 0, 200, 30, kTable, "", nullptr, 0,
+              "позиция: P — скорость к точке на метр ошибки (30 — расчётное)" },
+            { "autopilot_position_i", kInt, kMaster, kGroupAuto, 0, 200, 30, kTable, "", nullptr, 0,
+              "позиция: I — как быстро учится постоянный ветер" },
+            { "autopilot_position_d", kInt, kMaster, kGroupAuto, 0, 200, 30, kTable, "", nullptr, 0,
+              "позиция: D — наклон на ошибку скорости" },
+            { "autopilot_position_a", kInt, kMaster, kGroupAuto, 0, 200, 30, kTable, "", nullptr, 0,
+              "позиция: A — доля порыва ветра, которая гасится сразу по акселерометру (30 — половина)" },
+            { "autopilot_position_cutoff", kInt, kMaster, kGroupAuto, 10, 250, 80, kTable, "0.01 Гц", nullptr, 0,
+              "позиция: сглаживание A и D (меньше — плавнее, больше — резче)" },
+            { "autopilot_max_angle", kInt, kMaster, kGroupAuto, 10, 70, 50, kTable, "°", nullptr, 0,
+              "удержание позиции: наклон не больше; разгон и торможение по стику — половина" },
+            { "align_mag", kEnum, kMaster, kGroupGps, 0, 8, 0, kTable, "", MAG_ALIGN, 9,
+              "как стоит компас: CWnn — повёрнут по часовой, FLIP — перевёрнут (мастер калибровки определяет сам)" },
+            { "mag_declination", kInt, kMaster, kGroupGps, -1800, 1800, 0, kTable, "0.1°", nullptr, 0,
+              "магнитное склонение: + — магнитный север восточнее истинного" },
+            { "mag_zero_x", kInt, kMaster, kGroupGps, -30000, 30000, 0, kTable, "0.1 мкТл", nullptr, 0,
+              "калибровка компаса: смещение по оси X датчика (все три нуля — не откалиброван)" },
+            { "mag_zero_y", kInt, kMaster, kGroupGps, -30000, 30000, 0, kTable, "0.1 мкТл", nullptr, 0,
+              "калибровка компаса: смещение по оси Y" },
+            { "mag_zero_z", kInt, kMaster, kGroupGps, -30000, 30000, 0, kTable, "0.1 мкТл", nullptr, 0,
+              "калибровка компаса: смещение по оси Z" },
+            { "mag_scale_x", kInt, kMaster, kGroupGps, 500, 2000, 1000, kTable, "‰", nullptr, 0,
+              "калибровка компаса: растяжение по оси X" },
+            { "mag_scale_y", kInt, kMaster, kGroupGps, 500, 2000, 1000, kTable, "‰", nullptr, 0,
+              "калибровка компаса: растяжение по оси Y" },
+            { "mag_scale_z", kInt, kMaster, kGroupGps, 500, 2000, 1000, kTable, "‰", nullptr, 0,
+              "калибровка компаса: растяжение по оси Z" },
             { "airmode_start_throttle_percent", kInt, kMaster, kGroupSafety, 0, 100, 25, kTable, "%", nullptr, 0,
               "airmode включается, когда после ARM газ хоть раз был выше: на земле коптер не прыгает" },
             { "rc_smoothing", kEnum, kMaster, kGroupRx, 0, 1, 1, kTable, "", OFF_ON, 2,
@@ -1074,6 +1160,8 @@ namespace copter
               "предупреждение OSD: учебные ограничения — ALT LIMIT, FENCE, FENCE RETURN, SPEED LIMIT" },
             { "osd_warn_rssi", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "предупреждение OSD: сигнал пульта слабее osd_rssi_alarm (RSSI LOW)" },
+            { "osd_warn_poshold", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: POS HOLD не держит место — POSHOLD NO GPS, POSHOLD NO MAG, POSHOLD FAIL" },
             { "osd_alt_alarm", kInt, kMaster, kGroupOsd, 0, 10000, 100, kTable, "м", nullptr, 0,
               "выше — высота на OSD мигает; 0 — нет" },
             { "osd_cap_alarm", kInt, kMaster, kGroupOsd, 0, 20000, 2200, kTable, "мА·ч", nullptr, 0,
@@ -1302,6 +1390,20 @@ namespace copter
             return c;
         }
 
+        // Компас: установка, склонение, калибровка (copter/Compass.h).
+        CompassSettings compassSettings() const
+        {
+            CompassSettings c;
+            c.align = static_cast<MagAlign>(static_cast<uint8_t>(value(PARAM_ALIGN_MAG)));
+            c.declinationDeg = value(PARAM_MAG_DECLINATION) * 0.1f;
+            for (uint8_t i = 0; i < 3; ++i)
+            {
+                c.zero[i] = value(static_cast<ParamId>(PARAM_MAG_ZERO_X + i)) * 0.1f;
+                c.scale[i] = value(static_cast<ParamId>(PARAM_MAG_SCALE_X + i)) * 0.001f;
+            }
+            return c;
+        }
+
         RssiConfig rssiConfig() const
         {
             RssiConfig c;
@@ -1399,6 +1501,31 @@ namespace copter
             r.velocityP = value(PARAM_GPS_RESCUE_VELOCITY_P);
             r.velocityI = value(PARAM_GPS_RESCUE_VELOCITY_I);
             r.velocityD = value(PARAM_GPS_RESCUE_VELOCITY_D);
+            // удержание высоты и позиции (BF 2025: alt_hold_*, pos_hold_*, autopilot_*)
+            AltitudeController::Settings& a = s.alt;
+            const AltitudeController::Settings base;   // расчётные усиления — это 15 единиц BF
+            a.maxClimb = value(PARAM_ALT_HOLD_ADJUST_RATE) * 0.1f;
+            a.maxDescent = 0.6f * a.maxClimb;
+            a.deadband = value(PARAM_ALT_HOLD_DEADBAND) * 0.005f;   // % хода — поровну в обе стороны от центра
+            a.posGain = base.posGain * value(PARAM_AUTOPILOT_ALTITUDE_P) / 15.0f;
+            a.hoverIGain = base.hoverIGain * value(PARAM_AUTOPILOT_ALTITUDE_I) / 15.0f;
+            a.velGain = base.velGain * value(PARAM_AUTOPILOT_ALTITUDE_D) / 15.0f;
+            a.ffGain = base.ffGain * value(PARAM_AUTOPILOT_ALTITUDE_F) / 15.0f;
+            a.throttleMin = (value(PARAM_AUTOPILOT_THROTTLE_MIN) - 1000.0f) * 0.001f;
+            a.throttleMax = (value(PARAM_AUTOPILOT_THROTTLE_MAX) - 1000.0f) * 0.001f;
+            const float hoverUs = value(PARAM_AUTOPILOT_HOVER_THROTTLE);
+            s.hoverThrottle = hoverUs >= 1050.0f ? (hoverUs - 1000.0f) * 0.001f : 0.0f;
+            PosHoldSettings& ph = s.posHold;
+            ph.adjustRate = value(PARAM_POS_HOLD_ADJUST_RATE) * 0.1f;
+            ph.deadband = value(PARAM_POS_HOLD_DEADBAND) * 0.01f;
+            ph.withoutMag = value(PARAM_POS_HOLD_WITHOUT_MAG) > 0.5f;
+            ph.maxAngleDeg = value(PARAM_AUTOPILOT_MAX_ANGLE);
+            ph.p = value(PARAM_AUTOPILOT_POSITION_P);
+            ph.i = value(PARAM_AUTOPILOT_POSITION_I);
+            ph.d = value(PARAM_AUTOPILOT_POSITION_D);
+            ph.a = value(PARAM_AUTOPILOT_POSITION_A);
+            ph.cutoffHz = value(PARAM_AUTOPILOT_POSITION_CUTOFF) * 0.01f;
+            s.posHoldMinSats = static_cast<uint8_t>(value(PARAM_GPS_MINIMUM_SATS));
         }
 
         // Пульт: карта каналов, rxrange, таблица aux.
@@ -2259,7 +2386,7 @@ namespace copter
 
     static_assert(PARAM_OSD_PREFLIGHT_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
     static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
-    static_assert(PARAM_OSD_WARN_RSSI - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
+    static_assert(PARAM_OSD_WARN_POSHOLD - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 
     // Раскладка OSD из настроек osd_* (copter/Osd.h).
     inline OsdLayout osdLayoutFrom(const CopterParams& p)

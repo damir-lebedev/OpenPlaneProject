@@ -316,7 +316,9 @@ void test_hover_in_gusty_wind()
     h.stats.reset();
     h.run(10.0);
     TEST_ASSERT_TRUE(h.stats.maxTilt < 12.0);
-    TEST_ASSERT_TRUE(h.stats.minHeight > 4.3 && h.stats.maxHeight < 5.7);
+    // без GPS горизонт в порывах уходит на несколько градусов (P32), а с ним
+    // и оценка высоты — до полуметра
+    TEST_ASSERT_TRUE(h.stats.minHeight > 4.2 && h.stats.maxHeight < 5.8);
 }
 
 // Без барометра снижение при потере связи идёт по акселерометру.
@@ -1904,6 +1906,406 @@ void test_rpm_filter_per_motor_from_dshot_in_manoeuvre()
 }
 
 
+// 128, 130–132: оценка положения (GPS + акселерометр), удержание позиции
+// (POS HOLD) и высоты как в BF 2025 — в симуляторе. GPS: 10 Гц, шум, фикс
+// опаздывает на 0.12 с (если не сказано иное).
+namespace
+{
+    struct HoldRun
+    {
+        double maxDrift = 0;     // наибольший уход от точки, м
+        double lateDrift = 0;    // то же за последнюю треть
+        double maxTilt = 0;
+        double lateTilt = 0;
+        double minH = 1e9, maxH = -1e9;
+    };
+
+    // Висеть seconds секунд, мерить уход от точки (n0, e0).
+    HoldRun holdFor(QuadHarness& h, double n0, double e0, double seconds)
+    {
+        HoldRun r;
+        const long n = std::lround(seconds * 1000.0);
+        for (long i = 0; i < n; ++i)
+        {
+            h.step();
+            const double dn = h.sim.position().x - n0, de = h.sim.position().y - e0;
+            const double d = std::sqrt(dn * dn + de * de);
+            r.maxDrift = std::fmax(r.maxDrift, d);
+            r.maxTilt = std::fmax(r.maxTilt, h.sim.tiltDeg());
+            r.minH = std::fmin(r.minH, h.sim.height());
+            r.maxH = std::fmax(r.maxH, h.sim.height());
+            if (i > 2 * n / 3)
+            {
+                r.lateDrift = std::fmax(r.lateDrift, d);
+                r.lateTilt = std::fmax(r.lateTilt, h.sim.tiltDeg());
+            }
+        }
+        return r;
+    }
+
+    // Взлететь на 10 м и включить POS HOLD; true — режим взялся.
+    bool engagePosHold(QuadHarness& h)
+    {
+        h.gpsOn = true;
+        if (!h.takeoffTo(10.0)) return false;
+        h.rc.mode = CopterMode::POS_HOLD;
+        h.run(2.0);
+        return h.ctl.getStatus().mode == CopterMode::POS_HOLD && h.ctl.getStatus().posHoldPhase == PosHoldPhase::HOLD;
+    }
+
+    int asInt(CopterMode m) { return static_cast<int>(m); }
+    int asInt(PosHoldFail f) { return static_cast<int>(f); }
+}
+
+// Ветер 5 м/с включается разом (хуже, чем в жизни) и дует с порывами:
+// коптер не уходит от точки дальше 2 м, а когда интеграл выучил ветер, —
+// стоит в пределах метра. Дальний 7" и 5" в трёх вариантах физики.
+void test_pos_hold_keeps_place_in_wind()
+{
+    struct Case
+    {
+        const char* build;
+        QuadPerturb perturb;
+        const char* name;
+    };
+    const Case cases[] = { { "longrange7", QuadPerturb(), "7in nominal" },
+                           { "longrange7", sluggish(), "7in sluggish" },
+                           { "freestyle5", QuadPerturb(), "5in nominal" },
+                           { "freestyle5", twitchy(), "5in twitchy" },
+                           { "hex15", QuadPerturb(), "hex15 nominal" } };
+    uint32_t seed = 81;
+    for (const Case& c : cases)
+    {
+        QuadHarness h(*findBuild(c.build), c.perturb, seed++);
+        h.gpsDelayS = 0.12;
+        TEST_ASSERT_TRUE_MESSAGE(engagePosHold(h), c.name);
+        const double n0 = h.sim.position().x, e0 = h.sim.position().y;
+        h.sim.setWind(3.0, 4.0, 1.0);   // 5 м/с, порывы
+        const HoldRun r = holdFor(h, n0, e0, 30.0);
+        char line[200];
+        snprintf(line, sizeof(line), "POS HOLD %-13s wind 5 m/s step + gusts: drift max %.2f m, last 10 s %.2f m, tilt max %.0f deg, height %.1f..%.1f m",
+                 c.name, r.maxDrift, r.lateDrift, r.maxTilt, r.minH, r.maxH);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(r.maxDrift < 2.0, line);
+        TEST_ASSERT_TRUE_MESSAGE(r.lateDrift < 1.0, line);
+        TEST_ASSERT_TRUE_MESSAGE(r.maxTilt < 30.0, line);
+        TEST_ASSERT_TRUE_MESSAGE(r.minH > 9.0 && r.maxH < 11.0, line);
+        TEST_ASSERT_EQUAL_MESSAGE(asInt(CopterMode::POS_HOLD), asInt(h.ctl.getStatus().mode), line);
+    }
+}
+
+// Плохой GPS: шум положения ±1.5 м, скорости ±0.3 м/с, фикс опаздывает на
+// 0.25 с. Коптер не гоняется за шумом (наклон в штиль — единицы градусов) и
+// не уходит дальше 1.5 м: шум ±1.5 м усредняется акселерометром (постоянная
+// времени оценки ~1 с, 10 фиксов), остаётся ~0.5 м. На скорости 5 м/с оценка
+// не отстаёт от коптера, хотя сам фикс отстаёт на 1.25 м.
+void test_pos_hold_with_noisy_delayed_gps()
+{
+    QuadHarness h(*findBuild("longrange7"), QuadPerturb(), 86);
+    h.gpsDelayS = 0.25;
+    h.gpsNoisePosM = 1.5;
+    h.gpsNoiseVelMs = 0.3;
+    {
+        // оценка знает задержку приёмника (у u-blox M10 на 10 Гц — около 0.1 с; здесь — нарочно больше)
+        CopterSettings s;
+        s.gpsDelayS = 0.25f;
+        h.ctl.configure(h.tune, s);
+    }
+    TEST_ASSERT_TRUE(engagePosHold(h));
+    const double n0 = h.sim.position().x, e0 = h.sim.position().y;
+    const HoldRun calm = holdFor(h, n0, e0, 30.0);
+    // полёт по стику: ошибка оценки положения на скорости
+    h.rc.pitch = -1.0f;
+    h.run(4.0);
+    double estErr = 0, lag = 0;
+    for (int i = 0; i < 3000; ++i)
+    {
+        h.step();
+        const CopterStatus& st = h.ctl.getStatus();
+        const double dn = st.posN - (h.sim.position().x - h.homeN), de = st.posE - (h.sim.position().y - h.homeE);
+        estErr = std::fmax(estErr, std::sqrt(dn * dn + de * de));
+        lag = std::fmax(lag, 0.25 * std::sqrt(h.sim.velocity().x * h.sim.velocity().x + h.sim.velocity().y * h.sim.velocity().y));
+    }
+    char line[220];
+    snprintf(line, sizeof(line), "POS HOLD noisy GPS (pos +-1.5 m, vel +-0.3 m/s, delay 0.25 s): calm drift %.2f m, tilt max %.1f deg; at speed estimate error %.2f m (raw fix lags %.2f m + noise)",
+             calm.maxDrift, calm.maxTilt, estErr, lag);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(calm.maxDrift < 1.5, line);
+    TEST_ASSERT_TRUE_MESSAGE(calm.maxTilt < 8.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(estErr < 1.2, line);
+}
+
+// Стики: полный тангаж вперёд — летит со скоростью pos_hold_adjust_rate в
+// сторону носа; отпустил — тормозит не резче половины autopilot_max_angle и
+// встаёт; точка — где остановился, назад не возвращается.
+void test_pos_hold_sticks_fly_and_release_stops()
+{
+    QuadHarness h(*findBuild("longrange7"), QuadPerturb(), 87);
+    h.gpsDelayS = 0.12;
+    TEST_ASSERT_TRUE(engagePosHold(h));
+    h.rc.pitch = -1.0f;
+    h.run(6.0);
+    const double speed = std::sqrt(h.sim.velocity().x * h.sim.velocity().x + h.sim.velocity().y * h.sim.velocity().y);
+    const double side = std::fabs(h.sim.position().y);   // нос на север — летит вдоль севера
+    TEST_ASSERT_EQUAL(static_cast<int>(PosHoldPhase::MOVE), static_cast<int>(h.ctl.getStatus().posHoldPhase));
+    h.rc.pitch = 0.0f;
+    const double nRelease = h.sim.position().x;
+    double tilt = 0, far = 0;
+    for (int i = 0; i < 6000; ++i)
+    {
+        h.step();
+        tilt = std::fmax(tilt, h.sim.tiltDeg());
+        far = std::fmax(far, h.sim.position().x - nRelease);
+    }
+    const double stop = h.sim.position().x - nRelease;
+    const double rest = std::sqrt(h.sim.velocity().x * h.sim.velocity().x + h.sim.velocity().y * h.sim.velocity().y);
+    char line[200];
+    snprintf(line, sizeof(line), "POS HOLD full stick forward: %.1f m/s, sideways %.1f m; release -> stops in %.1f m (overshoot %.1f m), brake tilt %.0f deg, rest speed %.2f m/s",
+             speed, side, stop, far - stop, tilt, rest);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.6, 5.0, speed, line);
+    TEST_ASSERT_TRUE_MESSAGE(side < 1.5, line);
+    TEST_ASSERT_TRUE_MESSAGE(stop > 1.0 && stop < 8.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(far - stop < 0.7, line);
+    TEST_ASSERT_TRUE_MESSAGE(tilt < 35.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(rest < 0.3, line);
+    TEST_ASSERT_EQUAL(static_cast<int>(PosHoldPhase::HOLD), static_cast<int>(h.ctl.getStatus().posHoldPhase));
+}
+
+// GPS пропал посреди удержания (ветер 4 м/с): полторы секунды коптер ещё
+// держится по акселерометру, потом — ALT_HOLD (ровно, высота та же, стики —
+// наклон) и причина NO_GPS для очков; моторы работают. GPS вернулся — снова
+// держит место, уже новое.
+void test_pos_hold_gps_loss_falls_back_to_alt_hold()
+{
+    QuadHarness h(*findBuild("longrange7"), QuadPerturb(), 88);
+    h.gpsDelayS = 0.12;
+    TEST_ASSERT_TRUE(engagePosHold(h));
+    h.sim.setWind(4.0, 0.0, 0.5);
+    h.run(10.0);
+    const double holdTilt = h.sim.tiltDeg();   // стоит, наклонившись на ветер
+    h.gpsLost = true;
+    h.run(1.0);
+    TEST_ASSERT_EQUAL(asInt(CopterMode::POS_HOLD), asInt(h.ctl.getStatus().mode));   // секунду — по акселерометру
+    h.run(1.5);
+    TEST_ASSERT_EQUAL(asInt(CopterMode::ALT_HOLD), asInt(h.ctl.getStatus().mode));
+    TEST_ASSERT_EQUAL(asInt(PosHoldFail::NO_GPS), asInt(h.ctl.getStatus().posHoldFail));
+    TEST_ASSERT_EQUAL_STRING("POSHOLD NO GPS", posHoldFailText(h.ctl.getStatus().posHoldFail));
+    h.stats.reset();
+    h.run(6.0);
+    const double levelTilt = h.sim.tiltDeg();
+    const double drifted = std::sqrt(h.sim.position().x * h.sim.position().x + h.sim.position().y * h.sim.position().y);
+    TEST_ASSERT_TRUE(h.ctl.isArmed());
+    // пилот рулит как в ANGLE
+    h.rc.roll = 0.5f;
+    h.run(1.0);
+    const double stickTilt = h.sim.rollDeg();
+    h.rc.roll = 0.0f;
+    // GPS вернулся
+    h.gpsLost = false;
+    h.run(4.0);
+    const bool back = h.ctl.getStatus().mode == CopterMode::POS_HOLD;
+    h.run(6.0);
+    const double n1 = h.sim.position().x, e1 = h.sim.position().y;
+    const HoldRun r = holdFor(h, n1, e1, 10.0);
+    char line[240];
+    snprintf(line, sizeof(line), "POS HOLD, GPS lost in 4 m/s wind: hold tilt %.1f deg -> ALT_HOLD tilt %.1f deg, height %.1f..%.1f m, drifted to %.0f m, roll by stick %.0f deg; GPS back -> POS_HOLD %s, drift %.2f m",
+             holdTilt, levelTilt, h.stats.minHeight, h.stats.maxHeight, drifted, stickTilt, back ? "yes" : "NO", r.maxDrift);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(holdTilt > 2.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(levelTilt < 5.0, line);   // ровно с точностью до ошибки горизонта в порывах
+    TEST_ASSERT_TRUE_MESSAGE(h.stats.minHeight > 9.0 && h.stats.maxHeight < 11.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(stickTilt > 10.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(back, line);
+    TEST_ASSERT_EQUAL(asInt(PosHoldFail::NONE), asInt(h.ctl.getStatus().posHoldFail));
+    TEST_ASSERT_TRUE_MESSAGE(r.maxDrift < 1.5, line);
+}
+
+// Без годного фикса в POS HOLD не войти: GPS нет — ALT_HOLD и NO_GPS.
+// Компаса нет: с pos_hold_without_mag = OFF — NO_HEADING; с ON — тоже, пока
+// курс не выучен по полёту; после разгона и торможения (коптер стоял носом
+// на 70°, гироскоп об этом не знает) режим берётся и держит место.
+void test_pos_hold_needs_fix_and_heading()
+{
+    {
+        QuadHarness h(five(), QuadPerturb(), 89);
+        TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+        h.rc.mode = CopterMode::POS_HOLD;
+        h.run(3.0);
+        TEST_ASSERT_EQUAL(asInt(CopterMode::ALT_HOLD), asInt(h.ctl.getStatus().mode));
+        TEST_ASSERT_EQUAL(asInt(PosHoldFail::NO_GPS), asInt(h.ctl.getStatus().posHoldFail));
+        TEST_ASSERT_TRUE(h.ctl.isArmed());
+        TEST_ASSERT_FLOAT_WITHIN(1.0, 10.0, h.sim.height());
+    }
+    for (int withoutMag = 0; withoutMag < 2; ++withoutMag)
+    {
+        CopterSettings s;
+        s.posHold.withoutMag = withoutMag != 0;
+        QuadHarness h(*findBuild("longrange7"), QuadPerturb(), 90, EscProtocol::DSHOT600, 1000.0f, s);
+        h.gpsOn = true;
+        h.gpsDelayS = 0.12;
+        h.compass = false;
+        h.sim.setAttitude(0.0, 0.0, 70.0);
+        TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+        h.rc.mode = CopterMode::POS_HOLD;
+        h.run(3.0);
+        TEST_ASSERT_EQUAL(asInt(CopterMode::ALT_HOLD), asInt(h.ctl.getStatus().mode));
+        TEST_ASSERT_EQUAL(asInt(PosHoldFail::NO_HEADING), asInt(h.ctl.getStatus().posHoldFail));
+        // пилот (режим — ALT_HOLD, стики — наклон) разгоняется и тормозит
+        h.rc.pitch = -0.5f;
+        h.run(1.5);
+        h.rc.pitch = 0.4f;
+        h.run(1.0);
+        h.rc.pitch = 0.0f;
+        h.run(4.0);
+        const CopterStatus& st = h.ctl.getStatus();
+        char line[200];
+        snprintf(line, sizeof(line), "POS HOLD without compass (pos_hold_without_mag %s): heading %s %.0f deg (true %.0f), mode %s",
+                 withoutMag ? "ON" : "OFF", headingSourceName(st.headingSource), st.heading, h.sim.yawDeg(), copterModeName(st.mode));
+        TEST_MESSAGE(line);
+        TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(HeadingSource::GPS), static_cast<int>(st.headingSource), line);
+        TEST_ASSERT_FLOAT_WITHIN_MESSAGE(15.0, h.sim.yawDeg(), st.heading, line);
+        if (!withoutMag)
+        {
+            TEST_ASSERT_EQUAL_MESSAGE(asInt(CopterMode::ALT_HOLD), asInt(st.mode), line);
+            TEST_ASSERT_EQUAL(asInt(PosHoldFail::NO_HEADING), asInt(st.posHoldFail));
+            continue;
+        }
+        TEST_ASSERT_EQUAL_MESSAGE(asInt(CopterMode::POS_HOLD), asInt(st.mode), line);
+        h.run(3.0);
+        const double n0 = h.sim.position().x, e0 = h.sim.position().y;
+        h.sim.setWind(0.0, 5.0, 0.5);
+        const HoldRun r = holdFor(h, n0, e0, 20.0);
+        snprintf(line, sizeof(line), "POS HOLD on GPS-learned heading, wind 5 m/s: drift max %.2f m, last third %.2f m", r.maxDrift, r.lateDrift);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(r.maxDrift < 2.5, line);
+        TEST_ASSERT_TRUE_MESSAGE(r.lateDrift < 1.2, line);
+    }
+}
+
+// Компас врёт на 100° (не откалиброван, рядом силовой провод): удержание
+// раскачивается, но по первым же манёврам курс по полёту расходится с
+// компасом — компасу больше не верим. pos_hold_without_mag = OFF — режим
+// отдаёт управление (ALT_HOLD, NO_HEADING или FAIL), коптер не улетает;
+// ON — держит место по курсу GPS.
+void test_pos_hold_lying_compass()
+{
+    for (int withoutMag = 0; withoutMag < 2; ++withoutMag)
+    {
+        CopterSettings s;
+        s.posHold.withoutMag = withoutMag != 0;
+        QuadHarness h(*findBuild("longrange7"), QuadPerturb(), 91, EscProtocol::DSHOT600, 1000.0f, s);
+        h.gpsOn = true;
+        h.gpsDelayS = 0.12;
+        h.compassErrorDeg = 100.0;
+        TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+        h.rc.mode = CopterMode::POS_HOLD;
+        h.run(1.5);
+        const double n0 = h.sim.position().x, e0 = h.sim.position().y;
+        h.sim.setWind(4.0, 0.0, 1.0);
+        const HoldRun r = holdFor(h, n0, e0, 30.0);
+        const CopterStatus& st = h.ctl.getStatus();
+        char line[220];
+        snprintf(line, sizeof(line), "POS HOLD, compass 100 deg off, pos_hold_without_mag %s: mode %s, fail %s, heading by %s, compass rejected %s, went %.1f m, tilt max %.0f",
+                 withoutMag ? "ON" : "OFF", copterModeName(st.mode), posHoldFailName(st.posHoldFail),
+                 headingSourceName(st.headingSource), st.magDisagrees ? "yes" : "no", r.maxDrift, r.maxTilt);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(h.ctl.isArmed(), line);
+        TEST_ASSERT_TRUE_MESSAGE(st.magDisagrees, line);
+        TEST_ASSERT_TRUE_MESSAGE(r.maxTilt < 55.0, line);
+        TEST_ASSERT_TRUE_MESSAGE(r.minH > 8.5 && r.maxH < 11.5, line);
+        if (withoutMag)
+        {
+            TEST_ASSERT_EQUAL_MESSAGE(asInt(CopterMode::POS_HOLD), asInt(st.mode), line);
+            TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(HeadingSource::GPS), static_cast<int>(st.headingSource), line);
+            // после того как компас отброшен — стоит
+            const double n1 = h.sim.position().x, e1 = h.sim.position().y;
+            const HoldRun after = holdFor(h, n1, e1, 10.0);
+            TEST_ASSERT_TRUE_MESSAGE(after.maxDrift < 1.5, line);
+        }
+        else
+        {
+            TEST_ASSERT_EQUAL_MESSAGE(asInt(CopterMode::ALT_HOLD), asInt(st.mode), line);
+            TEST_ASSERT_TRUE_MESSAGE(st.posHoldFail != PosHoldFail::NONE, line);
+        }
+    }
+}
+
+// Потеря связи в ветер 5 м/с: с GPS коптер садится там, где пропала связь
+// (без GPS его за время посадки уносит на десятки метров).
+void test_failsafe_landing_holds_place_with_gps()
+{
+    double landed[2];
+    for (int withGps = 0; withGps < 2; ++withGps)
+    {
+        QuadHarness h(*findBuild("longrange7"), QuadPerturb(), 92);
+        h.gpsOn = withGps != 0;
+        h.gpsDelayS = 0.12;
+        TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+        if (withGps)
+        {
+            h.rc.mode = CopterMode::POS_HOLD;
+            h.run(2.0);
+        }
+        h.sim.setWind(0.0, 5.0, 0.5);
+        h.run(8.0);
+        const double n0 = h.sim.position().x, e0 = h.sim.position().y;
+        h.rc.linkOk = false;
+        const double t0 = h.sim.now();
+        while (h.ctl.isArmed() && h.sim.now() - t0 < 60.0) h.step();
+        TEST_ASSERT_FALSE(h.ctl.isArmed());
+        TEST_ASSERT_TRUE(h.sim.height() < 0.1);
+        landed[withGps] = std::sqrt((h.sim.position().x - n0) * (h.sim.position().x - n0) + (h.sim.position().y - e0) * (h.sim.position().y - e0));
+    }
+    char line[160];
+    snprintf(line, sizeof(line), "link lost in 5 m/s wind, AUTO-LAND from 10 m: landed %.1f m away with GPS, %.0f m without", landed[1], landed[0]);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(landed[1] < 3.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(landed[0] > 15.0, line);
+}
+
+// 128: удержание высоты с шумным барометром. СКО шума 0.4 м — втрое хуже
+// обычного (поток винтов, порывы на корпусе). Оценка высоты усредняет
+// барометр акселерометром с постоянной ~2.5 с: из 0.4 м шума на 50 Гц
+// остаётся около 0.4/sqrt(2·2.5·50/2) ≈ 0.04 м плюс медленные уходы — порог
+// ±0.5 м за 20 с с запасом на порывы; тяга при этом не дёргается за шумом.
+// Стик газа: вверх до упора — alt_hold_adjust_rate (5 м/с), отпустил —
+// тормозит и держит, где встал (без возврата и провала).
+void test_alt_hold_with_noisy_barometer()
+{
+    QuadHarness h(*findBuild("longrange7"), QuadPerturb(), 93);
+    h.sim.setBaroNoise(0.4);
+    h.sim.setWind(2.0, 1.0, 1.0);
+    TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+    const double start = h.sim.height();
+    h.stats.reset();
+    h.run(20.0);
+    const double lo = h.stats.minHeight - start, hi = h.stats.maxHeight - start;
+    const double motorNoise = h.stats.motorNoiseRms();
+    // стик вверх до упора 3 с, отпустить
+    h.rc.throttle = 1.0f;
+    h.run(3.0);
+    const double climb = h.sim.climbRate();
+    h.rc.throttle = 0.5f;
+    const double released = h.sim.height();
+    double top = released, bottom = 1e9;
+    for (int i = 0; i < 8000; ++i)
+    {
+        h.step();
+        top = std::fmax(top, h.sim.height());
+        if (i > 3000) bottom = std::fmin(bottom, h.sim.height());
+    }
+    char line[220];
+    snprintf(line, sizeof(line), "ALT HOLD, baro noise 0.4 m rms: height %+.2f..%+.2f m in 20 s, motor noise %.3f; full throttle -> %.1f m/s, release -> stops %.1f m higher, then sinks back %.2f m",
+             lo, hi, motorNoise, climb, top - released, top - bottom);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(lo > -0.5 && hi < 0.5, line);
+    TEST_ASSERT_TRUE_MESSAGE(motorNoise < 0.05, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.7, 5.0, climb, line);
+    TEST_ASSERT_TRUE_MESSAGE(top - released < 3.5, line);
+    TEST_ASSERT_TRUE_MESSAGE(top - bottom < 0.6, line);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -1957,5 +2359,13 @@ int main()
     RUN_TEST(test_training_fence_turns_back);
     RUN_TEST(test_horizon_and_altitude_hold_in_long_acceleration);
     RUN_TEST(test_training_speed_limit);
+    RUN_TEST(test_pos_hold_keeps_place_in_wind);
+    RUN_TEST(test_pos_hold_with_noisy_delayed_gps);
+    RUN_TEST(test_pos_hold_sticks_fly_and_release_stops);
+    RUN_TEST(test_pos_hold_gps_loss_falls_back_to_alt_hold);
+    RUN_TEST(test_pos_hold_needs_fix_and_heading);
+    RUN_TEST(test_pos_hold_lying_compass);
+    RUN_TEST(test_failsafe_landing_holds_place_with_gps);
+    RUN_TEST(test_alt_hold_with_noisy_barometer);
     return UNITY_END();
 }

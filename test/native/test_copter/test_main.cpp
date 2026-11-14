@@ -7810,6 +7810,498 @@ void test_osd_output_params()
     five5Params();   // вернуть умолчания для следующих тестов
 }
 
+// ---------------- 128, 130–132: оценка положения, компас, POS HOLD ----------------
+namespace
+{
+    // Коптер летит по прямой/с ускорением; GPS — 10 Гц, фикс описывает то, что
+    // было delayS назад. Оси «от включения» повёрнуты на bootDeg от севера.
+    struct EstRun
+    {
+        PositionEstimator est;
+        double n = 0, e = 0, vn = 0, ve = 0;
+        float bootDeg = 0;       // курс носа при включении (рысканье гироскопа 0)
+        float delayS = 0.1f;
+        bool compass = false;
+        float compassErrDeg = 0;
+        bool gpsOn = true;
+        uint8_t sats = 12;
+        long step = 0;
+        double histN[400] = {}, histE[400] = {}, histVn[400] = {}, histVe[400] = {};
+
+        // seconds с ускорением (aN, aE) в земных осях, цикл 1 кГц
+        void run(double seconds, double aN, double aE)
+        {
+            const float dt = 0.001f;
+            const long count = std::lround(seconds * 1000.0);
+            for (long i = 0; i < count; ++i, ++step)
+            {
+                vn += aN * dt;
+                ve += aE * dt;
+                n += vn * dt;
+                e += ve * dt;
+                histN[step % 400] = n;
+                histE[step % 400] = e;
+                histVn[step % 400] = vn;
+                histVe[step % 400] = ve;
+                // акселерометр — в осях «от включения»
+                const double b = bootDeg * 0.017453293;
+                const float ax = static_cast<float>(aN * std::cos(b) + aE * std::sin(b));
+                const float ay = static_cast<float>(-aN * std::sin(b) + aE * std::cos(b));
+                GpsInput g;
+                g.fix = true;
+                g.sats = sats;
+                g.home = true;
+                g.headingTrusted = compass;
+                g.headingDeg = bootDeg + compassErrDeg;
+                if (gpsOn && step % 100 == 0)
+                {
+                    const long back = std::min(step, std::lround(delayS * 1000.0));
+                    const long at = (step - back) % 400;
+                    g.fresh = true;
+                    g.northM = static_cast<float>(histN[at]);
+                    g.eastM = static_cast<float>(histE[at]);
+                    g.velN = static_cast<float>(histVn[at]);
+                    g.velE = static_cast<float>(histVe[at]);
+                }
+                est.update(ax, ay, 0.0f, g, true, dt);
+            }
+        }
+
+        double error() const { return std::hypot(est.north() - n, est.east() - e); }
+    };
+}
+
+// Задержка GPS: на 15 м/с фикс отстаёт от коптера на 1.5 м (0.1 с), а оценка —
+// нет: фикс сравнивается с тем, где оценка была 0.1 с назад. Не знать о
+// задержке (configure(0)) — отстать на те же полтора метра.
+void test_position_estimator_compensates_gps_delay()
+{
+    for (int aware = 1; aware >= 0; --aware)
+    {
+        EstRun r;
+        r.compass = true;
+        r.est.configure(aware ? 0.1f : 0.0f);
+        r.run(1.0, 0.0, 0.0);
+        r.run(5.0, 3.0, 0.0);     // разгон до 15 м/с на север
+        r.run(10.0, 0.0, 0.0);    // и летит
+        TEST_ASSERT_TRUE(r.est.valid());
+        TEST_ASSERT_FLOAT_WITHIN(0.1f, 15.0f, r.est.velN());
+        if (aware) TEST_ASSERT_TRUE(r.error() < 0.15);
+        else TEST_ASSERT_FLOAT_WITHIN(0.3, 1.5, r.error());
+        // торможение: скорость оценки идёт за акселерометром, а не ждёт GPS
+        r.run(0.5, -6.0, 0.0);
+        if (aware) TEST_ASSERT_FLOAT_WITHIN(0.2f, 12.0f, r.est.velN());
+    }
+}
+
+// GPS замолчал — оценка годится ещё полторы секунды (акселерометр ведёт
+// дальше), потом — нет. Мало спутников или нет дома — не годится сразу.
+void test_position_estimator_gps_loss_and_quality()
+{
+    EstRun r;
+    r.compass = true;
+    r.run(3.0, 1.0, 0.5);
+    TEST_ASSERT_TRUE(r.est.valid());
+    r.gpsOn = false;
+    r.run(1.0, 1.0, 0.5);
+    TEST_ASSERT_TRUE(r.est.valid());
+    TEST_ASSERT_TRUE(r.error() < 0.3);   // секунду без GPS — по акселерометру
+    r.run(1.0, 0.0, 0.0);
+    TEST_ASSERT_FALSE(r.est.valid());
+    r.gpsOn = true;
+    r.run(0.5, 0.0, 0.0);
+    TEST_ASSERT_TRUE(r.est.valid());
+    TEST_ASSERT_TRUE(r.error() < 0.5);
+    // спутников меньше gps_minimum_sats
+    r.est.setMinSats(10);
+    r.sats = 7;
+    r.run(0.3, 0.0, 0.0);
+    TEST_ASSERT_FALSE(r.est.valid());
+    // далеко от прежней оценки (переставили дом) — оценка встаёт в новую точку, а не ползёт к ней
+    r.sats = 12;
+    r.n += 500.0;
+    for (int i = 0; i < 400; ++i) r.histN[i] += 500.0;
+    r.run(0.3, 0.0, 0.0);
+    TEST_ASSERT_TRUE(r.est.valid());
+    TEST_ASSERT_TRUE(r.error() < 1.0);
+}
+
+// Курс без компаса: коптер включили носом на 70°, гироскоп считает это
+// нулём. Разгон и торможение — приращения скорости по GPS и по акселерометру
+// расходятся ровно на этот угол: курс выучен. До манёвра источника нет.
+void test_position_estimator_learns_heading_from_flight()
+{
+    EstRun r;
+    r.bootDeg = 70.0f;
+    r.run(2.0, 0.0, 0.0);
+    TEST_ASSERT_EQUAL(static_cast<int>(HeadingSource::NONE), static_cast<int>(r.est.headingSource()));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, r.est.headingDeg());   // рысканье гироскопа, как есть
+    r.run(1.5, 2.0, 1.0);
+    r.run(1.0, -2.0, 0.0);
+    TEST_ASSERT_EQUAL(static_cast<int>(HeadingSource::GPS), static_cast<int>(r.est.headingSource()));
+    TEST_ASSERT_FLOAT_WITHIN(3.0f, 70.0f, r.est.headingDeg());
+    // и оценка положения теперь с акселерометром: в манёвре не отстаёт
+    r.run(2.0, 0.0, 3.0);
+    TEST_ASSERT_TRUE(r.error() < 0.3);
+    // на земле (airborne = false) не учится: толчки при переноске — не полёт
+    PositionEstimator ground;
+    GpsInput g;
+    g.fix = g.home = g.fresh = true;
+    g.sats = 12;
+    for (int i = 0; i < 3000; ++i)
+    {
+        g.fresh = i % 100 == 0;
+        g.velN = i * 0.002f;
+        ground.update(2.0f, 0.0f, 0.0f, g, false, 0.001f);
+    }
+    TEST_ASSERT_FALSE(ground.gpsHeadingKnown());
+}
+
+// Компас есть: курс — по нему сразу. Врёт на 90° — после первого же манёвра
+// полёт с ним расходится: компасу веры нет, курс — по GPS; сошлись — снова верим.
+void test_position_estimator_rejects_lying_compass()
+{
+    EstRun r;
+    r.bootDeg = 30.0f;
+    r.compass = true;
+    r.run(1.0, 0.0, 0.0);
+    TEST_ASSERT_EQUAL(static_cast<int>(HeadingSource::MAG), static_cast<int>(r.est.headingSource()));
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 30.0f, r.est.headingDeg());
+    r.run(2.0, 2.0, 0.0);
+    TEST_ASSERT_FALSE(r.est.magDisagrees());   // честный компас манёвром подтверждён
+    r.compassErrDeg = 90.0f;
+    r.run(1.0, 0.0, 0.0);
+    TEST_ASSERT_TRUE(r.est.magDisagrees());
+    TEST_ASSERT_EQUAL(static_cast<int>(HeadingSource::GPS), static_cast<int>(r.est.headingSource()));
+    TEST_ASSERT_FLOAT_WITHIN(5.0f, 30.0f, r.est.headingDeg());
+    r.compassErrDeg = 5.0f;
+    r.run(1.0, 0.0, 0.0);
+    TEST_ASSERT_FALSE(r.est.magDisagrees());
+    TEST_ASSERT_EQUAL(static_cast<int>(HeadingSource::MAG), static_cast<int>(r.est.headingSource()));
+}
+
+// POS HOLD: что можно и чего нельзя, знаки наклона, стики.
+void test_position_hold_checks_and_stick_directions()
+{
+    PosHoldSettings s;
+    PositionHold hold;
+    hold.configure(s, 0.001f);
+    {
+        PositionEstimator none;
+        TEST_ASSERT_EQUAL(static_cast<int>(PosHoldFail::NO_GPS), static_cast<int>(hold.check(none)));
+    }
+    // курс выучен по полёту, компаса нет
+    EstRun r;
+    r.bootDeg = 90.0f;   // нос на восток
+    r.run(1.0, 2.0, 1.0);
+    r.run(1.0, -2.0, -1.0);
+    r.run(2.0, 0.0, 0.0);
+    TEST_ASSERT_EQUAL(static_cast<int>(PosHoldFail::NO_HEADING), static_cast<int>(hold.check(r.est)));
+    TEST_ASSERT_EQUAL_STRING("POSHOLD NO MAG", posHoldFailText(hold.check(r.est)));
+    s.withoutMag = true;
+    hold.configure(s, 0.001f);
+    TEST_ASSERT_EQUAL(static_cast<int>(PosHoldFail::NONE), static_cast<int>(hold.check(r.est)));
+
+    hold.start(r.est, 0.0f, 0.0f);
+    TEST_ASSERT_EQUAL(static_cast<int>(PosHoldPhase::HOLD), static_cast<int>(hold.phase()));
+    // стоит в точке — ровно
+    PosHoldCommand c = hold.update(r.est, 0.0f, 0.0f, 0.0f, 0.0f, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(2.5f, 0.0f, c.pitchDeg);
+    TEST_ASSERT_FLOAT_WITHIN(2.5f, 0.0f, c.rollDeg);
+    // стик вперёд (тангаж от себя) — нос вниз; вправо — крен вправо
+    for (int i = 0; i < 5; ++i) c = hold.update(r.est, 0.0f, -1.0f, 0.0f, 0.0f, 0.001f);
+    TEST_ASSERT_EQUAL(static_cast<int>(PosHoldPhase::MOVE), static_cast<int>(hold.phase()));
+    TEST_ASSERT_TRUE(c.pitchDeg < -10.0f);
+    TEST_ASSERT_FLOAT_WITHIN(2.5f, 0.0f, c.rollDeg);
+    TEST_ASSERT_TRUE(c.pitchDeg > -27.0f);   // разгон по стику — половина autopilot_max_angle
+    hold.start(r.est, 0.0f, 0.0f);
+    for (int i = 0; i < 100; ++i) c = hold.update(r.est, 1.0f, 0.0f, 0.0f, 0.0f, 0.001f);
+    TEST_ASSERT_TRUE(c.rollDeg > 10.0f);
+    // учебный предел наклона
+    hold.start(r.est, 0.0f, 0.0f);
+    for (int i = 0; i < 100; ++i) c = hold.update(r.est, 0.0f, -1.0f, 8.0f, 0.0f, 0.001f);
+    TEST_ASSERT_TRUE(c.pitchDeg > -8.5f);
+    // стик в мёртвой зоне не действует; pos_hold_deadband = 0 — стики не действуют вовсе
+    hold.start(r.est, 0.0f, 0.0f);
+    hold.update(r.est, 0.04f, -0.04f, 0.0f, 0.0f, 0.001f);
+    TEST_ASSERT_EQUAL(static_cast<int>(PosHoldPhase::HOLD), static_cast<int>(hold.phase()));
+    s.deadband = 0.0f;
+    hold.configure(s, 0.001f);
+    hold.update(r.est, 1.0f, -1.0f, 0.0f, 0.0f, 0.001f);
+    TEST_ASSERT_EQUAL(static_cast<int>(PosHoldPhase::HOLD), static_cast<int>(hold.phase()));
+
+    // точка осталась позади на 3 м к северу, нос на восток: север — слева, крен влево
+    s.deadband = 0.05f;
+    hold.configure(s, 0.001f);
+    hold.start(r.est, 0.0f, 0.0f);
+    r.n -= 3.0;
+    for (int i = 0; i < 400; ++i) r.histN[i] -= 3.0;
+    r.run(4.0, 0.0, 0.0);
+    c = hold.update(r.est, 0.0f, 0.0f, 0.0f, 0.0f, 0.001f);
+    TEST_ASSERT_TRUE(c.rollDeg < -5.0f);
+    TEST_ASSERT_FLOAT_WITHIN(3.0f, 0.0f, c.pitchDeg);
+    // унесло дальше 10 м — отказ до выключения режима
+    r.n -= 12.0;
+    for (int i = 0; i < 400; ++i) r.histN[i] -= 12.0;
+    r.run(4.0, 0.0, 0.0);
+    hold.update(r.est, 0.0f, 0.0f, 0.0f, 0.0f, 0.001f);
+    TEST_ASSERT_FALSE(hold.active());
+    TEST_ASSERT_EQUAL(static_cast<int>(PosHoldFail::DRIFT), static_cast<int>(hold.check(r.est)));
+    TEST_ASSERT_EQUAL_STRING("POSHOLD FAIL", posHoldFailText(hold.check(r.est)));
+    hold.clearFail();
+    TEST_ASSERT_EQUAL(static_cast<int>(PosHoldFail::NONE), static_cast<int>(hold.check(r.est)));
+}
+
+// Компас: установка датчика как align_mag в BF, наклон не мешает курсу,
+// склонение, без калибровки или с чужим полем — не верим.
+void test_compass_alignment_tilt_and_trust()
+{
+    // align_mag: поле датчика -> оси рамы (X нос, Y влево, Z вверх)
+    const float in[3] = { 1.0f, 2.0f, 3.0f };
+    const struct
+    {
+        MagAlign a;
+        float x, y, z;
+    } table[] = {
+        { MagAlign::BOARD_DEFAULT, 1, 2, 3 },     { MagAlign::CW0, 1, 2, 3 },        { MagAlign::CW90, 2, -1, 3 },
+        { MagAlign::CW180, -1, -2, 3 },     { MagAlign::CW270, -2, 1, 3 },     { MagAlign::CW0FLIP, -1, 2, -3 },
+        { MagAlign::CW90FLIP, 2, 1, -3 },   { MagAlign::CW180FLIP, 1, -2, -3 }, { MagAlign::CW270FLIP, -2, -1, -3 },
+    };
+    for (const auto& t : table)
+    {
+        float out[3];
+        alignMag(t.a, in, out);
+        TEST_ASSERT_EQUAL_FLOAT(t.x, out[0]);
+        TEST_ASSERT_EQUAL_FLOAT(t.y, out[1]);
+        TEST_ASSERT_EQUAL_FLOAT(t.z, out[2]);
+    }
+
+    // поле Земли в средних широтах: 20 мкТл к северу, 45 вниз
+    // коптер носом на восток: север слева (+Y), вниз — это −Z датчика
+    AttitudeQuat level;
+    const float gyro0[3] = { 0, 0, 0 }, accelLevel[3] = { 0, 0, 1 };
+    level.update(gyro0, accelLevel, 0.001f);
+    Compass c;
+    CompassSettings s;
+    const float east[3] = { 0.0f, 20.0f, -45.0f };
+    c.configure(s);
+    c.update(east, level);
+    TEST_ASSERT_FALSE(c.calibrated());
+    TEST_ASSERT_FALSE(c.trusted());                        // не откалиброван — не верим
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 90.0f, c.headingDeg(0.0f));
+    // калибровка: железо рядом сдвинуло поле на (30, −12, 8)
+    s.zero[0] = 30.0f;
+    s.zero[1] = -12.0f;
+    s.zero[2] = 8.0f;
+    c.configure(s);
+    const float shifted[3] = { 30.0f, 8.0f, -37.0f };
+    c.update(shifted, level);
+    TEST_ASSERT_TRUE(c.trusted());
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 90.0f, c.headingDeg(0.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 49.2f, c.fieldUT());
+    // курс — поправка к рысканью гироскопа: нос повернул на 30° — курс 120
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 120.0f, c.headingDeg(30.0f));
+    // склонение +10°: магнитный север восточнее истинного
+    s.declinationDeg = 10.0f;
+    c.configure(s);
+    c.update(shifted, level);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 100.0f, c.headingDeg(0.0f));
+    s.declinationDeg = 0.0f;
+
+    // крен 40° вправо, нос на север: курс по плоскому atan2(Y, X) ушёл бы на
+    // десятки градусов (вертикальное поле вдвое больше горизонтального)
+    AttitudeQuat rolled;
+    const float r40 = 40.0f * 0.017453293f;
+    const float accelRolled[3] = { 0.0f, sinf(r40), cosf(r40) };   // правый борт вниз — левый (+Y) вверх
+    rolled.update(gyro0, accelRolled, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 40.0f, rolled.rollDeg());
+    // поле в земных осях (20 север, 0, 45 вниз) -> в оси рамы (X нос, Y влево, Z вверх)
+    const float d = 45.0f, hN = 20.0f;
+    const float rolledField[3] = { hN + s.zero[0], -(d * sinf(r40)) + s.zero[1], -(d * cosf(r40)) + s.zero[2] };
+    c.configure(s);
+    c.update(rolledField, rolled);
+    const float h = c.headingDeg(rolled.yawDeg());
+    TEST_ASSERT_TRUE(h < 1.0f || h > 359.0f);
+
+    // установка: датчик повёрнут на 90° по часовой — align_mag = CW90 возвращает курс
+    s.align = MagAlign::CW90;
+    s.zero[0] = s.zero[1] = 0.0f;
+    s.zero[2] = 0.001f;
+    c.configure(s);
+    // нос на север: поле в раме (20, 0, −45); датчик видит его как (0, 20, −45)
+    const float turned[3] = { 0.0f, 20.0f, -45.0f };
+    c.update(turned, level);
+    const float hn = c.headingDeg(0.0f);
+    TEST_ASSERT_TRUE(hn < 1.0f || hn > 359.0f);
+
+    // рядом силовой провод: поле 150 мкТл — не верим
+    const float strong[3] = { 120.0f, 80.0f, -45.0f };
+    for (int i = 0; i < 100; ++i) c.update(strong, level);
+    TEST_ASSERT_FALSE(c.trusted());
+    // датчик пропал
+    for (int i = 0; i < 100; ++i) c.update(turned, level);
+    TEST_ASSERT_TRUE(c.trusted());
+    c.lost();
+    TEST_ASSERT_FALSE(c.trusted());
+}
+
+// Настройки BF 2025 в реестре: имена, умолчания, во что превращаются;
+// режим POS HOLD — бокс 11, старше ALTHOLD; предупреждение OSD.
+void test_poshold_althold_params_modes_and_osd()
+{
+    auto setByName = [](CopterParams& params, const char* name, float v) {
+        const int id = findParam(name);
+        return id >= 0 && params.setValue(static_cast<ParamId>(id), 0, v);
+    };
+    CopterParams p;
+    const struct
+    {
+        const char* name;
+        float def;
+    } defaults[] = {
+        { "alt_hold_adjust_rate", 50 },      { "alt_hold_deadband", 20 },        { "pos_hold_deadband", 5 },
+        { "pos_hold_without_mag", 0 },       { "pos_hold_adjust_rate", 50 },     { "autopilot_max_angle", 50 },
+        { "autopilot_position_p", 30 },      { "autopilot_position_i", 30 },     { "autopilot_position_d", 30 },
+        { "autopilot_position_a", 30 },      { "autopilot_position_cutoff", 80 }, { "autopilot_altitude_p", 15 },
+        { "autopilot_altitude_i", 15 },      { "autopilot_altitude_d", 15 },     { "autopilot_altitude_f", 15 },
+        { "autopilot_throttle_min", 1100 },  { "autopilot_throttle_max", 1700 }, { "autopilot_hover_throttle", 0 },
+        { "align_mag", 0 },                  { "mag_declination", 0 },           { "mag_zero_x", 0 },
+        { "mag_scale_z", 1000 },             { "osd_warn_poshold", 1 },
+    };
+    for (const auto& d : defaults)
+    {
+        const int id = findParam(d.name);
+        TEST_ASSERT_TRUE_MESSAGE(id >= 0, d.name);
+        TEST_ASSERT_EQUAL_FLOAT_MESSAGE(d.def, p.value(static_cast<ParamId>(id)), d.name);
+    }
+    // имена BF — с большой буквой в конце (autopilot_position_P): регистр не важен
+    TEST_ASSERT_EQUAL(PARAM_AUTOPILOT_POSITION_P, findParam("autopilot_position_P"));
+    TEST_ASSERT_EQUAL_STRING("autopilot", paramGroupName(paramTable()[PARAM_POS_HOLD_DEADBAND].group));
+
+    // умолчания реестра — те же, что у структур (на них летает симулятор)
+    CopterSettings s;
+    const CopterSettings plain;
+    p.applyTo(s);
+    TEST_ASSERT_EQUAL_FLOAT(plain.alt.maxClimb, s.alt.maxClimb);
+    TEST_ASSERT_EQUAL_FLOAT(plain.alt.maxDescent, s.alt.maxDescent);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, plain.alt.deadband, s.alt.deadband);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, plain.alt.posGain, s.alt.posGain);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, plain.alt.velGain, s.alt.velGain);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, plain.alt.hoverIGain, s.alt.hoverIGain);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, plain.alt.ffGain, s.alt.ffGain);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, plain.alt.throttleMin, s.alt.throttleMin);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, plain.alt.throttleMax, s.alt.throttleMax);
+    TEST_ASSERT_EQUAL_FLOAT(plain.posHold.adjustRate, s.posHold.adjustRate);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, plain.posHold.deadband, s.posHold.deadband);
+    TEST_ASSERT_FALSE(s.posHold.withoutMag);
+    TEST_ASSERT_EQUAL_FLOAT(plain.posHold.maxAngleDeg, s.posHold.maxAngleDeg);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, plain.posHold.cutoffHz, s.posHold.cutoffHz);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, s.hoverThrottle);
+    TEST_ASSERT_EQUAL_UINT8(8, s.posHoldMinSats);
+
+    char err[96];
+    TEST_ASSERT_TRUE(setByName(p, "alt_hold_adjust_rate", 30));
+    TEST_ASSERT_TRUE(setByName(p, "alt_hold_deadband", 40));
+    TEST_ASSERT_TRUE(setByName(p, "autopilot_altitude_P", 30));
+    TEST_ASSERT_TRUE(setByName(p, "autopilot_hover_throttle", 1275));
+    TEST_ASSERT_TRUE(setByName(p, "pos_hold_without_mag", 1));
+    TEST_ASSERT_TRUE(setByName(p, "pos_hold_deadband", 0));
+    TEST_ASSERT_TRUE(setByName(p, "autopilot_max_angle", 35));
+    TEST_ASSERT_TRUE(setByName(p, "gps_minimum_sats", 10));
+    p.applyTo(s);
+    TEST_ASSERT_EQUAL_FLOAT(3.0f, s.alt.maxClimb);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.8f, s.alt.maxDescent);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.2f, s.alt.deadband);   // 40 % хода — по 20 % в стороны
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 2.0f * plain.alt.posGain, s.alt.posGain);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.275f, s.hoverThrottle);
+    TEST_ASSERT_TRUE(s.posHold.withoutMag);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, s.posHold.deadband);
+    TEST_ASSERT_EQUAL_FLOAT(35.0f, s.posHold.maxAngleDeg);
+    TEST_ASSERT_EQUAL_UINT8(10, s.posHoldMinSats);
+
+    // компас
+    TEST_ASSERT_TRUE(setByName(p, "align_mag", 8));
+    TEST_ASSERT_TRUE(setByName(p, "mag_declination", 125));
+    TEST_ASSERT_TRUE(setByName(p, "mag_zero_y", -153));
+    TEST_ASSERT_TRUE(setByName(p, "mag_scale_x", 1100));
+    const CompassSettings cs = p.compassSettings();
+    TEST_ASSERT_EQUAL(static_cast<int>(MagAlign::CW270FLIP), static_cast<int>(cs.align));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 12.5f, cs.declinationDeg);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, -15.3f, cs.zero[1]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.1f, cs.scale[0]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, cs.scale[2]);
+
+    // режим: бокс 11 «POS HOLD», как в BF 2025; старше ALTHOLD и ANGLE
+    const BoxInfo* box = findBox(BOX_POSHOLD);
+    TEST_ASSERT_NOT_NULL(box);
+    TEST_ASSERT_EQUAL_UINT8(11, box->id);
+    TEST_ASSERT_EQUAL_STRING("POS HOLD", box->name);
+    TEST_ASSERT_TRUE(box->works);
+    TEST_ASSERT_EQUAL_UINT8(BOX_POSHOLD, boxForMode(CopterMode::POS_HOLD));
+    TEST_ASSERT_EQUAL_STRING("POS_HOLD", copterModeName(CopterMode::POS_HOLD));
+    TEST_ASSERT_TRUE(altitudeMode(CopterMode::POS_HOLD));
+    TEST_ASSERT_FALSE(altitudeMode(CopterMode::ANGLE));
+    RxBench b;
+    b.ch[4] = 2000;
+    TEST_ASSERT_TRUE(b.cfg.parseAux("2 3 2 1300 2100", err, sizeof(err)));    // ALTHOLD на AUX3
+    TEST_ASSERT_TRUE(b.cfg.parseAux("3 11 2 1700 2100", err, sizeof(err)));   // POS HOLD — верх того же тумблера
+    b.ch[6] = 1500;
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::ALT_HOLD), static_cast<int>(b.read().mode));
+    b.ch[6] = 1900;
+    TEST_ASSERT_EQUAL(static_cast<int>(CopterMode::POS_HOLD), static_cast<int>(b.read().mode));
+
+    // OSD: в полёте, важнее перегрузки и LOW BATTERY, но не важнее BATT CRITICAL; выключается
+    OsdData d;
+    d.armed = true;
+    d.posHold = posHoldFailText(PosHoldFail::NO_GPS);
+    d.batteryState = 2;
+    CopterParams q;
+    TEST_ASSERT_EQUAL_STRING("POSHOLD NO GPS", OsdScreen::warningText(d, osdLayoutFrom(q)));
+    d.batteryState = 3;
+    TEST_ASSERT_EQUAL_STRING("BATT CRITICAL", OsdScreen::warningText(d, osdLayoutFrom(q)));
+    d.batteryState = 2;
+    TEST_ASSERT_TRUE(setByName(q, "osd_warn_poshold", 0));
+    TEST_ASSERT_EQUAL_STRING("LOW BATTERY", OsdScreen::warningText(d, osdLayoutFrom(q)));
+}
+
+// ALT HOLD как в BF 2025: стик отпущен на скорости — сначала остановиться,
+// высота запоминается там, где встал; газ — в пределах autopilot_throttle_*.
+void test_altitude_controller_brakes_then_holds_and_limits_throttle()
+{
+    AltitudeController c;
+    AltitudeController::Settings s;
+    c.configure(s, 0.3f);
+    c.reset(0.0f, 0.3f);
+    c.update(0.0f, 0.0f, 0.0f, true, 1.0f, 0.001f);
+    // набор по стику 4 м/с, на 10 м стик отпущен: цель ещё едет за коптером
+    c.update(10.0f, 4.0f, 4.0f, true, 1.0f, 0.001f);
+    c.update(10.5f, 3.5f, 0.0f, true, 1.0f, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 10.5f, c.getTarget());
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.0f, c.climbTarget());   // просит остановиться, а не вернуться
+    c.update(11.4f, 1.0f, 0.0f, true, 1.0f, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 11.4f, c.getTarget());
+    // остановился — высота запомнена; дальше держит её
+    c.update(11.6f, 0.2f, 0.0f, true, 1.0f, 0.001f);
+    c.update(11.3f, 0.0f, 0.0f, true, 1.0f, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 11.6f, c.getTarget());
+    TEST_ASSERT_TRUE(c.climbTarget() > 0.1f);
+
+    // предел газа сверху: 0.7 (autopilot_throttle_max 1700), но не ниже 1.4 газа висения
+    AltitudeController heavy;
+    heavy.configure(s, 0.6f);
+    heavy.reset(0.0f, 0.6f);
+    heavy.setTarget(0.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.84f, heavy.update(-20.0f, -3.0f, 0.0f, true, 1.0f, 0.001f));
+    AltitudeController light;
+    light.configure(s, 0.2f);
+    light.reset(0.0f, 0.2f);
+    light.setTarget(0.0f);
+    TEST_ASSERT_TRUE(light.update(-20.0f, -3.0f, 0.0f, true, 1.0f, 0.001f) <= 0.7f + 1e-4f);
+    // снизу: не выше четверти газа висения — на земле тяга падает так, что посадка видна
+    const float low = light.update(20.0f, 3.0f, 0.0f, true, 1.0f, 0.001f);
+    TEST_ASSERT_TRUE(low >= 0.05f - 1e-4f && low < 0.11f);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -7973,5 +8465,13 @@ int main()
     RUN_TEST(test_msp_from_goggles_canvas_gps_and_safety);
     RUN_TEST(test_msp_vtx_follows_the_request);
     RUN_TEST(test_osd_output_params);
+    RUN_TEST(test_position_estimator_compensates_gps_delay);
+    RUN_TEST(test_position_estimator_gps_loss_and_quality);
+    RUN_TEST(test_position_estimator_learns_heading_from_flight);
+    RUN_TEST(test_position_estimator_rejects_lying_compass);
+    RUN_TEST(test_position_hold_checks_and_stick_directions);
+    RUN_TEST(test_compass_alignment_tilt_and_trust);
+    RUN_TEST(test_poshold_althold_params_modes_and_osd);
+    RUN_TEST(test_altitude_controller_brakes_then_holds_and_limits_throttle);
     return UNITY_END();
 }

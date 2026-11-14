@@ -113,15 +113,24 @@ public:
     bool takeoffTo(double height)
     {
         if (!armOnGround(copter::CopterMode::ALT_HOLD)) return false;
-        rc.throttle = 0.9f;
-        for (int i = 0; i < 30000 && sim.height() < height; ++i) step();
+        // как пилот: газ вверх, у нужной высоты стик плавно к центру (отпущенный
+        // на скорости стик — торможение, и высота запомнится выше)
+        const double edge = 0.5 + ctl.getSettings().alt.deadband;
+        for (int i = 0; i < 40000 && sim.height() < height - 0.05; ++i)
+        {
+            const double left = (height - sim.height()) / 3.0;
+            rc.throttle = static_cast<float>(edge + (0.9 - edge) * std::fmin(1.0, std::fmax(0.03, left)));
+            step();
+        }
         rc.throttle = 0.5f;
         run(3.0);
         return std::fabs(sim.height() - height) < 2.0;
     }
 
     // Модель GPS: фикс 10 Гц, шум положения и скорости, дом — где заармились;
-    // курс носа — компас (точно) или нет (контроллер учит его по курсу GPS).
+    // курс носа — компас (точно; compassErrorDeg — врёт на столько) или нет
+    // (контроллер учит его по полёту). gpsDelayS — фикс описывает то, что было
+    // столько назад (приёмник считает и шлёт решение не мгновенно).
     void feedGps(copter::GpsInput& g)
     {
         if (!gpsOn) return;
@@ -133,8 +142,18 @@ public:
             gpsHomeSet = true;
         }
         wasArmedGps = armed;
+        // прошлое — для задержки фикса
+        gpsPast[steps % GPS_PAST] = { sim.position().x, sim.position().y, sim.velocity().x, sim.velocity().y };
         g = gpsLast;
         g.fresh = false;
+        // компас отвечает каждый цикл и GPS ему не нужен
+        double yaw = sim.yawDeg() + compassErrorDeg;
+        while (yaw < 0) yaw += 360.0;
+        while (yaw >= 360.0) yaw -= 360.0;
+        g.headingDeg = static_cast<float>(yaw);
+        g.headingTrusted = compass;
+        gpsLast.headingDeg = g.headingDeg;
+        gpsLast.headingTrusted = g.headingTrusted;
         if (gpsLost || steps % std::lround(tune.loopHz / 10.0) != 0) return;
         auto noise = [this](double sigma) {
             gpsSeed = gpsSeed * 1103515245u + 12345u;
@@ -144,20 +163,24 @@ public:
         g.fix = true;
         g.sats = gpsSats;
         g.home = gpsHomeSet;
-        g.northM = static_cast<float>(sim.position().x - homeN + noise(0.4));
-        g.eastM = static_cast<float>(sim.position().y - homeE + noise(0.4));
-        g.velN = static_cast<float>(sim.velocity().x + noise(0.1));
-        g.velE = static_cast<float>(sim.velocity().y + noise(0.1));
-        double yaw = sim.yawDeg();
-        if (yaw < 0) yaw += 360.0;
-        g.headingDeg = static_cast<float>(yaw);
-        g.headingTrusted = compass;
+        long back = std::lround(gpsDelayS * tune.loopHz);
+        if (back > steps) back = steps;
+        if (back > GPS_PAST - 1) back = GPS_PAST - 1;
+        const GpsPast& was = gpsPast[(steps - back) % GPS_PAST];
+        g.northM = static_cast<float>(was.n - homeN + noise(gpsNoisePosM));
+        g.eastM = static_cast<float>(was.e - homeE + noise(gpsNoisePosM));
+        g.velN = static_cast<float>(was.vn + noise(gpsNoiseVelMs));
+        g.velE = static_cast<float>(was.ve + noise(gpsNoiseVelMs));
         gpsLast = g;
     }
 
     bool gpsOn = false;        // есть GPS
     bool compass = true;       // и компас
     bool gpsLost = false;      // GPS замолчал
+    double gpsDelayS = 0.0;        // фикс старше на столько
+    double gpsNoisePosM = 0.4;     // шум положения (±, равномерный)
+    double gpsNoiseVelMs = 0.1;    // и скорости
+    double compassErrorDeg = 0.0;  // компас врёт на столько
     uint8_t gpsSats = 14;
     bool gpsHomeSet = false, wasArmedGps = false;
     double homeN = 0, homeE = 0;
@@ -179,5 +202,11 @@ public:
     long steps = 0;
 
 private:
+    struct GpsPast
+    {
+        double n, e, vn, ve;
+    };
+    static constexpr long GPS_PAST = 4096;
+    GpsPast gpsPast[GPS_PAST] = {};
     double motorLpf[copter::MAX_MOTORS] = {};
 };

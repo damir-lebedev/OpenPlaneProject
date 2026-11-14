@@ -7,6 +7,8 @@
 #include "copter/GpsRescue.h"
 #include "copter/GyroFilter.h"
 #include "copter/Mixer.h"
+#include "copter/PositionEstimator.h"
+#include "copter/PositionHold.h"
 #include "copter/Presets.h"
 #include "copter/RateController.h"
 #include "copter/RcSmoothing.h"
@@ -31,7 +33,13 @@
 //   HORIZON  — у центра стика — как ANGLE, у края — как ACRO (флип);
 //   ANGLE    — стик задаёт наклон, отпустил — коптер выравнивается;
 //   ALT_HOLD — ANGLE + высота: газ в центре — висит, выше/ниже —
-//              набор/снижение.
+//              набор/снижение;
+//   POS_HOLD — ALT_HOLD + место по GPS: стики в центре — стоит над точкой,
+//              стик — летит со скоростью, отпустил — тормозит и держит
+//              (copter/PositionHold.h). Без годного GPS или курса в режим не
+//              войти, а пропали в полёте — остаётся ALT_HOLD (ровно и высота,
+//              стики — наклон) и предупреждение в очках; вернулись — снова
+//              держит. В failsafe (этап 1 и посадка) место держится само.
 //
 // Защиты:
 //   • ARM — только когда всё в порядке (armBlockers()): связь есть,
@@ -76,6 +84,7 @@ namespace copter
         HORIZON,
         ANGLE,
         ALT_HOLD,
+        POS_HOLD,
     };
 
     inline const char* copterModeName(CopterMode m)
@@ -86,9 +95,13 @@ namespace copter
             case CopterMode::HORIZON: return "HORIZON";
             case CopterMode::ANGLE: return "ANGLE";
             case CopterMode::ALT_HOLD: return "ALT_HOLD";
+            case CopterMode::POS_HOLD: return "POS_HOLD";
         }
         return "?";
     }
+
+    // Режимы, где газ — это высота (центр стика — висеть).
+    inline bool altitudeMode(CopterMode m) { return m == CopterMode::ALT_HOLD || m == CopterMode::POS_HOLD; }
 
     // Почему не армится (битовая маска). Биты 0–25 — номера флагов запрета
     // ARM Betaflight 4.5 (`status`, MSP_STATUS_EX: конфигуратор BF читает
@@ -368,6 +381,10 @@ namespace copter
         TurtleSettings turtle;             // crashflip_*
         AltitudeController::Settings alt;
         GpsRescueSettings rescue;          // gps_rescue_*
+        PosHoldSettings posHold;           // pos_hold_*, autopilot_position_* (copter/PositionHold.h)
+        uint8_t posHoldMinSats = 8;        // gps_minimum_sats: спутников меньше — позицию не держать
+        float gpsDelayS = 0.1f;            // фикс GPS старше на столько (copter/PositionEstimator.h)
+        float hoverThrottle = 0.0f;        // autopilot_hover_throttle: газ висения до обучения; 0 — из описания коптера
         TrainingSettings training;         // training_* (copter/TrainingLimits.h)
     };
 
@@ -401,6 +418,15 @@ namespace copter
         RescueFail rescueFail = RescueFail::NONE;      // и почему прерван
         float rescueHeadingFix = 0.0f;                  // без компаса: поправка курса гироскопа по GPS, °
         uint8_t trainingFlags = 0;     // учебные ограничения: биты TrainingFlag (что сейчас держит)
+        // положение по GPS и акселерометру (copter/PositionEstimator.h): от дома, м и м/с
+        bool posValid = false;
+        float posN = 0.0f, posE = 0.0f, velN = 0.0f, velE = 0.0f;
+        float heading = 0.0f;                                   // курс носа, 0…360 (без источника — рысканье гироскопа)
+        HeadingSource headingSource = HeadingSource::NONE;      // компас, полёт (GPS) или ничего
+        bool magDisagrees = false;                              // компас расходится с полётом — не верим
+        PosHoldPhase posHoldPhase = PosHoldPhase::OFF;          // удержание позиции: что делает
+        PosHoldFail posHoldFail = PosHoldFail::NONE;            // и почему не держит (режим включён)
+        float posTargetN = 0.0f, posTargetE = 0.0f;             // точка удержания
         uint32_t armCount = 0;
         uint32_t loops = 0;
     };
@@ -435,10 +461,18 @@ namespace copter
             attitude.configure(2.0f, 0.2f);
             attitude.reset();
             vertical.configure(2.5f);
-            altCtl.configure(s.alt, t.hoverThrust);
+            hover = s.hoverThrottle > 0.01f ? s.hoverThrottle : t.hoverThrust;
+            altCtl.configure(s.alt, hover);
             rescue.configure(s.rescue);
             training.configure(s.training);
-            hover = t.hoverThrust;
+            position.configure(s.gpsDelayS);
+            position.setMinSats(s.posHoldMinSats);
+            position.reset();
+            posHold.configure(s.posHold, dt);
+            posHold.stop();
+            posHold.clearFail();
+            posOkTimer = 0.0f;
+            posLastFail = PosHoldFail::NO_GPS;
             disarm();
             status = CopterStatus();
             uptime = 0.0f;
@@ -628,6 +662,21 @@ namespace copter
             status.altitude = vertical.altitude();
             status.climbRate = vertical.climbRate();
             for (int a = 0; a < 3; ++a) status.rates[a] = rates[a];
+            // положение по горизонтали: акселерометр в осях «от включения» + GPS
+            {
+                const Vec3 f = attitude.isInitialized() ? attitude.toEarth({ accel[0], -accel[1], -accel[2] }) : Vec3();
+                position.update(f.x * 9.80665f, f.y * 9.80665f, status.yaw, sens.gps, status.airborne, dt);
+                status.posValid = position.valid();
+                status.posN = position.north();
+                status.posE = position.east();
+                status.velN = position.velN();
+                status.velE = position.velE();
+                status.heading = position.headingDeg();
+                status.headingSource = position.headingSource();
+                // компас отброшен — отказ удержания «унесло» был из-за него: можно пробовать снова
+                if (position.magDisagrees() && !status.magDisagrees) posHold.clearFail();
+                status.magDisagrees = position.magDisagrees();
+            }
 
             // качают ли коптер (проверка перед ARM), крутится ли (посадка, переворот)
             const float motion = fabsf(rates[0]) + fabsf(rates[1]) + fabsf(rates[2]);
@@ -685,10 +734,50 @@ namespace copter
             status.rescuePhase = rescue.phase();
             status.rescueFail = rescue.failure();
             status.rescueHeadingFix = rescue.headingCorrection();
-            const CopterMode mode = rescuing ? CopterMode::ALT_HOLD
-                                    : failsafe ? (fixedThrottle || heldThrottle ? CopterMode::ANGLE : CopterMode::ALT_HOLD)
-                                               : rc.mode;
-            if (mode != status.mode && (mode == CopterMode::ALT_HOLD))
+            CopterMode mode = rescuing ? CopterMode::ALT_HOLD
+                              : failsafe ? (fixedThrottle || heldThrottle ? CopterMode::ANGLE : CopterMode::ALT_HOLD)
+                                         : rc.mode;
+
+            // ---- удержание позиции (copter/PositionHold.h) ----
+            // с тумблера (POS HOLD) и в failsafe, пока коптер сам висит или
+            // садится: с GPS он стоит над точкой, а не плывёт по ветру
+            const bool pilotPos = mode == CopterMode::POS_HOLD;
+            const bool failsafePos = failsafe && !rescuing && mode == CopterMode::ALT_HOLD && rc.roll == 0.0f &&
+                                     rc.pitch == 0.0f && vertical.altitude() > POS_GROUND_M;
+            const PosHoldFail posCheck = posHold.check(position);
+            if (posCheck != PosHoldFail::NONE)
+            {
+                posOkTimer = 0.0f;
+                posLastFail = posCheck;
+            }
+            else if (posOkTimer < POS_READY_S)
+            {
+                posOkTimer += dt;
+            }
+            // годится — когда GPS и курс в порядке POS_READY_S подряд (после отказа — тоже)
+            const PosHoldFail posFail = posOkTimer >= POS_READY_S ? PosHoldFail::NONE : posLastFail;
+            if (pilotPos || failsafePos)
+            {
+                if (posFail == PosHoldFail::NONE && status.airborne)
+                {
+                    if (!posHold.active()) posHold.start(position, status.roll, status.pitch);
+                }
+                else
+                {
+                    posHold.stop();
+                }
+                // держать нечем — ровно и высота (ALT_HOLD), пилоту — предупреждение
+                if (pilotPos && posFail != PosHoldFail::NONE) mode = CopterMode::ALT_HOLD;
+                if (failsafePos && posHold.active()) mode = CopterMode::POS_HOLD;
+            }
+            else
+            {
+                posHold.stop();
+                posHold.clearFail();
+            }
+            status.posHoldFail = pilotPos ? posFail : PosHoldFail::NONE;
+
+            if (altitudeMode(mode) && !altitudeMode(status.mode))
             {
                 altCtl.reset(vertical.altitude(), status.throttle);
             }
@@ -701,7 +790,22 @@ namespace copter
             status.rcSetpointCutoffHz = rcSmooth.setpointCutoffHz();
             status.rcThrottleCutoffHz = rcSmooth.throttleCutoffHz();
             float sp[3], stickSp[3];
-            rateSetpoints(mode, sticks, sp, stickSp, rc.acroTrainer, rescuing ? &rescueCmd : nullptr);
+            // удержание позиции: наклон задаёт автомат, рысканье — стик
+            RescueCommand posCmd;
+            if (posHold.active())
+            {
+                const float speedCap = set.training.enabled ? set.training.maxSpeedMs : 0.0f;
+                const PosHoldCommand pc = posHold.update(position, failsafe ? 0.0f : sticks[0], failsafe ? 0.0f : sticks[1],
+                                                         training.angleCap(set.posHold.maxAngleDeg), speedCap, dt);
+                posCmd.rollDeg = pc.rollDeg;
+                posCmd.pitchDeg = pc.pitchDeg;
+                posCmd.yawRateDps = tune.rates[2].apply(sticks[2]);
+            }
+            status.posHoldPhase = posHold.phase();
+            status.posTargetN = posHold.targetNorth();
+            status.posTargetE = posHold.targetEast();
+            const RescueCommand* autoCmd = rescuing ? &rescueCmd : posHold.active() ? &posCmd : nullptr;
+            rateSetpoints(mode, sticks, sp, stickSp, rc.acroTrainer, autoCmd);
             if (!crashRecovery(mode, sp, rates))
             {
                 out = CopterOutputs();   // crash_recovery = DISARM
@@ -734,7 +838,7 @@ namespace copter
             float thrust;   // что просит пилот (или удержание высоты), доля тяги
             const float cosTilt = attitude.cosTilt();
             const float stickSlow = throttleBoostLpf.apply(sticks[3]);
-            if (mode == CopterMode::ALT_HOLD)
+            if (altitudeMode(mode))
             {
                 float climb = 0.0f;
                 if (rescuing)
@@ -748,7 +852,7 @@ namespace copter
                 else
                 {
                     const float s = sticks[3] - 0.5f;   // центр — держать, края — набор/снижение
-                    const float dead = 0.08f;
+                    const float dead = fminf(0.45f, fmaxf(0.0f, set.alt.deadband));   // alt_hold_deadband
                     if (s > dead) climb = (s - dead) / (0.5f - dead) * set.alt.maxClimb;
                     if (s < -dead) climb = (s + dead) / (0.5f - dead) * set.alt.maxDescent;
                     climb = training.limitClimb(climb);
@@ -770,7 +874,7 @@ namespace copter
             // газ висения: учится, пока коптер спокойно висит (любой режим);
             // при снижении по команде — нет: севший коптер «висит» на
             // падающем газе, и оценка ушла бы за ним вниз
-            const bool holding = mode != CopterMode::ALT_HOLD || fabsf(altCtl.climbTarget()) < 0.2f;
+            const bool holding = !altitudeMode(mode) || fabsf(altCtl.climbTarget()) < 0.2f;
             const bool plausible = thrust * cosTilt > 0.4f * hover;   // на земле газ ниже — не висение
             if (status.airborne && holding && plausible && fabsf(vertical.climbRate()) < 0.5f && cosTilt > 0.95f &&
                 fabsf(accelUp) < 1.0f)
@@ -796,7 +900,7 @@ namespace copter
             // моторы догоняют стик раньше, плавный газ не меняется. Удержанию
             // высоты — нет: у него свой контур, рассчитанный без добавки
             float mixThrust = thrust;
-            if (mode != CopterMode::ALT_HOLD && tune.pid.throttleBoost > 0.0f)
+            if (!altitudeMode(mode) && tune.pid.throttleBoost > 0.0f)
             {
                 mixThrust = fminf(1.0f, fmaxf(0.0f, thrust + tune.pid.throttleBoost * (sticks[3] - stickSlow)));
             }
@@ -879,6 +983,9 @@ namespace copter
         // Насколько D оси поднят к d_max: 0 — в покое, 1 — d_max.
         float dBoost(uint8_t a) const { return axes[a < 3 ? a : 0].dBoost(); }
         const GyroFilter& getGyroFilter() const { return gyroFilter; }
+        // ориентация — компасу: поле из осей рамы в земные (copter/Compass.h)
+        const AttitudeQuat& getAttitude() const { return attitude; }
+        const PositionEstimator& getPosition() const { return position; }
         bool isArmed() const { return status.state != CopterState::DISARMED; }
 
         // Разоружить немедленно (консоль, ошибка).
@@ -902,6 +1009,8 @@ namespace copter
 
         static constexpr float FAILSAFE_HOLD_S = 0.3f;        // провал связи короче — последние ручки (как в BF)
         static constexpr float FAILSAFE_KILL_LOCK_S = 1.0f;   // после KILL с тумблера ARM не раньше
+        static constexpr float POS_READY_S = 1.0f;            // GPS и курс годятся столько подряд — позицию можно держать
+        static constexpr float POS_GROUND_M = 1.0f;           // failsafe: ниже — ровно (наклон в землю мешает понять, что сел)
         // runaway takeoff: сумма PID оси больше доли хода моторов, а гироскоп
         // по ней быстрее порога — RUNAWAY_TRIGGER_S подряд; «спокойно» —
         // сумма PID всех осей меньше RUNAWAY_CALM_PIDSUM
@@ -915,7 +1024,7 @@ namespace copter
         // ниже середины — «не взлетать».
         static bool throttleLow(const CopterRc& rc)
         {
-            return rc.mode == CopterMode::ALT_HOLD ? rc.throttle <= 0.42f : rc.throttle <= 0.05f;
+            return altitudeMode(rc.mode) ? rc.throttle <= 0.42f : rc.throttle <= 0.05f;
         }
 
         // DISARM защитой: снова ARM — только выключив и включив тумблер.
@@ -1050,6 +1159,10 @@ namespace copter
             rescue.resetFlight();
             training.reset();
             status.trainingFlags = 0;
+            posHold.stop();
+            posHold.clearFail();
+            status.posHoldPhase = PosHoldPhase::OFF;
+            status.posHoldFail = PosHoldFail::NONE;
         }
 
         // Возвращает false, если ручкам пульта верить нельзя (связи нет).
@@ -1073,7 +1186,7 @@ namespace copter
                     rc.throttle = 0.0f;
                 }
                 // failsafe_throttle_low_delay: газ внизу так долго — коптер, видно, на земле
-                const bool low = rc.mode != CopterMode::ALT_HOLD && rc.throttle <= 0.05f;
+                const bool low = !altitudeMode(rc.mode) && rc.throttle <= 0.05f;
                 lowThrottleTimer = (status.state == CopterState::ARMED && low) ? lowThrottleTimer + dt : 0.0f;
                 return true;
             }
@@ -1229,7 +1342,7 @@ namespace copter
                 runawayTimer = runawayFlown = 0.0f;
                 groundIdleTimer = lowThrottleTimer = 0.0f;
                 attitude.setGrounded(true);
-                if (rc.mode == CopterMode::ALT_HOLD) altCtl.reset(vertical.altitude(), 0.0f);
+                if (altitudeMode(rc.mode)) altCtl.reset(vertical.altitude(), 0.0f);
             }
             // ARM включён, но армить нельзя — нужен новый щелчок тумблером
             switchSeenOff = false;
@@ -1240,7 +1353,7 @@ namespace copter
             if (!set.crashDetection) return;
             const float tilt = attitude.tiltDeg();
             const float motion = motionLpf.value();
-            const bool levelMode = status.mode == CopterMode::ANGLE || status.mode == CopterMode::ALT_HOLD;
+            const bool levelMode = status.mode == CopterMode::ANGLE || altitudeMode(status.mode);
             const bool overturned = levelMode && tilt > 90.0f;
             // наклон не тот, что просит стик, больше 30° и дольше 2 с — коптер
             // не управляется (отказал мотор, слетел винт, лежит в траве на боку)
@@ -1510,6 +1623,10 @@ namespace copter
         RateAxis axes[3];
         AbsoluteControl absCtl[3];
         GpsRescue rescue;
+        PositionEstimator position;
+        PositionHold posHold;
+        float posOkTimer = 0.0f;                         // GPS и курс годятся подряд, с
+        PosHoldFail posLastFail = PosHoldFail::NO_GPS;   // чего не хватало в последний раз
         TrainingLimits training;
         RcSmoothing rcSmooth;
         Pt1 throttleHpLpf;               // anti-gravity

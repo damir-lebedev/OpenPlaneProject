@@ -88,6 +88,12 @@ public:
         gpsHome = home;
     }
     void setHeading(float deg) { headingDeg = deg; }
+    // Компас: датчик есть, и что из него получается (copter/Compass.h) — мастеру калибровки.
+    void setCompass(const copter::Compass* c, bool present)
+    {
+        magCal = c;
+        magPresent = present;
+    }
     void setOutputs(const copter::CopterOutputs& out) { outputs = out; }
     void setLoop(uint32_t avgUs, uint32_t hz)
     {
@@ -356,7 +362,28 @@ public:
                   o.port ? "true" : "false", o.deviceAlive ? "true" : "false", o.deviceCanvas ? "true" : "false",
                   o.mspVtx ? "true" : "false", static_cast<unsigned long>(o.requests));
         }
-        w.add(",\"hdg\":%.0f", headingDeg);
+        w.add(",\"hdg\":%.0f,\"hsrc\":\"%s\"", headingDeg, copter::headingSourceName(s.headingSource));
+        if (magPresent && magCal && magCal->hasSample())
+        {
+            // компас: сырое поле (мкТл, оси датчика), модуль после калибровки, откалиброван, верим ли,
+            // расходится ли с курсом по полёту
+            const float* m = magCal->rawUT();
+            w.add(",\"mag\":{\"raw\":[%.1f,%.1f,%.1f],\"f\":%.1f,\"cal\":%s,\"ok\":%s,\"bad\":%s}", m[0], m[1], m[2],
+                  magCal->fieldUT(), magCal->calibrated() ? "true" : "false", magCal->trusted() ? "true" : "false",
+                  s.magDisagrees ? "true" : "false");
+        }
+        if (s.posValid)
+        {
+            // оценка положения (от дома, м), скорость; удержание позиции: этап, точка, почему не держит
+            w.add(",\"pos\":{\"n\":%.2f,\"e\":%.2f,\"vn\":%.2f,\"ve\":%.2f", s.posN, s.posE, s.velN, s.velE);
+            if (s.posHoldPhase != copter::PosHoldPhase::OFF)
+            {
+                w.add(",\"hold\":\"%s\",\"tn\":%.2f,\"te\":%.2f", copter::posHoldPhaseName(s.posHoldPhase), s.posTargetN,
+                      s.posTargetE);
+            }
+            w.add("}");
+        }
+        if (s.posHoldFail != copter::PosHoldFail::NONE) w.add(",\"posfail\":\"%s\"", copter::posHoldFailName(s.posHoldFail));
         spectrum(w);
         if (const char* tl = copter::trainingText(s.trainingFlags)) w.add(",\"train\":\"%s\"", tl);
         if (s.rescuePhase != RescuePhase::IDLE)
@@ -872,6 +899,8 @@ private:
     const GpsSensor* gps = nullptr;
     const copter::GpsHome* gpsHome = nullptr;
     float headingDeg = 0.0f;
+    const copter::Compass* magCal = nullptr;
+    bool magPresent = false;
     copter::CopterOutputs outputs;
     uint32_t loopAvgUs = 0, loopHz = 0;
     bool dirty = false;
