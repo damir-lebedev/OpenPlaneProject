@@ -492,6 +492,14 @@ namespace copter
         PARAM_ACC_TRIM_ROLL,
         PARAM_ACC_TRIM_PITCH,
         PARAM_ATTITUDE_FILTER,
+        PARAM_CHIRP_AMPLITUDE_ROLL,
+        PARAM_CHIRP_AMPLITUDE_PITCH,
+        PARAM_CHIRP_AMPLITUDE_YAW,
+        PARAM_CHIRP_FREQUENCY_START_DECI_HZ,
+        PARAM_CHIRP_FREQUENCY_END_DECI_HZ,
+        PARAM_CHIRP_TIME_SECONDS,
+        PARAM_CHIRP_LEAD_FREQ_HZ,
+        PARAM_CHIRP_LAG_FREQ_HZ,
         PARAM_BEEPER_OFF_FLAGS,
         PARAM_DSHOT_BEACON_OFF_FLAGS,
         PARAM_BEEPER_DSHOT_BEACON_TONE,
@@ -1198,6 +1206,22 @@ namespace copter
               "подстройка горизонта по тангажу (+ — нос ниже); стиками: газ верх + тангаж" },
             { "attitude_filter", kEnum, kMaster, ParamGroup::OTHER, 0, 1, 1, kTable, "", ATTITUDE_FILTERS, 2,
               "фильтр ориентации: EKF — Калмана, сам находит смещение гироскопа; MAHONY — прежний, запасной" },
+            { "chirp_amplitude_roll", kInt, kMaster, kGroupPid, 0, 300, 60, kTable, "0.1 %", nullptr, 0,
+              "chirp: размах качания по крену, доля хода моторов (у BF — °/с уставки); 0 — ось пропускается" },
+            { "chirp_amplitude_pitch", kInt, kMaster, kGroupPid, 0, 300, 60, kTable, "0.1 %", nullptr, 0,
+              "chirp: размах качания по тангажу" },
+            { "chirp_amplitude_yaw", kInt, kMaster, kGroupPid, 0, 300, 100, kTable, "0.1 %", nullptr, 0,
+              "chirp: размах качания по рысканью" },
+            { "chirp_frequency_start_deci_hz", kInt, kMaster, kGroupPid, 2, 500, 10, kTable, "0.1 Гц", nullptr, 0,
+              "chirp: с какой частоты начинается качание" },
+            { "chirp_frequency_end_deci_hz", kInt, kMaster, kGroupPid, 100, 10000, 2000, kTable, "0.1 Гц", nullptr, 0,
+              "chirp: до какой частоты (не выше 0.4 частоты цикла)" },
+            { "chirp_time_seconds", kInt, kMaster, kGroupPid, 2, 60, 20, kTable, "с", nullptr, 0,
+              "chirp: сколько длится качание по одной оси" },
+            { "chirp_lead_freq_hz", kInt, kMaster, kGroupPid, 0, 1000, 20, kTable, "Гц", nullptr, 0,
+              "chirp: с этой частоты размах растёт (ответ коптера падает с частотой); 0 — размах постоянный" },
+            { "chirp_lag_freq_hz", kInt, kMaster, kGroupPid, 0, 1000, 60, kTable, "Гц", nullptr, 0,
+              "chirp: до этой частоты размах растёт (всего — в lag/lead раз, не больше 30 % хода)" },
             { "beeper_off_flags", kInt, kMaster, ParamGroup::BEEPER, 0, 16777215, 0, kTable, "", nullptr, 0,
               "выключенные писки (биты условий BF; в CLI — beeper -ИМЯ)" },
             { "dshot_beacon_off_flags", kInt, kMaster, ParamGroup::BEEPER, 0, 16777215, 514, kTable, "", nullptr, 0,
@@ -1460,6 +1484,14 @@ namespace copter
             s.levelTrimRollDeg = value(PARAM_ACC_TRIM_ROLL) * 0.1f;
             s.levelTrimPitchDeg = value(PARAM_ACC_TRIM_PITCH) * 0.1f;
             s.attitudeEkf = value(PARAM_ATTITUDE_FILTER) > 0.5f;
+            s.chirp.amplitude[0] = value(PARAM_CHIRP_AMPLITUDE_ROLL) * 0.001f;
+            s.chirp.amplitude[1] = value(PARAM_CHIRP_AMPLITUDE_PITCH) * 0.001f;
+            s.chirp.amplitude[2] = value(PARAM_CHIRP_AMPLITUDE_YAW) * 0.001f;
+            s.chirp.startHz = value(PARAM_CHIRP_FREQUENCY_START_DECI_HZ) * 0.1f;
+            s.chirp.endHz = value(PARAM_CHIRP_FREQUENCY_END_DECI_HZ) * 0.1f;
+            s.chirp.seconds = value(PARAM_CHIRP_TIME_SECONDS);
+            s.chirp.leadHz = value(PARAM_CHIRP_LEAD_FREQ_HZ);
+            s.chirp.lagHz = value(PARAM_CHIRP_LAG_FREQ_HZ);
             s.autoDisarmS = value(PARAM_AUTO_DISARM_DELAY);
             s.runawayPrevention = value(PARAM_RUNAWAY_TAKEOFF_PREVENTION) > 0.5f;
             s.runawayDeactivateS = value(PARAM_RUNAWAY_TAKEOFF_DEACTIVATE_DELAY) * 0.001f;

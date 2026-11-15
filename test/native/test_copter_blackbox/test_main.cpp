@@ -190,6 +190,10 @@ namespace
             h.rc.mode = CopterMode::ANGLE;
             h.rc.throttle = h.ctl.getStatus().hoverLearned;
             h.run(1.2);
+            h.rc.chirp = true;                                    // chirp по крену: полторы секунды и выключить
+            h.run(1.5);
+            h.rc.chirp = false;
+            h.run(0.3);
             ease(0.0f, 0.0f, 1.0f, 0.1);                          // пируэт
             h.run(1.0);
             ease(0.0f, 0.0f, 0.0f, 0.1);
@@ -418,6 +422,33 @@ void test_simulated_flight_is_in_the_log()
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "режим ACRO"));
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "режим ANGLE"));
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "ACRO TRAINER: вкл"));
+
+    // chirp (168): запись QCHIRP каждый цикл, пока идёт свип, и события
+    TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "chirp: roll, свип 1"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "chirp: конец — SWITCH"));
+    TEST_ASSERT_INT_WITHIN(5, 1500, static_cast<int>(countType(recs, REC_QCHIRP)));
+    {
+        int excite = 0, sum = 0, n = 0;
+        uint16_t firstHz = 0, lastHz = 0;
+        for (const Rec& r : recs)
+        {
+            if (r.type != REC_QCHIRP) continue;
+            const BlackBoxFormat::CopterChirpRecord q = r.as<BlackBoxFormat::CopterChirpRecord>();
+            TEST_ASSERT_EQUAL(0, q.axis);
+            TEST_ASSERT_EQUAL(1, q.run);
+            excite = std::max(excite, std::abs(static_cast<int>(q.excite)));
+            sum = std::max(sum, std::abs(q.command - q.excite));
+            if (!firstHz) firstHz = q.hz;
+            lastHz = q.hz;
+            ++n;
+        }
+        snprintf(line, sizeof(line), "chirp in the log: %d records, excitation up to %.3f, PID answers up to %.3f, %.1f -> %.1f Hz", n, excite / 1e4,
+                 sum / 1e4, firstHz / 10.0, lastHz / 10.0);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(excite > 400 && excite < 700, line);   // 6 % хода
+        TEST_ASSERT_TRUE_MESSAGE(sum > 50, line);                       // PID отвечает на раскачку
+        TEST_ASSERT_TRUE_MESSAGE(firstHz >= 10 && lastHz > firstHz, line);
+    }
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "ACRO TRAINER: выкл"));
     TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "GPS Rescue"));   // без GPS возврата не было
     TEST_ASSERT_TRUE(hasText(recs, REC_EVENT, "DISARM"));

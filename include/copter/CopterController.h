@@ -4,6 +4,7 @@
 
 #include "copter/AltitudeHold.h"
 #include "copter/Attitude.h"
+#include "copter/Chirp.h"
 #include "copter/GpsRescue.h"
 #include "copter/GyroFilter.h"
 #include "copter/Mixer.h"
@@ -326,6 +327,7 @@ namespace copter
         bool gpsRescue = false;        // режим GPS RESCUE: возврат домой с тумблера
         bool failsafeSwitch = false;   // режим FAILSAFE: как потеря связи
         bool flipOverAfterCrash = false;   // режим FLIP OVER AFTER CRASH: ARM — turtle mode (copter/Turtle.h)
+        bool chirp = false;            // режим CHIRP: качание частоты по одной оси (copter/Chirp.h)
         bool prearm = true;            // PREARM включён или его нет в таблице
         bool armAssigned = true;       // ARM есть в таблице режимов
         uint32_t frame = 0;            // счётчик кадров приёмника; 0 — неизвестно (кадр — раз в 1/FF_NOMINAL_FRAME_HZ)
@@ -388,6 +390,7 @@ namespace copter
         float gpsDelayS = 0.1f;            // фикс GPS старше на столько (copter/PositionEstimator.h)
         float hoverThrottle = 0.0f;        // autopilot_hover_throttle: газ висения до обучения; 0 — из описания коптера
         TrainingSettings training;         // training_* (copter/TrainingLimits.h)
+        ChirpSettings chirp;               // chirp_* (copter/Chirp.h)
     };
 
     struct CopterStatus
@@ -429,6 +432,14 @@ namespace copter
         PosHoldPhase posHoldPhase = PosHoldPhase::OFF;          // удержание позиции: что делает
         PosHoldFail posHoldFail = PosHoldFail::NONE;            // и почему не держит (режим включён)
         float posTargetN = 0.0f, posTargetE = 0.0f;             // точка удержания
+        // chirp — качание частоты для измерения коптера (copter/Chirp.h)
+        bool chirpActive = false;
+        uint8_t chirpAxis = 0;                  // ось свипа; пока не идёт — следующая
+        uint8_t chirpRun = 0;                   // номер свипа с включения
+        float chirpHz = 0.0f;
+        float chirpExcitation = 0.0f;           // добавка к команде оси, доля хода смесителя
+        float chirpCommand = 0.0f;              // команда этой оси на входе смесителя вместе с ней
+        ChirpEnd chirpEnd = ChirpEnd::NONE;     // чем кончился прошлый свип
         uint32_t armCount = 0;
         uint32_t loops = 0;
     };
@@ -474,6 +485,9 @@ namespace copter
             posHold.configure(s.posHold, dt);
             posHold.stop();
             posHold.clearFail();
+            chirp.configure(s.chirp, t.loopHz);
+            chirpAxisNext = 0;
+            chirpSwitch = true;
             posOkTimer = 0.0f;
             posLastFail = PosHoldFail::NO_GPS;
             disarm();
@@ -947,6 +961,15 @@ namespace copter
             mi.roll = axes[0].update(sp[0], rates[0], tpa, iBoost, holdI, status.saturated, pBoost);
             mi.pitch = axes[1].update(sp[1], rates[1], tpa, iBoost, holdI, status.saturated, pBoost);
             mi.yaw = axes[2].update(sp[2], rates[2], 1.0f, iBoost, holdI, status.saturated);
+            // chirp: качание частоты поверх суммы PID одной оси (168)
+            {
+                const float excite = chirpStep(rc, mode, failsafe || rescue.active(), thrust);
+                float* const axisCommand[3] = { &mi.roll, &mi.pitch, &mi.yaw };
+                const uint8_t ca = chirp.axis();
+                *axisCommand[ca] += excite;
+                status.chirpExcitation = excite;
+                status.chirpCommand = *axisCommand[ca];
+            }
             // на земле — и при выравнивании после удара (как в BF: накопленное
             // за кувырок потом докручивало бы раму мимо горизонта)
             if (!status.airborne || status.crashRecovery)
@@ -1008,6 +1031,7 @@ namespace copter
         const GyroFilter& getGyroFilter() const { return gyroFilter; }
         // ориентация — компасу: поле из осей рамы в земные (copter/Compass.h)
         const AttitudeQuat& getAttitude() const { return attitude; }
+        const Chirp& getChirp() const { return chirp; }
         const PositionEstimator& getPosition() const { return position; }
         bool isArmed() const { return status.state != CopterState::DISARMED; }
 
@@ -1036,6 +1060,14 @@ namespace copter
         static constexpr float POS_GROUND_M = 1.0f;           // failsafe: ниже — ровно (наклон в землю мешает понять, что сел)
         static constexpr float STANDING_CLIMB_MS = 0.3f;      // просят снижаться быстрее, а скорость меньше — стоит
         static constexpr float STANDING_S = 0.3f;             // столько подряд
+        // chirp: начать — наклон меньше 25° и коптер не крутится; прервать —
+        // наклон больше 45° в ANGLE и 70° в ACRO, моторы упёрты дольше 0.25 с
+        static constexpr float CHIRP_START_COS = 0.9063f;
+        static constexpr float CHIRP_START_MOTION_DPS = 60.0f;
+        static constexpr float CHIRP_ABORT_COS_ANGLE = 0.7071f;
+        static constexpr float CHIRP_ABORT_COS_ACRO = 0.3420f;
+        static constexpr float CHIRP_SATURATED_S = 0.25f;
+        static constexpr float CHIRP_THRUST_SHARE = 0.5f;     // размах не больше этой доли газа
         // runaway takeoff: сумма PID оси больше доли хода моторов, а гироскоп
         // по ней быстрее порога — RUNAWAY_TRIGGER_S подряд; «спокойно» —
         // сумма PID всех осей меньше RUNAWAY_CALM_PIDSUM
@@ -1173,6 +1205,13 @@ namespace copter
             crashTimer = 0.0f;
             status.crashRecovery = false;
             crashPrevValid = false;
+            if (chirp.active()) chirp.stop(ChirpEnd::NOT_FLYING);
+            chirpAxisNext = 0;
+            chirpSwitch = true;   // тумблер, включённый до ARM, — не команда: выключить и включить
+            status.chirpActive = false;
+            status.chirpAxis = 0;
+            status.chirpHz = 0.0f;
+            status.chirpExcitation = status.chirpCommand = 0.0f;
             lostControlTimer = 0.0f;
             yawLostTimer = 0.0f;
             levelErrorDeg = 0.0f;
@@ -1501,6 +1540,55 @@ namespace copter
             }
         }
 
+        // CHIRP (copter/Chirp.h): свип начинается по фронту тумблера (включён
+        // заранее, до ARM, — не считается), только в воздухе, в ANGLE или ACRO,
+        // когда коптер висит спокойно и моторы не упёрты. Пройденный свип
+        // переводит на следующую ось: крен, тангаж, рысканье; прерванный —
+        // повторится на той же. Прерывают: тумблер, смена режима и любой
+        // автомат (failsafe, возврат домой), наклон больше предела, упор
+        // моторов дольше CHIRP_SATURATED_S, посадка. Стики работают как
+        // обычно — управление всё время у пилота.
+        float chirpStep(const CopterRc& rc, CopterMode mode, bool automatic, float thrust)
+        {
+            const bool modeOk = !automatic && status.state == CopterState::ARMED &&
+                                (mode == CopterMode::ANGLE || mode == CopterMode::ACRO);
+            const bool rising = rc.chirp && !chirpSwitch;
+            chirpSwitch = rc.chirp;
+            const bool was = chirp.active();
+            if (!was)
+            {
+                if (rising && modeOk && status.airborne && !status.crashRecovery && !status.saturated &&
+                    attitude.cosTilt() > CHIRP_START_COS && motionLpf.value() < CHIRP_START_MOTION_DPS)
+                {
+                    chirp.start(chirpAxisNext);
+                    chirpSaturated = 0.0f;
+                }
+            }
+            else
+            {
+                chirpSaturated = status.saturated ? chirpSaturated + dt : 0.0f;
+                const float limit = mode == CopterMode::ANGLE ? CHIRP_ABORT_COS_ANGLE : CHIRP_ABORT_COS_ACRO;
+                ChirpEnd end = ChirpEnd::NONE;
+                if (!rc.chirp) end = ChirpEnd::SWITCH;
+                else if (!status.airborne) end = ChirpEnd::NOT_FLYING;
+                else if (!modeOk) end = ChirpEnd::MODE;
+                else if (status.crashRecovery || attitude.cosTilt() < limit) end = ChirpEnd::TILT;
+                else if (chirpSaturated > CHIRP_SATURATED_S) end = ChirpEnd::SATURATED;
+                if (end != ChirpEnd::NONE) chirp.stop(end);
+            }
+            const float value = chirp.update(dt, CHIRP_THRUST_SHARE * thrust);
+            if (was && !chirp.active())
+            {
+                status.chirpEnd = chirp.lastEnd();
+                if (chirp.lastEnd() == ChirpEnd::DONE) chirpAxisNext = static_cast<uint8_t>((chirp.axis() + 1) % 3);
+            }
+            status.chirpActive = chirp.active();
+            status.chirpAxis = chirp.active() ? chirp.axis() : chirpAxisNext;
+            status.chirpRun = chirp.runCount();
+            status.chirpHz = chirp.hz();
+            return value;
+        }
+
         // Сглаживание упреждения ANGLE и возврата выравнивания HORIZON (BF 4.5).
         void configureLevelFilters(const PidExtras& p)
         {
@@ -1701,6 +1789,10 @@ namespace copter
         float failsafeTimer = 0.0f;
         float landingTimer = 0.0f;
         float standingTimer = 0.0f;      // автомат снижается, а коптер стоит (интеграл замирает)
+        Chirp chirp;                     // качание частоты (168)
+        uint8_t chirpAxisNext = 0;
+        bool chirpSwitch = true;         // тумблер CHIRP в прошлом цикле (фронт)
+        float chirpSaturated = 0.0f;
         float crashTimer = 0.0f;
         float lostControlTimer = 0.0f;
         float crashPrevRate[2] = {};

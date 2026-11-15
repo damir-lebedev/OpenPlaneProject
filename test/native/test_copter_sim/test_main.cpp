@@ -39,6 +39,10 @@ void tearDown() {}
 void test_attitude_ekf_learns_gyro_bias();
 void test_attitude_ekf_against_mahony_in_manoeuvres();
 void test_failsafe_landing_on_a_slope_disarms();
+// test_ident.cpp: chirp, идентификация и автонастройка (168, 169)
+void test_chirp_runs_by_switch_in_flight_only();
+void test_chirp_identifies_the_plant_within_10_percent();
+void test_autotune_by_chirp_on_every_build();
 
 namespace
 {
@@ -2352,5 +2356,8 @@ int main()
     RUN_TEST(test_attitude_ekf_learns_gyro_bias);
     RUN_TEST(test_attitude_ekf_against_mahony_in_manoeuvres);
     RUN_TEST(test_failsafe_landing_on_a_slope_disarms);
+    RUN_TEST(test_chirp_runs_by_switch_in_flight_only);
+    RUN_TEST(test_chirp_identifies_the_plant_within_10_percent);
+    RUN_TEST(test_autotune_by_chirp_on_every_build);
     return UNITY_END();
 }

@@ -27,6 +27,8 @@
 //          спектра шума;
 //   QCTRL  тогда же: P, I, D, F по осям, команды моторам 1–4, газ;
 //   QMOT8  тогда же, если моторов больше четырёх: моторы 5–8;
+//   QCHIRP тогда же, пока идёт chirp: возбуждение, команда оси, гироскоп
+//          до и после фильтров — для частотной характеристики (168);
 //   QSTATE 50 Гц: углы, высота, стики, батарея, обороты, связь, режим,
 //          флаги, запреты ARM;
 //   GPS    каждое новое решение; SYS — 1 Гц: цикл, приёмник, сам ящик;
@@ -280,6 +282,7 @@ private:
         bool motorTest = false;
         uint8_t rescue = 0;      // RescuePhase::IDLE
         bool trainer = false;    // режим ACRO TRAINER
+        bool chirp = false;      // идёт качание частоты
     } seen;
 
     bool vehicleArmed() const override { return ctl.isArmed(); }
@@ -394,6 +397,16 @@ private:
         {
             event("ACRO TRAINER: %s", rc.acroTrainer ? "вкл" : "выкл");
             seen.trainer = rc.acroTrainer;
+        }
+        if (s.chirpActive != seen.chirp)
+        {
+            static const char* const AXES[] = { "roll", "pitch", "yaw" };
+            if (s.chirpActive)
+                event("chirp: %s, свип %u, %.1f–%.1f Гц", AXES[s.chirpAxis % 3], s.chirpRun,
+                      static_cast<double>(ctl.getChirp().startHz()), static_cast<double>(ctl.getChirp().endHz()));
+            else
+                event("chirp: конец — %s", copter::chirpEndName(s.chirpEnd));
+            seen.chirp = s.chirpActive;
         }
         if (s.crashed != seen.crashed)
         {
@@ -530,6 +543,21 @@ private:
             c.thrust = u16(s.throttle * 1000.0f);
             pushRecord(BlackBoxFormat::REC_QCTRL, c);
 
+            if (s.chirpActive)
+            {
+                BlackBoxFormat::CopterChirpRecord q;
+                const uint8_t ca = s.chirpAxis < 3 ? s.chirpAxis : 0;
+                q.tUs = nowUs;
+                q.excite = i16(s.chirpExcitation * 10000.0f);
+                q.command = i16(s.chirpCommand * 10000.0f);
+                q.gyro = i16(sens.gyro[ca] * 10.0f);
+                q.gyroF = i16(s.rates[ca] * 10.0f);
+                q.hz = u16(s.chirpHz * 10.0f);
+                q.axis = ca;
+                q.run = s.chirpRun;
+                pushRecord(BlackBoxFormat::REC_QCHIRP, q);
+            }
+
             if (out.count > 4)
             {
                 BlackBoxFormat::CopterMotor8Record m8;
@@ -663,6 +691,20 @@ private:
         info("filter.gyro_lpf_hz=%.0f", static_cast<double>(t.gyroLpfHz));
         info("filter.dterm_lpf_hz=%.0f", static_cast<double>(t.dtermLpfHz));
         info("filter.yaw_lpf_hz=%.0f", static_cast<double>(t.yawLpfHz));
+        // ФНЧ D целиком (для расчёта контура по журналу): тип и срез двух ступеней,
+        // динамический срез первой, режектор
+        {
+            const copter::FilterSpec& f = t.filters;
+            info("filter.dterm=%u %.0f %u %.0f %.0f %.0f %.0f %.0f", static_cast<unsigned>(f.valid ? f.dterm1.type : copter::LpfType::PT1),
+                 static_cast<double>(f.valid ? f.dterm1.hz : t.dtermLpfHz), static_cast<unsigned>(f.dterm2.type),
+                 static_cast<double>(f.valid ? f.dterm2.hz : 0.0f), static_cast<double>(f.dtermDyn.minHz),
+                 static_cast<double>(f.dtermDyn.maxHz), static_cast<double>(f.dtermNotch.hz), static_cast<double>(f.dtermNotch.cutoffHz));
+        }
+        info("pid.dmax=%.0f %.0f %.0f", static_cast<double>(copter::gainToBf(copter::PidTerm::D, 0, t.pid.dMax[0])),
+             static_cast<double>(copter::gainToBf(copter::PidTerm::D, 1, t.pid.dMax[1])),
+             static_cast<double>(copter::gainToBf(copter::PidTerm::D, 2, t.pid.dMax[2])));
+        info("model.k=%.1f %.1f %.1f", static_cast<double>(t.kRoll), static_cast<double>(t.kPitch), static_cast<double>(t.kYaw));
+        info("model.motor_tau_ms=%.1f", static_cast<double>(t.motorTauS * 1000.0f));
         info("filter.notch_q=%.1f", static_cast<double>(t.notchQ));
         info("model.crossover_hz=%.1f", static_cast<double>(t.crossoverHzRP));
         info("model.hover=%.3f", static_cast<double>(t.hoverThrust));

@@ -332,6 +332,12 @@ public:
         for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i) w.add(i ? ",%u" : "%u", static_cast<unsigned>(rc.getState().get(i)));
         w.add("],\"att\":[%.1f,%.1f,%.1f],\"alt\":%.2f,\"vz\":%.2f,\"thr\":%.3f,\"v\":%.2f", s.roll, s.pitch, s.yaw,
               s.altitude, s.climbRate, s.throttle, s.volts);
+        // chirp: идёт ли качание, по какой оси (или какая следующая), частота, чем кончилось прошлое
+        if (s.chirpActive || s.chirpRun > 0)
+        {
+            w.add(",\"chirp\":{\"on\":%s,\"axis\":%u,\"hz\":%.1f,\"run\":%u,\"end\":\"%s\"}", s.chirpActive ? "true" : "false",
+                  static_cast<unsigned>(s.chirpAxis), s.chirpHz, static_cast<unsigned>(s.chirpRun), copter::chirpEndName(s.chirpEnd));
+        }
         // фильтр ориентации MEKF: найденное смещение гироскопа (°/с) и вера акселерометру (%)
         if (ctl.getAttitude().ekfEnabled())
         {

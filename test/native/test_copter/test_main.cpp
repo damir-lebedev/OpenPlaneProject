@@ -1111,6 +1111,69 @@ void test_attitude_ekf_thrust_is_not_gravity_and_gps_acceleration_helps()
     TEST_ASSERT_TRUE(off.qw() == off.qw());
 }
 
+// test_sysid.cpp: идентификация и автонастройка на известных системах (168, 169)
+void test_sysid_fft_finds_a_sine();
+void test_sysid_recovers_a_known_plant_in_closed_loop();
+void test_autotune_margins_of_a_reference_loop();
+void test_autotune_synthesis_on_a_known_plant();
+
+// 168: chirp — частота растёт по логарифму от начала к концу за заданное
+// время, размах растёт между lead и lag, не выше потолка и MAX_AMPLITUDE,
+// вход и выход плавные; конечная частота — не выше 0.4 частоты цикла.
+void test_chirp_sweeps_frequency_and_respects_limits()
+{
+    ChirpSettings s;
+    s.amplitude[0] = 0.06f;
+    s.amplitude[1] = 0.0f;   // ось пропускается
+    s.startHz = 2.0f;
+    s.endHz = 800.0f;        // выше 0.4 цикла — обрежется
+    s.seconds = 4.0f;
+    s.leadHz = 20.0f;
+    s.lagHz = 60.0f;
+    Chirp c;
+    c.configure(s, 1000.0f);
+    TEST_ASSERT_FALSE(c.active());
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, c.update(0.001f));
+    TEST_ASSERT_FALSE(c.start(1));
+    TEST_ASSERT_TRUE(c.start(0));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 400.0f, c.endHz());
+    float peakLow = 0, peakHigh = 0, first = 0, hzMid = 0, last = 1;
+    int crossings = 0;
+    float prev = 0;
+    for (int i = 0; i < 4000; ++i)
+    {
+        const float v = c.update(0.001f);
+        if (i == 5) first = fabsf(v);
+        if (i == 1999) hzMid = c.hz();
+        if (i > 520 && i < 800) peakLow = fmaxf(peakLow, fabsf(v));        // 4–6 Гц: до lead
+        if (i > 3000 && i < 3700) peakHigh = fmaxf(peakHigh, fabsf(v));    // выше lag
+        if (i < 1000 && prev < 0 && v >= 0) ++crossings;
+        if (i == 3998) last = fabsf(v);
+        prev = v;
+    }
+    for (int i = 0; i < 5; ++i) c.update(0.001f);   // 4000 шагов по 0.001f — чуть меньше 4 с
+    TEST_ASSERT_FALSE(c.active());
+    TEST_ASSERT_EQUAL(static_cast<int>(ChirpEnd::DONE), static_cast<int>(c.lastEnd()));
+    TEST_ASSERT_TRUE(first < 0.002f && last < 0.005f);                    // плавный вход и выход
+    TEST_ASSERT_FLOAT_WITHIN(0.004f, 0.061f, peakLow);
+    TEST_ASSERT_FLOAT_WITHIN(0.012f, 0.18f, peakHigh);                    // в lag/lead = 3 раза больше
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, sqrtf(2.0f * 400.0f), hzMid);          // середина по времени — среднее геометрическое
+    // за первую секунду: интеграл частоты 2·(400/2)^(t/4) — около 3.5 периода
+    TEST_ASSERT_INT_WITHIN(1, 3, crossings);
+    // потолок: размах не больше половины газа
+    c.start(0);
+    float capped = 0;
+    for (int i = 0; i < 4000; ++i) capped = fmaxf(capped, fabsf(c.update(0.001f, 0.5f * 0.1f)));
+    TEST_ASSERT_TRUE(capped <= 0.0501f && capped > 0.045f);
+    TEST_ASSERT_EQUAL(2, c.runCount());
+    // прервали — причина осталась, возбуждение ноль
+    c.start(0);
+    c.update(0.001f);
+    c.stop(ChirpEnd::TILT);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, c.update(0.001f));
+    TEST_ASSERT_EQUAL_STRING("TILT", chirpEndName(c.lastEnd()));
+}
+
 // ---------------- высота ----------------
 
 void test_vertical_estimator_fuses_baro_and_accel()
@@ -8457,6 +8520,11 @@ int main()
     RUN_TEST(test_attitude_trust_fades_with_gps_accel_or_tilt);
     RUN_TEST(test_attitude_ekf_finds_gyro_bias_on_the_ground);
     RUN_TEST(test_attitude_ekf_thrust_is_not_gravity_and_gps_acceleration_helps);
+    RUN_TEST(test_chirp_sweeps_frequency_and_respects_limits);
+    RUN_TEST(test_sysid_fft_finds_a_sine);
+    RUN_TEST(test_sysid_recovers_a_known_plant_in_closed_loop);
+    RUN_TEST(test_autotune_margins_of_a_reference_loop);
+    RUN_TEST(test_autotune_synthesis_on_a_known_plant);
     RUN_TEST(test_vertical_estimator_fuses_baro_and_accel);
     RUN_TEST(test_vertical_estimator_without_baro_learns_bias_on_ground);
     RUN_TEST(test_altitude_controller);

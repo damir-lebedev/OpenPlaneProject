@@ -84,6 +84,7 @@ namespace copter
         BOX_LAUNCH_CONTROL = 49,
         BOX_STICK_COMMANDS_DISABLE = 51,
         BOX_BEEPER_MUTE = 52,
+        BOX_CHIRP = 55,   // BF 2025: качание частоты (copter/Chirp.h)
         BOX_COUNT = 64,   // номера 0..63
     };
 
@@ -122,6 +123,7 @@ namespace copter
             { BOX_PARALYZE, "PARALYZE", false },
             { BOX_GPS_RESCUE, "GPS RESCUE", true },
             { BOX_ACRO_TRAINER, "ACRO TRAINER", true },
+            { BOX_CHIRP, "CHIRP", true },
             { BOX_LAUNCH_CONTROL, "LAUNCH CONTROL", false },
             { BOX_BEEPER_MUTE, "BEEPER MUTE", true },
             { BOX_GPS_BEEP_SATELLITE_COUNT, "GPS BEEP SATELLITE COUNT", true },
@@ -847,6 +849,7 @@ namespace copter
             rc.airmode = isActive(BOX_AIRMODE);
             rc.acroTrainer = isActive(BOX_ACRO_TRAINER);
             rc.gpsRescue = isActive(BOX_GPS_RESCUE);
+            rc.chirp = isActive(BOX_CHIRP);
             rc.failsafeSwitch = isActive(BOX_FAILSAFE);
             rc.flipOverAfterCrash = isActive(BOX_FLIP_OVER_AFTER_CRASH);
             rc.prearm = !cfg.hasMode(BOX_PREARM) || isActive(BOX_PREARM);
