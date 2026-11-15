@@ -999,6 +999,118 @@ void test_attitude_trust_fades_with_gps_accel_or_tilt()
     TEST_ASSERT_EQUAL_FLOAT(-1.0f, g.accel());
 }
 
+// 067, MEKF: стоит на земле, гироскоп врёт на постоянную — горизонт на месте,
+// смещение найдено. Рысканье акселерометр не видит: его смещение не найти
+// (и не выдумать). Цикл 8 кГц даёт то же, что 1 кГц (шаг фильтра — раз в 1 мс).
+void test_attitude_ekf_finds_gyro_bias_on_the_ground()
+{
+    for (float dt : { 0.001f, 0.000125f })
+    {
+        AttitudeQuat a;
+        a.setEkf(true);
+        float acc[3], gyro[3] = { 1.5f, -1.0f, 0.5f };
+        accelFor(4.0f, -2.0f, acc);   // стоит на склоне
+        const int steps = static_cast<int>(10.0f / dt);
+        for (int i = 0; i < steps; ++i) a.update(gyro, acc, dt);
+        TEST_ASSERT_FLOAT_WITHIN(0.2f, 4.0f, a.rollDeg());
+        TEST_ASSERT_FLOAT_WITHIN(0.2f, -2.0f, a.pitchDeg());
+        TEST_ASSERT_FLOAT_WITHIN(0.15f, 1.5f, a.gyroBiasDps(0));
+        TEST_ASSERT_FLOAT_WITHIN(0.15f, -1.0f, a.gyroBiasDps(1));
+        TEST_ASSERT_FLOAT_WITHIN(0.2f, 0.0f, a.gyroBiasDps(2));
+        TEST_ASSERT_TRUE(a.tiltSigmaDeg() < 0.5f);
+        TEST_ASSERT_TRUE(a.accelTrust() > 0.9f);
+    }
+    // Махони того же не умеет: стоит с ошибкой смещение / усиление
+    AttitudeQuat m;
+    float level[3] = { 0, 0, 1 }, gyro[3] = { 1.5f, 0, 0 };
+    for (int i = 0; i < 10000; ++i) m.update(gyro, level, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 0.3f, m.rollDeg());   // 1.5 °/с / 5 1/с
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, m.gyroBiasDps(0));
+}
+
+// 067, MEKF: в полёте акселерометр показывает тягу, а она идёт по оси рамы —
+// «ровно» при любом наклоне. Махони за 3 с утягивает горизонт к «ровно»,
+// MEKF знает, что тяга — не тяжесть. С ускорением по GPS и курсом вираж —
+// законный наклон, а ошибка горизонта без ускорения — видна и убирается.
+void test_attitude_ekf_thrust_is_not_gravity_and_gps_acceleration_helps()
+{
+    const float zero[3] = { 0, 0, 0 };
+    float tilted[3];
+    accelFor(20.0f, 0.0f, tilted);
+    const float phi = 20.0f * PI_F / 180.0f;
+    const float thrust[3] = { 0, 0, 1.0f / cosf(phi) };   // держит высоту с креном 20°
+    // Крен 20° и 4 с так: коптер разгоняется вправо, сопротивление винтов
+    // (в их плоскости, c·v) растёт. Акселерометр: тяга по оси рамы + сопротивление.
+    // drag — настоящий коэффициент: как в модели фильтра (0.3) и в полтора раза меньше.
+    for (float drag : { 0.3f, 0.2f })
+    {
+        float roll[2] = {};
+        for (int ekf = 0; ekf < 2; ++ekf)
+        {
+            AttitudeQuat a;
+            a.configure(2.0f, 0.2f);
+            a.setEkf(ekf != 0);
+            a.update(zero, tilted, 0.001f);   // встал по акселерометру: крен 20°
+            a.setGrounded(false);
+            float v = 0.0f;   // вправо, м/с
+            for (int i = 0; i < 4000; ++i)
+            {
+                const float dragY = -drag * cosf(phi) * v / 9.80665f;          // по оси Y рамы (вправо), g
+                const float lift = (1.0f + sinf(phi) * dragY) / cosf(phi);     // тяга: высота держится
+                v += 9.80665f * (cosf(phi) * dragY + sinf(phi) * lift) * 0.001f;
+                const float acc[3] = { 0.0f, -dragY, lift };                   // X нос, Y влево, Z вверх
+                a.update(zero, acc, 0.001f);
+            }
+            roll[ekf] = a.rollDeg();
+        }
+        TEST_ASSERT_TRUE(roll[0] < 17.0f);                 // Махони: ушёл к «ровно» больше чем на 3°
+        // коэффициент в модели в полтора раза не тот — ошибка до 2°, всё равно меньше, чем без модели
+        TEST_ASSERT_FLOAT_WITHIN(drag == 0.3f ? 0.3f : 2.0f, 20.0f, roll[1]);
+        TEST_ASSERT_TRUE(roll[1] > roll[0] + 1.0f);
+    }
+
+    // вираж: крен 20°, GPS видит g·tg 20° = 3.57 м/с² вправо (курс — север: вправо — восток)
+    AttitudeQuat turn;
+    turn.setEkf(true);
+    turn.update(zero, tilted, 0.001f);
+    turn.setGrounded(false);
+    turn.setGroundAccel(3.57f);
+    turn.setGroundAccelVector(0.0f, 3.57f, 0.0f);
+    for (int i = 0; i < 10000; ++i) turn.update(zero, thrust, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 20.0f, turn.rollDeg());
+
+    // тот же вираж, но нос на восток, а фильтр считает рысканье от нуля:
+    // ускорение на юг, курс минус рысканье — 90°
+    AttitudeQuat east;
+    east.setEkf(true);
+    east.update(zero, tilted, 0.001f);
+    east.setGrounded(false);
+    east.setGroundAccel(3.57f);
+    east.setGroundAccelVector(-3.57f, 0.0f, 90.0f);
+    for (int i = 0; i < 10000; ++i) east.update(zero, thrust, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 20.0f, east.rollDeg());
+
+    // оценка врёт на 6°, коптер висит ровно: GPS ускорения не видит —
+    // значит, «верх» там, куда показывает тяга; за 10 с ошибка уходит
+    AttitudeQuat off;
+    off.setEkf(true);
+    float wrong[3];
+    accelFor(6.0f, 0.0f, wrong);
+    const float hover[3] = { 0, 0, 1 };
+    off.update(zero, wrong, 0.001f);
+    off.setGrounded(false);
+    off.setGroundAccel(0.0f);
+    off.setGroundAccelVector(0.0f, 0.0f, 0.0f);
+    for (int i = 0; i < 10000; ++i) off.update(zero, hover, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 0.0f, off.rollDeg());
+    // свободное падение (акселерометр молчит): поправки нет, оценка идёт по
+    // гироскопу (с остатком смещения, выученного за переходный процесс) и не «ломается»
+    const float fall[3] = { 0.01f, 0.0f, 0.02f };
+    for (int i = 0; i < 2000; ++i) off.update(zero, fall, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(2.0f, 0.0f, off.rollDeg());
+    TEST_ASSERT_TRUE(off.qw() == off.qw());
+}
+
 // ---------------- высота ----------------
 
 void test_vertical_estimator_fuses_baro_and_accel()
@@ -8343,6 +8455,8 @@ int main()
     RUN_TEST(test_attitude_integrates_full_flip_and_yaw);
     RUN_TEST(test_attitude_accelerometer_pulls_slowly_and_only_near_1g);
     RUN_TEST(test_attitude_trust_fades_with_gps_accel_or_tilt);
+    RUN_TEST(test_attitude_ekf_finds_gyro_bias_on_the_ground);
+    RUN_TEST(test_attitude_ekf_thrust_is_not_gravity_and_gps_acceleration_helps);
     RUN_TEST(test_vertical_estimator_fuses_baro_and_accel);
     RUN_TEST(test_vertical_estimator_without_baro_learns_bias_on_ground);
     RUN_TEST(test_altitude_controller);

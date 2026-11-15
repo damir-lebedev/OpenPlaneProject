@@ -332,6 +332,13 @@ public:
         for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i) w.add(i ? ",%u" : "%u", static_cast<unsigned>(rc.getState().get(i)));
         w.add("],\"att\":[%.1f,%.1f,%.1f],\"alt\":%.2f,\"vz\":%.2f,\"thr\":%.3f,\"v\":%.2f", s.roll, s.pitch, s.yaw,
               s.altitude, s.climbRate, s.throttle, s.volts);
+        // фильтр ориентации MEKF: найденное смещение гироскопа (°/с) и вера акселерометру (%)
+        if (ctl.getAttitude().ekfEnabled())
+        {
+            const copter::AttitudeQuat& at = ctl.getAttitude();
+            w.add(",\"gbias\":[%.2f,%.2f,%.2f],\"atrust\":%d", at.gyroBiasDps(0), at.gyroBiasDps(1), at.gyroBiasDps(2),
+                  static_cast<int>(lroundf(at.accelTrust() * 100.0f)));
+        }
         if (battery)
         {
             w.add(",\"bat\":\"%s\",\"cell\":%.2f,\"full\":%s", copter::batteryStateName(battery->state()), battery->cellVolts(),

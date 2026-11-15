@@ -28,41 +28,20 @@
 
 #include "copter/Params.h"
 #include "helpers/QuadHarness.h"
+#include "helpers/QuadVariants.h"
 
 using namespace copter;
 
 void setUp() {}
 void tearDown() {}
 
+// test_attitude.cpp: фильтр ориентации (MEKF против Махони), посадка на склон
+void test_attitude_ekf_learns_gyro_bias();
+void test_attitude_ekf_against_mahony_in_manoeuvres();
+void test_failsafe_landing_on_a_slope_disarms();
+
 namespace
 {
-    QuadPerturb sluggish()
-    {
-        QuadPerturb p;
-        p.thrust = 0.8;
-        p.resistance = 1.3;
-        p.rotorInertia = 1.3;
-        p.bodyInertia = 1.3;
-        p.mass = 1.2;
-        p.motorSpread = 0.05;
-        p.cgX = 0.08;
-        return p;
-    }
-
-    QuadPerturb twitchy()
-    {
-        QuadPerturb p;
-        p.thrust = 1.2;
-        p.torque = 1.2;
-        p.resistance = 0.75;
-        p.rotorInertia = 0.7;
-        p.bodyInertia = 0.7;
-        p.mass = 0.85;
-        p.motorSpread = 0.05;
-        p.cgY = 0.05;
-        return p;
-    }
-
     const char* label(const BuildSpec& b, const char* variant)
     {
         static char text[64];
@@ -1403,7 +1382,10 @@ void test_angle_feedforward_tilts_faster()
         TEST_MESSAGE(line);
         TEST_ASSERT_TRUE_MESSAGE(on.t90 > 0 && off.t90 > 0, line);
         TEST_ASSERT_TRUE_MESSAGE(on.t90 < off.t90, line);
-        TEST_ASSERT_TRUE_MESSAGE(on.peak < off.peak + 0.10, line);
+        // перелёт с упреждением — до 13 % (с прежним фильтром ориентации он
+        // прятался: горизонт уплывал, и «без упреждения» выходило 105 %)
+        TEST_ASSERT_TRUE_MESSAGE(on.peak < 1.15, line);
+        TEST_ASSERT_TRUE_MESSAGE(off.peak < 1.04, line);
     }
 }
 
@@ -2367,5 +2349,8 @@ int main()
     RUN_TEST(test_pos_hold_lying_compass);
     RUN_TEST(test_failsafe_landing_holds_place_with_gps);
     RUN_TEST(test_alt_hold_with_noisy_barometer);
+    RUN_TEST(test_attitude_ekf_learns_gyro_bias);
+    RUN_TEST(test_attitude_ekf_against_mahony_in_manoeuvres);
+    RUN_TEST(test_failsafe_landing_on_a_slope_disarms);
     return UNITY_END();
 }

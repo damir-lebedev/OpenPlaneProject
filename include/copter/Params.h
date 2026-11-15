@@ -491,6 +491,7 @@ namespace copter
         PARAM_MAX_CHECK,
         PARAM_ACC_TRIM_ROLL,
         PARAM_ACC_TRIM_PITCH,
+        PARAM_ATTITUDE_FILTER,
         PARAM_BEEPER_OFF_FLAGS,
         PARAM_DSHOT_BEACON_OFF_FLAGS,
         PARAM_BEEPER_DSHOT_BEACON_TONE,
@@ -521,6 +522,7 @@ namespace copter
         // порядок — как Config::RxProtocol (static_assert в main_copter.cpp)
         static const char* const RX_PROVIDERS[] = { "IBUS", "SBUS", "CRSF" };
         static const char* const OFF_ON[] = { "OFF", "ON" };
+        static const char* const ATTITUDE_FILTERS[] = { "MAHONY", "EKF" };
         // порядок — как BatteryChemistry
         static const char* const CHEMISTRIES[] = { "LIPO", "LIHV", "LIION" };
         // порядок — как CurrentMeter и VoltageMeter (Battery.h) и в BF
@@ -1194,6 +1196,8 @@ namespace copter
               "подстройка горизонта по крену (+ — правее); стиками: газ верх + крен" },
             { "acc_trim_pitch", kInt, kMaster, ParamGroup::OTHER, -300, 300, 0, kTable, "0.1°", nullptr, 0,
               "подстройка горизонта по тангажу (+ — нос ниже); стиками: газ верх + тангаж" },
+            { "attitude_filter", kEnum, kMaster, ParamGroup::OTHER, 0, 1, 1, kTable, "", ATTITUDE_FILTERS, 2,
+              "фильтр ориентации: EKF — Калмана, сам находит смещение гироскопа; MAHONY — прежний, запасной" },
             { "beeper_off_flags", kInt, kMaster, ParamGroup::BEEPER, 0, 16777215, 0, kTable, "", nullptr, 0,
               "выключенные писки (биты условий BF; в CLI — beeper -ИМЯ)" },
             { "dshot_beacon_off_flags", kInt, kMaster, ParamGroup::BEEPER, 0, 16777215, 514, kTable, "", nullptr, 0,
@@ -1455,6 +1459,7 @@ namespace copter
             s.smallAngleDeg = value(PARAM_SMALL_ANGLE);
             s.levelTrimRollDeg = value(PARAM_ACC_TRIM_ROLL) * 0.1f;
             s.levelTrimPitchDeg = value(PARAM_ACC_TRIM_PITCH) * 0.1f;
+            s.attitudeEkf = value(PARAM_ATTITUDE_FILTER) > 0.5f;
             s.autoDisarmS = value(PARAM_AUTO_DISARM_DELAY);
             s.runawayPrevention = value(PARAM_RUNAWAY_TAKEOFF_PREVENTION) > 0.5f;
             s.runawayDeactivateS = value(PARAM_RUNAWAY_TAKEOFF_DEACTIVATE_DELAY) * 0.001f;

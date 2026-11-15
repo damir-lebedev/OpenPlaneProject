@@ -53,6 +53,7 @@ public:
     {
         copter::CopterSensors s;
         sim.readImu(s.gyro, s.accel);
+        for (int a = 0; a < 3; ++a) s.gyro[a] = static_cast<float>(s.gyro[a] * gyroScale + gyroBiasDps[a]);
         s.imuOk = imuOk;
         s.baroOk = baroOk;
         s.baroAltM = baroOk ? sim.readBaro() + 120.0f : 0.0f;   // над уровнем моря — не ноль
@@ -174,6 +175,8 @@ public:
         gpsLast = g;
     }
 
+    double gyroBiasDps[3] = {};   // смещение нуля гироскопа (уход с температурой), °/с
+    double gyroScale = 1.0;       // ошибка масштаба гироскопа (1.01 — завышает на 1 %)
     bool gpsOn = false;        // есть GPS
     bool compass = true;       // и компас
     bool gpsLost = false;      // GPS замолчал

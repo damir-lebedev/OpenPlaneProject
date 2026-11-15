@@ -370,6 +370,8 @@ namespace copter
         // вправо и нос вниз (как в BF: летит вперёд — тангаж назад)
         float levelTrimRollDeg = 0.0f;
         float levelTrimPitchDeg = 0.0f;
+        // attitude_filter: MEKF (оценивает и смещение гироскопа) или Махони (copter/Attitude.h)
+        bool attitudeEkf = true;
         float autoDisarmS = 5.0f;          // auto_disarm_delay: на земле с газом внизу столько — DISARM; 0 — нет
         // runaway_takeoff_*: «убегает» на взлёте — DISARM; проверка гаснет,
         // когда коптер столько продержался в воздухе спокойно
@@ -460,6 +462,7 @@ namespace copter
             voltLpf.configure(2.0f, dt);
             attitude.configure(2.0f, 0.2f);
             attitude.reset();
+            attitude.setEkf(s.attitudeEkf);
             vertical.configure(2.5f);
             hover = s.hoverThrottle > 0.01f ? s.hoverThrottle : t.hoverThrust;
             altCtl.configure(s.alt, hover);
@@ -650,6 +653,12 @@ namespace copter
             attitude.setGrounded(!status.airborne);
             gpsAccel.update(sens.gps.fresh, sens.gps.fix, sens.gps.velN, sens.gps.velE, dt);
             attitude.setGroundAccel(gpsAccel.accel());
+            // курс известен — ускорение по GPS вычитается из акселерометра
+            // (вираж, разгон: «верх» наклонён на него по праву)
+            if (gpsAccel.accel() >= 0.0f && position.headingSource() != HeadingSource::NONE)
+                attitude.setGroundAccelVector(gpsAccel.accelN(), gpsAccel.accelE(), position.headingDeg() - attitude.yawDeg());
+            else
+                attitude.clearGroundAccelVector();
             if (sens.imuOk) attitude.update(sens.gyro, accel, dt);
             const float accelUp = attitude.isInitialized() ? attitude.verticalAccel(accel) : 0.0f;
             // без барометра смещение акселерометра учится, пока коптер стоит
@@ -838,6 +847,7 @@ namespace copter
             float thrust;   // что просит пилот (или удержание высоты), доля тяги
             const float cosTilt = attitude.cosTilt();
             const float stickSlow = throttleBoostLpf.apply(sticks[3]);
+            float climbCmd = 0.0f;   // что просят у удержания высоты, м/с (ниже — «стоит ли уже на земле»)
             if (altitudeMode(mode))
             {
                 float climb = 0.0f;
@@ -857,6 +867,7 @@ namespace copter
                     if (s < -dead) climb = (s + dead) / (0.5f - dead) * set.alt.maxDescent;
                     climb = training.limitClimb(climb);
                 }
+                climbCmd = climb;
                 altCtl.setHover(hover);
                 thrust = altCtl.update(vertical.altitude(), vertical.climbRate(), climb, vertical.baroUsed(), cosTilt, dt);
                 status.altTarget = altCtl.getTarget();
@@ -912,7 +923,19 @@ namespace copter
             if (thrust >= tune.pid.tpaLowBreakpoint) tpaLowDone = true;
             float tpa = tune.tpaAt(lastMixThrottle);
             if (tune.pid.tpaLowAlways || !tpaLowDone) tpa *= tune.tpaLowAt(lastMixThrottle);
-            const bool holdI = !status.airborne;
+            // Снижение просят (посадка в failsafe, возврат домой, ALT HOLD с
+            // газом вниз), а высота не меняется и коптер не качается — он уже
+            // стоит, хотя «в воздухе» снимется только через секунды, когда
+            // упадёт тяга. Земля раму держит, и интеграл копился бы на любой
+            // градус между «ровно» и землёй (склон, подстройка горизонта,
+            // ошибка оценки), пока моторы не разойдутся и коптер не запрыгает.
+            // Интеграл замирает — не сбрасывается: ошиблись в воздухе (начало
+            // снижения, восходящий поток) — рывка нет.
+            const bool sinking = climbCmd < -STANDING_CLIMB_MS;
+            const bool still = fabsf(vertical.climbRate()) < STANDING_CLIMB_MS && motionLpf.value() < 20.0f;
+            standingTimer = (status.airborne && sinking && still) ? standingTimer + dt : 0.0f;
+            const bool standing = standingTimer > STANDING_S;
+            const bool holdI = !status.airborne || standing;
             if (tune.pid.itermRotation && !holdI)
             {
                 float v[3] = { axes[0].integral(), axes[1].integral(), axes[2].integral() };
@@ -926,7 +949,7 @@ namespace copter
             mi.yaw = axes[2].update(sp[2], rates[2], 1.0f, iBoost, holdI, status.saturated);
             // на земле — и при выравнивании после удара (как в BF: накопленное
             // за кувырок потом докручивало бы раму мимо горизонта)
-            if (holdI || status.crashRecovery)
+            if (!status.airborne || status.crashRecovery)
             {
                 for (auto& ax : axes) ax.resetIntegral();
             }
@@ -1011,6 +1034,8 @@ namespace copter
         static constexpr float FAILSAFE_KILL_LOCK_S = 1.0f;   // после KILL с тумблера ARM не раньше
         static constexpr float POS_READY_S = 1.0f;            // GPS и курс годятся столько подряд — позицию можно держать
         static constexpr float POS_GROUND_M = 1.0f;           // failsafe: ниже — ровно (наклон в землю мешает понять, что сел)
+        static constexpr float STANDING_CLIMB_MS = 0.3f;      // просят снижаться быстрее, а скорость меньше — стоит
+        static constexpr float STANDING_S = 0.3f;             // столько подряд
         // runaway takeoff: сумма PID оси больше доли хода моторов, а гироскоп
         // по ней быстрее порога — RUNAWAY_TRIGGER_S подряд; «спокойно» —
         // сумма PID всех осей меньше RUNAWAY_CALM_PIDSUM
@@ -1675,6 +1700,7 @@ namespace copter
         bool forcedOff = false;          // DISARM защитой — код NOT_DISARMED
         float failsafeTimer = 0.0f;
         float landingTimer = 0.0f;
+        float standingTimer = 0.0f;      // автомат снижается, а коптер стоит (интеграл замирает)
         float crashTimer = 0.0f;
         float lostControlTimer = 0.0f;
         float crashPrevRate[2] = {};
