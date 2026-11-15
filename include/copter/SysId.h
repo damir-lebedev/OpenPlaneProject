@@ -49,7 +49,7 @@ namespace copter
     namespace sysid
     {
         using Cx = std::complex<double>;
-        constexpr double PI = 3.14159265358979323846;
+        constexpr double kPi = 3.14159265358979323846;
 
         // БПФ на месте, длина — степень двойки.
         inline void fft(std::vector<Cx>& x)
@@ -64,7 +64,7 @@ namespace copter
             }
             for (size_t len = 2; len <= n; len <<= 1)
             {
-                const double ang = -2.0 * PI / static_cast<double>(len);
+                const double ang = -2.0 * kPi / static_cast<double>(len);
                 const Cx wl(std::cos(ang), std::sin(ang));
                 for (size_t i = 0; i < n; i += len)
                 {
@@ -135,7 +135,7 @@ namespace copter
             double wPower = 0.0;
             for (size_t i = 0; i < N; ++i)
             {
-                window[i] = 0.5 - 0.5 * std::cos(2.0 * PI * static_cast<double>(i) / static_cast<double>(N));
+                window[i] = 0.5 - 0.5 * std::cos(2.0 * kPi * static_cast<double>(i) / static_cast<double>(N));
                 wPower += window[i] * window[i];
             }
 
@@ -244,7 +244,7 @@ namespace copter
 
             Cx at(double hz) const
             {
-                const double w = 2.0 * PI * hz;
+                const double w = 2.0 * kPi * hz;
                 const Cx jw(0.0, w);
                 return gain * (1.0 + jw * zero) / (jw * (1.0 + jw * tau)) * std::exp(Cx(0.0, -w * delay));
             }
@@ -256,8 +256,8 @@ namespace copter
 
         inline double wrapPi(double a)
         {
-            while (a > PI) a -= 2.0 * PI;
-            while (a < -PI) a += 2.0 * PI;
+            while (a > kPi) a -= 2.0 * kPi;
+            while (a < -kPi) a += 2.0 * kPi;
             return a;
         }
 
@@ -284,7 +284,7 @@ namespace copter
                 for (size_t i = 0; i < pts.size(); ++i)
                 {
                     const Point& p = pts[i];
-                    rho[i] = p.phase + 0.5 * PI + std::atan(p.w * tau) - std::atan(p.w * zero);
+                    rho[i] = p.phase + 0.5 * kPi + std::atan(p.w * tau) - std::atan(p.w * zero);
                 }
                 double best = 1e300, bestT = 0.0;
                 for (double T = 0.0; T <= MAX_DELAY_S; T += 0.0001)
@@ -365,7 +365,7 @@ namespace copter
                 const double mag = std::abs(b.plant);
                 if (!(mag > 0.0)) continue;
                 const double weight = std::fmin(WEIGHT_CAP, b.coherence / (1.0 - b.coherence + 1e-6));
-                pts.push_back({ 2.0 * PI * b.hz, std::log(mag), std::arg(b.plant), weight });
+                pts.push_back({ 2.0 * kPi * b.hz, std::log(mag), std::arg(b.plant), weight });
             }
             out.points = static_cast<int>(pts.size());
             if (pts.size() < 6) return out;

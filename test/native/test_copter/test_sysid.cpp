@@ -51,7 +51,7 @@ namespace
         for (int k = 0; k < samples; ++k)
         {
             const double t = k * SYN_DT;
-            phase += 2.0 * sysid::PI * f0 * std::pow(f1 / f0, t / total) * SYN_DT;
+            phase += 2.0 * sysid::kPi * f0 * std::pow(f1 / f0, t / total) * SYN_DT;
             const double excite = 0.05 * std::sin(phase);
             const double gyro = rate + noiseDps * noise();
             filtered += SYN_FILTER * (gyro - filtered);
@@ -73,7 +73,7 @@ namespace
 void test_sysid_fft_finds_a_sine()
 {
     std::vector<sysid::Cx> x(64);
-    for (int i = 0; i < 64; ++i) x[i] = 3.0 * std::cos(2.0 * sysid::PI * 5.0 * i / 64.0) + 1.0;
+    for (int i = 0; i < 64; ++i) x[i] = 3.0 * std::cos(2.0 * sysid::kPi * 5.0 * i / 64.0) + 1.0;
     sysid::fft(x);
     TEST_ASSERT_FLOAT_WITHIN(1e-9, 64.0, std::abs(x[0]));        // постоянная
     TEST_ASSERT_FLOAT_WITHIN(1e-9, 96.0, std::abs(x[5]));        // амплитуда 3 — N·3/2
@@ -109,9 +109,9 @@ void test_sysid_recovers_a_known_plant_in_closed_loop()
         TEST_ASSERT_TRUE_MESSAGE(b.coherence > 0.6, line);
         const sysid::Cx ratio = b.plant / truth.at(b.hz);
         TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.12, 1.0, std::abs(ratio), line);
-        TEST_ASSERT_FLOAT_WITHIN_MESSAGE(6.0, 0.0, std::arg(ratio) * 180.0 / sysid::PI, line);
+        TEST_ASSERT_FLOAT_WITHIN_MESSAGE(6.0, 0.0, std::arg(ratio) * 180.0 / sysid::kPi, line);
         // фильтр гироскопа — PT1 с коэффициентом SYN_FILTER
-        const sysid::Cx z1 = std::exp(sysid::Cx(0.0, -2.0 * sysid::PI * b.hz * SYN_DT));
+        const sysid::Cx z1 = std::exp(sysid::Cx(0.0, -2.0 * sysid::kPi * b.hz * SYN_DT));
         const sysid::Cx filter = SYN_FILTER / (1.0 - (1.0 - SYN_FILTER) * z1);
         TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.03, std::abs(filter), std::abs(b.gyroFilter), line);
         // контур как летал: L = C·F·G
@@ -143,7 +143,7 @@ void test_autotune_margins_of_a_reference_loop()
     std::vector<sysid::Cx> L;
     for (double f = 0.2; f < 490.0; f *= 1.02)
     {
-        const double w = 2.0 * sysid::PI * f;
+        const double w = 2.0 * sysid::kPi * f;
         hz.push_back(f);
         L.push_back(K / sysid::Cx(0.0, w) * std::exp(sysid::Cx(0.0, -w * T)));
     }
@@ -152,9 +152,9 @@ void test_autotune_margins_of_a_reference_loop()
     snprintf(line, sizeof(line), "reference loop: crossover %.9g Hz, pm %.9g, gm %.9g dB, ms %.9g dB at %.9g Hz", m.crossoverHz, m.phaseMarginDeg,
              m.gainMarginDb, m.sensitivityDb, m.sensitivityHz);
     TEST_MESSAGE(line);
-    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.02, K / (2.0 * sysid::PI), m.crossoverHz, line);
-    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.2, 90.0 - K * T * 180.0 / sysid::PI, m.phaseMarginDeg, line);
-    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.05, 20.0 * std::log10(sysid::PI / (2.0 * T * K)), m.gainMarginDb, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.02, K / (2.0 * sysid::kPi), m.crossoverHz, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.2, 90.0 - K * T * 180.0 / sysid::kPi, m.phaseMarginDeg, line);
+    TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.05, 20.0 * std::log10(sysid::kPi / (2.0 * T * K)), m.gainMarginDb, line);
     // |S| наибольший между срезом и −180°: 1/|1 + L| больше 1 и меньше 1/(1 − 1/запас)
     TEST_ASSERT_TRUE_MESSAGE(m.sensitivityDb > 2.0 && m.sensitivityDb < 5.0, line);
     TEST_ASSERT_TRUE_MESSAGE(m.sensitivityHz > m.crossoverHz, line);

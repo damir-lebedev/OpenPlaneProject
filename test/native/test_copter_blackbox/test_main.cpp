@@ -29,6 +29,7 @@
 #include "helpers/SpiNorFlashChip.h"
 #include "helpers/BflParse.h"
 #include "helpers/BlackBoxParse.h"
+#include "helpers/ChirpFlight.h"
 #include "helpers/QuadHarness.h"
 #include "helpers/TestSupport.h"
 #include "rc/RcReceiver.h"
@@ -479,6 +480,85 @@ namespace
     };
 }
 
+// 168: три полных свипа в журнале — ни одной записи QCHIRP не потеряно, и по
+// самому журналу (целые числа: команда 1e-4 хода, гироскоп 0.1 °/с) коптер
+// измеряется так же, как по точным данным: K, τ и задержка — в пределах 10 %.
+// OPENPLANE_COPTER_CHIRP_DUMP=<файл> — сохранить журнал (сквозная проверка
+// расчёта в OpenPlane Studio: src/core/chirplog.test.ts).
+void test_chirp_sweeps_in_the_log_identify_the_copter()
+{
+    Flight f;
+    TEST_ASSERT_TRUE(f.h.takeoffTo(12.0));
+    f.h.rc.mode = CopterMode::ANGLE;
+    f.h.rc.throttle = f.h.ctl.getStatus().hoverLearned;
+    f.h.run(1.0);
+    TruePlant truth[3];
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        truth[axis] = truePlant(f.h, axis);
+        const ChirpLog log = flyChirp(f.h);
+        TEST_ASSERT_EQUAL(axis, log.axis);
+        TEST_ASSERT_EQUAL(static_cast<int>(ChirpEnd::DONE), static_cast<int>(log.end));
+    }
+    f.h.rc.mode = CopterMode::ALT_HOLD;
+    f.h.rc.throttle = 0.1f;
+    for (int i = 0; i < 40000 && f.h.sim.height() > 0.05; ++i) f.h.step();
+    f.h.run(1.5);
+    f.h.rc.throttle = 0.0f;
+    f.h.rc.armSwitch = false;
+    f.h.run(CopterBlackBox::POSTROLL_MS / 1000.0 + 1.0);
+    for (int i = 0; i < 20000 && f.box.getState() != BlackBoxCore::State::Idle; ++i) f.h.step();
+    TEST_ASSERT_EQUAL(BlackBoxCore::State::Idle, f.box.getState());
+
+    const std::vector<Rec> recs = readFlight(f.storage, 1);
+    if (const char* path = getenv("OPENPLANE_COPTER_CHIRP_DUMP"))
+    {
+        const std::vector<uint8_t> img = f.image();
+        if (FILE* file = fopen(path, "wb"))
+        {
+            fwrite(img.data(), 1, img.size(), file);
+            fclose(file);
+            TEST_MESSAGE("chirp log written");
+        }
+    }
+    TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "очередь переполнена"));
+    std::vector<double> r[3], u[3], y[3], yf[3];
+    for (const Rec& rec : recs)
+    {
+        if (rec.type != REC_QCHIRP) continue;
+        const BlackBoxFormat::CopterChirpRecord q = rec.as<BlackBoxFormat::CopterChirpRecord>();
+        TEST_ASSERT_TRUE(q.axis < 3);
+        TEST_ASSERT_EQUAL(q.axis + 1, q.run);
+        r[q.axis].push_back(q.excite / 1e4);
+        u[q.axis].push_back(q.command / 1e4);
+        y[q.axis].push_back(q.gyro / 10.0);
+        yf[q.axis].push_back(q.gyroF / 10.0);
+    }
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const sysid::Response resp = sysid::estimate(r[axis], u[axis], y[axis], yf[axis], 1000.0);
+        const sysid::Plant p = sysid::fit(resp, axis == 2);
+        char line[220];
+        snprintf(line, sizeof(line), "from the log, axis %d: %d records, K %.0f (true %.0f), tau %.1f ms (%.1f), delay %.2f ms (%.2f), fit rms %.3f on %d bands", axis,
+                 static_cast<int>(r[axis].size()), p.gain, truth[axis].gain, p.tau * 1e3, truth[axis].tau * 1e3, p.delay * 1e3,
+                 truth[axis].delay * 1e3, p.error, p.points);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_INT_WITHIN_MESSAGE(3, 20000, static_cast<int>(r[axis].size()), line);
+        TEST_ASSERT_TRUE_MESSAGE(p.valid() && p.points >= 40, line);
+        TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.10 * truth[axis].delay, truth[axis].delay, p.delay, line);
+        if (axis < 2)
+        {
+            TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.10 * truth[axis].gain, truth[axis].gain, p.gain, line);
+            TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.10 * truth[axis].tau, truth[axis].tau, p.tau, line);
+        }
+    }
+    // заголовок: то, по чему Studio восстанавливает регулятор
+    TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "pid.roll="));
+    TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "filter.dterm="));
+    TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "tune.level_gain="));
+    TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "rates.yaw="));
+}
+
 void test_spi_nor_flash_driver()
 {
     SPIClass spi;
@@ -546,6 +626,7 @@ int main()
     UNITY_BEGIN();
     RUN_TEST(test_bfl_writer_encoding);
     RUN_TEST(test_simulated_flight_is_in_the_log);
+    RUN_TEST(test_chirp_sweeps_in_the_log_identify_the_copter);
     RUN_TEST(test_spi_nor_flash_driver);
     return UNITY_END();
 }

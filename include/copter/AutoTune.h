@@ -66,7 +66,7 @@ namespace copter
     namespace autotune
     {
         using sysid::Cx;
-        using sysid::PI;
+        using sysid::kPi;
 
         constexpr double FF_LPF_HZ = 25.0;   // ФНЧ скорости уставки в упреждении (RateController.h)
 
@@ -83,10 +83,10 @@ namespace copter
         inline Cx lowpassAt(const Stage& s, double hz, double dt)
         {
             if (s.hz <= 0.0 || s.hz >= 0.49 / dt) return Cx(1.0, 0.0);
-            const Cx z1 = std::exp(Cx(0.0, -2.0 * PI * hz * dt));   // z⁻¹
+            const Cx z1 = std::exp(Cx(0.0, -2.0 * kPi * hz * dt));   // z⁻¹
             if (s.type == BIQUAD)
             {
-                const double omega = 2.0 * PI * s.hz * dt;
+                const double omega = 2.0 * kPi * s.hz * dt;
                 const double sn = std::sin(omega), cs = std::cos(omega);
                 const double alpha = sn / (2.0 * 0.70710678);
                 const double a0 = 1.0 + alpha;
@@ -96,7 +96,7 @@ namespace copter
             }
             const int order = s.type == PT3 ? 3 : s.type == PT2 ? 2 : 1;
             const double correction = order == 2 ? 1.553773974 : order == 3 ? 1.961459177 : 1.0;
-            const double k = 1.0 - std::exp(-2.0 * PI * s.hz * correction * dt);
+            const double k = 1.0 - std::exp(-2.0 * kPi * s.hz * correction * dt);
             const Cx one = k / (1.0 - (1.0 - k) * z1);
             Cx r = one;
             for (int i = 1; i < order; ++i) r *= one;
@@ -108,10 +108,10 @@ namespace copter
         {
             if (centerHz <= 0.0 || cutoffHz <= 0.0 || cutoffHz >= centerHz || centerHz >= 0.49 / dt) return Cx(1.0, 0.0);
             const double q = centerHz * cutoffHz / (centerHz * centerHz - cutoffHz * cutoffHz);
-            const double omega = 2.0 * PI * centerHz * dt;
+            const double omega = 2.0 * kPi * centerHz * dt;
             const double alpha = std::sin(omega) / (2.0 * q), cs = std::cos(omega);
             const double a0 = 1.0 + alpha;
-            const Cx z1 = std::exp(Cx(0.0, -2.0 * PI * hz * dt));
+            const Cx z1 = std::exp(Cx(0.0, -2.0 * kPi * hz * dt));
             return (1.0 / a0 - 2.0 * cs / a0 * z1 + 1.0 / a0 * z1 * z1) / (1.0 - 2.0 * cs / a0 * z1 + (1.0 - alpha) / a0 * z1 * z1);
         }
 
@@ -132,13 +132,13 @@ namespace copter
             // D-часть: от гироскопа (после фильтров) к команде, без знака
             Cx dPathAt(double hz) const
             {
-                const Cx z1 = std::exp(Cx(0.0, -2.0 * PI * hz * dt));
+                const Cx z1 = std::exp(Cx(0.0, -2.0 * kPi * hz * dt));
                 return d * (1.0 - z1) / dt * dFilterAt(hz);
             }
             // C(z): от гироскопа после фильтров к команде (обратная связь, без знака)
             Cx at(double hz) const
             {
-                const Cx z1 = std::exp(Cx(0.0, -2.0 * PI * hz * dt));
+                const Cx z1 = std::exp(Cx(0.0, -2.0 * kPi * hz * dt));
                 Cx c = p + i * dt / (1.0 - z1) + dPathAt(hz);
                 if (outputLpfHz > 0.0) c *= lowpassAt({ PT1, outputLpfHz }, hz, dt);
                 return c;
@@ -148,7 +148,7 @@ namespace copter
             Cx angleAt(double hz) const
             {
                 if (levelGain <= 0.0) return Cx(0.0, 0.0);
-                const Cx z1 = std::exp(Cx(0.0, -2.0 * PI * hz * dt));
+                const Cx z1 = std::exp(Cx(0.0, -2.0 * kPi * hz * dt));
                 const Cx integrator = dt / (1.0 - z1);
                 return (p + i * integrator) * levelGain * integrator + ff * levelGain * lowpassAt({ PT1, FF_LPF_HZ }, hz, dt);
             }
@@ -167,8 +167,8 @@ namespace copter
                 double ph = std::arg(v);
                 if (!phase.empty())
                 {
-                    while (ph - phase.back() > PI) ph -= 2.0 * PI;
-                    while (ph - phase.back() < -PI) ph += 2.0 * PI;
+                    while (ph - phase.back() > kPi) ph -= 2.0 * kPi;
+                    while (ph - phase.back() < -kPi) ph += 2.0 * kPi;
                 }
                 hz.push_back(f);
                 lnMag.push_back(std::log(m));
@@ -250,15 +250,15 @@ namespace copter
             if (hz.size() < 2) return m;
             double prevMag = std::abs(L[0]), prevPhase = std::arg(L[0]);
             // далеко внизу контур с интегралом — двойной интегратор: фаза у −180°, а не у +180°
-            if (prevPhase > 0.0) prevPhase -= 2.0 * PI;
+            if (prevPhase > 0.0) prevPhase -= 2.0 * kPi;
             double peak = 1.0 / std::abs(1.0 + L[0]);
             m.sensitivityHz = hz[0];
             for (size_t k = 1; k < hz.size(); ++k)
             {
                 const double mag = std::abs(L[k]);
                 double phase = std::arg(L[k]);
-                while (phase - prevPhase > PI) phase -= 2.0 * PI;
-                while (phase - prevPhase < -PI) phase += 2.0 * PI;
+                while (phase - prevPhase > kPi) phase -= 2.0 * kPi;
+                while (phase - prevPhase < -kPi) phase += 2.0 * kPi;
                 const double s = 1.0 / std::abs(1.0 + L[k]);
                 if (s > peak)
                 {
@@ -269,15 +269,15 @@ namespace copter
                 {
                     const double t = std::log(prevMag) / (std::log(prevMag) - std::log(mag));
                     const double at = hz[k - 1] * std::pow(hz[k] / hz[k - 1], t);
-                    const double pm = 180.0 + (prevPhase + t * (phase - prevPhase)) * 180.0 / PI;
+                    const double pm = 180.0 + (prevPhase + t * (phase - prevPhase)) * 180.0 / kPi;
                     if (m.crossoverHz == 0.0 && prevMag > mag) m.crossoverHz = at;
                     m.phaseMarginDeg = std::fmin(m.phaseMarginDeg, pm);
                 }
                 // фаза прошла −180° − 360°·n
-                const double a = (prevPhase + PI) / (2.0 * PI), b = (phase + PI) / (2.0 * PI);
+                const double a = (prevPhase + kPi) / (2.0 * kPi), b = (phase + kPi) / (2.0 * kPi);
                 if (std::floor(a) != std::floor(b))
                 {
-                    const double edge = (prevPhase > phase ? std::floor(a) : std::floor(b)) * 2.0 * PI - PI;
+                    const double edge = (prevPhase > phase ? std::floor(a) : std::floor(b)) * 2.0 * kPi - kPi;
                     const double t = (edge - prevPhase) / (phase - prevPhase);
                     const double at = std::exp(std::log(prevMag) + t * (std::log(mag) - std::log(prevMag)));
                     m.gainMarginDb = std::fmin(m.gainMarginDb, std::fabs(20.0 * std::log10(at)));
@@ -383,7 +383,7 @@ namespace copter
             const double h = dt / SUB;
             // задержка фильтров гироскопа: наклон фазы у 20 Гц
             const double f0 = 20.0;
-            const double gyroDelay = std::fmax(0.0, -std::arg(a.gyroFilter.at(f0)) / (2.0 * PI * f0));
+            const double gyroDelay = std::fmax(0.0, -std::arg(a.gyroFilter.at(f0)) / (2.0 * kPi * f0));
             // задержка объекта меряна «в том же цикле»: полцикла из неё — удержание
             // команды, оно здесь получается само
             const double delay = std::fmax(0.0, g.delay - 0.5 * dt) + gyroDelay;
@@ -391,7 +391,7 @@ namespace copter
             std::vector<double> queue(static_cast<size_t>(line), 0.0);
             size_t head = 0;
 
-            const auto pt1 = [dt](double hz) { return 1.0 - std::exp(-2.0 * PI * hz * dt); };
+            const auto pt1 = [dt](double hz) { return 1.0 - std::exp(-2.0 * kPi * hz * dt); };
             const double kSp = pt1(STEP_SETPOINT_HZ * 1.961459177), kFf = pt1(FF_LPF_HZ), kRelax = pt1(RELAX_HZ);
             const double kOut = c.outputLpfHz > 0.0 ? pt1(c.outputLpfHz) : 1.0;
             // ФНЧ D: до двух ступеней PT1…PT3 (биквад — как PT2 на той же частоте)
@@ -520,7 +520,7 @@ namespace copter
                 for (size_t k = 0; k < n; ++k)
                 {
                     const double f = hz[k];
-                    const Cx z1 = std::exp(Cx(0.0, -2.0 * PI * f * base.dt));
+                    const Cx z1 = std::exp(Cx(0.0, -2.0 * kPi * f * base.dt));
                     const Cx g = withPlant ? a.plant.at(f) : Cx(1.0, 0.0);
                     t.integrator[k] = base.dt / (1.0 - z1);
                     t.dPath[k] = unit.dPathAt(f);
@@ -591,7 +591,7 @@ namespace copter
                 Controller c = base;
                 c.ff = 0.0;
                 c.p = 1.0;
-                c.i = 2.0 * PI * crossoverHz * iRatio;
+                c.i = 2.0 * kPi * crossoverHz * iRatio;
                 c.d = dOverP;
                 const double mag = std::abs(c.at(crossoverHz) * a.gyroFilter.at(crossoverHz) * a.plant.at(crossoverHz));
                 const double p = mag > 0.0 ? 1.0 / mag : 0.0;

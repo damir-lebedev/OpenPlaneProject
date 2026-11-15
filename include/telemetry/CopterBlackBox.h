@@ -704,6 +704,7 @@ private:
              static_cast<double>(copter::gainToBf(copter::PidTerm::D, 1, t.pid.dMax[1])),
              static_cast<double>(copter::gainToBf(copter::PidTerm::D, 2, t.pid.dMax[2])));
         info("model.k=%.1f %.1f %.1f", static_cast<double>(t.kRoll), static_cast<double>(t.kPitch), static_cast<double>(t.kYaw));
+        info("tune.level_gain=%.2f", static_cast<double>(t.levelGain));
         info("model.motor_tau_ms=%.1f", static_cast<double>(t.motorTauS * 1000.0f));
         info("filter.notch_q=%.1f", static_cast<double>(t.notchQ));
         info("model.crossover_hz=%.1f", static_cast<double>(t.crossoverHzRP));
