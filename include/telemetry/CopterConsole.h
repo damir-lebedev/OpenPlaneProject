@@ -443,6 +443,7 @@ private:
             case 'i':
                 if (refuseArmed()) return;
                 imu.calibrate();
+                ctl.gyroRecalibrated();
                 break;
             case 'c':
                 if (refuseArmed()) return;

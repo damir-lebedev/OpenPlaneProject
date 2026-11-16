@@ -1,0 +1,219 @@
+### version
+version
+# Betaflight / STM32F405 (S405) 4.5.1 Sep 28 2024 / 02:36:24 (77d01ba3b) MSP API: 1.46
+# board: manufacturer_id: JFPV, board_name: JXFPVF405V3
+
+# 
+### status
+status
+MCU F40X Clock=168MHz (PLLP-HSI), Vref=3.26V, Core temp=53degC
+Stack size: 2048, Stack address: 0x1000fff0
+Configuration: CONFIGURED, size: 4073, max available: 16384
+Devices detected: SPI:1, I2C:1
+Gyros detected: gyro 1
+GYRO=ICM42688P, ACC=ICM42688P, BARO=DPS310
+OSD: MAX7456 (30 x 13)
+System Uptime: 175 seconds
+CPU:59%, cycle time: 125, GYRO rate: 8000, RX rate: 15, System rate: 10
+Voltage: 2224 * 0.01V (6S battery - OK)
+I2C Errors: 0
+FLASH: JEDEC ID=0x00ef4018 16M
+GPS: NOT ENABLED
+Arming disable flags: RXLOSS CLI
+
+# 
+### resource
+resource
+resource BEEPER 1 B00
+resource MOTOR 1 A15
+resource MOTOR 2 A10
+resource MOTOR 3 A09
+resource MOTOR 4 A08
+resource MOTOR 5 C09
+resource MOTOR 6 C08
+resource MOTOR 7 B11
+resource MOTOR 8 B10
+resource LED_STRIP 1 B01
+resource SERIAL_TX 1 B06
+resource SERIAL_TX 2 A02
+resource SERIAL_TX 3 C10
+resource SERIAL_TX 4 A00
+resource SERIAL_TX 5 C12
+resource SERIAL_TX 6 C06
+resource SERIAL_RX 1 B07
+resource SERIAL_RX 2 A03
+resource SERIAL_RX 3 C11
+resource SERIAL_RX 4 A01
+resource SERIAL_RX 5 D02
+resource SERIAL_RX 6 C07
+resource I2C_SCL 1 B08
+resource I2C_SDA 1 B09
+resource LED 1 C15
+resource LED 2 C14
+resource SPI_SCK 1 A05
+resource SPI_SCK 2 B13
+resource SPI_SCK 3 B03
+resource SPI_SDI 1 A06
+resource SPI_SDI 2 B14
+resource SPI_SDI 3 B04
+resource SPI_SDO 1 A07
+resource SPI_SDO 2 B15
+resource SPI_SDO 3 B05
+resource ADC_BATT 1 C00
+resource ADC_RSSI 1 C02
+resource ADC_CURR 1 C01
+resource PINIO 1 C04
+resource PINIO 2 C05
+resource FLASH_CS 1 C13
+resource OSD_CS 1 B12
+resource GYRO_CS 1 A04
+resource USB_DETECT 1 C03
+
+# 
+### resource show all
+resource show all
+Currently active IO resource assignments:
+(reboot to update)
+--------------------
+A00: FREE
+A01: FREE
+A02: SERIAL_TX 2
+A03: SERIAL_RX 2
+A04: GYRO_CS 1
+A05: SPI_SCK 1
+A06: SPI_SDI 1
+A07: SPI_SDO 1
+A08: MOTOR 4
+A09: MOTOR 3
+A10: MOTOR 2
+A11: USB
+A12: USB
+A13: SWD
+A14: SWD
+A15: MOTOR 1
+B00: BEEPER
+B01: LED_STRIP
+B02: FREE
+B03: SPI_SCK 3
+B04: SPI_SDI 3
+B05: SPI_SDO 3
+B06: FREE
+B07: FREE
+B08: I2C_SCL 1
+B09: I2C_SDA 1
+B10: FREE
+B11: FREE
+B12: OSD_CS
+B13: SPI_SCK 2
+B14: SPI_SDI 2
+B15: SPI_SDO 2
+C00: ADC_BATT
+C01: ADC_CURR
+C02: FREE
+C03: FREE
+C04: PINIO 1
+C05: PINIO 2
+C06: FREE
+C07: FREE
+C08: FREE
+C09: FREE
+C10: FREE
+C11: FREE
+C12: FREE
+C13: FLASH_CS
+C14: LED 2
+C15: LED 1
+D00: FREE
+D01: FREE
+D02: SERIAL_RX 5
+D03: FREE
+D04: FREE
+D05: FREE
+D06: FREE
+D07: FREE
+D08: FREE
+D09: FREE
+D10: FREE
+D11: FREE
+D12: FREE
+D13: FREE
+D14: FREE
+D15: FREE
+E00: FREE
+E01: FREE
+E02: FREE
+E03: FREE
+E04: FREE
+E05: FREE
+E06: FREE
+E07: FREE
+E08: FREE
+E09: FREE
+E10: FREE
+E11: FREE
+E12: FREE
+E13: FREE
+E14: FREE
+E15: FREE
+F00: FREE
+F01: FREE
+F02: FREE
+F03: FREE
+F04: FREE
+F05: FREE
+F06: FREE
+F07: FREE
+F08: FREE
+F09: FREE
+F10: FREE
+F11: FREE
+F12: FREE
+F13: FREE
+F14: FREE
+F15: FREE
+
+Currently active Timers:
+-----------------------
+TIM1:
+    CH1 : MOTOR 4
+    CH2 : MOTOR 3
+    CH3 : MOTOR 2
+TIM2:
+    CH1 : MOTOR 1
+TIM3:
+    CH4 : LED_STRIP
+TIM4: FREE
+TIM5: FREE
+TIM6: FREE
+TIM7: FREE
+TIM8: FREE
+TIM9: FREE
+TIM10: FREE
+TIM11: FREE
+TIM12: FREE
+TIM13: FREE
+TIM14: FREE
+
+Currently active DMA:
+--------------------
+DMA1 Stream 0: SPI_SDI 3
+DMA1 Stream 1: FREE
+DMA1 Stream 2: LED_STRIP
+DMA1 Stream 3: SPI_SDI 2
+DMA1 Stream 4: SPI_SDO 2
+DMA1 Stream 5: SPI_SDO 3
+DMA1 Stream 6: FREE
+DMA1 Stream 7: TIMUP 2
+DMA2 Stream 0: ADC 3
+DMA2 Stream 1: FREE
+DMA2 Stream 2: SPI_SDI 1
+DMA2 Stream 3: SPI_SDO 1
+DMA2 Stream 4: FREE
+DMA2 Stream 5: TIMUP 1
+DMA2 Stream 6: FREE
+DMA2 Stream 7: FREE
+
+# 
+### dump hardware
+
+### diff all

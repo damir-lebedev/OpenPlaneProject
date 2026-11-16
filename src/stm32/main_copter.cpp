@@ -593,6 +593,7 @@ static void runStickCommand(const copter::StickCommand& c)
         case StickAction::NONE: return;
         case StickAction::CALIBRATE_GYRO:
             imuSensor.calibrate();
+            copterController.gyroRecalibrated();
             if (baroSensor.isAvailable()) baroSensor.calibrateAltitude();
             beeper.event(BeeperCondition::GYRO_CALIBRATED);
             return;
@@ -1136,7 +1137,7 @@ static void setupBlackBox()
     copterBlackBox.setGps(&gps, &gpsHome);
     copterBlackBox.setSensors(&imuSensor, &baroSensor);
 #if defined(ARDUINO_ARCH_STM32)
-    copterBlackBox.begin(true, reinterpret_cast<uint8_t*>(0x10000000u), Config::BLACKBOX_RING_F405_BYTES);   // CCM
+    copterBlackBox.begin(true, reinterpret_cast<uint8_t*>(Config::F405_CCM_BASE), Config::BLACKBOX_RING_F405_BYTES);   // CCM
 #else
     copterBlackBox.begin(true, nullptr, Config::BLACKBOX_RING_F405_BYTES);
 #endif
@@ -1272,11 +1273,24 @@ void setup()
 
     // Стеки задач берутся из остатка ОЗУ: не хватило — сказать прямо, а не молчать
     // (на F405 его мало; без задачи OSD нет экрана, без flight не летает ничего).
-    bool tasksOk = Rtos::startTask(flightTask, "flight", 16384, nullptr, Rtos::PRIORITY_FLIGHT);
-    tasksOk = Rtos::startTask(storageTask, "storage", 2048, nullptr, Rtos::PRIORITY_BACKGROUND) && tasksOk;
+#if defined(BOARD_STM32F405)
+    // F405: после статики в основных 128 КБ остаётся ~19 КБ кучи — стекам
+    // 16 + 2 + 3 КБ мало. Стеки — в CCM за очередью ящика (DMA их не касается).
+    Rtos::StackArena ccm(Config::F405_CCM_STACKS_BASE, Config::F405_CCM_STACKS_BYTES);
+    auto start = [&ccm](TaskFunction_t fn, const char* name, uint32_t bytes, UBaseType_t prio) {
+        StackType_t* stack = ccm.take(bytes);
+        return stack ? Rtos::startTaskStatic(fn, name, stack, bytes, nullptr, prio) : Rtos::startTask(fn, name, bytes, nullptr, prio);
+    };
+#else
+    auto start = [](TaskFunction_t fn, const char* name, uint32_t bytes, UBaseType_t prio) {
+        return Rtos::startTask(fn, name, bytes, nullptr, prio);
+    };
+#endif
+    bool tasksOk = start(flightTask, "flight", 16384, Rtos::PRIORITY_FLIGHT);
+    tasksOk = start(storageTask, "storage", 2048, Rtos::PRIORITY_BACKGROUND) && tasksOk;
     if (osdChip.isPresent() || devicePort.isOpen())
     {
-        tasksOk = Rtos::startTask(osdTask, "osd", 3072, nullptr, Rtos::PRIORITY_BACKGROUND) && tasksOk;
+        tasksOk = start(osdTask, "osd", 3072, Rtos::PRIORITY_BACKGROUND) && tasksOk;
     }
     if (!tasksOk) Serial.println("ОШИБКА: не хватило памяти на задачи (flight / storage / osd) — прошивка работает не полностью");
     vTaskStartScheduler();   // не возвращается

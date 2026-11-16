@@ -307,13 +307,21 @@ namespace Config
     // самолёта M1 — мотор, M2…M7 — сервы. Приёмник, GPS и телеметрия — на тех
     // UART, где их держал Betaflight (`serial` в дампе). Датчики на плате —
     // набор SENSOR_KIT_BF_BOARD: гироскоп на SPI, барометр на I2C.
-    constexpr int16_t BOARD_UART_TX[7] = { -1, OPB_UART1_TX, OPB_UART2_TX, OPB_UART3_TX, OPB_UART4_TX, OPB_UART5_TX, OPB_UART6_TX };
-    constexpr int16_t BOARD_UART_RX[7] = { -1, OPB_UART1_RX, OPB_UART2_RX, OPB_UART3_RX, OPB_UART4_RX, OPB_UART5_RX, OPB_UART6_RX };
+    //
+    // STM32duino по номеру ножки берёт ПЕРВУЮ периферию из PeripheralPins:
+    // PB3/PB4/PB5 — это SPI1 (AF5), а не SPI3; PC10/PC11 — UART4, а не USART3.
+    // Без варианта _ALT1 флеш на SPI3 (PB3–PB5) перенастраивал шину гироскопа
+    // SPI1 и не отвечал (JEDEC 0xFFFFFF) — на столе с GETFUN F405V3, 2026-11-16.
+    constexpr int16_t pinAlt1(int16_t pin) { return pin < 0 ? pin : static_cast<int16_t>(pin | ALT1); }
+    constexpr int16_t spi3Pin(int16_t pin) { return pin == PB3 || pin == PB4 || pin == PB5 ? pinAlt1(pin) : pin; }
+    constexpr int16_t uart3Pin(int16_t pin) { return pin == PC10 || pin == PC11 ? pinAlt1(pin) : pin; }
+    constexpr int16_t BOARD_UART_TX[7] = { -1, OPB_UART1_TX, OPB_UART2_TX, uart3Pin(OPB_UART3_TX), OPB_UART4_TX, OPB_UART5_TX, OPB_UART6_TX };
+    constexpr int16_t BOARD_UART_RX[7] = { -1, OPB_UART1_RX, OPB_UART2_RX, uart3Pin(OPB_UART3_RX), OPB_UART4_RX, OPB_UART5_RX, OPB_UART6_RX };
     constexpr int16_t BOARD_MOTORS[8] = { OPB_MOTOR_PINS };   // недостающие — 0, см. boardMotor()
     constexpr int16_t boardMotor(uint8_t n) { return n < OPB_MOTOR_COUNT ? BOARD_MOTORS[n] : -1; }
-    constexpr int16_t BOARD_SPI_SCK[4] = { -1, OPB_SPI1_SCK, OPB_SPI2_SCK, OPB_SPI3_SCK };
-    constexpr int16_t BOARD_SPI_MISO[4] = { -1, OPB_SPI1_MISO, OPB_SPI2_MISO, OPB_SPI3_MISO };
-    constexpr int16_t BOARD_SPI_MOSI[4] = { -1, OPB_SPI1_MOSI, OPB_SPI2_MOSI, OPB_SPI3_MOSI };
+    constexpr int16_t BOARD_SPI_SCK[4] = { -1, OPB_SPI1_SCK, OPB_SPI2_SCK, spi3Pin(OPB_SPI3_SCK) };
+    constexpr int16_t BOARD_SPI_MISO[4] = { -1, OPB_SPI1_MISO, OPB_SPI2_MISO, spi3Pin(OPB_SPI3_MISO) };
+    constexpr int16_t BOARD_SPI_MOSI[4] = { -1, OPB_SPI1_MOSI, OPB_SPI2_MOSI, spi3Pin(OPB_SPI3_MOSI) };
     constexpr int16_t BOARD_I2C_SDA[4] = { -1, OPB_I2C1_SDA, OPB_I2C2_SDA, OPB_I2C3_SDA };
     constexpr int16_t BOARD_I2C_SCL[4] = { -1, OPB_I2C1_SCL, OPB_I2C2_SCL, OPB_I2C3_SCL };
 
@@ -1310,9 +1318,18 @@ namespace Config
     // иногда длится десятки мс, при чистке внутри карты — до сотни).
     constexpr uint32_t BLACKBOX_RING_STM32_BYTES = 384UL * 1024;
 
-    // STM32F405: очередь — в CCM RAM (64 КБ, main_copter.cpp): ~1 с потока
+    // STM32F405: очередь — в CCM RAM (64 КБ, main_copter.cpp): ~0.7 с потока
     // коптера при 1/1 — флеш пишет страницу за доли мс, запаса хватает.
-    constexpr uint32_t BLACKBOX_RING_F405_BYTES = 60UL * 1024;
+    // Остаток CCM — стеки задач (F405_CCM_STACKS_*): в основных 128 КБ
+    // после статики их не помещалось, задачи не создавались и прошивка
+    // молчала (стол, GETFUN F405V3, 2026-11-16).
+    constexpr uint32_t BLACKBOX_RING_F405_BYTES = 40UL * 1024;
+    constexpr uint32_t F405_CCM_BASE = 0x10000000UL;
+    constexpr uint32_t F405_CCM_STACKS_BASE = 0x1000A000UL;   // сразу за очередью ящика
+    // до конца CCM без последнего килобайта: там метка загрузчика DFU (bootloader.cpp)
+    constexpr uint32_t F405_CCM_STACKS_BYTES = 23UL * 1024;
+    static_assert(F405_CCM_STACKS_BASE == F405_CCM_BASE + BLACKBOX_RING_F405_BYTES, "стеки — сразу за очередью ящика");
+    static_assert(F405_CCM_STACKS_BASE + F405_CCM_STACKS_BYTES <= F405_CCM_BASE + 63UL * 1024, "последний КБ CCM — метка DFU");
 
     // STM32H743: файл на карте и потолок его используемой части. Время
     // сверки секторов при включении растёт вместе с областью (~0.15 мс

@@ -1028,6 +1028,27 @@ void test_attitude_ekf_finds_gyro_bias_on_the_ground()
     TEST_ASSERT_EQUAL_FLOAT(0.0f, m.gyroBiasDps(0));
 }
 
+// Стол, GETFUN F405V3: фильтр выучил смещение, потом нуль гироскопа
+// откалибровали заново ('i') — без forgetGyroBias() старая поправка
+// вычиталась из уже чистого гироскопа и уводила горизонт; курс — навсегда.
+void test_attitude_forgets_bias_after_gyro_recalibration()
+{
+    AttitudeQuat a;
+    a.setEkf(true);
+    float acc[3], biased[3] = { 1.5f, -1.0f, 0.0f }, clean[3] = { 0, 0, 0 };
+    accelFor(0.0f, 0.0f, acc);
+    for (int i = 0; i < 10000; ++i) a.update(biased, acc, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(0.15f, 1.5f, a.gyroBiasDps(0));
+    a.forgetGyroBias();
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, a.gyroBiasDps(0));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, a.gyroBiasDps(1));
+    const float yaw0 = a.yawDeg();
+    for (int i = 0; i < 2000; ++i) a.update(clean, acc, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(0.2f, 0.0f, a.rollDeg());   // без сброса ушёл бы на ~0.3°/с·с
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 0.0f, a.gyroBiasDps(0));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, yaw0, a.yawDeg());
+}
+
 // 067, MEKF: в полёте акселерометр показывает тягу, а она идёт по оси рамы —
 // «ровно» при любом наклоне. Махони за 3 с утягивает горизонт к «ровно»,
 // MEKF знает, что тяга — не тяжесть. С ускорением по GPS и курсом вираж —
@@ -8519,6 +8540,7 @@ int main()
     RUN_TEST(test_attitude_accelerometer_pulls_slowly_and_only_near_1g);
     RUN_TEST(test_attitude_trust_fades_with_gps_accel_or_tilt);
     RUN_TEST(test_attitude_ekf_finds_gyro_bias_on_the_ground);
+    RUN_TEST(test_attitude_forgets_bias_after_gyro_recalibration);
     RUN_TEST(test_attitude_ekf_thrust_is_not_gravity_and_gps_acceleration_helps);
     RUN_TEST(test_chirp_sweeps_frequency_and_respects_limits);
     RUN_TEST(test_sysid_fft_finds_a_sine);

@@ -397,7 +397,7 @@ class CopterManifestTest(unittest.TestCase):
         self.assertEqual("longrange7li", getfun["build"])
         self.assertEqual("MULTISHOT", getfun["esc"])
         self.assertEqual("dfu", getfun["uploadProtocol"])
-        self.assertTrue(getfun["needsBoardDump"])   # заглушка с #error, пока нет дампа с платы
+        self.assertFalse(getfun["needsBoardDump"])   # распиновка снята с платы 2026-11-16 (была заглушка с #error)
         self.assertIn("GETFUN", getfun["title"])
         self.assertFalse(copters["aocodarc-f405v3-quad"]["needsBoardDump"])
         builds = {b["id"]: b for b in manifest["copters"]["builds"]}

@@ -1031,6 +1031,8 @@ namespace copter
         const GyroFilter& getGyroFilter() const { return gyroFilter; }
         // ориентация — компасу: поле из осей рамы в земные (copter/Compass.h)
         const AttitudeQuat& getAttitude() const { return attitude; }
+        // нуль гироскопа откалиброван заново — фильтр забывает выученное смещение
+        void gyroRecalibrated() { attitude.forgetGyroBias(); }
         const Chirp& getChirp() const { return chirp; }
         const PositionEstimator& getPosition() const { return position; }
         bool isArmed() const { return status.state != CopterState::DISARMED; }

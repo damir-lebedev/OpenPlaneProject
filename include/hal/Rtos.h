@@ -42,6 +42,47 @@ namespace Rtos
 #endif
     }
 
+#if defined(OP_STM32) && configSUPPORT_STATIC_ALLOCATION
+    // Задача со стеком в заданной памяти (F405: CCM-ОЗУ — куча в основных
+    // 128 КБ не вмещает стеки коптера). TCB — из пула здесь. Нужен
+    // configSUPPORT_STATIC_ALLOCATION = 1 (platformio.ini, env F405) и
+    // память задач idle/таймеров (src/stm32/rtos_static.cpp).
+    inline bool startTaskStatic(TaskFunction_t function, const char* name, StackType_t* stack, uint32_t stackBytes,
+                                void* arg, UBaseType_t priority = PRIORITY_BACKGROUND, TaskHandle_t* handle = nullptr)
+    {
+        static StaticTask_t tcbs[6];
+        static uint8_t used = 0;
+        if (used >= sizeof(tcbs) / sizeof(tcbs[0])) return false;
+        TaskHandle_t h = xTaskCreateStatic(function, name, stackBytes / sizeof(StackType_t), arg, priority, stack, &tcbs[used]);
+        if (!h) return false;
+        ++used;
+        if (handle) *handle = h;
+        return true;
+    }
+
+    // Нарезка области памяти под стеки (по 8 байт, как требует ARM EABI).
+    class StackArena
+    {
+    public:
+        StackArena(uintptr_t base, uint32_t bytes) : next(base), end(base + bytes) {}
+
+        StackType_t* take(uint32_t bytes)
+        {
+            bytes = (bytes + 7u) & ~7u;
+            if (next + bytes > end) return nullptr;
+            StackType_t* p = reinterpret_cast<StackType_t*>(next);
+            next += bytes;
+            return p;
+        }
+
+        uint32_t left() const { return static_cast<uint32_t>(end - next); }
+
+    private:
+        uintptr_t next;
+        uintptr_t end;
+    };
+#endif
+
     // Подождать ms, отдав процессор другим задачам. До запуска планировщика
     // (setup() на STM32) — обычный delay().
     inline void sleepMs(uint32_t ms)

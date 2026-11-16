@@ -419,6 +419,28 @@ void test_icm42688_over_spi_is_configured_and_read()
     TEST_ASSERT_FLOAT_WITHIN(0.05f, 35.0f, icm.getImuData().temperature);
 }
 
+// Гироскоп ещё не запустился — чип отдаёт 0x8000. Это не данные: в нуль
+// калибровки их брать нельзя (стол, GETFUN F405V3: нуль был −454 °/с).
+void test_icm42688_ignores_not_ready_samples()
+{
+    SpiRig rig(Config::PIN_SPI_CS_IMU, 0);
+    rig.chip.regs[0x75] = 0x47;
+    setIcm(rig.chip.regs, 0, 0, 1, 0, 0);
+    SpiRegisterDevice device = ICM42688_Sensor::spiDevice(rig.bus, Config::PIN_SPI_CS_IMU);
+    ICM42688_Sensor icm(device);
+    const uint32_t t0 = millis();
+    TEST_ASSERT_TRUE(icm.begin());
+    TEST_ASSERT_TRUE(millis() - t0 >= 50);   // ждёт запуска гироскопа
+    for (uint8_t reg : { 0x25, 0x27, 0x29 })
+    {
+        rig.chip.regs[reg] = 0x80;
+        rig.chip.regs[reg + 1] = 0x00;
+    }
+    takeSerial();
+    icm.calibrate();
+    TEST_ASSERT_TRUE(contains(takeSerial(), "калибровка не удалась"));
+}
+
 void test_icm42688_rejects_wrong_or_missing_chip()
 {
     SpiRig rig(Config::PIN_SPI_CS_IMU, 0);
@@ -585,6 +607,7 @@ int main()
     RUN_TEST(test_orientation_calibration_times_out_without_poses);
     RUN_TEST(test_mounting_mismatch_after_board_moved);
     RUN_TEST(test_icm42688_over_spi_is_configured_and_read);
+    RUN_TEST(test_icm42688_ignores_not_ready_samples);
     RUN_TEST(test_icm42688_rejects_wrong_or_missing_chip);
     RUN_TEST(test_orientation_nvs_round_trip_and_validation);
     RUN_TEST(test_orientation_describe_and_degenerate_inputs);

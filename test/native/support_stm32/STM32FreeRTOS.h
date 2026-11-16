@@ -11,6 +11,7 @@
 #include <Arduino.h>
 
 typedef uint32_t StackType_t;
+#define configSUPPORT_STATIC_ALLOCATION 1
 #define configSTACK_DEPTH_TYPE uint16_t
 
 namespace fake
@@ -36,6 +37,21 @@ inline BaseType_t xTaskCreate(TaskFunction_t function, const char* name, configS
     // Ненулевой и у каждой задачи свой — как настоящий хэндл.
     if (handle) *handle = reinterpret_cast<TaskHandle_t>(fake::tasks().created.size());
     return pdPASS;
+}
+
+// Стек и TCB — память вызывающего (F405: стеки в CCM). Фейку они не нужны.
+struct StaticTask_t
+{
+    uint32_t reserved[24];
+};
+
+inline TaskHandle_t xTaskCreateStatic(TaskFunction_t function, const char* name, uint32_t stackWords, void* parameter,
+                                      UBaseType_t priority, StackType_t* stack, StaticTask_t* tcb)
+{
+    if (!stack || !tcb) return nullptr;
+    TaskHandle_t handle = nullptr;
+    xTaskCreate(function, name, static_cast<configSTACK_DEPTH_TYPE>(stackWords), parameter, priority, &handle);
+    return handle;
 }
 
 inline void vTaskStartScheduler() { fake::schedulerStarted() = true; }

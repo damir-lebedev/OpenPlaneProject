@@ -72,6 +72,8 @@ class Board:
         self.flash_cs = None
         self.baro_i2c = None
         self.mag_i2c = None
+        self.baro = None            # тип барометра из `status` (BARO=DPS310)
+        self.guessed = []           # что выведено, а не прочитано (строки в заголовок)
         self.adc_vbat = None
         self.adc_curr = None
         self.adc_rssi = None
@@ -244,6 +246,14 @@ def parse_dump(text, board):
         m = re.match(r"board_name\s+(\S+)", line)
         if m:
             board.name = m.group(1)
+        # version: "# board: manufacturer_id: JFPV, board_name: JXFPVF405V3"
+        m = re.search(r"board_name:\s*(\w+)", line)
+        if m and not board.name:
+            board.name = m.group(1)
+        # status: "GYRO=ICM42688P, ACC=ICM42688P, BARO=DPS310"
+        m = re.search(r"\bBARO=(\w+)", line)
+        if m and m.group(1).upper() in BAROS:
+            board.baro = m.group(1).upper()
         # resource MOTOR 1 B06
         m = re.match(r"resource\s+(\w+)\s+(\d+)\s+(\S+)", line, re.I)
         if m and m.group(1).upper() != "SHOW":
@@ -306,6 +316,34 @@ def parse_dump(text, board):
                 board.pinio_config[i] = v
 
 
+# Аппаратный NSS шин SPI у F405/F722/H743: ножка CS устройства почти всегда
+# стоит на NSS своей шины. Нужен, когда в дампе нет `dump hardware`
+# (gyro_1_spibus, max7456_spi_bus, flash_spi_bus): BF 4.5 отдаёт его не всегда.
+SPI_NSS = {"PA4": (1, 3), "PA15": (1, 3), "PB12": (2,), "PB9": (2,), "PG10": (1,), "PE4": (4,), "PE11": (4,)}
+
+
+def infer_spi_buses(board):
+    """Шины гироскопа, OSD и флеша, если дамп их не назвал: по NSS, иначе —
+    свободная шина с ножками (гироскоп первым). Что выведено — в board.guessed."""
+    have = [n for n in range(1, SPIS + 1) if all(board.spi.get((n, r)) for r in ("SCK", "SDI", "SDO"))]
+    devices = [("gyro", "гироскоп"), ("osd", "OSD"), ("flash", "флеш")]
+    taken = {getattr(board, k + "_spi") for k, _ in devices} - {None}
+    # сперва — у кого NSS однозначен, потом остальные
+    order = sorted(devices, key=lambda d: len(SPI_NSS.get(getattr(board, d[0] + "_cs") or "", (0, 0, 0))))
+    for key, title in order:
+        cs = getattr(board, key + "_cs")
+        if not cs or getattr(board, key + "_spi"):
+            continue
+        nss = [n for n in SPI_NSS.get(cs, ()) if n in have]
+        free = [n for n in nss if n not in taken] or nss or [n for n in have if n not in taken]
+        if not free:
+            continue
+        setattr(board, key + "_spi", free[0])
+        taken.add(free[0])
+        why = "NSS шины" if free[0] in nss else "свободная шина"
+        board.guessed.append("{} на SPI{} — выведено ({} {}), в дампе нет dump hardware".format(title, free[0], why, cs))
+
+
 def load(path):
     with open(path, encoding="utf-8", errors="replace") as f:
         text = f.read()
@@ -314,6 +352,7 @@ def load(path):
         parse_config_h(text, board)
     else:
         parse_dump(text, board)
+        infer_spi_buses(board)
     return board
 
 
@@ -343,7 +382,8 @@ def c_pin(pin):
     return pin if pin else "-1"
 
 
-def generate(board, baro="SPL06", source_note=""):
+def generate(board, baro=None, source_note=""):
+    baro = baro or board.baro or "SPL06"
     name = board.name or "BOARD"
     motors = [board.motors.get(i) for i in range(1, 9)]
     while motors and not motors[-1]:
@@ -365,6 +405,8 @@ def generate(board, baro="SPL06", source_note=""):
     w("// Только факты о плате: ножки, номера шин, масштабы датчиков. Заново —")
     w("//   python tools/bf_board.py header <дамп или config.h> --out <этот файл>")
     w("// Номера пинов — макросы STM32duino (PA0…PE15), −1 — нет.")
+    for note in board.guessed:
+        w("// Внимание: {}.".format(note))
     w("// ============================================================")
     w("")
     w('#define OPB_BOARD_NAME "{}"'.format(name))
@@ -409,7 +451,8 @@ def generate(board, baro="SPL06", source_note=""):
         w("#define OPB_I2C{0}_SCL {1}".format(n, c_pin(board.i2c.get((n, "SCL")))))
         w("#define OPB_I2C{0}_SDA {1}".format(n, c_pin(board.i2c.get((n, "SDA")))))
     w("#define OPB_I2C_SENSORS {}".format(i2c_bus))
-    w("#define OPB_BARO_{} 1   // тип — по описанию платы (у BF драйвера SPL06 нет)".format(baro))
+    w("#define OPB_BARO_{} 1   // тип — {}".format(
+        baro, "как его нашёл Betaflight (status)" if board.baro == baro else "по описанию платы (у BF драйвера SPL06 нет)"))
     w("")
     w("// Батарея и ток: масштабы — как vbat_scale, vbat_divider, vbat_multiplier,")
     w("// ibata_scale, ibata_offset в BF.")
@@ -619,7 +662,7 @@ def main(argv=None):
     h = sub.add_parser("header", help="заголовок платы из дампа или config.h")
     h.add_argument("source")
     h.add_argument("--name")
-    h.add_argument("--baro", choices=BAROS, default="SPL06")
+    h.add_argument("--baro", choices=BAROS, help="тип барометра; по умолчанию — из status дампа, иначе SPL06")
     h.add_argument("--out")
     h.add_argument("--note", help="откуда дамп (строка в заголовке)")
     args = parser.parse_args(argv)

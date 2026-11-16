@@ -219,6 +219,31 @@ class BfBoardTest(unittest.TestCase):
         self.assertIn("нет гироскопа", problems)
         self.assertIn("нет имени платы", problems)
 
+    def test_dump_without_dump_hardware(self):
+        # BF 4.5.1 отдал только version/status/resource (JXFPVF405V3 = GETFUN F405V3):
+        # имя — из строки version, барометр — из status, шины SPI — по NSS ножки CS.
+        text = (
+            "# board: manufacturer_id: JFPV, board_name: JXFPVF405V3\n"
+            "GYRO=ICM42688P, ACC=ICM42688P, BARO=DPS310\n"
+            "resource SPI_SCK 1 A05\nresource SPI_SDI 1 A06\nresource SPI_SDO 1 A07\n"
+            "resource SPI_SCK 2 B13\nresource SPI_SDI 2 B14\nresource SPI_SDO 2 B15\n"
+            "resource SPI_SCK 3 B03\nresource SPI_SDI 3 B04\nresource SPI_SDO 3 B05\n"
+            "resource FLASH_CS 1 C13\nresource OSD_CS 1 B12\nresource GYRO_CS 1 A04\n"
+        )
+        b = parsed(text)
+        bf_board.infer_spi_buses(b)
+        self.assertEqual(("JXFPVF405V3", "DPS310"), (b.name, b.baro))
+        self.assertEqual((1, 2, 3), (b.gyro_spi, b.osd_spi, b.flash_spi))
+        self.assertEqual(3, len(b.guessed))
+        header = bf_board.generate(b)
+        self.assertIn("#define OPB_BARO_DPS310 1", header)
+        self.assertIn("#define OPB_GYRO_SPI 1", header)
+        self.assertIn("// Внимание: гироскоп на SPI1", header)
+        # шина из dump hardware не перетирается
+        b2 = parsed(text + "set gyro_1_spibus = 3\n")
+        bf_board.infer_spi_buses(b2)
+        self.assertEqual(3, b2.gyro_spi)
+
     def test_cli_writes_file(self):
         with tempfile.TemporaryDirectory() as tmp:
             src = os.path.join(tmp, "dump.txt")

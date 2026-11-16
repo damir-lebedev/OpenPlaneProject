@@ -83,6 +83,12 @@ public:
             return false;
         }
 
+        // Гироскоп запускается ~30 мс (датащит: start-up time) и всё это время
+        // отдаёт 0x8000 — «данных нет». Калибровка сразу после begin() брала их
+        // в среднее: нуль −454 °/с, MEKF упирался в предел смещения (стол,
+        // GETFUN F405V3, 2026-11-16). Ждём с запасом; readSample их ещё и отбрасывает.
+        delay(STARTUP_MS);
+
         Serial.println("ICM42688: подключён");
         setAvailable(true);
         return true;
@@ -103,6 +109,8 @@ protected:
         s.gyroX       = be16(b + 8);
         s.gyroY       = be16(b + 10);
         s.gyroZ       = be16(b + 12);
+        // 0x8000 — датчик ещё не запустился (или канал выключен): это не данные
+        if (s.gyroX == INT16_MIN || s.gyroY == INT16_MIN || s.gyroZ == INT16_MIN || s.accelZ == INT16_MIN) return false;
         return true;
     }
 
@@ -120,6 +128,7 @@ private:
     // Банк 0.
     static constexpr uint8_t REG_DEVICE_CONFIG       = 0x11;
     static constexpr uint8_t REG_TEMP_DATA1          = 0x1D;
+    static constexpr uint32_t STARTUP_MS             = 50;     // запуск гироскопа ~30 мс + запас
     static constexpr uint8_t REG_PWR_MGMT0           = 0x4E;
     static constexpr uint8_t REG_GYRO_CONFIG0        = 0x4F;
     static constexpr uint8_t REG_ACCEL_CONFIG0       = 0x50;
