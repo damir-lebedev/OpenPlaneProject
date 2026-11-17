@@ -344,6 +344,9 @@ public:
             const copter::AttitudeQuat& at = ctl.getAttitude();
             w.add(",\"gbias\":[%.2f,%.2f,%.2f],\"atrust\":%d", at.gyroBiasDps(0), at.gyroBiasDps(1), at.gyroBiasDps(2),
                   static_cast<int>(lroundf(at.accelTrust() * 100.0f)));
+            // сопротивление винтов по оценке фильтра (1/с) и её неуверенность (%); компас в деле
+            w.add(",\"kdrag\":[%.3f,%d],\"amag\":%d", at.dragCoef(), static_cast<int>(lroundf(at.dragSigma() * 100.0f)),
+                  at.compassUsed() ? 1 : 0);
         }
         if (battery)
         {

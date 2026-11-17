@@ -267,6 +267,15 @@ namespace copter
             return stored ? SaveResult::SAVED : SaveResult::FLASH_FULL;
         }
 
+        // Записать настройки во флеш, не трогая контроллер: то, что прошивка
+        // выучила в полёте сама (attitude_drag), уже работает — пересчитывать
+        // нечего. С несохранёнными правками пилота не пишет: они — его.
+        bool storeQuietly()
+        {
+            if (!kv || dirty) return false;
+            return params.save(*kv) && kv->commit();
+        }
+
         // Несохранённое — отменить: снова из флеша.
         void revert()
         {

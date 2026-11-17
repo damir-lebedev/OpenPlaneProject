@@ -148,7 +148,21 @@ public:
         g = gpsLast;
         g.fresh = false;
         // компас отвечает каждый цикл и GPS ему не нужен
-        double yaw = sim.yawDeg() + compassErrorDeg;
+        // шум компаса — отсчёт датчика 50 Гц, между отсчётами курс ведёт гироскоп
+        if (compassNoiseDeg > 0.0 && steps % std::lround(tune.loopHz / 50.0) == 0)
+        {
+            double sum = 0;
+            for (int i = 0; i < 4; ++i)
+            {
+                compassSeed = compassSeed * 1103515245u + 12345u;
+                sum += static_cast<double>((compassSeed >> 8) & 0xFFFF) / 32768.0 - 1.0;
+            }
+            // сумма четырёх равномерных: СКО 1. compassNoiseTauS > 0 — шум «цветной»
+            // (помехи и наклон держатся доли секунды), СКО то же
+            const double rho = compassNoiseTauS > 0.0 ? std::exp(-0.02 / compassNoiseTauS) : 0.0;
+            compassNoiseNow = rho * compassNoiseNow + std::sqrt(1.0 - rho * rho) * compassNoiseDeg * sum * 0.8660254;
+        }
+        double yaw = sim.yawDeg() + compassErrorDeg + (compassNoiseDeg > 0.0 ? compassNoiseNow : 0.0);
         while (yaw < 0) yaw += 360.0;
         while (yaw >= 360.0) yaw -= 360.0;
         g.headingDeg = static_cast<float>(yaw);
@@ -184,6 +198,10 @@ public:
     double gpsNoisePosM = 0.4;     // шум положения (±, равномерный)
     double gpsNoiseVelMs = 0.1;    // и скорости
     double compassErrorDeg = 0.0;  // компас врёт на столько
+    double compassNoiseDeg = 0.0;  // и шумит (СКО), отсчёты 50 Гц
+    double compassNoiseTauS = 0.0; // время корреляции шума компаса; 0 — белый
+    double compassNoiseNow = 0.0;
+    uint32_t compassSeed = 777;
     uint8_t gpsSats = 14;
     bool gpsHomeSet = false, wasArmedGps = false;
     double homeN = 0, homeE = 0;

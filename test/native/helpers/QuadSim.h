@@ -46,6 +46,8 @@ struct QuadPerturb
     double vibration = 1.0;       // множитель вибраций
     double vibFrequency = 1.0;    // вибрация на стольких оборотах: модель оборотов ошибается
     double escDelayS = 0.0;       // сверх цикла
+    double dragLin = 0.25;        // сопротивление винтов, 1/с: (м/с²) на (м/с)
+    double dragQuad = 1.0;        // множитель сопротивления рамы (квадратичного)
 };
 
 struct QuadSimParams
@@ -112,7 +114,8 @@ inline QuadSimParams quadParamsFrom(const copter::CopterTune& t, const copter::B
     s.vibGAtFull *= p.vibration;
     s.vibFrequency = p.vibFrequency;
     const double d = t.prop.prop.diameterIn * 0.0254;
-    s.dragQuad = 0.5 * 1.225 * 1.0 * (0.25 * d * d + 0.004 * t.massKg);
+    s.dragQuad = 0.5 * 1.225 * 1.0 * (0.25 * d * d + 0.004 * t.massKg) * p.dragQuad;
+    s.dragLin = p.dragLin;
     return s;
 }
 
@@ -253,6 +256,21 @@ public:
     double totalCurrent() const { return current; }
     bool grounded() const { return onGround; }
     double now() const { return time; }
+    // ветер сейчас (с порывом), м/с: север, восток
+    Vec wind() const { return { windBase.x + gust.x, windBase.y + gust.y, 0 }; }
+    // скорость относительно воздуха в плоскости винтов, м/с
+    double airSpeedInRotorPlane() const
+    {
+        const Vec b = toBody({ vel.x - windBase.x - gust.x, vel.y - windBase.y - gust.y, vel.z });
+        return std::sqrt(b.x * b.x + b.y * b.y);
+    }
+    // сопротивление в плоскости винтов сейчас, 1/с: линейное (винты) плюс
+    // квадратичное (рама) — на этой скорости
+    double dragNow() const
+    {
+        const Vec b = toBody({ vel.x - windBase.x - gust.x, vel.y - windBase.y - gust.y, vel.z });
+        return par.dragLin + par.dragQuad * std::sqrt(b.x * b.x + b.y * b.y + b.z * b.z) / par.massKg;
+    }
     const QuadSimParams& params() const { return par; }
     // шум барометра, м (СКО): поток винтов и ветер на корпусе дают до 0.3–0.5 м
     void setBaroNoise(double m) { par.baroNoiseM = m; }

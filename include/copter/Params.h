@@ -492,6 +492,7 @@ namespace copter
         PARAM_ACC_TRIM_ROLL,
         PARAM_ACC_TRIM_PITCH,
         PARAM_ATTITUDE_FILTER,
+        PARAM_ATTITUDE_DRAG,
         PARAM_CHIRP_AMPLITUDE_ROLL,
         PARAM_CHIRP_AMPLITUDE_PITCH,
         PARAM_CHIRP_AMPLITUDE_YAW,
@@ -1206,6 +1207,8 @@ namespace copter
               "подстройка горизонта по тангажу (+ — нос ниже); стиками: газ верх + тангаж" },
             { "attitude_filter", kEnum, kMaster, ParamGroup::OTHER, 0, 1, 1, kTable, "", ATTITUDE_FILTERS, 2,
               "фильтр ориентации: EKF — Калмана, сам находит смещение гироскопа; MAHONY — прежний, запасной" },
+            { "attitude_drag", kInt, kMaster, ParamGroup::OTHER, 0, 1500, 0, kTable, "0.001 1/с", nullptr, 0,
+              "сопротивление винтов для фильтра ориентации; 0 — не измерено (берётся 300); фильтр меряет его в полёте по GPS и после посадки записывает сюда" },
             { "chirp_amplitude_roll", kInt, kMaster, kGroupPid, 0, 300, 60, kTable, "0.1 %", nullptr, 0,
               "chirp: размах качания по крену, доля хода моторов (у BF — °/с уставки); 0 — ось пропускается" },
             { "chirp_amplitude_pitch", kInt, kMaster, kGroupPid, 0, 300, 60, kTable, "0.1 %", nullptr, 0,
@@ -1484,6 +1487,7 @@ namespace copter
             s.levelTrimRollDeg = value(PARAM_ACC_TRIM_ROLL) * 0.1f;
             s.levelTrimPitchDeg = value(PARAM_ACC_TRIM_PITCH) * 0.1f;
             s.attitudeEkf = value(PARAM_ATTITUDE_FILTER) > 0.5f;
+            s.dragCoef = value(PARAM_ATTITUDE_DRAG) * 0.001f;
             s.chirp.amplitude[0] = value(PARAM_CHIRP_AMPLITUDE_ROLL) * 0.001f;
             s.chirp.amplitude[1] = value(PARAM_CHIRP_AMPLITUDE_PITCH) * 0.001f;
             s.chirp.amplitude[2] = value(PARAM_CHIRP_AMPLITUDE_YAW) * 0.001f;
@@ -1675,6 +1679,17 @@ namespace copter
             }
             for (uint8_t h = 0; h < RPM_HARMONICS_MAX; ++h) out[h] = w[h];
             return true;
+        }
+
+        // Сопротивление винтов, которое фильтр ориентации выучил в полёте
+        // (copter/Attitude.h), 1/с — в настройку attitude_drag: следующий полёт
+        // начнётся с него. false — менять нечего: отличие от записанного меньше
+        // 5 % (флеш по пустякам не трогаем) или значение не годится.
+        bool learnDrag(float perS)
+        {
+            const float learned = roundf(perS * 1000.0f);
+            if (!(learned > 0.0f) || fabsf(learned - value(PARAM_ATTITUDE_DRAG)) < 0.05f * learned) return false;
+            return setValue(PARAM_ATTITUDE_DRAG, 0, learned);
         }
 
         // Задать число (в границах, ENUM — номер значения). Равное

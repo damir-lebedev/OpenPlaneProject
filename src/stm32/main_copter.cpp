@@ -638,6 +638,16 @@ static void runStickCommand(const copter::StickCommand& c)
     }
 }
 
+// Фильтр ориентации выучил сопротивление винтов (attitude_drag) — записать.
+// Контроллер не пересчитывается: оценка в нём уже работает. Если у пилота
+// есть несохранённые правки — в другой раз: чужое «save» за него не делаем.
+static void saveLearnedDrag()
+{
+    const copter::AttitudeQuat& attitude = copterController.getAttitude();
+    if (!attitude.dragLearned() || copterConsole.cliActive() || copterConsole.appUnsaved()) return;
+    if (copterParams.learnDrag(attitude.dragCoef())) copterConsole.storeLearned();
+}
+
 // Стики до контроллера: ARM стиками (ARM нет в таблице), команды стиками,
 // ARM после DShot-маяка — через 1.2 с (как в BF). Возвращает тумблер ARM
 // пилота (до отсрочки) — маяк молчит, пока пилот армится.
@@ -917,6 +927,9 @@ static void flightTask(void*)
         // ARM — недосланные команды (пищалка, настройки) отменяются; turtle
         // mode — регуляторам «наоборот», и моторы стоят, пока команда не уйдёт
         if (copterController.isArmed() && !armedLastLoop) motors.dshotOutput().clearCommands();
+        // DISARM после полёта: сопротивление винтов, которое фильтр ориентации
+        // выучил по GPS, — в настройку (следующий полёт начнёт с него)
+        if (!copterController.isArmed() && armedLastLoop) saveLearnedDrag();
         armedLastLoop = copterController.isArmed();
         motors.dshotOutput().setReversed(out.reversed);
         // DShot-маяк: нет связи / режим BEEPER — регуляторы пищат (без ARM)

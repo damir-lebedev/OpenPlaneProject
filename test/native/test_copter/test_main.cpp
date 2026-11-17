@@ -1132,6 +1132,17 @@ void test_attitude_ekf_thrust_is_not_gravity_and_gps_acceleration_helps()
     TEST_ASSERT_TRUE(off.qw() == off.qw());
 }
 
+// test_attitude_ekf.cpp: MEKF — сопротивление винтов и ветер по GPS, компас (остатки 067)
+void test_attitude_ekf_learns_rotor_drag_from_gps_velocity();
+void test_attitude_ekf_rotor_drag_stands_still_in_hover_and_without_gps();
+void test_attitude_ekf_learned_drag_keeps_horizon_in_long_tilt_without_gps();
+void test_attitude_ekf_compass_finds_yaw_bias();
+void test_attitude_ekf_compass_never_touches_the_horizon();
+void test_attitude_ekf_compass_interference_is_gated();
+void test_attitude_ekf_compass_returns_after_long_outage();
+void test_attitude_ekf_unobservable_states_do_not_drift();
+void test_attitude_ekf_covariance_stays_valid_in_float();
+
 // test_sysid.cpp: идентификация и автонастройка на известных системах (168, 169)
 void test_sysid_fft_finds_a_sine();
 void test_sysid_recovers_a_known_plant_in_closed_loop();
@@ -1825,6 +1836,73 @@ void test_params_set_get_bounds_and_enums()
     TEST_ASSERT_FALSE(p.parse(PARAM_PROFILE_NAME, 1, "123456789", err, sizeof(err)));
     TEST_ASSERT_TRUE(p.parse(PARAM_PROFILE_NAME, 1, "-", err, sizeof(err)));
     TEST_ASSERT_FALSE(p.isSet(PARAM_PROFILE_NAME, 1));
+}
+
+// attitude_drag: сопротивление винтов, которое фильтр ориентации выучил в
+// полёте, — в настройку и во флеш (контроллер при этом не пересчитывается:
+// оценка в нём уже работает), а после включения — снова фильтру.
+void test_params_attitude_drag_is_learned_saved_and_restored()
+{
+    RamFlash flash;
+    {
+        KeyValueStore kv(flash);
+        CopterParams& p = five5Params();
+        CopterSettings s;
+        p.applyTo(s);
+        TEST_ASSERT_EQUAL_FLOAT(0.0f, s.dragCoef);   // не измерено
+        Bench b;
+        b.ctl.configure(p.tune(), s);
+        TEST_ASSERT_EQUAL_FLOAT(0.3f, b.ctl.getAttitude().dragCoef());
+        TEST_ASSERT_EQUAL_FLOAT(0.5f, b.ctl.getAttitude().dragSigma());
+        TEST_ASSERT_FALSE(b.ctl.getAttitude().dragLearned());
+
+        CliCapture port;
+        CopterCli cli(p, b.ctl, port);
+        cli.setStore(&kv);
+        TEST_ASSERT_TRUE(p.learnDrag(0.4512f));
+        TEST_ASSERT_EQUAL_FLOAT(451.0f, p.value(PARAM_ATTITUDE_DRAG));
+        TEST_ASSERT_TRUE(cli.storeQuietly());
+        // контроллер не тронут: настройка в нём прежняя (как и ориентация, высота, дом)
+        TEST_ASSERT_EQUAL_FLOAT(0.0f, b.ctl.getSettings().dragCoef);
+
+        // мелочь (меньше 5 %) флеш не трогает; ноль и «не число» — не значение
+        TEST_ASSERT_FALSE(p.learnDrag(0.44f));
+        TEST_ASSERT_FALSE(p.learnDrag(0.47f));
+        TEST_ASSERT_FALSE(p.learnDrag(0.0f));
+        TEST_ASSERT_FALSE(p.learnDrag(NAN));
+        TEST_ASSERT_FALSE(p.learnDrag(3.0f));   // вне границ настройки
+        TEST_ASSERT_EQUAL_FLOAT(451.0f, p.value(PARAM_ATTITUDE_DRAG));
+
+        // у пилота несохранённая правка в CLI — чужое «save» за него не делаем
+        TEST_ASSERT_TRUE(cli.enter());
+        cli.execute("set small_angle = 60");
+        TEST_ASSERT_TRUE(cli.hasUnsaved());
+        TEST_ASSERT_TRUE(p.learnDrag(0.30f));
+        TEST_ASSERT_FALSE(cli.storeQuietly());
+    }
+    {
+        KeyValueStore kv(flash);   // «перезагрузка»
+        CopterParams p;
+        p.begin(*findBuild("freestyle5"), 1000.0f, EscProtocol::ONESHOT125);
+        TEST_ASSERT_TRUE(p.load(kv));
+        TEST_ASSERT_EQUAL_FLOAT(451.0f, p.value(PARAM_ATTITUDE_DRAG));   // записанное до правки пилота
+        TEST_ASSERT_EQUAL_FLOAT(25.0f, p.value(PARAM_SMALL_ANGLE));      // его правка не сохранена
+        CopterSettings s;
+        p.applyTo(s);
+        TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.451f, s.dragCoef);
+        Bench b;
+        b.ctl.configure(p.tune(), s);
+        // следующий полёт начинается с выученного, и вера ему — ±15 %
+        TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.451f, b.ctl.getAttitude().dragCoef());
+        TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.15f, b.ctl.getAttitude().dragSigma());
+        // вписано руками в CLI — то же самое
+        CliCapture port;
+        CopterCli cli(p, b.ctl, port);
+        TEST_ASSERT_TRUE(cli.enter());
+        cli.execute("set attitude_drag = 220");
+        cli.execute("save");
+        TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.22f, b.ctl.getAttitude().dragCoef());
+    }
 }
 
 // Заданного больше, чем помещается в хранилище, — save отказывает, а не пишет за буфер,
@@ -8542,6 +8620,15 @@ int main()
     RUN_TEST(test_attitude_ekf_finds_gyro_bias_on_the_ground);
     RUN_TEST(test_attitude_forgets_bias_after_gyro_recalibration);
     RUN_TEST(test_attitude_ekf_thrust_is_not_gravity_and_gps_acceleration_helps);
+    RUN_TEST(test_attitude_ekf_learns_rotor_drag_from_gps_velocity);
+    RUN_TEST(test_attitude_ekf_rotor_drag_stands_still_in_hover_and_without_gps);
+    RUN_TEST(test_attitude_ekf_learned_drag_keeps_horizon_in_long_tilt_without_gps);
+    RUN_TEST(test_attitude_ekf_compass_finds_yaw_bias);
+    RUN_TEST(test_attitude_ekf_compass_never_touches_the_horizon);
+    RUN_TEST(test_attitude_ekf_compass_interference_is_gated);
+    RUN_TEST(test_attitude_ekf_compass_returns_after_long_outage);
+    RUN_TEST(test_attitude_ekf_unobservable_states_do_not_drift);
+    RUN_TEST(test_attitude_ekf_covariance_stays_valid_in_float);
     RUN_TEST(test_chirp_sweeps_frequency_and_respects_limits);
     RUN_TEST(test_sysid_fft_finds_a_sine);
     RUN_TEST(test_sysid_recovers_a_known_plant_in_closed_loop);
@@ -8568,6 +8655,7 @@ int main()
     RUN_TEST(test_params_save_refuses_overflow);
     RUN_TEST(test_params_big_diff_survives_reboot);
     RUN_TEST(test_params_survive_flash_and_skip_unknown);
+    RUN_TEST(test_params_attitude_drag_is_learned_saved_and_restored);
     RUN_TEST(test_pid_in_betaflight_units);
     RUN_TEST(test_betaflight_source_takes_bf_45_defaults);
     RUN_TEST(test_simplified_pid_sliders_scale_gains_and_margin);

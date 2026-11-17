@@ -374,6 +374,9 @@ namespace copter
         float levelTrimPitchDeg = 0.0f;
         // attitude_filter: MEKF (оценивает и смещение гироскопа) или Махони (copter/Attitude.h)
         bool attitudeEkf = true;
+        // attitude_drag: сопротивление винтов для модели фильтра, 1/с; 0 — не
+        // измерено (фильтр берёт 0.3 и учит по GPS в полёте)
+        float dragCoef = 0.0f;
         float autoDisarmS = 5.0f;          // auto_disarm_delay: на земле с газом внизу столько — DISARM; 0 — нет
         // runaway_takeoff_*: «убегает» на взлёте — DISARM; проверка гаснет,
         // когда коптер столько продержался в воздухе спокойно
@@ -474,6 +477,7 @@ namespace copter
             attitude.configure(2.0f, 0.2f);
             attitude.reset();
             attitude.setEkf(s.attitudeEkf);
+            attitude.setDragCoef(s.dragCoef);
             vertical.configure(2.5f);
             hover = s.hoverThrottle > 0.01f ? s.hoverThrottle : t.hoverThrust;
             altCtl.configure(s.alt, hover);
@@ -673,6 +677,20 @@ namespace copter
                 attitude.setGroundAccelVector(gpsAccel.accelN(), gpsAccel.accelE(), position.headingDeg() - attitude.yawDeg());
             else
                 attitude.clearGroundAccelVector();
+            // новый фикс при известном курсе — скорость фильтру: по ней и по
+            // акселерометру он учит сопротивление винтов и ветер. Только в
+            // настоящем полёте: «в воздухе» включается уже на раскрутке, а пока
+            // коптер стоит, акселерометр показывает опору, а не сопротивление —
+            // фильтр «узнал» бы, что ветра нет
+            if (sens.gps.fresh && sens.gps.fix && position.headingSource() != HeadingSource::NONE && status.airborne &&
+                (vertical.altitude() > DRAG_MIN_HEIGHT_M ||
+                 sens.gps.velN * sens.gps.velN + sens.gps.velE * sens.gps.velE > DRAG_MIN_SPEED_MS * DRAG_MIN_SPEED_MS))
+                attitude.setDragVelocity(sens.gps.velN, sens.gps.velE, -vertical.climbRate(), position.headingDeg() - attitude.yawDeg());
+            // компас, которому есть вера, — фильтру: рысканье не уплывает, и
+            // находится смещение гироскопа по нему (курс минус рысканье — как
+            // их считали в прошлом цикле: status.yaw)
+            if (sens.gps.headingTrusted && !status.magDisagrees) attitude.setCompass(sens.gps.headingDeg - status.yaw);
+            else attitude.clearCompass();
             if (sens.imuOk) attitude.update(sens.gyro, accel, dt);
             const float accelUp = attitude.isInitialized() ? attitude.verticalAccel(accel) : 0.0f;
             // без барометра смещение акселерометра учится, пока коптер стоит
@@ -1757,6 +1775,8 @@ namespace copter
         float accelG[3] = { 0.0f, 0.0f, 1.0f };   // после ФНЧ
         Pt1 motionLpf;
         AttitudeQuat attitude;
+        // сопротивление винтов меряется выше (над точкой ARM) или на ходу
+        static constexpr float DRAG_MIN_HEIGHT_M = 2.0f, DRAG_MIN_SPEED_MS = 2.0f;
         GpsAccel gpsAccel;               // в разгоне по GPS горизонт не тянется к акселерометру (P32)
         VerticalEstimator vertical;
         AltitudeController altCtl;

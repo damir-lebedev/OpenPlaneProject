@@ -63,6 +63,9 @@ public:
     bool cliActive() const { return cli.active(); }
     // Сохранить и применить (команды стиками: профиль, save, горизонт) — как save.
     copter::CopterCli::SaveResult saveSettings() { return cli.saveAndApply(); }
+    // Записать во флеш выученное в полёте, контроллер не трогая; false — не
+    // записано (флеша нет, или у пилота несохранённые правки — в CLI, в приложении).
+    bool storeLearned() { return !link.hasUnsaved() && !msp.hasUnsaved() && cli.storeQuietly(); }
     // Отменить несохранённое (меню в очках: EXIT) — снова из флеша.
     void revertSettings() { cli.revert(); }
     // Приложение поменяло настройки и не сохранило — ARM нельзя.

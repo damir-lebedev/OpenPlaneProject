@@ -38,6 +38,9 @@ void tearDown() {}
 // test_attitude.cpp: фильтр ориентации (MEKF против Махони), посадка на склон
 void test_attitude_ekf_learns_gyro_bias();
 void test_attitude_ekf_against_mahony_in_manoeuvres();
+void test_attitude_ekf_learns_rotor_drag_in_flight();
+void test_attitude_ekf_consistency_nees_nis();
+void test_attitude_ekf_compass_yaw_bias_and_interference_in_flight();
 void test_failsafe_landing_on_a_slope_disarms();
 // test_ident.cpp: chirp, идентификация и автонастройка (168, 169)
 void test_chirp_runs_by_switch_in_flight_only();
@@ -2355,6 +2358,9 @@ int main()
     RUN_TEST(test_alt_hold_with_noisy_barometer);
     RUN_TEST(test_attitude_ekf_learns_gyro_bias);
     RUN_TEST(test_attitude_ekf_against_mahony_in_manoeuvres);
+    RUN_TEST(test_attitude_ekf_learns_rotor_drag_in_flight);
+    RUN_TEST(test_attitude_ekf_consistency_nees_nis);
+    RUN_TEST(test_attitude_ekf_compass_yaw_bias_and_interference_in_flight);
     RUN_TEST(test_failsafe_landing_on_a_slope_disarms);
     RUN_TEST(test_chirp_runs_by_switch_in_flight_only);
     RUN_TEST(test_chirp_identifies_the_plant_within_10_percent);
