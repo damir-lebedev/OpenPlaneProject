@@ -11,6 +11,10 @@
 // (gps_minimum_sats, как в BF); не было — при первом хорошем фиксе уже в
 // полёте (status об этом скажет). DISARM дом не стирает — до следующего ARM.
 //
+// Последняя точка с 3D-фиксом (lastGood, located) — «найти упавший»:
+// перевёрнутый в траве коптер фикс обычно теряет, а пульт (CRSF) и очки
+// должны и тогда показывать, где он был. Хранится до перезагрузки.
+//
 // Расстояния — плоская Земля вокруг дома (до десятков километров ошибка
 // меньше метра на сотни метров), этого хватает для стрелки и цифр.
 //
@@ -43,6 +47,11 @@ namespace copter
         void update(const GpsFix& f, bool armed)
         {
             last = f;
+            if (f.valid)
+            {
+                lastGoodFix = f;
+                lastGoodSet = true;
+            }
             if (armed && !wasArmed)
             {
                 homeSet = false;   // новый ARM — новый дом
@@ -62,6 +71,22 @@ namespace copter
         }
 
         bool hasHome() const { return homeSet; }
+
+        // Был ли с включения хоть один 3D-фикс; последний такой — lastGood().
+        bool hasLastGood() const { return lastGoodSet; }
+        const GpsFix& lastGood() const { return lastGoodFix; }
+
+        // Для пульта и очков: текущий фикс, а без него — последняя точка с
+        // фиксом (спутники — сколько видно сейчас, скорость 0, valid = false).
+        GpsFix located() const
+        {
+            if (last.valid || !lastGoodSet) return last;
+            GpsFix f = lastGoodFix;
+            f.valid = false;
+            f.satellites = last.satellites;
+            f.speedMs = 0.0f;
+            return f;
+        }
         bool homeSetInFlight() const { return setInFlight; }
         const GpsFix& fix() const { return last; }
 
@@ -115,6 +140,8 @@ namespace copter
         }
 
         GpsFix last;
+        GpsFix lastGoodFix;
+        bool lastGoodSet = false;
         uint8_t minSats = 8;
         bool homeSet = false;
         bool setInFlight = false;

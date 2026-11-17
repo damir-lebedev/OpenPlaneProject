@@ -473,8 +473,8 @@ static void sendTelemetry()
     d.pitchDeg = s.pitch;
     d.yawDeg = headingDeg();
     d.climbMs = s.climbRate;
-    const copter::GpsFix& f = gpsHome.fix();
-    d.gps = f.valid;
+    const copter::GpsFix f = gpsHome.located();   // фикс пропал — последняя точка (найти упавший)
+    d.gps = f.valid || gpsHome.hasLastGood();
     d.latitude = f.latitude;
     d.longitude = f.longitude;
     d.speedMs = f.speedMs;
@@ -731,8 +731,10 @@ static void composeOsd()
     d.satellites = fix.satellites;
     d.gpsFix = fix.valid;
     d.speedKmh = fix.speedMs * 3.6f;
-    d.latitude = fix.latitude;
-    d.longitude = fix.longitude;
+    const copter::GpsFix where = gpsHome.located();
+    d.gpsLastKnown = !fix.valid && gpsHome.hasLastGood();
+    d.latitude = where.latitude;
+    d.longitude = where.longitude;
     d.home = gpsHome.hasHome();
     d.homeDistanceM = gpsHome.distanceM();
     d.homeRelativeDeg = gpsHome.relativeHomeDeg(headingDeg());

@@ -5092,6 +5092,58 @@ void test_gps_home_distance_and_direction()
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, h.distanceM());
 }
 
+void test_gps_last_good_point()
+{
+    GpsHome h;
+    TEST_ASSERT_FALSE(h.hasLastGood());
+    TEST_ASSERT_FALSE(h.located().valid);
+    h.update(fixAt(55.75, 37.61), true);
+    GpsFix lost;   // перевернулся в траве: фикса нет, спутников 3
+    lost.satellites = 3;
+    lost.latitude = 0.0;
+    h.update(lost, true);
+    TEST_ASSERT_TRUE(h.hasLastGood());
+    const GpsFix w = h.located();
+    TEST_ASSERT_FALSE(w.valid);
+    TEST_ASSERT_EQUAL_UINT8(3, w.satellites);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, w.speedMs);
+    TEST_ASSERT_TRUE(fabs(w.latitude - 55.75) < 1e-9);
+    TEST_ASSERT_TRUE(fabs(w.longitude - 37.61) < 1e-9);
+    // фикс вернулся — снова текущий
+    h.update(fixAt(55.76, 37.62), false);
+    TEST_ASSERT_TRUE(h.located().valid);
+    TEST_ASSERT_TRUE(fabs(h.located().latitude - 55.76) < 1e-9);
+}
+
+void test_osd_coordinates_after_fix_lost()
+{
+    CopterParams p;
+    TEST_ASSERT_TRUE(p.setValue(PARAM_OSD_GPS_LAT_POS, 0, static_cast<float>(osdPos(1, 3))));
+    const OsdLayout l = osdLayoutFrom(p);
+    OsdScreen s;
+    s.setRows(13);
+    OsdData d;
+    d.armed = true;
+    d.gpsPresent = true;
+    d.latitude = 55.75;
+    d.longitude = 37.61;
+    auto row = [&s](uint8_t r) {
+        std::string t;
+        for (uint8_t c = 0; c < OsdScreen::COLS; ++c) t += static_cast<char>(s.at(r, c));
+        return t;
+    };
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_FALSE(has(row(3), "55.75"));   // ни фикса, ни последней точки
+    d.gpsLastKnown = true;                       // фикс пропал — последняя точка видна
+    d.blink = false;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_TRUE_MESSAGE(has(row(3), "55.7500000"), row(3).c_str());
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(3, 1));     // значок мигает
+    d.blink = true;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(osdsym::LAT, s.at(3, 1));
+}
+
 void test_crsf_telemetry_frames()
 {
     CrsfTelemetryData d;
@@ -8718,6 +8770,8 @@ int main()
     RUN_TEST(test_vtx_ranges_from_switches);
     RUN_TEST(test_cli_vtx_and_params);
     RUN_TEST(test_gps_home_distance_and_direction);
+    RUN_TEST(test_gps_last_good_point);
+    RUN_TEST(test_osd_coordinates_after_fix_lost);
     RUN_TEST(test_crsf_telemetry_frames);
     RUN_TEST(test_rssi_sources);
     RUN_TEST(test_rc_smoothing_cutoff_follows_frame_rate);

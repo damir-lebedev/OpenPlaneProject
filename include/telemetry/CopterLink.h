@@ -413,6 +413,8 @@ public:
             w.add(",\"gps\":{\"fix\":%s,\"sats\":%u,\"lat\":%.7f,\"lon\":%.7f,\"spd\":%.1f", f.valid ? "true" : "false",
                   f.satellites, f.latitude, f.longitude, f.speedMs);
             if (gpsHome->hasHome()) w.add(",\"home\":%.0f,\"dir\":%.0f", gpsHome->distanceM(), gpsHome->bearingHomeDeg());
+            if (!f.valid && gpsHome->hasLastGood())   // фикс пропал — где был (найти упавший)
+                w.add(",\"last\":[%.7f,%.7f]", gpsHome->lastGood().latitude, gpsHome->lastGood().longitude);
             w.add("}");
         }
         w.add(",\"motors\":[");

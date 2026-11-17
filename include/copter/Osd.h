@@ -281,6 +281,7 @@ namespace copter
         uint8_t satellites = 0;
         float speedKmh = 0.0f;
         double latitude = 0.0, longitude = 0.0;
+        bool gpsLastKnown = false;          // фикса нет, координаты — последняя точка с фиксом
         bool home = false;
         float homeDistanceM = 0.0f, homeRelativeDeg = 0.0f;
         uint16_t vtxMw = 0;                 // 0 — нет VTX
@@ -568,8 +569,9 @@ namespace copter
                     return;
                 case OSD_GPS_LAT:
                 case OSD_GPS_LON:
-                    if (!d.gpsFix) return;
-                    put(y, x, e == OSD_GPS_LAT ? osdsym::LAT : osdsym::LON);
+                    if (!d.gpsFix && !d.gpsLastKnown) return;
+                    // фикс пропал — последняя точка, значок мигает (найти упавший)
+                    if (d.gpsFix || d.blink) put(y, x, e == OSD_GPS_LAT ? osdsym::LAT : osdsym::LON);
                     snprintf(s, n, "%.7f", e == OSD_GPS_LAT ? d.latitude : d.longitude);
                     print(y, static_cast<uint8_t>(x + 1), s);
                     return;

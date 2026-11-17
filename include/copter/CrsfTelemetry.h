@@ -49,7 +49,7 @@ namespace copter
         float volts = 0.0f, amps = 0.0f, mahDrawn = 0.0f, percentLeft = 0.0f;
         float rollDeg = 0.0f, pitchDeg = 0.0f, yawDeg = 0.0f;
         float climbMs = 0.0f;
-        bool gps = false;
+        bool gps = false;   // есть координаты: фикс или последняя точка с фиксом (GpsHome::located)
         double latitude = 0.0, longitude = 0.0;
         float speedMs = 0.0f, courseDeg = 0.0f, altitudeM = 0.0f;
         uint8_t satellites = 0;
