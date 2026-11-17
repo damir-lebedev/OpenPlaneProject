@@ -250,6 +250,14 @@ public:
     double rollDeg() const { return std::atan2(2 * (qy * qz + qw * qx), 1 - 2 * (qx * qx + qy * qy)) * 57.29578; }
     double pitchDeg() const { return std::asin(std::fmax(-1.0, std::fmin(1.0, 2 * (qw * qy - qx * qz)))) * 57.29578; }
     double yawDeg() const { return std::atan2(2 * (qx * qy + qw * qz), 1 - 2 * (qy * qy + qz * qz)) * 57.29578; }
+    // ориентация кватернионом (рама FRD -> Земля NED)
+    void attitude(double& w, double& x, double& y, double& z) const
+    {
+        w = qw;
+        x = qx;
+        y = qy;
+        z = qz;
+    }
     double tiltDeg() const { return std::acos(std::fmax(-1.0, std::fmin(1.0, 1 - 2 * (qx * qx + qy * qy)))) * 57.29578; }
     double rotorHz(int i) const { return rotor[i] / (2 * M_PI); }
     double batteryVolts() const { return volts; }

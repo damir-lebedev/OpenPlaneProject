@@ -634,6 +634,10 @@ schreibt die App mit den Befehlen oben und `save` aufs Board.
 - **Am Boden sammelt sich das Integral nicht** – der Copter springt nicht
   und kippt beim Abheben nicht um.
 
+## Simulator (SITL)
+
+Die komplette Copter-Firmware (`src/stm32/main_copter.cpp`) wird für den PC gebaut — `pio run -e sitl`, Einstieg `src/sitl/main.cpp`: dieselben Treiber, CLI, Einstellungen und Live-Frames wie auf dem Matek H743; die Sensoren sind Chip-Emulatoren, gespeist vom Flugmodell `test/native/helpers/QuadSim.h` (6 Freiheitsgrade, Motoren, Akku, Wind, Boden). Die Konsole läuft über TCP `127.0.0.1:5761`; OpenPlane Studio verbindet sich wie mit einem COM-Port. Fernsteuerung: `\x02sim rc …` (AETR1234, µs), zurück kommt `@sim {...}` ~30-mal pro Sekunde. In Studio — Bereich **Simulator**: einmal bauen (MinGW nötig), starten, in 3D fliegen (Verfolger-, FPV- und Bodenkamera) mit Sender im USB-Joystick-Modus, Gamepad oder Tastatur.
+
 ## Was drin ist – kurz
 
 | Datei | Was |

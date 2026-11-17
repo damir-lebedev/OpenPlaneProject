@@ -640,6 +640,10 @@ placa con los comandos de arriba y `save`.
 - **En el suelo la integral no se acumula** — el multicóptero no salta ni
   vuelca al despegar.
 
+## Simulador (SITL)
+
+Todo el firmware del cóptero (`src/stm32/main_copter.cpp`) se compila para el PC — `pio run -e sitl`, punto de entrada `src/sitl/main.cpp`: los mismos drivers, CLI, ajustes y tramas en vivo que en la Matek H743; los sensores son emuladores de chips alimentados por el modelo de vuelo `test/native/helpers/QuadSim.h` (6 grados de libertad, motores, batería, viento, suelo). La consola va por TCP `127.0.0.1:5761`; OpenPlane Studio se conecta como a un puerto COM. Emisora: `\x02sim rc …` (AETR1234, µs); de vuelta llega `@sim {...}` ~30 veces por segundo. En Studio — sección **Simulador**: compilar una vez (requiere MinGW), iniciar y volar en 3D (cámaras de persecución, FPV y desde el suelo) con la emisora en modo joystick USB, un gamepad o el teclado.
+
 ## Qué hay dentro, en breve
 
 | Archivo | Qué |

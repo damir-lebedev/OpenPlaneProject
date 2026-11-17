@@ -616,6 +616,32 @@ power — the app writes to the board with the commands above and `save`.
 - **On the ground the integral does not accumulate** — the copter does not
   jump or tip over on takeoff.
 
+## Simulator (SITL)
+
+The whole copter firmware (`src/stm32/main_copter.cpp`) builds for the PC —
+`pio run -e sitl`, entry point `src/sitl/main.cpp`. It is not a separate
+controller model but the same glue that runs on the Matek H743: drivers, a
+Betaflight-style CLI, settings, live frames. The hardware is replaced by the
+native-test fakes, the sensors by chip emulators (ICM-42688 on SPI1, DPS310
+on I2C2, battery divider) fed by the flight model
+`test/native/helpers/QuadSim.h` (6 DoF, motors with back-EMF, battery sag,
+vibration, wind, ground). The model is built from the same copter
+description the firmware derives its PIDs from.
+
+- TCP `127.0.0.1:5761` (`--port`) carries the USB console stream as is;
+  OpenPlane Studio connects to it like to a COM port (port `tcp:…`).
+- Radio: lines `\x02sim rc 1500,1500,1000,…` (AETR1234, µs) become iBUS
+  frames; no lines for 0.3 s means the radio is lost (failsafe).
+  `\x02sim reset` puts the copter back on the pad, `\x02sim wind <north>
+  <east> <gusts>` sets the wind, m/s.
+- Back: `@sim {...}` ~30 times a second: position (NED, m), quaternion,
+  velocity, motor commands and speeds, ARM, battery, wind.
+- Real-time pacing; settings live in the `--eeprom` file; `save`/`reboot`
+  restart the process like a power cycle.
+- In Studio — the **Simulator** section: build once (needs MinGW), start,
+  fly in 3D (chase, FPV, ground cameras) with a radio in USB joystick mode,
+  a gamepad or the keyboard.
+
 ## What's inside, briefly
 
 | File | What |

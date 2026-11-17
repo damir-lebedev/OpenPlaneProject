@@ -615,6 +615,10 @@ ovan och `save`.
 - **På marken ackumuleras inte integralen** — multikoptern hoppar inte och
   välter inte vid lyftet.
 
+## Simulator (SITL)
+
+Hela kopterns firmware (`src/stm32/main_copter.cpp`) byggs för datorn — `pio run -e sitl`, ingång `src/sitl/main.cpp`: samma drivrutiner, CLI, inställningar och live-ramar som på Matek H743; sensorerna är chipemulatorer som matas av flygmodellen `test/native/helpers/QuadSim.h` (6 frihetsgrader, motorer, batteri, vind, mark). Konsolen går över TCP `127.0.0.1:5761`; OpenPlane Studio ansluter som till en COM-port. Radio: `\x02sim rc …` (AETR1234, µs); tillbaka kommer `@sim {...}` ~30 gånger per sekund. I Studio — avsnittet **Simulator**: bygg en gång (kräver MinGW), starta och flyg i 3D (följ-, FPV- och markkamera) med radion i USB-joystickläge, en handkontroll eller tangentbordet.
+
 ## Vad som finns inuti, i korthet
 
 | Fil | Vad |

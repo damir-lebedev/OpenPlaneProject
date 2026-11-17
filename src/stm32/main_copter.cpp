@@ -91,6 +91,9 @@ Stm32Board board;
 #if defined(ARDUINO_ARCH_STM32)
 void stm32RebootToBootloader();   // src/stm32/bootloader.cpp
 #endif
+#if defined(OPENPLANE_SITL)
+void sitlOutputs(const copter::CopterOutputs& out);   // src/sitl/main.cpp: моторы — в модель
+#endif
 
 auto imuDevice = SELECTED_IMU_DEVICE(board);
 SelectedImu imuSensor(imuDevice);
@@ -941,6 +944,9 @@ static void flightTask(void*)
                 motors.dshotOutput().queueCommand(copter::dshot::CommandQueue::ALL, beacon);
         }
         motors.write(out.motor, out.spinning);
+#if defined(OPENPLANE_SITL)
+        sitlOutputs(out);
+#endif
         t = lap(TASK_MOTORS, t);
 
         if (copterController.isArmed())

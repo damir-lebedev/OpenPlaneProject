@@ -213,13 +213,22 @@ namespace chips
 
         void update(const World& w)
         {
-            float ax, ay, az, gx, gy, gz, a[3], g[3];
+            float ax, ay, az, gx, gy, gz;
             w.accelBody(ax, ay, az);
             w.gyroBody(gx, gy, gz);
-            World::toChip(rotationCwDeg, ax, ay, az, a);
-            World::toChip(rotationCwDeg, gx, gy, gz, g);
+            const float accel[3] = { ax, ay, az }, gyro[3] = { gx, gy, gz };
+            writeMotion(accel, gyro, w.temperatureC);
+        }
+
+        // Любое движение (модель полёта, SITL): акселерометр, g, и гироскоп,
+        // °/с, — в осях FLU рамы.
+        void writeMotion(const float accelFlu[3], const float gyroFlu[3], float temperatureC = 25.0f)
+        {
+            float a[3], g[3];
+            World::toChip(rotationCwDeg, accelFlu[0], accelFlu[1], accelFlu[2], a);
+            World::toChip(rotationCwDeg, gyroFlu[0], gyroFlu[1], gyroFlu[2], g);
             uint8_t* r = regs();
-            putBe16(r, 0x1D, (w.temperatureC - 25.0f) * 132.48f);
+            putBe16(r, 0x1D, (temperatureC - 25.0f) * 132.48f);
             for (int i = 0; i < 3; ++i) putBe16(r, static_cast<uint8_t>(0x1F + 2 * i), a[i] * 2048.0f);
             for (int i = 0; i < 3; ++i) putBe16(r, static_cast<uint8_t>(0x25 + 2 * i), g[i] * 16.4f);
         }
