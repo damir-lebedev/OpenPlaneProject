@@ -76,12 +76,7 @@ python -m unittest tools.test_opconfig            # opconfig
 cd ../openplane-studio && npx tsc --noEmit && npx vitest run
 ```
 
-Веб-прошивальщик (телефон Android/Chrome, WebUSB): `tools/web-flasher/` (index.html +
-flasher.css + flasher.js — без встроенных стилей/скриптов, CSP сайта). Основной адрес
-https://lebedev-space.ru/flash/ (копия в `C:\Damir\SERVER\lebedev-space\web\flash`, там же
-приём отчётов `/api/flash-report` → Telegram + CRM), зеркало — GitHub Pages (ветка gh-pages).
-После изменений прошивки или страницы: `python tools/publish_web_flasher.py --space
-C:/Damir/SERVER/lebedev-space`, закоммитить в lebedev-space, деплой — скриптом пользователя.
+Веб-прошивальщик (WebUSB) удалён 2026-11-19 по решению пользователя: вместо него — OpenPlane Studio для Android (APK), пункты P46–P50 в PLAN.md. Старый код — `git show 4b93d79:tools/web-flasher/`.
 
 Прошивка платы: в консоли клавиша `D` → DFU, затем
 `pio run -d <копия> -e stm32h743-devebox -t upload`. Консоль — COM13, нужен DTR;

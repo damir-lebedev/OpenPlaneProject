@@ -6,8 +6,6 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — настроить, прошить и полететь: самолёт и коптер (в том числе плату из-под Betaflight). Установщик работает без интернета — всё нужное внутри.</a></p>
 <!-- download:end -->
-<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20%D0%9F%D1%80%D0%BE%D1%88%D0%B8%D1%82%D1%8C%20%D1%81%20%D1%82%D0%B5%D0%BB%D0%B5%D1%84%D0%BE%D0%BD%D0%B0-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="Прошить с телефона"></a></p>
-<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">Прошивка с телефона Android прямо из браузера — один кабель USB-C, без программ и драйверов.</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -63,39 +61,6 @@
 
 ---
 
-## 📱 Прошивка с телефона — одним кабелем
-
-<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%D0%9E%D1%82%D0%BA%D1%80%D1%8B%D1%82%D1%8C%20%D0%BF%D1%80%D0%BE%D1%88%D0%B8%D0%B2%D0%B0%D0%BB%D1%8C%D1%89%D0%B8%D0%BA-damir--lebedev.github.io%2FOpenPlaneProject-a78bfa?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Открыть прошивальщик"></a></p>
-
-<table>
-  <tr>
-    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="docs/images/flasher/phone.png" alt="OpenPlane Flasher на телефоне: выбрана плата, идёт запись" width="100%"></a></td>
-    <td>
-      <b>В поле нет ноутбука — есть телефон.</b> Открываете страницу в Chrome на Android, втыкаете кабель type-c — type-c в полётник и жмёте одну кнопку.<br><br>
-      ① страница спрашивает у прошивки её <b>паспорт</b> (<code>@id</code>) и сама выбирает сборку под плату;<br>
-      ② клавиша <code>D</code> перезагружает плату в <b>загрузчик STM32</b> — кнопку BOOT жать не надо;<br>
-      ③ стираются <b>только секторы прошивки</b>, запись, <b>сверка чтением</b> — и плата стартует.<br><br>
-      PID, тумблеры, калибровки коптера лежат в отдельном секторе флеша — <b>прошивка их не трогает</b>. Заармленную плату прошить нельзя, прошивку не для того чипа — тоже.<br><br>
-      <sub>Ничего не устанавливается: WebUSB есть в Chrome на Android и в Chrome/Edge на компьютере. Готовые сборки: Matek H743 · AocodaRC F405 V3 · GETFUN F405V3 · DevEBox H743 — коптер и самолёт.</sub>
-    </td>
-  </tr>
-</table>
-
-<p align="center"><img src="docs/images/flasher/flow.svg" alt="Путь прошивки: Chrome → паспорт → загрузчик → стирание → запись и сверка → старт" width="100%"></p>
-<p align="center"><img src="docs/images/flasher/flash_map.svg" alt="Карта флеша: стираются только секторы прошивки, сектор настроек цел" width="100%"></p>
-
-<details>
-<summary><b>Телефон не видит плату? Плата с Betaflight?</b></summary>
-
-- Не у всех полётников на USB-C стоят резисторы, по которым телефон понимает, что плату надо питать: тогда переходник OTG (USB-C → USB-A) и обычный кабель.
-- Первая прошивка поверх Betaflight/INAV: зажать **BOOT**, вставить кабель, на странице выбрать **STM32 BOOTLOADER**. Загрузчик STM32 — в ПЗУ, «окирпичить» плату прошивкой нельзя.
-- Самолёт со своими датчиками и тумблерами прошивайте из Studio: готовые сборки самолёта — с настройками по умолчанию.
-- Сайт обновляет `python tools/publish_web_flasher.py`: собирает платы и выкладывает страницу с прошивками в ветку `gh-pages`. Страница — [`tools/web-flasher/index.html`](tools/web-flasher/index.html), один файл без зависимостей.
-
-</details>
-
----
-
 ## ⚡ За 30 секунд
 
 | | |
@@ -103,7 +68,7 @@
 | **Что это** | Открытый полётный контроллер и автопилот для радиоуправляемых самолётов. Основная плата — STM32H743 (класс плат Pixhawk): на плате DevEBox прошивка **уже запущена и управляется с пульта** — [есть видео](#-stm32h743-ожила-на-плате), сейчас подключаются датчики. Прежняя основа — ESP32-S3 за ~$10, на ней пройден стенд со всеми датчиками. |
 | **Что умеет** | 12 режимов полёта — от стабилизации до возврата домой, кругов по GPS, запуска с руки, автопосадки и **парения в термиках**. Трубка Пито из двух дешёвых барометров. Телеметрия MAVLink в QGroundControl и Mission Planner. |
 | **Мультикоптеры** | Та же прошивка — для квадро, гексы, окты, Y6 и X8: описываете раму, винты, моторы и батарею, а PID и фильтры прошивка выводит сама по физической модели. Пока проверено в симуляторе — [COPTER.md](docs/COPTER.md). Вся прошивка коптера летает и на ПК (SITL, `pio run -e sitl`) — в OpenPlane Studio это раздел «Симулятор» с 3D и управлением с пульта. |
-| **Прошить** | С телефона: Chrome на Android, кабель type-c — type-c, [одна кнопка](https://damir-lebedev.github.io/OpenPlaneProject/). Плата узнаётся сама, настройки коптера не стираются. С компьютера — тот же сайт или [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio). |
+| **Прошить** | Из [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) одной кнопкой — Windows и macOS. Плата узнаётся сама, настройки коптера не стираются. **Studio для Android** (кабель USB-C ⇄ USB-C, вся настройка и прошивка в поле) — в работе. |
 | **Главная фишка** | Любой тумблер или крутилка пульта = любая функция. **Одна строка** в `Controls.h` — и SwD уже не реверс мотора, а сброс груза. |
 | **Почему можно верить** | 710 автотестов (плюс 9 на самой плате с настоящей SD-картой), 94 % кода под тестами, 33 сборки «плата × датчики» без единого предупреждения, замкнутые симуляции каждого режима. |
 | **Честно** | В воздухе пока был ручной режим (первый прототип). STM32H743 пока проверена на столе, без датчиков. Автопилот проверен на стенде, тестами и симуляциями и ждёт лётных испытаний — [статус ниже](#-честный-статус). |
@@ -333,8 +298,6 @@ flowchart LR
 ---
 
 ## 🚀 Быстрый старт
-
-**С телефона, без компьютера:** [damir-lebedev.github.io/OpenPlaneProject](https://damir-lebedev.github.io/OpenPlaneProject/) — Chrome на Android, кабель type-c — type-c, одна кнопка ([как это работает](#-прошивка-с-телефона--одним-кабелем)).
 
 Проще всего — **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)** ([скачать](https://github.com/damir-lebedev/openplane-studio/releases/latest)): приложение для Windows и macOS настраивает плату под ваш самолёт по шагам, собирает прошивку и прошивает её одной кнопкой, а потом помогает наладить всё на земле по живым данным с платы. Из командной строки:
 

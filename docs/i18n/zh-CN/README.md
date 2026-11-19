@@ -6,8 +6,6 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — 配置、刷写并起飞：固定翼与多旋翼（包括从 Betaflight 迁移的飞控）。安装包可离线使用，所需的一切都已内置。</a></p>
 <!-- download:end -->
-<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20%E7%94%A8%E6%89%8B%E6%9C%BA%E5%88%B7%E5%86%99-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="用手机刷写"></a></p>
-<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">在安卓手机浏览器中直接刷写——一根 USB-C 线，无需安装软件和驱动。</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -62,38 +60,6 @@
 <p align="center">
   <img src="../../images/sim/replay_rth.gif" alt="失去信号：飞机自己返航并盘旋" width="576">
 </p>
-
----
-
-## 📱 用手机刷写——一根线
-
-<table>
-  <tr>
-    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="../../images/flasher/phone.png" alt="OpenPlane Flasher" width="100%"></a></td>
-    <td>在 Android 上用 Chrome 打开页面，用 USB-C 对 USB-C 线连接飞控，按一个按钮。页面读取固件身份（<code>@id</code>）并自动选择对应版本，按键 <code>D</code> 让飞控进入 STM32 引导程序，只擦除固件扇区，写入并回读校验。PID、开关和校准保存在独立扇区，刷写不会改动。<br><br><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><b>damir-lebedev.github.io/OpenPlaneProject</b></a></td>
-  </tr>
-</table>
-
-<p align="center"><img src="../../images/flasher/flow.en.svg" alt="OpenPlane Flasher" width="100%"></p>
-
-### 🧱 电子围栏：飞不出去的无人机
-
-画一个圆和高度上限即可。任何模式下（包括全速 ACRO）接近边界会自动减速，到达边界时自动驾驶接管并飞回。GPS 丢失——自行返航或降落。
-
-<table>
-  <tr>
-    <td width="66%"><img src="../../images/copter/fence_studio.gif" alt="Geofence — OpenPlane Studio" width="100%"></td>
-    <td width="34%"><img src="../../images/copter/fence_sim.gif" alt="Geofence — SITL" width="100%"></td>
-  </tr>
-</table>
-
-<p align="center"><img src="../../images/copter/fence_stats.en.svg" alt="Geofence: 60 s, 97 km/h, 9, 72 m / 100" width="100%"></p>
-
-### 🎮 模拟器：买之前先飞
-
-<p align="center"><img src="../../images/copter/sim_gates.gif" alt="OpenPlane Studio — simulator" width="100%"></p>
-
-这是将装进飞机的同一套固件，编译到电脑上运行（<code>pio run -e sitl</code>）。遥控器、手柄或键盘；尾随、FPV 或地面视角；摔了按 <code>R</code> 重来。
 
 ---
 

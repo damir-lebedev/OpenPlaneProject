@@ -100,12 +100,6 @@ constexpr copter::EscProtocol ESC_PROTOCOL = copter::EscProtocol::ONESHOT125;
 > **Бета.** На железе коптер на этой прошивке ещё не летал. Порядок
 > проверки для тестеров — [BETA_TEST.md](BETA_TEST.md).
 
-**С телефона:** [damir-lebedev.github.io/OpenPlaneProject](https://damir-lebedev.github.io/OpenPlaneProject/) — Chrome на Android, кабель
-type-c — type-c, одна кнопка: страница узнаёт плату по `@id`, сама переводит её
-в загрузчик (клавиша `D`), стирает только секторы прошивки (настройки целы),
-пишет и сверяет. Плата с Betaflight — зажать BOOT, вставить USB, выбрать
-«STM32 BOOTLOADER». С компьютера:
-
 ```bash
 pio run -e matek-h743-quad -t upload          # Matek H743-WING/SLIM: кнопка BOOT + USB
 pio run -e stm32h743-devebox-quad -t upload   # DevEBox H743

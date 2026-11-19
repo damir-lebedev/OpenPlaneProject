@@ -96,12 +96,6 @@ blocked (`REBOOT_REQD`).
 
 ## Flashing and first start
 
-**From a phone:** [damir-lebedev.github.io/OpenPlaneProject](https://damir-lebedev.github.io/OpenPlaneProject/) — Chrome on Android, a USB-C to
-USB-C cable, one button: the page recognises the board by `@id`, reboots it
-into the bootloader itself (key `D`), erases only the firmware sectors (settings
-are kept), writes and verifies. Board on Betaflight — hold BOOT, plug in USB,
-pick “STM32 BOOTLOADER”. From a computer:
-
 ```bash
 pio run -e matek-h743-quad -t upload          # Matek H743-WING V3: BOOT button + USB
 pio run -e stm32h743-devebox-quad -t upload   # DevEBox H743
