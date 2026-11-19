@@ -156,48 +156,27 @@ DfuSe, стирание только секторов прошивки, свер
   сам); обход — скопировать `.so` и `gradlew assembleUniversalDebug -x rustBuild…` (`docs/ANDROID.md`).
   Эмулятор без окна: `emulator -avd opstudio -no-window -no-audio -gpu swiftshader_indirect`
   (GPU не трогать), `adb install`, `adb exec-out screencap -p`, в конце `adb emu kill`.
-- [ ] **P47 · USB-OTG на Android: консоль платы и прошивка DfuSe (плагин на Kotlin).**
-
-  - Плагин `src-tauri/plugins/usb-android/` (Rust-часть + `android/` на Kotlin), подключить
-
-    `.plugin(...)` только под `cfg(mobile)`.
-
-  - Kotlin: `UsbManager`, разрешение через `PendingIntent`; CDC — `com.github.mik3y:usb-serial-for-android`
-
-    (MIT, JitPack). Команды: `list_devices` (VID/PID, имя, серийник), `serial_open` (115200, **DTR=on** —
-
-    без DTR плата молчит) / `serial_write` / событие `serial_data` / `serial_close`,
-
-    `dfu_flash(bin, address=0x08000000, limit)` с событиями прогресса.
-
-  - DfuSe 0483:DF11 (H743, F405): GETSTATUS/CLRSTATUS, карта секторов из строки интерфейса
-
-    (`@Internal Flash /0x08000000/…`), стирание **только секторов под образ** (0x41 + адрес),
-
-    **предел — начало сектора настроек: H743 `0x081E0000`, F405 `0x080E0000`** (больше — отказ, настройки
-
-    коптера не трогать), SET_ADDRESS 0x21, DNLOAD блоками по размеру из функционального дескриптора
-
-    (обычно 2048), сверка чтением (UPLOAD), выход (manifest). Эталон — наш `flasher.js` из 4b93d79;
-
-    код Betaflight Configurator (GPL) не копировать.
-
-  - Вход в DFU: в консоль `D` → ждать 0483:DF11 до 10 с; заармленная плата — отказ с понятным текстом.
-
-  - `src-tauri/gen/android/app/src/main/AndroidManifest.xml`: `uses-feature android.hardware.usb.host`,
-
-    intent-filter `USB_DEVICE_ATTACHED` + `res/xml/device_filter.xml` (0483:5740 — проверить, какой
-
-    VID/PID отдаёт наша прошивка в USB-дескрипторе, 0483:DF11, 303a:* ESP32).
-
-  - `src/api.ts`: на mobile команды `link.rs` и upload из `firmware.rs` идут в плагин с тем же
-
-    интерфейсом — `core/link.ts`, `core/live.ts` и экраны не меняются.
-
-  - Тесты: unit-тесты Kotlin (разбор DFU-статусов и карты секторов, разбиение образа, предел настроек).
-
-    APK собрать. Прошивку на реальном телефоне делает пользователь/тестер — шаги ему написать. — Стенд: да
-
+- Сделано (P47 a, 2026-11-20, Studio `d4ee7df`): Kotlin `UsbPlugin` в `gen/android/app/src/main/java/com/openplane/studio/usb/`
+  (не отдельный крейт: проще, `gen/android` в git) — список, разрешение (`PendingIntent` FLAG_MUTABLE + явный пакет,
+  `RECEIVER_NOT_EXPORTED`), CDC через `usb-serial-for-android` 3.9.0 (JitPack; DTR только STM32; нет драйвера —
+  `CdcAcmSerialDriver`), сырые control-передачи DFU; USB ждёт на своих потоках (команды плагина идут на главном).
+  Байты порта — прямым JNI в Rust (`UsbNative.data` → `Java_com_openplane_studio_usb_UsbNative_data`).
+  Rust `usb_android.rs`: порт `usb:<deviceName>`, `AndroidPort: Read+Write` → `link.rs`, чёрный ящик, паспорт без
+  изменений; `devices::classify_ids` общий с ПК. **DfuSe — на Rust** (`dfuse.rs`, 9 тестов `cargo test` с фейковым
+  загрузчиком, вместо Kotlin-тестов): только секторы под образ, предел настроек, сверка UPLOAD, выход.
+  `firmware_flash_bin` (тело — байты, заголовки `port`/`chip`; «Только без ARM.» → `ARMED`), `api.flashBin` +
+  `onFlashProgress`. Манифест: `usb.host` (required=false), `USB_DEVICE_ATTACHED` + `device_filter.xml`.
+  Debug-APK собирается `tauri android build` целиком (Режим разработчика Windows включён); ~380 МБ (символы).
+- [ ] **P47 b · USB-OTG на реальном телефоне с платой.** Телефон пользователя — Xiaomi Redmi 14C (2409BRN2CG,
+  Helio G81 MT6769, 4 ГБ, Android 15, `usb.host` есть), adb авторизован с этого ПК. (1) Проверено 2026-11-20:
+  `adb install` debug-APK (24 с), запуск без падений, анкета, плагин `usb` отвечает (`listDevices` в logcat).
+  Единственный USB телефона займёт плата → дальше adb по Wi-Fi: `adb tcpip 5555`, `adb connect <ip>:5555`.
+  (2) Плата с нашей прошивкой (DevEBox H743 / SLIM V4) по USB-C ↔ USB-C: окно Android «Открыть Studio?»,
+  в списке устройств `stm32-cdc`, связь (живые данные, консоль, `set`), выгрузка чёрного ящика.
+  (3) Прошивка готовым `.bin` (`api.flashBin` из консоли WebView через `chrome://inspect`, пока нет экрана P48):
+  'D' → DFU → стирание только секторов образа → сверка → плата снова на связи, настройки целы (`get` до/после);
+  заармленная — отказ `ARMED`. (4) Выдернуть кабель посреди связи — Studio не падает, связь «закрыта».
+  Ловушки: без DTR плата молчит; DFU-интерфейс без строки — Kotlin читает её сам (`interfaceName`). — Стенд: да
 - [ ] **P48 · Экраны Studio на телефоне + прошивка готовым .bin + экспорт с ПК.**
   - Увидено в эмуляторе (P46 b): вёрстка шире экрана (анкета обрезана справа — десктопные ширины),
     контент под строкой состояния (edge-to-edge: отступ `env(safe-area-inset-top)`), Rail слева на
@@ -225,6 +204,13 @@ DfuSe, стирание только секторов прошивки, свер
 
   - Тесты: выбор env по имени `.bin` и по `@id`; `npx tsc --noEmit && npx vitest run`.
 
+- [ ] **P51 · Studio на слабом телефоне: скорость и память** (пользователь 2026-11-20: «андроид слабенький —
+  задача на оптимизацию», в P47 не делать). Мерить на его телефоне (adb: `dumpsys gfxinfo com.openplane.studio`,
+  `dumpsys meminfo`, `top -n 1`, время холодного старта `am start -W`). Кандидаты: Rust в release-профиле (сейчас
+  debug, APK ~380 МБ) и только arm64; ленивые вкладки (`React.lazy`) — не грузить карту/3D/графики до открытия;
+  частота живых кадров на телефоне 2–5 Гц вместо 10, графики без перерисовки всего SVG; без `backdrop-filter`
+  и тяжёлых теней; WebView без лишних шрифтов. Цель — холодный старт ≤ 3 с, 60 кадр/с прокрутки, ≤ 250 МБ.
+  Замер 2026-11-20 (debug-APK, Redmi 14C): `am start -W` 2.1 с, PSS 225 МБ / RSS 340 МБ, первые 3 с — 1–16 кадр/с.
 - [ ] **P49 · APK и готовые прошивки в GitHub-релиз, кнопка «Скачать на Android».**
 
   - `../openplane-studio/.github/workflows/installers.yml` (jobs `build` matrix macOS×2/Windows и
