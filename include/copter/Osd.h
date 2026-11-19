@@ -113,6 +113,8 @@ namespace copter
         OSD_GPS_LON,
         OSD_RSSI_VALUE,
         OSD_PREFLIGHT,   // своё: до ARM — батарея, GPS, пульт одной строкой (P08)
+        OSD_FENCE,       // своё: до края геозабора и стрелка к нему (P44)
+        OSD_FENCE_MAP,   // своё: радар геозабора 9 × 5 (P44)
         OSD_ELEMENT_COUNT
     };
 
@@ -149,6 +151,8 @@ namespace copter
             { "gps_lon", osdPos(1, 4, false), "долгота" },
             { "rssi_value", osdPos(6, 0, false), "сила сигнала пульта (RSSI), %" },
             { "preflight", osdPos(1, 8), "до ARM: батарея, GPS, пульт (BATT OK  GPS OK  RX OK)" },
+            { "fence", osdPos(22, 8), "до края геозабора, м, и стрелка к нему" },
+            { "fence_map", osdPos(20, 3), "радар геозабора 9 × 5: край, дом, нос вверх" },
         };
         return table[e < OSD_ELEMENT_COUNT ? e : 0];
     }
@@ -208,6 +212,7 @@ namespace copter
         OSD_WARN_RSSI,
         OSD_WARN_POSHOLD,    // своё: POS HOLD включён, а держать нечем (copter/PositionHold.h)
         OSD_WARN_GPS_SPOOF,  // своё: GPS подменяют (copter/GpsIntegrity.h)
+        OSD_WARN_GEOFENCE,   // своё: геозабор (copter/Geofence.h)
         OSD_WARN_COUNT
     };
 
@@ -226,6 +231,7 @@ namespace copter
             { "rssi", true, "сигнал пульта слабее osd_rssi_alarm (RSSI LOW)" },
             { "poshold", true, "POS HOLD не держит место: POSHOLD NO GPS, POSHOLD NO MAG, POSHOLD FAIL — летит как ALTHOLD" },
             { "gps_spoof", true, "GPS подменяют: GPS SPOOF — GPS выключен из навигации до посадки" },
+            { "geofence", true, "геозабор: FENCE у края, FENCE RETURN — ведёт назад, FENCE NO GPS, FENCE LAND, FENCE ALT" },
         };
         return table[w < OSD_WARN_COUNT ? w : 0];
     }
@@ -297,6 +303,9 @@ namespace copter
         const char* posHold = nullptr;      // POSHOLD NO GPS / NO MAG / FAIL (copter/PositionHold.h) или nullptr
         bool gpsSpoof = false;              // GPS подменяют (copter/GpsIntegrity.h)
         const char* training = nullptr;     // учебные ограничения: ALT LIMIT, FENCE… (copter/TrainingLimits.h) или nullptr
+        // геозабор (copter/Geofence.h): радиус (0 — нет), предупреждение; место — homeDistanceM/homeRelativeDeg
+        float fenceRadiusM = 0.0f;
+        const char* fence = nullptr;        // FENCE, FENCE RETURN… или nullptr
         bool vtxHot = false;                // VTX без ARM греется (copter/Vtx.h, VtxHeatWatch)
         uint16_t escOverloads = 0, batteryOverloads = 0;   // за этот полёт
     };
@@ -445,6 +454,7 @@ namespace copter
             if (l.warn(OSD_WARN_FAIL_SAFE) && d.linkLost) return "RXLOSS";
             if (l.warn(OSD_WARN_BATT_CRITICAL) && d.batteryState == 3) return "BATT CRITICAL";
             if (l.warn(OSD_WARN_GPS_SPOOF) && d.gpsSpoof) return "GPS SPOOF";
+            if (l.warn(OSD_WARN_GEOFENCE) && d.armed && d.fence) return d.fence;
             if (l.warn(OSD_WARN_POSHOLD) && d.armed && d.posHold) return d.posHold;
             if (l.warn(OSD_WARN_OVERLOAD) && d.armed && d.overload) return d.overload;
             if (l.warn(OSD_WARN_TRAINING) && d.armed && d.training) return d.training;
@@ -586,11 +596,70 @@ namespace copter
                     preflightText(d, s, n);
                     print(y, x, s);
                     return;
+                case OSD_FENCE:
+                {
+                    if (!d.armed || !d.home || d.fenceRadiusM <= 0.0f) return;
+                    const float margin = d.fenceRadiusM - d.homeDistanceM;
+                    // у края (как FENCE) — мигает
+                    if (!d.blink && margin < fminf(0.2f * d.fenceRadiusM, 20.0f)) return;
+                    // ближний край круга — прямо от дома
+                    put(y, x, osdArrow(d.homeRelativeDeg + 180.0f));
+                    snprintf(s, n, "%d", static_cast<int>(lroundf(margin)));
+                    printWithSymbol(y, static_cast<uint8_t>(x + 1), s, osdsym::METRE);
+                    return;
+                }
+                case OSD_FENCE_MAP:
+                    if (!d.armed || !d.home || d.fenceRadiusM <= 0.0f) return;
+                    drawFenceMap(x, y, d);
+                    return;
                 case OSD_ELEMENT_COUNT:
                 default:
                     return;
             }
         }
+
+    public:
+        static constexpr uint8_t FENCE_MAP_COLS = 9;   // радар геозабора
+        static constexpr uint8_t FENCE_MAP_ROWS = 5;
+        static constexpr float FENCE_MAP_SPAN = 3.5f;  // радиус забора — столько ширин знака (весь круг виден из дома)
+        static constexpr float CELL_ASPECT = 1.5f;     // знак аналогового OSD выше, чем шире (12 × 18 точек)
+
+    private:
+        // Радар: коптер в середине носом вверх (стрелка), край забора — точки,
+        // за краем — пусто, дом — значок дома. Масштаб постоянный: радиус —
+        // FENCE_MAP_SPAN знаков; у края круг уходит за рамку, край — рядом.
+        void drawFenceMap(uint8_t x, uint8_t y, const OsdData& d)
+        {
+            const float cell = d.fenceRadiusM / FENCE_MAP_SPAN;   // м на ширину знака
+            // дом в осях носа: вперёд и вправо от коптера, м
+            const float rel = d.homeRelativeDeg * 0.017453293f;
+            const float homeFwd = d.homeDistanceM * cosf(rel), homeRight = d.homeDistanceM * sinf(rel);
+            const int cc = FENCE_MAP_COLS / 2, cr = FENCE_MAP_ROWS / 2;
+            for (int r = 0; r < FENCE_MAP_ROWS; ++r)
+            {
+                for (int c = 0; c < FENCE_MAP_COLS; ++c)
+                {
+                    // середина знака относительно дома, в осях носа
+                    const float right = (c - cc) * cell - homeRight;
+                    const float fwd = (cr - r) * cell * CELL_ASPECT - homeFwd;
+                    const float distM = sqrtf(right * right + fwd * fwd);
+                    // знак задевает край: край ближе половины знака (по высоте он больше; с запасом — без дыр)
+                    const float half = 0.55f * cell * (fabsf(fwd) > fabsf(right) ? CELL_ASPECT : 1.0f);
+                    if (fabsf(distM - d.fenceRadiusM) <= half)
+                        put(static_cast<uint8_t>(y + r), static_cast<uint8_t>(x + c), '.');
+                }
+            }
+            // дом — в его знак, если в рамке
+            const int hc = cc + static_cast<int>(lroundf(homeRight / cell));
+            const int hr = cr - static_cast<int>(lroundf(homeFwd / (cell * CELL_ASPECT)));
+            if (hc >= 0 && hc < FENCE_MAP_COLS && hr >= 0 && hr < FENCE_MAP_ROWS && (hc != cc || hr != cr))
+                put(static_cast<uint8_t>(y + hr), static_cast<uint8_t>(x + hc), osdsym::HOME);
+            // коптер — стрелка носом вверх; за краем — мигает
+            if (d.homeDistanceM <= d.fenceRadiusM || d.blink)
+                put(static_cast<uint8_t>(y + cr), static_cast<uint8_t>(x + cc), osdArrow(0.0f));
+        }
+
+    private:
 
         // Короткий список перед ARM (P08): что не готово — словом, готово — OK.
         // Не больше 28 знаков: «NOT FULL  GPS WAIT  NO RADIO».

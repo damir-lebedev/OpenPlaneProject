@@ -421,6 +421,7 @@ public:
         if (s.posHoldFail != copter::PosHoldFail::NONE) w.add(",\"posfail\":\"%s\"", copter::posHoldFailName(s.posHoldFail));
         spectrum(w);
         if (const char* tl = copter::trainingText(s.trainingFlags)) w.add(",\"train\":\"%s\"", tl);
+        if (ctl.getGeofence().enabled()) w.add(",\"fence\":{\"f\":%u,\"m\":%.0f}", s.fenceFlags, s.fenceMarginM);
         if (s.rescuePhase != RescuePhase::IDLE)
         {
             w.add(",\"rescue\":\"%s\"", rescuePhaseName(s.rescuePhase));

@@ -1846,6 +1846,155 @@ void test_training_fence_turns_back()
     TEST_ASSERT_TRUE(h.sim.height() < 23.0);   // и возврат — не выше потолка
 }
 
+// P44: геозабор в симуляторе.
+namespace
+{
+    CopterSettings fenceSettings(float radius, float ceiling)
+    {
+        CopterSettings s;
+        s.geofence.enabled = true;
+        s.geofence.radiusM = radius;
+        s.geofence.ceilingM = ceiling;
+        return s;
+    }
+
+    // Куда наклоняется коптер от стиков (в ANGLE): pitchSign — знак тангажа
+    // при стике вперёд, rollSign — крена при стике вправо.
+    struct StickSigns
+    {
+        double pitch = 1.0, roll = 1.0;
+        float hover = 0.4f;
+    };
+    StickSigns learnStickSigns(QuadHarness& h)
+    {
+        StickSigns g;
+        h.rc.pitch = -1.0f;
+        h.run(0.6);
+        g.pitch = h.sim.pitchDeg() > 0 ? 1.0 : -1.0;
+        h.rc.pitch = 0.0f;
+        h.run(3.0);
+        h.rc.roll = 1.0f;
+        h.run(0.6);
+        g.roll = h.sim.rollDeg() > 0 ? 1.0 : -1.0;
+        h.rc.roll = 0.0f;
+        h.run(3.0);
+        g.hover = h.ctl.getStatus().throttle;
+        return g;
+    }
+
+    // «Пилот» в ACRO: держит наклон носом вниз targetDeg (стик — скорость
+    // вращения), крен ноль и высоту газом.
+    void acroPilot(QuadHarness& h, double targetDeg, const StickSigns& g, double holdAlt)
+    {
+        const double pitch = h.sim.pitchDeg() * g.pitch;   // > 0 — туда, куда стик вперёд
+        h.rc.pitch = static_cast<float>(-std::fmax(-1.0, std::fmin(1.0, 0.03 * (targetDeg - pitch))));
+        h.rc.roll = static_cast<float>(-std::fmax(-1.0, std::fmin(1.0, 0.03 * h.sim.rollDeg() * g.roll)));
+        const double tilt = std::fmin(70.0, h.sim.tiltDeg()) * 0.017453293;
+        // скорость по z — вниз
+        const double thr = g.hover / std::cos(tilt) + 0.08 * (holdAlt - h.sim.height()) + 0.05 * h.sim.velocity().z;
+        h.rc.throttle = static_cast<float>(std::fmax(0.05, std::fmin(1.0, thr)));
+    }
+}
+
+// Пилот в ACRO рвётся наружу на 50° (25–30 м/с) — минуту, после каждого
+// возврата снова: коптер ни разу не уходит за край дальше чем на несколько
+// метров, стики во время возврата не слушаются, потом управление снова у пилота.
+void test_geofence_acro_pilot_cannot_leave()
+{
+    QuadHarness h(five(), QuadPerturb(), 81, EscProtocol::DSHOT600, 1000.0f, fenceSettings(100.0f, 0.0f));
+    h.gpsOn = true;
+    TEST_ASSERT_TRUE(h.takeoffTo(15.0));
+    const StickSigns g = learnStickSigns(h);
+    h.rc.mode = CopterMode::ACRO;
+    double far = 0, fast = 0;
+    int returns = 0;
+    bool was = false, pilotAgain = false;
+    for (int i = 0; i < 60000; ++i)
+    {
+        acroPilot(h, 50.0, g, 15.0);
+        h.step();
+        far = std::fmax(far, homeDistance(h));
+        fast = std::fmax(fast, std::hypot(h.sim.velocity().x, h.sim.velocity().y));
+        const bool ret = h.ctl.getStatus().fenceFlags & FENCE_RETURN;
+        if (ret && !was) ++returns;
+        if (!ret && was) pilotAgain = true;
+        was = ret;
+        if (h.sim.height() < 1.0) break;
+    }
+    char line[200];
+    snprintf(line, sizeof(line), "geofence 100 m, ACRO pilot at 50 deg for 60 s: farthest %.1f m, top speed %.1f m/s, %d returns, height %.1f m",
+             far, fast, returns, h.sim.height());
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(fast > 15.0, line);   // пилот правда разгонялся
+    TEST_ASSERT_TRUE_MESSAGE(far < 105.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(returns >= 1, line);
+    TEST_ASSERT_TRUE_MESSAGE(pilotAgain, line);
+    TEST_ASSERT_TRUE_MESSAGE(h.sim.height() > 3.0, line);
+    TEST_ASSERT_TRUE(h.ctl.isArmed());
+}
+
+// Потолок забора и в ACRO: газ в полный — коптер висит под потолком.
+void test_geofence_ceiling_in_acro()
+{
+    QuadHarness h(five(), QuadPerturb(), 82, EscProtocol::DSHOT600, 1000.0f, fenceSettings(0.0f, 25.0f));
+    h.gpsOn = true;
+    TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+    const StickSigns g = learnStickSigns(h);
+    h.rc.mode = CopterMode::ACRO;
+    double top = 0;
+    for (int i = 0; i < 15000; ++i)
+    {
+        acroPilot(h, 0.0, g, 100.0);
+        h.rc.throttle = 1.0f;
+        h.step();
+        top = std::fmax(top, h.sim.height());
+    }
+    char line[160];
+    snprintf(line, sizeof(line), "geofence ceiling 25 m, full throttle in ACRO: top %.1f m, after 15 s %.1f m", top, h.sim.height());
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(top < 28.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(h.sim.height() > 20.0, line);
+    TEST_ASSERT_TRUE(h.ctl.isArmed());
+}
+
+// GPS пропал внутри забора, пилот тянет наружу: через 3 с стики больше не
+// слушаются — домой вслепую или посадка; дальше нескольких метров не уходит.
+void test_geofence_gps_lost_takes_control()
+{
+    QuadHarness h(five(), QuadPerturb(), 83, EscProtocol::DSHOT600, 1000.0f, fenceSettings(100.0f, 0.0f));
+    h.gpsOn = true;
+    TEST_ASSERT_TRUE(h.takeoffTo(10.0));
+    h.gpsLost = true;
+    h.rc.pitch = -1.0f;
+    double lostAt = homeDistance(h), far = 0;
+    bool took = false;
+    for (int i = 0; i < 30000; ++i)
+    {
+        h.step();
+        far = std::fmax(far, homeDistance(h));
+        took = took || (h.ctl.getStatus().fenceFlags & (FENCE_RETURN | FENCE_LAND));
+        if (!h.ctl.isArmed()) break;
+    }
+    char line[200];
+    snprintf(line, sizeof(line), "geofence, GPS lost at %.0f m, stick forward: took control %d, farthest %.0f m, end height %.1f m, %.0f m from home",
+             lostAt, took ? 1 : 0, far, h.sim.height(), homeDistance(h));
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(took, line);
+    TEST_ASSERT_TRUE_MESSAGE(far < 60.0, line);         // 3 с стика вперёд — и всё
+    TEST_ASSERT_TRUE_MESSAGE(h.sim.height() < 1.0, line);   // сел (вслепую домой или на месте)
+}
+
+// С забором без GPS не армится; с GPS — армится.
+void test_geofence_blocks_arming_without_gps()
+{
+    QuadHarness h(five(), QuadPerturb(), 84, EscProtocol::DSHOT600, 1000.0f, fenceSettings(100.0f, 0.0f));
+    TEST_ASSERT_FALSE(h.armOnGround());
+    TEST_ASSERT_TRUE(h.ctl.getStatus().armBlockers & ARM_BLOCK_GPS);
+    h.rc.armSwitch = false;
+    h.gpsOn = true;
+    TEST_ASSERT_TRUE(h.armOnGround());
+}
+
 // P32: долгий разгон в ALT_HOLD с удержанием высоты — модуль ускорения
 // около 1 g, а «верх» акселерометра наклонён меньше настоящего. Горизонт
 // не должен уходить (раньше — на 12°: лимит 30°, реально 42°), а высота —
@@ -2494,6 +2643,10 @@ int main()
     RUN_TEST(test_level_trim_shifts_angle_hover);
     RUN_TEST(test_training_ceiling_holds_full_throttle);
     RUN_TEST(test_training_fence_turns_back);
+    RUN_TEST(test_geofence_acro_pilot_cannot_leave);
+    RUN_TEST(test_geofence_ceiling_in_acro);
+    RUN_TEST(test_geofence_gps_lost_takes_control);
+    RUN_TEST(test_geofence_blocks_arming_without_gps);
     RUN_TEST(test_horizon_and_altitude_hold_in_long_acceleration);
     RUN_TEST(test_training_speed_limit);
     RUN_TEST(test_pos_hold_keeps_place_in_wind);

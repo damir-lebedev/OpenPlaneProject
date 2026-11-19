@@ -174,6 +174,8 @@ namespace copter
 
         // GPS годится для возврата (до ARM дома ещё нет): фикс, спутники, свежий.
         bool gpsOk() const { return last.fix && last.sats >= set.minSats && sinceFix <= GPS_TIMEOUT_S; }
+        // Сколько секунд нет нового фикса.
+        float fixAgeS() const { return sinceFix; }
 
         // Можно ли вернуться прямо сейчас.
         RescueFail ready() const

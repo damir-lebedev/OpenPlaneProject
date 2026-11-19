@@ -7033,6 +7033,184 @@ void test_training_limits_params_and_logic()
     p.resetAll();
 }
 
+// P44: геозабор — настройки, логика, радар и предупреждения в очках.
+void test_geofence_params_logic_and_osd()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    CopterSettings s;
+    p.applyTo(s);
+    TEST_ASSERT_FALSE(s.geofence.enabled);
+    TEST_ASSERT_EQUAL_FLOAT(200.0f, s.geofence.radiusM);
+    TEST_ASSERT_EQUAL_FLOAT(120.0f, s.geofence.ceilingM);
+    TEST_ASSERT_EQUAL(static_cast<int>(GeofenceNoGps::RETURN), static_cast<int>(s.geofence.noGps));
+    TEST_ASSERT_TRUE(p.parse(PARAM_GEOFENCE, 0, "ON", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_GEOFENCE_RADIUS, 0, "100", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_GEOFENCE_NO_GPS, 0, "LAND", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_GEOFENCE_NO_GPS, 0, "FLY", err, sizeof(err)));
+    p.applyTo(s);
+    TEST_ASSERT_TRUE(s.geofence.circle());
+    TEST_ASSERT_EQUAL(static_cast<int>(GeofenceNoGps::LAND), static_cast<int>(s.geofence.noGps));
+    p.resetAll();
+
+    GeofenceSettings g;
+    g.enabled = true;
+    g.radiusM = 100.0f;
+    g.ceilingM = 30.0f;
+    Geofence f;
+    f.configure(g);
+    f.reset();
+    const float dt = 0.001f;
+
+    // внутри, медленно — ничего; к краю быстро — наклон меньше
+    f.update(10.0f, true, 20.0f, 2.0f, 2.0f, true, true, dt);
+    TEST_ASSERT_EQUAL(0, f.flags());
+    TEST_ASSERT_EQUAL_FLOAT(40.0f, f.angleCap(40.0f));
+    TEST_ASSERT_EQUAL_FLOAT(80.0f, f.marginM());
+    for (int i = 0; i < 1000; ++i) f.update(10.0f, true, 30.0f, 18.0f, 18.0f, true, true, dt);   // 30 + 7.2 + 54 < 100
+    TEST_ASSERT_FALSE(f.wantReturn());
+    TEST_ASSERT_TRUE(f.angleCap(40.0f) < 30.0f);   // тормозной путь при 2 м/с² — 81 м, а до края 70
+    // точка остановки за краем — автомат, стики не слушаются
+    f.update(10.0f, true, 55.0f, 16.0f, 16.0f, true, true, dt);   // 55 + 6.4 + 42.7 > 100
+    TEST_ASSERT_TRUE(f.wantReturn());
+    TEST_ASSERT_EQUAL_STRING("FENCE RETURN", geofenceText(f.flags()));
+    // назад: внутри 80 %, но ещё наружу — держит; к дому — отпускает
+    f.update(10.0f, true, 70.0f, 1.0f, 1.0f, true, true, dt);
+    TEST_ASSERT_TRUE(f.wantReturn());
+    f.update(10.0f, true, 70.0f, -3.0f, 3.0f, true, true, dt);
+    TEST_ASSERT_FALSE(f.wantReturn());
+    f.update(10.0f, true, 85.0f, 0.0f, 0.0f, true, true, dt);
+    TEST_ASSERT_EQUAL_STRING("FENCE", geofenceText(f.flags()));
+    f.update(10.0f, true, 101.0f, 0.0f, 0.0f, true, true, dt);
+    TEST_ASSERT_TRUE(f.flags() & FENCE_OUTSIDE);
+    TEST_ASSERT_TRUE(f.marginM() < 0.0f);
+    f.update(10.0f, true, 60.0f, -2.0f, 2.0f, true, true, dt);
+    TEST_ASSERT_FALSE(f.wantReturn());
+
+    // потолок: газ срезан у потолка, без барометра — нет
+    f.update(27.0f, true, 10.0f, 0.0f, 0.0f, true, true, dt);
+    TEST_ASSERT_EQUAL_STRING("FENCE ALT", geofenceText(f.flags()));
+    TEST_ASSERT_TRUE(f.limitThrust(0.9f, 3.0f, 0.3f, 1.0f) < 0.3f);
+    TEST_ASSERT_TRUE(f.limitClimb(5.0f) < 3.0f);   // 3 м до потолка — не быстрее 2.6 м/с
+    TEST_ASSERT_EQUAL_FLOAT(30.0f, f.rescueCeilingM());
+    f.update(27.0f, false, 10.0f, 0.0f, 0.0f, true, true, dt);
+    TEST_ASSERT_EQUAL_FLOAT(0.9f, f.limitThrust(0.9f, 3.0f, 0.3f, 1.0f));
+
+    // GPS пропал: сразу FENCE NO GPS и наклон стиком наименьший; висел в 30 м
+    // от дома — назад (RETURN), когда пилот в худшем случае мог бы достать до края; вернулся, внутри — пилоту не сразу, а через 2 с честного GPS
+    f.reset();
+    f.update(10.0f, true, 30.0f, 0.0f, 0.0f, true, true, dt);
+    // худший случай: 30 м + разгон 8 м/с² — точка остановки за краем через ~2.1 с
+    // после последнего фикса (потерю видно через 0.5 с)
+    for (int i = 0; i < 1400; ++i) f.update(10.0f, true, 30.0f, 0.0f, 0.0f, false, true, dt);
+    TEST_ASSERT_EQUAL_STRING("FENCE NO GPS", geofenceText(f.flags()));
+    TEST_ASSERT_FALSE(f.wantReturn());
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 40.0f * Geofence::MIN_ANGLE_K, f.angleCap(40.0f));
+    for (int i = 0; i < 300; ++i) f.update(10.0f, true, 30.0f, 0.0f, 0.0f, false, true, dt);
+    TEST_ASSERT_TRUE(f.wantReturn());
+    for (int i = 0; i < 1000; ++i) f.update(10.0f, true, 30.0f, 0.0f, 0.0f, true, true, dt);
+    TEST_ASSERT_TRUE(f.wantReturn());
+    for (int i = 0; i < 1100; ++i) f.update(10.0f, true, 30.0f, 0.0f, 0.0f, true, true, dt);
+    TEST_ASSERT_FALSE(f.wantReturn());
+    // GPS пропал на скорости к краю — сразу назад, не ждать 3 с
+    f.update(10.0f, true, 50.0f, 15.0f, 15.0f, true, true, dt);
+    for (int i = 0; i < 100; ++i) f.update(10.0f, true, 50.0f, 15.0f, 15.0f, false, true, dt);
+    TEST_ASSERT_TRUE(f.wantReturn());
+    for (int i = 0; i < 2100; ++i) f.update(10.0f, true, 30.0f, -3.0f, 3.0f, true, true, dt);
+    TEST_ASSERT_FALSE(f.wantReturn());
+    // вернуть нечем — сесть; на земле — всё снято
+    f.forceLand();
+    f.update(10.0f, true, 30.0f, 0.0f, 0.0f, false, true, dt);
+    TEST_ASSERT_EQUAL_STRING("FENCE LAND", geofenceText(f.flags()));
+    f.update(0.0f, true, 30.0f, 0.0f, 0.0f, false, false, dt);
+    TEST_ASSERT_FALSE(f.wantLand());
+    // WARN — только предупреждение
+    g.noGps = GeofenceNoGps::WARN;
+    f.configure(g);
+    f.reset();
+    for (int i = 0; i < 5000; ++i) f.update(10.0f, true, 30.0f, 0.0f, 0.0f, false, true, dt);
+    TEST_ASSERT_FALSE(f.wantReturn());
+    TEST_ASSERT_FALSE(f.wantLand());
+    // выключен — ничего
+    g.enabled = false;
+    f.configure(g);
+    f.update(200.0f, true, 300.0f, 20.0f, 20.0f, false, true, dt);
+    TEST_ASSERT_EQUAL(0, f.flags());
+    TEST_ASSERT_EQUAL_FLOAT(40.0f, f.angleCap(40.0f));
+
+    // OSD: важнее перегрузки и LOW BATTERY; выключается osd_warn_geofence
+    OsdData d;
+    d.armed = true;
+    d.fence = "FENCE RETURN";
+    d.overload = "ESC OVERLOAD";
+    d.batteryState = 2;
+    TEST_ASSERT_EQUAL_STRING("FENCE RETURN", OsdScreen::warningText(d));
+    TEST_ASSERT_TRUE(p.parse(PARAM_OSD_WARN_GEOFENCE, 0, "OFF", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("ESC OVERLOAD", OsdScreen::warningText(d, osdLayoutFrom(p)));
+    p.resetAll();
+
+    // радар и расстояние: забор 100 м, коптер в 60 м к северу, нос на север —
+    // дом сзади (внизу рамки), край впереди (вверху)
+    d = OsdData();
+    d.armed = true;
+    d.home = true;
+    d.fenceRadiusM = 100.0f;
+    d.homeDistanceM = 60.0f;
+    d.homeRelativeDeg = 180.0f;
+    OsdScreen scr;
+    scr.compose(d, osdLayoutFrom(p), nullptr);
+    const OsdLayout l = osdLayoutFrom(p);
+    const uint8_t mx = osdPosX(l.pos[OSD_FENCE_MAP]), my = osdPosY(l.pos[OSD_FENCE_MAP]);
+    char line[200];
+    int n = 0;
+    for (int r = 0; r < OsdScreen::FENCE_MAP_ROWS; ++r)
+    {
+        line[n++] = '|';
+        for (int c = 0; c < OsdScreen::FENCE_MAP_COLS; ++c)
+        {
+            const uint8_t ch = scr.at(static_cast<uint8_t>(my + r), static_cast<uint8_t>(mx + c));
+            line[n++] = ch == osdsym::HOME ? 'H' : ch >= 0x60 && ch < 0x70 ? '^' : static_cast<char>(ch);
+        }
+        line[n++] = '|';
+    }
+    line[n] = 0;
+    TEST_MESSAGE(line);
+    // те же знаки рисует Studio (core/geofence.ts, fenceMap)
+    TEST_ASSERT_EQUAL_STRING("|         ||  .....  || .. ^ .. ||..  H  ..|| .     . |", line);
+    // нос — стрелка вверх в середине; дом — ниже; край — точки выше середины, ниже — нет
+    TEST_ASSERT_EQUAL_HEX8(osdArrow(0.0f), scr.at(static_cast<uint8_t>(my + 2), static_cast<uint8_t>(mx + 4)));
+    bool homeBelow = false, edgeAbove = false, edgeBelow = false;
+    for (int r = 0; r < OsdScreen::FENCE_MAP_ROWS; ++r)
+        for (int c = 0; c < OsdScreen::FENCE_MAP_COLS; ++c)
+        {
+            const uint8_t ch = scr.at(static_cast<uint8_t>(my + r), static_cast<uint8_t>(mx + c));
+            if (ch == osdsym::HOME && r > 2) homeBelow = true;
+            // по курсу (средний столбец): край впереди, сзади — нет (там дом)
+            if (ch == '.' && r < 2 && c == 4) edgeAbove = true;
+            if (ch == '.' && r > 2 && c == 4) edgeBelow = true;
+        }
+    TEST_ASSERT_TRUE(homeBelow);
+    TEST_ASSERT_TRUE(edgeAbove);
+    TEST_ASSERT_FALSE(edgeBelow);
+    // расстояние до края: 40 м, стрелка вперёд
+    const uint8_t fx = osdPosX(l.pos[OSD_FENCE]), fy = osdPosY(l.pos[OSD_FENCE]);
+    TEST_ASSERT_EQUAL_HEX8(osdArrow(0.0f), scr.at(fy, fx));
+    TEST_ASSERT_EQUAL('4', scr.at(fy, static_cast<uint8_t>(fx + 1)));
+    TEST_ASSERT_EQUAL('0', scr.at(fy, static_cast<uint8_t>(fx + 2)));
+    // из дома весь круг в рамке: точки со всех четырёх сторон
+    d.homeDistanceM = 0.0f;
+    scr.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL('.', scr.at(my, static_cast<uint8_t>(mx + 4)));
+    TEST_ASSERT_EQUAL('.', scr.at(static_cast<uint8_t>(my + 4), static_cast<uint8_t>(mx + 4)));
+    TEST_ASSERT_EQUAL('.', scr.at(static_cast<uint8_t>(my + 2), mx));
+    TEST_ASSERT_EQUAL('.', scr.at(static_cast<uint8_t>(my + 2), static_cast<uint8_t>(mx + 8)));
+    // без забора или до ARM — ни радара, ни расстояния
+    d.fenceRadiusM = 0.0f;
+    scr.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL(' ', scr.at(my, static_cast<uint8_t>(mx + 4)));
+    TEST_ASSERT_EQUAL(' ', scr.at(fy, fx));
+}
+
 // Меню в очках стиками (CMS): вход, отпустить в центр, ходить, менять, выйти.
 void test_osd_menu_by_sticks()
 {
@@ -9318,6 +9496,7 @@ int main()
     RUN_TEST(test_gps_rescue_logic);
     RUN_TEST(test_gps_rescue_params);
     RUN_TEST(test_training_limits_params_and_logic);
+    RUN_TEST(test_geofence_params_logic_and_osd);
     RUN_TEST(test_cli_pastes_betaflight_diff);
     RUN_TEST(test_vbat_sag_compensation_percent);
     RUN_TEST(test_battery_voltage_current_and_mah);

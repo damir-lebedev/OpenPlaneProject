@@ -156,16 +156,16 @@ namespace copter
             return fminf(thrust, cap);
         }
 
-    private:
-        float climbCap() const { return brakeSpeed(set.maxAltM - alt, ALT_BRAKE); }
-
         // Скорость к пределу, с которой ещё успеть остановиться за d м
-        // (у самого предела — линейно, за ним — назад).
+        // (у самого предела — линейно, за ним — назад). И для геозабора.
         static float brakeSpeed(float d, float brake)
         {
             if (d <= 0.0f) return d * ALT_GAIN;
             return fminf(sqrtf(2.0f * brake * d), d * ALT_GAIN + 0.5f);
         }
+
+    private:
+        float climbCap() const { return brakeSpeed(set.maxAltM - alt, ALT_BRAKE); }
 
         TrainingSettings set;
         uint8_t flags_ = 0;

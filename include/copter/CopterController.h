@@ -16,6 +16,7 @@
 #include "copter/RateController.h"
 #include "copter/RcSmoothing.h"
 #include "copter/TrainingLimits.h"
+#include "copter/Geofence.h"
 #include "copter/Turtle.h"
 
 // ============================================================
@@ -397,6 +398,7 @@ namespace copter
         bool gpsSpoofDetect = true;        // gps_spoof_detect: подмена GPS — GPS из навигации вон (copter/GpsIntegrity.h)
         float hoverThrottle = 0.0f;        // autopilot_hover_throttle: газ висения до обучения; 0 — из описания коптера
         TrainingSettings training;         // training_* (copter/TrainingLimits.h)
+        GeofenceSettings geofence;         // geofence_*: граница, за которую не вылетит (copter/Geofence.h)
         ChirpSettings chirp;               // chirp_* (copter/Chirp.h)
     };
 
@@ -433,6 +435,8 @@ namespace copter
         DeadReckonPhase deadReckPhase = DeadReckonPhase::IDLE;
         float deadReckN = 0.0f, deadReckE = 0.0f, deadReckErrM = 0.0f;
         uint8_t trainingFlags = 0;     // учебные ограничения: биты TrainingFlag (что сейчас держит)
+        uint8_t fenceFlags = 0;        // геозабор: биты GeofenceFlag
+        float fenceMarginM = 0.0f;     // до края забора, м (< 0 — за ним; без забора — 0)
         // положение по GPS и акселерометру (copter/PositionEstimator.h): от дома, м и м/с
         bool posValid = false;
         float posN = 0.0f, posE = 0.0f, velN = 0.0f, velE = 0.0f;
@@ -493,6 +497,7 @@ namespace copter
             rescue.configure(s.rescue);
             deadReck.configure(s.deadReck, s.rescue);
             training.configure(s.training);
+            fence.configure(s.geofence);
             position.configure(s.gpsDelayS);
             position.setMinSats(s.posHoldMinSats);
             gpsIntegrity.configure(s.gpsSpoofDetect);
@@ -829,6 +834,11 @@ namespace copter
             training.update(vertical.altitude(), vertical.baroUsed(), rescue.distanceHome(), rescue.outwardSpeed(),
                             rescue.ready() == RescueFail::NONE, rescue.groundSpeed(), rescue.gpsOk(), dt);
             status.trainingFlags = training.flags();
+            // ---- геозабор (copter/Geofence.h): в любом режиме, и в failsafe ----
+            fence.update(vertical.altitude(), vertical.baroUsed(), rescue.distanceHome(), rescue.outwardSpeed(),
+                         rescue.groundSpeed(),
+                         !gpsMasked && rescue.ready() == RescueFail::NONE && rescue.fixAgeS() < Geofence::GPS_STALE_S,
+                         status.airborne, dt);
 
             // ---- уставки ----
             const bool failsafe = status.state == CopterState::FAILSAFE;
@@ -838,8 +848,9 @@ namespace copter
             // возврат домой: этап 2 failsafe с GPS-RESCUE или режим GPS RESCUE в воздухе
             const bool wantRescue = (failsafe && status.failsafeStage >= 2 && set.failsafeProcedure == FailsafeProcedure::GPS_RESCUE) ||
                                     ((rc.gpsRescue || training.wantReturn()) && status.state == CopterState::ARMED &&
-                                     status.airborne);
-            if (wantRescue && !rescue.active()) rescue.start(vertical.altitude(), failsafe, training.rescueCeilingM());
+                                     status.airborne) ||
+                                    (fence.wantReturn() && status.airborne);
+            if (wantRescue && !rescue.active()) rescue.start(vertical.altitude(), failsafe, rescueCeiling());
             if (!wantRescue && rescue.active()) rescue.stop();
             if (!wantRescue) deadReck.stop();
             // GPS подменяют — по нему не лететь, даже если проверки выключены
@@ -854,7 +865,7 @@ namespace copter
                 // медленный увод ловят не сразу — точка и ветер за LOOKBACK_S до него
                 const GpsSpoof why = gpsIntegrity.reason();
                 const bool slow = gpsMasked && why != GpsSpoof::JUMP && why != GpsSpoof::ALTITUDE;
-                deadReck.start(slow, rescue.returnAltitude(vertical.altitude(), training.rescueCeilingM()));
+                deadReck.start(slow, rescue.returnAltitude(vertical.altitude(), rescueCeiling()));
                 blindGpsBack = 0.0f;
             }
             // GPS вернулся и годен BLIND_GPS_BACK_S подряд (глушили, не подменяли) — снова по GPS
@@ -864,13 +875,25 @@ namespace copter
                 if (blindGpsBack >= BLIND_GPS_BACK_S)
                 {
                     deadReck.stop();
-                    rescue.start(vertical.altitude(), failsafe, training.rescueCeilingM());
+                    rescue.start(vertical.altitude(), failsafe, rescueCeiling());
                     if (rescue.active()) rescueCmd = rescue.update(vertical.altitude(), status.yaw, dt);
                 }
             }
             const bool blind = deadReck.active();
             if (blind) rescueCmd = deadReck.update(vertical.altitude(), status.yaw, dt);
-            const bool rescuing = blind || (rescue.active() && rescue.phase() != RescuePhase::ABORT);
+            bool rescuing = blind || (rescue.active() && rescue.phase() != RescuePhase::ABORT);
+            // забор ведёт назад, а вернуть нечем (нет GPS и модели для полёта вслепую) — сесть
+            if (fence.wantReturn() && !rescuing) fence.forceLand();
+            const bool fenceLanding = fence.wantLand() && !rescuing && status.airborne;
+            RescueCommand fenceLandCmd;
+            if (fenceLanding)
+            {
+                fenceLandCmd.climbRate = -set.failsafeDescent;
+                rescueCmd = fenceLandCmd;
+                rescuing = true;   // ровно и вниз, стики не слушаются
+            }
+            status.fenceFlags = fence.flags();
+            status.fenceMarginM = fence.marginM();
             status.deadReckPhase = deadReck.phase();
             status.deadReckN = deadReck.northM();
             status.deadReckE = deadReck.eastM();
@@ -940,7 +963,7 @@ namespace copter
             {
                 const float speedCap = set.training.enabled ? set.training.maxSpeedMs : 0.0f;
                 const PosHoldCommand pc = posHold.update(position, failsafe ? 0.0f : sticks[0], failsafe ? 0.0f : sticks[1],
-                                                         training.angleCap(set.posHold.maxAngleDeg), speedCap, dt);
+                                                         fence.angleCap(training.angleCap(set.posHold.maxAngleDeg)), speedCap, dt);
                 posCmd.rollDeg = pc.rollDeg;
                 posCmd.pitchDeg = pc.pitchDeg;
                 posCmd.yawRateDps = tune.rates[2].apply(sticks[2]);
@@ -1000,7 +1023,7 @@ namespace copter
                     const float dead = fminf(0.45f, fmaxf(0.0f, set.alt.deadband));   // alt_hold_deadband
                     if (s > dead) climb = (s - dead) / (0.5f - dead) * set.alt.maxClimb;
                     if (s < -dead) climb = (s + dead) / (0.5f - dead) * set.alt.maxDescent;
-                    climb = training.limitClimb(climb);
+                    climb = fence.limitClimb(training.limitClimb(climb));
                 }
                 climbCmd = climb;
                 altCtl.setHover(hover);
@@ -1011,6 +1034,7 @@ namespace copter
             {
                 thrust = fixedThrottle ? set.failsafeThrottle : sticks[3] * (failsafe ? 1.0f : throttleLimit);
                 if (!failsafe) thrust = training.limitThrust(thrust, vertical.climbRate(), hover, cosTilt);
+                thrust = fence.limitThrust(thrust, vertical.climbRate(), hover, cosTilt);   // забор — и в failsafe
                 status.altTarget = vertical.altitude();
             }
 
@@ -1158,6 +1182,7 @@ namespace copter
         const PositionEstimator& getPosition() const { return position; }
         const GpsIntegrity& getGpsIntegrity() const { return gpsIntegrity; }
         const DeadReckonHome& getDeadReckon() const { return deadReck; }
+        const Geofence& getGeofence() const { return fence; }
         bool isArmed() const { return status.state != CopterState::DISARMED; }
 
         // Разоружить немедленно (консоль, ошибка).
@@ -1350,6 +1375,9 @@ namespace copter
             blindGpsBack = 0.0f;
             training.reset();
             status.trainingFlags = 0;
+            fence.reset();
+            status.fenceFlags = 0;
+            status.fenceMarginM = 0.0f;
             posHold.stop();
             posHold.clearFail();
             status.posHoldPhase = PosHoldPhase::OFF;
@@ -1490,6 +1518,8 @@ namespace copter
             // GPS-RESCUE по потере связи без GPS не вернёт — не армить (как BF)
             if (set.failsafeProcedure == FailsafeProcedure::GPS_RESCUE && !set.rescue.allowArmingWithoutFix && !rescue.gpsOk())
                 b |= ARM_BLOCK_GPS;
+            // геозабор без GPS не знает, где край, — не армить
+            if (set.geofence.circle() && !rescue.gpsOk()) b |= ARM_BLOCK_GPS;
             b |= externalBlockers;
             if (!switchSeenOff) b |= forcedOff ? ARM_BLOCK_NOT_DISARMED : ARM_BLOCK_SWITCH;
             return b;
@@ -1783,7 +1813,7 @@ namespace copter
             }
 
             // ANGLE: целевой угол стиком; упреждение — по его скорости
-            const float maxA = training.angleCap(tune.maxAngleDeg);   // учебный предел наклона и скорости
+            const float maxA = fence.angleCap(training.angleCap(tune.maxAngleDeg));   // учебный предел и забор
             float target[2] = { sticks[0] * maxA, sticks[1] * maxA };
             if (rescueCmd)
             {
@@ -1875,6 +1905,14 @@ namespace copter
         float posOkTimer = 0.0f;                         // GPS и курс годятся подряд, с
         PosHoldFail posLastFail = PosHoldFail::NO_GPS;   // чего не хватало в последний раз
         TrainingLimits training;
+        Geofence fence;
+
+        // Потолок для возврата домой: учебный и забора — ниже из двух (0 — нет).
+        float rescueCeiling() const
+        {
+            const float a = training.rescueCeilingM(), b = fence.rescueCeilingM();
+            return a > 0.0f && b > 0.0f ? fminf(a, b) : fmaxf(a, b);
+        }
         RcSmoothing rcSmooth;
         Pt1 throttleHpLpf;               // anti-gravity
         Pt1 throttleBoostLpf;            // throttle_boost

@@ -353,6 +353,10 @@ namespace copter
         PARAM_TRAINING_MAX_DIST,
         PARAM_TRAINING_MAX_ANGLE,
         PARAM_TRAINING_MAX_SPEED,
+        PARAM_GEOFENCE,
+        PARAM_GEOFENCE_RADIUS,
+        PARAM_GEOFENCE_ALT,
+        PARAM_GEOFENCE_NO_GPS,
         PARAM_MOTOR_POLES,
         PARAM_DSHOT_BIDIR,
         PARAM_DSHOT_EDT,
@@ -457,6 +461,8 @@ namespace copter
         PARAM_OSD_GPS_LON_POS,
         PARAM_OSD_RSSI_VALUE_POS,
         PARAM_OSD_PREFLIGHT_POS,
+        PARAM_OSD_FENCE_POS,
+        PARAM_OSD_FENCE_MAP_POS,
         PARAM_OSD_STAT_TIM_2,
         PARAM_OSD_STAT_MAX_ALT,
         PARAM_OSD_STAT_MAX_SPD,
@@ -479,6 +485,7 @@ namespace copter
         PARAM_OSD_WARN_RSSI,
         PARAM_OSD_WARN_POSHOLD,
         PARAM_OSD_WARN_GPS_SPOOF,
+        PARAM_OSD_WARN_GEOFENCE,
         PARAM_OSD_ALT_ALARM,
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
@@ -563,6 +570,7 @@ namespace copter
         // порядок — как FailsafeProcedure и FailsafeSwitchMode (CopterController.h) и в BF
         static const char* const FS_PROCEDURES[] = { "AUTO-LAND", "DROP", "GPS-RESCUE" };
         static const char* const FS_SWITCH_MODES[] = { "STAGE1", "KILL", "STAGE2" };
+        static const char* const FENCE_NO_GPS[] = { "WARN", "RETURN", "LAND" };   // как GeofenceNoGps
         // порядок — как RescueAltMode и RescueSanity (GpsRescue.h) и в BF
         static const char* const RESCUE_ALT_MODES[] = { "MAX_ALT", "FIXED_ALT", "CURRENT_ALT" };
         static const char* const RESCUE_SANITY[] = { "OFF", "ON", "FS_ONLY" };
@@ -938,6 +946,14 @@ namespace copter
               "учебный наклон в ANGLE: стик даёт не больше; 0 — как angle_limit" },
             { "training_max_speed", kInt, kMaster, kGroupSafety, 0, 200, 40, kTable, "км/ч", nullptr, 0,
               "учебная скорость по GPS: быстрее — наклон в ANGLE плавно меньше; 0 — нет" },
+            { "geofence", kEnum, kMaster, kGroupSafety, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "геозабор: круг от дома и потолок, за которые не вылетит в любом режиме, и ACRO; без GPS не армится (своё)" },
+            { "geofence_radius", kInt, kMaster, kGroupSafety, 0, 10000, 200, kTable, "м", nullptr, 0,
+              "радиус забора от точки ARM: к краю тормозит, у края — автомат назад до 80 % радиуса; 0 — нет" },
+            { "geofence_alt", kInt, kMaster, kGroupSafety, 0, 1000, 120, kTable, "м", nullptr, 0,
+              "потолок забора над точкой ARM: выше газ не пустит (нужен барометр); 0 — нет" },
+            { "geofence_no_gps", kEnum, kMaster, kGroupSafety, 0, 2, 1, kTable, "", FENCE_NO_GPS, 3,
+              "GPS пропал или подменён в полёте дольше 3 с: WARN — только FENCE NO GPS, RETURN — домой (вслепую), LAND — сесть" },
             { "motor_poles", kInt, kMaster, kGroupMotors, 4, 255, 14, kTable, "", nullptr, 0,
               "магнитов в роторе мотора (у 2207 — 14): обороты = eRPM x 2 / motor_poles" },
             { "dshot_bidir", kEnum, kMaster, kGroupMotors, 0, 1, 0, kTable, "", OFF_ON, 2,
@@ -1144,6 +1160,10 @@ namespace copter
               "OSD: сила сигнала пульта (RSSI), % — x + 32·y, +2048 — показан" },
             { "osd_preflight_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2305, kTable, "", nullptr, 0,
               "OSD: до ARM — батарея, GPS, пульт одной строкой (своё) — x + 32·y, +2048 — показан" },
+            { "osd_fence_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2326, kTable, "", nullptr, 0,
+              "OSD: до края геозабора, м, и стрелка к нему (своё) — x + 32·y, +2048 — показан" },
+            { "osd_fence_map_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2164, kTable, "", nullptr, 0,
+              "OSD: радар геозабора 9 x 5 — край, дом, нос вверх (своё; левый верхний угол) — x + 32·y, +2048 — показан" },
             { "osd_stat_tim_2", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "статистика после полёта: время в полёте" },
             { "osd_stat_max_alt", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
@@ -1188,6 +1208,8 @@ namespace copter
               "предупреждение OSD: POS HOLD не держит место — POSHOLD NO GPS, POSHOLD NO MAG, POSHOLD FAIL" },
             { "osd_warn_gps_spoof", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "предупреждение OSD: GPS подменяют — GPS SPOOF (выключен из навигации)" },
+            { "osd_warn_geofence", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: геозабор — FENCE, FENCE RETURN, FENCE NO GPS, FENCE LAND, FENCE ALT" },
             { "osd_alt_alarm", kInt, kMaster, kGroupOsd, 0, 10000, 100, kTable, "м", nullptr, 0,
               "выше — высота на OSD мигает; 0 — нет" },
             { "osd_cap_alarm", kInt, kMaster, kGroupOsd, 0, 20000, 2200, kTable, "мА·ч", nullptr, 0,
@@ -1530,6 +1552,10 @@ namespace copter
             s.training.maxDistM = value(PARAM_TRAINING_MAX_DIST);
             s.training.maxAngleDeg = value(PARAM_TRAINING_MAX_ANGLE);
             s.training.maxSpeedMs = value(PARAM_TRAINING_MAX_SPEED) / 3.6f;
+            s.geofence.enabled = value(PARAM_GEOFENCE) > 0.5f;
+            s.geofence.radiusM = value(PARAM_GEOFENCE_RADIUS);
+            s.geofence.ceilingM = value(PARAM_GEOFENCE_ALT);
+            s.geofence.noGps = static_cast<GeofenceNoGps>(static_cast<uint8_t>(value(PARAM_GEOFENCE_NO_GPS)));
             s.airmodeStartThrottle = value(PARAM_AIRMODE_START_THROTTLE_PERCENT) * 0.01f;
             s.turtle.otherMotors = value(PARAM_CRASHFLIP_MOTOR_PERCENT) * 0.01f;
             s.turtle.expo = value(PARAM_CRASHFLIP_EXPO) * 0.01f;
@@ -2455,9 +2481,9 @@ namespace copter
         uint8_t rateIndex = 0;
     };
 
-    static_assert(PARAM_OSD_PREFLIGHT_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
+    static_assert(PARAM_OSD_FENCE_MAP_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
     static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
-    static_assert(PARAM_OSD_WARN_GPS_SPOOF - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
+    static_assert(PARAM_OSD_WARN_GEOFENCE - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 
     // Раскладка OSD из настроек osd_* (copter/Osd.h).
     inline OsdLayout osdLayoutFrom(const CopterParams& p)
