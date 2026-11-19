@@ -98,7 +98,7 @@ namespace copter
     }
 
     // Почему возврат прервали (или не начали).
-    enum class RescueFail : uint8_t { NONE, NO_HOME, NO_FIX, LOW_SATS, GPS_LOST, NO_PROGRESS, FLYAWAY };
+    enum class RescueFail : uint8_t { NONE, NO_HOME, NO_FIX, LOW_SATS, GPS_LOST, NO_PROGRESS, FLYAWAY, GPS_SPOOF };
 
     inline const char* rescueFailName(RescueFail f)
     {
@@ -110,9 +110,18 @@ namespace copter
             case RescueFail::GPS_LOST: return "GPS_LOST";
             case RescueFail::NO_PROGRESS: return "NO_PROGRESS";
             case RescueFail::FLYAWAY: return "FLYAWAY";
+            case RescueFail::GPS_SPOOF: return "GPS_SPOOF";
             case RescueFail::NONE:
             default: return "NONE";
         }
+    }
+
+    // Прерван из-за самого GPS (нет, мало спутников, пропал, подменяют) —
+    // тогда можно вернуться вслепую (copter/DeadReckonHome.h).
+    inline bool gpsFailure(RescueFail f)
+    {
+        return f == RescueFail::NO_HOME || f == RescueFail::NO_FIX || f == RescueFail::LOW_SATS ||
+               f == RescueFail::GPS_LOST || f == RescueFail::GPS_SPOOF;
     }
 
     // Команда контроллеру на этот цикл.
@@ -194,19 +203,31 @@ namespace copter
             }
             const float dist = distance(last);
             bestDist = dist;
-            switch (set.altMode)
-            {
-                case RescueAltMode::FIXED_ALT: targetAlt = set.returnAltM; break;
-                case RescueAltMode::CURRENT_ALT: targetAlt = altM + set.initialClimbM; break;
-                case RescueAltMode::MAX_ALT:
-                default: targetAlt = fmaxf(maxAltM, altM) + set.initialClimbM; break;
-            }
-            if (ceilingM > 0.0f) targetAlt = fminf(targetAlt, ceilingM);
+            targetAlt = returnAltitude(altM, ceilingM);
             returnAlt = targetAlt;
             phase_ = dist < set.minStartDistM ? RescuePhase::LAND : RescuePhase::CLIMB;
         }
 
         void stop() { phase_ = RescuePhase::IDLE; }
+        // Прервать снаружи (GPS подменяют — по нему лететь нельзя даже без проверок).
+        void fail(RescueFail f)
+        {
+            if (active()) abort(f);
+        }
+
+        // Высота возврата по gps_rescue_alt_mode (и для полёта вслепую).
+        float returnAltitude(float altM, float ceilingM = 0.0f) const
+        {
+            float t;
+            switch (set.altMode)
+            {
+                case RescueAltMode::FIXED_ALT: t = set.returnAltM; break;
+                case RescueAltMode::CURRENT_ALT: t = altM + set.initialClimbM; break;
+                case RescueAltMode::MAX_ALT:
+                default: t = fmaxf(maxAltM, altM) + set.initialClimbM; break;
+            }
+            return ceilingM > 0.0f ? fminf(t, ceilingM) : t;
+        }
 
         bool active() const { return phase_ != RescuePhase::IDLE; }
         RescuePhase phase() const { return phase_; }

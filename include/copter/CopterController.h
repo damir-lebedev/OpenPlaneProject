@@ -10,6 +10,7 @@
 #include "copter/Mixer.h"
 #include "copter/PositionEstimator.h"
 #include "copter/GpsIntegrity.h"
+#include "copter/DeadReckonHome.h"
 #include "copter/PositionHold.h"
 #include "copter/Presets.h"
 #include "copter/RateController.h"
@@ -389,6 +390,7 @@ namespace copter
         TurtleSettings turtle;             // crashflip_*
         AltitudeController::Settings alt;
         GpsRescueSettings rescue;          // gps_rescue_*
+        DeadReckonSettings deadReck;       // deadreck_*: домой вслепую без GPS (copter/DeadReckonHome.h)
         PosHoldSettings posHold;           // pos_hold_*, autopilot_position_* (copter/PositionHold.h)
         uint8_t posHoldMinSats = 8;        // gps_minimum_sats: спутников меньше — позицию не держать
         float gpsDelayS = 0.1f;            // фикс GPS старше на столько (copter/PositionEstimator.h)
@@ -427,6 +429,9 @@ namespace copter
         RescuePhase rescuePhase = RescuePhase::IDLE;   // возврат домой: этап
         RescueFail rescueFail = RescueFail::NONE;      // и почему прерван
         float rescueHeadingFix = 0.0f;                  // без компаса: поправка курса гироскопа по GPS, °
+        // домой вслепую (copter/DeadReckonHome.h): этап, место по своим датчикам и его неуверенность
+        DeadReckonPhase deadReckPhase = DeadReckonPhase::IDLE;
+        float deadReckN = 0.0f, deadReckE = 0.0f, deadReckErrM = 0.0f;
         uint8_t trainingFlags = 0;     // учебные ограничения: биты TrainingFlag (что сейчас держит)
         // положение по GPS и акселерометру (copter/PositionEstimator.h): от дома, м и м/с
         bool posValid = false;
@@ -486,6 +491,7 @@ namespace copter
             hover = s.hoverThrottle > 0.01f ? s.hoverThrottle : t.hoverThrust;
             altCtl.configure(s.alt, hover);
             rescue.configure(s.rescue);
+            deadReck.configure(s.deadReck, s.rescue);
             training.configure(s.training);
             position.configure(s.gpsDelayS);
             position.setMinSats(s.posHoldMinSats);
@@ -635,6 +641,7 @@ namespace copter
                 gi.windN = attitude.windNorth();
                 gi.windE = attitude.windEast();
                 gi.armed = status.state != CopterState::DISARMED;
+                gi.pathRatio = deadReck.pathRatio();   // с прошлого такта
                 gpsIntegrity.update(gi, dt);
                 status.gpsSpoof = gpsIntegrity.reason();
                 status.gpsTrust = gpsIntegrity.trust();
@@ -772,6 +779,24 @@ namespace copter
             motionTimer = motion > 15.0f ? 0.0f : motionTimer + dt;
 
             rescue.track(sens.gps, vertical.altitude(), dt);
+            // путь по своим датчикам — на случай, если GPS подменят или заглушат
+            {
+                DeadReckonInput di;
+                di.gpsGood = sens.gps.fresh && rescue.ready() == RescueFail::NONE;
+                di.gpsN = sens.gps.northM;
+                di.gpsE = sens.gps.eastM;
+                di.modelOk = attitude.ekfEnabled() && attitude.isInitialized() && status.airborne;
+                di.airX = attitude.airVelX();
+                di.airY = attitude.airVelY();
+                di.headingOk = position.headingSource() != HeadingSource::NONE;
+                di.headingOffsetDeg = position.headingDeg() - attitude.yawDeg();
+                di.windN = attitude.windNorth();
+                di.windE = attitude.windEast();
+                di.windSigma = attitude.windSigma();
+                di.dragCoef = attitude.dragCoef();
+                di.dragSigma = attitude.dragSigma();
+                deadReck.track(di, dt);
+            }
 
             // ---- связь, ARM, failsafe ----
             CopterRc rc = rcIn;
@@ -816,9 +841,40 @@ namespace copter
                                      status.airborne);
             if (wantRescue && !rescue.active()) rescue.start(vertical.altitude(), failsafe, training.rescueCeilingM());
             if (!wantRescue && rescue.active()) rescue.stop();
+            if (!wantRescue) deadReck.stop();
+            // GPS подменяют — по нему не лететь, даже если проверки выключены
+            if (gpsMasked) rescue.fail(RescueFail::GPS_SPOOF);
             RescueCommand rescueCmd;
-            if (rescue.active()) rescueCmd = rescue.update(vertical.altitude(), status.yaw, dt);
-            const bool rescuing = rescue.active() && rescue.phase() != RescuePhase::ABORT;
+            if (rescue.active() && !deadReck.active()) rescueCmd = rescue.update(vertical.altitude(), status.yaw, dt);
+            // GPS не годится (подмена, глушение) — домой вслепую по своим датчикам
+            if (wantRescue && !deadReck.active() && rescue.phase() == RescuePhase::ABORT && gpsFailure(rescue.failure()) &&
+                deadReck.available())
+            {
+                // скачок (точки или высоты) виден сразу — последний честный фикс годится;
+                // медленный увод ловят не сразу — точка и ветер за LOOKBACK_S до него
+                const GpsSpoof why = gpsIntegrity.reason();
+                const bool slow = gpsMasked && why != GpsSpoof::JUMP && why != GpsSpoof::ALTITUDE;
+                deadReck.start(slow, rescue.returnAltitude(vertical.altitude(), training.rescueCeilingM()));
+                blindGpsBack = 0.0f;
+            }
+            // GPS вернулся и годен BLIND_GPS_BACK_S подряд (глушили, не подменяли) — снова по GPS
+            if (deadReck.active())
+            {
+                blindGpsBack = !gpsMasked && rescue.ready() == RescueFail::NONE ? blindGpsBack + dt : 0.0f;
+                if (blindGpsBack >= BLIND_GPS_BACK_S)
+                {
+                    deadReck.stop();
+                    rescue.start(vertical.altitude(), failsafe, training.rescueCeilingM());
+                    if (rescue.active()) rescueCmd = rescue.update(vertical.altitude(), status.yaw, dt);
+                }
+            }
+            const bool blind = deadReck.active();
+            if (blind) rescueCmd = deadReck.update(vertical.altitude(), status.yaw, dt);
+            const bool rescuing = blind || (rescue.active() && rescue.phase() != RescuePhase::ABORT);
+            status.deadReckPhase = deadReck.phase();
+            status.deadReckN = deadReck.northM();
+            status.deadReckE = deadReck.eastM();
+            status.deadReckErrM = deadReck.errorM();
             status.rescuePhase = rescue.phase();
             status.rescueFail = rescue.failure();
             status.rescueHeadingFix = rescue.headingCorrection();
@@ -1101,6 +1157,7 @@ namespace copter
         const Chirp& getChirp() const { return chirp; }
         const PositionEstimator& getPosition() const { return position; }
         const GpsIntegrity& getGpsIntegrity() const { return gpsIntegrity; }
+        const DeadReckonHome& getDeadReckon() const { return deadReck; }
         bool isArmed() const { return status.state != CopterState::DISARMED; }
 
         // Разоружить немедленно (консоль, ошибка).
@@ -1289,6 +1346,8 @@ namespace copter
             vertical.reset(sens.baroOk ? sens.baroAltM - baroHome : 0.0f);
             altCtl.reset(0.0f, 0.0f);
             rescue.resetFlight();
+            deadReck.resetFlight();
+            blindGpsBack = 0.0f;
             training.reset();
             status.trainingFlags = 0;
             posHold.stop();
@@ -1596,11 +1655,12 @@ namespace copter
                 landingTimer = 0.0f;
                 vertical.reset(vertical.altitude());
                 if (status.state == CopterState::FAILSAFE) failsafeDisarm();
-                else if (rescue.landing()) forcedDisarm();   // GPS RESCUE с тумблера сел
+                else if (rescue.landing() || deadReck.landing()) forcedDisarm();   // GPS RESCUE с тумблера сел
             }
             // failsafe_landing_time: этап 2 не кончился посадкой — DISARM
             // (полёт домой — не посадка: время идёт с этапа LAND или без возврата)
-            const bool flyingHome = rescue.active() && !rescue.landing() && rescue.phase() != RescuePhase::ABORT;
+            const bool flyingHome = (rescue.active() && !rescue.landing() && rescue.phase() != RescuePhase::ABORT && !deadReck.active()) ||
+                                    (deadReck.active() && !deadReck.landing());
             if (status.state == CopterState::FAILSAFE && status.failsafeStage >= 2 && !flyingHome)
             {
                 failsafeTimer += dt;
@@ -1804,6 +1864,9 @@ namespace copter
         RateAxis axes[3];
         AbsoluteControl absCtl[3];
         GpsRescue rescue;
+        DeadReckonHome deadReck;
+        float blindGpsBack = 0.0f;                       // вслепую: GPS снова годен подряд, с
+        static constexpr float BLIND_GPS_BACK_S = 3.0f;  // столько — и обратно к GPS Rescue
         PositionEstimator position;
         GpsIntegrity gpsIntegrity;
         float earthAccelX = 0.0f, earthAccelY = 0.0f;    // горизонтальное ускорение в осях «от включения», м/с²

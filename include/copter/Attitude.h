@@ -401,6 +401,13 @@ namespace copter
         // Ветер по оценке, м/с: куда дует — на север, на восток.
         float windNorth() const { return windN; }
         float windEast() const { return windE; }
+        // его неуверенность, м/с (1σ, худшая из двух осей)
+        float windSigma() const { return ekf ? sqrtf(fmaxf(D[1][1], D[2][2])) : 0.0f; }
+        // Скорость относительно воздуха по модели (тяга − сопротивление), м/с,
+        // в осях рысканья гироскопа (X — рысканье 0): для полёта вслепую
+        // (copter/DeadReckonHome.h)
+        float airVelX() const { return ekf ? airX : 0.0f; }
+        float airVelY() const { return ekf ? airY : 0.0f; }
         // Компас: принят ли фильтром (опора рысканья есть), сколько отсчётов
         // отброшено проверкой невязки.
         bool compassUsed() const { return ekf && magAnchored; }

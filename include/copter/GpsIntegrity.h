@@ -35,6 +35,12 @@
 //     медленно в полёте (уход барометра), скачок больше ALT_M — подмена.
 //   • RECEIVER — сам приёмник: u-blox M10 сообщает подмену
 //     (UBX-NAV-STATUS spoofDetState ≥ 2) дольше RECEIVER_S.
+//   Доверие (не защёлка) снижает и путь по GPS за 8 с против пути по модели
+//   фильтра (наклон → скорость относительно воздуха + ветер,
+//   copter/DeadReckonHome.h): он видит увод, который GPS Rescue сам
+//   наполовину гасит (модули разгонов совпадают — VELOCITY молчит), но так
+//   же выглядит резкая смена ветра на 4–5 м/с — защёлкивать нельзя, пока нет
+//   признака по переходному процессу (сопротивление по акселерометру).
 //
 // Подмена защёлкивается: GPS выключен из навигации до посадки — в воздухе
 // сам не возвращается (подменщик может «отпустить» и поймать снова).
@@ -79,6 +85,9 @@ namespace copter
         bool windOk = false;           // фильтр выучил сопротивление: ветер ниже ему верен
         float windN = 0.0f, windE = 0.0f;         // м/с
         bool armed = false;
+        // путь по GPS против пути по модели (copter/DeadReckonHome.h): отношение
+        // к допуску (< 0 — не сравнить) — только в доверие, без защёлки
+        float pathRatio = -1.0f;
     };
 
     class GpsIntegrity
@@ -272,7 +281,7 @@ namespace copter
                         altOffset += dev * fminf(1.0f, fixPeriod() / (in.armed ? ALT_TAU_AIR_S : ALT_TAU_GROUND_S));
                 }
                 lastFixAt = now;
-                worst = fmaxf(fixWorst, windRatio);
+                worst = fmaxf(fmaxf(fixWorst, windRatio), in.pathRatio);
             }
 
             // ---- защёлка ----

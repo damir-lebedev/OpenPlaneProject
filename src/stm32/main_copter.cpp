@@ -521,7 +521,8 @@ static void sendTelemetry()
     d.altitudeM = f.altitudeM;
     d.satellites = f.satellites;
     const copter::CopterMode mode = copterController.isArmed() ? s.mode : switchMode;
-    const bool rescue = s.rescuePhase != copter::RescuePhase::IDLE && s.rescuePhase != copter::RescuePhase::ABORT;
+    const bool rescue = (s.rescuePhase != copter::RescuePhase::IDLE && s.rescuePhase != copter::RescuePhase::ABORT) ||
+                        s.deadReckPhase != copter::DeadReckonPhase::IDLE;
     const char* name = s.turtle ? "TURT" : rescue ? "RTH" : crsfModeName(mode);   // turtle mode — как OSD BF
     copter::CrsfTelemetry::modeName(d.mode, sizeof(d.mode), name, copterController.isArmed(),
                                     s.state == copter::CopterState::FAILSAFE && !rescue);
@@ -750,8 +751,9 @@ static void composeOsd()
     d.armed = copterController.isArmed();
     d.failsafe = s.state == copter::CopterState::FAILSAFE;
     d.mode = s.turtle ? "TURT" : crsfModeName(d.armed ? s.mode : switchMode);
-    d.rescue = s.rescuePhase != copter::RescuePhase::IDLE && s.rescuePhase != copter::RescuePhase::ABORT;
-    d.rescueAbort = s.rescuePhase == copter::RescuePhase::ABORT;
+    d.rescueBlind = s.deadReckPhase != copter::DeadReckonPhase::IDLE;
+    d.rescue = (s.rescuePhase != copter::RescuePhase::IDLE && s.rescuePhase != copter::RescuePhase::ABORT) || d.rescueBlind;
+    d.rescueAbort = s.rescuePhase == copter::RescuePhase::ABORT && !d.rescueBlind;
     d.linkQuality = rcReceiver.getLinkQuality();
     d.rssi = rssi.percent();
     d.linkLost = rcReceiver.isSignalLost();

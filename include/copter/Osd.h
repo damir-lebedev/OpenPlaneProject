@@ -266,6 +266,7 @@ namespace copter
         const char* mode = "ACRO";          // ACRO, ANGL, HOR, ALTH, POSH
         bool rescue = false;                // GPS Rescue летит домой — режим RESC, как в BF
         bool rescueAbort = false;           // возврат невозможен — садится на месте
+        bool rescueBlind = false;           // домой вслепую: GPS подменён или заглушён (copter/DeadReckonHome.h)
         int16_t linkQuality = -1;           // %, −1 — неизвестно
         int16_t rssi = -1;                  // %, −1 — неизвестно (copter/Rssi.h)
         bool linkLost = false;
@@ -439,6 +440,7 @@ namespace copter
         static const char* warningText(const OsdData& d, const OsdLayout& l)
         {
             if (d.rescueAbort) return "RESCUE FAIL";
+            if (d.rescueBlind) return "BLIND RTH";
             if (l.warn(OSD_WARN_FAIL_SAFE) && d.failsafe) return "FAILSAFE";
             if (l.warn(OSD_WARN_FAIL_SAFE) && d.linkLost) return "RXLOSS";
             if (l.warn(OSD_WARN_BATT_CRITICAL) && d.batteryState == 3) return "BATT CRITICAL";

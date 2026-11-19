@@ -9099,6 +9099,101 @@ void test_gps_integrity_params_and_osd()
     TEST_ASSERT_EQUAL_STRING("GPS SPOOF", OsdScreen::warningText(d));
 }
 
+// Домой вслепую (copter/DeadReckonHome.h): коптер летит на север 5 м/с по
+// модели, ветер 1 м/с на восток; GPS честный — путь сходится. Потом ложная
+// точка уезжает на восток ещё 6 м/с — путь разошёлся (за 7 с отношение
+// больше 1); старт «медленный увод» берёт точку и ветер за 10 с до
+// обнаружения и оказывается там, где коптер на самом деле. Дальше: нос на
+// дом, наклон вперёд под скорость, время вышло — посадка.
+void test_dead_reckon_home_unit()
+{
+    DeadReckonHome dr;
+    GpsRescueSettings rs;
+    DeadReckonSettings ds;
+    ds.maxS = 30.0f;
+    dr.configure(ds, rs);
+    dr.resetFlight();
+    TEST_ASSERT_FALSE(dr.available());
+    DeadReckonInput in;
+    in.modelOk = true;
+    in.headingOk = true;
+    in.headingOffsetDeg = 0.0f;
+    in.airX = 5.0f;   // нос и рысканье — на север
+    in.windE = 1.0f;
+    in.windSigma = 0.2f;
+    in.dragCoef = 0.3f;
+    in.dragSigma = 0.1f;
+    const float dt = 0.01f;
+    double n = 100.0, e = 0.0;   // где коптер на самом деле
+    double fakeE = 0.0, fakeV = 0.0;
+    float worstHonest = 0.0f;
+    int disagreeAt = -1;
+    for (int i = 0; i < 4000; ++i)   // 40 с
+    {
+        n += 5.0 * dt;
+        e += 1.0 * dt;
+        if (i >= 2500)
+        {
+            fakeV = fmin(6.0, fakeV + 3.0 * dt);
+            fakeE += fakeV * dt;
+        }
+        in.gpsGood = i % 10 == 0 && disagreeAt < 0;   // подмену увидели — GPS выключен (как в контроллере)
+        in.gpsN = static_cast<float>(n);
+        in.gpsE = static_cast<float>(e + fakeE);
+        dr.track(in, dt);
+        if (i < 2500 && dr.pathRatio() > worstHonest) worstHonest = dr.pathRatio();
+        if (disagreeAt < 0 && i > 2500 && dr.pathRatio() > 1.0f) disagreeAt = i;
+    }
+    TEST_ASSERT_TRUE(dr.available());
+    TEST_ASSERT_TRUE(worstHonest > 0.0f && worstHonest < 0.5f);
+    TEST_ASSERT_TRUE(disagreeAt > 2500 && disagreeAt < 3200);   // за 7 с
+    dr.start(true, 30.0f);
+    TEST_ASSERT_TRUE(dr.active());
+    TEST_ASSERT_EQUAL(static_cast<int>(DeadReckonPhase::CLIMB), static_cast<int>(dr.phase()));
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, static_cast<float>(n), dr.northM());
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, static_cast<float>(e), dr.eastM());   // а не e + fakeE
+    TEST_ASSERT_TRUE(dr.errorM() > 3.0f && dr.errorM() < 20.0f);
+    // на подъёме: нос разворачивается к дому (он на юге — поворот), набор высоты
+    RescueCommand c = dr.update(10.0f, 0.0f, dt);
+    TEST_ASSERT_TRUE(fabsf(c.yawRateDps) > 30.0f);
+    TEST_ASSERT_EQUAL_FLOAT(rs.ascendRate, c.climbRate);
+    c = dr.update(30.0f, 0.0f, dt);
+    TEST_ASSERT_EQUAL(static_cast<int>(DeadReckonPhase::FLY_HOME), static_cast<int>(dr.phase()));
+    // нос на юг (рысканье 180): тангаж вперёд под скорость
+    in.airX = 0.0f;
+    dr.track(in, dt);
+    c = dr.update(30.0f, 180.0f, dt);
+    TEST_ASSERT_TRUE(c.pitchDeg < -10.0f && c.pitchDeg > -45.0f);
+    // ветер на восток сносит: нужно воздухом на запад — нос на юг, запад справа: крен вправо
+    TEST_ASSERT_TRUE(c.rollDeg > 1.0f);
+    // время вышло — посадка
+    for (int i = 0; i < 3100; ++i) dr.track(in, dt);
+    c = dr.update(30.0f, 180.0f, dt);
+    TEST_ASSERT_TRUE(dr.landing());
+    TEST_ASSERT_EQUAL_FLOAT(-rs.descendRate, c.climbRate);
+    dr.resetFlight();
+    TEST_ASSERT_FALSE(dr.available());
+}
+
+// Полёт вслепую: настройка, OSD, причина прерывания GPS Rescue.
+void test_dead_reckon_params_and_osd()
+{
+    CopterParams params;
+    TEST_ASSERT_EQUAL(PARAM_DEADRECK_MAX_S, findParam("deadreck_max_s"));
+    TEST_ASSERT_EQUAL_FLOAT(120.0f, params.value(PARAM_DEADRECK_MAX_S));
+    params.setValue(PARAM_DEADRECK_MAX_S, 0, 0.0f);
+    CopterSettings s;
+    params.applyTo(s);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, s.deadReck.maxS);
+    OsdData d;
+    d.rescue = true;
+    d.rescueBlind = true;
+    TEST_ASSERT_EQUAL_STRING("BLIND RTH", OsdScreen::warningText(d));
+    TEST_ASSERT_EQUAL_STRING("GPS_SPOOF", rescueFailName(RescueFail::GPS_SPOOF));
+    TEST_ASSERT_TRUE(gpsFailure(RescueFail::GPS_SPOOF) && gpsFailure(RescueFail::GPS_LOST));
+    TEST_ASSERT_FALSE(gpsFailure(RescueFail::NO_PROGRESS));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -9301,5 +9396,7 @@ int main()
     RUN_TEST(test_gps_integrity_velocity_drift);
     RUN_TEST(test_gps_integrity_wind_altitude_receiver);
     RUN_TEST(test_gps_integrity_params_and_osd);
+    RUN_TEST(test_dead_reckon_home_unit);
+    RUN_TEST(test_dead_reckon_params_and_osd);
     return UNITY_END();
 }

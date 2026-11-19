@@ -1557,9 +1557,10 @@ void test_gps_rescue_returns_home_in_crosswind()
         TEST_ASSERT_TRUE(flyAway(h, 150.0, 0.5f, 1.0));
         h.sim.setWind(0.0, 4.0, 0.5);   // боковой ветер 4 м/с
         const RescueRun r = linkLostRescue(h, 150.0);
-        char line[220];
-        snprintf(line, sizeof(line), "GPS rescue %-8s from 150 m, crosswind 4 m/s: landed %.1f m from home in %.0f s, max tilt %.0f, max height %.0f m (%s)",
-                 names[k], r.homeDist, r.seconds, r.maxTilt, r.maxHeight, rescuePhaseName(r.lastPhase));
+        char line[260];
+        snprintf(line, sizeof(line), "GPS rescue %-8s from 150 m, crosswind 4 m/s: landed %.1f m from home in %.0f s, max tilt %.0f, max height %.0f m (%s %s, spoof %s)",
+                 names[k], r.homeDist, r.seconds, r.maxTilt, r.maxHeight, rescuePhaseName(r.lastPhase),
+                 rescueFailName(h.ctl.getStatus().rescueFail), gpsSpoofName(h.ctl.getStatus().gpsSpoof));
         TEST_MESSAGE(line);
         TEST_ASSERT_TRUE_MESSAGE(r.disarmed, line);
         TEST_ASSERT_TRUE_MESSAGE(r.homeDist < 6.0, line);
@@ -1587,10 +1588,13 @@ void test_gps_rescue_without_compass_aligns_heading()
     TEST_ASSERT_TRUE_MESSAGE(r.homeDist < 8.0, line);
 }
 
-// GPS пропал на пути домой — возврат прерван, посадка на месте (у BF — DISARM).
+// GPS пропал на пути домой, полёт вслепую выключен (deadreck_max_s = 0) —
+// возврат прерван, посадка на месте (у BF — DISARM).
 void test_gps_rescue_gps_loss_lands_in_place()
 {
-    QuadHarness h(five(), QuadPerturb(), 63, EscProtocol::DSHOT600, 1000.0f, rescueSettings());
+    CopterSettings cs = rescueSettings();
+    cs.deadReck.maxS = 0.0f;
+    QuadHarness h(five(), QuadPerturb(), 63, EscProtocol::DSHOT600, 1000.0f, cs);
     h.gpsOn = true;
     TEST_ASSERT_TRUE(flyAway(h, 150.0, 0.0f, 0.0));
     h.rc.linkOk = false;
@@ -1613,6 +1617,95 @@ void test_gps_rescue_gps_loss_lands_in_place()
     TEST_ASSERT_EQUAL(static_cast<int>(RescueFail::GPS_LOST), static_cast<int>(h.ctl.getStatus().rescueFail));
     TEST_ASSERT_TRUE_MESSAGE(homeDistance(h) > 60.0, line);   // не долетел — сел, где был
     TEST_ASSERT_TRUE_MESSAGE(tilt < 15.0, line);
+}
+
+// Домой вслепую (copter/DeadReckonHome.h, P43 в): 7" улетел на 250 м,
+// ветер 3.6 м/с, связь пропала, GPS Rescue повёл домой — и тут (1) GPS
+// заглушили: точка — последний фикс, дальше путь по модели «наклон →
+// скорость» и ветру из фильтра; (2) GPS подменили — точка прыгнула на 1 км
+// (JUMP, сразу): точка — последний честный фикс. Коптер долетает и садится
+// у дома с ошибкой в несколько процентов пути, а не на месте.
+void test_dead_reckon_home_when_gps_jammed_or_spoofed()
+{
+    for (int spoof = 0; spoof <= 1; ++spoof)
+    {
+        QuadHarness h(*findBuild("longrange7"), QuadPerturb(), 71 + spoof, EscProtocol::DSHOT600, 1000.0f, rescueSettings());
+        h.gpsOn = true;
+        h.gpsDelayS = 0.12;
+        h.sim.setWind(3.0, 2.0, 0.5);
+        TEST_ASSERT_TRUE(flyAway(h, 250.0, 0.6f, 1.0));
+        h.run(20.0);   // сопротивление и ветер выучены в полёте
+        h.rc.linkOk = false;
+        while (h.ctl.getStatus().rescuePhase != RescuePhase::FLY_HOME && h.sim.now() < 600.0) h.step();
+        h.run(4.0);
+        const double from = homeDistance(h);
+        if (!spoof) h.gpsLost = true;
+        double maxTilt = 0.0, worstErr = 0.0, blindAt = -1.0, spoofAt = -1.0, ledAway = 0.0;
+        DeadReckonPhase lastPhase = DeadReckonPhase::IDLE;
+        const double t0 = h.sim.now();
+        int i = 0;
+        while (h.ctl.isArmed() && h.sim.now() - t0 < 200.0)
+        {
+            if (spoof) h.spoofE = 1000.0;   // ложная точка — в километре
+            ++i;
+            h.step();
+            const CopterStatus& st = h.ctl.getStatus();
+            maxTilt = std::fmax(maxTilt, h.sim.tiltDeg());
+            if (spoofAt < 0.0 && st.gpsSpoof != GpsSpoof::NONE)
+            {
+                spoofAt = h.sim.now() - t0;
+                ledAway = homeDistance(h) - from;
+            }
+            if (st.deadReckPhase != DeadReckonPhase::IDLE)
+            {
+                if (blindAt < 0.0) blindAt = h.sim.now() - t0;
+                lastPhase = st.deadReckPhase;
+                const double en = st.deadReckN - (h.sim.position().x - h.homeN);
+                const double ee = st.deadReckE - (h.sim.position().y - h.homeE);
+                worstErr = std::fmax(worstErr, std::sqrt(en * en + ee * ee));
+            }
+        }
+        const CopterStatus& st = h.ctl.getStatus();
+        char line[320];
+        snprintf(line, sizeof(line), "blind RTH (%s at %.0f m, wind 3.6 m/s): spoof %s seen after %.1f s (led %+.0f m), blind after %.1f s, landed %.0f m from home in %.0f s, est. error worst %.0f m (reported %.0f), max tilt %.0f, %s/%s",
+                 spoof ? "GPS spoofed" : "GPS jammed", from, gpsSpoofName(st.gpsSpoof), spoofAt, ledAway, blindAt, homeDistance(h), h.sim.now() - t0, worstErr,
+                 static_cast<double>(st.deadReckErrM), maxTilt, deadReckonPhaseName(lastPhase), rescueFailName(st.rescueFail));
+        TEST_MESSAGE(line);
+        TEST_ASSERT_FALSE_MESSAGE(h.ctl.isArmed(), line);
+        TEST_ASSERT_TRUE_MESSAGE(blindAt >= 0.0, line);
+        TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(DeadReckonPhase::LAND), static_cast<int>(lastPhase), line);
+        TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(spoof ? RescueFail::GPS_SPOOF : RescueFail::GPS_LOST),
+                                  static_cast<int>(st.rescueFail), line);
+        TEST_ASSERT_TRUE_MESSAGE(homeDistance(h) < 0.1 * from, line);
+        TEST_ASSERT_TRUE_MESSAGE(maxTilt < 50.0, line);
+    }
+}
+
+// Глушили и отпустили: GPS годен 3 с подряд — снова GPS Rescue, садится у дома точно.
+void test_dead_reckon_hands_back_to_gps()
+{
+    QuadHarness h(five(), QuadPerturb(), 73, EscProtocol::DSHOT600, 1000.0f, rescueSettings());
+    h.gpsOn = true;
+    TEST_ASSERT_TRUE(flyAway(h, 150.0, 0.0f, 0.0));
+    h.run(10.0);
+    h.rc.linkOk = false;
+    while (h.ctl.getStatus().rescuePhase != RescuePhase::FLY_HOME && h.sim.now() < 300.0) h.step();
+    h.gpsLost = true;
+    h.run(8.0);
+    const bool blind = h.ctl.getStatus().deadReckPhase != DeadReckonPhase::IDLE;
+    h.gpsLost = false;
+    h.run(5.0);
+    const bool back = h.ctl.getStatus().deadReckPhase == DeadReckonPhase::IDLE &&
+                      h.ctl.getStatus().rescuePhase != RescuePhase::ABORT;
+    const RescueRun r = linkLostRescue(h, 120.0);
+    char line[200];
+    snprintf(line, sizeof(line), "GPS jammed 8 s on the way home: blind %s, GPS back -> rescue %s, landed %.1f m from home",
+             blind ? "yes" : "NO", back ? "yes" : "NO", r.homeDist);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(blind, line);
+    TEST_ASSERT_TRUE_MESSAGE(back, line);
+    TEST_ASSERT_TRUE_MESSAGE(r.disarmed, line);
+    TEST_ASSERT_TRUE_MESSAGE(r.homeDist < 6.0, line);
 }
 
 // Режим GPS RESCUE с тумблера: связь есть, коптер летит домой; тумблер назад —
@@ -2395,6 +2488,8 @@ int main()
     RUN_TEST(test_gps_rescue_returns_home_in_crosswind);
     RUN_TEST(test_gps_rescue_without_compass_aligns_heading);
     RUN_TEST(test_gps_rescue_gps_loss_lands_in_place);
+    RUN_TEST(test_dead_reckon_home_when_gps_jammed_or_spoofed);
+    RUN_TEST(test_dead_reckon_hands_back_to_gps);
     RUN_TEST(test_gps_rescue_switch_and_arming_check);
     RUN_TEST(test_level_trim_shifts_angle_hover);
     RUN_TEST(test_training_ceiling_holds_full_throttle);

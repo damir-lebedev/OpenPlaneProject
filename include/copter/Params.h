@@ -330,6 +330,7 @@ namespace copter
         PARAM_VTX_LOW_POWER_DISARM,
         PARAM_GPS_MINIMUM_SATS,
         PARAM_GPS_SPOOF_DETECT,
+        PARAM_DEADRECK_MAX_S,
         PARAM_CRSF_TELEMETRY,
         PARAM_BLACKBOX_DEVICE,
         PARAM_BLACKBOX_MODE,
@@ -891,6 +892,8 @@ namespace copter
               "дом ставится при ARM, если спутников не меньше" },
             { "gps_spoof_detect", kEnum, kMaster, kGroupGps, 0, 1, 1, kTable, "", OFF_ON, 2,
               "подмена GPS (скачок, увод против акселерометра, ветер, высота против барометра, флаг приёмника) — GPS выключен из навигации до посадки, GPS SPOOF" },
+            { "deadreck_max_s", kInt, kMaster, kGroupGps, 0, 600, 120, kTable, "с", nullptr, 0,
+              "GPS подменили или заглушили на пути домой — лететь домой вслепую (наклон, ветер, компас, барометр) не дольше, потом посадка; 0 — сесть на месте" },
             { "crsf_telemetry", kEnum, kMaster, kGroupRx, 0, 1, 1, kTable, "", OFF_ON, 2,
               "телеметрия в пульт по CRSF: батарея, GPS, ориентация, режим" },
             { "blackbox_device", kEnum, kMaster, kGroupBlackbox, 0, 3, 2, kTable, "", BLACKBOX_DEVICES, 4,
@@ -1582,6 +1585,7 @@ namespace copter
             ph.cutoffHz = value(PARAM_AUTOPILOT_POSITION_CUTOFF) * 0.01f;
             s.posHoldMinSats = static_cast<uint8_t>(value(PARAM_GPS_MINIMUM_SATS));
             s.gpsSpoofDetect = value(PARAM_GPS_SPOOF_DETECT) > 0.5f;
+            s.deadReck.maxS = value(PARAM_DEADRECK_MAX_S);
         }
 
         // Пульт: карта каналов, rxrange, таблица aux.

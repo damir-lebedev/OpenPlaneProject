@@ -426,6 +426,10 @@ public:
             w.add(",\"rescue\":\"%s\"", rescuePhaseName(s.rescuePhase));
             if (s.rescueFail != RescueFail::NONE) w.add(",\"rescueFail\":\"%s\"", rescueFailName(s.rescueFail));
         }
+        // домой вслепую: этап, место по своим датчикам (м от дома) и его неуверенность
+        if (s.deadReckPhase != DeadReckonPhase::IDLE)
+            w.add(",\"blind\":{\"phase\":\"%s\",\"n\":%.0f,\"e\":%.0f,\"err\":%.0f}", deadReckonPhaseName(s.deadReckPhase),
+                  static_cast<double>(s.deadReckN), static_cast<double>(s.deadReckE), static_cast<double>(s.deadReckErrM));
         if (gps && gpsHome && gps->isAvailable())
         {
             const copter::GpsFix& f = gpsHome->fix();
