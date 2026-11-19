@@ -81,7 +81,10 @@ const MSG = {
     rCopy: "Copy the report", rCopied: "Copied", rNothing: "(log is empty — flashing hasn't been started yet)",
   },
 };
-let lang = (localStorage.getItem("op-lang") || (navigator.language || "ru").slice(0, 2)) === "ru" ? "ru" : "en";
+// Русский всегда (страница для русскоязычных пилотов); английский — только если сам нажал EN.
+// Ключ сменён с "op-lang": тот выбирался по языку браузера и залипал на английском.
+let lang = "ru";
+try { if (localStorage.getItem("op-lang-v2") === "en") lang = "en"; } catch (e) {}
 const $ = (id) => document.getElementById(id);
 const M = () => MSG[lang];
 function applyLang() {
@@ -101,7 +104,7 @@ function applyLang() {
   $("logbtn").textContent = $("log").classList.contains("on") ? M().hideLog : M().showLog;
   fillList();
 }
-$("lang").onclick = () => { lang = lang === "ru" ? "en" : "ru"; try { localStorage.setItem("op-lang", lang); } catch (e) {} applyLang(); };
+$("lang").onclick = () => { lang = lang === "ru" ? "en" : "ru"; try { localStorage.setItem("op-lang-v2", lang); } catch (e) {} applyLang(); };
 
 // ---------------- журнал и статус ----------------
 function log(s) { const l = $("log"); l.textContent += s + "\n"; l.scrollTop = l.scrollHeight; console.log(s); }
