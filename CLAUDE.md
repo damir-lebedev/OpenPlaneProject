@@ -76,6 +76,11 @@ python -m unittest tools.test_opconfig            # opconfig
 cd ../openplane-studio && npx tsc --noEmit && npx vitest run
 ```
 
+Веб-прошивальщик (телефон Android/Chrome, WebUSB): `tools/web-flasher/index.html`,
+сайт https://damir-lebedev.github.io/OpenPlaneProject/ (ветка gh-pages, один коммит
+--force) — после изменений прошивки `python tools/publish_web_flasher.py` (собирает
+6 env STM32, manifest с sha256). Стенд DfuSe-имитации — нет в репо (jsdom из Studio).
+
 Прошивка платы: в консоли клавиша `D` → DFU, затем
 `pio run -d <копия> -e stm32h743-devebox -t upload`. Консоль — COM13, нужен DTR;
 pyserial есть только в `~/.platformio/penv/Scripts/python.exe`. Клавиши: `s`
