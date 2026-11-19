@@ -232,10 +232,12 @@ namespace Config
 
 #elif defined(BOARD_MATEK_H743)
     // @board(blackbox=sd, telemetry=mavlink) — для приложения OpenPlane Studio (tools/opconfig.py)
-    // Matek H743-WING V3, H743-WLITE, H743-SLIM V3 — готовый полётник на
+    // Matek H743-WING V3, H743-WLITE, H743-SLIM V3/V4 — готовый полётник на
     // том же STM32H743VIT6, что DevEBox. Распиновка — по описанию платы в
     // ArduPilot (hwdef MatekH743) и надписям на плате; на железе ещё не
-    // проверялась.
+    // проверялась. SLIM V4 — та же распиновка (чип в корпусе BGA, VIH6 —
+    // тот же кристалл), барометр DPS368 (регистры и ID — как у DPS310),
+    // второй ICM-42688-P на SPI4 (PE12/PE13/PE14, CS PE11) пока не опрашивается.
     //
     // Отличия от DevEBox: кварц 8 МГц (src/stm32/clock_matek.cpp,
     // HSE_VALUE в platformio.ini); датчики на самой плате — IMU
@@ -502,6 +504,28 @@ namespace Config
     constexpr bool BOARD_FLASH_SHARES_OSD = OPB_FLASH_SPI == OPB_OSD_SPI;       // @fixed
     constexpr bool BOARD_FLASH_SHARES_GYRO = OPB_FLASH_SPI == OPB_GYRO_SPI;     // @fixed
     constexpr bool BOARD_BEEPER_ACTIVE_HIGH = OPB_BEEPER_INVERTED != 0;  // @fixed
+#elif defined(BOARD_MATEK_H743)
+    // Matek H743 (WING/SLIM V3, SLIM V4 — распиновка та же): как таргет
+    // MATEKH743 у Betaflight и hwdef MatekH743 у ArduPilot. OSD AT7456E — SPI2,
+    // PINIO1 PD10 (питание VTX, USER1), PINIO2 PD11 (камера, USER2), пищалка —
+    // высоким уровнем (beeper_inversion = ON). Чёрный ящик — SD-карта (SDMMC1).
+    // Провод SmartAudio/Tramp — на свободный TX; какой — решим на плате.
+    constexpr int16_t BOARD_VTX_PIN = -1;  // @fixed
+    constexpr int16_t BOARD_PINIO_PINS[4] = { PD10, PD11, -1, -1 };
+    constexpr uint8_t BOARD_PINIO_BOX[4] = { 40, 41, 255, 255 };   // USER1, USER2
+    constexpr bool BOARD_PINIO_INVERTED[4] = { false, false, false, false };
+    constexpr int16_t BOARD_OSD_SCK = PB13;   // SPI2 @fixed
+    constexpr int16_t BOARD_OSD_MISO = PB14;  // @fixed
+    constexpr int16_t BOARD_OSD_MOSI = PB15;  // @fixed
+    constexpr int16_t BOARD_OSD_CS = PB12;    // @fixed
+    constexpr uint8_t BOARD_FLASH_SPI = 0;     // @fixed
+    constexpr int16_t BOARD_FLASH_SCK = -1;    // @fixed
+    constexpr int16_t BOARD_FLASH_MISO = -1;   // @fixed
+    constexpr int16_t BOARD_FLASH_MOSI = -1;   // @fixed
+    constexpr int16_t BOARD_FLASH_CS = -1;     // @fixed
+    constexpr bool BOARD_FLASH_SHARES_OSD = false;   // @fixed
+    constexpr bool BOARD_FLASH_SHARES_GYRO = false;  // @fixed
+    constexpr bool BOARD_BEEPER_ACTIVE_HIGH = true;  // @fixed
 #else
     constexpr int16_t BOARD_VTX_PIN = -1;  // @fixed
     constexpr int16_t BOARD_PINIO_PINS[4] = { -1, -1, -1, -1 };

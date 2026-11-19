@@ -1,6 +1,6 @@
 # COPTER.md — прошивка для мультикоптеров
 
-Та же прошивка, те же платы (Matek H743-WING V3, DevEBox H743 и почти любой
+Та же прошивка, те же платы (Matek H743-WING V3 и SLIM V3/V4, DevEBox H743 и почти любой
 F405 из-под Betaflight), те же датчики и приёмники — но вместо самолёта квадрокоптер, гекса, окта, Y6
 или X8. Главное отличие от Betaflight, INAV и ArduPilot — **PID, фильтры,
 холостые и расходы не подбираются руками**: вы описываете коптер (раму,
@@ -101,13 +101,14 @@ constexpr copter::EscProtocol ESC_PROTOCOL = copter::EscProtocol::ONESHOT125;
 > проверки для тестеров — [BETA_TEST.md](BETA_TEST.md).
 
 ```bash
-pio run -e matek-h743-quad -t upload          # Matek H743-WING V3: кнопка BOOT + USB
+pio run -e matek-h743-quad -t upload          # Matek H743-WING/SLIM: кнопка BOOT + USB
 pio run -e stm32h743-devebox-quad -t upload   # DevEBox H743
 pio run -e aocodarc-f405v3-quad -t upload     # полётник F405 из-под Betaflight — ниже
 ```
 
 Выходы на моторы — по порядку: Matek — S1…S8, DevEBox — PA0–PA3, PD14,
-PD15, PE9. **Первый запуск — без пропеллеров**, монитор порта 115200:
+PD15, PE9. У Matek H743 есть OSD (AT7456E на SPI2) и PINIO: PD10 — `USER1`
+(питание VTX), PD11 — `USER2` (камера), как у таргета MATEKH743 в BF. **Первый запуск — без пропеллеров**, монитор порта 115200:
 
 | Клавиша | Что делает |
 |---|---|
