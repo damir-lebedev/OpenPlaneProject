@@ -146,12 +146,16 @@ DfuSe, стирание только секторов прошивки, свер
   разделы «Настроек» про исходники/подготовку/сборку; `bundle.android.minSdkVersion = 24`;
   `docs/ANDROID.md`; тест `components/__tests__/mobile.test.tsx`. Команды pio/python на телефоне
   не закрыты cfg — они собираются и просто падают «не найден», окно их не показывает.
-- [ ] **P46 b · APK собирается.** На машине нет Android SDK/NDK/JDK — ждёт установки
-  пользователем (`openplane-studio/docs/ANDROID.md`: Android Studio → SDK 34 + NDK + Build/Platform/
-  Command-line Tools, `JAVA_HOME` = `…\Android Studio\jbr`, `ANDROID_HOME`, `NDK_HOME`). Потом:
-  `rustup target add` (4 цели), `npx tauri android init` (`src-tauri/gen/android` — в git; capabilities
-  получат mobile-schema), `npx tauri android build --apk --target aarch64 --debug`; если упадёт на
-  крейте с C-кодом (cc) — смотреть NDK_HOME. Десктоп не сломать (`tsc`, `vitest`, `cargo test`).
+- Сделано (P46 b, 2026-11-20, Studio `e463e04`): на машине поставлены JDK 17 (MS OpenJDK, user),
+  Android cmdline-tools + platform 36 + build-tools 36 + platform-tools + NDK 28.2 + emulator +
+  образ `android-35;default;x86_64` (AVD `opstudio`, WHPX работает), переменные `JAVA_HOME`/
+  `ANDROID_HOME`/`NDK_HOME` (user), 4 цели Rust. `tauri android init` → `src-tauri/gen/android` в git
+  (в `.gitignore` теперь только `gen/schemas/`). Debug-APK (arm64 + x86_64, ~160 МБ) **запускается в
+  эмуляторе Android 15**: анкета первого запуска, без падений. Ловушка: `tauri android build` падает
+  на symlink `.so` → jniLibs без «Режима разработчика» Windows (нужен админ — пользователь включает
+  сам); обход — скопировать `.so` и `gradlew assembleUniversalDebug -x rustBuild…` (`docs/ANDROID.md`).
+  Эмулятор без окна: `emulator -avd opstudio -no-window -no-audio -gpu swiftshader_indirect`
+  (GPU не трогать), `adb install`, `adb exec-out screencap -p`, в конце `adb emu kill`.
 - [ ] **P47 · USB-OTG на Android: консоль платы и прошивка DfuSe (плагин на Kotlin).**
 
   - Плагин `src-tauri/plugins/usb-android/` (Rust-часть + `android/` на Kotlin), подключить
@@ -195,6 +199,9 @@ DfuSe, стирание только секторов прошивки, свер
     APK собрать. Прошивку на реальном телефоне делает пользователь/тестер — шаги ему написать. — Стенд: да
 
 - [ ] **P48 · Экраны Studio на телефоне + прошивка готовым .bin + экспорт с ПК.**
+  - Увидено в эмуляторе (P46 b): вёрстка шире экрана (анкета обрезана справа — десктопные ширины),
+    контент под строкой состояния (edge-to-edge: отступ `env(safe-area-inset-top)`), Rail слева на
+    телефоне — вниз панелью вкладок. Проверять скриншотами эмулятора 1080×2400.
 
   - `src/flash.ts`: ветка mobile — выбрать `.bin` (нужен `@tauri-apps/plugin-dialog`) или скачать готовый
 
