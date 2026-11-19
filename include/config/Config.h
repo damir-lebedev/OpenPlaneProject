@@ -237,7 +237,7 @@ namespace Config
     // ArduPilot (hwdef MatekH743) и надписям на плате; на железе ещё не
     // проверялась. SLIM V4 — та же распиновка (чип в корпусе BGA, VIH6 —
     // тот же кристалл), барометр DPS368 (регистры и ID — как у DPS310),
-    // второй ICM-42688-P на SPI4 (PE12/PE13/PE14, CS PE11) пока не опрашивается.
+    // второй ICM-42688-P на SPI4 (PE12/PE13/PE14, CS PE11) — запасной (gyro_to_use).
     //
     // Отличия от DevEBox: кварц 8 МГц (src/stm32/clock_matek.cpp,
     // HSE_VALUE в platformio.ini); датчики на самой плате — IMU
@@ -504,6 +504,10 @@ namespace Config
     constexpr bool BOARD_FLASH_SHARES_OSD = OPB_FLASH_SPI == OPB_OSD_SPI;       // @fixed
     constexpr bool BOARD_FLASH_SHARES_GYRO = OPB_FLASH_SPI == OPB_GYRO_SPI;     // @fixed
     constexpr bool BOARD_BEEPER_ACTIVE_HIGH = OPB_BEEPER_INVERTED != 0;  // @fixed
+    constexpr int16_t BOARD_GYRO2_SCK = -1;   // второго гироскопа нет @fixed
+    constexpr int16_t BOARD_GYRO2_MISO = -1;  // @fixed
+    constexpr int16_t BOARD_GYRO2_MOSI = -1;  // @fixed
+    constexpr int16_t BOARD_GYRO2_CS = -1;    // @fixed
 #elif defined(BOARD_MATEK_H743)
     // Matek H743 (WING/SLIM V3, SLIM V4 — распиновка та же): как таргет
     // MATEKH743 у Betaflight и hwdef MatekH743 у ArduPilot. OSD AT7456E — SPI2,
@@ -526,6 +530,12 @@ namespace Config
     constexpr bool BOARD_FLASH_SHARES_OSD = false;   // @fixed
     constexpr bool BOARD_FLASH_SHARES_GYRO = false;  // @fixed
     constexpr bool BOARD_BEEPER_ACTIVE_HIGH = true;  // @fixed
+    // Второй ICM-42688-P (только SLIM V4; у V3 и WING его нет — не ответит,
+    // и это не ошибка): SPI4, выбор — настройка gyro_to_use (copter/GyroSelect.h).
+    constexpr int16_t BOARD_GYRO2_SCK = PE12;   // SPI4 @fixed
+    constexpr int16_t BOARD_GYRO2_MISO = PE13;  // @fixed
+    constexpr int16_t BOARD_GYRO2_MOSI = PE14;  // @fixed
+    constexpr int16_t BOARD_GYRO2_CS = PE11;    // @fixed
 #else
     constexpr int16_t BOARD_VTX_PIN = -1;  // @fixed
     constexpr int16_t BOARD_PINIO_PINS[4] = { -1, -1, -1, -1 };
@@ -543,6 +553,10 @@ namespace Config
     constexpr bool BOARD_FLASH_SHARES_OSD = false;   // @fixed
     constexpr bool BOARD_FLASH_SHARES_GYRO = false;  // @fixed
     constexpr bool BOARD_BEEPER_ACTIVE_HIGH = true;  // @fixed
+    constexpr int16_t BOARD_GYRO2_SCK = -1;   // второго гироскопа нет @fixed
+    constexpr int16_t BOARD_GYRO2_MISO = -1;  // @fixed
+    constexpr int16_t BOARD_GYRO2_MOSI = -1;  // @fixed
+    constexpr int16_t BOARD_GYRO2_CS = -1;    // @fixed
 #endif
 
 

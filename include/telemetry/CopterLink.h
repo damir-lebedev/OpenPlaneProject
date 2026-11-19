@@ -7,6 +7,7 @@
 #include "copter/Battery.h"
 #include "copter/CopterController.h"
 #include "copter/GpsHome.h"
+#include "copter/GyroSelect.h"
 #include "copter/Params.h"
 #include "copter/RcSetup.h"
 #include "copter/Rssi.h"
@@ -97,6 +98,13 @@ public:
         magPresent = present;
     }
     void setOutputs(const copter::CopterOutputs& out) { outputs = out; }
+    // Два гироскопа на плате (copter/GyroSelect.h): маска живых и маска взятых в контур.
+    void setGyros(const copter::GyroPick* pick, const uint8_t* aliveMask, const copter::GyroAgreement* agreement)
+    {
+        gyroPick = pick;
+        gyroAlive = aliveMask;
+        gyroAgree = agreement;
+    }
     void setLoop(uint32_t avgUs, uint32_t hz)
     {
         loopAvgUs = avgUs;
@@ -350,6 +358,11 @@ public:
             // сопротивление винтов по оценке фильтра (1/с) и её неуверенность (%); компас в деле
             w.add(",\"kdrag\":[%.3f,%d],\"amag\":%d", at.dragCoef(), static_cast<int>(lroundf(at.dragSigma() * 100.0f)),
                   at.compassUsed() ? 1 : 0);
+        }
+        if (gyroPick && gyroAlive)
+        {
+            w.add(",\"gyros\":[%u,%u,%u]", static_cast<unsigned>(*gyroAlive), static_cast<unsigned>(gyroPick->used),
+                  static_cast<unsigned>(gyroAgree ? gyroAgree->state() : copter::GyroAgree::UNKNOWN));
         }
         if (battery)
         {
@@ -923,6 +936,9 @@ private:
     const char* txModel = nullptr;
     const copter::Compass* magCal = nullptr;
     bool magPresent = false;
+    const copter::GyroPick* gyroPick = nullptr;
+    const uint8_t* gyroAlive = nullptr;
+    const copter::GyroAgreement* gyroAgree = nullptr;
     copter::CopterOutputs outputs;
     uint32_t loopAvgUs = 0, loopHz = 0;
     bool dirty = false;

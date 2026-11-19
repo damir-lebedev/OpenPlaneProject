@@ -54,6 +54,7 @@
 #include "rc/RcReceiver.h"
 #include "sensors/SensorInterface.h"
 #include "sensors/SensorSelection.h"
+#include "sensors/imu/ICM42688_Sensor.h"
 #include "sensors/gps/UbloxM10_Gps.h"
 #include "sensors/mag/QMC5883L_Sensor.h"
 #include "sensors/mag/QMC5883P_Sensor.h"
@@ -97,6 +98,36 @@ void sitlOutputs(const copter::CopterOutputs& out);   // src/sitl/main.cpp: мо
 
 auto imuDevice = SELECTED_IMU_DEVICE(board);
 SelectedImu imuSensor(imuDevice);
+
+// Второй гироскоп (Matek H743-SLIM V4: ICM-42688-P на SPI4) — запасной или
+// в среднее, настройка gyro_to_use (copter/GyroSelect.h). Нет на плате — CS −1.
+constexpr bool HAS_GYRO2 = Config::BOARD_GYRO2_CS >= 0;
+SPIClass gyro2Spi;
+Stm32SpiBus gyro2Bus(gyro2Spi, static_cast<pin_size_t>(HAS_GYRO2 ? Config::BOARD_GYRO2_SCK : 0),
+                     static_cast<pin_size_t>(HAS_GYRO2 ? Config::BOARD_GYRO2_MISO : 0),
+                     static_cast<pin_size_t>(HAS_GYRO2 ? Config::BOARD_GYRO2_MOSI : 0));
+SpiRegisterDevice gyro2Device = ICM42688_Sensor::spiDevice(gyro2Bus, static_cast<uint8_t>(HAS_GYRO2 ? Config::BOARD_GYRO2_CS : 0));
+ICM42688_Sensor gyro2Sensor(gyro2Device);
+static copter::GyroToUse gyroToUse = copter::GyroToUse::FIRST;
+static copter::GyroStuckDetector gyroStuck[2];
+static copter::GyroAgreement gyroAgreement;
+static copter::GyroPick gyroPick;
+static uint8_t gyroAlive = 0;
+static bool gyroFallbackSaid = false;
+static bool gyro2Present = false;   // второй ответил при включении
+
+static copter::GyroSample gyroSampleOf(const ImuData& d, bool ok)
+{
+    copter::GyroSample s;
+    s.gyro[0] = d.gyroX;
+    s.gyro[1] = d.gyroY;
+    s.gyro[2] = d.gyroZ;
+    s.accel[0] = d.accelX;
+    s.accel[1] = d.accelY;
+    s.accel[2] = d.accelZ;
+    s.ok = ok;
+    return s;
+}
 
 auto baroDevice = SELECTED_BARO_DEVICE(board);
 SelectedBaro baroSensor(baroDevice);
@@ -296,6 +327,7 @@ static void applySettings()
     beeper.setOffFlags(static_cast<uint32_t>(copterParams.value(copter::PARAM_BEEPER_OFF_FLAGS)));
     dshotBeacon.configure(static_cast<uint32_t>(copterParams.value(copter::PARAM_DSHOT_BEACON_OFF_FLAGS)),
                           static_cast<uint8_t>(copterParams.value(copter::PARAM_BEEPER_DSHOT_BEACON_TONE)));
+    gyroToUse = static_cast<copter::GyroToUse>(static_cast<uint8_t>(copterParams.value(copter::PARAM_GYRO_TO_USE)));
     stickCommands.configure(static_cast<uint16_t>(copterParams.value(copter::PARAM_MIN_CHECK)),
                             static_cast<uint16_t>(copterParams.value(copter::PARAM_MAX_CHECK)));
     osdMenu.configure(static_cast<uint16_t>(copterParams.value(copter::PARAM_MIN_CHECK)),
@@ -596,6 +628,7 @@ static void runStickCommand(const copter::StickCommand& c)
         case StickAction::NONE: return;
         case StickAction::CALIBRATE_GYRO:
             imuSensor.calibrate();
+            if (HAS_GYRO2 && gyro2Sensor.isAvailable()) gyro2Sensor.calibrate();
             copterController.gyroRecalibrated();
             if (baroSensor.isAvailable()) baroSensor.calibrateAltitude();
             beeper.event(BeeperCondition::GYRO_CALIBRATED);
@@ -854,6 +887,7 @@ static void flightTask(void*)
         uint32_t t = start;
 
         imuSensor.update();
+        if (HAS_GYRO2 && gyro2Sensor.isAvailable()) gyro2Sensor.update();
         t = lap(TASK_GYRO, t);
         if (tick % 20 == 0)
         {
@@ -886,14 +920,31 @@ static void flightTask(void*)
         }
 
         copter::CopterSensors sens;
-        const ImuData& imu = imuSensor.getImuData();
-        sens.gyro[0] = imu.gyroX;
-        sens.gyro[1] = imu.gyroY;
-        sens.gyro[2] = imu.gyroZ;
-        sens.accel[0] = imu.accelX;
-        sens.accel[1] = imu.accelY;
-        sens.accel[2] = imu.accelZ;
-        sens.imuOk = imuSensor.isAvailable();
+        {
+            const copter::GyroSample g1 = gyroSampleOf(imuSensor.getImuData(), imuSensor.isAvailable());
+            // «застывший» гироскоп ищем, только когда есть чем его заменить:
+            // с одним чипом ложная тревога стоила бы больше, чем дала
+            bool alive1 = g1.ok;
+            copter::GyroSample g2;
+            bool alive2 = false;
+            if (gyro2Present)
+            {
+                g2 = gyroSampleOf(gyro2Sensor.getImuData(), gyro2Sensor.isAvailable());
+                alive1 = gyroStuck[0].update(g1);
+                alive2 = gyroStuck[1].update(g2);
+            }
+            gyroAlive = static_cast<uint8_t>((alive1 ? 1u : 0u) | (alive2 ? 2u : 0u));
+            const copter::GyroAgree agree = alive1 && alive2 ? gyroAgreement.update(g1.gyro, g2.gyro) : gyroAgreement.state();
+            gyroPick = copter::pickGyro(gyroToUse, g1, alive1, gyro2Present ? &g2 : nullptr, alive2, agree);
+            if (gyroPick.fallback && !gyroFallbackSaid) Serial.println("Гироскоп: выбранный не отвечает — взят второй (gyro_to_use)");
+            gyroFallbackSaid = gyroPick.fallback;
+        }
+        for (int i = 0; i < 3; ++i)
+        {
+            sens.gyro[i] = gyroPick.gyro[i];
+            sens.accel[i] = gyroPick.accel[i];
+        }
+        sens.imuOk = gyroPick.ok;
         sens.baroOk = baroSensor.isAvailable();
         sens.baroAltM = baroSensor.getBarometerData().altitude;
         // компенсации просадки — быстрый фильтр (vbat_sag_lpf_period), а не показ
@@ -1235,6 +1286,17 @@ void setup()
     setupCopter(settings);   // выходы на моторы — сразу «стоп»
 
     if (imuSensor.begin()) imuSensor.calibrate();
+    if (HAS_GYRO2)
+    {
+        gyro2Bus.begin();
+        gyro2Present = gyro2Sensor.begin();
+        if (gyro2Present)
+        {
+            gyro2Sensor.calibrate();
+            copterConsole.setGyros(&gyroPick, &gyroAlive, &gyroAgreement, &gyro2Sensor);
+        }
+        else Serial.println("Второй гироскоп (SPI4) не ответил — у SLIM V3/WING его и нет");
+    }
     if (baroSensor.begin()) baroSensor.calibrateAltitude();
     if (Config::PIN_GPS_RX >= 0) gps.begin();
     if (magL.begin()) compass = &magL;

@@ -118,6 +118,11 @@ public:
     }
     // Перегрузка по току (copter/EscGuard.h) — в живые кадры.
     void setGuard(const copter::EscGuard* g) { link.setGuard(g); }
+    void setGyros(const copter::GyroPick* pick, const uint8_t* aliveMask, const copter::GyroAgreement* agreement, ImuSensor* second)
+    {
+        link.setGyros(pick, aliveMask, agreement);
+        imu2 = second;
+    }
     // Сила сигнала пульта (copter/Rssi.h) — в живые кадры и MSP_ANALOG.
     void setRssi(const copter::Rssi* r)
     {
@@ -447,6 +452,7 @@ private:
             case 'i':
                 if (refuseArmed()) return;
                 imu.calibrate();
+                if (imu2 && imu2->isAvailable()) imu2->calibrate();
                 ctl.gyroRecalibrated();
                 break;
             case 'c':
@@ -752,6 +758,7 @@ private:
     const copter::GpsHome* gpsHome = nullptr;
     MagnetometerSensor* compass = nullptr;
     const copter::Compass* magCal = nullptr;
+    ImuSensor* imu2 = nullptr;   // второй гироскоп (copter/GyroSelect.h): калибруется вместе с первым
     float headingDeg = 0.0f;
     const TaskStats* tasks = nullptr;
     IFlightRecorder* recorder = nullptr;

@@ -47,6 +47,7 @@
 #include "telemetry/MspPort.h"
 #include "copter/Presets.h"
 #include "copter/Propulsion.h"
+#include "copter/GyroSelect.h"
 #include "copter/RateController.h"
 #include "copter/RcSetup.h"
 #include "copter/Rssi.h"
@@ -8723,6 +8724,100 @@ void test_altitude_controller_brakes_then_holds_and_limits_throttle()
     TEST_ASSERT_TRUE(low >= 0.05f - 1e-4f && low < 0.11f);
 }
 
+static copter::GyroSample gyroOf(float gx, float gy, float gz, bool ok = true)
+{
+    copter::GyroSample s;
+    s.gyro[0] = gx;
+    s.gyro[1] = gy;
+    s.gyro[2] = gz;
+    s.accel[2] = 1.0f;
+    s.ok = ok;
+    return s;
+}
+
+// P42: два гироскопа — FIRST/SECOND/BOTH, запасной при отказе, второго нет — настройка ни при чём
+void test_gyro_select_modes_and_fallback()
+{
+    using namespace copter;
+    const GyroSample a = gyroOf(10, 20, 30), b = gyroOf(12, 22, 32);
+    GyroPick p = pickGyro(GyroToUse::FIRST, a, true, &b, true, GyroAgree::YES);
+    TEST_ASSERT_TRUE(p.ok);
+    TEST_ASSERT_EQUAL_UINT8(1, p.used);
+    TEST_ASSERT_EQUAL_FLOAT(10, p.gyro[0]);
+    p = pickGyro(GyroToUse::SECOND, a, true, &b, true, GyroAgree::YES);
+    TEST_ASSERT_EQUAL_UINT8(2, p.used);
+    TEST_ASSERT_EQUAL_FLOAT(22, p.gyro[1]);
+    p = pickGyro(GyroToUse::BOTH, a, true, &b, true, GyroAgree::YES);
+    TEST_ASSERT_EQUAL_UINT8(3, p.used);
+    TEST_ASSERT_EQUAL_FLOAT(31, p.gyro[2]);
+    TEST_ASSERT_EQUAL_FLOAT(1, p.accel[2]);
+    TEST_ASSERT_FALSE(p.fallback);
+    // первый умер — второй, с отметкой «запасной»
+    p = pickGyro(GyroToUse::FIRST, a, false, &b, true, GyroAgree::YES);
+    TEST_ASSERT_TRUE(p.ok && p.fallback);
+    TEST_ASSERT_EQUAL_UINT8(2, p.used);
+    p = pickGyro(GyroToUse::BOTH, a, true, &b, false, GyroAgree::YES);
+    TEST_ASSERT_TRUE(p.ok && p.fallback);
+    TEST_ASSERT_EQUAL_UINT8(1, p.used);
+    // оба мёртвы — ok = false (запрет ARM)
+    p = pickGyro(GyroToUse::BOTH, a, false, &b, false, GyroAgree::YES);
+    TEST_ASSERT_FALSE(p.ok);
+    TEST_ASSERT_EQUAL_UINT8(0, p.used);
+    // второго нет на плате: SECOND и BOTH — это первый, без «запасного»
+    p = pickGyro(GyroToUse::SECOND, a, true, nullptr, false, GyroAgree::UNKNOWN);
+    TEST_ASSERT_TRUE(p.ok);
+    TEST_ASSERT_FALSE(p.fallback);
+    TEST_ASSERT_EQUAL_UINT8(1, p.used);
+}
+
+// Второй не проверен вращением — пока первый жив, его не берут; «повёрнутый» — никогда
+void test_gyro_select_agreement_gates_second()
+{
+    using namespace copter;
+    const GyroSample a = gyroOf(10, 20, 30), b = gyroOf(12, 22, 32);
+    GyroPick p = pickGyro(GyroToUse::BOTH, a, true, &b, true, GyroAgree::UNKNOWN);
+    TEST_ASSERT_EQUAL_UINT8(1, p.used);
+    TEST_ASSERT_FALSE(p.fallback);   // не отказ — просто ждём движения
+    p = pickGyro(GyroToUse::SECOND, a, true, &b, true, GyroAgree::NO);
+    TEST_ASSERT_EQUAL_UINT8(1, p.used);
+    // первый мёртв с включения: непроверенный второй — единственный гироскоп
+    p = pickGyro(GyroToUse::FIRST, a, false, &b, true, GyroAgree::UNKNOWN);
+    TEST_ASSERT_TRUE(p.ok);
+    TEST_ASSERT_EQUAL_UINT8(2, p.used);
+    // «повёрнутый» второй при мёртвом первом — не летим
+    p = pickGyro(GyroToUse::FIRST, a, false, &b, true, GyroAgree::NO);
+    TEST_ASSERT_FALSE(p.ok);
+
+    // проверка осей: медленно — не решает; одинаково — YES; второй повёрнут на 90° — NO
+    GyroAgreement same, rotated;
+    const float slow[3] = { 5, 0, 0 };
+    for (int i = 0; i < 1000; ++i) TEST_ASSERT_EQUAL(GyroAgree::UNKNOWN, same.update(slow, slow));
+    const float roll[3] = { 200, 3, -2 }, roll2[3] = { 196, 5, 0 }, asPitch[3] = { 3, 200, -2 };
+    for (int i = 0; i < GyroAgreement::DECIDE_SAMPLES - 1; ++i) same.update(roll, roll2);
+    TEST_ASSERT_EQUAL(GyroAgree::UNKNOWN, same.state());
+    TEST_ASSERT_EQUAL(GyroAgree::YES, same.update(roll, roll2));
+    for (int i = 0; i < 2 * GyroAgreement::DECIDE_SAMPLES; ++i) same.update(roll, asPitch);
+    TEST_ASSERT_EQUAL(GyroAgree::YES, same.state());   // решение — до перезагрузки
+    for (int i = 0; i < GyroAgreement::DECIDE_SAMPLES; ++i) rotated.update(roll, asPitch);
+    TEST_ASSERT_EQUAL(GyroAgree::NO, rotated.state());
+}
+
+// Застывшие показания — гироскоп мёртв; ожил — снова жив
+void test_gyro_stuck_detector()
+{
+    using namespace copter;
+    GyroStuckDetector d;
+    const GyroSample dead = gyroOf(-0.06f, -0.06f, -0.06f);
+    for (int i = 0; i < GyroStuckDetector::STUCK_SAMPLES; ++i) TEST_ASSERT_TRUE(d.update(dead));
+    TEST_ASSERT_FALSE(d.update(dead));
+    TEST_ASSERT_TRUE(d.update(gyroOf(0.1f, -0.2f, 0.05f)));
+    TEST_ASSERT_FALSE(d.update(gyroOf(1, 2, 3, false)));   // не ответил при включении
+    // настройка: имя BF, умолчание FIRST
+    TEST_ASSERT_EQUAL(PARAM_GYRO_TO_USE, findParam("gyro_to_use"));
+    CopterParams params;
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, params.value(PARAM_GYRO_TO_USE));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -8915,5 +9010,8 @@ int main()
     RUN_TEST(test_compass_alignment_tilt_and_trust);
     RUN_TEST(test_poshold_althold_params_modes_and_osd);
     RUN_TEST(test_altitude_controller_brakes_then_holds_and_limits_throttle);
+    RUN_TEST(test_gyro_select_modes_and_fallback);
+    RUN_TEST(test_gyro_select_agreement_gates_second);
+    RUN_TEST(test_gyro_stuck_detector);
     return UNITY_END();
 }

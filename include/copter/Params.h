@@ -493,6 +493,7 @@ namespace copter
         PARAM_ACC_TRIM_PITCH,
         PARAM_ATTITUDE_FILTER,
         PARAM_ATTITUDE_DRAG,
+        PARAM_GYRO_TO_USE,
         PARAM_CHIRP_AMPLITUDE_ROLL,
         PARAM_CHIRP_AMPLITUDE_PITCH,
         PARAM_CHIRP_AMPLITUDE_YAW,
@@ -532,6 +533,8 @@ namespace copter
         static const char* const RX_PROVIDERS[] = { "IBUS", "SBUS", "CRSF" };
         static const char* const OFF_ON[] = { "OFF", "ON" };
         static const char* const ATTITUDE_FILTERS[] = { "MAHONY", "EKF" };
+        // порядок — как GyroToUse (copter/GyroSelect.h)
+        static const char* const GYROS_TO_USE[] = { "FIRST", "SECOND", "BOTH" };
         // порядок — как BatteryChemistry
         static const char* const CHEMISTRIES[] = { "LIPO", "LIHV", "LIION" };
         // порядок — как CurrentMeter и VoltageMeter (Battery.h) и в BF
@@ -1209,6 +1212,8 @@ namespace copter
               "фильтр ориентации: EKF — Калмана, сам находит смещение гироскопа; MAHONY — прежний, запасной" },
             { "attitude_drag", kInt, kMaster, ParamGroup::OTHER, 0, 1500, 0, kTable, "0.001 1/с", nullptr, 0,
               "сопротивление винтов для фильтра ориентации; 0 — не измерено (берётся 300); фильтр меряет его в полёте по GPS и после посадки записывает сюда" },
+            { "gyro_to_use", kEnum, kMaster, ParamGroup::OTHER, 0, 2, 0, kTable, "", GYROS_TO_USE, 3,
+              "какой гироскоп, если их на плате два: FIRST, SECOND или BOTH (среднее); выбранный отказал — берётся живой" },
             { "chirp_amplitude_roll", kInt, kMaster, kGroupPid, 0, 300, 60, kTable, "0.1 %", nullptr, 0,
               "chirp: размах качания по крену, доля хода моторов (у BF — °/с уставки); 0 — ось пропускается" },
             { "chirp_amplitude_pitch", kInt, kMaster, kGroupPid, 0, 300, 60, kTable, "0.1 %", nullptr, 0,
