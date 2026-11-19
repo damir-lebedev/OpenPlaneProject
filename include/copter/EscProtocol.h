@@ -83,6 +83,35 @@ namespace copter
         return r.stopUs + (r.fullUs - r.stopUs) * command;
     }
 
+    // Расширенная телеметрия регулятора (EDT, dshot_edt): температура,
+    // напряжение, ток, «стресс» и флаги — между кадрами оборотов.
+    struct EscExtTelemetry
+    {
+        enum Seen : uint8_t
+        {
+            TEMPERATURE = 1,
+            VOLTAGE = 2,
+            CURRENT = 4,
+            STRESS = 8,
+            STATUS = 16,
+        };
+        // флаги статуса (кадр 0xE): тревога, предупреждение, ошибка
+        static constexpr uint8_t STATUS_ALERT = 0x80;
+        static constexpr uint8_t STATUS_WARNING = 0x40;
+        static constexpr uint8_t STATUS_ERROR = 0x20;
+
+        uint8_t seen = 0;          // какие значения уже приходили (Seen)
+        int16_t temperatureC = 0;  // °C
+        float volts = 0.0f;        // шаг 0.25 В
+        float amps = 0.0f;         // шаг 1 А
+        uint8_t stress = 0;        // 0–255: насколько тяжело регулятору (Bluejay)
+        uint8_t status = 0;        // STATUS_* | наибольший стресс 0–15
+        uint32_t frames = 0;       // кадров EDT всего
+
+        bool has(uint8_t what) const { return (seen & what) != 0; }
+        bool any() const { return seen != 0; }
+    };
+
     // Обороты от регуляторов (двунаправленный DShot) — для консоли и
     // приложения; реализация — hal/stm32/Stm32Dshot.h.
     class IMotorTelemetry
@@ -94,6 +123,12 @@ namespace copter
         virtual bool hasTelemetry(uint8_t i) const = 0;
         virtual uint32_t erpm(uint8_t i) const = 0;
         virtual float telemetryErrorPercent(uint8_t i) const = 0;
+        // EDT мотора i; nullptr — кадров EDT от него не было.
+        virtual const EscExtTelemetry* extended(uint8_t i) const
+        {
+            (void)i;
+            return nullptr;
+        }
     };
 
     // Команды регуляторам DShot (пищалка, направление, сохранить) — для
@@ -415,6 +450,100 @@ namespace copter
         {
             return poles >= 2 ? static_cast<float>(erpm) * 2.0f / poles : 0.0f;
         }
+
+        // Расширенная телеметрия (EDT): после команды EXTENDED_TELEMETRY_ON
+        // (Bluejay, BLHeli_32, AM32) регулятор иногда шлёт вместо оборотов
+        // кадр «pppp vvvvvvvv»: p — тип (чётный, 2–14), v — значение. У кадра
+        // оборотов на месте младшего бита p — старший бит мантиссы, а она
+        // нормализована (при e > 0 этот бит — единица; при e = 0 p = 0 или 1),
+        // поэтому чётное p ≠ 0 — всегда EDT.
+        enum EdtType : uint8_t
+        {
+            EDT_TEMPERATURE = 0x2,   // °C
+            EDT_VOLTAGE = 0x4,       // 0.25 В
+            EDT_CURRENT = 0x6,       // А
+            EDT_DEBUG1 = 0x8,
+            EDT_DEBUG2 = 0xA,
+            EDT_STRESS = 0xC,        // 0–255
+            EDT_STATUS = 0xE,        // тревога | предупреждение | ошибка | стресс 0–15
+        };
+
+        inline bool isEdtFrame(uint16_t value12)
+        {
+            const uint8_t p = static_cast<uint8_t>((value12 >> 8) & 0x0F);
+            return p != 0 && (p & 1) == 0;
+        }
+
+        // Кадр EDT (для тестов и симулятора).
+        inline uint16_t edtFrame(uint8_t type, uint8_t value)
+        {
+            return static_cast<uint16_t>(((type & 0x0E) << 8) | value);
+        }
+
+        // Кадр EDT -> в t. false — это не EDT (обороты).
+        inline bool feedEdt(uint16_t value12, EscExtTelemetry& t)
+        {
+            if (!isEdtFrame(value12)) return false;
+            const uint8_t v = static_cast<uint8_t>(value12 & 0xFF);
+            switch ((value12 >> 8) & 0x0E)
+            {
+            case EDT_TEMPERATURE:
+                t.temperatureC = v;
+                t.seen |= EscExtTelemetry::TEMPERATURE;
+                break;
+            case EDT_VOLTAGE:
+                t.volts = v * 0.25f;
+                t.seen |= EscExtTelemetry::VOLTAGE;
+                break;
+            case EDT_CURRENT:
+                t.amps = v;
+                t.seen |= EscExtTelemetry::CURRENT;
+                break;
+            case EDT_STRESS:
+                t.stress = v;
+                t.seen |= EscExtTelemetry::STRESS;
+                break;
+            case EDT_STATUS:
+                t.status = v;
+                t.seen |= EscExtTelemetry::STATUS;
+                break;
+            default:   // отладочные — пропускаем
+                break;
+            }
+            ++t.frames;
+            return true;
+        }
+
+        // Включение EDT: команда при старте, а если регулятор отвечает
+        // оборотами, но EDT молчит (батарею подключили после USB, регулятор
+        // был без питания) — повтор, пока моторы стоят: не чаще RETRY_MS и
+        // не больше MAX_SENDS раз.
+        class EdtEnabler
+        {
+        public:
+            static constexpr uint32_t RETRY_MS = 3000;
+            static constexpr uint8_t MAX_SENDS = 4;
+
+            // Раз в такт. replying — хоть один мотор отвечает оборотами,
+            // extended — все отвечающие уже шлют EDT, stopped — моторы стоят
+            // (DISARM). true — поставить EXTENDED_TELEMETRY_ON в очередь.
+            bool update(uint32_t nowMs, bool enabled, bool replying, bool extended, bool stopped)
+            {
+                if (!enabled || sends >= MAX_SENDS || !stopped) return false;
+                if (sends == 0 || (replying && !extended && nowMs - lastMs >= RETRY_MS))
+                {
+                    ++sends;
+                    lastMs = nowMs;
+                    return true;
+                }
+                return false;
+            }
+            uint8_t sent() const { return sends; }
+
+        private:
+            uint8_t sends = 0;
+            uint32_t lastMs = 0;
+        };
 
         // Ответ -> уровни линии (21 бит, старший — стартовый, 0 = низкий).
         inline uint32_t telemetryLine(uint16_t value12)

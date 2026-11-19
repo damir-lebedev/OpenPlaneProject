@@ -79,6 +79,8 @@ public:
     void setRxInput(const copter::RxInput* input) { rxInput = input; }
     void setBattery(const copter::BatteryMonitor* monitor) { battery = monitor; }
     void setGuard(const copter::EscGuard* g) { guard = g; }
+    // обороты и EDT регуляторов (dshot_edt) — строка "esc"
+    void setMotorTelemetry(const copter::IMotorTelemetry* t) { motorTelemetry = t; }
     void setRssi(const copter::Rssi* r) { rssi = r; }
     void setVtx(const copter::VtxController* controller) { vtx = controller; }
     // Куда рисуется OSD и что на порту очков (copter/DisplayPort.h) — в живые кадры.
@@ -378,6 +380,7 @@ public:
                   o == copter::Overload::ESC ? "ESC" : o == copter::Overload::BATTERY ? "BATT" : guard->limiting() ? "LIMIT" : "",
                   guard->flightStats().maxMotorA);
         }
+        escTelemetry(w);
         if (vtx)
         {
             const copter::VtxState& v = vtx->state();
@@ -485,6 +488,33 @@ private:
         w.add("],\"rpm\":[");
         for (uint8_t m = 0; m < f.motorCount(); ++m) w.add(m ? ",%.0f" : "%.0f", f.motorRotationHz(m));
         w.add("],\"src\":\"%s\"}", ctl.getStatus().rpmTelemetry ? "dshot" : "model");
+    }
+
+    // EDT регуляторов (dshot_edt): "esc":[[°C, В, А, статус], …] по моторам,
+    // null — значение ещё не приходило; нет EDT ни от одного — строки нет.
+    void escTelemetry(JsonWriter& w) const
+    {
+        using copter::EscExtTelemetry;
+        if (!motorTelemetry || !motorTelemetry->telemetryEnabled()) return;
+        const uint8_t n = motorTelemetry->telemetryMotors();
+        bool any = false;
+        for (uint8_t i = 0; i < n && !any; ++i) any = motorTelemetry->extended(i) != nullptr;
+        if (!any) return;
+        w.add(",\"esc\":[");
+        for (uint8_t i = 0; i < n; ++i)
+        {
+            const EscExtTelemetry* x = motorTelemetry->extended(i);
+            w.add(i ? ",[" : "[");
+            if (x && x->has(EscExtTelemetry::TEMPERATURE)) w.add("%d", x->temperatureC);
+            else w.add("null");
+            if (x && x->has(EscExtTelemetry::VOLTAGE)) w.add(",%.2f", x->volts);
+            else w.add(",null");
+            if (x && x->has(EscExtTelemetry::CURRENT)) w.add(",%.0f", x->amps);
+            else w.add(",null");
+            if (x && x->has(EscExtTelemetry::STATUS)) w.add(",%u]", static_cast<unsigned>(x->status));
+            else w.add(",null]");
+        }
+        w.add("]");
     }
 
     // строки ответа на params: заголовок, настройки, @rc, @modes
@@ -927,6 +957,7 @@ private:
     const copter::RxInput* rxInput = nullptr;
     const copter::BatteryMonitor* battery = nullptr;
     const copter::EscGuard* guard = nullptr;   // перегрузка по току (ovl, mma)
+    const copter::IMotorTelemetry* motorTelemetry = nullptr;   // EDT -> "esc"
     const copter::Rssi* rssi = nullptr;        // сила сигнала пульта (rssi, rssisrc)
     const copter::VtxController* vtx = nullptr;
     const copter::OsdOutputStatus* osdOut = nullptr;

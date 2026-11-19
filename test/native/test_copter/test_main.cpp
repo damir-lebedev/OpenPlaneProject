@@ -360,6 +360,56 @@ namespace
     }
 }
 
+// 091: расширенная телеметрия (EDT) — кадры «тип + значение» между оборотами.
+void test_dshot_edt_frames()
+{
+    // ни один кадр оборотов (любой период) не принимается за EDT
+    for (uint32_t us = 1; us < 70000; us += (us < 2000 ? 1 : 7))
+    {
+        TEST_ASSERT_FALSE(dshot::isEdtFrame(dshot::periodToTelemetry(us)));
+    }
+    TEST_ASSERT_FALSE(dshot::isEdtFrame(dshot::TELEMETRY_STOPPED));
+    // а все кадры EDT — EDT, и CRC/линия их пропускают как обычные
+    uint16_t back = 0;
+    TEST_ASSERT_TRUE(dshot::decodeTelemetryLine(dshot::telemetryLine(dshot::edtFrame(dshot::EDT_TEMPERATURE, 45)), back));
+    TEST_ASSERT_EQUAL_HEX16(0x22D, back);
+    for (uint8_t t = 2; t <= 14; t += 2) TEST_ASSERT_TRUE(dshot::isEdtFrame(dshot::edtFrame(t, 0)));
+
+    copter::EscExtTelemetry x;
+    TEST_ASSERT_FALSE(x.any());
+    TEST_ASSERT_FALSE(dshot::feedEdt(dshot::periodToTelemetry(500), x));   // обороты — не трогает
+    TEST_ASSERT_FALSE(x.any());
+    TEST_ASSERT_TRUE(dshot::feedEdt(dshot::edtFrame(dshot::EDT_TEMPERATURE, 45), x));
+    TEST_ASSERT_TRUE(dshot::feedEdt(dshot::edtFrame(dshot::EDT_VOLTAGE, 67), x));   // 16.75 В
+    TEST_ASSERT_TRUE(dshot::feedEdt(dshot::edtFrame(dshot::EDT_CURRENT, 23), x));
+    TEST_ASSERT_TRUE(dshot::feedEdt(dshot::edtFrame(dshot::EDT_DEBUG1, 99), x));    // пропускается
+    TEST_ASSERT_TRUE(x.has(copter::EscExtTelemetry::TEMPERATURE | copter::EscExtTelemetry::VOLTAGE));
+    TEST_ASSERT_FALSE(x.has(copter::EscExtTelemetry::STATUS));
+    TEST_ASSERT_EQUAL_INT16(45, x.temperatureC);
+    TEST_ASSERT_EQUAL_FLOAT(16.75f, x.volts);
+    TEST_ASSERT_EQUAL_FLOAT(23.0f, x.amps);
+    TEST_ASSERT_TRUE(dshot::feedEdt(dshot::edtFrame(dshot::EDT_STATUS, copter::EscExtTelemetry::STATUS_WARNING | 9), x));
+    TEST_ASSERT_TRUE(x.status & copter::EscExtTelemetry::STATUS_WARNING);
+    TEST_ASSERT_EQUAL_UINT8(9, x.status & 0x0F);
+    TEST_ASSERT_EQUAL_UINT32(5, x.frames);
+
+    // включение: сразу при старте; повтор — только если обороты есть, а EDT нет,
+    // моторы стоят и прошло 3 с; не больше 4 раз; выключено — никогда
+    dshot::EdtEnabler e;
+    TEST_ASSERT_FALSE(e.update(0, false, false, false, true));
+    TEST_ASSERT_FALSE(e.update(0, true, false, false, false));   // крутятся — ждём
+    TEST_ASSERT_TRUE(e.update(10, true, false, false, true));
+    TEST_ASSERT_FALSE(e.update(5000, true, false, false, true));   // регуляторы молчат — незачем
+    TEST_ASSERT_FALSE(e.update(5000, true, true, true, true));     // EDT идёт
+    TEST_ASSERT_FALSE(e.update(2000, true, true, false, true));    // рано
+    TEST_ASSERT_TRUE(e.update(3010, true, true, false, true));     // батарею подключили позже
+    TEST_ASSERT_FALSE(e.update(9000, true, true, false, false));   // ARM — не шлём
+    TEST_ASSERT_TRUE(e.update(9000, true, true, false, true));
+    TEST_ASSERT_TRUE(e.update(12000, true, true, false, true));
+    TEST_ASSERT_FALSE(e.update(60000, true, true, false, true));   // 4 раза — хватит
+    TEST_ASSERT_EQUAL_UINT8(4, e.sent());
+}
+
 void test_dshot_telemetry_decoding()
 {
     // GCR: 16 разных кодов, обратно — те же полубайты, чужой код — нет
@@ -8839,6 +8889,7 @@ int main()
     RUN_TEST(test_analog_esc_pulses);
     RUN_TEST(test_dshot_frame_and_crc);
     RUN_TEST(test_dshot_telemetry_decoding);
+    RUN_TEST(test_dshot_edt_frames);
     RUN_TEST(test_dshot_bit_timing);
     RUN_TEST(test_propulsion_matches_bench_data_for_5_inch);
     RUN_TEST(test_every_catalog_build_gets_a_sane_tune);

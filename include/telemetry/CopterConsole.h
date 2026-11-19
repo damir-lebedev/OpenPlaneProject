@@ -98,7 +98,11 @@ public:
     // события консоли (стёрт ящик — BLACKBOX_ERASE). false — пищалки нет.
     void setBeepHook(bool (*hook)(copter::BeeperCondition c, bool preview)) { beepHook = hook; }
     void setTaskStats(const TaskStats* stats) { tasks = stats; }
-    void setMotorTelemetry(const copter::IMotorTelemetry* t) { motorTelemetry = t; }
+    void setMotorTelemetry(const copter::IMotorTelemetry* t)
+    {
+        motorTelemetry = t;
+        link.setMotorTelemetry(t);
+    }
     // Регуляторы DShot: dshotprog в CLI, «dshot» приложения, MSP2_SEND_DSHOT_COMMAND.
     void setEscCommands(copter::IEscCommands* e) { cli.setEscCommands(e); }
     // SPI-флеш ящика (F405) — для flash_info.
@@ -319,14 +323,32 @@ public:
             return;
         }
         const uint8_t poles = static_cast<uint8_t>(params.value(copter::PARAM_MOTOR_POLES));
-        io.println("Motor    eRPM    RPM     Hz Invalid");
-        io.println("=====   =====  =====  ===== =======");
+        bool edt = false;
+        for (uint8_t i = 0; i < motorTelemetry->telemetryMotors(); ++i) edt = edt || motorTelemetry->extended(i);
+        io.println(edt ? "Motor    eRPM    RPM     Hz Invalid  TempC Voltage Current Status"
+                       : "Motor    eRPM    RPM     Hz Invalid");
+        io.println(edt ? "=====   =====  =====  ===== =======  ===== ======= ======= ======" : "=====   =====  =====  ===== =======");
         for (uint8_t i = 0; i < motorTelemetry->telemetryMotors(); ++i)
         {
             const uint32_t e = motorTelemetry->erpm(i);
             const float rpm = copter::dshot::erpmToRpm(e, poles);
-            io.printf("%5u %7lu %6.0f %6.0f %6.2f%%%s\n", i, static_cast<unsigned long>(e), rpm, rpm / 60.0f,
-                      motorTelemetry->telemetryErrorPercent(i), motorTelemetry->hasTelemetry(i) ? "" : "  (ответа не было)");
+            io.printf("%5u %7lu %6.0f %6.0f %6.2f%%", i, static_cast<unsigned long>(e), rpm, rpm / 60.0f,
+                      motorTelemetry->telemetryErrorPercent(i));
+            // EDT (dshot_edt): «-» — значение не приходило
+            const copter::EscExtTelemetry* x = motorTelemetry->extended(i);
+            if (edt)
+            {
+                using copter::EscExtTelemetry;
+                if (x && x->has(EscExtTelemetry::TEMPERATURE)) io.printf("  %5d", x->temperatureC);
+                else io.print("      -");
+                if (x && x->has(EscExtTelemetry::VOLTAGE)) io.printf(" %7.2f", x->volts);
+                else io.print("       -");
+                if (x && x->has(EscExtTelemetry::CURRENT)) io.printf(" %7.0f", x->amps);
+                else io.print("       -");
+                if (x && x->has(EscExtTelemetry::STATUS)) io.printf("   0x%02x", x->status);
+                else io.print("      -");
+            }
+            io.printf("%s\n", motorTelemetry->hasTelemetry(i) ? "" : "  (ответа не было)");
         }
     }
 

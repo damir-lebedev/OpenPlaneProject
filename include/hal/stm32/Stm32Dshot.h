@@ -410,6 +410,11 @@ public:
         if (total == 0) return m.lastWindowPercent;
         return m.windowDone ? m.lastWindowPercent : 100.0f * m.telBad / total;
     }
+    // EDT (dshot_edt): температура, напряжение, ток регулятора.
+    const copter::EscExtTelemetry* extended(uint8_t i) const override
+    {
+        return i < motorCount && motors[i].ext.any() ? &motors[i].ext : nullptr;
+    }
 
 private:
     struct Motor
@@ -422,6 +427,7 @@ private:
         // телеметрия
         bool telemetryValid = false;
         uint32_t erpm = 0;
+        copter::EscExtTelemetry ext;   // кадры EDT вместо оборотов
         uint16_t telOk = 0, telBad = 0;
         bool windowDone = false;
         float lastWindowPercent = 100.0f;
@@ -553,7 +559,8 @@ private:
     {
         if (ok)
         {
-            m.erpm = copter::dshot::telemetryToErpm(value);
+            // кадр EDT — значение регулятора, обороты остаются прошлые
+            if (!copter::dshot::feedEdt(value, m.ext)) m.erpm = copter::dshot::telemetryToErpm(value);
             m.telemetryValid = true;
             ++m.telOk;
         }

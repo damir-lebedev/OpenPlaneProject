@@ -1097,6 +1097,18 @@ void test_dshot_eight_motors_timers_and_af()
 // ошибка; доля ошибок за окно 1000 кадров; dshot_telemetry_info в CLI.
 namespace
 {
+    std::vector<uint8_t> escReplyValue(uint16_t value12, float spb)
+    {
+        std::vector<uint8_t> out(9, 1);
+        const uint32_t line = copter::dshot::telemetryLine(value12);
+        for (int b = 20; b >= 0; --b)
+        {
+            for (int k = 0; k < static_cast<int>(spb); ++k) out.push_back(static_cast<uint8_t>((line >> b) & 1u));
+        }
+        out.insert(out.end(), 12, 1);
+        return out;
+    }
+
     std::vector<uint8_t> escReply(uint32_t periodUs, float spb)
     {
         std::vector<uint8_t> out(9, 1);
@@ -1151,6 +1163,26 @@ void test_dshot_bidirectional_telemetry()
     }
     TEST_ASSERT_FLOAT_WITHIN(0.2f, 50.0f, d.telemetryErrorPercent(0));
     TEST_ASSERT_EQUAL_UINT32(120000, d.erpm(0));   // последнее верное
+
+    // 091: EDT — S1 вперемешку шлёт температуру, напряжение и ток; обороты не
+    // портятся, ошибкой кадры EDT не считаются
+    TEST_ASSERT_NULL(d.extended(0));
+    const std::vector<uint8_t> edt[3] = { escReplyValue(copter::dshot::edtFrame(copter::dshot::EDT_TEMPERATURE, 52), 3.0f),
+                                          escReplyValue(copter::dshot::edtFrame(copter::dshot::EDT_VOLTAGE, 66), 3.0f),
+                                          escReplyValue(copter::dshot::edtFrame(copter::dshot::EDT_CURRENT, 14), 3.0f) };
+    for (int i = 0; i < 1000; ++i)
+    {
+        s1.samples = (i % 4 == 3) ? good : edt[i % 4];
+        d.write(zero, false);
+    }
+    TEST_ASSERT_EQUAL_UINT32(120000, d.erpm(0));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 0.0f, d.telemetryErrorPercent(0));
+    const copter::EscExtTelemetry* x = d.extended(0);
+    TEST_ASSERT_NOT_NULL(x);
+    TEST_ASSERT_EQUAL_INT16(52, x->temperatureC);
+    TEST_ASSERT_EQUAL_FLOAT(16.5f, x->volts);
+    TEST_ASSERT_EQUAL_FLOAT(14.0f, x->amps);
+    TEST_ASSERT_NULL(d.extended(2));   // S3 шлёт только обороты
 
     // без bidir — телеметрии нет
     static Stm32Dshot plain;

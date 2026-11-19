@@ -166,6 +166,8 @@ static uint8_t outputsAtBoot = 0;   // выходов на моторы наст
 copter::BatteryMonitor battery;
 // Перегрузка регулятора и батареи по току — copter/EscGuard.h.
 copter::EscGuard escGuard;
+// EDT (dshot_edt): команда регуляторам при старте и повтор, если молчат.
+static copter::dshot::EdtEnabler edtEnabler;
 copter::Rssi rssi;   // сила сигнала пульта: канал, битые кадры или dBm CRSF (113)
 copter::VtxHeatWatch vtxHeat;
 static bool wasArmedForGuard = false;
@@ -861,8 +863,49 @@ static void autoProfile()
 
 // Батарея и ток (раз в 10 мс): мВ на пинах АЦП -> copter/Battery.h (масштабы
 // vbat_scale, ibata_scale, ibata_offset — настройки коптера).
+// Ток регуляторов по EDT: наибольший на мотор и сумма — когда отвечают все
+// моторы рамы. Заодно включает EDT у регуляторов (dshot_edt, моторы стоят).
+struct EscCurrents
+{
+    bool all = false;
+    float maxA = 0.0f;
+    float sumA = 0.0f;
+};
+
+static EscCurrents escCurrents()
+{
+    EscCurrents c;
+    const copter::IMotorTelemetry& tel = motors.dshotOutput();
+    const uint8_t n = tel.telemetryMotors();
+    bool replying = false, extended = true;
+    uint8_t withCurrent = 0;
+    for (uint8_t i = 0; tel.telemetryEnabled() && i < n; ++i)
+    {
+        if (!tel.hasTelemetry(i)) continue;
+        replying = true;
+        const copter::EscExtTelemetry* x = tel.extended(i);
+        if (!x)
+        {
+            extended = false;
+            continue;
+        }
+        if (!x->has(copter::EscExtTelemetry::CURRENT)) continue;
+        ++withCurrent;
+        c.sumA += x->amps;
+        if (x->amps > c.maxA) c.maxA = x->amps;
+    }
+    c.all = n > 0 && withCurrent == n;
+    const bool edt = bidirAtBoot && copterParams.value(copter::PARAM_DSHOT_EDT) > 0.5f && tel.telemetryEnabled();
+    if (edtEnabler.update(millis(), edt, replying, replying && extended, !copterController.isArmed()))
+    {
+        motors.dshotOutput().queueCommand(copter::dshot::CommandQueue::ALL, copter::dshot::EXTENDED_TELEMETRY_ON);
+    }
+    return c;
+}
+
 static void readBattery()
 {
+    const EscCurrents esc = escCurrents();
     if (Config::PIN_VBAT_ADC < 0) return;
     auto pinMv = [](int16_t pin) {
         return pin < 0 ? 0.0f : static_cast<float>(analogRead(static_cast<uint32_t>(pin))) * 3300.0f / 4095.0f;
@@ -871,7 +914,11 @@ static void readBattery()
     const bool armed = copterController.isArmed();
     if (armed && !wasArmedForGuard) escGuard.resetFlight();
     wasArmedForGuard = armed;
-    escGuard.update(armed, battery.hasCurrent(), battery.amps(), 0.01f);
+    // ток на мотор — по EDT, если отвечают все; нет датчика тока — сумма по EDT
+    if (battery.hasCurrent())
+        escGuard.update(armed, true, battery.amps(), 0.01f, esc.all ? esc.maxA : -1.0f);
+    else
+        escGuard.update(armed, esc.all, esc.sumA, 0.01f, esc.maxA);
     copterController.setOutputScale(escGuard.outputScale());
     autoProfile();
 }
