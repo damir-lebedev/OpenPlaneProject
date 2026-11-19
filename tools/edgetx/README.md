@@ -9,8 +9,9 @@ Crossfire (MSP через CRSF). Подробно — `docs/COPTER.md`, «Нас
 
 | Файл | Что |
 |---|---|
-| `SCRIPTS/TOOLS/OpenPlane.lua` | SYS → Tools → OpenPlane: GPS Rescue, Training, OSD, Radio |
-| `SCRIPTS/TELEMETRY/oplan.lua` | экран телеметрии модели: в фоне шлёт имя модели пульта (для «Перед полётом» в Studio) |
+| `SCRIPTS/TOOLS/OpenPlane.lua` | SYS → Tools → OpenPlane: GPS Rescue, Training, OSD, Radio, Find |
+| `SCRIPTS/TELEMETRY/oplan.lua` | экран телеметрии модели: в фоне шлёт имя модели пульта (для «Перед полётом» в Studio) и запоминает точку GPS |
+| `SCRIPTS/OPLANE/find.lua` | поиск упавшего: последняя точка GPS на SD (`lastgps.txt`), метры, стрелка, писк |
 | `SCRIPTS/OPLANE/msp.lua` | общая часть: MSP v2 через CRSF, свои команды `0x4F00`–`0x4F02` |
 
 Кнопки: колесо или +/− — строка, ENTER — править, ENTER ещё раз — записать
@@ -18,4 +19,11 @@ Crossfire (MSP через CRSF). Подробно — `docs/COPTER.md`, «Нас
 полётника, ARM до сохранения запрещён — на выходе скрипт спросит «Save»
 (ENTER). При ARM настройки не меняются.
 
+Страница Find: координаты последней точки, «Fix lost: it is HERE», если
+GPS коптера потерял фикс, метры от старта или от пилота (пульт со своим
+GPS — со стрелкой), ENTER — писк «горячо-холодно». Точку пишет экран
+телеметрии `oplan` в фоне — поставьте его на экран модели.
+
 Код свой (не из Lua-скриптов Betaflight), Lua 5.2 без битовых операций.
+Тесты на ПК с заглушками API EdgeTX: `python tools/test_edgetx_lua.py`
+(`pip install lupa`).

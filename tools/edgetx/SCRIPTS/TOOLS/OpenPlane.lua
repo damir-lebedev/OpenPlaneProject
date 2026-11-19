@@ -1,12 +1,14 @@
 -- OpenPlane: настройки коптера с пульта EdgeTX (System → Tools → OpenPlane).
--- Страницы: возврат домой, учебные ограничения, OSD, пульт. Связь — MSP через
--- CRSF (../OPLANE/msp.lua), настройки — по именам BF (как в CLI). Подписи
+-- Страницы: возврат домой, учебные ограничения, OSD, пульт, поиск упавшего
+-- (../OPLANE/find.lua). Связь — MSP через CRSF (../OPLANE/msp.lua), настройки —
+-- по именам BF (как в CLI). Подписи
 -- английские: шрифты пульта не у всех с кириллицей.
 --
 -- Колесо/+- — строка, ENTER — править (ENTER ещё раз — записать, EXIT —
 -- отменить), PAGE — страница, EXIT — выход (несохранённое — спросит).
 
 local msp = nil
+local find = nil
 
 -- { подпись, имя настройки, единицы, step = шаг, vis = показ элемента OSD (бит 0x800) }
 local PAGES = {
@@ -50,6 +52,7 @@ local PAGES = {
     { "Preflight", "osd_preflight_pos", vis = true },
   } },
   { title = "Radio", radio = true },
+  { title = "Find", find = true },
 }
 
 local VISIBLE = 2048   -- OSD_VISIBLE в osd_*_pos
@@ -80,6 +83,7 @@ local function load()
   msp.clear()
   edit = nil
   local p = PAGES[page]
+  if p.find then return end
   if p.radio then
     radio.model = msp.modelName()
     radio.craft = nil
@@ -206,6 +210,11 @@ local function draw()
     drawRadio()
     return
   end
+  if p.find then
+    find.draw(LH + 1, LH, FONT)
+    lcd.drawText(2, LCD_H - LH + 1, "ENT: beep on/off", FONT)
+    return
+  end
   local visible = math.floor((LCD_H - 2 * LH) / LH)
   if cursor < top then top = cursor end
   if cursor >= top + visible then top = cursor - visible + 1 end
@@ -222,6 +231,7 @@ end
 
 local function init()
   msp = loadScript("/SCRIPTS/OPLANE/msp.lua")()
+  find = loadScript("/SCRIPTS/OPLANE/find.lua")()
   radio.model = msp.modelName()
   msp.sendModel(radio.model, function(craft) radio.craft = craft or false end)
   load()
@@ -236,6 +246,7 @@ end
 
 local function run(e)
   msp.poll()
+  find.update()
   if leaving then return 1 end
   if asking then
     if e == E_ENTER then save()
@@ -263,7 +274,9 @@ local function run(e)
   elseif anyOf(e, E_PREV, E_PREV_R) and cursor > 1 then
     cursor = cursor - 1
   elseif e == E_ENTER then
-    if p.radio then
+    if p.find then
+      find.beep = not find.beep
+    elseif p.radio then
       load()
     else
       local row = p.rows[cursor]
