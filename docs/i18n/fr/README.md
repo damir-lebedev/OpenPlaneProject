@@ -3,6 +3,7 @@
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/T%C3%A9l%C3%A9charger-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Télécharger Windows"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/T%C3%A9l%C3%A9charger-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="Télécharger macOS Apple Silicon"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/T%C3%A9l%C3%A9charger-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Télécharger macOS Intel"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Android.apk"><img src="https://img.shields.io/badge/T%C3%A9l%C3%A9charger-Android%207%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Télécharger Android"></a>
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — configurer, flasher et voler : avions et multirotors (y compris une carte livrée avec Betaflight). L'installateur fonctionne hors ligne — tout le nécessaire est inclus.</a></p>
 <!-- download:end -->

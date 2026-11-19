@@ -3,6 +3,7 @@
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/Baixar-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Baixar Windows"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/Baixar-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="Baixar macOS Apple Silicon"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/Baixar-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Baixar macOS Intel"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Android.apk"><img src="https://img.shields.io/badge/Baixar-Android%207%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Baixar Android"></a>
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — configure, grave o firmware e voe: aviões e multirrotores (inclusive uma placa que veio com Betaflight). O instalador funciona sem internet — tudo o que precisa está dentro.</a></p>
 <!-- download:end -->

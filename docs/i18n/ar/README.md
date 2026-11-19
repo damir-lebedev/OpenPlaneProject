@@ -3,6 +3,7 @@
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/%D8%AA%D9%86%D8%B2%D9%8A%D9%84-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="تنزيل Windows"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/%D8%AA%D9%86%D8%B2%D9%8A%D9%84-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="تنزيل macOS Apple Silicon"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/%D8%AA%D9%86%D8%B2%D9%8A%D9%84-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="تنزيل macOS Intel"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Android.apk"><img src="https://img.shields.io/badge/%D8%AA%D9%86%D8%B2%D9%8A%D9%84-Android%207%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="تنزيل Android"></a>
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — اضبط وحمّل البرنامج وطِر: طائرات ومروحيات متعددة (بما فيها لوحة كانت تعمل بـ Betaflight). المثبّت يعمل دون إنترنت — كل ما يلزم بداخله.</a></p>
 <!-- download:end -->

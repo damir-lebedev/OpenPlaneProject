@@ -3,8 +3,9 @@
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Скачать Windows"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="Скачать macOS Apple Silicon"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Скачать macOS Intel"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Android.apk"><img src="https://img.shields.io/badge/%D0%A1%D0%BA%D0%B0%D1%87%D0%B0%D1%82%D1%8C-Android%207%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Скачать Android"></a>
 </p>
-<p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — настроить, прошить и полететь: самолёт и коптер (в том числе плату из-под Betaflight). Установщик работает без интернета — всё нужное внутри.</a></p>
+<p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — настроить, прошить и полететь: самолёт и коптер (в том числе плату из-под Betaflight). Установщик работает без интернета — всё нужное внутри. На Android — настройка и прошивка в поле по кабелю USB-C ⇄ USB-C.</a></p>
 <!-- download:end -->
 
 <!-- i18n-bar:start -->
@@ -68,7 +69,7 @@
 | **Что это** | Открытый полётный контроллер и автопилот для радиоуправляемых самолётов. Основная плата — STM32H743 (класс плат Pixhawk): на плате DevEBox прошивка **уже запущена и управляется с пульта** — [есть видео](#-stm32h743-ожила-на-плате), сейчас подключаются датчики. Прежняя основа — ESP32-S3 за ~$10, на ней пройден стенд со всеми датчиками. |
 | **Что умеет** | 12 режимов полёта — от стабилизации до возврата домой, кругов по GPS, запуска с руки, автопосадки и **парения в термиках**. Трубка Пито из двух дешёвых барометров. Телеметрия MAVLink в QGroundControl и Mission Planner. |
 | **Мультикоптеры** | Та же прошивка — для квадро, гексы, окты, Y6 и X8: описываете раму, винты, моторы и батарею, а PID и фильтры прошивка выводит сама по физической модели. Пока проверено в симуляторе — [COPTER.md](docs/COPTER.md). Вся прошивка коптера летает и на ПК (SITL, `pio run -e sitl`) — в OpenPlane Studio это раздел «Симулятор» с 3D и управлением с пульта. |
-| **Прошить** | Из [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) одной кнопкой — Windows и macOS. Плата узнаётся сама, настройки коптера не стираются. **Studio для Android** (кабель USB-C ⇄ USB-C, вся настройка и прошивка в поле) — в работе. |
+| **Прошить** | Из [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) одной кнопкой — Windows и macOS. Плата узнаётся сама, настройки коптера не стираются. **Studio для Android** — кабель USB-C ⇄ USB-C, вся настройка в поле и прошивка готовым файлом из релиза одной кнопкой «Скачать и прошить». |
 | **Главная фишка** | Любой тумблер или крутилка пульта = любая функция. **Одна строка** в `Controls.h` — и SwD уже не реверс мотора, а сброс груза. |
 | **Почему можно верить** | 710 автотестов (плюс 9 на самой плате с настоящей SD-картой), 94 % кода под тестами, 33 сборки «плата × датчики» без единого предупреждения, замкнутые симуляции каждого режима. |
 | **Честно** | В воздухе пока был ручной режим (первый прототип). STM32H743 пока проверена на столе, без датчиков. Автопилот проверен на стенде, тестами и симуляциями и ждёт лётных испытаний — [статус ниже](#-честный-статус). |
@@ -299,7 +300,7 @@ flowchart LR
 
 ## 🚀 Быстрый старт
 
-Проще всего — **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)** ([скачать](https://github.com/damir-lebedev/openplane-studio/releases/latest)): приложение для Windows и macOS настраивает плату под ваш самолёт по шагам, собирает прошивку и прошивает её одной кнопкой, а потом помогает наладить всё на земле по живым данным с платы. Из командной строки:
+Проще всего — **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)** ([скачать](https://github.com/damir-lebedev/openplane-studio/releases/latest)): приложение для Windows и macOS (и Android — настройка и прошивка готовым файлом) настраивает плату под ваш самолёт по шагам, собирает прошивку и прошивает её одной кнопкой, а потом помогает наладить всё на земле по живым данным с платы. Из командной строки:
 
 ```bash
 pip install platformio

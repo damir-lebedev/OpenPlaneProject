@@ -3,6 +3,7 @@
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="다운로드 Windows"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="다운로드 macOS Apple Silicon"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="다운로드 macOS Intel"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Android.apk"><img src="https://img.shields.io/badge/%EB%8B%A4%EC%9A%B4%EB%A1%9C%EB%93%9C-Android%207%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="다운로드 Android"></a>
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — 설정, 펌웨어 굽기, 비행까지: 비행기와 멀티콥터(Betaflight 보드 전환 포함). 설치 파일은 인터넷 없이 동작하며 필요한 모든 것이 들어 있습니다.</a></p>
 <!-- download:end -->

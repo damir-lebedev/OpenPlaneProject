@@ -3,6 +3,7 @@
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/Herunterladen-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Herunterladen Windows"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/Herunterladen-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="Herunterladen macOS Apple Silicon"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/Herunterladen-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="Herunterladen macOS Intel"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Android.apk"><img src="https://img.shields.io/badge/Herunterladen-Android%207%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Herunterladen Android"></a>
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — einrichten, flashen und fliegen: Flugzeuge und Copter (auch ein Board, das mit Betaflight kam). Der Installer funktioniert offline — alles Nötige ist dabei.</a></p>
 <!-- download:end -->

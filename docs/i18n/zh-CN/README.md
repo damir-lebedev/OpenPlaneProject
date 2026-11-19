@@ -3,6 +3,7 @@
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Windows-Setup.exe"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-Windows%2010%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="下载 Windows"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-AppleSilicon.dmg"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-macOS%20M1%E2%80%A6M4-111111?style=for-the-badge&logo=apple&logoColor=white" alt="下载 macOS Apple Silicon"></a>
   <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-macOS-Intel.dmg"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-macOS%20Intel-555555?style=for-the-badge&logo=apple&logoColor=white" alt="下载 macOS Intel"></a>
+  <a href="https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Android.apk"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD-Android%207%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="下载 Android"></a>
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — 配置、刷写并起飞：固定翼与多旋翼（包括从 Betaflight 迁移的飞控）。安装包可离线使用，所需的一切都已内置。</a></p>
 <!-- download:end -->
