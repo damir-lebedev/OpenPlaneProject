@@ -3,94 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>OpenPlane Flasher</title>
-<meta name="description" content="Прошивка полётника OpenPlane с телефона (Android, Chrome) или компьютера по USB — без установки программ.">
+<title>OpenPlane Flasher — прошивка полётника с телефона</title>
+<meta name="description" content="Прошивка полётника OpenPlane с телефона (Android, Chrome) или компьютера по USB — без установки программ. Геозабор, симулятор и всё, что умеет прошивка.">
 <meta name="theme-color" content="#0b1220">
+<meta property="og:title" content="OpenPlane Flasher — прошивка полётника с телефона">
+<meta property="og:description" content="Chrome на Android, кабель type-c — type-c, одна кнопка. Настройки коптера не стираются.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b1220'/%3E%3Cpath d='M10 36l44-14-16 22-6-8-10 6 4-8z' fill='%2338bdf8'/%3E%3C/svg%3E">
-<style>
-/* ============================================================
-   OpenPlane Flasher — прошивка STM32 по USB прямо из браузера.
-   Телефон Android (Chrome) → кабель type-c — type-c → полётник.
-   WebUSB: консоль платы (CDC) → клавиша 'D' → системный загрузчик
-   STM32 (DfuSe) → стираются только секторы под прошивку (сектор
-   настроек не трогается) → запись → сверка → запуск.
-   Исходник: tools/web-flasher/index.html, выкладка —
-   tools/publish_web_flasher.py (ветка gh-pages).
-   ============================================================ */
-:root {
-  --bg: #0b1220; --bg2: #111a2e; --card: #141f36; --line: #22304f;
-  --text: #e6edf7; --mute: #8ea0bf; --acc: #38bdf8; --acc2: #a78bfa;
-  --ok: #34d399; --warn: #fbbf24; --bad: #f87171;
-  --r: 16px;
-}
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    --bg: #f4f7fb; --bg2: #e9eef7; --card: #ffffff; --line: #d6deeb;
-    --text: #0f172a; --mute: #55657f; --acc: #0284c7; --acc2: #7c3aed;
-    --ok: #059669; --warn: #b45309; --bad: #dc2626;
-  }
-}
-* { box-sizing: border-box; }
-html, body { margin: 0; }
-body {
-  background: radial-gradient(1200px 600px at 80% -10%, color-mix(in srgb, var(--acc2) 18%, transparent), transparent 60%),
-              radial-gradient(900px 500px at -10% 10%, color-mix(in srgb, var(--acc) 16%, transparent), transparent 60%),
-              var(--bg);
-  color: var(--text);
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  min-height: 100vh;
-  padding: max(16px, env(safe-area-inset-top)) 16px 40px;
-}
-main { max-width: 640px; margin: 0 auto; }
-header { display: flex; align-items: center; gap: 12px; margin: 8px 0 20px; }
-header > div { min-width: 0; }
-html, body { overflow-x: hidden; }
-.logo { width: 44px; height: 44px; flex: none; }
-h1 { font-size: 22px; margin: 0; letter-spacing: .2px; }
-.sub { color: var(--mute); font-size: 14px; margin: 0; }
-.lang { margin-left: auto; background: none; border: 1px solid var(--line); color: var(--mute);
-        border-radius: 10px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; margin: 14px 0;
-        box-shadow: 0 10px 30px -18px rgba(0,0,0,.5); }
-.step { display: flex; gap: 12px; align-items: flex-start; }
-.num { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
-       font-weight: 700; font-size: 14px; background: color-mix(in srgb, var(--acc) 18%, transparent); color: var(--acc); }
-.step.done .num { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
-.step h2 { font-size: 17px; margin: 3px 0 6px; }
-.step p { margin: 0 0 10px; color: var(--mute); font-size: 14px; }
-.grow { flex: 1; min-width: 0; }
-select, input[type=file] { width: 100%; max-width: 100%; font: inherit; color: var(--text); background: var(--bg2);
-         border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
-.fwinfo { font-size: 13px; color: var(--mute); margin-top: 8px; min-height: 1.4em; }
-button.big { width: 100%; border: 0; border-radius: 14px; padding: 16px; font-family: inherit; font-weight: 700; font-size: 17px; line-height: 1.2;
-             color: #04121f; background: linear-gradient(135deg, var(--acc), var(--acc2)); cursor: pointer;
-             box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--acc) 70%, transparent); transition: transform .08s, opacity .2s; }
-button.big:active { transform: scale(.98); }
-button.big:disabled { opacity: .45; cursor: default; }
-button.ghost { width: 100%; margin-top: 10px; background: none; border: 1px dashed var(--line); color: var(--mute);
-               border-radius: 14px; padding: 12px; font: inherit; cursor: pointer; }
-.bar { height: 10px; border-radius: 99px; background: var(--bg2); overflow: hidden; margin: 14px 0 6px; border: 1px solid var(--line); }
-.bar > i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--acc), var(--acc2)); transition: width .15s; }
-.status { font-weight: 600; min-height: 1.5em; }
-.status.ok { color: var(--ok); } .status.bad { color: var(--bad); } .status.warn { color: var(--warn); }
-.log { font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; color: var(--mute); background: var(--bg2);
-       border-radius: 12px; padding: 10px; max-height: 220px; overflow: auto; white-space: pre-wrap; margin-top: 10px; display: none; }
-.log.on { display: block; }
-.note { border-left: 3px solid var(--warn); padding: 10px 12px; background: color-mix(in srgb, var(--warn) 8%, transparent);
-        border-radius: 0 12px 12px 0; font-size: 14px; color: var(--text); margin: 14px 0; }
-.note.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent); }
-details { margin: 10px 0; }
-details summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
-details ol, details ul { color: var(--mute); font-size: 14px; padding-left: 20px; }
-footer { color: var(--mute); font-size: 13px; text-align: center; margin-top: 26px; }
-footer a, a { color: var(--acc); }
-.pulse { animation: pulse 1.4s ease-in-out infinite; }
-@keyframes pulse { 50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--acc) 0%, transparent), 0 0 0 0 color-mix(in srgb, var(--acc) 40%, transparent); } }
-.cable { display: block; width: 100%; height: auto; margin: 4px 0 2px; }
-.cable .dash { stroke-dasharray: 6 8; animation: flow 1.2s linear infinite; }
-@keyframes flow { to { stroke-dashoffset: -28; } }
-@media (prefers-reduced-motion: reduce) { .cable .dash, .pulse { animation: none; } }
-</style>
+<!-- Исходник: OpenPlaneProject tools/web-flasher/ (index.html + flasher.css + flasher.js).
+     Выкладка: tools/publish_web_flasher.py → GitHub Pages и lebedev-space.ru/flash/.
+     Встроенных стилей и скриптов нет: у lebedev-space CSP style-src/script-src 'self'. -->
+<link rel="stylesheet" href="flasher.css">
+<script src="flasher.js" defer></script>
 </head>
 <body>
 <main>
@@ -100,22 +23,60 @@ footer a, a { color: var(--acc); }
       <h1>OpenPlane Flasher</h1>
       <p class="sub" data-t="tagline">Прошивка полётника с телефона — по одному кабелю</p>
     </div>
-    <button class="lang" id="lang">EN</button>
+    <button class="lang" id="lang" type="button">EN</button>
   </header>
 
+  <!-- отчёт об ошибке: наверху, чтобы в поле не искать -->
+  <div class="bug" id="bugbar">
+    <div class="grow">
+      <b data-t="bugB">Нашли баг или что-то непонятно?</b>
+      <span data-t="bugS">Напишите здесь — сообщение сразу придёт автору.</span>
+    </div>
+    <button class="small" id="bugbtn" type="button" data-t="bugBtn">Сообщить</button>
+  </div>
+
+  <form class="card form hide" id="report" novalidate>
+    <label for="rmsg" data-t="rMsgL">Что случилось</label>
+    <textarea id="rmsg" maxlength="3000" data-tp="rMsgP" placeholder="Что делали и что пошло не так: какая плата, на каком шаге, что на экране"></textarea>
+    <div class="row2">
+      <div>
+        <label for="rnick" data-t="rNickL">Ник — для списка благодарностей тестерам</label>
+        <input type="text" id="rnick" maxlength="40" autocomplete="nickname" data-tp="rNickP" placeholder="необязательно">
+      </div>
+      <div>
+        <label for="rcontact" data-t="rContactL">Telegram, почта или телефон — чтобы ответить</label>
+        <input type="text" id="rcontact" maxlength="120" autocomplete="email" data-tp="rContactP" placeholder="необязательно">
+      </div>
+    </div>
+    <label class="check"><input type="checkbox" id="rconsent"><span data-t="rConsent">Даю <a href="https://lebedev-visit.ru/soglasie" target="_blank" rel="noopener">согласие на обработку персональных данных</a>, чтобы мне ответили по этому отчёту.</span></label>
+    <label class="check off" id="rnewsrow"><input type="checkbox" id="rnews" disabled><span data-t="rNews">Пишите мне о новых версиях и предложениях OpenPlane по этому контакту</span></label>
+    <label class="check"><input type="checkbox" id="rattach" checked><span data-t="rAttach">Приложить журнал прошивки и данные платы</span></label>
+    <details>
+      <summary data-t="rWhat">Что приложится</summary>
+      <div class="attach" id="rattachtext"></div>
+    </details>
+    <input type="text" id="rtrap" class="trap" tabindex="-1" autocomplete="off" aria-hidden="true">
+    <div class="actions">
+      <button class="big" id="rsend" type="submit" data-t="rSend">Отправить</button>
+      <button class="ghost" id="rcancel" type="button" data-t="rCancel">Закрыть</button>
+    </div>
+    <div class="sent" id="rsent" role="status"></div>
+    <button class="ghost hide" id="rcopy" type="button"></button>
+  </form>
+
   <svg class="cable" viewBox="0 0 600 90" aria-hidden="true">
-    <rect x="8" y="10" width="64" height="70" rx="12" fill="none" stroke="var(--mute)" stroke-width="3"/>
-    <rect x="18" y="20" width="44" height="44" rx="4" fill="color-mix(in srgb, var(--acc) 20%, transparent)"/>
-    <text x="40" y="49" text-anchor="middle" font-size="16" fill="var(--acc)" font-family="system-ui">⚡</text>
-    <path class="dash" d="M74 45 C 200 45, 380 45, 520 45" fill="none" stroke="var(--acc)" stroke-width="4" stroke-linecap="round"/>
-    <text x="300" y="34" text-anchor="middle" font-size="13" fill="var(--mute)" font-family="system-ui">USB-C ⇄ USB-C</text>
-    <rect x="522" y="18" width="70" height="54" rx="8" fill="none" stroke="var(--acc2)" stroke-width="3"/>
-    <rect x="545" y="33" width="24" height="24" rx="3" fill="var(--acc2)" opacity=".85"/>
-    <circle cx="532" cy="28" r="3" fill="var(--acc2)"/><circle cx="582" cy="28" r="3" fill="var(--acc2)"/>
-    <circle cx="532" cy="62" r="3" fill="var(--acc2)"/><circle cx="582" cy="62" r="3" fill="var(--acc2)"/>
+    <rect x="8" y="10" width="64" height="70" rx="12" fill="none" stroke="#8ea0bf" stroke-width="3"/>
+    <rect x="18" y="20" width="44" height="44" rx="4" fill="#38bdf8" fill-opacity=".2"/>
+    <text x="40" y="49" text-anchor="middle" font-size="16" fill="#38bdf8" font-family="system-ui">⚡</text>
+    <path class="dash" d="M74 45 C 200 45, 380 45, 520 45" fill="none" stroke="#38bdf8" stroke-width="4" stroke-linecap="round"/>
+    <text x="300" y="34" text-anchor="middle" font-size="13" fill="#8ea0bf" font-family="system-ui">USB-C ⇄ USB-C</text>
+    <rect x="522" y="18" width="70" height="54" rx="8" fill="none" stroke="#a78bfa" stroke-width="3"/>
+    <rect x="545" y="33" width="24" height="24" rx="3" fill="#a78bfa" opacity=".85"/>
+    <circle cx="532" cy="28" r="3" fill="#a78bfa"/><circle cx="582" cy="28" r="3" fill="#a78bfa"/>
+    <circle cx="532" cy="62" r="3" fill="#a78bfa"/><circle cx="582" cy="62" r="3" fill="#a78bfa"/>
   </svg>
 
-  <div id="unsupported" class="note bad" style="display:none" data-t="unsupported">
+  <div id="unsupported" class="note bad hide" data-t="unsupported">
     Этот браузер не умеет USB. На Android откройте страницу в <b>Chrome</b> (не во встроенном браузере Telegram/WhatsApp),
     на компьютере — Chrome или Edge.
   </div>
@@ -128,7 +89,7 @@ footer a, a { color: var(--acc); }
         <p data-t="s1p">Выберите плату. Если плата уже с OpenPlane — страница узнает её сама.</p>
         <select id="fw"><option value="" data-t="loading">Загрузка списка…</option></select>
         <div class="fwinfo" id="fwinfo"></div>
-        <input type="file" id="file" accept=".bin" style="display:none">
+        <input type="file" id="file" accept=".bin" class="hide">
       </div>
     </div>
   </section>
@@ -139,11 +100,12 @@ footer a, a { color: var(--acc); }
       <div class="grow">
         <h2 data-t="s2h">Подключить и прошить</h2>
         <p data-t="s2p">Пропеллеры сняты, аккумулятор отключён. Кабель от телефона — в USB полётника. Нажмите кнопку и выберите плату в списке.</p>
-        <button class="big pulse" id="go" data-t="go">Подключить и прошить</button>
-        <button class="big" id="pickdfu" style="display:none;margin-top:10px" data-t="pickdfu">Разрешить загрузчик (STM32 BOOTLOADER)</button>
+        <button class="big pulse" id="go" type="button" data-t="go">Подключить и прошить</button>
+        <button class="big hide reportnow" id="pickdfu" type="button" data-t="pickdfu">Разрешить загрузчик (STM32 BOOTLOADER)</button>
         <div class="bar"><i id="bar"></i></div>
         <div class="status" id="status"></div>
-        <button class="ghost" id="logbtn" data-t="logbtn">Показать журнал</button>
+        <button class="small hide reportnow" id="reportnow" type="button" data-t="reportNow">Отправить отчёт об ошибке</button>
+        <button class="ghost" id="logbtn" type="button" data-t="logbtn">Показать журнал</button>
         <div class="log" id="log"></div>
       </div>
     </div>
@@ -174,475 +136,37 @@ footer a, a { color: var(--acc); }
       </ol>
     </details>
   </section>
-
-  <footer>
-    <span id="build"></span><br>
-    <a href="https://github.com/damir-lebedev/OpenPlaneProject">github.com/damir-lebedev/OpenPlaneProject</a>
-  </footer>
 </main>
 
-<script>
-"use strict";
-// ---------------- тексты ----------------
-const EN = {
-  tagline: "Flash the flight controller from your phone — one cable",
-  unsupported: "This browser has no USB access. On Android open the page in <b>Chrome</b> (not inside Telegram/WhatsApp); on a computer use Chrome or Edge.",
-  s1h: "Firmware", s1p: "Pick your board. If it already runs OpenPlane, the page will recognise it.",
-  loading: "Loading list…",
-  s2h: "Connect and flash",
-  s2p: "Props off, battery unplugged. Cable from the phone into the flight controller USB. Tap the button and pick the board.",
-  go: "Connect and flash", pickdfu: "Allow the bootloader (STM32 BOOTLOADER)", logbtn: "Show log",
-  settingsNote: "Copter settings (PID, switches, calibrations) live in a separate flash sector — flashing keeps them. Prebuilt plane firmware uses default settings: flash a plane with its own sensors and switches from OpenPlane Studio.",
-  helpH: "Not working?",
-  helpL: "<li><b>The phone doesn't see the board.</b> Some flight controllers lack the USB-C resistors that tell the phone to power them. Use an OTG adapter (USB-C → USB-A) plus a USB-A → USB-C cable; enable “OTG” in Android settings if present.</li><li><b>The board won't enter the bootloader</b> (no OpenPlane yet, or Betaflight/INAV). Unplug USB, hold <b>BOOT</b>, plug in, release. Then tap “Connect and flash” and pick <b>STM32 BOOTLOADER</b>. DevEBox has no button — jumper BT0 → 3V3 and press RST.</li><li><b>Armed</b> — disarm first.</li><li><b>Windows:</b> the bootloader needs the WinUSB driver (Zadig → “STM32 BOOTLOADER” → WinUSB). Android and Linux need no drivers.</li><li><b>Flashing interrupted</b> — no harm: the STM32 bootloader is in ROM. Hold BOOT and flash again.</li>",
-  howH: "How it works",
-  howL: "<li>Chrome talks to the board directly via WebUSB — no apps, no drivers.</li><li>The page reads the firmware passport (<code>@id</code>), picks the matching build and sends the <code>D</code> key: the board reboots into the STM32 system bootloader.</li><li>Only the firmware sectors are erased, then written block by block, verified by reading back and started.</li>",
-};
-const RU = {};
-const MSG = {
-  ru: {
-    custom: "Свой файл .bin…", choose: "— выберите плату —",
-    noList: "Список прошивок не загрузился — можно выбрать свой .bin",
-    pickFirst: "Сначала выберите прошивку", connecting: "Подключение…",
-    idOk: (id) => `Плата: ${id.board}${id.vehicle === "copter" ? " (коптер)" : ""}, прошивка ${id.commit}`,
-    armed: "Плата заармлена — снимите ARM и повторите", toDfu: "Перезагрузка в загрузчик…",
-    waitDfu: "Ждём загрузчик STM32…", needTap: "Нажмите «Разрешить загрузчик» и выберите STM32 BOOTLOADER",
-    noDfu: "Загрузчик не появился. Зажмите BOOT, переподключите USB и нажмите кнопку ещё раз.",
-    chip: (c) => `Загрузчик: ${c}`, wrongChip: (a, b) => `Эта прошивка для ${a}, а плата — ${b}. Выберите другую.`,
-    tooBig: "Прошивка залезает в сектор настроек — отказ.",
-    erase: (i, n) => `Стирание ${i}/${n}…`, write: (p) => `Запись ${p}%`, verify: (p) => `Сверка ${p}%`,
-    verifyBad: (a) => `Сверка не сошлась по адресу 0x${a.toString(16)} — прошейте ещё раз`,
-    done: "Готово! Плата перезапущена с новой прошивкой ✈", fail: "Ошибка: ",
-    hideLog: "Скрыть журнал", showLog: "Показать журнал", cancelled: "Выбор устройства отменён",
-    mismatch: (b) => `Внимание: плата сообщила «${b}», а выбрана другая прошивка.`,
-    updated: "собрано", plane: "самолёт", copter: "коптер", kb: "КБ",
-  },
-  en: {
-    custom: "Custom .bin file…", choose: "— pick a board —",
-    noList: "Firmware list did not load — you can pick your own .bin",
-    pickFirst: "Pick the firmware first", connecting: "Connecting…",
-    idOk: (id) => `Board: ${id.board}${id.vehicle === "copter" ? " (copter)" : ""}, firmware ${id.commit}`,
-    armed: "The board is armed — disarm and retry", toDfu: "Rebooting into the bootloader…",
-    waitDfu: "Waiting for the STM32 bootloader…", needTap: "Tap “Allow the bootloader” and pick STM32 BOOTLOADER",
-    noDfu: "The bootloader did not show up. Hold BOOT, replug USB and tap the button again.",
-    chip: (c) => `Bootloader: ${c}`, wrongChip: (a, b) => `This firmware is for ${a}, the board is ${b}. Pick another one.`,
-    tooBig: "Firmware would overlap the settings sector — refused.",
-    erase: (i, n) => `Erasing ${i}/${n}…`, write: (p) => `Writing ${p}%`, verify: (p) => `Verifying ${p}%`,
-    verifyBad: (a) => `Verify mismatch at 0x${a.toString(16)} — flash again`,
-    done: "Done! The board restarted with the new firmware ✈", fail: "Error: ",
-    hideLog: "Hide log", showLog: "Show log", cancelled: "Device selection cancelled",
-    mismatch: (b) => `Note: the board reported “${b}”, but a different firmware is selected.`,
-    updated: "built", plane: "plane", copter: "copter", kb: "KB",
-  },
-};
-let lang = (localStorage.getItem("op-lang") || (navigator.language || "ru").slice(0, 2)) === "ru" ? "ru" : "en";
-const $ = (id) => document.getElementById(id);
-const M = () => MSG[lang];
-function applyLang() {
-  document.documentElement.lang = lang;
-  document.querySelectorAll("[data-t]").forEach((el) => {
-    const k = el.dataset.t;
-    if (!(k in RU)) RU[k] = el.innerHTML;
-    el.innerHTML = lang === "en" && EN[k] ? EN[k] : RU[k];
-  });
-  $("lang").textContent = lang === "ru" ? "EN" : "RU";
-  $("logbtn").textContent = $("log").classList.contains("on") ? M().hideLog : M().showLog;
-  fillList();
-}
-$("lang").onclick = () => { lang = lang === "ru" ? "en" : "ru"; try { localStorage.setItem("op-lang", lang); } catch (e) {} applyLang(); };
+<section class="show">
+  <h2 data-t="showH">Что внутри прошивки</h2>
+  <p class="lead" data-t="showP">Та же прошивка, которую вы только что залили: что она умеет и как это проверено.</p>
+  <figure><img data-svg="flow" src="img/flow.svg" alt="Путь прошивки: Chrome → паспорт → загрузчик → стирание → запись и сверка → старт" width="1200" height="300" loading="lazy"></figure>
+  <figure><img data-svg="flash_map" src="img/flash_map.svg" alt="Карта флеша: стираются только секторы прошивки, сектор настроек цел" width="1200" height="330" loading="lazy"></figure>
 
-// ---------------- журнал и статус ----------------
-function log(s) { const l = $("log"); l.textContent += s + "\n"; l.scrollTop = l.scrollHeight; console.log(s); }
-function status(s, cls = "") { const e = $("status"); e.textContent = s; e.className = "status " + cls; log("» " + s); }
-function progress(f) { $("bar").style.width = Math.round(Math.max(0, Math.min(1, f)) * 100) + "%"; }
-$("logbtn").onclick = () => { const l = $("log"); l.classList.toggle("on"); $("logbtn").textContent = l.classList.contains("on") ? M().hideLog : M().showLog; };
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  <h3 data-t="fenceH">Геозабор: дрон, который не улетит</h3>
+  <p class="lead" data-t="fenceP">Рисуете круг и потолок. В любом режиме, даже в ACRO на полной скорости, коптер к краю сам тормозит, а у края автомат перехватывает управление и ведёт назад — стики не слушаются. Пропал GPS — летит домой по своим датчикам или садится.</p>
+  <div class="duo">
+    <figure><video src="img/fence_studio.mp4" width="1120" height="470" autoplay muted loop playsinline preload="metadata"></video><figcaption data-t="fenceC1">OpenPlane Studio → «Безопасность»: радиус, потолок, что делать без GPS; справа от круга — радар из очков.</figcaption></figure>
+    <figure><video src="img/fence_sim.mp4" width="540" height="590" autoplay muted loop playsinline preload="metadata"></video><figcaption data-t="fenceC2">Настоящая траектория из теста прошивки: робот-пилот минуту рвётся наружу.</figcaption></figure>
+  </div>
+  <figure><img data-svg="fence_stats" src="img/fence_stats.svg" alt="Геозабор в цифрах: 60 с, 97 км/ч, 9 перехватов, 72 м из 100" width="1200" height="360" loading="lazy"></figure>
 
-// ---------------- список прошивок ----------------
-let manifest = null, customBin = null;
-async function loadManifest() {
-  try {
-    const r = await fetch("firmware/manifest.json", { cache: "no-cache" });
-    manifest = await r.json();
-    $("build").textContent = `${M().updated} ${manifest.date} · ${manifest.commit}`;
-  } catch (e) { manifest = { firmware: [] }; status(M().noList, "warn"); }
-  fillList();
-}
-function fillList() {
-  if (!manifest) return;
-  const sel = $("fw"), keep = sel.value;
-  sel.innerHTML = "";
-  const o0 = new Option(M().choose, ""); sel.add(o0);
-  for (const f of manifest.firmware) {
-    const kind = f.vehicle === "copter" ? M().copter : M().plane;
-    sel.add(new Option(`${lang === "en" ? f.title_en : f.title} — ${kind}`, f.env));
-  }
-  sel.add(new Option(M().custom, "__file"));
-  sel.value = keep;
-  showInfo();
-}
-function selected() { return manifest && manifest.firmware.find((f) => f.env === $("fw").value); }
-function showInfo() {
-  const f = selected(), i = $("fwinfo");
-  if ($("fw").value === "__file") { i.textContent = customBin ? `${customBin.name} · ${(customBin.data.byteLength / 1024).toFixed(0)} ${M().kb}` : ""; return; }
-  i.textContent = f ? `${lang === "en" ? f.note_en : f.note} · ${(f.size / 1024).toFixed(0)} ${M().kb} · ${f.chip.toUpperCase()}` : "";
-}
-$("fw").onchange = () => { if ($("fw").value === "__file") $("file").click(); showInfo(); };
-$("file").onchange = async () => {
-  const f = $("file").files[0]; if (!f) return;
-  customBin = { name: f.name, data: new Uint8Array(await f.arrayBuffer()) }; showInfo();
-};
+  <h3 data-t="simH">Симулятор: полетай раньше, чем купишь</h3>
+  <figure><video src="img/sim_gates.mp4" width="960" height="598" autoplay muted loop playsinline preload="metadata"></video></figure>
+  <p class="lead" data-t="simP">Та же прошивка коптера, собранная для компьютера, — вместо датчиков модель полёта. Пульт по USB, геймпад или клавиатура; камера сзади, FPV или с земли; упал — R. Бесплатно, внутри OpenPlane Studio.</p>
 
-// ---------------- консоль платы: WebUSB CDC (Android) или Web Serial (ПК) ----------------
-const ST_VID = 0x0483, DFU_PID = 0xdf11;
-const enc = new TextEncoder(), dec = new TextDecoder();
+  <div class="links">
+    <a href="https://lebedev-space.ru/studio" data-t="linkStudio">OpenPlane Studio<small>настройка, прошивка, симулятор — Windows и macOS</small></a>
+    <a href="https://github.com/damir-lebedev/OpenPlaneProject" data-t="linkGit">Исходный код<small>github.com/damir-lebedev/OpenPlaneProject</small></a>
+    <a href="https://lebedev-space.ru/" data-t="linkSite">Lebedev Space<small>самолёты, школа пилотов, новости</small></a>
+  </div>
+</section>
 
-async function cdcOverUsb(dev) {
-  await dev.open();
-  if (!dev.configuration) await dev.selectConfiguration(1);
-  const ifs = dev.configuration.interfaces;
-  const comm = ifs.find((i) => i.alternates[0].interfaceClass === 0x02);
-  const data = ifs.find((i) => i.alternates[0].interfaceClass === 0x0a);
-  if (!data) throw new Error("no CDC data interface");
-  if (comm) { try { await dev.claimInterface(comm.interfaceNumber); } catch (e) { log("comm: " + e.message); } }
-  await dev.claimInterface(data.interfaceNumber);
-  const eps = data.alternates[0].endpoints;
-  const epIn = eps.find((e) => e.direction === "in").endpointNumber;
-  const epOut = eps.find((e) => e.direction === "out").endpointNumber;
-  if (comm) {
-    const idx = comm.interfaceNumber;
-    const lc = new Uint8Array([0x00, 0xc2, 0x01, 0x00, 0, 0, 8]); // 115200 8N1
-    try { await dev.controlTransferOut({ requestType: "class", recipient: "interface", request: 0x20, value: 0, index: idx }, lc); } catch (e) {}
-    try { await dev.controlTransferOut({ requestType: "class", recipient: "interface", request: 0x22, value: 0x03, index: idx }); } catch (e) {}
-  }
-  let buf = "", alive = true;
-  (async () => {
-    while (alive) {
-      try { const r = await dev.transferIn(epIn, 512); if (r.data) buf += dec.decode(r.data); }
-      catch (e) { alive = false; }
-    }
-  })();
-  return {
-    write: (s) => dev.transferOut(epOut, enc.encode(s)),
-    take: () => { const b = buf; buf = ""; return b; },
-    close: async () => { alive = false; try { await dev.close(); } catch (e) {} },
-  };
-}
-
-async function cdcOverSerial() {
-  const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: ST_VID }] });
-  await port.open({ baudRate: 115200 });
-  try { await port.setSignals({ dataTerminalReady: true, requestToSend: true }); } catch (e) {}
-  const reader = port.readable.getReader(), writer = port.writable.getWriter();
-  let buf = "", alive = true;
-  (async () => {
-    while (alive) {
-      try { const { value, done } = await reader.read(); if (done) break; buf += dec.decode(value); }
-      catch (e) { break; }
-    }
-  })();
-  return {
-    write: (s) => writer.write(enc.encode(s)),
-    take: () => { const b = buf; buf = ""; return b; },
-    close: async () => { alive = false; try { reader.releaseLock(); writer.releaseLock(); await port.close(); } catch (e) {} },
-  };
-}
-
-// Паспорт прошивки: STX "id" \n → "@id {json}" (telemetry/FirmwareIdentity.h, CopterLink.h)
-async function readIdentity(con) {
-  con.take();
-  for (let attempt = 0; attempt < 3; attempt++) {
-    await con.write("\x02id\n");
-    let acc = "";
-    for (let t = 0; t < 10; t++) {
-      await sleep(100);
-      acc += con.take();
-      const m = acc.match(/@id (\{[^\n]*\})/);
-      if (m) { try { return JSON.parse(m[1]); } catch (e) {} }
-    }
-  }
-  return null;
-}
-
-// Паспорт → env сборки
-function envFromIdentity(id) {
-  const copter = id.vehicle === "copter";
-  const b = id.board || "";
-  if (b.endsWith("-quad")) return b;
-  if (b === "matek-h743") return copter ? "matek-h743-quad" : "matek-h743";
-  if (b === "stm32h743" || b === "stm32h743-devebox") return copter ? "stm32h743-devebox-quad" : "stm32h743-devebox";
-  return b;
-}
-
-// ---------------- DfuSe (системный загрузчик STM32) ----------------
-const DFU = { DNLOAD: 1, UPLOAD: 2, GETSTATUS: 3, CLRSTATUS: 4, GETSTATE: 5, ABORT: 6 };
-const S = { dfuIDLE: 2, dfuDNBUSY: 4, dfuDNLOAD_IDLE: 5, dfuMANIFEST: 7, dfuUPLOAD_IDLE: 9, dfuERROR: 10 };
-
-function parseLayout(desc) {
-  // "@Internal Flash  /0x08000000/04*016Kg,01*064Kg,07*128Kg"
-  const mult = { " ": 1, B: 1, K: 1024, M: 1048576 };
-  const segs = [];
-  const re = /\/\s*(0x[0-9a-fA-F]{1,8})\s*\/((?:\s*\d+\s*\*\s*\d+\s?[ BKM]\s*[a-g]\s*,?)+)/g;
-  let m;
-  while ((m = re.exec(desc))) {
-    let addr = parseInt(m[1], 16);
-    const sr = /(\d+)\s*\*\s*(\d+)\s?([ BKM])\s*([a-g])/g; let s;
-    while ((s = sr.exec(m[2]))) {
-      const count = parseInt(s[1], 10), size = parseInt(s[2], 10) * mult[s[3]];
-      const p = s[4].charCodeAt(0) - 96;
-      for (let i = 0; i < count; i++) { segs.push({ start: addr, size, erasable: !!(p & 2), writable: !!(p & 4) }); addr += size; }
-    }
-  }
-  return segs;
-}
-function chipFromLayout(sectors) {
-  const total = sectors.reduce((a, s) => a + s.size, 0);
-  if (sectors.length && sectors[0].size === 16384 && total <= 1048576) return "f405";
-  if (sectors.length && sectors[0].size === 131072 && total === 2097152) return "h743";
-  return "unknown";
-}
-
-class Dfu {
-  constructor(dev) { this.dev = dev; }
-  async open() {
-    const d = this.dev;
-    await d.open();
-    if (!d.configuration) await d.selectConfiguration(1);
-    // интерфейс DFU, альтернатива "@Internal Flash"
-    let pick = null;
-    for (const intf of d.configuration.interfaces) {
-      for (const alt of intf.alternates) {
-        if (alt.interfaceClass === 0xfe && alt.interfaceSubclass === 0x01) {
-          const name = alt.interfaceName || (await this.stringFor(intf.interfaceNumber, alt.alternateSetting));
-          log(`alt ${alt.alternateSetting}: ${name}`);
-          if (!pick && /internal flash/i.test(name || "")) pick = { intf: intf.interfaceNumber, alt: alt.alternateSetting, name };
-        }
-      }
-    }
-    if (!pick) throw new Error("no '@Internal Flash' DFU alt setting");
-    this.intf = pick.intf;
-    await d.claimInterface(this.intf);
-    await d.selectAlternateInterface(this.intf, pick.alt);
-    this.sectors = parseLayout(pick.name);
-    this.chip = chipFromLayout(this.sectors);
-    this.xfer = (await this.readTransferSize()) || 1024;
-    log(`chip ${this.chip}, xfer ${this.xfer}, sectors ${this.sectors.length}`);
-  }
-  async rawDesc(type, index, len, langId = 0) {
-    const r = await this.dev.controlTransferIn({ requestType: "standard", recipient: "device", request: 6, value: (type << 8) | index, index: langId }, len);
-    return new DataView(r.data.buffer);
-  }
-  async configDesc() {
-    if (this._cfg) return this._cfg;
-    const head = await this.rawDesc(2, 0, 9);
-    this._cfg = await this.rawDesc(2, 0, head.getUint16(2, true));
-    return this._cfg;
-  }
-  async stringFor(intfNum, altNum) {
-    try {
-      const c = await this.configDesc();
-      for (let o = 0; o < c.byteLength; o += c.getUint8(o)) {
-        if (c.getUint8(o + 1) === 4 && c.getUint8(o + 2) === intfNum && c.getUint8(o + 3) === altNum) {
-          const idx = c.getUint8(o + 8); if (!idx) return "";
-          const s = await this.rawDesc(3, idx, 255, 0x0409);
-          let out = ""; for (let i = 2; i < s.getUint8(0); i += 2) out += String.fromCharCode(s.getUint16(i, true));
-          return out;
-        }
-        if (!c.getUint8(o)) break;
-      }
-    } catch (e) { log("string desc: " + e.message); }
-    return "";
-  }
-  async readTransferSize() {
-    try {
-      const c = await this.configDesc();
-      for (let o = 0; o < c.byteLength && c.getUint8(o); o += c.getUint8(o)) {
-        if (c.getUint8(o + 1) === 0x21 && c.getUint8(o) >= 7) return c.getUint16(o + 5, true);
-      }
-    } catch (e) { log("func desc: " + e.message); }
-    return 0;
-  }
-  out(req, value, data) {
-    return this.dev.controlTransferOut({ requestType: "class", recipient: "interface", request: req, value, index: this.intf }, data);
-  }
-  async in(req, value, len) {
-    const r = await this.dev.controlTransferIn({ requestType: "class", recipient: "interface", request: req, value, index: this.intf }, len);
-    if (r.status !== "ok") throw new Error("control in: " + r.status);
-    return r.data;
-  }
-  async getStatus() {
-    const d = await this.in(DFU.GETSTATUS, 0, 6);
-    return { status: d.getUint8(0), poll: d.getUint8(1) | (d.getUint8(2) << 8) | (d.getUint8(3) << 16), state: d.getUint8(4) };
-  }
-  async pollUntil(pred) {
-    let st = await this.getStatus();
-    while (!pred(st.state) && st.state !== S.dfuERROR) { await sleep(Math.max(st.poll, 5)); st = await this.getStatus(); }
-    return st;
-  }
-  async toIdle() {
-    let st = await this.getStatus();
-    if (st.state === S.dfuERROR) { await this.out(DFU.CLRSTATUS, 0); st = await this.getStatus(); }
-    if (st.state !== S.dfuIDLE) { await this.out(DFU.ABORT, 0); st = await this.getStatus(); }
-    if (st.state === S.dfuERROR) { await this.out(DFU.CLRSTATUS, 0); st = await this.getStatus(); }
-    if (st.state !== S.dfuIDLE) throw new Error("DFU not idle, state " + st.state);
-  }
-  async command(cmd, addr) {
-    const p = new Uint8Array([cmd, addr & 0xff, (addr >>> 8) & 0xff, (addr >>> 16) & 0xff, (addr >>> 24) & 0xff]);
-    await this.out(DFU.DNLOAD, 0, p);
-    const st = await this.pollUntil((s) => s !== S.dfuDNBUSY);
-    if (st.status !== 0) throw new Error(`DfuSe 0x${cmd.toString(16)} @0x${addr.toString(16)}: status ${st.status}`);
-  }
-  async flash(start, data, onPhase) {
-    await this.toIdle();
-    const end = start + data.length;
-    const touched = this.sectors.filter((s) => s.start < end && s.start + s.size > start);
-    if (!touched.length || touched.some((s) => !s.erasable || !s.writable)) throw new Error("address range not writable");
-    for (let i = 0; i < touched.length; i++) {
-      onPhase("erase", i / touched.length, i + 1, touched.length);
-      await this.command(0x41, touched[i].start);
-    }
-    for (let off = 0; off < data.length; off += this.xfer) {
-      onPhase("write", off / data.length);
-      await this.command(0x21, start + off);
-      await this.out(DFU.DNLOAD, 2, data.subarray(off, Math.min(off + this.xfer, data.length)));
-      const st = await this.pollUntil((s) => s === S.dfuDNLOAD_IDLE);
-      if (st.status !== 0) throw new Error(`write @0x${(start + off).toString(16)}: status ${st.status}`);
-    }
-    onPhase("write", 1);
-  }
-  async verify(start, data, onPhase) {
-    await this.toIdle();
-    await this.command(0x21, start);
-    await this.out(DFU.ABORT, 0);
-    for (let off = 0, block = 2; off < data.length; off += this.xfer, block++) {
-      onPhase("verify", off / data.length);
-      const want = Math.min(this.xfer, data.length - off);
-      const got = new Uint8Array((await this.in(DFU.UPLOAD, block, this.xfer)).buffer).subarray(0, want);
-      for (let i = 0; i < want; i++) if (got[i] !== data[off + i]) return start + off + i;
-    }
-    await this.out(DFU.ABORT, 0);
-    onPhase("verify", 1);
-    return -1;
-  }
-  async leave(start) {
-    await this.toIdle();
-    await this.command(0x21, start);
-    await this.out(DFU.DNLOAD, 0, new Uint8Array(0));
-    try { await this.pollUntil((s) => s === S.dfuMANIFEST); } catch (e) { /* плата ушла в прошивку */ }
-    try { await this.dev.close(); } catch (e) {}
-  }
-}
-
-// ---------------- ход прошивки ----------------
-let busy = false, dfuResolve = null;
-const isDfu = (d) => d.vendorId === ST_VID && d.productId === DFU_PID;
-
-async function firmwareBytes() {
-  if ($("fw").value === "__file") { if (!customBin) throw new Error(M().pickFirst); return { data: customBin.data, chip: null, env: null, base: 0x08000000, limit: null }; }
-  const f = selected(); if (!f) throw new Error(M().pickFirst);
-  const r = await fetch("firmware/" + f.file, { cache: "no-cache" });
-  if (!r.ok) throw new Error("download " + f.file + ": " + r.status);
-  const data = new Uint8Array(await r.arrayBuffer());
-  if (f.sha256 && crypto.subtle) {
-    const h = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", data))).map((b) => b.toString(16).padStart(2, "0")).join("");
-    if (h !== f.sha256) throw new Error("sha256 mismatch");
-  }
-  return { data, chip: f.chip, env: f.env, base: parseInt(f.address, 16), limit: f.limit ? parseInt(f.limit, 16) : null };
-}
-
-async function waitForDfu(ms) {
-  const known = (await navigator.usb.getDevices()).find(isDfu);
-  if (known) return known;
-  return new Promise((resolve) => {
-    const t = setTimeout(() => { dfuResolve = null; resolve(null); }, ms);
-    dfuResolve = (d) => { clearTimeout(t); dfuResolve = null; resolve(d); };
-  });
-}
-if ("usb" in navigator) navigator.usb.addEventListener("connect", (e) => { if (isDfu(e.device) && dfuResolve) dfuResolve(e.device); });
-
-async function run() {
-  if (busy) return; busy = true; $("go").disabled = true; $("go").classList.remove("pulse"); progress(0);
-  $("s1").classList.remove("done"); $("s2").classList.remove("done");
-  try {
-    let dev = null;
-    if ("usb" in navigator) {
-      status(M().connecting);
-      try { dev = await navigator.usb.requestDevice({ filters: [{ vendorId: ST_VID }] }); }
-      catch (e) { if (e.name === "NotFoundError") throw new Error(M().cancelled); throw e; }
-    }
-    if (!dev || !isDfu(dev)) {
-      // консоль работающей прошивки
-      let con = null;
-      if (dev) { try { con = await cdcOverUsb(dev); } catch (e) { log("WebUSB CDC: " + e.message); try { await dev.close(); } catch (_) {} } }
-      if (!con && "serial" in navigator) con = await cdcOverSerial();
-      if (!con) throw new Error("no access to the board console");
-      const id = await readIdentity(con);
-      if (id) {
-        log("@id " + JSON.stringify(id));
-        $("s1").classList.add("done");
-        status(M().idOk(id));
-        if (id.armed) { await con.close(); throw new Error(M().armed); }
-        const env = envFromIdentity(id);
-        if (manifest && manifest.firmware.some((f) => f.env === env)) {
-          if (!$("fw").value) { $("fw").value = env; showInfo(); }
-          else if ($("fw").value !== "__file" && $("fw").value !== env) log(M().mismatch(env));
-        }
-      }
-      if (!$("fw").value || ($("fw").value === "__file" && !customBin)) { await con.close(); $("fw").focus(); throw new Error(M().pickFirst); }
-      status(M().toDfu);
-      await con.write("D");
-      await sleep(300);
-      await con.close();
-      status(M().waitDfu);
-      dev = await waitForDfu(4000);
-      if (!dev) {
-        status(M().needTap, "warn");
-        $("pickdfu").style.display = "block";
-        dev = await new Promise((resolve) => {
-          $("pickdfu").onclick = async () => {
-            try { resolve(await navigator.usb.requestDevice({ filters: [{ vendorId: ST_VID, productId: DFU_PID }] })); }
-            catch (e) { resolve(null); }
-          };
-        });
-        $("pickdfu").style.display = "none";
-        if (!dev) throw new Error(M().noDfu);
-      }
-    }
-    if (!$("fw").value) { $("fw").focus(); throw new Error(M().pickFirst); }
-    const fw = await firmwareBytes();
-    let data = fw.data;
-    if (data.length % 32) { const p = new Uint8Array(Math.ceil(data.length / 32) * 32).fill(0xff); p.set(data); data = p; }
-    const dfu = new Dfu(dev);
-    await dfu.open();
-    status(M().chip(dfu.chip.toUpperCase()));
-    if (fw.chip && dfu.chip !== "unknown" && fw.chip !== dfu.chip) throw new Error(M().wrongChip(fw.chip.toUpperCase(), dfu.chip.toUpperCase()));
-    const limit = fw.limit || (dfu.chip === "f405" ? 0x080e0000 : dfu.chip === "h743" ? 0x081e0000 : null);
-    if (limit && fw.base + data.length > limit) throw new Error(M().tooBig);
-    const phase = (p, f, i, n) => {
-      if (p === "erase") { status(M().erase(i, n)); progress(0.15 * f); }
-      if (p === "write") { $("status").textContent = M().write(Math.round(f * 100)); progress(0.15 + 0.65 * f); }
-      if (p === "verify") { $("status").textContent = M().verify(Math.round(f * 100)); progress(0.8 + 0.2 * f); }
-    };
-    const t0 = performance.now();
-    await dfu.flash(fw.base, data, phase);
-    const bad = await dfu.verify(fw.base, data, phase);
-    if (bad >= 0) throw new Error(M().verifyBad(bad));
-    log(`${data.length} B, ${((performance.now() - t0) / 1000).toFixed(1)} s`);
-    await dfu.leave(fw.base);
-    progress(1);
-    $("s2").classList.add("done");
-    status(M().done, "ok");
-  } catch (e) {
-    status(M().fail + (e.message || e), "bad");
-  } finally {
-    busy = false; $("go").disabled = false;
-  }
-}
-$("go").onclick = run;
-
-if (!("usb" in navigator) && !("serial" in navigator)) { $("unsupported").style.display = "block"; $("go").disabled = true; }
-applyLang();
-loadManifest();
-</script>
+<footer>
+  <span id="build"></span><br>
+  <a href="https://github.com/damir-lebedev/OpenPlaneProject">OpenPlane</a> · <a href="https://lebedev-space.ru/">Lebedev Space</a> · лицензия OpenPlane 2.0
+  <div class="legal"><a href="https://lebedev-visit.ru/privacy">Конфиденциальность</a> · <a href="https://lebedev-visit.ru/soglasie">Согласие на обработку данных</a></div>
+</footer>
 </body>
 </html>

@@ -6,11 +6,16 @@ tools/web-flasher/index.html, пишет firmware/manifest.json (размер, s
 чип, предел флеша до сектора настроек) и заливает всё одним коммитом в
 ветку gh-pages (история ветки не копится: каждый раз --force).
 
-Страница: https://damir-lebedev.github.io/OpenPlaneProject/
+Страница: https://lebedev-space.ru/flash/ (основная, сервер Lebedev Space — там же приём
+отчётов об ошибках /api/flash-report) и зеркало https://damir-lebedev.github.io/OpenPlaneProject/.
+Страница — три файла (index.html, flasher.css, flasher.js): у lebedev-space CSP без встроенных
+стилей и скриптов. Картинки и ролики витрины — из docs/images.
 
-    python tools/publish_web_flasher.py            # сборка + проверка + выкладка
+    python tools/publish_web_flasher.py            # сборка + проверка + выкладка на GitHub Pages
     python tools/publish_web_flasher.py --no-build # взять уже собранные .pio/build/*
     python tools/publish_web_flasher.py --dry-run  # собрать сайт в папку, не пушить
+    python tools/publish_web_flasher.py --no-build --space C:/Damir/SERVER/lebedev-space
+        # ещё и копия в web/flash/ сайта Lebedev Space (закоммитить там и задеплоить его скриптом)
 """
 from __future__ import annotations
 
@@ -66,6 +71,14 @@ FIRMWARE = [
 ]
 
 
+# Витрина под прошивальщиком: инфографика (RU + .en) и ролики (MP4 легче GIF в 7 раз)
+SHOWCASE = [
+    "flasher/flow.svg", "flasher/flow.en.svg", "flasher/flash_map.svg", "flasher/flash_map.en.svg",
+    "copter/fence_stats.svg", "copter/fence_stats.en.svg",
+    "copter/fence_studio.mp4", "copter/fence_sim.mp4", "copter/sim_gates.mp4",
+]
+
+
 def run(cmd: list[str], cwd: Path = ROOT, capture: bool = False) -> str:
     print("$", " ".join(cmd))
     r = subprocess.run(cmd, cwd=cwd, check=True, text=True, encoding="utf-8", errors="replace",
@@ -94,8 +107,18 @@ def build_site(out: Path, build: bool) -> None:
     dirty = bool(run(["git", "status", "--porcelain", "--untracked-files=no"], capture=True))
     fw_dir = out / "firmware"
     fw_dir.mkdir(parents=True)
-    shutil.copy(ROOT / "tools" / "web-flasher" / "index.html", out / "index.html")
+    page_dir = ROOT / "tools" / "web-flasher"
+    html = (page_dir / "index.html").read_text(encoding="utf-8")
+    for name in ("flasher.css", "flasher.js"):
+        data = (page_dir / name).read_bytes()
+        (out / name).write_bytes(data)
+        html = html.replace(f'"{name}"', f'"{name}?v={hashlib.sha1(data).hexdigest()[:8]}"')
+    (out / "index.html").write_text(html, encoding="utf-8")
     (out / ".nojekyll").write_text("")
+    img = out / "img"
+    img.mkdir()
+    for rel in SHOWCASE:
+        shutil.copy(ROOT / "docs" / "images" / rel, img / Path(rel).name)
 
     entries = []
     for f in FIRMWARE:
@@ -138,6 +161,7 @@ def main() -> None:
     ap.add_argument("--no-build", action="store_true", help="не запускать pio run")
     ap.add_argument("--dry-run", action="store_true", help="только собрать сайт, не пушить")
     ap.add_argument("--out", type=Path, help="папка для сайта (по умолчанию — временная)")
+    ap.add_argument("--space", type=Path, help="репозиторий lebedev-space: положить копию в его web/flash/")
     args = ap.parse_args()
 
     out = args.out or Path(tempfile.mkdtemp(prefix="openplane-flasher-"))
@@ -146,6 +170,13 @@ def main() -> None:
     out.mkdir(parents=True, exist_ok=True)
     build_site(out, build=not args.no_build)
     print("сайт:", out)
+    if args.space:
+        dest = args.space / "web" / "flash"
+        if not (args.space / "server" / "server.js").exists():
+            sys.exit(f"{args.space} не похож на lebedev-space")
+        shutil.rmtree(dest, ignore_errors=True)
+        shutil.copytree(out, dest, ignore=shutil.ignore_patterns(".nojekyll", ".git"))
+        print("копия для Lebedev Space:", dest)
     if not args.dry_run:
         push(out)
         print("готово: https://damir-lebedev.github.io/OpenPlaneProject/")
