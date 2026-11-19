@@ -9,6 +9,7 @@
 #include "copter/GyroFilter.h"
 #include "copter/Mixer.h"
 #include "copter/PositionEstimator.h"
+#include "copter/GpsIntegrity.h"
 #include "copter/PositionHold.h"
 #include "copter/Presets.h"
 #include "copter/RateController.h"
@@ -391,6 +392,7 @@ namespace copter
         PosHoldSettings posHold;           // pos_hold_*, autopilot_position_* (copter/PositionHold.h)
         uint8_t posHoldMinSats = 8;        // gps_minimum_sats: спутников меньше — позицию не держать
         float gpsDelayS = 0.1f;            // фикс GPS старше на столько (copter/PositionEstimator.h)
+        bool gpsSpoofDetect = true;        // gps_spoof_detect: подмена GPS — GPS из навигации вон (copter/GpsIntegrity.h)
         float hoverThrottle = 0.0f;        // autopilot_hover_throttle: газ висения до обучения; 0 — из описания коптера
         TrainingSettings training;         // training_* (copter/TrainingLimits.h)
         ChirpSettings chirp;               // chirp_* (copter/Chirp.h)
@@ -432,6 +434,8 @@ namespace copter
         float heading = 0.0f;                                   // курс носа, 0…360 (без источника — рысканье гироскопа)
         HeadingSource headingSource = HeadingSource::NONE;      // компас, полёт (GPS) или ничего
         bool magDisagrees = false;                              // компас расходится с полётом — не верим
+        GpsSpoof gpsSpoof = GpsSpoof::NONE;                     // подмена GPS (copter/GpsIntegrity.h): GPS выключен из навигации
+        uint8_t gpsTrust = 100;                                 // доверие GPS, 0…100
         PosHoldPhase posHoldPhase = PosHoldPhase::OFF;          // удержание позиции: что делает
         PosHoldFail posHoldFail = PosHoldFail::NONE;            // и почему не держит (режим включён)
         float posTargetN = 0.0f, posTargetE = 0.0f;             // точка удержания
@@ -485,6 +489,7 @@ namespace copter
             training.configure(s.training);
             position.configure(s.gpsDelayS);
             position.setMinSats(s.posHoldMinSats);
+            gpsIntegrity.configure(s.gpsSpoofDetect);
             position.reset();
             posHold.configure(s.posHold, dt);
             posHold.stop();
@@ -605,8 +610,48 @@ namespace copter
         }
 
         // Один цикл стабилизации.
-        CopterOutputs update(const CopterSensors& sens, const CopterRc& rcIn)
+        CopterOutputs update(const CopterSensors& sensIn, const CopterRc& rcIn)
         {
+            // подмена GPS: сырой фикс против акселерометра, ветра, барометра —
+            // до того, как фикс увидят навигация и фильтр (ускорение и ветер — с
+            // прошлого такта)
+            {
+                GpsIntegrityInput gi;
+                gi.fresh = sensIn.gps.fresh;
+                gi.fix = sensIn.gps.fix;
+                gi.latitude = sensIn.gps.latitude;
+                gi.longitude = sensIn.gps.longitude;
+                gi.velN = sensIn.gps.velN;
+                gi.velE = sensIn.gps.velE;
+                gi.altitudeM = sensIn.gps.altitudeM;
+                gi.receiverSpoof = sensIn.gps.receiverSpoof;
+                gi.baroAltM = sensIn.baroAltM;
+                gi.baroOk = sensIn.baroOk;
+                // сырое ускорение, без курса и выученного по GPS смещения: подмена не должна учить сверку
+                gi.accelOk = attitude.isInitialized();
+                gi.accelX = earthAccelX;
+                gi.accelY = earthAccelY;
+                gi.windOk = status.airborne && attitude.dragSigma() <= GPS_WIND_SIGMA;
+                gi.windN = attitude.windNorth();
+                gi.windE = attitude.windEast();
+                gi.armed = status.state != CopterState::DISARMED;
+                gpsIntegrity.update(gi, dt);
+                status.gpsSpoof = gpsIntegrity.reason();
+                status.gpsTrust = gpsIntegrity.trust();
+            }
+            // подмена GPS (copter/GpsIntegrity.h): навигация, возврат и фильтр
+            // ориентации GPS не видят — как будто фикса нет
+            const bool gpsMasked = gpsIntegrity.spoofed();
+            CopterSensors maskedSens;   // на стеке задачи (на F405 — в CCM), не в общей ОЗУ
+            if (gpsMasked)
+            {
+                maskedSens = sensIn;
+                maskedSens.gps.fix = false;
+                maskedSens.gps.home = false;
+                maskedSens.gps.sats = 0;
+                maskedSens.gps.velN = maskedSens.gps.velE = 0.0f;
+            }
+            const CopterSensors& sens = gpsMasked ? maskedSens : sensIn;
             CopterOutputs out;
             out.count = tune.frame.count;
             uptime += dt;
@@ -706,6 +751,8 @@ namespace copter
             // положение по горизонтали: акселерометр в осях «от включения» + GPS
             {
                 const Vec3 f = attitude.isInitialized() ? attitude.toEarth({ accel[0], -accel[1], -accel[2] }) : Vec3();
+                earthAccelX = f.x * 9.80665f;
+                earthAccelY = f.y * 9.80665f;
                 position.update(f.x * 9.80665f, f.y * 9.80665f, status.yaw, sens.gps, status.airborne, dt);
                 status.posValid = position.valid();
                 status.posN = position.north();
@@ -1053,6 +1100,7 @@ namespace copter
         void gyroRecalibrated() { attitude.forgetGyroBias(); }
         const Chirp& getChirp() const { return chirp; }
         const PositionEstimator& getPosition() const { return position; }
+        const GpsIntegrity& getGpsIntegrity() const { return gpsIntegrity; }
         bool isArmed() const { return status.state != CopterState::DISARMED; }
 
         // Разоружить немедленно (консоль, ошибка).
@@ -1757,6 +1805,9 @@ namespace copter
         AbsoluteControl absCtl[3];
         GpsRescue rescue;
         PositionEstimator position;
+        GpsIntegrity gpsIntegrity;
+        float earthAccelX = 0.0f, earthAccelY = 0.0f;    // горизонтальное ускорение в осях «от включения», м/с²
+        static constexpr float GPS_WIND_SIGMA = 0.12f;   // сопротивление выучено — ветру верим (подмена по ветру)
         PositionHold posHold;
         float posOkTimer = 0.0f;                         // GPS и курс годятся подряд, с
         PosHoldFail posLastFail = PosHoldFail::NO_GPS;   // чего не хватало в последний раз

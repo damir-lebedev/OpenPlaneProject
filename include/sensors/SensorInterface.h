@@ -254,6 +254,7 @@ struct GpsData
     uint8_t fixType;          // 0=нет фикса, 2=2D, 3=3D
     float horizontalAccuracy; // метры, оценка точности по горизонтали
     float verticalAccuracy;   // метры, оценка точности по высоте
+    uint8_t spoofState;       // признак подмены от приёмника: 0 — не знает, 1 — нет, 2 — подмена, 3 — несколько признаков
 
     // Временная метка (микросекунды)
     uint32_t timestamp;

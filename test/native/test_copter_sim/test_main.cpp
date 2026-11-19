@@ -1944,6 +1944,7 @@ namespace
 
     int asInt(CopterMode m) { return static_cast<int>(m); }
     int asInt(PosHoldFail f) { return static_cast<int>(f); }
+    int asInt(GpsSpoof s) { return static_cast<int>(s); }
 }
 
 // Ветер 5 м/с включается разом (хуже, чем в жизни) и дует с порывами:
@@ -2108,6 +2109,58 @@ void test_pos_hold_gps_loss_falls_back_to_alt_hold()
     TEST_ASSERT_TRUE_MESSAGE(back, line);
     TEST_ASSERT_EQUAL(asInt(PosHoldFail::NONE), asInt(h.ctl.getStatus().posHoldFail));
     TEST_ASSERT_TRUE_MESSAGE(r.maxDrift < 1.5, line);
+}
+
+// Подмена GPS в POS HOLD (copter/GpsIntegrity.h, P43 а): (1) увод — ложная
+// точка уезжает на восток с разгоном 2 м/с² до 4 м/с, удержание тянет
+// коптер за ней на запад; борт видит, что акселерометр и GPS разошлись, —
+// GPS выключен, ALT_HOLD, в воздухе GPS не возвращается; (2) скачок на 500 м — сразу.
+void test_pos_hold_gps_spoof_detected()
+{
+    for (int jump = 0; jump <= 1; ++jump)
+    {
+        QuadHarness h(*findBuild("longrange7"), QuadPerturb(), 91);
+        h.gpsDelayS = 0.12;
+        TEST_ASSERT_TRUE(engagePosHold(h));
+        h.sim.setWind(4.0, 0.0, 0.5);
+        h.run(10.0);
+        TEST_ASSERT_EQUAL(asInt(GpsSpoof::NONE), asInt(h.ctl.getStatus().gpsSpoof));
+        const double n0 = h.sim.position().x, e0 = h.sim.position().y;
+        double detectedAt = -1.0, led = -1.0;
+        for (int i = 0; i < 100; ++i)
+        {
+            if (jump) h.spoofN = 500.0;
+            else
+            {
+                h.spoofVe = std::fmin(4.0, 0.2 * i);
+                h.spoofE += h.spoofVe * 0.1;
+            }
+            h.run(0.1);
+            if (detectedAt < 0.0 && h.ctl.getStatus().gpsSpoof != GpsSpoof::NONE)
+            {
+                detectedAt = 0.1 * (i + 1);
+                led = std::sqrt((h.sim.position().x - n0) * (h.sim.position().x - n0) +
+                                (h.sim.position().y - e0) * (h.sim.position().y - e0));
+            }
+        }
+        const CopterStatus& st = h.ctl.getStatus();
+        char line[200];
+        snprintf(line, sizeof(line), "GPS spoof (%s) in POS HOLD, 4 m/s wind: detected %s after %.1f s, led away %.1f m by then, trust %u, mode %s",
+                 jump ? "jump 500 m" : "drift 2 m/s^2 to 4 m/s", gpsSpoofName(st.gpsSpoof), detectedAt, led,
+                 static_cast<unsigned>(st.gpsTrust), copterModeName(st.mode));
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(detectedAt > 0.0, line);
+        TEST_ASSERT_EQUAL_MESSAGE(asInt(jump ? GpsSpoof::JUMP : GpsSpoof::VELOCITY), asInt(st.gpsSpoof), line);
+        TEST_ASSERT_EQUAL_MESSAGE(asInt(CopterMode::ALT_HOLD), asInt(st.mode), line);
+        TEST_ASSERT_EQUAL(asInt(PosHoldFail::NO_GPS), asInt(st.posHoldFail));
+        TEST_ASSERT_TRUE_MESSAGE(led < 10.0, line);
+        TEST_ASSERT_TRUE(h.ctl.isArmed());
+        // подменщик отпустил — в воздухе GPS всё равно выключен
+        h.spoofN = h.spoofE = h.spoofVe = 0.0;
+        h.run(5.0);
+        TEST_ASSERT_TRUE(h.ctl.getStatus().gpsSpoof != GpsSpoof::NONE);
+        TEST_ASSERT_EQUAL(asInt(CopterMode::ALT_HOLD), asInt(h.ctl.getStatus().mode));
+    }
 }
 
 // Без годного фикса в POS HOLD не войти: GPS нет — ALT_HOLD и NO_GPS.
@@ -2352,6 +2405,7 @@ int main()
     RUN_TEST(test_pos_hold_with_noisy_delayed_gps);
     RUN_TEST(test_pos_hold_sticks_fly_and_release_stops);
     RUN_TEST(test_pos_hold_gps_loss_falls_back_to_alt_hold);
+    RUN_TEST(test_pos_hold_gps_spoof_detected);
     RUN_TEST(test_pos_hold_needs_fix_and_heading);
     RUN_TEST(test_pos_hold_lying_compass);
     RUN_TEST(test_failsafe_landing_holds_place_with_gps);

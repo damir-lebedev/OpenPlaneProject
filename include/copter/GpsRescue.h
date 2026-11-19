@@ -75,6 +75,10 @@ namespace copter
         float velN = 0.0f, velE = 0.0f;      // м/с по земле
         float headingDeg = 0.0f;        // курс носа, 0 — север (компас или оценка)
         bool headingTrusted = false;    // по компасу
+        // для проверки подмены (copter/GpsIntegrity.h)
+        double latitude = 0.0, longitude = 0.0;
+        float altitudeM = 0.0f;         // над уровнем моря
+        uint8_t receiverSpoof = 0;      // spoofDetState приёмника (0 — не знает)
     };
 
     enum class RescuePhase : uint8_t { IDLE, CLIMB, FLY_HOME, DESCEND, LAND, ABORT };

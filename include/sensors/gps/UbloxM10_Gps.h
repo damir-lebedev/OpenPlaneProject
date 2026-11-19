@@ -78,6 +78,7 @@ public:
         config.addU2(KEY_RATE_MEAS, 100);              // 100 мс = 10 Гц
         config.addU2(KEY_RATE_NAV, 1);                 // решение на каждое измерение
         config.addU1(KEY_MSGOUT_NAV_PVT_UART1, 1);     // NAV-PVT на каждое решение
+        config.addU1(KEY_MSGOUT_NAV_STATUS_UART1, 10); // NAV-STATUS раз в секунду: признак подмены
         config.addU1(KEY_UART1OUTPROT_UBX, 1);
         config.addU1(KEY_UART1OUTPROT_NMEA, 0);        // NMEA не нужен — меньше трафика
         sendUbxMessage(UBX_CLASS_CFG, UBX_ID_VALSET, config.data(), config.size());
@@ -142,6 +143,8 @@ private:
     static constexpr uint16_t NAV_PVT_LEN = 92;
     static constexpr uint8_t UBX_CLASS_NAV = 0x01;
     static constexpr uint8_t UBX_ID_NAV_PVT = 0x07;
+    static constexpr uint8_t UBX_ID_NAV_STATUS = 0x03;
+    static constexpr uint16_t NAV_STATUS_LEN = 16;
     static constexpr uint8_t UBX_CLASS_CFG = 0x06;
     static constexpr uint8_t UBX_ID_VALSET = 0x8A;
 
@@ -157,6 +160,7 @@ private:
     static constexpr uint32_t KEY_RATE_MEAS             = 0x30210001;  // U2, мс
     static constexpr uint32_t KEY_RATE_NAV              = 0x30210002;  // U2
     static constexpr uint32_t KEY_MSGOUT_NAV_PVT_UART1  = 0x20910007;  // U1
+    static constexpr uint32_t KEY_MSGOUT_NAV_STATUS_UART1 = 0x2091001b; // U1
     static constexpr uint32_t KEY_UART1OUTPROT_UBX      = 0x10740001;  // L
     static constexpr uint32_t KEY_UART1OUTPROT_NMEA     = 0x10740002;  // L
 
@@ -201,6 +205,7 @@ private:
     uint8_t ckA = 0, ckB = 0;           // накапливаемая контрольная сумма
     uint8_t ckARecv = 0, ckBRecv = 0;
     bool isNavPvt = false;
+    bool isNavStatus = false;
     uint8_t payload[NAV_PVT_LEN] = {};
 
     // Побайтовый разбор — как в IBusParser::feed(), кадры
@@ -242,6 +247,8 @@ private:
                 payloadIndex = 0;
                 isNavPvt = (msgClass == UBX_CLASS_NAV && msgId == UBX_ID_NAV_PVT &&
                             payloadLen == NAV_PVT_LEN);
+                isNavStatus = (msgClass == UBX_CLASS_NAV && msgId == UBX_ID_NAV_STATUS &&
+                               payloadLen == NAV_STATUS_LEN);
 
                 if (payloadLen > MAX_PAYLOAD_LEN)
                 {
@@ -255,7 +262,7 @@ private:
             case ParseState::PAYLOAD:
                 ckA += b; ckB += ckA;
 
-                if (isNavPvt && payloadIndex < NAV_PVT_LEN)
+                if ((isNavPvt || isNavStatus) && payloadIndex < NAV_PVT_LEN)
                 {
                     payload[payloadIndex] = b;
                 }
@@ -275,6 +282,10 @@ private:
                 if (isNavPvt && ckARecv == ckA && ckBRecv == ckB)
                 {
                     parseNavPvt();
+                }
+                if (isNavStatus && ckARecv == ckA && ckBRecv == ckB)
+                {
+                    gpsData.spoofState = (payload[7] >> 3) & 0x03;   // flags2.spoofDetState
                 }
 
                 state = ParseState::SYNC1;

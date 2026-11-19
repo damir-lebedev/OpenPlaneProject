@@ -434,6 +434,9 @@ public:
             if (gpsHome->hasHome()) w.add(",\"home\":%.0f,\"dir\":%.0f", gpsHome->distanceM(), gpsHome->bearingHomeDeg());
             if (!f.valid && gpsHome->hasLastGood())   // фикс пропал — где был (найти упавший)
                 w.add(",\"last\":[%.7f,%.7f]", gpsHome->lastGood().latitude, gpsHome->lastGood().longitude);
+            // подмена (copter/GpsIntegrity.h): доверие 0…100 и причина, если GPS выключен из навигации
+            w.add(",\"trust\":%u", static_cast<unsigned>(s.gpsTrust));
+            if (s.gpsSpoof != GpsSpoof::NONE) w.add(",\"spoof\":\"%s\"", gpsSpoofName(s.gpsSpoof));
             w.add("}");
         }
         w.add(",\"motors\":[");

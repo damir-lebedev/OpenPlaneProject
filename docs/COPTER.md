@@ -369,7 +369,7 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `vtx_low_power_disarm` | общая | `OFF`, `ON`, `UNTIL_FIRST_ARM` | `OFF` | без ARM — самый слабый уровень |
 | `osd_<элемент>_pos` | общая | 0–16383 | как в BF: LQ 1,0 · режим 13,0 · спутники 24,0 · VTX 23,1 · прицел 14,6 · предупреждения 9,9 · ток 1,10 · мА·ч 8,10 · стрелка и расстояние домой 1,11 и 2,11 · высота 23,11 · батарея 1,12 · банка 8,12 · время 22,12, перед полётом 1,8 (показаны); газ, скорость, вариометр, имя, мощность, широта, долгота, RSSI 6,0 — спрятаны | позиция элемента OSD: x + 32·y, +2048 — показан. Элементы: `link_quality`, `flymode`, `gps_sats`, `vtx_channel`, `crosshairs`, `warnings`, `current`, `mah_drawn`, `home_dir`, `home_dist`, `altitude`, `vbat`, `avg_cell_voltage`, `tim_2`, `throttle`, `gps_speed`, `vario_num`, `craft_name`, `power`, `gps_lat`, `gps_lon`, `rssi_value`, `preflight` (своё: до ARM одной строкой — `BATT OK  GPS OK  RX OK`, что не готово — словом: `NOT FULL`, `BATT LOW`, `GPS WAIT`, `NO RADIO`) |
 | `osd_stat_<строка>` | общая | `OFF`, `ON` | `ON`, кроме `endbatt` | статистика после посадки: `tim_2`, `max_alt`, `max_spd`, `max_dist`, `min_batt`, `endbatt`, `used_mah`, `max_curr`, `min_link_quality`, `overload` (своё: перегрузки по току, если были) |
-| `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality`, `overload` (своё: `ESC OVERLOAD`, `BATT OVERLOAD`, `CURRENT LIMIT`), `vtx_hot` (своё: `VTX HOT` — без ARM передатчик греется), `training` (своё: `ALT LIMIT`, `FENCE`, `FENCE RETURN`, `SPEED LIMIT`), `rssi` (`RSSI LOW`), `poshold` (своё: `POSHOLD NO GPS`, `POSHOLD NO MAG`, `POSHOLD FAIL`) |
+| `osd_warn_<что>` | общая | `OFF`, `ON` | `ON` | предупреждения OSD: `arming_disable`, `batt_not_full`, `batt_warning`, `batt_critical`, `fail_safe` (и RXLOSS), `link_quality`, `overload` (своё: `ESC OVERLOAD`, `BATT OVERLOAD`, `CURRENT LIMIT`), `vtx_hot` (своё: `VTX HOT` — без ARM передатчик греется), `training` (своё: `ALT LIMIT`, `FENCE`, `FENCE RETURN`, `SPEED LIMIT`), `rssi` (`RSSI LOW`), `poshold` (своё: `POSHOLD NO GPS`, `POSHOLD NO MAG`, `POSHOLD FAIL`), `gps_spoof` (своё: `GPS SPOOF`) |
 | `osd_alt_alarm` · `osd_cap_alarm` · `osd_link_quality_alarm` · `osd_rssi_alarm` | общая | 0–10000 м · 0–20000 мА·ч · 0–100 % · 0–100 % | 100 · 2200 · 80 · 20 | за порогом значение мигает (LQ и RSSI — и предупреждения LINK QUALITY, RSSI LOW); 0 — нет |
 | `osd_displayport_device` | общая | `NONE`, `AUTO`, `MAX7456`, `MSP` | `AUTO` | куда рисовать OSD: `AUTO` — чип на плате и очки на порту MSP, как только они объявились; `MAX7456` — только чип; `MSP` — только цифровые очки (DJI, Walksnail, HDZero); `NONE` — никуда |
 | `vcd_video_system` | общая | `AUTO`, `PAL`, `NTSC`, `HD` | `AUTO` | экран OSD: `AUTO` — по камере (30 × 16 PAL или 13 NTSC), `PAL` / `NTSC` — насильно, `HD` — большой экран очков `osd_canvas_width` × `osd_canvas_height`; очки, сообщившие свой размер, включают HD сами |
@@ -377,6 +377,7 @@ Betaflight; таймер каждого мотора — тот же, что в�
 | `displayport_msp_col_adjust` · `displayport_msp_row_adjust` | общая | −6…0 · −3…0 | 0 · 0 | сдвиг OSD в очках влево и вверх, если край экрана обрезан |
 | `osd_framerate_hz` | общая | 1–60 Гц | 12 | сколько раз в секунду экран уходит в очки по MSP (не чаще 20; чип на плате обновляется сам) |
 | `gps_minimum_sats` | общая | 4–50 | 8 | дом ставится при ARM, если спутников не меньше |
+| `gps_spoof_detect` | общая | `OFF`, `ON` | `ON` | своё: подмена GPS (скачок, увод против акселерометра, ветер, высота против барометра, флаг приёмника) — GPS выключен из навигации до посадки, `GPS SPOOF` |
 | `crsf_telemetry` | общая | `OFF`, `ON` | `ON` | телеметрия в пульт по CRSF; без неё не работает и настройка с пульта (ответы MSP) |
 | `min_check` · `max_check` | общая | 750–2250 мкс | 1050 · 1900 | команды стиками: ниже — «низ», выше — «верх» |
 | `acc_trim_roll` · `acc_trim_pitch` | общая | −300…300 (0.1°) | 0 | подстройка горизонта ANGLE/HORIZON: + — правее и нос ниже (как в BF); стиками — газ верх + крен/тангаж |
@@ -1444,6 +1445,25 @@ CRSF, видеопередатчик с потолком мощности, ту�
   `training_max_speed` — наклон плавно уменьшается (`SPEED LIMIT`). В очках —
   `osd_warn_training`. Симулятор: потолок 20 м на полном газе — 20,5 м; круг
   60 м со стиком вперёд минуту — дальше 66 м не ушёл; 20 км/ч — 27 вместо 50.
+- **Подмена GPS** (`copter/GpsIntegrity.h`, своё, `gps_spoof_detect`): борт
+  сверяет GPS с тем, что подменить нельзя, — без курса (сырое ускорение в
+  осях «от включения», сравниваются модули: ни выученное по GPS смещение,
+  ни врущий компас сверку не сбивают). **Скачок** — точка и скорость ушли от
+  прошлого фикса дальше, чем позволяет ∫|a| (после глушения допуск растёт с
+  полётом, в висении — метры); **увод** — за 2 с |разгон по GPS| против
+  |разгона по акселерометру|, χ² пять фиксов подряд (ложная точка
+  разгоняется от ~1.5 м/с², или удержание тянет коптер за ней);
+  **ветер** — выученный фильтром ветер ушёл от своего среднего за минуту
+  больше чем на 5 м/с дольше 5 с (медленный увод); **высота** против
+  барометра больше 30 м; **приёмник** — u-blox M10 сам сообщает подмену
+  (`UBX-NAV-STATUS spoofDetState`) дольше 3 с. Подмена → GPS выключен из
+  навигации, возврата и фильтра ориентации до посадки (в воздухе сам не
+  возвращается; снимается без ARM после 10 с чистого), POS HOLD → ALT HOLD
+  (`POSHOLD NO GPS`), в очках `GPS SPOOF` (`osd_warn_gps_spoof`, и без ARM),
+  в ящике событие, в живом кадре `gps.trust` (0–100) и `gps.spoof`.
+  Симулятор: увод 2 м/с² до 4 м/с в POS HOLD при ветре 4 м/с — пойман
+  через 2.4 с, коптер успел уйти на 4 м; скачок на 500 м — за 0.1 с.
+  Возврат домой вслепую и подпись пульта — дальше (P43 б, в).
 
 ## Что внутри — коротко
 

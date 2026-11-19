@@ -329,6 +329,7 @@ namespace copter
         PARAM_VTX_MAX_POWER_MW,
         PARAM_VTX_LOW_POWER_DISARM,
         PARAM_GPS_MINIMUM_SATS,
+        PARAM_GPS_SPOOF_DETECT,
         PARAM_CRSF_TELEMETRY,
         PARAM_BLACKBOX_DEVICE,
         PARAM_BLACKBOX_MODE,
@@ -476,6 +477,7 @@ namespace copter
         PARAM_OSD_WARN_TRAINING,
         PARAM_OSD_WARN_RSSI,
         PARAM_OSD_WARN_POSHOLD,
+        PARAM_OSD_WARN_GPS_SPOOF,
         PARAM_OSD_ALT_ALARM,
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
@@ -887,6 +889,8 @@ namespace copter
               "без ARM — самый слабый уровень: ON — всегда, UNTIL_FIRST_ARM — до первого ARM" },
             { "gps_minimum_sats", kInt, kMaster, kGroupGps, 4, 50, 8, kTable, "", nullptr, 0,
               "дом ставится при ARM, если спутников не меньше" },
+            { "gps_spoof_detect", kEnum, kMaster, kGroupGps, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "подмена GPS (скачок, увод против акселерометра, ветер, высота против барометра, флаг приёмника) — GPS выключен из навигации до посадки, GPS SPOOF" },
             { "crsf_telemetry", kEnum, kMaster, kGroupRx, 0, 1, 1, kTable, "", OFF_ON, 2,
               "телеметрия в пульт по CRSF: батарея, GPS, ориентация, режим" },
             { "blackbox_device", kEnum, kMaster, kGroupBlackbox, 0, 3, 2, kTable, "", BLACKBOX_DEVICES, 4,
@@ -1179,6 +1183,8 @@ namespace copter
               "предупреждение OSD: сигнал пульта слабее osd_rssi_alarm (RSSI LOW)" },
             { "osd_warn_poshold", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "предупреждение OSD: POS HOLD не держит место — POSHOLD NO GPS, POSHOLD NO MAG, POSHOLD FAIL" },
+            { "osd_warn_gps_spoof", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: GPS подменяют — GPS SPOOF (выключен из навигации)" },
             { "osd_alt_alarm", kInt, kMaster, kGroupOsd, 0, 10000, 100, kTable, "м", nullptr, 0,
               "выше — высота на OSD мигает; 0 — нет" },
             { "osd_cap_alarm", kInt, kMaster, kGroupOsd, 0, 20000, 2200, kTable, "мА·ч", nullptr, 0,
@@ -1575,6 +1581,7 @@ namespace copter
             ph.a = value(PARAM_AUTOPILOT_POSITION_A);
             ph.cutoffHz = value(PARAM_AUTOPILOT_POSITION_CUTOFF) * 0.01f;
             s.posHoldMinSats = static_cast<uint8_t>(value(PARAM_GPS_MINIMUM_SATS));
+            s.gpsSpoofDetect = value(PARAM_GPS_SPOOF_DETECT) > 0.5f;
         }
 
         // Пульт: карта каналов, rxrange, таблица aux.
@@ -2446,7 +2453,7 @@ namespace copter
 
     static_assert(PARAM_OSD_PREFLIGHT_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
     static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
-    static_assert(PARAM_OSD_WARN_POSHOLD - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
+    static_assert(PARAM_OSD_WARN_GPS_SPOOF - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 
     // Раскладка OSD из настроек osd_* (copter/Osd.h).
     inline OsdLayout osdLayoutFrom(const CopterParams& p)

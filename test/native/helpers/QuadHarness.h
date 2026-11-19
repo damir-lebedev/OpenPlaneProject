@@ -144,7 +144,7 @@ public:
         }
         wasArmedGps = armed;
         // прошлое — для задержки фикса
-        gpsPast[steps % GPS_PAST] = { sim.position().x, sim.position().y, sim.velocity().x, sim.velocity().y };
+        gpsPast[steps % GPS_PAST] = { sim.position().x, sim.position().y, sim.velocity().x, sim.velocity().y, sim.height() };
         g = gpsLast;
         g.fresh = false;
         // компас отвечает каждый цикл и GPS ему не нужен
@@ -186,6 +186,14 @@ public:
         g.eastM = static_cast<float>(was.e - homeE + noise(gpsNoisePosM));
         g.velN = static_cast<float>(was.vn + noise(gpsNoiseVelMs));
         g.velE = static_cast<float>(was.ve + noise(gpsNoiseVelMs));
+        // точка на Земле — проверке подмены (copter/GpsIntegrity.h); spoofN/E — подмена
+        g.latitude = 55.75 + (was.n + spoofN) / 111194.93;
+        g.longitude = 37.62 + (was.e + spoofE) / (111194.93 * std::cos(55.75 * 0.017453293));
+        g.northM += static_cast<float>(spoofN);
+        g.eastM += static_cast<float>(spoofE);
+        g.velN += static_cast<float>(spoofVn);
+        g.velE += static_cast<float>(spoofVe);
+        g.altitudeM = static_cast<float>(was.alt + 120.0 + noise(1.0));
         gpsLast = g;
     }
 
@@ -194,6 +202,8 @@ public:
     bool gpsOn = false;        // есть GPS
     bool compass = true;       // и компас
     bool gpsLost = false;      // GPS замолчал
+    double spoofN = 0.0, spoofE = 0.0;     // подмена GPS: сдвиг точки, м
+    double spoofVn = 0.0, spoofVe = 0.0;   // и скорость увода, м/с (точку сдвигать самому)
     double gpsDelayS = 0.0;        // фикс старше на столько
     double gpsNoisePosM = 0.4;     // шум положения (±, равномерный)
     double gpsNoiseVelMs = 0.1;    // и скорости
@@ -225,7 +235,7 @@ public:
 private:
     struct GpsPast
     {
-        double n, e, vn, ve;
+        double n, e, vn, ve, alt;
     };
     static constexpr long GPS_PAST = 4096;
     GpsPast gpsPast[GPS_PAST] = {};

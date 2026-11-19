@@ -478,6 +478,11 @@ static void fillGps(copter::GpsInput& g)
     g.velE = f.speedMs * sinf(course);
     g.headingTrusted = compassTrusted();
     g.headingDeg = g.headingTrusted ? copterCompass.headingDeg(copterController.getStatus().yaw) : headingDeg();
+    // для проверки подмены (copter/GpsIntegrity.h)
+    g.latitude = f.latitude;
+    g.longitude = f.longitude;
+    g.altitudeM = f.altitudeM;
+    g.receiverSpoof = gps.isAvailable() ? gps.getGpsData().spoofState : 0;
 }
 
 // Режим для пульта, как пишет Betaflight (4 буквы, без ARM — «*»).
@@ -781,6 +786,7 @@ static void composeOsd()
     d.exitStats = sticksUp;
     d.overload = copter::overloadText(escGuard.state());
     d.posHold = copter::posHoldFailText(s.posHoldFail);
+    d.gpsSpoof = s.gpsSpoof != copter::GpsSpoof::NONE;
     if (!d.overload && escGuard.limiting()) d.overload = "CURRENT LIMIT";
     d.training = copter::trainingText(s.trainingFlags);
     vtxHeat.update(d.armed, vtx.state(), millis());

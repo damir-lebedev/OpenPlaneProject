@@ -283,6 +283,7 @@ private:
         uint8_t rescue = 0;      // RescuePhase::IDLE
         bool trainer = false;    // режим ACRO TRAINER
         bool chirp = false;      // идёт качание частоты
+        uint8_t gpsSpoof = 0;    // GpsSpoof::NONE
     } seen;
 
     bool vehicleArmed() const override { return ctl.isArmed(); }
@@ -392,6 +393,15 @@ private:
         {
             event("GPS Rescue: %s", copter::rescuePhaseName(s.rescuePhase));
             seen.rescue = static_cast<uint8_t>(s.rescuePhase);
+        }
+        // подмена GPS (copter/GpsIntegrity.h) — Studio рисует по ней дорожку доверия
+        if (static_cast<uint8_t>(s.gpsSpoof) != seen.gpsSpoof)
+        {
+            if (s.gpsSpoof != copter::GpsSpoof::NONE)
+                event("GPS: подмена (%s) — GPS выключен из навигации", copter::gpsSpoofName(s.gpsSpoof));
+            else
+                event("GPS: подмена снята");
+            seen.gpsSpoof = static_cast<uint8_t>(s.gpsSpoof);
         }
         if (rc.acroTrainer != seen.trainer)
         {

@@ -207,6 +207,7 @@ namespace copter
         OSD_WARN_TRAINING,   // своё: учебные ограничения (copter/TrainingLimits.h)
         OSD_WARN_RSSI,
         OSD_WARN_POSHOLD,    // своё: POS HOLD включён, а держать нечем (copter/PositionHold.h)
+        OSD_WARN_GPS_SPOOF,  // своё: GPS подменяют (copter/GpsIntegrity.h)
         OSD_WARN_COUNT
     };
 
@@ -224,6 +225,7 @@ namespace copter
             { "training", true, "учебные ограничения: ALT LIMIT, FENCE, FENCE RETURN, SPEED LIMIT" },
             { "rssi", true, "сигнал пульта слабее osd_rssi_alarm (RSSI LOW)" },
             { "poshold", true, "POS HOLD не держит место: POSHOLD NO GPS, POSHOLD NO MAG, POSHOLD FAIL — летит как ALTHOLD" },
+            { "gps_spoof", true, "GPS подменяют: GPS SPOOF — GPS выключен из навигации до посадки" },
         };
         return table[w < OSD_WARN_COUNT ? w : 0];
     }
@@ -292,6 +294,7 @@ namespace copter
         bool exitStats = false;             // газ или тангаж вверх — убрать статистику
         const char* overload = nullptr;     // ESC OVERLOAD / BATT OVERLOAD / CURRENT LIMIT (copter/EscGuard.h) или nullptr
         const char* posHold = nullptr;      // POSHOLD NO GPS / NO MAG / FAIL (copter/PositionHold.h) или nullptr
+        bool gpsSpoof = false;              // GPS подменяют (copter/GpsIntegrity.h)
         const char* training = nullptr;     // учебные ограничения: ALT LIMIT, FENCE… (copter/TrainingLimits.h) или nullptr
         bool vtxHot = false;                // VTX без ARM греется (copter/Vtx.h, VtxHeatWatch)
         uint16_t escOverloads = 0, batteryOverloads = 0;   // за этот полёт
@@ -439,6 +442,7 @@ namespace copter
             if (l.warn(OSD_WARN_FAIL_SAFE) && d.failsafe) return "FAILSAFE";
             if (l.warn(OSD_WARN_FAIL_SAFE) && d.linkLost) return "RXLOSS";
             if (l.warn(OSD_WARN_BATT_CRITICAL) && d.batteryState == 3) return "BATT CRITICAL";
+            if (l.warn(OSD_WARN_GPS_SPOOF) && d.gpsSpoof) return "GPS SPOOF";
             if (l.warn(OSD_WARN_POSHOLD) && d.armed && d.posHold) return d.posHold;
             if (l.warn(OSD_WARN_OVERLOAD) && d.armed && d.overload) return d.overload;
             if (l.warn(OSD_WARN_TRAINING) && d.armed && d.training) return d.training;

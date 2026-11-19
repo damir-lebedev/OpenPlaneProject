@@ -8868,6 +8868,237 @@ void test_gyro_stuck_detector()
     TEST_ASSERT_EQUAL_FLOAT(0.0f, params.value(PARAM_GYRO_TO_USE));
 }
 
+// ---------- подмена GPS (copter/GpsIntegrity.h, P43 а) ----------
+namespace
+{
+    // Коптер летит по заданному ускорению (север/восток), такт 500 Гц, фикс 10 Гц
+    // с шумом; подмена — сдвиг точки и скорость увода поверх правды.
+    struct SpoofRun
+    {
+        GpsIntegrity gi;
+        double n = 0.0, e = 0.0, vn = 0.0, ve = 0.0, alt = 30.0;
+        double fakeN = 0.0, fakeE = 0.0, fakeVn = 0.0, fakeVe = 0.0, fakeAlt = 0.0;
+        double t = 0.0;
+        long step = 0;
+        bool accelOk = true, armed = true, gpsOn = true, baroOk = true;
+        uint8_t receiver = 1;
+        bool windOk = false;
+        double windN = 3.0, windE = -2.0;
+        uint32_t seed = 12345;
+        double noise(double s)
+        {
+            seed = seed * 1103515245u + 12345u;
+            return s * (static_cast<double>((seed >> 8) & 0xFFFF) / 32768.0 - 1.0);
+        }
+        // aN, aE — истинное ускорение; fakeA* — ускорение увода (только в GPS)
+        void run(double seconds, double aN, double aE, double fakeAn = 0.0, double fakeAe = 0.0)
+        {
+            const double dt = 0.002;
+            for (double s = 0.0; s < seconds - 1e-9; s += dt)
+            {
+                vn += aN * dt;
+                ve += aE * dt;
+                n += vn * dt;
+                e += ve * dt;
+                fakeVn += fakeAn * dt;
+                fakeVe += fakeAe * dt;
+                fakeN += fakeVn * dt;
+                fakeE += fakeVe * dt;
+                t += dt;
+                GpsIntegrityInput in;
+                in.accelOk = accelOk;
+                // в осях «от включения»: нос при включении смотрел на 70° — сверке курс не нужен
+                const double c = 0.342, sn = 0.940;
+                const double ax = aN * c + aE * sn, ay = -aN * sn + aE * c;
+                in.accelX = static_cast<float>(ax + noise(0.3));   // вибрация после ФНЧ
+                in.accelY = static_cast<float>(ay + noise(0.3));
+                in.baroOk = baroOk;
+                in.baroAltM = static_cast<float>(alt + 150.0 + noise(0.3));
+                in.receiverSpoof = receiver;
+                in.windOk = windOk;
+                in.windN = static_cast<float>(windN);
+                in.windE = static_cast<float>(windE);
+                in.armed = armed;
+                if (gpsOn && ++step % 50 == 0)
+                {
+                    in.fresh = true;
+                    in.fix = true;
+                    const double gn = n + fakeN + noise(0.5), ge = e + fakeE + noise(0.5);
+                    in.latitude = 55.75 + gn / 111194.93;
+                    in.longitude = 37.62 + ge / (111194.93 * 0.5628);
+                    in.velN = static_cast<float>(vn + fakeVn + noise(0.15));
+                    in.velE = static_cast<float>(ve + fakeVe + noise(0.15));
+                    in.altitudeM = static_cast<float>(alt + 180.0 + fakeAlt + noise(2.0));
+                }
+                gi.update(in, static_cast<float>(dt));
+            }
+        }
+        // энергичный честный полёт: разгоны, торможения, вираж
+        void honestFlight()
+        {
+            run(2.0, 0.0, 0.0);
+            run(3.0, 5.0, 0.0);
+            run(2.0, 0.0, 0.0);
+            run(2.0, -4.0, 6.0);
+            run(1.0, 0.0, 0.0);
+            run(3.0, -3.0, -4.0);
+            run(2.0, 8.0, 0.0);
+            run(2.0, -2.0, 0.0);
+        }
+    };
+}
+
+// Честный GPS — ни при энергичном полёте, ни без курса подмены нет; доверие высокое.
+void test_gps_integrity_honest_flight()
+{
+    SpoofRun r;
+    r.honestFlight();
+    TEST_ASSERT_FALSE(r.gi.spoofed());
+    TEST_ASSERT_TRUE(r.gi.trust() > 20);
+    SpoofRun blind;
+    blind.accelOk = false;   // ориентации нет: сверка только скачков по A_MAX
+    blind.honestFlight();
+    TEST_ASSERT_FALSE(blind.gi.spoofed());
+    // ветру верят, и он ровный — тоже чисто
+    SpoofRun wind;
+    wind.windOk = true;
+    wind.honestFlight();
+    wind.honestFlight();
+    TEST_ASSERT_FALSE(wind.gi.spoofed());
+    TEST_ASSERT_EQUAL(0, wind.gi.detections());
+}
+
+// Скачок на километр — JUMP сразу; в воздухе не снимается, на земле — через CLEAR_S чистого.
+void test_gps_integrity_jump_latches_until_landed()
+{
+    SpoofRun r;
+    r.run(5.0, 0.0, 0.0);
+    r.fakeN = 1000.0;
+    r.run(0.2, 0.0, 0.0);
+    TEST_ASSERT_TRUE(r.gi.spoofed());
+    TEST_ASSERT_EQUAL(GpsSpoof::JUMP, r.gi.reason());
+    TEST_ASSERT_EQUAL(0, r.gi.trust());
+    TEST_ASSERT_EQUAL_STRING("JUMP", gpsSpoofName(r.gi.reason()));
+    r.fakeN = 0.0;   // подменщик «отпустил» — в воздухе GPS не возвращается
+    r.run(30.0, 0.0, 0.0);
+    TEST_ASSERT_TRUE(r.gi.spoofed());
+    r.armed = false;
+    r.run(GpsIntegrity::CLEAR_S - 1.0f, 0.0, 0.0);
+    TEST_ASSERT_TRUE(r.gi.spoofed());
+    r.run(2.0, 0.0, 0.0);
+    TEST_ASSERT_FALSE(r.gi.spoofed());
+    TEST_ASSERT_EQUAL(1, r.gi.detections());
+    // без курса скачок на 1 км тоже виден
+    SpoofRun b;
+    b.accelOk = false;
+    b.run(5.0, 0.0, 0.0);
+    b.fakeE = -1000.0;
+    b.run(0.2, 0.0, 0.0);
+    TEST_ASSERT_EQUAL(GpsSpoof::JUMP, b.gi.reason());
+}
+
+// Глушение, потом подмена: фикс пропал на 5 с и вернулся в 300 м — JUMP;
+// вернулся на месте — чисто.
+void test_gps_integrity_jam_then_spoof()
+{
+    SpoofRun r;
+    r.run(5.0, 0.0, 0.0);
+    r.gpsOn = false;
+    r.run(5.0, 0.0, 0.0);
+    r.gpsOn = true;
+    r.run(1.0, 0.0, 0.0);
+    TEST_ASSERT_FALSE(r.gi.spoofed());
+    r.gpsOn = false;
+    r.run(5.0, 0.0, 0.0);
+    r.fakeE = 300.0;
+    r.gpsOn = true;
+    r.run(0.5, 0.0, 0.0);
+    TEST_ASSERT_EQUAL(GpsSpoof::JUMP, r.gi.reason());
+}
+
+// Увод: GPS разгоняется на 2 м/с², акселерометр — нет — VELOCITY;
+// и наоборот: удержание тянет коптер (акселерометр чувствует), GPS стоит.
+void test_gps_integrity_velocity_drift()
+{
+    SpoofRun r;
+    r.run(5.0, 0.0, 0.0);
+    r.run(2.0, 0.0, 0.0, 0.0, 2.0);   // 4 м/с на восток за 2 с только в GPS
+    r.run(1.0, 0.0, 0.0);
+    TEST_ASSERT_TRUE(r.gi.spoofed());
+    TEST_ASSERT_EQUAL(GpsSpoof::VELOCITY, r.gi.reason());
+    SpoofRun h;
+    h.run(5.0, 0.0, 0.0);
+    h.run(2.0, -2.0, 0.0, 2.0, 0.0);   // коптер разгоняется на юг, а GPS этого не видит
+    h.run(1.0, 0.0, 0.0);
+    TEST_ASSERT_EQUAL(GpsSpoof::VELOCITY, h.gi.reason());
+    // выключено: считает, но не защёлкивает
+    SpoofRun off;
+    off.gi.configure(false);
+    off.run(5.0, 0.0, 0.0);
+    off.run(2.0, 0.0, 0.0, 0.0, 2.0);
+    TEST_ASSERT_FALSE(off.gi.spoofed());
+    TEST_ASSERT_TRUE(off.gi.trust() < 50);
+}
+
+// Медленный увод тоньше акселерометра виден по ветру; высота против барометра; флаг приёмника.
+void test_gps_integrity_wind_altitude_receiver()
+{
+    SpoofRun w;
+    w.windOk = true;
+    w.run(15.0, 0.0, 0.0);
+    TEST_ASSERT_FALSE(w.gi.spoofed());
+    w.windN += 7.0;   // скорость GPS подменили на 7 м/с — фильтр видит это как ветер
+    w.run(GpsIntegrity::WIND_HOLD_S - 1.0f, 0.0, 0.0);
+    TEST_ASSERT_FALSE(w.gi.spoofed());
+    w.run(2.0, 0.0, 0.0);
+    TEST_ASSERT_EQUAL(GpsSpoof::WIND, w.gi.reason());
+    // ветер только начал учиться — не сверяем (разгон оценки с нуля)
+    SpoofRun warm;
+    warm.windOk = true;
+    warm.run(1.0, 0.0, 0.0);
+    warm.windN += 7.0;
+    warm.run(8.0, 0.0, 0.0);
+    TEST_ASSERT_FALSE(warm.gi.spoofed());
+
+    SpoofRun a;
+    a.run(10.0, 0.0, 0.0);
+    a.alt += 20.0;   // честный подъём — барометр и GPS вместе
+    a.run(5.0, 0.0, 0.0);
+    TEST_ASSERT_FALSE(a.gi.spoofed());
+    a.fakeAlt = 60.0;
+    a.run(1.0, 0.0, 0.0);
+    TEST_ASSERT_FALSE(a.gi.spoofed());
+    a.run(2.0, 0.0, 0.0);
+    TEST_ASSERT_EQUAL(GpsSpoof::ALTITUDE, a.gi.reason());
+
+    SpoofRun rx;
+    rx.run(5.0, 0.0, 0.0);
+    rx.receiver = 2;
+    rx.run(2.0, 0.0, 0.0);
+    TEST_ASSERT_FALSE(rx.gi.spoofed());
+    rx.run(2.0, 0.0, 0.0);
+    TEST_ASSERT_EQUAL(GpsSpoof::RECEIVER, rx.gi.reason());
+}
+
+// Настройка и OSD: gps_spoof_detect (ON), osd_warn_gps_spoof, GPS SPOOF — даже без ARM.
+void test_gps_integrity_params_and_osd()
+{
+    CopterParams params;
+    TEST_ASSERT_EQUAL(PARAM_GPS_SPOOF_DETECT, findParam("gps_spoof_detect"));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, params.value(PARAM_GPS_SPOOF_DETECT));
+    CopterSettings s;
+    s.gpsSpoofDetect = false;
+    params.applyTo(s);
+    TEST_ASSERT_TRUE(s.gpsSpoofDetect);
+    TEST_ASSERT_EQUAL(PARAM_OSD_WARN_GPS_SPOOF, findParam("osd_warn_gps_spoof"));
+    OsdData d;
+    d.gpsSpoof = true;
+    TEST_ASSERT_EQUAL_STRING("GPS SPOOF", OsdScreen::warningText(d));
+    d.armed = true;
+    d.posHold = "POSHOLD NO GPS";
+    TEST_ASSERT_EQUAL_STRING("GPS SPOOF", OsdScreen::warningText(d));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -9064,5 +9295,11 @@ int main()
     RUN_TEST(test_gyro_select_modes_and_fallback);
     RUN_TEST(test_gyro_select_agreement_gates_second);
     RUN_TEST(test_gyro_stuck_detector);
+    RUN_TEST(test_gps_integrity_honest_flight);
+    RUN_TEST(test_gps_integrity_jump_latches_until_landed);
+    RUN_TEST(test_gps_integrity_jam_then_spoof);
+    RUN_TEST(test_gps_integrity_velocity_drift);
+    RUN_TEST(test_gps_integrity_wind_altitude_receiver);
+    RUN_TEST(test_gps_integrity_params_and_osd);
     return UNITY_END();
 }
