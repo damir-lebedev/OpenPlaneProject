@@ -71,6 +71,8 @@ namespace copter
             STATUS_EX = 150, UID = 160, SET_RAW_RC = 200, SET_PID = 202, SET_RC_TUNING = 204, SELECT_SETTING = 210,
             SET_MOTOR = 214, SET_MOTOR_CONFIG = 222, EEPROM_WRITE = 250,
             SEND_DSHOT_COMMAND = 0x3003,   // MSP2: мастер направления моторов конфигуратора
+            // MSP2 OpenPlane (свой Lua-скрипт EdgeTX, tools/edgetx): настройка по имени, модель пульта.
+            OP_PARAM_GET = 0x4F00, OP_PARAM_SET = 0x4F01, OP_TX_MODEL = 0x4F02,
         };
     }
 
@@ -198,6 +200,10 @@ namespace copter
             return armingDisabled && seen && nowMs - lastFrameMs < ARMING_HOLD_MS;
         }
         bool hasUnsaved() const { return unsaved; }
+        // Имя модели EdgeTX от нашего Lua-скрипта (OP_TX_MODEL); "" — не присылал.
+        static constexpr size_t TX_MODEL_LENGTH = 16;
+        static constexpr float PARAM_FLOAT_SCALE = 1000.0f;
+        const char* txModelName() const { return txModel; }
         void settingsApplied() { unsaved = false; }
 
         // MSP_REBOOT: после отправки ответа — перезагрузка (0 — прошивка, 1 — загрузчик DFU).
@@ -286,6 +292,22 @@ namespace copter
                     return true;
                 case SET_RTC:
                 case SET_TX_INFO: return true;   // часов и RSSI с пульта у нас нет — молча принять
+                case OP_PARAM_GET: return paramReply(readParamName(r), w);
+                case OP_TX_MODEL:
+                {
+                    // имя модели EdgeTX — для строки «пульт — та модель» в «Перед полётом»
+                    if (passive) return false;
+                    size_t i = 0;
+                    while (r.remaining() && i < TX_MODEL_LENGTH)
+                    {
+                        const char c = static_cast<char>(r.u8());
+                        if (!c) break;
+                        if (c >= ' ' && c != '"' && c != '\\' && c < 0x7F) txModel[i++] = c;   // в JSON без экранирования
+                    }
+                    txModel[i] = '\0';
+                    w.text(params.text(PARAM_CRAFT_NAME, 0));
+                    return true;
+                }
                 case OSD_CANVAS:
                     w.u8(canvasCols);
                     w.u8(canvasRows);
@@ -412,6 +434,17 @@ namespace copter
                                          : params.selectPidProfile(n < CopterParams::PROFILES ? n : 0);
                     if (!ok) return false;
                     ctl.applyProfile(params.tune());
+                    break;
+                }
+                case OP_PARAM_SET:
+                {
+                    const int32_t raw = static_cast<int32_t>(r.u32());
+                    const int id = readParamName(r);
+                    if (id < 0) return false;
+                    const ParamInfo& info = paramInfo(static_cast<ParamId>(id));
+                    const float v = static_cast<float>(raw) / (info.type == ParamType::FLOAT ? PARAM_FLOAT_SCALE : 1.0f);
+                    if (!params.setValue(static_cast<ParamId>(id), params.activeSlot(static_cast<ParamId>(id)), v)) return false;
+                    paramReply(id, w);
                     break;
                 }
                 case EEPROM_WRITE:
@@ -1238,6 +1271,50 @@ namespace copter
             return true;
         }
 
+        // OP_PARAM_GET/SET: имя настройки до нуля или до конца запроса; -1 — нет такой.
+        static int readParamName(msp::Reader& r)
+        {
+            char name[48] = {};
+            size_t i = 0;
+            while (r.remaining() && i < sizeof(name) - 1)
+            {
+                const char c = static_cast<char>(r.u8());
+                if (!c) break;
+                name[i++] = c;
+            }
+            return findParam(name);
+        }
+
+        // Ответ OP_PARAM_GET/SET: тип u8 (0 INT, 1 FLOAT, 2 ENUM, 3 STRING), знаков
+        // после запятой u8 (FLOAT — 3, остальные 0), значение, мин, макс — i32 в
+        // этих знаках; дальше ENUM — имена значений через запятую, STRING — текст.
+        bool paramReply(int id, msp::Writer& w) const
+        {
+            if (id < 0) return false;
+            const ParamId pid = static_cast<ParamId>(id);
+            const ParamInfo& info = paramInfo(pid);
+            const bool fractional = info.type == ParamType::FLOAT;
+            const float k = fractional ? PARAM_FLOAT_SCALE : 1.0f;
+            w.u8(static_cast<uint8_t>(info.type));
+            w.u8(fractional ? 3 : 0);
+            w.u32(static_cast<uint32_t>(static_cast<int32_t>(lroundf(info.type == ParamType::STRING ? 0.0f : params.value(pid) * k))));
+            w.u32(static_cast<uint32_t>(static_cast<int32_t>(lroundf(info.min * k))));
+            w.u32(static_cast<uint32_t>(static_cast<int32_t>(lroundf(info.max * k))));
+            if (info.type == ParamType::ENUM)
+            {
+                for (uint8_t i = 0; i < info.optionCount; ++i)
+                {
+                    if (i) w.u8(',');
+                    w.text(info.options[i]);
+                }
+            }
+            else if (info.type == ParamType::STRING)
+            {
+                w.text(params.text(pid, params.activeSlot(pid)));
+            }
+            return true;
+        }
+
         // Число из конфигуратора -> настройка (прижать к её границам).
         void set(ParamId id, float v)
         {
@@ -1273,5 +1350,6 @@ namespace copter
         bool motorTestOn = false;
         uint8_t rebootMode = 0;
         uint32_t lastFrameMs = 0;
+        char txModel[TX_MODEL_LENGTH + 1] = {};
     };
 }

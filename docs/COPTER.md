@@ -1218,6 +1218,7 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 | Команды регуляторам | `MSP2_SEND_DSHOT_COMMAND` | мастер направления моторов: в ту же очередь, что `dshotprog` |
 | Видеопередатчик | `VTX_CONFIG`, `SET_VTX_CONFIG` | `vtx_band`/`vtx_channel` или `vtx_freq`, `vtx_power`, `vtx_low_power_disarm`; PIT — только тумблером |
 | Пульт | `TX_INFO`, `SET_TX_INFO`, `SET_RTC` | принимаются и пропускаются (Lua-скриптам BF не нужно) |
+| Свои (MSP2, наш Lua-скрипт) | `0x4F00` настройка по имени, `0x4F01` записать по имени, `0x4F02` имя модели пульта | ответ: тип, знаков после запятой, значение, мин, макс (i32), имена ENUM через запятую; на `0x4F02` — `craft_name` |
 
 Записи (`SET_*`) меняют настройки в памяти, `EEPROM_WRITE` — сохраняет и
 применяет; до него ARM запрещён (флаг `MSP`), как и пока конфигуратор держит
@@ -1240,6 +1241,17 @@ CRSF `0x7A` (запрос), `0x7C` (запись без ответа), отве�
 «Приёмник» → «Настройка с пульта» — шаги, кнопка «Скачать на SD пульта»
 (последний выпуск betaflight-tx-lua-scripts с их GitHub — в `SCRIPTS` на
 карте пульта, подключённого как USB-накопитель).
+
+**Свой скрипт OpenPlane** (`tools/edgetx/`, скопировать папку `SCRIPTS` на
+SD пульта): SYS → Tools → OpenPlane — страницы «GPS Rescue» (`gps_rescue_*`,
+`failsafe_procedure`), «Training» (`training_*`), «OSD» (пороги и показ
+элементов) и «Radio». Настройки читаются и пишутся по именам BF (MSP2
+`0x4F00`/`0x4F01`), ENTER — править, ENTER — записать; на выходе спросит
+«сохранить» (`EEPROM_WRITE`). Экран телеметрии `oplan` (Model → Telemetry)
+в фоне раз в 10 с шлёт прошивке имя модели пульта (`0x4F02`) — оно в живом
+кадре (`"tx"`), и Studio в «Перед полётом» сверяет его с `craft_name`:
+строка «пульт — та модель». Подписи на пульте — английские (шрифты не у
+всех с кириллицей).
 
 ## Симулятор (SITL)
 
@@ -1443,6 +1455,7 @@ CRSF, видеопередатчик с потолком мощности, ту�
 | `telemetry/CopterBlackBox.h` · `hal/SpiNorFlash.h` · `telemetry/BflEncoder.h` | чёрный ящик · SPI-флеш F405 · формат Betaflight (.BFL) |
 | `telemetry/Msp.h` · `telemetry/CopterMsp.h` | MSP: кадры v1/v2 · ответы конфигуратору Betaflight |
 | `copter/CrsfMsp.h` | MSP с пульта: Lua-скрипты BF, VTX Admin ELRS |
+| `tools/edgetx/SCRIPTS/` | свой Lua-скрипт EdgeTX: GPS Rescue, учебные ограничения, OSD, имя модели пульта |
 | `src/stm32/main_copter.cpp` | точка входа на STM32 |
 
 ## Как это проверено

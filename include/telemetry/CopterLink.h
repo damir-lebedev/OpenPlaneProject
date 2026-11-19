@@ -88,6 +88,8 @@ public:
         gpsHome = home;
     }
     void setHeading(float deg) { headingDeg = deg; }
+    // Имя модели пульта (MSP OP_TX_MODEL от Lua-скрипта) — "tx" в живом кадре.
+    void setTxModel(const char* name) { txModel = name; }
     // Компас: датчик есть, и что из него получается (copter/Compass.h) — мастеру калибровки.
     void setCompass(const copter::Compass* c, bool present)
     {
@@ -327,6 +329,7 @@ public:
             w.add(",\"rssi\":%d,\"rssisrc\":\"%s\"", static_cast<int>(rssi->percent()), copter::rssiSourceName(rssi->source()));
         }
         if (rc.getRssiDbm() < 0) w.add(",\"dbm\":%d", static_cast<int>(rc.getRssiDbm()));
+        if (txModel && *txModel) w.add(",\"tx\":\"%s\"", txModel);   // без кавычек и \\ — CopterMsp
         w.add(",\"rxhz\":%.0f,\"rcsp\":%.0f,\"rcth\":%.0f", s.rcFrameHz, s.rcSetpointCutoffHz, s.rcThrottleCutoffHz);
         w.add(",\"ch\":[");
         for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i) w.add(i ? ",%u" : "%u", static_cast<unsigned>(rc.getState().get(i)));
@@ -917,6 +920,7 @@ private:
     const GpsSensor* gps = nullptr;
     const copter::GpsHome* gpsHome = nullptr;
     float headingDeg = 0.0f;
+    const char* txModel = nullptr;
     const copter::Compass* magCal = nullptr;
     bool magPresent = false;
     copter::CopterOutputs outputs;

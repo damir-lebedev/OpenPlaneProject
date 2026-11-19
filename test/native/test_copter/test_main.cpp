@@ -6798,6 +6798,101 @@ void test_crsf_msp_from_radio()
     m.params.resetAll();
 }
 
+namespace
+{
+    // Запрос MSP v2 с пульта одним куском (так шлёт наш Lua-скрипт) -> ответ (данные без заголовка v2).
+    bool crsfMspV2(MspBench& m, CrsfMsp& c, uint16_t cmd, const std::vector<uint8_t>& data, std::vector<uint8_t>& out)
+    {
+        std::vector<uint8_t> body = { 0, static_cast<uint8_t>(cmd), static_cast<uint8_t>(cmd >> 8),
+                                      static_cast<uint8_t>(data.size()), static_cast<uint8_t>(data.size() >> 8) };
+        body.insert(body.end(), data.begin(), data.end());
+        TEST_ASSERT_TRUE(crsfFeed(c, crsfMspFrame(CRSF_FRAME_MSP_REQ, 0x50, body)));
+        msp::Writer w;
+        const bool ok = m.msp.process(c.request(), w, m.nowMs);
+        c.reply(ok, w.buf, w.length);
+        std::vector<uint8_t> st;
+        const std::vector<uint8_t> r = crsfMspReply(c, st);
+        TEST_ASSERT_TRUE(r.size() >= 5);
+        TEST_ASSERT_EQUAL_UINT16(cmd, le16(r, 1));
+        TEST_ASSERT_EQUAL_UINT16(r.size() - 5, le16(r, 3));
+        out.assign(r.begin() + 5, r.end());
+        return (st[0] & 0x80) == 0;
+    }
+
+    std::vector<uint8_t> nameBytes(const char* name, int32_t value = 0, bool withValue = false)
+    {
+        std::vector<uint8_t> d;
+        if (withValue)
+        {
+            for (int i = 0; i < 4; ++i) d.push_back(static_cast<uint8_t>(static_cast<uint32_t>(value) >> (8 * i)));
+        }
+        d.insert(d.end(), name, name + strlen(name));
+        return d;
+    }
+}
+
+// Свой Lua-скрипт EdgeTX (tools/edgetx): настройка по имени (MSP2 0x4F00/0x4F01),
+// имя модели пульта (0x4F02) — в живой кадр для «Перед полётом».
+void test_crsf_msp_param_by_name_and_tx_model()
+{
+    MspBench m;
+    CrsfMsp c;
+    std::vector<uint8_t> r;
+
+    // INT: тип 0, знаков 0, значение, границы
+    TEST_ASSERT_TRUE(crsfMspV2(m, c, 0x4F00, nameBytes("gps_rescue_return_alt"), r));
+    TEST_ASSERT_EQUAL(14, static_cast<int>(r.size()));
+    TEST_ASSERT_EQUAL_UINT8(0, r[0]);
+    TEST_ASSERT_EQUAL_UINT8(0, r[1]);
+    TEST_ASSERT_EQUAL_INT32(static_cast<int32_t>(m.params.value(PARAM_GPS_RESCUE_RETURN_ALT)), static_cast<int32_t>(le32(r, 2)));
+    TEST_ASSERT_EQUAL_INT32(5, static_cast<int32_t>(le32(r, 6)));
+    TEST_ASSERT_EQUAL_INT32(1000, static_cast<int32_t>(le32(r, 10)));
+
+    // ENUM: имена значений через запятую; имя без учёта регистра
+    TEST_ASSERT_TRUE(crsfMspV2(m, c, 0x4F00, nameBytes("TRAINING_LIMITS"), r));
+    TEST_ASSERT_EQUAL_UINT8(2, r[0]);
+    TEST_ASSERT_EQUAL_STRING("OFF,ON", std::string(r.begin() + 14, r.end()).c_str());
+
+    // запись: ответ — новое значение; без сохранения ARM нельзя, как после MSP_SET_*
+    TEST_ASSERT_TRUE(crsfMspV2(m, c, 0x4F01, nameBytes("training_max_alt", 35, true), r));
+    TEST_ASSERT_EQUAL_FLOAT(35.0f, m.params.value(PARAM_TRAINING_MAX_ALT));
+    TEST_ASSERT_EQUAL_INT32(35, static_cast<int32_t>(le32(r, 2)));
+    TEST_ASSERT_TRUE(m.msp.hasUnsaved());
+    // вне границ и незнакомое имя — ошибка, значение не меняется
+    TEST_ASSERT_FALSE(crsfMspV2(m, c, 0x4F01, nameBytes("training_max_alt", 501, true), r));
+    TEST_ASSERT_EQUAL_FLOAT(35.0f, m.params.value(PARAM_TRAINING_MAX_ALT));
+    TEST_ASSERT_FALSE(crsfMspV2(m, c, 0x4F00, nameBytes("no_such_param"), r));
+
+    // FLOAT — в тысячных
+    for (int i = 0; i < PARAM_COUNT; ++i)
+    {
+        const ParamInfo& info = paramInfo(static_cast<ParamId>(i));
+        if (info.type != ParamType::FLOAT || info.scope != ParamScope::MASTER) continue;
+        TEST_ASSERT_TRUE(crsfMspV2(m, c, 0x4F00, nameBytes(info.name), r));
+        TEST_ASSERT_EQUAL_UINT8(1, r[0]);
+        TEST_ASSERT_EQUAL_UINT8(3, r[1]);
+        TEST_ASSERT_EQUAL_INT32(static_cast<int32_t>(lroundf(info.max * 1000.0f)), static_cast<int32_t>(le32(r, 10)));
+        break;
+    }
+
+    // ARM: читать можно, писать нельзя
+    TEST_ASSERT_TRUE(crsfMspV2(m, c, 250, {}, r));   // EEPROM_WRITE: иначе ARM запрещён
+    TEST_ASSERT_TRUE(m.bench.armAfterBoot());
+    TEST_ASSERT_TRUE(crsfMspV2(m, c, 0x4F00, nameBytes("training_max_alt"), r));
+    TEST_ASSERT_FALSE(crsfMspV2(m, c, 0x4F01, nameBytes("training_max_alt", 40, true), r));
+    TEST_ASSERT_EQUAL_FLOAT(35.0f, m.params.value(PARAM_TRAINING_MAX_ALT));
+    m.bench.rc.armSwitch = false;
+    m.bench.run(0.01f);
+
+    // имя модели пульта: ответ — имя коптера; кавычки выбрасываются (живой кадр — JSON)
+    m.params.setText(PARAM_CRAFT_NAME, 0, "SEVEN");
+    TEST_ASSERT_EQUAL_STRING("", m.msp.txModelName());
+    TEST_ASSERT_TRUE(crsfMspV2(m, c, 0x4F02, nameBytes("Se\"ven 7in long name!"), r));
+    TEST_ASSERT_EQUAL_STRING("SEVEN", std::string(r.begin(), r.end()).c_str());
+    TEST_ASSERT_EQUAL_STRING("Seven 7in long n", m.msp.txModelName());
+}
+
+
 // P09: учебные ограничения — настройки, логика, OSD.
 void test_training_limits_params_and_logic()
 {
@@ -8793,6 +8888,7 @@ int main()
     RUN_TEST(test_cli_beeper_and_beacon);
     RUN_TEST(test_msp_beeper_config);
     RUN_TEST(test_crsf_msp_from_radio);
+    RUN_TEST(test_crsf_msp_param_by_name_and_tx_model);
     RUN_TEST(test_osd_menu_by_sticks);
     RUN_TEST(test_filter_chain_like_betaflight);
     RUN_TEST(test_gyro_spectrum_finds_vibration_peak);

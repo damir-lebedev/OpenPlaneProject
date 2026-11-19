@@ -56,6 +56,7 @@ public:
           link(stream, controller, paramsRef, cli, receiver), msp(controller, paramsRef, cli)
     {
         cli.setVersion("OpenPlane copter / " OP_BOARD_ENV " / " OP_SOURCE_COMMIT);
+        link.setTxModel(msp.txModelName());
     }
 
     // Куда CLI сохраняет настройки (save); без него — только до перезагрузки.
