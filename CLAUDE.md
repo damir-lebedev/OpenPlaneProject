@@ -78,7 +78,7 @@ cd ../openplane-studio && npx tsc --noEmit && npx vitest run
 
 Веб-прошивальщик (телефон Android/Chrome, WebUSB): `tools/web-flasher/` (index.html +
 flasher.css + flasher.js — без встроенных стилей/скриптов, CSP сайта). Основной адрес
-https://lebedev-space.ru/flash/ (копия в `C:\Damir\SERVER\lebedev-space\weblash`, там же
+https://lebedev-space.ru/flash/ (копия в `C:\Damir\SERVER\lebedev-space\web\flash`, там же
 приём отчётов `/api/flash-report` → Telegram + CRM), зеркало — GitHub Pages (ветка gh-pages).
 После изменений прошивки или страницы: `python tools/publish_web_flasher.py --space
 C:/Damir/SERVER/lebedev-space`, закоммитить в lebedev-space, деплой — скриптом пользователя.
