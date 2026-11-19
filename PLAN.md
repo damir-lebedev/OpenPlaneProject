@@ -212,46 +212,24 @@ DfuSe, стирание только секторов прошивки, свер
   в одну строку, «Плата» самолёта в одну колонку («Назад» стрелкой), таблица пинов листается сама, длинные надписи
   кнопок и пути переносятся, `.page` вбок не листается. Проверено: эмуляция 320/360 по всем разделам и шагам мастера,
   release-APK поставлен на Redmi 14C (`adb install -r`).
-- [ ] **P49 · APK и готовые прошивки в GitHub-релиз, кнопка «Скачать на Android».**
-
-  - (из P48 b) На телефоне — кнопка «Скачать прошивку» рядом с «Прошить файлом»: `releases/latest/download/
-    firmware-<env>.bin` по `@id` платы, `fetch` из WebView (CSP `connect-src` GitHub) → `api.flashBin`.
-
-  - `../openplane-studio/.github/workflows/installers.yml` (jobs `build` matrix macOS×2/Windows и
-
-    `release` с `needs: build`): job `android` (ubuntu-latest: setup-java 17, android-actions/setup-android,
-
-    NDK, `rustup target add aarch64-linux-android armv7-linux-androideabi`, `npx tauri android build --apk`),
-
-    подпись — keystore из secrets `ANDROID_KEYSTORE` (base64), `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`;
-
-    файл `OpenPlane-Studio-Android.apk`; добавить в `needs` у `release`. Keystore и secrets создаёт
-
-    пользователь — написать ему команды (`keytool …`, Settings → Secrets), самому секреты не трогать.
-
-  - Job `firmware`: `pio run` для `stm32h743-devebox`, `matek-h743`, `matek-h743-quad`,
-
-    `stm32h743-devebox-quad`, `aocodarc-f405v3-quad` (не `getfun-f405v3-quad` — `#error` до дампа платы)
-
-    → `firmware-<env>.bin` в тот же релиз.
-
-  - Кнопки: `README.md` между `<!-- download:start -->` и `<!-- download:end -->` — shields-бейдж
-
-    «Скачать · Android», цвет `3DDC84`, `logo=android` →
-
-    `https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Android.apk`;
-
-    то же в `../openplane-studio/README.md` и в `docs/i18n/<lang>/README.md` (11 языков, подпись на языке).
-
-    Строку «приложение для Windows и macOS» в «Быстром старте» и строку «Прошить» в «За 30 секунд» —
-
-    дополнить Android (там сейчас «в работе»).
-
-  - Сайт: на lebedev-space.ru/studio заменить тизер «Скоро на Android» на кнопку APK
-
-    (`C:\Damir\SERVER\lebedev-space\server\lib\studio-phone.js`, `studio.js` PLATFORMS) — коммит там,
-
-    деплой — скриптом пользователя.
+- Сделано (P49, 2026-11-20, Studio `4c8c42c` + `9ec5ee4`, сайт lebedev-space `a32bdc0`, README `0110c40`): выпуск для
+  телефона. `installers.yml`: job `android` (ubuntu, JDK 17, NDK 28.2, Rust aarch64, свежий `firmware-manifest.json` из
+  исходников прошивки, `tauri android build --apk --target aarch64`, `zipalign` + `apksigner` ключом из секретов; нет
+  секретов — предупреждение и APK в выпуск не идёт; `continue-on-error` — выпуск ПК не держит) и job `firmware`
+  (`firmware-<env>.bin` для 5 сборок `RELEASE_ENVS`); `release` ждёт все три. Телефон: «Скачать и прошить» рядом с
+  «Прошить файлом» (сборка по `@id` платы, иначе у коптера; только сборки из релиза) → Kotlin `UsbPlugin.download`
+  (у github.com нет CORS, fetch из окна не пройдёт; только github.com, ≤ 2 МБ, в кэш) → Rust `firmware_release_bin` →
+  `runBinFlash`. README: бейдж Android (12 языков). Сайт `/studio`: «Studio в кармане» сама меняется на кнопку APK
+  (размер, SHA-256), как только в последнем выпуске есть `OpenPlane-Studio-Android.apk` — деплой тем же
+  `deploy-2026-11-20-studio.ps1`. Проверено: тесты (vitest 369, Rust 32, сайт 30), CI-прогон по кнопке — оба новых job
+  зелёные (APK собран, прошивки ~1 МБ артефактом), на Redmi 14C через CDP — 404 → «В релизе нет файла», getfun — отказ без сети.
+  Не проверено: подпись в CI (нет секретов), успешное скачивание `.bin` с редиректом на release-assets (нет выпуска с ними).
+- [ ] **P49 b · Ключ подписи и первый выпуск с APK — нужен пользователь.** (1) Пользователь создаёт ключ и три секрета
+  по `../openplane-studio/docs/ANDROID.md` «Ключ подписи» (keytool + `gh secret set`, `.jks` и пароль — в два места вне
+  git). (2) Тег `vX.Y.Z` (аннотированный, «Что нового» + Android) → в выпуске `OpenPlane-Studio-Android.apk` и 5 `.bin`;
+  проверить `apksigner verify` в журнале job. (3) Телефон: удалить сборку с debug-ключом, поставить APK из выпуска;
+  «Скачать и прошить» с платой (вместе с P47 b) — файл скачался (редирект), прошился. (4) Сайт `/studio` через ≤ 30 мин
+  показывает кнопку APK; добавить запись в `CHANGES` (`server/lib/studio.js`) под новый тег. Полевому тестеру — ссылку.
 
 - [ ] **P50 · ESP32 (S3/C3): прошивка по WiFi с Android.** STM32 не трогать — у них нет WiFi; ELRS ни при чём.
 
