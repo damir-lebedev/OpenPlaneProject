@@ -6,6 +6,8 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — 설정, 펌웨어 굽기, 비행까지: 비행기와 멀티콥터(Betaflight 보드 전환 포함). 설치 파일은 인터넷 없이 동작하며 필요한 모든 것이 들어 있습니다.</a></p>
 <!-- download:end -->
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20%ED%9C%B4%EB%8C%80%ED%8F%B0%EC%9C%BC%EB%A1%9C%20%ED%94%8C%EB%9E%98%EC%8B%9C-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="휴대폰으로 플래시"></a></p>
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">안드로이드 휴대폰 브라우저에서 바로 플래시 — USB-C 케이블 하나, 앱도 드라이버도 필요 없음.</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -60,6 +62,38 @@
 <p align="center">
   <img src="../../images/sim/replay_rth.gif" alt="신호 상실: 비행기가 스스로 집으로 돌아와 선회한다" width="576">
 </p>
+
+---
+
+## 📱 휴대폰으로 플래시 — 케이블 하나
+
+<table>
+  <tr>
+    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="../../images/flasher/phone.png" alt="OpenPlane Flasher" width="100%"></a></td>
+    <td>안드로이드 Chrome에서 페이지를 열고 USB-C to USB-C 케이블을 비행 컨트롤러에 꽂은 뒤 버튼 하나만 누르세요. 페이지가 펌웨어 여권(<code>@id</code>)을 읽어 맞는 빌드를 고르고, <code>D</code> 키로 STM32 부트로더로 재부팅한 뒤 펌웨어 섹터만 지우고 쓰고 다시 읽어 검증합니다. PID, 스위치, 캘리브레이션은 별도 섹터에 있어 그대로 유지됩니다.<br><br><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><b>damir-lebedev.github.io/OpenPlaneProject</b></a></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/flasher/flow.en.svg" alt="OpenPlane Flasher" width="100%"></p>
+
+### 🧱 지오펜스: 날아가 버리지 않는 드론
+
+원과 고도 상한만 그리면 끝. 어떤 모드에서도, 전속력 ACRO에서도 경계에 다가가면 스스로 감속하고 경계에서는 자동조종이 넘겨받아 되돌립니다. GPS를 잃으면 자체 센서로 귀환하거나 착륙합니다.
+
+<table>
+  <tr>
+    <td width="66%"><img src="../../images/copter/fence_studio.gif" alt="Geofence — OpenPlane Studio" width="100%"></td>
+    <td width="34%"><img src="../../images/copter/fence_sim.gif" alt="Geofence — SITL" width="100%"></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/copter/fence_stats.en.svg" alt="Geofence: 60 s, 97 km/h, 9, 72 m / 100" width="100%"></p>
+
+### 🎮 시뮬레이터: 사기 전에 날려 보기
+
+<p align="center"><img src="../../images/copter/sim_gates.gif" alt="OpenPlane Studio — simulator" width="100%"></p>
+
+드론에 들어갈 바로 그 펌웨어를 PC용으로 빌드한 것(<code>pio run -e sitl</code>). 조종기, 게임패드, 키보드; 후방·FPV·지상 카메라; 추락하면 <code>R</code>.
 
 ---
 

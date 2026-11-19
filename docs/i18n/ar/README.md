@@ -6,6 +6,8 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — اضبط وحمّل البرنامج وطِر: طائرات ومروحيات متعددة (بما فيها لوحة كانت تعمل بـ Betaflight). المثبّت يعمل دون إنترنت — كل ما يلزم بداخله.</a></p>
 <!-- download:end -->
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20%D8%A7%D9%84%D8%AA%D9%81%D9%84%D9%8A%D8%B4%20%D9%85%D9%86%20%D8%A7%D9%84%D9%87%D8%A7%D8%AA%D9%81-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="التفليش من الهاتف"></a></p>
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">فلّش من هاتف أندرويد مباشرة في المتصفح — كابل USB-C واحد، بلا تطبيقات أو تعريفات.</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -62,6 +64,38 @@
 <p align="center" dir="ltr">
   <img src="../../images/sim/replay_rth.gif" alt="فقدان الاتصال: الطائرة تعود إلى المنزل وحدها وتدور" width="576">
 </p>
+
+---
+
+## 📱 التفليش من الهاتف — بكابل واحد
+
+<table>
+  <tr>
+    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="../../images/flasher/phone.png" alt="OpenPlane Flasher" width="100%"></a></td>
+    <td>افتح الصفحة في Chrome على أندرويد، وصِل كابل USB-C إلى USB-C بوحدة التحكم واضغط زرًا واحدًا. تقرأ الصفحة جواز البرنامج الثابت (<code>@id</code>) وتختار النسخة المناسبة، ومفتاح <code>D</code> يعيد تشغيل اللوحة في محمّل STM32، ثم تُمسح قطاعات البرنامج فقط وتُكتب ويُتحقق منها بالقراءة. إعدادات PID والمفاتيح والمعايرة في قطاع منفصل — لا تُمس.<br><br><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><b>damir-lebedev.github.io/OpenPlaneProject</b></a></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/flasher/flow.en.svg" alt="OpenPlane Flasher" width="100%"></p>
+
+### 🧱 السياج الجغرافي: درون لا يطير بعيدًا
+
+ارسم دائرة وسقفًا — وانتهى. في أي وضع، حتى ACRO بأقصى سرعة، يفرمل الدرون قرب الحافة وعندها يتولى الطيار الآلي ويعيده. فُقد GPS؟ يعود إلى البيت بحساساته أو يهبط.
+
+<table>
+  <tr>
+    <td width="66%"><img src="../../images/copter/fence_studio.gif" alt="Geofence — OpenPlane Studio" width="100%"></td>
+    <td width="34%"><img src="../../images/copter/fence_sim.gif" alt="Geofence — SITL" width="100%"></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/copter/fence_stats.en.svg" alt="Geofence: 60 s, 97 km/h, 9, 72 m / 100" width="100%"></p>
+
+### 🎮 المحاكي: طِر قبل أن تشتري
+
+<p align="center"><img src="../../images/copter/sim_gates.gif" alt="OpenPlane Studio — simulator" width="100%"></p>
+
+إنه البرنامج الثابت نفسه الذي يدخل الدرون، مبني للحاسوب (<code>pio run -e sitl</code>). جهاز تحكم أو يد ألعاب أو لوحة مفاتيح؛ كاميرا خلفية أو FPV أو أرضية؛ سقطت؟ اضغط <code>R</code>.
 
 ---
 

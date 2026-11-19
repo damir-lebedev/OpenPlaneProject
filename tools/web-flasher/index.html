@@ -43,6 +43,8 @@ body {
 }
 main { max-width: 640px; margin: 0 auto; }
 header { display: flex; align-items: center; gap: 12px; margin: 8px 0 20px; }
+header > div { min-width: 0; }
+html, body { overflow-x: hidden; }
 .logo { width: 44px; height: 44px; flex: none; }
 h1 { font-size: 22px; margin: 0; letter-spacing: .2px; }
 .sub { color: var(--mute); font-size: 14px; margin: 0; }
@@ -57,10 +59,10 @@ h1 { font-size: 22px; margin: 0; letter-spacing: .2px; }
 .step h2 { font-size: 17px; margin: 3px 0 6px; }
 .step p { margin: 0 0 10px; color: var(--mute); font-size: 14px; }
 .grow { flex: 1; min-width: 0; }
-select, input[type=file] { width: 100%; font: inherit; color: var(--text); background: var(--bg2);
+select, input[type=file] { width: 100%; max-width: 100%; font: inherit; color: var(--text); background: var(--bg2);
          border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
 .fwinfo { font-size: 13px; color: var(--mute); margin-top: 8px; min-height: 1.4em; }
-button.big { width: 100%; border: 0; border-radius: 14px; padding: 16px; font: 600 17px/1.2 inherit; font-family: inherit;
+button.big { width: 100%; border: 0; border-radius: 14px; padding: 16px; font-family: inherit; font-weight: 700; font-size: 17px; line-height: 1.2;
              color: #04121f; background: linear-gradient(135deg, var(--acc), var(--acc2)); cursor: pointer;
              box-shadow: 0 10px 24px -10px color-mix(in srgb, var(--acc) 70%, transparent); transition: transform .08s, opacity .2s; }
 button.big:active { transform: scale(.98); }
@@ -213,7 +215,7 @@ const MSG = {
     done: "Готово! Плата перезапущена с новой прошивкой ✈", fail: "Ошибка: ",
     hideLog: "Скрыть журнал", showLog: "Показать журнал", cancelled: "Выбор устройства отменён",
     mismatch: (b) => `Внимание: плата сообщила «${b}», а выбрана другая прошивка.`,
-    updated: "собрано", plane: "самолёт", copter: "коптер",
+    updated: "собрано", plane: "самолёт", copter: "коптер", kb: "КБ",
   },
   en: {
     custom: "Custom .bin file…", choose: "— pick a board —",
@@ -230,7 +232,7 @@ const MSG = {
     done: "Done! The board restarted with the new firmware ✈", fail: "Error: ",
     hideLog: "Hide log", showLog: "Show log", cancelled: "Device selection cancelled",
     mismatch: (b) => `Note: the board reported “${b}”, but a different firmware is selected.`,
-    updated: "built", plane: "plane", copter: "copter",
+    updated: "built", plane: "plane", copter: "copter", kb: "KB",
   },
 };
 let lang = (localStorage.getItem("op-lang") || (navigator.language || "ru").slice(0, 2)) === "ru" ? "ru" : "en";
@@ -282,8 +284,8 @@ function fillList() {
 function selected() { return manifest && manifest.firmware.find((f) => f.env === $("fw").value); }
 function showInfo() {
   const f = selected(), i = $("fwinfo");
-  if ($("fw").value === "__file") { i.textContent = customBin ? `${customBin.name} · ${(customBin.data.byteLength / 1024).toFixed(0)} КБ` : ""; return; }
-  i.textContent = f ? `${lang === "en" ? f.note_en : f.note} · ${(f.size / 1024).toFixed(0)} KB · ${f.chip.toUpperCase()}` : "";
+  if ($("fw").value === "__file") { i.textContent = customBin ? `${customBin.name} · ${(customBin.data.byteLength / 1024).toFixed(0)} ${M().kb}` : ""; return; }
+  i.textContent = f ? `${lang === "en" ? f.note_en : f.note} · ${(f.size / 1024).toFixed(0)} ${M().kb} · ${f.chip.toUpperCase()}` : "";
 }
 $("fw").onchange = () => { if ($("fw").value === "__file") $("file").click(); showInfo(); };
 $("file").onchange = async () => {

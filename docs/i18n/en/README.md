@@ -6,6 +6,8 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — set up, flash and fly: planes and copters (including a board taken over from Betaflight). The installer works offline — everything it needs is inside.</a></p>
 <!-- download:end -->
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20Flash%20from%20a%20phone-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="Flash from a phone"></a></p>
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">Flash from an Android phone right in the browser — one USB-C cable, no apps, no drivers.</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -63,6 +65,39 @@
 
 ---
 
+## 📱 Flashing from a phone — one cable
+
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/Open%20the%20flasher-damir--lebedev.github.io%2FOpenPlaneProject-a78bfa?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Open the flasher"></a></p>
+
+<table>
+  <tr>
+    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="../../images/flasher/phone.png" alt="OpenPlane Flasher on a phone: board selected, writing" width="100%"></a></td>
+    <td>
+      <b>No laptop in the field — but there is a phone.</b> Open the page in Chrome on Android, plug a USB-C to USB-C cable into the flight controller and tap one button.<br><br>
+      ① the page asks the firmware for its <b>passport</b> (<code>@id</code>) and picks the right build for the board;<br>
+      ② the <code>D</code> key reboots the board into the <b>STM32 bootloader</b> — no BOOT button needed;<br>
+      ③ <b>only the firmware sectors</b> are erased, then written, <b>verified by reading back</b> — and the board starts.<br><br>
+      Copter PID, switches and calibrations live in a separate flash sector — <b>flashing never touches them</b>. An armed board can't be flashed, and neither can firmware for the wrong chip.<br><br>
+      <sub>Nothing to install: WebUSB is in Chrome on Android and Chrome/Edge on desktop. Prebuilt: Matek H743 · AocodaRC F405 V3 · GETFUN F405V3 · DevEBox H743 — copter and plane.</sub>
+    </td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/flasher/flow.en.svg" alt="Flashing path: Chrome → passport → bootloader → erase → write and verify → start" width="100%"></p>
+<p align="center"><img src="../../images/flasher/flash_map.en.svg" alt="Flash map: only firmware sectors are erased, the settings sector is kept" width="100%"></p>
+
+<details>
+<summary><b>The phone doesn't see the board? Board running Betaflight?</b></summary>
+
+- Some flight controllers lack the USB-C resistors that tell a phone to power them: use an OTG adapter (USB-C → USB-A) and a regular cable.
+- First flash over Betaflight/INAV: hold **BOOT**, plug in, pick **STM32 BOOTLOADER** on the page. The STM32 bootloader is in ROM — flashing can't brick the board.
+- Flash a plane with its own sensors and switches from Studio: prebuilt plane builds use default settings.
+- The site is updated by `python tools/publish_web_flasher.py`: builds the boards and publishes the page with firmware to the `gh-pages` branch. The page is [`tools/web-flasher/index.html`](../../../tools/web-flasher/index.html), one file, no dependencies.
+
+</details>
+
+---
+
 ## ⚡ In 30 seconds
 
 | | |
@@ -70,6 +105,7 @@
 | **What it is** | An open flight controller and autopilot for radio-controlled airplanes. The main board is the STM32H743 (a Pixhawk-class board): on a DevEBox board the firmware is **already up and flown from the transmitter** — [there is a video](#-stm32h743-came-alive-on-the-board), and the sensors are being connected now. The former base is an ESP32-S3 at ~$10, which passed the bench with all the sensors. |
 | **What it can do** | 12 flight modes — from stabilization to return-home, GPS circles, hand launch, auto-landing and **thermal soaring**. A pitot tube made of two cheap barometers. MAVLink telemetry to QGroundControl and Mission Planner. |
 | **Multicopters** | The same firmware for quads, hexes, octos, Y6 and X8: you describe the frame, props, motors and battery, and the firmware derives the PID and filters itself from a physical model. Checked in a simulator so far — [COPTER.md](COPTER.md). |
+| **Flashing** | From a phone: Chrome on Android, a USB-C to USB-C cable, [one button](https://damir-lebedev.github.io/OpenPlaneProject/). The board is recognised automatically, copter settings are kept. From a computer — the same site or [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio). |
 | **The main trick** | Any switch or knob on the transmitter = any function. **One line** in `Controls.h` — and SwD is no longer motor reverse but a payload drop. |
 | **Why you can trust it** | 522 automated tests (plus 9 on the board itself with a real SD card), 94% of the code under test, 33 "board × sensors" builds with not a single warning, closed-loop simulations of every mode. |
 | **Honestly** | So far only manual mode has flown (the first prototype). The STM32H743 has so far been checked only on the bench, without sensors. The autopilot has been verified on the bench, by tests and by simulations, and is waiting for flight trials — [status below](#-honest-status). |
@@ -162,6 +198,29 @@ pio run -e matek-h743-quad -t upload    # then in the console: t — tune, m —
 ```
 
 Details — [COPTER.md](COPTER.md).
+
+### 🧱 Geofence: a drone that won't fly away
+
+Draw a circle around yourself and a ceiling — that's it. **In any mode, even ACRO at full speed**, the copter brakes on its own as it nears the edge, and at the edge the autopilot takes over and brings it back — the sticks are ignored. GPS lost — it doesn't wait: flies home on its own sensors or lands. In the goggles — a radar: where the edge is, where home is, and how many metres are left.
+
+<table>
+  <tr>
+    <td width="66%"><img src="../../images/copter/fence_studio.gif" alt="The Geofence card in OpenPlane Studio: the dot hits the edge — FENCE RETURN" width="100%"></td>
+    <td width="34%"><img src="../../images/copter/fence_sim.gif" alt="A robot pilot in ACRO for a minute: 9 takeovers, never past 72 m of 100" width="100%"></td>
+  </tr>
+  <tr>
+    <td>OpenPlane Studio → Safety: Yard / Field / Open field, radius, ceiling, what to do without GPS. Next to the circle — the radar as seen in the goggles.</td>
+    <td><b>The real trajectory</b> from a firmware test: a robot pilot pushes outward for a minute, the autopilot takes over 9 times.</td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/copter/fence_stats.en.svg" alt="Geofence in numbers: 60 s, 97 km/h, 9 takeovers, 72 m of 100" width="100%"></p>
+
+### 🎮 Simulator: fly before you buy
+
+<p align="center"><img src="../../images/copter/sim_gates.gif" alt="OpenPlane Studio simulator: the copter flies through gates, chase and ground cameras" width="100%"></p>
+
+Not a game with similar physics — it is **the same firmware** that goes into the copter (same PID, filters, modes and protections), built for a PC (`pio run -e sitl`), with a flight model instead of sensors. Sticks — your radio over USB, a gamepad or the keyboard; chase, FPV or ground camera; gates to practise; crashed — press `R` and you're back on the pad. The Simulator tab in OpenPlane Studio — free.
 
 ---
 
@@ -276,6 +335,8 @@ Details — [ARCHITECTURE.md](ARCHITECTURE.md).
 ---
 
 ## 🚀 Quick start
+
+**From a phone, no computer:** [damir-lebedev.github.io/OpenPlaneProject](https://damir-lebedev.github.io/OpenPlaneProject/) — Chrome on Android, a USB-C to USB-C cable, one button ([how it works](#-flashing-from-a-phone--one-cable)).
 
 The easiest way is **[OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio)**: a Windows app that sets up the board for your plane step by step, builds the firmware and flashes it with one button, then helps you get everything working on the ground using live data from the board. From the command line:
 

@@ -6,6 +6,8 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — ställ in, flasha och flyg: flygplan och koptrar (även ett kort som kom med Betaflight). Installationsprogrammet fungerar utan internet — allt som behövs finns med.</a></p>
 <!-- download:end -->
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20Flasha%20fr%C3%A5n%20mobilen-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="Flasha från mobilen"></a></p>
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">Flasha från en Android-mobil direkt i webbläsaren — en USB-C-kabel, inga appar, inga drivrutiner.</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -60,6 +62,38 @@
 <p align="center">
   <img src="../../images/sim/replay_rth.gif" alt="Förbindelsen bruten: planet återvänder hem av sig självt och cirklar" width="576">
 </p>
+
+---
+
+## 📱 Flasha från mobilen — en kabel
+
+<table>
+  <tr>
+    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="../../images/flasher/phone.png" alt="OpenPlane Flasher" width="100%"></a></td>
+    <td>Öppna sidan i Chrome på Android, koppla en USB-C till USB-C-kabel till flygkontrollern och tryck på en knapp. Sidan läser firmwarens pass (<code>@id</code>) och väljer rätt bygge, tangenten <code>D</code> startar om kortet i STM32-bootloadern, bara firmwarens sektorer raderas, skrivs och verifieras genom återläsning. PID, brytare och kalibreringar ligger i en egen sektor — de rörs inte.<br><br><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><b>damir-lebedev.github.io/OpenPlaneProject</b></a></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/flasher/flow.en.svg" alt="OpenPlane Flasher" width="100%"></p>
+
+### 🧱 Geostängsel: en drönare som inte flyger iväg
+
+Rita en cirkel och ett tak — klart. I alla lägen, även ACRO i full fart, bromsar den själv nära kanten och vid kanten tar autopiloten över och flyger tillbaka. GPS borta? Den flyger hem på egna sensorer eller landar.
+
+<table>
+  <tr>
+    <td width="66%"><img src="../../images/copter/fence_studio.gif" alt="Geofence — OpenPlane Studio" width="100%"></td>
+    <td width="34%"><img src="../../images/copter/fence_sim.gif" alt="Geofence — SITL" width="100%"></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/copter/fence_stats.en.svg" alt="Geofence: 60 s, 97 km/h, 9, 72 m / 100" width="100%"></p>
+
+### 🎮 Simulator: flyg innan du köper
+
+<p align="center"><img src="../../images/copter/sim_gates.gif" alt="OpenPlane Studio — simulator" width="100%"></p>
+
+Det är samma firmware som går in i drönaren, byggd för PC (<code>pio run -e sitl</code>). Radio, handkontroll eller tangentbord; bakom-, FPV- eller markkamera; kraschat? <code>R</code> och igen.
 
 ---
 

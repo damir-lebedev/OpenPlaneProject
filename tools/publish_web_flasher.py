@@ -68,7 +68,8 @@ FIRMWARE = [
 
 def run(cmd: list[str], cwd: Path = ROOT, capture: bool = False) -> str:
     print("$", " ".join(cmd))
-    r = subprocess.run(cmd, cwd=cwd, check=True, text=True, capture_output=capture)
+    r = subprocess.run(cmd, cwd=cwd, check=True, text=True, encoding="utf-8", errors="replace",
+                       capture_output=capture)
     return r.stdout.strip() if capture else ""
 
 

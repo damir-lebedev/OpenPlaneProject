@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="Прошивка с телефона: что происходит за полминуты">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1020"/><stop offset=".6" stop-color="#101a36"/><stop offset="1" stop-color="#1b1140"/></linearGradient>
+  <linearGradient id="acc" x1="0" x2="1"><stop offset="0" stop-color="#39d0ff"/><stop offset="1" stop-color="#a371f7"/></linearGradient>
+  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#fff" stroke-opacity=".05"/></pattern>
+  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<rect width="1200" height="300" rx="18" fill="url(#bg)"/><rect width="1200" height="300" rx="18" fill="url(#grid)"/>
+<text x="40" y="46" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="22" font-weight="700" fill="#e6edf7">Прошивка с телефона: что происходит за полминуты</text>
+<path id="wire" d="M110 140 H1090" stroke="#22304f" stroke-width="6" stroke-linecap="round"/>
+<path d="M110 140 H1090" stroke="url(#acc)" stroke-width="3" stroke-dasharray="8 12" fill="none"><animate attributeName="stroke-dashoffset" from="0" to="-40" dur="1s" repeatCount="indefinite"/></path>
+<circle cx="110" cy="140" r="50" fill="#39d0ff" opacity=".0" filter="url(#glow)"><animate attributeName="opacity" values="0;0;.55;0;0" keyTimes="0;0.001;0.040;0.220;1" dur="7.0s" repeatCount="indefinite"/></circle>
+<circle cx="110" cy="140" r="44" fill="#141f36" stroke="url(#acc)" stroke-width="3"/>
+<text x="110" y="146" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="18" font-weight="800" fill="#9fe7ff">Chrome</text>
+<text x="110" y="222" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#e6edf7">на Android</text>
+<text x="110" y="246" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">WebUSB — без приложений</text>
+<circle cx="306" cy="140" r="50" fill="#39d0ff" opacity=".0" filter="url(#glow)"><animate attributeName="opacity" values="0;0;.55;0;0" keyTimes="0;0.157;0.207;0.387;1" dur="7.0s" repeatCount="indefinite"/></circle>
+<circle cx="306" cy="140" r="44" fill="#141f36" stroke="url(#acc)" stroke-width="3"/>
+<text x="306" y="146" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="18" font-weight="800" fill="#9fe7ff">@id</text>
+<text x="306" y="222" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#e6edf7">паспорт прошивки</text>
+<text x="306" y="246" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">плата узнана сама</text>
+<circle cx="502" cy="140" r="50" fill="#39d0ff" opacity=".0" filter="url(#glow)"><animate attributeName="opacity" values="0;0;.55;0;0" keyTimes="0;0.323;0.373;0.553;1" dur="7.0s" repeatCount="indefinite"/></circle>
+<circle cx="502" cy="140" r="44" fill="#141f36" stroke="url(#acc)" stroke-width="3"/>
+<text x="502" y="151" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="30" font-weight="800" fill="#9fe7ff">D</text>
+<text x="502" y="222" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#e6edf7">одна клавиша</text>
+<text x="502" y="246" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">→ загрузчик STM32</text>
+<circle cx="698" cy="140" r="50" fill="#39d0ff" opacity=".0" filter="url(#glow)"><animate attributeName="opacity" values="0;0;.55;0;0" keyTimes="0;0.490;0.540;0.720;1" dur="7.0s" repeatCount="indefinite"/></circle>
+<circle cx="698" cy="140" r="44" fill="#141f36" stroke="url(#acc)" stroke-width="3"/>
+<text x="698" y="151" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="30" font-weight="800" fill="#9fe7ff">⌫</text>
+<text x="698" y="222" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#e6edf7">стирание</text>
+<text x="698" y="246" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">только секторы прошивки</text>
+<circle cx="894" cy="140" r="50" fill="#39d0ff" opacity=".0" filter="url(#glow)"><animate attributeName="opacity" values="0;0;.55;0;0" keyTimes="0;0.657;0.707;0.887;1" dur="7.0s" repeatCount="indefinite"/></circle>
+<circle cx="894" cy="140" r="44" fill="#141f36" stroke="url(#acc)" stroke-width="3"/>
+<text x="894" y="151" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="30" font-weight="800" fill="#9fe7ff">✓</text>
+<text x="894" y="222" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#e6edf7">запись + сверка</text>
+<text x="894" y="246" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">побайтно, чтением</text>
+<circle cx="1090" cy="140" r="50" fill="#39d0ff" opacity=".0" filter="url(#glow)"><animate attributeName="opacity" values="0;0;.55;0;0" keyTimes="0;0.823;0.873;0.999;1" dur="7.0s" repeatCount="indefinite"/></circle>
+<circle cx="1090" cy="140" r="44" fill="#141f36" stroke="url(#acc)" stroke-width="3"/>
+<text x="1090" y="151" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="30" font-weight="800" fill="#9fe7ff">✈</text>
+<text x="1090" y="222" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="17" font-weight="700" fill="#e6edf7">старт</text>
+<text x="1090" y="246" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">настройки на месте</text>
+<circle r="9" fill="#fff" filter="url(#glow)"><animateMotion dur="7.0s" repeatCount="indefinite" path="M110 140 H1150" keyPoints="0;1" keyTimes="0;1" calcMode="linear"/><animate attributeName="opacity" values="1;1;0" keyTimes="0;.93;1" dur="7.0s" repeatCount="indefinite"/></circle>
+</svg>

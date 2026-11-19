@@ -6,6 +6,8 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — सेट करें, फ़्लैश करें और उड़ाएँ: विमान और कॉप्टर (Betaflight वाले बोर्ड सहित)। इंस्टॉलर बिना इंटरनेट के चलता है — ज़रूरी सब कुछ अंदर है।</a></p>
 <!-- download:end -->
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20%E0%A4%AB%E0%A4%BC%E0%A5%8B%E0%A4%A8%20%E0%A4%B8%E0%A5%87%20%E0%A4%AB%E0%A4%BC%E0%A5%8D%E0%A4%B2%E0%A5%88%E0%A4%B6%20%E0%A4%95%E0%A4%B0%E0%A5%87%E0%A4%82-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="फ़ोन से फ़्लैश करें"></a></p>
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">Android फ़ोन के ब्राउज़र से सीधे फ़्लैश करें — एक USB-C केबल, कोई ऐप या ड्राइवर नहीं।</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -60,6 +62,38 @@
 <p align="center">
   <img src="../../images/sim/replay_rth.gif" alt="सिग्नल खो गया: हवाई जहाज़ अपने-आप घर लौटता है और चक्कर लगाता है" width="576">
 </p>
+
+---
+
+## 📱 फ़ोन से फ़्लैश — एक केबल
+
+<table>
+  <tr>
+    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="../../images/flasher/phone.png" alt="OpenPlane Flasher" width="100%"></a></td>
+    <td>Android पर Chrome में पेज खोलें, USB-C से USB-C केबल फ़्लाइट कंट्रोलर में लगाएँ और एक बटन दबाएँ। पेज फ़र्मवेयर का पासपोर्ट (<code>@id</code>) पढ़कर सही बिल्ड चुनता है, <code>D</code> कुंजी बोर्ड को STM32 बूटलोडर में भेजती है, केवल फ़र्मवेयर सेक्टर मिटते हैं, फिर लिखकर पढ़कर जाँच होती है। PID, स्विच और कैलिब्रेशन अलग सेक्टर में रहते हैं — वे सुरक्षित हैं।<br><br><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><b>damir-lebedev.github.io/OpenPlaneProject</b></a></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/flasher/flow.en.svg" alt="OpenPlane Flasher" width="100%"></p>
+
+### 🧱 जियोफ़ेंस: ड्रोन जो उड़कर नहीं जाएगा
+
+एक घेरा और ऊँचाई की सीमा बनाइए — बस। किसी भी मोड में, पूरी रफ़्तार ACRO में भी, किनारे के पास ड्रोन खुद ब्रेक लगाता है और किनारे पर ऑटोपायलट उसे वापस लाता है। GPS गया — खुद घर लौटता है या उतरता है।
+
+<table>
+  <tr>
+    <td width="66%"><img src="../../images/copter/fence_studio.gif" alt="Geofence — OpenPlane Studio" width="100%"></td>
+    <td width="34%"><img src="../../images/copter/fence_sim.gif" alt="Geofence — SITL" width="100%"></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/copter/fence_stats.en.svg" alt="Geofence: 60 s, 97 km/h, 9, 72 m / 100" width="100%"></p>
+
+### 🎮 सिम्युलेटर: खरीदने से पहले उड़ाइए
+
+<p align="center"><img src="../../images/copter/sim_gates.gif" alt="OpenPlane Studio — simulator" width="100%"></p>
+
+यह वही फ़र्मवेयर है जो ड्रोन में जाएगा, PC के लिए बनाया गया (<code>pio run -e sitl</code>)। रिमोट, गेमपैड या कीबोर्ड; पीछे, FPV या ज़मीन का कैमरा; गिरे तो <code>R</code>।
 
 ---
 

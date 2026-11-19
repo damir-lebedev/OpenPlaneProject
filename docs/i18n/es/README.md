@@ -6,6 +6,8 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio: configura, flashea y vuela aviones y multirrotores (incluida una placa que venía con Betaflight). El instalador funciona sin internet: lleva todo dentro.</a></p>
 <!-- download:end -->
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20Flashear%20desde%20el%20m%C3%B3vil-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="Flashear desde el móvil"></a></p>
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">Flashea desde un móvil Android en el navegador: un cable USB-C, sin apps ni drivers.</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -60,6 +62,38 @@
 <p align="center">
   <img src="../../images/sim/replay_rth.gif" alt="Pérdida de señal: el avión vuelve solo a casa y da vueltas" width="576">
 </p>
+
+---
+
+## 📱 Flashear desde el móvil — un cable
+
+<table>
+  <tr>
+    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="../../images/flasher/phone.png" alt="OpenPlane Flasher" width="100%"></a></td>
+    <td>Abre la página en Chrome para Android, conecta un cable USB-C a USB-C a la controladora y pulsa un botón. La página lee el pasaporte del firmware (<code>@id</code>) y elige la compilación, la tecla <code>D</code> reinicia la placa en el bootloader STM32, se borran solo los sectores del firmware, se escribe y se verifica leyendo. PID, interruptores y calibraciones están en otro sector: no se tocan.<br><br><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><b>damir-lebedev.github.io/OpenPlaneProject</b></a></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/flasher/flow.en.svg" alt="OpenPlane Flasher" width="100%"></p>
+
+### 🧱 Geovalla: un dron que no se escapa
+
+Dibuja un círculo y un techo, y listo. En cualquier modo, incluso ACRO a fondo, frena solo al acercarse al borde y en el borde el piloto automático toma el control y lo trae de vuelta. ¿Sin GPS? Vuelve a casa con sus sensores o aterriza.
+
+<table>
+  <tr>
+    <td width="66%"><img src="../../images/copter/fence_studio.gif" alt="Geofence — OpenPlane Studio" width="100%"></td>
+    <td width="34%"><img src="../../images/copter/fence_sim.gif" alt="Geofence — SITL" width="100%"></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/copter/fence_stats.en.svg" alt="Geofence: 60 s, 97 km/h, 9, 72 m / 100" width="100%"></p>
+
+### 🎮 Simulador: vuela antes de comprar
+
+<p align="center"><img src="../../images/copter/sim_gates.gif" alt="OpenPlane Studio — simulator" width="100%"></p>
+
+Es el mismo firmware que va al dron, compilado para PC (<code>pio run -e sitl</code>). Emisora, mando o teclado; cámara trasera, FPV o desde tierra; ¿te estrellas? <code>R</code> y otra vez.
 
 ---
 

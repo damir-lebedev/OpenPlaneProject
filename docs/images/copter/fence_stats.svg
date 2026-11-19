@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="Геозабор: минута робота-пилота в ACRO">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1020"/><stop offset=".6" stop-color="#101a36"/><stop offset="1" stop-color="#1b1140"/></linearGradient>
+  <linearGradient id="acc" x1="0" x2="1"><stop offset="0" stop-color="#39d0ff"/><stop offset="1" stop-color="#a371f7"/></linearGradient>
+  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#fff" stroke-opacity=".05"/></pattern>
+  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<defs><linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#39d0ff" stop-opacity="0"/><stop offset="1" stop-color="#39d0ff" stop-opacity=".45"/></linearGradient></defs>
+<rect width="1200" height="360" rx="18" fill="url(#bg)"/><rect width="1200" height="360" rx="18" fill="url(#grid)"/>
+<text x="380" y="62" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="26" font-weight="800" fill="#e6edf7">Геозабор: минута робота-пилота в ACRO</text>
+<text x="380" y="90" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">SITL — вся прошивка коптера на ПК · test_geofence_acro_pilot_cannot_leave</text>
+<circle cx="190" cy="200" r="130" fill="#0f1a30" stroke="#39d0ff" stroke-width="3"/>
+<circle cx="190" cy="200" r="43" fill="none" stroke="#39d0ff" stroke-opacity=".15"/>
+<circle cx="190" cy="200" r="86" fill="none" stroke="#39d0ff" stroke-opacity=".15"/>
+<circle cx="190" cy="200" r="94" fill="none" stroke="#f87171" stroke-opacity=".5" stroke-dasharray="4 6"/>
+<path d="M190 200 L320 200 A130 130 0 0 0 302.6 135.0 Z" fill="url(#sweep)"><animateTransform attributeName="transform" type="rotate" from="0 190 200" to="-360 190 200" dur="4s" repeatCount="indefinite"/></path>
+<path d="M190 200 L215 130 L223 108 L210 140 L170 250 L160 290 L172 258 L190 200" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-opacity=".55" stroke-linejoin="round"/>
+<circle r="8" fill="#fbbf24" filter="url(#glow)"><animateMotion dur="6s" repeatCount="indefinite" path="M190 200 L215 130 L223 108 L210 140 L170 250 L160 290 L172 258 L190 200"/></circle>
+<circle cx="190" cy="200" r="6" fill="#34d399"/>
+<text x="190" y="222" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="700" fill="#34d399">дом</text>
+<text x="190" y="58" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#39d0ff">забор 100 м</text>
+<rect x="380" y="125" width="182" height="180" rx="16" fill="#141f36" stroke="#22304f"/>
+<text x="398" y="200" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="44" font-weight="800" fill="#9fe7ff">60 с<animate attributeName="opacity" values=".35;1;1" keyTimes="0;.15;1" dur="6s" begin="0.0s" repeatCount="indefinite"/></text>
+<text x="398" y="244" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf7">наклон 50° — робот</text>
+<text x="398" y="266" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">рвётся наружу</text>
+<rect x="572" y="125" width="182" height="180" rx="16" fill="#141f36" stroke="#22304f"/>
+<text x="590" y="200" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="34" font-weight="800" fill="#9fe7ff">97 км/ч<animate attributeName="opacity" values=".35;1;1" keyTimes="0;.15;1" dur="6s" begin="0.25s" repeatCount="indefinite"/></text>
+<text x="590" y="244" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf7">максимальная скорость</text>
+<text x="590" y="266" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">у края забора</text>
+<rect x="764" y="125" width="182" height="180" rx="16" fill="#141f36" stroke="#22304f"/>
+<text x="782" y="200" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="44" font-weight="800" fill="#fbbf24">9<animate attributeName="opacity" values=".35;1;1" keyTimes="0;.15;1" dur="6s" begin="0.5s" repeatCount="indefinite"/></text>
+<text x="782" y="244" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf7">перехватов автомата</text>
+<text x="782" y="266" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">тормозит и ведёт назад</text>
+<rect x="956" y="125" width="182" height="180" rx="16" fill="#141f36" stroke="#22304f"/>
+<text x="974" y="200" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="44" font-weight="800" fill="#9fe7ff">72 м<animate attributeName="opacity" values=".35;1;1" keyTimes="0;.15;1" dur="6s" begin="0.75s" repeatCount="indefinite"/></text>
+<text x="974" y="244" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf7">из 100 — дальше</text>
+<text x="974" y="266" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">не пустил ни разу</text>
+</svg>

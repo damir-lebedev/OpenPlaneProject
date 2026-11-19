@@ -6,6 +6,8 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — einrichten, flashen und fliegen: Flugzeuge und Copter (auch ein Board, das mit Betaflight kam). Der Installer funktioniert offline — alles Nötige ist dabei.</a></p>
 <!-- download:end -->
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20Vom%20Handy%20flashen-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="Vom Handy flashen"></a></p>
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">Vom Android-Handy direkt im Browser flashen — ein USB-C-Kabel, keine Apps, keine Treiber.</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -60,6 +62,38 @@
 <p align="center">
   <img src="../../images/sim/replay_rth.gif" alt="Verbindungsverlust: Das Flugzeug kehrt von selbst nach Hause zurück und kreist" width="576">
 </p>
+
+---
+
+## 📱 Vom Handy flashen — ein Kabel
+
+<table>
+  <tr>
+    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="../../images/flasher/phone.png" alt="OpenPlane Flasher" width="100%"></a></td>
+    <td>Seite in Chrome auf Android öffnen, USB-C-zu-USB-C-Kabel in den Flugcontroller stecken, einen Knopf drücken. Die Seite liest den Firmware-Pass (<code>@id</code>) und wählt den passenden Build, die Taste <code>D</code> startet die Platine in den STM32-Bootloader, nur die Firmware-Sektoren werden gelöscht, geschrieben und per Rücklesen geprüft. PID, Schalter und Kalibrierungen liegen in einem eigenen Sektor — bleiben erhalten.<br><br><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><b>damir-lebedev.github.io/OpenPlaneProject</b></a></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/flasher/flow.en.svg" alt="OpenPlane Flasher" width="100%"></p>
+
+### 🧱 Geozaun: eine Drohne, die nicht abhaut
+
+Kreis und Decke festlegen — fertig. In jedem Modus, selbst ACRO mit Vollgas, bremst sie vor dem Rand selbst, am Rand übernimmt der Autopilot und bringt sie zurück. GPS weg? Sie fliegt mit eigenen Sensoren heim oder landet.
+
+<table>
+  <tr>
+    <td width="66%"><img src="../../images/copter/fence_studio.gif" alt="Geofence — OpenPlane Studio" width="100%"></td>
+    <td width="34%"><img src="../../images/copter/fence_sim.gif" alt="Geofence — SITL" width="100%"></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/copter/fence_stats.en.svg" alt="Geofence: 60 s, 97 km/h, 9, 72 m / 100" width="100%"></p>
+
+### 🎮 Simulator: fliegen, bevor man kauft
+
+<p align="center"><img src="../../images/copter/sim_gates.gif" alt="OpenPlane Studio — simulator" width="100%"></p>
+
+Dieselbe Firmware wie in der Drohne, für den PC gebaut (<code>pio run -e sitl</code>). Fernsteuerung, Gamepad oder Tastatur; Verfolger-, FPV- oder Bodenkamera; abgestürzt? <code>R</code> und weiter.
 
 ---
 

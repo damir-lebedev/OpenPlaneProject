@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-label="Geofence: a robot pilot in ACRO for a minute">
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0b1020"/><stop offset=".6" stop-color="#101a36"/><stop offset="1" stop-color="#1b1140"/></linearGradient>
+  <linearGradient id="acc" x1="0" x2="1"><stop offset="0" stop-color="#39d0ff"/><stop offset="1" stop-color="#a371f7"/></linearGradient>
+  <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#fff" stroke-opacity=".05"/></pattern>
+  <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<defs><linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#39d0ff" stop-opacity="0"/><stop offset="1" stop-color="#39d0ff" stop-opacity=".45"/></linearGradient></defs>
+<rect width="1200" height="360" rx="18" fill="url(#bg)"/><rect width="1200" height="360" rx="18" fill="url(#grid)"/>
+<text x="380" y="62" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="26" font-weight="800" fill="#e6edf7">Geofence: a robot pilot in ACRO for a minute</text>
+<text x="380" y="90" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">SITL — the whole copter firmware on a PC · test_geofence_acro_pilot_cannot_leave</text>
+<circle cx="190" cy="200" r="130" fill="#0f1a30" stroke="#39d0ff" stroke-width="3"/>
+<circle cx="190" cy="200" r="43" fill="none" stroke="#39d0ff" stroke-opacity=".15"/>
+<circle cx="190" cy="200" r="86" fill="none" stroke="#39d0ff" stroke-opacity=".15"/>
+<circle cx="190" cy="200" r="94" fill="none" stroke="#f87171" stroke-opacity=".5" stroke-dasharray="4 6"/>
+<path d="M190 200 L320 200 A130 130 0 0 0 302.6 135.0 Z" fill="url(#sweep)"><animateTransform attributeName="transform" type="rotate" from="0 190 200" to="-360 190 200" dur="4s" repeatCount="indefinite"/></path>
+<path d="M190 200 L215 130 L223 108 L210 140 L170 250 L160 290 L172 258 L190 200" fill="none" stroke="#fbbf24" stroke-width="2.5" stroke-opacity=".55" stroke-linejoin="round"/>
+<circle r="8" fill="#fbbf24" filter="url(#glow)"><animateMotion dur="6s" repeatCount="indefinite" path="M190 200 L215 130 L223 108 L210 140 L170 250 L160 290 L172 258 L190 200"/></circle>
+<circle cx="190" cy="200" r="6" fill="#34d399"/>
+<text x="190" y="222" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="12" font-weight="700" fill="#34d399">home</text>
+<text x="190" y="58" text-anchor="middle" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="13" font-weight="700" fill="#39d0ff">fence 100 m</text>
+<rect x="380" y="125" width="182" height="180" rx="16" fill="#141f36" stroke="#22304f"/>
+<text x="398" y="200" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="44" font-weight="800" fill="#9fe7ff">60 s<animate attributeName="opacity" values=".35;1;1" keyTimes="0;.15;1" dur="6s" begin="0.0s" repeatCount="indefinite"/></text>
+<text x="398" y="244" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf7">50° tilt — a robot</text>
+<text x="398" y="266" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">pushing outward</text>
+<rect x="572" y="125" width="182" height="180" rx="16" fill="#141f36" stroke="#22304f"/>
+<text x="590" y="200" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="34" font-weight="800" fill="#9fe7ff">97 km/h<animate attributeName="opacity" values=".35;1;1" keyTimes="0;.15;1" dur="6s" begin="0.25s" repeatCount="indefinite"/></text>
+<text x="590" y="244" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf7">top speed</text>
+<text x="590" y="266" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">at the fence</text>
+<rect x="764" y="125" width="182" height="180" rx="16" fill="#141f36" stroke="#22304f"/>
+<text x="782" y="200" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="44" font-weight="800" fill="#fbbf24">9<animate attributeName="opacity" values=".35;1;1" keyTimes="0;.15;1" dur="6s" begin="0.5s" repeatCount="indefinite"/></text>
+<text x="782" y="244" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf7">autopilot takeovers</text>
+<text x="782" y="266" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">brake and bring back</text>
+<rect x="956" y="125" width="182" height="180" rx="16" fill="#141f36" stroke="#22304f"/>
+<text x="974" y="200" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="44" font-weight="800" fill="#9fe7ff">72 m<animate attributeName="opacity" values=".35;1;1" keyTimes="0;.15;1" dur="6s" begin="0.75s" repeatCount="indefinite"/></text>
+<text x="974" y="244" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="15" font-weight="600" fill="#e6edf7">of 100 — never</text>
+<text x="974" y="266" font-family="'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif" font-size="14" fill="#8ea0bf">got any further</text>
+</svg>

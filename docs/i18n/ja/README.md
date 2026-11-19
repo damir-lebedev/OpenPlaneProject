@@ -6,6 +6,8 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — 設定・書き込み・飛行まで：固定翼とマルチコプター（Betaflight から移行するボードも）。インストーラーはオフラインで動作し、必要なものはすべて同梱。</a></p>
 <!-- download:end -->
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20%E3%82%B9%E3%83%9E%E3%83%9B%E3%81%8B%E3%82%89%E6%9B%B8%E3%81%8D%E8%BE%BC%E3%81%BF-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="スマホから書き込み"></a></p>
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">Android スマホのブラウザから直接書き込み — USB-C ケーブル 1 本、アプリもドライバーも不要。</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -60,6 +62,38 @@
 <p align="center">
   <img src="../../images/sim/replay_rth.gif" alt="信号喪失：飛行機が自分で帰還して旋回する" width="576">
 </p>
+
+---
+
+## 📱 スマホから書き込み — ケーブル 1 本
+
+<table>
+  <tr>
+    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="../../images/flasher/phone.png" alt="OpenPlane Flasher" width="100%"></a></td>
+    <td>Android の Chrome でページを開き、USB-C to USB-C ケーブルをフライトコントローラーに挿してボタンを 1 回押すだけ。ページがファームウェアのパスポート（<code>@id</code>）を読んで適切なビルドを選び、<code>D</code> キーで STM32 ブートローダーへ再起動、ファームウェアのセクターだけを消去・書き込み・読み戻し検証します。PID、スイッチ、キャリブレーションは別セクターにあり、消えません。<br><br><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><b>damir-lebedev.github.io/OpenPlaneProject</b></a></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/flasher/flow.en.svg" alt="OpenPlane Flasher" width="100%"></p>
+
+### 🧱 ジオフェンス：飛び去らないドローン
+
+円と高度上限を描くだけ。どのモードでも、全速の ACRO でも、端に近づくと自動で減速し、端ではオートパイロットが操縦を引き取って戻します。GPS を失ったら自分のセンサーで帰還するか着陸します。
+
+<table>
+  <tr>
+    <td width="66%"><img src="../../images/copter/fence_studio.gif" alt="Geofence — OpenPlane Studio" width="100%"></td>
+    <td width="34%"><img src="../../images/copter/fence_sim.gif" alt="Geofence — SITL" width="100%"></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/copter/fence_stats.en.svg" alt="Geofence: 60 s, 97 km/h, 9, 72 m / 100" width="100%"></p>
+
+### 🎮 シミュレーター：買う前に飛ばす
+
+<p align="center"><img src="../../images/copter/sim_gates.gif" alt="OpenPlane Studio — simulator" width="100%"></p>
+
+ドローンに入るのと同じファームウェアを PC 向けにビルドしたもの（<code>pio run -e sitl</code>）。送信機、ゲームパッド、キーボード；後方・FPV・地上カメラ；墜落したら <code>R</code>。
 
 ---
 

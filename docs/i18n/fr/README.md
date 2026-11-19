@@ -6,6 +6,8 @@
 </p>
 <p align="center"><a href="https://github.com/damir-lebedev/openplane-studio/releases/latest">OpenPlane Studio — configurer, flasher et voler : avions et multirotors (y compris une carte livrée avec Betaflight). L'installateur fonctionne hors ligne — tout le nécessaire est inclus.</a></p>
 <!-- download:end -->
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="https://img.shields.io/badge/%F0%9F%93%B1%20Flasher%20depuis%20le%20t%C3%A9l%C3%A9phone-Android%20%C2%B7%20Chrome%20%C2%B7%20USB--C-38bdf8?style=for-the-badge&logo=android&logoColor=white" alt="Flasher depuis le téléphone"></a></p>
+<p align="center"><a href="https://damir-lebedev.github.io/OpenPlaneProject/">Flashez depuis un téléphone Android dans le navigateur — un câble USB-C, sans appli ni pilote.</a></p>
 
 <!-- i18n-bar:start -->
   <p align="center">
@@ -60,6 +62,38 @@
 <p align="center">
   <img src="../../images/sim/replay_rth.gif" alt="Perte du signal : l’avion rentre seul à la maison et tourne en cercle" width="576">
 </p>
+
+---
+
+## 📱 Flasher depuis le téléphone — un seul câble
+
+<table>
+  <tr>
+    <td width="36%"><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><img src="../../images/flasher/phone.png" alt="OpenPlane Flasher" width="100%"></a></td>
+    <td>Ouvrez la page dans Chrome sur Android, branchez un câble USB-C vers USB-C au contrôleur de vol et appuyez sur un bouton. La page lit le passeport du firmware (<code>@id</code>) et choisit la bonne version, la touche <code>D</code> redémarre la carte dans le bootloader STM32, seuls les secteurs du firmware sont effacés, écrits puis vérifiés par relecture. PID, interrupteurs et calibrations sont dans un autre secteur — intacts.<br><br><a href="https://damir-lebedev.github.io/OpenPlaneProject/"><b>damir-lebedev.github.io/OpenPlaneProject</b></a></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/flasher/flow.en.svg" alt="OpenPlane Flasher" width="100%"></p>
+
+### 🧱 Géobarrière : un drone qui ne s'échappe pas
+
+Tracez un cercle et un plafond — c'est tout. Dans tous les modes, même en ACRO à fond, il freine seul près du bord et au bord le pilote automatique reprend la main et le ramène. GPS perdu ? Il rentre avec ses capteurs ou se pose.
+
+<table>
+  <tr>
+    <td width="66%"><img src="../../images/copter/fence_studio.gif" alt="Geofence — OpenPlane Studio" width="100%"></td>
+    <td width="34%"><img src="../../images/copter/fence_sim.gif" alt="Geofence — SITL" width="100%"></td>
+  </tr>
+</table>
+
+<p align="center"><img src="../../images/copter/fence_stats.en.svg" alt="Geofence: 60 s, 97 km/h, 9, 72 m / 100" width="100%"></p>
+
+### 🎮 Simulateur : volez avant d'acheter
+
+<p align="center"><img src="../../images/copter/sim_gates.gif" alt="OpenPlane Studio — simulator" width="100%"></p>
+
+C'est le même firmware que dans le drone, compilé pour PC (<code>pio run -e sitl</code>). Radio, manette ou clavier ; caméra arrière, FPV ou au sol ; crash ? <code>R</code> et on recommence.
 
 ---
 
