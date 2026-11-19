@@ -113,104 +113,177 @@ Studio — `S` + номер), новые — `P` + номер.
 
 ## 3. Раздел A — для пользователя: начинающий пилот и оператор (по порядку)
 
-### A0. OpenPlane Studio для Android — APK (приоритет пользователя, 2026-11-19)
-
-Зачем: в поле нет ноутбука. Геозабор, тумблеры, PID, failsafe бессмысленны, если их нельзя
-настроить на месте, — поэтому нужна **вся Studio на телефоне**, а не одна кнопка «прошить».
-Первый тестер — пилот-донатор, шьёт с Android по кабелю USB-C ⇄ USB-C: как только будет APK
-(P46 + P47), отдать ему debug-сборку. Веб-прошивальщик (WebUSB) удалён 2026-11-19 по решению
-пользователя; **его DfuSe — наш код** (`git show 4b93d79:tools/web-flasher/flasher.js`: @id → `D` →
-DfuSe, стирание только секторов прошивки, сверка чтением; проверен на имитации загрузчика) —
-логику переносить в Kotlin оттуда. Пункты — по порядку, каждый — отдельный коммит.
-На Android нет pio/python: сборки прошивки нет, только готовые `.bin` (релиз или экспорт с ПК, P48).
-Всё, что меняется настройками (`set …` по консоли: геозабор, PID, тумблеры, failsafe, OSD), на
-телефоне работает полностью — через тот же `core/link.ts`.
-
-- [ ] **P46 · Android-каркас Studio, APK собирается.** Studio (`../openplane-studio`, Tauri 2 + React/TS),
-  репозиторий целиком не изучать — карта:
-  - `src-tauri/Cargo.toml`: `serialport = "4"` и `nusb = "0.2"` на Android не соберутся → в
-    `[target.'cfg(not(target_os = "android"))'.dependencies]` (`sysinfo`, `sha2` — проверить).
-  - `src-tauri/src/lib.rs`: точка входа уже `#[cfg_attr(mobile, tauri::mobile_entry_point)]` (стр. ~379);
-    модули `firmware.rs` (pio build/upload, opconfig), `source.rs`, `setup.rs`, `update.rs`, `system.rs`,
-    `devices.rs`, `link.rs`, `radio.rs`, `blackbox.rs`, `sitl.rs` — всё с pio/python/serialport/nusb закрыть
-    `#[cfg(desktop)]`; на mobile — те же команды-заглушки с `Err("недоступно на Android")`,
-    чтобы `generate_handler!` и фронт не менялись. `hangar.rs`, `util.rs` — скорее всего общие.
-  - `src-tauri/tauri.conf.json`: identifier `com.openplane.studio` оставить; секция android (minSdk 24).
-  - `src/api.ts`: `isMobile()` (UA или `@tauri-apps/plugin-os` — плагинов сейчас нет, лишний не тащить).
-  - `src/App.tsx`: на телефоне скрыть то, что требует ПК: сборка из исходников, «Скачать с GitHub»
-    исходники, «Подготовка компьютера» (pio/драйверы), симулятор SITL (`sitl.rs` — процесс на ПК).
-  - Шаги: `npx tauri android init` (`src-tauri/gen/android` — в git) → `cargo check --target
-    aarch64-linux-android` зелёный → `npx tauri android build --apk --target aarch64` (debug-подпись).
-    Нет Android SDK/NDK/JDK 17 на машине — сказать пользователю, что поставить (Android Studio →
-    SDK + NDK, `JAVA_HOME`, `ANDROID_HOME`, `NDK_HOME`), не ставить молча гигабайты.
-  - Десктоп не сломать: `npx tsc --noEmit && npx vitest run`, `cargo test --offline`.
-  - `docs/ANDROID.md` (Studio, по-русски, коротко): что нужно и как собрать APK.
-- [ ] **P47 · USB-OTG на Android: консоль платы и прошивка DfuSe (плагин на Kotlin).**
-  - Плагин `src-tauri/plugins/usb-android/` (Rust-часть + `android/` на Kotlin), подключить
-    `.plugin(...)` только под `cfg(mobile)`.
-  - Kotlin: `UsbManager`, разрешение через `PendingIntent`; CDC — `com.github.mik3y:usb-serial-for-android`
-    (MIT, JitPack). Команды: `list_devices` (VID/PID, имя, серийник), `serial_open` (115200, **DTR=on** —
-    без DTR плата молчит) / `serial_write` / событие `serial_data` / `serial_close`,
-    `dfu_flash(bin, address=0x08000000, limit)` с событиями прогресса.
-  - DfuSe 0483:DF11 (H743, F405): GETSTATUS/CLRSTATUS, карта секторов из строки интерфейса
-    (`@Internal Flash /0x08000000/…`), стирание **только секторов под образ** (0x41 + адрес),
-    **предел — начало сектора настроек: H743 `0x081E0000`, F405 `0x080E0000`** (больше — отказ, настройки
-    коптера не трогать), SET_ADDRESS 0x21, DNLOAD блоками по размеру из функционального дескриптора
-    (обычно 2048), сверка чтением (UPLOAD), выход (manifest). Эталон — наш `flasher.js` из 4b93d79;
-    код Betaflight Configurator (GPL) не копировать.
-  - Вход в DFU: в консоль `D` → ждать 0483:DF11 до 10 с; заармленная плата — отказ с понятным текстом.
-  - `src-tauri/gen/android/app/src/main/AndroidManifest.xml`: `uses-feature android.hardware.usb.host`,
-    intent-filter `USB_DEVICE_ATTACHED` + `res/xml/device_filter.xml` (0483:5740 — проверить, какой
-    VID/PID отдаёт наша прошивка в USB-дескрипторе, 0483:DF11, 303a:* ESP32).
-  - `src/api.ts`: на mobile команды `link.rs` и upload из `firmware.rs` идут в плагин с тем же
-    интерфейсом — `core/link.ts`, `core/live.ts` и экраны не меняются.
-  - Тесты: unit-тесты Kotlin (разбор DFU-статусов и карты секторов, разбиение образа, предел настроек).
-    APK собрать. Прошивку на реальном телефоне делает пользователь/тестер — шаги ему написать. — Стенд: да
-- [ ] **P48 · Экраны Studio на телефоне + прошивка готовым .bin + экспорт с ПК.**
-  - `src/flash.ts`: ветка mobile — выбрать `.bin` (нужен `@tauri-apps/plugin-dialog`) или скачать готовый
-    из последнего релиза (`releases/latest/download/firmware-<env>.bin`, P49) → проверить размер и env
-    (по `@id` платы и имени файла) → `D` → `dfu_flash` → прогресс → проверка калибровок, как на ПК.
-  - `src-tauri/src/firmware.rs`: команда `export_bin(env)` — копия `.pio/build/<env>/firmware.bin`
-    (есть `fn firmware_file`) с именем самолёта в имени файла; кнопка «Экспорт для телефона» в прошивке на ПК
-    (самолёт со своими датчиками и тумблерами собирается только на ПК — Config.h компилируется).
-  - Вёрстка 360–420 px: `src/styles.css`, `live.css` — меню в «гамбургер», без горизонтальной
-    прокрутки, крупные касания; прогнать все вкладки коптера (геозабор, тумблеры, PID, failsafe, OSD,
-    чёрный ящик) на эмуляторе Android или в окне 400 px.
-  - Переводы: `src/locales/en.json` (отступ 2), `en.firmware.json` (отступ 1), `python tools/i18n_check.py`.
-  - Тесты: выбор env по имени `.bin` и по `@id`; `npx tsc --noEmit && npx vitest run`.
-- [ ] **P49 · APK и готовые прошивки в GitHub-релиз, кнопка «Скачать на Android».**
-  - `../openplane-studio/.github/workflows/installers.yml` (jobs `build` matrix macOS×2/Windows и
-    `release` с `needs: build`): job `android` (ubuntu-latest: setup-java 17, android-actions/setup-android,
-    NDK, `rustup target add aarch64-linux-android armv7-linux-androideabi`, `npx tauri android build --apk`),
-    подпись — keystore из secrets `ANDROID_KEYSTORE` (base64), `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`;
-    файл `OpenPlane-Studio-Android.apk`; добавить в `needs` у `release`. Keystore и secrets создаёт
-    пользователь — написать ему команды (`keytool …`, Settings → Secrets), самому секреты не трогать.
-  - Job `firmware`: `pio run` для `stm32h743-devebox`, `matek-h743`, `matek-h743-quad`,
-    `stm32h743-devebox-quad`, `aocodarc-f405v3-quad` (не `getfun-f405v3-quad` — `#error` до дампа платы)
-    → `firmware-<env>.bin` в тот же релиз.
-  - Кнопки: `README.md` между `<!-- download:start -->` и `<!-- download:end -->` — shields-бейдж
-    «Скачать · Android», цвет `3DDC84`, `logo=android` →
-    `https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Android.apk`;
-    то же в `../openplane-studio/README.md` и в `docs/i18n/<lang>/README.md` (11 языков, подпись на языке).
-    Строку «приложение для Windows и macOS» в «Быстром старте» и строку «Прошить» в «За 30 секунд» —
-    дополнить Android (там сейчас «в работе»).
-  - Сайт: на lebedev-space.ru/studio заменить тизер «Скоро на Android» на кнопку APK
-    (`C:\Damir\SERVER\lebedev-space\server\lib\studio-phone.js`, `studio.js` PLATFORMS) — коммит там,
-    деплой — скриптом пользователя.
-- [ ] **P50 · ESP32 (S3/C3): прошивка по WiFi с Android.** STM32 не трогать — у них нет WiFi; ELRS ни при чём.
-  - **Сначала спросить пользователя:** в `partitions_blackbox.csv` (ESP32-S3 16 МБ) одна app-область
-    (`app0` 2 МБ, «OTA is not used»), чёрный ящик 13.9 МБ. Для OTA нужна вторая (`app1` 2 МБ → ящик
-    ≈11.9 МБ) — предложить разметку, `nvs` не двигать (калибровки).
-  - Прошивка: `include/telemetry/WifiOta.h` — только на земле (DISARM, газ в нуле — см. ArmingManager),
-    включение клавишей в `DebugConsole.h` или жестом стиков; точка доступа `OpenPlane-XXXX` с паролем,
-    HTTP POST `/update` через `Update.h`, проверка образа, отказ при ARM, через 5 мин WiFi выключить.
-    Посмотреть `WebDebugServer.h` — WiFi-стек там уже есть. Константы — в `include/config/Config.h`
-    с `@range` (их читает `tools/opconfig.py`).
-  - Studio: способ «WiFi» в `src/flash.ts` (на Android — подключение к точке через `WifiNetworkSpecifier`
-    в плагине P47), отправка `.bin`, прогресс.
-  - Тесты `test/native`: разрешение OTA (ARM / газ / таймаут). `pio run -e esp32-s3`, `pio test -e native`.
-  - Документация: раздел в `docs/` + переводы `docs/i18n/<lang>/`.
-
+### A0. OpenPlane Studio для Android — APK (приоритет пользователя, 2026-11-19)
+
+
+
+Зачем: в поле нет ноутбука. Геозабор, тумблеры, PID, failsafe бессмысленны, если их нельзя
+
+настроить на месте, — поэтому нужна **вся Studio на телефоне**, а не одна кнопка «прошить».
+
+Первый тестер — пилот-донатор, шьёт с Android по кабелю USB-C ⇄ USB-C: как только будет APK
+
+(P46 + P47), отдать ему debug-сборку. Веб-прошивальщик (WebUSB) удалён 2026-11-19 по решению
+
+пользователя; **его DfuSe — наш код** (`git show 4b93d79:tools/web-flasher/flasher.js`: @id → `D` →
+
+DfuSe, стирание только секторов прошивки, сверка чтением; проверен на имитации загрузчика) —
+
+логику переносить в Kotlin оттуда. Пункты — по порядку, каждый — отдельный коммит.
+
+На Android нет pio/python: сборки прошивки нет, только готовые `.bin` (релиз или экспорт с ПК, P48).
+
+Всё, что меняется настройками (`set …` по консоли: геозабор, PID, тумблеры, failsafe, OSD), на
+
+телефоне работает полностью — через тот же `core/link.ts`.
+
+
+
+- Сделано (P46 a, 2026-11-20, Studio `cbacf26`): Rust собирается под `aarch64-linux-android`
+  (`cargo check` зелёный без NDK; `serialport`/`nusb` — только не-Android, команды COM-порта на
+  телефоне отвечают `NOT_ON_ANDROID: …`, `devices::list` пуст, ангар — в `app_data_dir/Hangar`);
+  `isMobile()` в `src/api.ts` (Android в UA) прячет «Симулятор», окно подготовки, обновление .exe,
+  разделы «Настроек» про исходники/подготовку/сборку; `bundle.android.minSdkVersion = 24`;
+  `docs/ANDROID.md`; тест `components/__tests__/mobile.test.tsx`. Команды pio/python на телефоне
+  не закрыты cfg — они собираются и просто падают «не найден», окно их не показывает.
+- [ ] **P46 b · APK собирается.** На машине нет Android SDK/NDK/JDK — ждёт установки
+  пользователем (`openplane-studio/docs/ANDROID.md`: Android Studio → SDK 34 + NDK + Build/Platform/
+  Command-line Tools, `JAVA_HOME` = `…\Android Studio\jbr`, `ANDROID_HOME`, `NDK_HOME`). Потом:
+  `rustup target add` (4 цели), `npx tauri android init` (`src-tauri/gen/android` — в git; capabilities
+  получат mobile-schema), `npx tauri android build --apk --target aarch64 --debug`; если упадёт на
+  крейте с C-кодом (cc) — смотреть NDK_HOME. Десктоп не сломать (`tsc`, `vitest`, `cargo test`).
+- [ ] **P47 · USB-OTG на Android: консоль платы и прошивка DfuSe (плагин на Kotlin).**
+
+  - Плагин `src-tauri/plugins/usb-android/` (Rust-часть + `android/` на Kotlin), подключить
+
+    `.plugin(...)` только под `cfg(mobile)`.
+
+  - Kotlin: `UsbManager`, разрешение через `PendingIntent`; CDC — `com.github.mik3y:usb-serial-for-android`
+
+    (MIT, JitPack). Команды: `list_devices` (VID/PID, имя, серийник), `serial_open` (115200, **DTR=on** —
+
+    без DTR плата молчит) / `serial_write` / событие `serial_data` / `serial_close`,
+
+    `dfu_flash(bin, address=0x08000000, limit)` с событиями прогресса.
+
+  - DfuSe 0483:DF11 (H743, F405): GETSTATUS/CLRSTATUS, карта секторов из строки интерфейса
+
+    (`@Internal Flash /0x08000000/…`), стирание **только секторов под образ** (0x41 + адрес),
+
+    **предел — начало сектора настроек: H743 `0x081E0000`, F405 `0x080E0000`** (больше — отказ, настройки
+
+    коптера не трогать), SET_ADDRESS 0x21, DNLOAD блоками по размеру из функционального дескриптора
+
+    (обычно 2048), сверка чтением (UPLOAD), выход (manifest). Эталон — наш `flasher.js` из 4b93d79;
+
+    код Betaflight Configurator (GPL) не копировать.
+
+  - Вход в DFU: в консоль `D` → ждать 0483:DF11 до 10 с; заармленная плата — отказ с понятным текстом.
+
+  - `src-tauri/gen/android/app/src/main/AndroidManifest.xml`: `uses-feature android.hardware.usb.host`,
+
+    intent-filter `USB_DEVICE_ATTACHED` + `res/xml/device_filter.xml` (0483:5740 — проверить, какой
+
+    VID/PID отдаёт наша прошивка в USB-дескрипторе, 0483:DF11, 303a:* ESP32).
+
+  - `src/api.ts`: на mobile команды `link.rs` и upload из `firmware.rs` идут в плагин с тем же
+
+    интерфейсом — `core/link.ts`, `core/live.ts` и экраны не меняются.
+
+  - Тесты: unit-тесты Kotlin (разбор DFU-статусов и карты секторов, разбиение образа, предел настроек).
+
+    APK собрать. Прошивку на реальном телефоне делает пользователь/тестер — шаги ему написать. — Стенд: да
+
+- [ ] **P48 · Экраны Studio на телефоне + прошивка готовым .bin + экспорт с ПК.**
+
+  - `src/flash.ts`: ветка mobile — выбрать `.bin` (нужен `@tauri-apps/plugin-dialog`) или скачать готовый
+
+    из последнего релиза (`releases/latest/download/firmware-<env>.bin`, P49) → проверить размер и env
+
+    (по `@id` платы и имени файла) → `D` → `dfu_flash` → прогресс → проверка калибровок, как на ПК.
+
+  - `src-tauri/src/firmware.rs`: команда `export_bin(env)` — копия `.pio/build/<env>/firmware.bin`
+
+    (есть `fn firmware_file`) с именем самолёта в имени файла; кнопка «Экспорт для телефона» в прошивке на ПК
+
+    (самолёт со своими датчиками и тумблерами собирается только на ПК — Config.h компилируется).
+
+  - Вёрстка 360–420 px: `src/styles.css`, `live.css` — меню в «гамбургер», без горизонтальной
+
+    прокрутки, крупные касания; прогнать все вкладки коптера (геозабор, тумблеры, PID, failsafe, OSD,
+
+    чёрный ящик) на эмуляторе Android или в окне 400 px.
+
+  - Переводы: `src/locales/en.json` (отступ 2), `en.firmware.json` (отступ 1), `python tools/i18n_check.py`.
+
+  - Тесты: выбор env по имени `.bin` и по `@id`; `npx tsc --noEmit && npx vitest run`.
+
+- [ ] **P49 · APK и готовые прошивки в GitHub-релиз, кнопка «Скачать на Android».**
+
+  - `../openplane-studio/.github/workflows/installers.yml` (jobs `build` matrix macOS×2/Windows и
+
+    `release` с `needs: build`): job `android` (ubuntu-latest: setup-java 17, android-actions/setup-android,
+
+    NDK, `rustup target add aarch64-linux-android armv7-linux-androideabi`, `npx tauri android build --apk`),
+
+    подпись — keystore из secrets `ANDROID_KEYSTORE` (base64), `ANDROID_KEY_PASSWORD`, `ANDROID_KEY_ALIAS`;
+
+    файл `OpenPlane-Studio-Android.apk`; добавить в `needs` у `release`. Keystore и secrets создаёт
+
+    пользователь — написать ему команды (`keytool …`, Settings → Secrets), самому секреты не трогать.
+
+  - Job `firmware`: `pio run` для `stm32h743-devebox`, `matek-h743`, `matek-h743-quad`,
+
+    `stm32h743-devebox-quad`, `aocodarc-f405v3-quad` (не `getfun-f405v3-quad` — `#error` до дампа платы)
+
+    → `firmware-<env>.bin` в тот же релиз.
+
+  - Кнопки: `README.md` между `<!-- download:start -->` и `<!-- download:end -->` — shields-бейдж
+
+    «Скачать · Android», цвет `3DDC84`, `logo=android` →
+
+    `https://github.com/damir-lebedev/openplane-studio/releases/latest/download/OpenPlane-Studio-Android.apk`;
+
+    то же в `../openplane-studio/README.md` и в `docs/i18n/<lang>/README.md` (11 языков, подпись на языке).
+
+    Строку «приложение для Windows и macOS» в «Быстром старте» и строку «Прошить» в «За 30 секунд» —
+
+    дополнить Android (там сейчас «в работе»).
+
+  - Сайт: на lebedev-space.ru/studio заменить тизер «Скоро на Android» на кнопку APK
+
+    (`C:\Damir\SERVER\lebedev-space\server\lib\studio-phone.js`, `studio.js` PLATFORMS) — коммит там,
+
+    деплой — скриптом пользователя.
+
+- [ ] **P50 · ESP32 (S3/C3): прошивка по WiFi с Android.** STM32 не трогать — у них нет WiFi; ELRS ни при чём.
+
+  - **Сначала спросить пользователя:** в `partitions_blackbox.csv` (ESP32-S3 16 МБ) одна app-область
+
+    (`app0` 2 МБ, «OTA is not used»), чёрный ящик 13.9 МБ. Для OTA нужна вторая (`app1` 2 МБ → ящик
+
+    ≈11.9 МБ) — предложить разметку, `nvs` не двигать (калибровки).
+
+  - Прошивка: `include/telemetry/WifiOta.h` — только на земле (DISARM, газ в нуле — см. ArmingManager),
+
+    включение клавишей в `DebugConsole.h` или жестом стиков; точка доступа `OpenPlane-XXXX` с паролем,
+
+    HTTP POST `/update` через `Update.h`, проверка образа, отказ при ARM, через 5 мин WiFi выключить.
+
+    Посмотреть `WebDebugServer.h` — WiFi-стек там уже есть. Константы — в `include/config/Config.h`
+
+    с `@range` (их читает `tools/opconfig.py`).
+
+  - Studio: способ «WiFi» в `src/flash.ts` (на Android — подключение к точке через `WifiNetworkSpecifier`
+
+    в плагине P47), отправка `.bin`, прогресс.
+
+  - Тесты `test/native`: разрешение OTA (ARM / газ / таймаут). `pio run -e esp32-s3`, `pio test -e native`.
+
+  - Документация: раздел в `docs/` + переводы `docs/i18n/<lang>/`.
+
+
+
 ### A1. Железо 7" и первые полёты (с 22.11, только с пользователем)
 
 Железо (полётник — **Matek H743-SLIM V4**, придёт ~2026-12-02; GETFUN F405V3
