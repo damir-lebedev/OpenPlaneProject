@@ -1501,7 +1501,7 @@ void test_arm_blockers()
         TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_NO_LINK);
     }
     // у каждой причины — слова и код, коды как в status Betaflight
-    for (uint32_t bit = 1; bit <= ARM_BLOCK_LAST; bit <<= 1)
+    for (uint32_t bit = 1; bit && bit <= ARM_BLOCK_LAST; bit <<= 1)
     {
         TEST_ASSERT_NOT_EQUAL(0, strcmp("?", armBlockText(bit)));
         TEST_ASSERT_NOT_EQUAL(0, strcmp("?", armBlockCode(bit)));
@@ -7211,6 +7211,222 @@ void test_geofence_params_logic_and_osd()
     TEST_ASSERT_EQUAL(' ', scr.at(fy, fx));
 }
 
+// Поле и запретные зоны геозабора (P44 б): таблица geozone, забор по
+// ближайшей стороне, ARM только внутри, радар со сторонами, CLI и флеш.
+namespace
+{
+    // точка в n м к северу и e м к востоку от 56° с. ш., 44° в. д.
+    double polyLat(double n) { return 56.0 + n / 111194.92664; }
+    double polyLon(double e) { return 44.0 + e / (111194.92664 * cos(56.0 * 3.14159265358979323846 / 180.0)); }
+    std::string polyPoint(int zone, int i, double n, double e)
+    {
+        char s[96];
+        snprintf(s, sizeof(s), "%d %d %.7f %.7f", zone, i, polyLat(n), polyLon(e));
+        return s;
+    }
+}
+
+void test_geofence_polygon_zones()
+{
+    GeoZoneTable t;
+    char err[96];
+    TEST_ASSERT_TRUE(t.isDefault());
+    TEST_ASSERT_FALSE(t.parse("0 0 56 44", err, sizeof(err)));   // сначала тип
+    TEST_ASSERT_TRUE(t.parse("0 FIELD", err, sizeof(err)));
+    TEST_ASSERT_FALSE(t.parse("8 FIELD", err, sizeof(err)));
+    TEST_ASSERT_FALSE(t.parse("0 1 56 44", err, sizeof(err)));   // точки по порядку
+    TEST_ASSERT_TRUE(t.parse("0 0 56 44", err, sizeof(err)));
+    TEST_ASSERT_FALSE(t.parse("0 1 91 44", err, sizeof(err)));
+    TEST_ASSERT_FALSE(t.parse("0 1 56 44x", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("меньше 3 точек", t.problem(0));
+    // поле 200 м на север × 300 м на восток
+    TEST_ASSERT_TRUE(t.parse(polyPoint(0, 1, 200, 0).c_str(), err, sizeof(err)));
+    TEST_ASSERT_TRUE(t.parse(polyPoint(0, 2, 200, 300).c_str(), err, sizeof(err)));
+    TEST_ASSERT_TRUE(t.parse(polyPoint(0, 3, 0, 300).c_str(), err, sizeof(err)));
+    TEST_ASSERT_NULL(t.problem(0));
+    // «бантик» — стороны пересекаются, такая зона не действует
+    TEST_ASSERT_TRUE(t.parse("1 NOFLY", err, sizeof(err)));
+    TEST_ASSERT_TRUE(t.parse(polyPoint(1, 0, 10, 10).c_str(), err, sizeof(err)));
+    TEST_ASSERT_TRUE(t.parse(polyPoint(1, 1, 30, 30).c_str(), err, sizeof(err)));
+    TEST_ASSERT_TRUE(t.parse(polyPoint(1, 2, 10, 30).c_str(), err, sizeof(err)));
+    TEST_ASSERT_TRUE(t.parse(polyPoint(1, 3, 30, 10).c_str(), err, sizeof(err)));
+    TEST_ASSERT_EQUAL_STRING("стороны пересекаются", t.problem(1));
+    // градусы точно до 1e-7 (без double), минус, округление 8-го знака
+    TEST_ASSERT_TRUE(t.parse("1 0 -56.12345678 -0.5", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_INT32(-561234568, t.zone(1).pts[0].latE7);
+    TEST_ASSERT_EQUAL_INT32(-5000000, t.zone(1).pts[0].lonE7);
+    TEST_ASSERT_TRUE(t.parse("1 clear", err, sizeof(err)));
+    TEST_ASSERT_FALSE(t.used(1));
+    std::vector<std::string> lines;
+    t.formatZone(0, [&](const char* l) { lines.push_back(l); });
+    TEST_ASSERT_EQUAL(5, lines.size());
+    TEST_ASSERT_EQUAL_STRING("geozone 0 FIELD", lines[0].c_str());
+    TEST_ASSERT_EQUAL_STRING("geozone 0 0 56.0000000 44.0000000", lines[1].c_str());
+    char deg[16];
+    GeoZoneTable::formatDegrees(-5000001, deg, sizeof(deg));
+    TEST_ASSERT_EQUAL_STRING("-0.5000001", deg);
+    uint8_t blob[GeoZoneTable::STORE_MAX];
+    const size_t len = t.serialize(blob, sizeof(blob));
+    TEST_ASSERT_EQUAL(2 + 2 + 4 * 8, len);
+    GeoZoneTable back;
+    TEST_ASSERT_TRUE(back.deserialize(blob, len));
+    TEST_ASSERT_EQUAL(4, back.zone(0).count);
+    TEST_ASSERT_EQUAL_INT32(t.zone(0).pts[2].lonE7, back.zone(0).pts[2].lonE7);
+    blob[3] = 99;   // точек больше, чем может быть, — мусор не берём
+    TEST_ASSERT_FALSE(back.deserialize(blob, len));
+    TEST_ASSERT_TRUE(back.isDefault());
+
+    // ---- забор: поле без круга, дом в 20 м от южного края ----
+    GeofenceSettings g;
+    g.enabled = true;
+    g.radiusM = 0.0f;
+    g.ceilingM = 0.0f;
+    g.zones = &t;
+    TEST_ASSERT_TRUE(g.area());
+    Geofence f;
+    f.configure(g);
+    TEST_ASSERT_TRUE(f.hasPolygons());
+    TEST_ASSERT_TRUE(f.armOutside());   // место ещё неизвестно — не армить
+    f.updatePosition(polyLat(20), polyLon(150), 0, 0);
+    TEST_ASSERT_FALSE(f.armOutside());
+    f.reset();
+    f.update(0, false, 0, 0, 0, true, true, 0.01f);
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 20.0f, f.marginM());
+    TEST_ASSERT_TRUE(f.polygonNearer());
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 180.0f, f.edgeBearingDeg());   // ближний край — южный
+    // летит на север 10 м/с: за 40 м до северного края успевает (тормозной путь 20.7 м)
+    f.updatePosition(polyLat(160), polyLon(150), 10, 0);
+    f.update(0, false, 0, 0, 10, true, true, 0.01f);
+    TEST_ASSERT_FALSE(f.wantReturn());
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 0.0f, f.edgeBearingDeg());
+    // за 19 м — уже нет: автомат ведёт назад
+    f.updatePosition(polyLat(181), polyLon(150), 10, 0);
+    f.update(0, false, 0, 0, 10, true, true, 0.01f);
+    TEST_ASSERT_TRUE(f.wantReturn());
+    TEST_ASSERT_TRUE(f.flags() & FENCE_RETURN);
+    TEST_ASSERT_TRUE(f.angleCap(30.0f) < 30.0f);
+    // вернулся вглубь, летит к дому — пилоту
+    f.updatePosition(polyLat(120), polyLon(150), -5, 0);
+    f.update(0, false, 0, 0, 5, true, true, 0.01f);
+    TEST_ASSERT_FALSE(f.wantReturn());
+    // ветром вынесло за край
+    f.updatePosition(polyLat(210), polyLon(150), 0, 0);
+    f.update(0, false, 0, 0, 0, true, true, 0.01f);
+    TEST_ASSERT_TRUE(f.flags() & FENCE_OUTSIDE);
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, -10.0f, f.marginM());
+    TEST_ASSERT_TRUE(f.armOutside());
+
+    // GPS пропал: худший случай считается от последнего запаса до стороны
+    f.configure(g);
+    f.updatePosition(polyLat(100), polyLon(150), 0, 0);
+    f.reset();
+    f.update(0, false, 0, 0, 0, true, true, 0.01f);
+    for (int i = 0; i < 150; ++i) f.update(0, false, 0, 0, 0, false, true, 0.01f);
+    TEST_ASSERT_FALSE(f.wantReturn());   // 1.5 с, запас 100 м — ещё не достать
+    f.updatePosition(polyLat(180), polyLon(150), 0, 0);
+    f.reset();
+    f.update(0, false, 0, 0, 0, true, true, 0.01f);
+    for (int i = 0; i < 150; ++i) f.update(0, false, 0, 0, 0, false, true, 0.01f);
+    TEST_ASSERT_TRUE(f.wantReturn());    // запас 20 м — уже мог достать
+
+    // ---- запретная зона 20 × 40 м посреди поля ----
+    TEST_ASSERT_TRUE(t.parse("2 NOFLY", err, sizeof(err)));
+    TEST_ASSERT_TRUE(t.parse(polyPoint(2, 0, 60, 140).c_str(), err, sizeof(err)));
+    TEST_ASSERT_TRUE(t.parse(polyPoint(2, 1, 100, 140).c_str(), err, sizeof(err)));
+    TEST_ASSERT_TRUE(t.parse(polyPoint(2, 2, 100, 160).c_str(), err, sizeof(err)));
+    TEST_ASSERT_TRUE(t.parse(polyPoint(2, 3, 60, 160).c_str(), err, sizeof(err)));
+    f.configure(g);
+    TEST_ASSERT_EQUAL(2, f.polygonCount());
+    TEST_ASSERT_TRUE(f.polygonNoFly(1));
+    f.updatePosition(polyLat(30), polyLon(150), 0, 0);
+    f.reset();
+    f.update(0, false, 0, 0, 0, true, true, 0.01f);
+    f.updatePosition(polyLat(41), polyLon(150), 10, 0);   // к зоне 10 м/с, до неё 19 м
+    f.update(0, false, 0, 0, 10, true, true, 0.01f);
+    TEST_ASSERT_TRUE(f.wantReturn());
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 0.0f, f.edgeBearingDeg());
+    f.updatePosition(polyLat(80), polyLon(150), 0, 0);    // внутри зоны — не армить
+    TEST_ASSERT_TRUE(f.armOutside());
+    TEST_ASSERT_TRUE(f.marginM() < 0.0f);
+    // круг и поле вместе: ближе круг — стрелка от дома
+    g.radiusM = 50.0f;
+    f.configure(g);
+    f.updatePosition(polyLat(30), polyLon(150), 0, 0);
+    f.reset();
+    f.update(0, false, 45.0f, 0, 0, true, true, 0.01f);
+    TEST_ASSERT_FALSE(f.polygonNearer());
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 5.0f, f.marginM());
+
+    // ---- радар: сторона в 40 м впереди — строка точек над коптером, расстояние 40 ----
+    CopterParams& p = five5Params();
+    const OsdLayout l = osdLayoutFrom(p);
+    OsdData d;
+    d.armed = true;
+    d.fencePolygon = true;
+    d.fenceMarginM = 40.0f;
+    d.fenceEdgeRelDeg = 0.0f;
+    d.fenceScaleM = 100.0f;
+    d.fenceEdgeCount = 1;
+    const float edge[4] = { 40.0f, -200.0f, 40.0f, 200.0f };
+    memcpy(d.fenceEdges[0], edge, sizeof(edge));
+    OsdScreen scr;
+    scr.compose(d, l, nullptr);
+    const uint8_t mx = osdPosX(l.pos[OSD_FENCE_MAP]), my = osdPosY(l.pos[OSD_FENCE_MAP]);
+    for (int c = 0; c < OsdScreen::FENCE_MAP_COLS; ++c)
+    {
+        TEST_ASSERT_EQUAL('.', scr.at(static_cast<uint8_t>(my + 1), static_cast<uint8_t>(mx + c)));
+        TEST_ASSERT_EQUAL(' ', scr.at(my, static_cast<uint8_t>(mx + c)));
+        TEST_ASSERT_EQUAL(' ', scr.at(static_cast<uint8_t>(my + 4), static_cast<uint8_t>(mx + c)));
+    }
+    TEST_ASSERT_EQUAL_HEX8(osdArrow(0.0f), scr.at(static_cast<uint8_t>(my + 2), static_cast<uint8_t>(mx + 4)));
+    const uint8_t fx = osdPosX(l.pos[OSD_FENCE]), fy = osdPosY(l.pos[OSD_FENCE]);
+    TEST_ASSERT_EQUAL_HEX8(osdArrow(0.0f), scr.at(fy, fx));
+    TEST_ASSERT_EQUAL('4', scr.at(fy, static_cast<uint8_t>(fx + 1)));
+
+    // ---- CLI: geozone, diff, save, «перезагрузка» ----
+    RamFlash flash;
+    {
+        KeyValueStore kv(flash);
+        CopterParams& cp = five5Params();
+        Bench b;
+        CliCapture port;
+        CopterCli cli(cp, b.ctl, port);
+        cli.setStore(&kv);
+        TEST_ASSERT_TRUE(cli.enter());
+        cli.execute("geozone 0 FIELD");
+        for (int i = 0; i < 4; ++i)
+        {
+            const double n[4] = { 0, 200, 200, 0 }, e[4] = { 0, 0, 300, 300 };
+            cli.execute(("geozone " + polyPoint(0, i, n[i], e[i])).c_str());
+        }
+        cli.execute("geozone 0 9 56 44");
+        TEST_ASSERT_TRUE(has(port.take(), "по порядку"));
+        cli.execute("geozone");
+        TEST_ASSERT_TRUE(has(port.take(), "зона 0: годится"));
+        cli.execute("diff");
+        const std::string diff = port.take();
+        TEST_ASSERT_TRUE(has(diff, "# geozone\r\ngeozone clear\r\ngeozone 0 FIELD\r\ngeozone 0 0 56.0000000 44.0000000"));
+        cli.execute("save");
+    }
+    {
+        KeyValueStore kv(flash);
+        CopterParams cp;
+        cp.begin(*findBuild("freestyle5"), 1000.0f, EscProtocol::ONESHOT125);
+        cp.load(kv);
+        TEST_ASSERT_EQUAL(4, cp.zones().zone(0).count);
+        TEST_ASSERT_NULL(cp.zones().problem(0));
+        CopterSettings s;
+        cp.applyTo(s);
+        TEST_ASSERT_FALSE(s.geofence.polygons());   // geofence выключен — поле не действует
+        TEST_ASSERT_TRUE(cp.parse(PARAM_GEOFENCE, 0, "ON", err, sizeof(err)));
+        cp.applyTo(s);
+        TEST_ASSERT_TRUE(s.geofence.polygons());
+        cp.resetAll();
+        TEST_ASSERT_TRUE(cp.zones().isDefault());
+    }
+    TEST_ASSERT_EQUAL_STRING("FENCE", armBlockCode(ARM_BLOCK_FENCE));
+}
+
 // Меню в очках стиками (CMS): вход, отпустить в центр, ходить, менять, выйти.
 void test_osd_menu_by_sticks()
 {
@@ -9497,6 +9713,7 @@ int main()
     RUN_TEST(test_gps_rescue_params);
     RUN_TEST(test_training_limits_params_and_logic);
     RUN_TEST(test_geofence_params_logic_and_osd);
+    RUN_TEST(test_geofence_polygon_zones);
     RUN_TEST(test_cli_pastes_betaflight_diff);
     RUN_TEST(test_vbat_sag_compensation_percent);
     RUN_TEST(test_battery_voltage_current_and_mah);

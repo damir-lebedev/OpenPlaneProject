@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "copter/GeoZones.h"   // segmentDistance — стороны поля на радаре
+
 // ============================================================
 // OSD коптера — что рисуется поверх картинки камеры (чип AT7456E/MAX7456,
 // hal/Max7456.h): экран 30 столбцов × 16 строк (PAL) или 13 (NTSC). В
@@ -306,6 +308,15 @@ namespace copter
         // геозабор (copter/Geofence.h): радиус (0 — нет), предупреждение; место — homeDistanceM/homeRelativeDeg
         float fenceRadiusM = 0.0f;
         const char* fence = nullptr;        // FENCE, FENCE RETURN… или nullptr
+        // поле геозабора (P44 б, GeoZones.h): стороны рядом с коптером в осях носа
+        // {вперёд1, вправо1, вперёд2, вправо2} м от коптера; ближний край (поле или круг)
+        static constexpr uint8_t FENCE_EDGES_MAX = 24;
+        bool fencePolygon = false;          // поле есть и место известно
+        uint8_t fenceEdgeCount = 0;
+        float fenceEdges[FENCE_EDGES_MAX][4] = {};
+        float fenceMarginM = 0.0f;          // до ближнего края, м (< 0 — за ним)
+        float fenceEdgeRelDeg = 0.0f;       // куда ближний край относительно носа
+        float fenceScaleM = 0.0f;           // радар: столько метров — FENCE_MAP_SPAN знаков
         bool vtxHot = false;                // VTX без ARM греется (copter/Vtx.h, VtxHeatWatch)
         uint16_t escOverloads = 0, batteryOverloads = 0;   // за этот полёт
     };
@@ -598,18 +609,31 @@ namespace copter
                     return;
                 case OSD_FENCE:
                 {
-                    if (!d.armed || !d.home || d.fenceRadiusM <= 0.0f) return;
-                    const float margin = d.fenceRadiusM - d.homeDistanceM;
-                    // у края (как FENCE) — мигает
-                    if (!d.blink && margin < fminf(0.2f * d.fenceRadiusM, 20.0f)) return;
-                    // ближний край круга — прямо от дома
-                    put(y, x, osdArrow(d.homeRelativeDeg + 180.0f));
+                    if (!d.armed) return;
+                    float margin, dir;
+                    if (d.fencePolygon)
+                    {
+                        // поле: до ближней стороны (или круга, если он ближе) — main_copter
+                        margin = d.fenceMarginM;
+                        dir = d.fenceEdgeRelDeg;
+                        if (!d.blink && margin < 20.0f) return;
+                    }
+                    else
+                    {
+                        if (!d.home || d.fenceRadiusM <= 0.0f) return;
+                        margin = d.fenceRadiusM - d.homeDistanceM;
+                        // у края (как FENCE) — мигает
+                        if (!d.blink && margin < fminf(0.2f * d.fenceRadiusM, 20.0f)) return;
+                        dir = d.homeRelativeDeg + 180.0f;   // ближний край круга — прямо от дома
+                    }
+                    put(y, x, osdArrow(dir));
                     snprintf(s, n, "%d", static_cast<int>(lroundf(margin)));
                     printWithSymbol(y, static_cast<uint8_t>(x + 1), s, osdsym::METRE);
                     return;
                 }
                 case OSD_FENCE_MAP:
-                    if (!d.armed || !d.home || d.fenceRadiusM <= 0.0f) return;
+                    if (!d.armed) return;
+                    if (!d.fencePolygon && (!d.home || d.fenceRadiusM <= 0.0f)) return;
                     drawFenceMap(x, y, d);
                     return;
                 case OSD_ELEMENT_COUNT:
@@ -630,7 +654,9 @@ namespace copter
         // FENCE_MAP_SPAN знаков; у края круг уходит за рамку, край — рядом.
         void drawFenceMap(uint8_t x, uint8_t y, const OsdData& d)
         {
-            const float cell = d.fenceRadiusM / FENCE_MAP_SPAN;   // м на ширину знака
+            const bool circle = d.home && d.fenceRadiusM > 0.0f;
+            const float scale = d.fencePolygon && d.fenceScaleM > 1.0f ? d.fenceScaleM : d.fenceRadiusM;
+            const float cell = fmaxf(1.0f, scale) / FENCE_MAP_SPAN;   // м на ширину знака
             // дом в осях носа: вперёд и вправо от коптера, м
             const float rel = d.homeRelativeDeg * 0.017453293f;
             const float homeFwd = d.homeDistanceM * cosf(rel), homeRight = d.homeDistanceM * sinf(rel);
@@ -639,14 +665,22 @@ namespace copter
             {
                 for (int c = 0; c < FENCE_MAP_COLS; ++c)
                 {
-                    // середина знака относительно дома, в осях носа
-                    const float right = (c - cc) * cell - homeRight;
-                    const float fwd = (cr - r) * cell * CELL_ASPECT - homeFwd;
+                    // середина знака относительно коптера и относительно дома, в осях носа
+                    const float cRight = (c - cc) * cell, cFwd = (cr - r) * cell * CELL_ASPECT;
+                    const float right = cRight - homeRight;
+                    const float fwd = cFwd - homeFwd;
                     const float distM = sqrtf(right * right + fwd * fwd);
                     // знак задевает край: край ближе половины знака (по высоте он больше; с запасом — без дыр)
                     const float half = 0.55f * cell * (fabsf(fwd) > fabsf(right) ? CELL_ASPECT : 1.0f);
-                    if (fabsf(distM - d.fenceRadiusM) <= half)
-                        put(static_cast<uint8_t>(y + r), static_cast<uint8_t>(x + c), '.');
+                    bool edge = circle && fabsf(distM - d.fenceRadiusM) <= half;
+                    // стороны поля: задевает ли знак (прямоугольник ≈ эллипс — сжимаем высоту)
+                    for (uint8_t k = 0; !edge && d.fencePolygon && k < d.fenceEdgeCount; ++k)
+                    {
+                        const float* e = d.fenceEdges[k];
+                        edge = segmentDistance(cRight, cFwd / CELL_ASPECT, e[1], e[0] / CELL_ASPECT, e[3], e[2] / CELL_ASPECT) <=
+                               0.55f * cell;
+                    }
+                    if (edge) put(static_cast<uint8_t>(y + r), static_cast<uint8_t>(x + c), '.');
                 }
             }
             // дом — в его знак, если в рамке
@@ -655,7 +689,8 @@ namespace copter
             if (hc >= 0 && hc < FENCE_MAP_COLS && hr >= 0 && hr < FENCE_MAP_ROWS && (hc != cc || hr != cr))
                 put(static_cast<uint8_t>(y + hr), static_cast<uint8_t>(x + hc), osdsym::HOME);
             // коптер — стрелка носом вверх; за краем — мигает
-            if (d.homeDistanceM <= d.fenceRadiusM || d.blink)
+            const bool outside = d.fencePolygon ? d.fenceMarginM < 0.0f : d.homeDistanceM > d.fenceRadiusM;
+            if (!outside || d.blink)
                 put(static_cast<uint8_t>(y + cr), static_cast<uint8_t>(x + cc), osdArrow(0.0f));
         }
 

@@ -36,6 +36,8 @@
 //   set имя значение  — "@set {...}": ok или ошибка, новое значение;
 //   profile N · rateprofile N — "@profile {...}" (сразу, на ходу);
 //   aux … · map … · rxrange … · vtx … · rxfail … — как в CLI; ответ — "@rc {...}";
+//   geozone …         — поле и запретные зоны, как в CLI; ответ — "@fence {...}"
+//                       на зону (в потоке params — по строке на каждую из 8);
 //   calibrate vbat В · calibrate ibat А — по мультиметру: vbat_scale /
 //                       ibata_scale, ответ — как на set;
 //   save              — во флеш и в работу: "@save {...}" (и "flash":[занято, всего]);
@@ -164,7 +166,7 @@ public:
         const bool changes = strcmp(cmd, "set") == 0 || strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0 ||
                              strcmp(cmd, "aux") == 0 || strcmp(cmd, "map") == 0 || strcmp(cmd, "rxrange") == 0 ||
                              strcmp(cmd, "vtx") == 0 || strcmp(cmd, "rxfail") == 0 || strcmp(cmd, "calibrate") == 0 ||
-                             strcmp(cmd, "save") == 0 ||
+                             strcmp(cmd, "save") == 0 || strcmp(cmd, "geozone") == 0 ||
                              strcmp(cmd, "revert") == 0;
         if (!changes) return false;
         if (ctl.isArmed() || cli.active())
@@ -177,6 +179,7 @@ public:
         else if (strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0) doProfile(cmd, args);
         else if (strcmp(cmd, "save") == 0) doSave();
         else if (strcmp(cmd, "revert") == 0) doRevert();
+        else if (strcmp(cmd, "geozone") == 0) doGeozone(args);
         else doRcTable(cmd, args);
         return true;
     }
@@ -305,6 +308,46 @@ public:
         }
         w.add("]}\n");
         return w.overflow ? 0 : w.length;
+    }
+
+    // "@fence {"zone":0,"type":"FIELD","pts":[[563268710,440059870],…],"problem":null}" — точки в 1e-7 градуса.
+    size_t formatFence(uint8_t i, char* buffer, size_t capacity) const
+    {
+        using namespace copter;
+        const GeoZoneTable& t = params.zones();
+        const GeoZoneTable::Zone& z = t.zone(i);
+        JsonWriter w(buffer, capacity);
+        w.add("@fence {\"zone\":%u,\"type\":\"%s\",\"pts\":[", i, geoZoneTypeName(z.type));
+        for (uint8_t k = 0; k < z.count; ++k)
+            w.add("%s[%ld,%ld]", k ? "," : "", static_cast<long>(z.pts[k].latE7), static_cast<long>(z.pts[k].lonE7));
+        w.add("],\"problem\":");
+        const char* p = t.used(i) ? t.problem(i) : nullptr;
+        if (p) w.str(p);
+        else w.add("null");
+        w.add("}\n");
+        return w.overflow ? 0 : w.length;
+    }
+
+    void doGeozone(char* args)
+    {
+        using namespace copter;
+        char error[96] = {};
+        if (!params.zones().parse(args, error, sizeof(error)))
+        {
+            sendError("geozone", error);
+            return;
+        }
+        dirty = true;
+        // ответ — изменённая зона; «geozone clear» — все
+        char* end = nullptr;
+        const long zi = strtol(args, &end, 10);
+        char line[LINE_CAPACITY];
+        for (uint8_t i = 0; i < GeoZoneTable::MAX_ZONES; ++i)
+        {
+            if (end != args && i != zi) continue;
+            const size_t length = formatFence(i, line, sizeof(line));
+            if (length) io.write(reinterpret_cast<const uint8_t*>(line), length);
+        }
     }
 
     size_t formatModes(char* buffer, size_t capacity) const
@@ -448,7 +491,7 @@ public:
         for (uint8_t i = 0; i < outputs.count && i < MAX_MOTORS; ++i) w.add(i ? ",%.3f" : "%.3f", outputs.motor[i]);
         w.add("],\"block\":[");
         bool first = true;
-        for (uint32_t bit = 1; bit <= ARM_BLOCK_LAST; bit <<= 1)
+        for (uint32_t bit = 1; bit && bit <= ARM_BLOCK_LAST; bit <<= 1)
         {
             if (!(s.armBlockers & bit)) continue;
             w.add(first ? "\"%s\"" : ",\"%s\"", armBlockCode(bit));
@@ -526,7 +569,7 @@ private:
     }
 
     // строки ответа на params: заголовок, настройки, @rc, @modes
-    static constexpr int DUMP_LAST = copter::PARAM_COUNT + 2;
+    static constexpr int DUMP_LAST = copter::PARAM_COUNT + 2 + copter::GeoZoneTable::MAX_ZONES;
 
     size_t formatDumpLine(int step, char* buffer, size_t capacity) const
     {
@@ -558,6 +601,8 @@ private:
         }
         if (step <= PARAM_COUNT) return formatParam(static_cast<ParamId>(step - 1), buffer, capacity);
         if (step == PARAM_COUNT + 1) return formatRc(buffer, capacity);
+        // зоны — до @modes: по @modes приложение считает загрузку законченной
+        if (step < DUMP_LAST) return formatFence(static_cast<uint8_t>(step - PARAM_COUNT - 2), buffer, capacity);
         return formatModes(buffer, capacity);
     }
 

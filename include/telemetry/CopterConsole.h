@@ -268,7 +268,7 @@ public:
             }
         }
         io.print("Arming disable flags:");
-        for (uint32_t bit = 1; bit <= copter::ARM_BLOCK_LAST; bit <<= 1)
+        for (uint32_t bit = 1; bit && bit <= copter::ARM_BLOCK_LAST; bit <<= 1)
         {
             if (s.armBlockers & bit) io.printf(" %s", copter::armBlockCode(bit));
         }
@@ -285,7 +285,7 @@ public:
             else
             {
                 io.println("ARM нельзя:");
-                for (uint32_t bit = 1; bit <= copter::ARM_BLOCK_LAST; bit <<= 1)
+                for (uint32_t bit = 1; bit && bit <= copter::ARM_BLOCK_LAST; bit <<= 1)
                 {
                     if (s.armBlockers & bit) io.printf("  - %s: %s\n", copter::armBlockCode(bit), copter::armBlockText(bit));
                 }

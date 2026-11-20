@@ -146,7 +146,8 @@ namespace copter
         ARM_BLOCK_MOTOR_TEST = 1u << 28,
         ARM_BLOCK_NO_ARM_SWITCH = 1u << 29,
         ARM_BLOCK_CONFIG = 1u << 30,
-        ARM_BLOCK_LAST = ARM_BLOCK_CONFIG,
+        ARM_BLOCK_FENCE = 1u << 31,           // поле геозабора: коптер вне поля или в запретной зоне
+        ARM_BLOCK_LAST = ARM_BLOCK_FENCE,     // циклы по битам — с «bit &&»: после 1u << 31 сдвиг даёт 0
     };
 
     // Флаги, у которых есть номер в Betaflight 4.5 (биты 0–25).
@@ -193,6 +194,7 @@ namespace copter
             case ARM_BLOCK_MOTOR_TEST: return "идёт проверка моторов";
             case ARM_BLOCK_NO_ARM_SWITCH: return "ARM не назначен ни на один тумблер (aux)";
             case ARM_BLOCK_CONFIG: return "описание коптера не сходится с платой (см. консоль)";
+            case ARM_BLOCK_FENCE: return "вне поля геозабора или в запретной зоне — перенести коптер внутрь";
         }
         return "?";
     }
@@ -234,6 +236,7 @@ namespace copter
             case ARM_BLOCK_MOTOR_TEST: return "MOTOR TEST";
             case ARM_BLOCK_NO_ARM_SWITCH: return "NO ARM SW";
             case ARM_BLOCK_CONFIG: return "CONFIG";
+            case ARM_BLOCK_FENCE: return "FENCE";
         }
         return "?";
     }
@@ -274,6 +277,7 @@ namespace copter
             case ARM_BLOCK_MOTOR_TEST: return "MOTOR_TEST";
             case ARM_BLOCK_NO_ARM_SWITCH: return "NO_ARM_AUX";
             case ARM_BLOCK_CONFIG: return "CONFIG";
+            case ARM_BLOCK_FENCE: return "FENCE";
         }
         return "?";
     }
@@ -784,6 +788,9 @@ namespace copter
             motionTimer = motion > 15.0f ? 0.0f : motionTimer + dt;
 
             rescue.track(sens.gps, vertical.altitude(), dt);
+            // поле геозабора: где коптер (и без ARM — ARM только внутри)
+            if (sens.gps.fresh && sens.gps.fix && !gpsIntegrity.spoofed())
+                fence.updatePosition(sens.gps.latitude, sens.gps.longitude, sens.gps.velN, sens.gps.velE);
             // путь по своим датчикам — на случай, если GPS подменят или заглушат
             {
                 DeadReckonInput di;
@@ -1519,7 +1526,9 @@ namespace copter
             if (set.failsafeProcedure == FailsafeProcedure::GPS_RESCUE && !set.rescue.allowArmingWithoutFix && !rescue.gpsOk())
                 b |= ARM_BLOCK_GPS;
             // геозабор без GPS не знает, где край, — не армить
-            if (set.geofence.circle() && !rescue.gpsOk()) b |= ARM_BLOCK_GPS;
+            if (set.geofence.area() && !rescue.gpsOk()) b |= ARM_BLOCK_GPS;
+            // поле: только внутри и не в запретной зоне
+            if (fence.armOutside() && rescue.gpsOk()) b |= ARM_BLOCK_FENCE;
             b |= externalBlockers;
             if (!switchSeenOff) b |= forcedOff ? ARM_BLOCK_NOT_DISARMED : ARM_BLOCK_SWITCH;
             return b;

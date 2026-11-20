@@ -1353,6 +1353,7 @@ namespace copter
         static constexpr const char* STORE_SPACE = "copter";
         static constexpr const char* STORE_KEY = "params";
         static constexpr const char* RC_KEY = "rc";
+        static constexpr const char* FENCE_KEY = "fence";   // поле и запретные зоны геозабора (GeoZones.h)
 
         using BuildOverrides = void (*)(BuildSpec&);
 
@@ -1556,6 +1557,7 @@ namespace copter
             s.geofence.radiusM = value(PARAM_GEOFENCE_RADIUS);
             s.geofence.ceilingM = value(PARAM_GEOFENCE_ALT);
             s.geofence.noGps = static_cast<GeofenceNoGps>(static_cast<uint8_t>(value(PARAM_GEOFENCE_NO_GPS)));
+            s.geofence.zones = &geoZones;
             s.airmodeStartThrottle = value(PARAM_AIRMODE_START_THROTTLE_PERCENT) * 0.01f;
             s.turtle.otherMotors = value(PARAM_CRASHFLIP_MOTOR_PERCENT) * 0.01f;
             s.turtle.expo = value(PARAM_CRASHFLIP_EXPO) * 0.01f;
@@ -1617,6 +1619,8 @@ namespace copter
         // Пульт: карта каналов, rxrange, таблица aux.
         RcConfig& rc() { return rcConfig; }
         const RcConfig& rc() const { return rcConfig; }
+        GeoZoneTable& zones() { return geoZones; }
+        const GeoZoneTable& zones() const { return geoZones; }
 
         // ---- профили ----
         uint8_t pidProfile() const { return pidIndex; }
@@ -1779,6 +1783,7 @@ namespace copter
         {
             clearValues();
             rcConfig.reset();
+            geoZones.reset();
             refreshDefaults();
         }
 
@@ -2082,6 +2087,13 @@ namespace copter
             const size_t rcLength = rcConfig.serialize(rcBlob, sizeof(rcBlob));
             if (rcConfig.isDefault()) kv.remove(STORE_SPACE, RC_KEY);
             else ok = kv.put(STORE_SPACE, RC_KEY, rcBlob, rcLength) && ok;
+            if (geoZones.isDefault()) kv.remove(STORE_SPACE, FENCE_KEY);
+            else
+            {
+                uint8_t fenceBlob[GeoZoneTable::STORE_MAX];
+                const size_t fenceLength = geoZones.serialize(fenceBlob, sizeof(fenceBlob));
+                ok = fenceLength && kv.put(STORE_SPACE, FENCE_KEY, fenceBlob, fenceLength) && ok;
+            }
             return ok;
         }
 
@@ -2149,6 +2161,9 @@ namespace copter
             size_t rcLength = 0;
             const uint8_t* rcData = kv.get(STORE_SPACE, RC_KEY, &rcLength);
             const bool rcOk = rcConfig.deserialize(rcData, rcLength);
+            size_t fenceLength = 0;
+            const uint8_t* fenceData = kv.get(STORE_SPACE, FENCE_KEY, &fenceLength);
+            geoZones.deserialize(fenceData, fenceLength);   // нет — пусто
 
             clearValues();
             size_t length = 0;
@@ -2469,6 +2484,7 @@ namespace copter
         float loopHz = 1000.0f;
         EscProtocol esc = EscProtocol::ONESHOT125;
         RcConfig rcConfig;
+        GeoZoneTable geoZones;
         float tableDefaults[PARAM_COUNT] = {};
         float defaults[PARAM_COUNT] = {};
         float scaledDefaults[SCALED_COUNT][PROFILES] = {};

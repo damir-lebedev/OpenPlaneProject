@@ -220,6 +220,7 @@ namespace copter
             else if (is(cmd, "profile")) cmdProfile(args, false);
             else if (is(cmd, "rateprofile")) cmdProfile(args, true);
             else if (is(cmd, "aux")) cmdAux(args);
+            else if (is(cmd, "geozone")) cmdGeozone(args);
             else if (is(cmd, "map")) cmdMap(args);
             else if (is(cmd, "rxrange")) cmdRxrange(args);
             else if (is(cmd, "rxfail")) cmdRxfail(args);
@@ -292,6 +293,7 @@ namespace copter
             print("diff [all] · dump [all] — изменённое · всё (all — все профили)\r\n");
             print("profile [0-3] · rateprofile [0-3] — профиль PID · расходов\r\n");
             print("aux [№ режим канал от до логика связь] — режимы на тумблерах (режимы: aux help)\r\n");
+            print("geozone [зона FIELD|NOFLY|clear · зона точка широта долгота] — поле и запретные зоны геозабора\r\n");
             print("map [AETR1234] · rxrange [0-3 мин макс] — порядок каналов · концы стиков\r\n");
             print("rxfail [канал a|h|s [значение]] — канал без связи: a — авто, h — держать, s — задать (AUX)\r\n");
             print("motor [№|255 значение] — мотор без пропеллеров: 1000 стоп … 2000 (у нас до 30 %%), 5 с; 255 — все\r\n");
@@ -641,6 +643,38 @@ namespace copter
             }
             dumpBeeper(PARAM_BEEPER_OFF_FLAGS, "beeper", BEEPER_ALL_MASK, onlyChanged);
             dumpBeeper(PARAM_DSHOT_BEACON_OFF_FLAGS, "beacon", DSHOT_BEACON_ALLOWED, onlyChanged);
+            dumpGeozones(onlyChanged);
+        }
+
+        // Поле и запретные зоны (своё): в dump без зон — «geozone clear», чтобы перенос затирал старое.
+        void dumpGeozones(bool onlyChanged)
+        {
+            const GeoZoneTable& z = params.zones();
+            if (onlyChanged && z.isDefault()) return;
+            print("\r\n# geozone\r\ngeozone clear\r\n");
+            for (uint8_t i = 0; i < GeoZoneTable::MAX_ZONES; ++i) z.formatZone(i, [this](const char* line) { print("%s\r\n", line); });
+        }
+
+        void cmdGeozone(const char* args)
+        {
+            GeoZoneTable& z = params.zones();
+            if (*args == '\0')
+            {
+                if (z.isDefault()) print("# зон нет: geozone 0 FIELD, затем geozone 0 0 широта долгота … (≥ 3 точек)\r\n");
+                for (uint8_t i = 0; i < GeoZoneTable::MAX_ZONES; ++i)
+                {
+                    z.formatZone(i, [this](const char* line) { print("%s\r\n", line); });
+                    if (z.used(i)) print("# зона %u: %s\r\n", i, z.problem(i) ? z.problem(i) : "годится");
+                }
+                return;
+            }
+            char error[96];
+            if (!z.parse(args, error, sizeof(error)))
+            {
+                printError("%s", error);
+                return;
+            }
+            dirty = true;
         }
 
         // Как в BF: diff — только то, что не как по умолчанию.

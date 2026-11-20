@@ -306,6 +306,40 @@ static void configureBuzzer()
 
 // Настройки пульта и описание коптера — в работу (при включении, после
 // save и отмены в CLI или приложении).
+// Поле геозабора для очков (P44 б): ближний край, масштаб радара и стороны
+// рядом с коптером в осях носа (дальние отбрасываем — их радар не покажет).
+static void fillFenceOsd(copter::OsdData& d, float headingDeg)
+{
+    const copter::Geofence& f = copterController.getGeofence();
+    d.fencePolygon = f.hasPolygons() && f.positionKnown();
+    d.fenceEdgeCount = 0;
+    if (!d.fencePolygon) return;
+    d.fenceMarginM = f.marginM();
+    d.fenceEdgeRelDeg = f.polygonNearer() ? f.edgeBearingDeg() - headingDeg : d.homeRelativeDeg + 180.0f;
+    d.fenceScaleM = d.fenceRadiusM > 0.0f ? fminf(d.fenceRadiusM, f.radarSpanM()) : f.radarSpanM();
+    const float window = 6.0f * fmaxf(1.0f, d.fenceScaleM) / copter::OsdScreen::FENCE_MAP_SPAN;
+    float pn, pe;
+    f.positionM(pn, pe);
+    const float h = headingDeg * 0.017453293f, ch = cosf(h), sh = sinf(h);
+    for (uint8_t i = 0; i < f.polygonCount(); ++i)
+    {
+        const uint8_t n = f.polygonPoints(i);
+        for (uint8_t k = 0; k < n && d.fenceEdgeCount < copter::OsdData::FENCE_EDGES_MAX; ++k)
+        {
+            float an, ae, bn, be;
+            f.polygonPoint(i, k, an, ae);
+            f.polygonPoint(i, static_cast<uint8_t>((k + 1) % n), bn, be);
+            an -= pn; ae -= pe; bn -= pn; be -= pe;
+            if (copter::segmentDistance(0.0f, 0.0f, an, ae, bn, be) > window) continue;
+            float* e = d.fenceEdges[d.fenceEdgeCount++];
+            e[0] = an * ch + ae * sh;    // вперёд
+            e[1] = -an * sh + ae * ch;   // вправо
+            e[2] = bn * ch + be * sh;
+            e[3] = -bn * sh + be * ch;
+        }
+    }
+}
+
 static void applySettings()
 {
     copterParams.rc().setChannelCount(Config::RC_CHANNELS);
@@ -725,7 +759,7 @@ static bool handleSticks(copter::CopterRc& rc)
 static const char* firstArmBlock()
 {
     const uint32_t b = copterController.getStatus().armBlockers;
-    for (uint32_t bit = 1; bit <= copter::ARM_BLOCK_LAST; bit <<= 1)
+    for (uint32_t bit = 1; bit && bit <= copter::ARM_BLOCK_LAST; bit <<= 1)
     {
         if (b & bit) return copter::armBlockWord(bit);
     }
@@ -793,6 +827,7 @@ static void composeOsd()
     d.training = copter::trainingText(s.trainingFlags);
     d.fence = copter::geofenceText(s.fenceFlags);
     d.fenceRadiusM = copterController.getGeofence().settings().circle() ? copterController.getGeofence().settings().radiusM : 0.0f;
+    fillFenceOsd(d, headingDeg());
     vtxHeat.update(d.armed, vtx.state(), millis());
     d.vtxHot = vtxHeat.warn();
     d.escOverloads = escGuard.flightStats().escEvents;
