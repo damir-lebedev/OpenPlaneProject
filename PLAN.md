@@ -167,6 +167,37 @@ DfuSe, стирание только секторов прошивки, свер
   `firmware_flash_bin` (тело — байты, заголовки `port`/`chip`; «Только без ARM.» → `ARMED`), `api.flashBin` +
   `onFlashProgress`. Манифест: `usb.host` (required=false), `USB_DEVICE_ATTACHED` + `device_filter.xml`.
   Debug-APK собирается `tauri android build` целиком (Режим разработчика Windows включён); ~380 МБ (символы).
+- [ ] **P53 · APK не ставится у знакомого (2026-11-20, скриншоты — `C:\Damir\SERVER\errors\`)
+  — ПЕРВЫМ.** Что видно: файл открыт в «Браузере файлов SHAREit», имя
+  `SDOC-E928EB353D25C9651C4B95904E5DDC58-11-20-SI.` — не наше
+  `OpenPlane-Studio-Android.apk`, без расширения `.apk`, иконка «?»; «Открыть» →
+  системное «Не удалось обработать пакет» (parse error), повторно — «Файл
+  недействителен». У Дамира тот же APK с сайта встал. Кнопка на `/studio` ведёт
+  на `github.com/…/releases/download/<tag>/…` → редирект на
+  `objects.githubusercontent.com` (длинный подписанный URL).
+  Причины по вероятности: (1) **файл недокачан или подменён**: зарубежные CDN из
+  РФ рвутся посреди передачи (DPI, см. SERVER CLAUDE.md «Foreign CDNs from RU»),
+  браузер/качалка сохранила обрывок или HTML-страницу под своим именем — parse
+  error ровно так и выглядит; (2) имя без `.apk` — SHAREit/MIUI не распознают
+  тип (лечится переименованием, но если файл целый); (3) телефон 32-битный
+  (armeabi-v7a, дешёвые/Android Go) — у нас APK **только arm64** (`--target
+  aarch64`), на старых Android это тоже бывает «ошибкой разбора»; (4) Android
+  ниже 7.0 (minSdk 24) — маловероятно, интерфейс на скриншоте новый.
+  Сделать: (а) спросить у знакомого: откуда качал (кнопка сайта / Telegram /
+  GitHub), **размер файла** (должен быть ≈7,5 МБ), версию Android и модель
+  (CPU-Z → «Набор инструкций»); переименовать в `.apk` и открыть системным
+  «Файлы»; (б) **зеркало APK на нашем сервере**: lebedev-space отдаёт
+  `/studio/OpenPlane-Studio-Android.apk` сам (скачать с GitHub при
+  `startReleaseSync`, проверить SHA-256 из выпуска, `Content-Type:
+  application/vnd.android.package-archive`, `Content-Disposition: attachment;
+  filename=…apk`, `Content-Length`, поддержка Range), кнопка — на зеркало,
+  GitHub — запасной ссылкой; (в) рядом с кнопкой: «файл ≈7,5 МБ и называется
+  …apk; не ставится — переименуй / сверь SHA-256 / напиши в «Нашёл баг?»»
+  (тема `android`); (г) CI: второй APK для armeabi-v7a (`--target armv7`) или
+  универсальный, на сайте — выбор по `navigator.userAgentData`/подсказка;
+  (д) в Studio на Android — экран «О программе» с ABI и версией (для отчётов).
+  Деплой сайта — скриптом владельцу.
+
 - [ ] **P47 b · USB-OTG на реальном телефоне с платой.** Платы по очереди (пользователь 2026-11-20): **F405 у полевого
   тестера** (донор, Android, USB-C↔USB-C; какая именно F405 — уточнить: env `aocodarc-f405v3-quad` или
   `getfun-f405v3-quad`) — первой; **Matek H743-SLIM V4** — у пользователя ~2026-12-02 (P41). Первую прошивку F405 с BF
