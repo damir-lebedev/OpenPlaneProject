@@ -9795,6 +9795,243 @@ void test_dead_reckon_params_and_osd()
     TEST_ASSERT_FALSE(gpsFailure(RescueFail::NO_PROGRESS));
 }
 
+// 066/068/070: acc_calibration строкой как в BF ("x,y,z,флаг", 1/2048 g), прочие — числами.
+void test_imu_align_params_text_and_settings()
+{
+    CopterParams& p = five5Params();
+    char err[128], out[32];
+    p.format(PARAM_ACC_CALIBRATION, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("0,0,0,0", out);
+    TEST_ASSERT_TRUE(p.parse(PARAM_ACC_CALIBRATION, 0, "41,-20,61,1", err, sizeof(err)));
+    p.format(PARAM_ACC_CALIBRATION, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("41,-20,61,1", out);
+    TEST_ASSERT_FALSE(p.parse(PARAM_ACC_CALIBRATION, 0, "1000,0,0,1", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_ACC_CALIBRATION, 0, "1,2,3", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_ACC_CALIBRATION, 0, "1,2,3,2", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_ALIGN_BOARD_YAW, 0, "90", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_GYRO_OFFSET_YAW, 0, "-150", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_IMU_DCM_KI, 0, "300", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_ALIGN_BOARD_PITCH, 0, "400", err, sizeof(err)));
+    CopterSettings s;
+    p.applyTo(s);
+    TEST_ASSERT_EQUAL_INT16(90, s.imuAlign.alignYawDeg);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 41.0f / 2048.0f, s.imuAlign.accZeroG[0]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, -20.0f / 2048.0f, s.imuAlign.accZeroG[1]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, -1.5f, s.imuAlign.gyroOffsetYawDps);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, s.dcmKp);   // умолчание 5000 — прежние 2 с
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.03f, s.dcmKi);
+    // нули — то же, что умолчание (пустая строка)
+    TEST_ASSERT_TRUE(p.parse(PARAM_ACC_CALIBRATION, 0, "0,0,0,0", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.isSet(PARAM_ACC_CALIBRATION, 0));
+    TEST_ASSERT_EQUAL_FLOAT(125.0f, p.value(PARAM_GYRO_CALIB_DURATION));
+    TEST_ASSERT_EQUAL_FLOAT(48.0f, p.value(PARAM_GYRO_CALIB_NOISE_LIMIT));
+    p.resetAll();
+}
+
+// align_board_*: плата повёрнута на раме — гироскоп и акселерометр в осях рамы.
+void test_imu_align_rotates_board_to_frame()
+{
+    ImuAlign a;
+    ImuAlignSettings s;
+    float g[3], acc[3];
+    // без поворота и нулей — как есть
+    a.configure(s);
+    TEST_ASSERT_FALSE(a.rotates());
+    const float g0[3] = { 1, 2, 3 }, a0[3] = { 0.1f, 0.2f, 0.9f };
+    a.apply(g0, a0, g, acc);
+    TEST_ASSERT_EQUAL_FLOAT(2.0f, g[1]);
+    TEST_ASSERT_EQUAL_FLOAT(0.2f, acc[1]);
+    // стрелка платы вправо (по часовой, 90): крен рамы вправо плата видит по своей −Y
+    s.alignYawDeg = 90;
+    a.configure(s);
+    const float rollRight[3] = { 0, -10, 0 };
+    const float flat[3] = { 0, 0, 1 };
+    a.apply(rollRight, flat, g, acc);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 10.0f, g[0]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.0f, g[1]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, acc[2]);
+    // «верх» по оси X платы — это правый борт рамы
+    const float boardNoseRight[3] = { 0.5f, 0, 0.866f };   // ось X платы смотрит вправо от рамы
+    a.apply(g0, boardNoseRight, g, acc);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 0.0f, acc[0]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, -0.5f, acc[1]);   // Y рамы — влево: «верх» сместился вправо
+    // плата под камеру: передний край вверх на 10°, рама ровно — после поворота ровно
+    ImuAlignSettings t;
+    t.alignPitchDeg = 10;
+    a.configure(t);
+    float up[3];
+    a.levelUpInBoard(up);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, sinf(10.0f * 3.14159265f / 180.0f), up[0]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, cosf(10.0f * 3.14159265f / 180.0f), up[2]);
+    a.apply(g0, up, g, acc);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.0f, acc[0]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.0f, acc[1]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, acc[2]);
+    // 360 — то же, что 0
+    ImuAlignSettings full;
+    full.alignYawDeg = 360;
+    a.configure(full);
+    TEST_ASSERT_FALSE(a.rotates());
+    // нуль акселерометра вычитается в осях платы, gyro_offset_yaw добавляется к рысканью
+    ImuAlignSettings z;
+    z.accZeroG[0] = 0.05f;
+    z.gyroOffsetYawDps = 1.5f;
+    a.configure(z);
+    const float still[3] = { 0, 0, 0 }, biased[3] = { 0.05f, 0, 1 };
+    a.apply(still, biased, g, acc);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, acc[0]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 1.5f, g[2]);
+}
+
+// Калибровка нуля акселерометра: ровно и неподвижно 0.5 с — нуль = среднее − «верх».
+void test_acc_zero_calibrator()
+{
+    ImuAlign align;
+    align.configure(ImuAlignSettings());
+    AccZeroCalibrator c;
+    TEST_ASSERT_FALSE(c.running());
+    c.start();
+    const float acc[3] = { 0.02f, -0.01f, 1.03f }, still[3] = { 0.3f, -0.2f, 0.1f };
+    AccZeroCalibrator::State st = AccZeroCalibrator::State::RUNNING;
+    int ticks = 0;
+    while (st == AccZeroCalibrator::State::RUNNING && ticks < 2000)
+    {
+        st = c.feed(acc, still, 0.001f, align);
+        ++ticks;
+    }
+    TEST_ASSERT_EQUAL(static_cast<int>(AccZeroCalibrator::State::DONE), static_cast<int>(st));
+    TEST_ASSERT_INT_WITHIN(2, 500, ticks);
+    TEST_ASSERT_EQUAL_INT16(41, c.result()[0]);
+    TEST_ASSERT_EQUAL_INT16(-20, c.result()[1]);
+    TEST_ASSERT_EQUAL_INT16(61, c.result()[2]);
+    char text[24];
+    formatAccCalibration(c.result(), true, text, sizeof(text));
+    TEST_ASSERT_EQUAL_STRING("41,-20,61,1", text);
+    int16_t back[3];
+    bool done = false;
+    TEST_ASSERT_TRUE(parseAccCalibration(text, back, done));
+    TEST_ASSERT_TRUE(done);
+    TEST_ASSERT_EQUAL_INT16(-20, back[1]);
+    // повернули — не удалась
+    c.start();
+    const float spin[3] = { 0, 0, 30 };
+    c.feed(acc, still, 0.001f, align);
+    TEST_ASSERT_EQUAL(static_cast<int>(AccZeroCalibrator::State::FAILED), static_cast<int>(c.feed(acc, spin, 0.001f, align)));
+    // стоит с наклоном 30° — не удалась
+    c.start();
+    const float tilted[3] = { 0.5f, 0, 0.866f };
+    for (int i = 0; i < 600 && c.running(); ++i) c.feed(tilted, still, 0.001f, align);
+    TEST_ASSERT_EQUAL(static_cast<int>(AccZeroCalibrator::State::FAILED), static_cast<int>(c.getState()));
+    // плата под камеру на 10° и align_board_pitch = 10: «ровно» — для рамы, нуль ≈ 0
+    ImuAlignSettings t;
+    t.alignPitchDeg = 10;
+    align.configure(t);
+    float up[3];
+    align.levelUpInBoard(up);
+    c.start();
+    for (int i = 0; i < 600 && c.running(); ++i) c.feed(up, still, 0.001f, align);
+    TEST_ASSERT_EQUAL(static_cast<int>(AccZeroCalibrator::State::DONE), static_cast<int>(c.getState()));
+    TEST_ASSERT_INT_WITHIN(1, 0, c.result()[0]);
+    TEST_ASSERT_INT_WITHIN(1, 0, c.result()[2]);
+}
+
+// Контроллер берёт поворот платы и нуль: плата наклонена на 5° по тангажу и
+// нуль это снимает — горизонт ровный; gyro_offset_yaw — рысканье не уплывает.
+void test_controller_applies_board_alignment()
+{
+    const float tilt = 5.0f * 3.14159265f / 180.0f;
+    Bench raw;
+    raw.sens.accel[0] = sinf(tilt);
+    raw.sens.accel[2] = cosf(tilt);
+    raw.run(2.0f);
+    TEST_ASSERT_TRUE(fabsf(raw.ctl.getStatus().pitch) > 4.0f);
+    CopterSettings s;
+    s.imuAlign.accZeroG[0] = sinf(tilt);
+    s.imuAlign.accZeroG[2] = cosf(tilt) - 1.0f;
+    Bench zeroed(s);
+    zeroed.sens.accel[0] = sinf(tilt);
+    zeroed.sens.accel[2] = cosf(tilt);
+    zeroed.run(2.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 0.0f, zeroed.ctl.getStatus().pitch);
+    // тот же наклон как align_board_pitch: плата наклонена — рама ровно
+    CopterSettings a;
+    a.imuAlign.alignPitchDeg = 5;
+    Bench aligned(a);
+    aligned.sens.accel[0] = sinf(tilt);
+    aligned.sens.accel[2] = cosf(tilt);
+    aligned.run(2.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 0.0f, aligned.ctl.getStatus().pitch);
+    // гироскоп уходит по рысканью на −1.5 °/с, gyro_offset_yaw = +1.5 — курс стоит (Махони, без MEKF)
+    CopterSettings y;
+    y.attitudeEkf = false;
+    y.imuAlign.gyroOffsetYawDps = 1.5f;
+    Bench yaw(y);
+    yaw.sens.gyro[2] = -1.5f;
+    yaw.run(0.5f);
+    const float y0 = yaw.ctl.getStatus().yaw;
+    yaw.run(4.0f);
+    TEST_ASSERT_FLOAT_WITHIN(0.2f, y0, yaw.ctl.getStatus().yaw);
+}
+
+// imu_dcm_kp / imu_dcm_ki: Махони с интегралом сам выбирает смещение гироскопа.
+void test_mahony_integral_removes_gyro_bias()
+{
+    float level[3] = { 0, 0, 1 }, biased[3] = { 2.0f, 0, 0 };   // крен уходит на 2 °/с
+    AttitudeQuat p;
+    p.configure(2.0f, 0.2f);
+    p.update(biased, level, 0.001f);
+    p.setGrounded(false);
+    for (int i = 0; i < 30000; ++i) p.update(biased, level, 0.001f);
+    const float onlyP = fabsf(p.rollDeg());   // установившаяся ошибка ≈ 2 / 0.5 рад = 4°
+    TEST_ASSERT_TRUE(onlyP > 3.0f);
+    AttitudeQuat pi;
+    pi.configure(2.0f, 0.2f);
+    pi.setMahonyGains(0.5f, 5.0f, 0.1f);
+    pi.update(biased, level, 0.001f);
+    pi.setGrounded(false);
+    for (int i = 0; i < 30000; ++i) pi.update(biased, level, 0.001f);
+    TEST_ASSERT_TRUE(fabsf(pi.rollDeg()) < 0.3f);
+    // сильнее kp — меньше ошибка без интеграла
+    AttitudeQuat strong;
+    strong.configure(2.0f, 0.2f);
+    strong.setMahonyGains(2.0f, 20.0f, 0.0f);
+    strong.update(biased, level, 0.001f);
+    strong.setGrounded(false);
+    for (int i = 0; i < 30000; ++i) strong.update(biased, level, 0.001f);
+    TEST_ASSERT_TRUE(fabsf(strong.rollDeg()) < onlyP * 0.35f);
+    // MEKF их не берёт: kp = 0 не отключает ему акселерометр
+    AttitudeQuat ekf;
+    ekf.configure(2.0f, 0.2f);
+    ekf.setEkf(true);
+    ekf.setMahonyGains(0.0f, 0.0f, 0.0f);
+    float tilted[3];
+    accelFor(20.0f, 0.0f, tilted);
+    ekf.update(level, level, 0.001f);
+    const float zero[3] = { 0, 0, 0 };
+    ekf.setGrounded(true);
+    for (int i = 0; i < 3000; ++i) ekf.update(zero, tilted, 0.001f);
+    TEST_ASSERT_TRUE(ekf.rollDeg() > 10.0f);
+}
+
+// MSP 38/43 (поворот платы для конфигуратора BF) и 205 (калибровка акселерометра).
+void test_msp_board_alignment_and_acc_calibration()
+{
+    MspBench m;
+    std::vector<uint8_t> p;
+    TEST_ASSERT_TRUE(m.ask(43, { 0x00, 0x00, 0xF6, 0xFF, 0x5A, 0x00 }, p));   // 0, −10, 90
+    TEST_ASSERT_EQUAL_FLOAT(-10.0f, m.params.value(PARAM_ALIGN_BOARD_PITCH));
+    TEST_ASSERT_EQUAL_FLOAT(90.0f, m.params.value(PARAM_ALIGN_BOARD_YAW));
+    std::vector<uint8_t> r = m.get(38);
+    TEST_ASSERT_EQUAL(6, static_cast<int>(r.size()));
+    TEST_ASSERT_EQUAL_INT16(-10, static_cast<int16_t>(le16(r, 2)));
+    TEST_ASSERT_EQUAL_INT16(90, static_cast<int16_t>(le16(r, 4)));
+    TEST_ASSERT_FALSE(m.msp.takeAccCalibration());
+    m.get(205);
+    TEST_ASSERT_TRUE(m.msp.takeAccCalibration());
+    TEST_ASSERT_FALSE(m.msp.takeAccCalibration());
+    m.params.resetAll();
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -9972,6 +10209,12 @@ int main()
     RUN_TEST(test_gyro_spectrum_finds_vibration_peak);
     RUN_TEST(test_dyn_notch_cuts_unmodelled_vibration);
     RUN_TEST(test_rpm_filter_weights_and_fade);
+    RUN_TEST(test_imu_align_params_text_and_settings);
+    RUN_TEST(test_imu_align_rotates_board_to_frame);
+    RUN_TEST(test_acc_zero_calibrator);
+    RUN_TEST(test_controller_applies_board_alignment);
+    RUN_TEST(test_mahony_integral_removes_gyro_bias);
+    RUN_TEST(test_msp_board_alignment_and_acc_calibration);
     RUN_TEST(test_rpm_filter_per_motor);
     RUN_TEST(test_dyn_notch_and_rpm_filter_params);
     RUN_TEST(test_msp_filter_config_dyn_notch_and_rpm);

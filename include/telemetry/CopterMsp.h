@@ -58,7 +58,8 @@ namespace copter
             API_VERSION = 1, FC_VARIANT = 2, FC_VERSION = 3, BOARD_INFO = 4, BUILD_INFO = 5,
             NAME = 10, SET_NAME = 11,
             BATTERY_CONFIG = 32, SET_BATTERY_CONFIG = 33, MODE_RANGES = 34, SET_MODE_RANGE = 35,
-            FEATURE_CONFIG = 36, SET_FEATURE_CONFIG = 37, MIXER_CONFIG = 42, RX_CONFIG = 44, SET_RX_CONFIG = 45,
+            FEATURE_CONFIG = 36, SET_FEATURE_CONFIG = 37, BOARD_ALIGNMENT_CONFIG = 38,
+            SET_BOARD_ALIGNMENT_CONFIG = 43, ACC_CALIBRATION = 205, MIXER_CONFIG = 42, RX_CONFIG = 44, SET_RX_CONFIG = 45,
             ARMING_CONFIG = 61, SET_ARMING_CONFIG = 62, RX_MAP = 64, SET_RX_MAP = 65, REBOOT = 68,
             RAW_GPS = 106, COMP_GPS = 107, DISPLAYPORT = 182, SET_OSD_CANVAS = 188, OSD_CANVAS = 189,
             VTX_CONFIG = 88, SET_VTX_CONFIG = 89,
@@ -206,6 +207,14 @@ namespace copter
         const char* txModelName() const { return txModel; }
         void settingsApplied() { unsaved = false; }
 
+        // MSP_ACC_CALIBRATION пришёл — main_copter.cpp запускает калибровку нуля.
+        bool takeAccCalibration()
+        {
+            const bool p = accCalPending;
+            accCalPending = false;
+            return p;
+        }
+
         // MSP_REBOOT: после отправки ответа — перезагрузка (0 — прошивка, 1 — загрузчик DFU).
         bool takeReboot(uint8_t& mode)
         {
@@ -271,6 +280,15 @@ namespace copter
                 case MODE_RANGES: modeRanges(w); return true;
                 case MOTOR_CONFIG: motorConfig(w); return true;
                 case FAILSAFE_CONFIG: failsafeConfig(w); return true;
+                case BOARD_ALIGNMENT_CONFIG:   // align_board_roll / _pitch / _yaw, int16
+                    w.u16(static_cast<uint16_t>(static_cast<int16_t>(params.value(PARAM_ALIGN_BOARD_ROLL))));
+                    w.u16(static_cast<uint16_t>(static_cast<int16_t>(params.value(PARAM_ALIGN_BOARD_PITCH))));
+                    w.u16(static_cast<uint16_t>(static_cast<int16_t>(params.value(PARAM_ALIGN_BOARD_YAW))));
+                    return true;
+                case ACC_CALIBRATION:   // нуль акселерометра: рама ровно, ~0.5 с (main_copter.cpp)
+                    if (armed) return false;
+                    accCalPending = true;
+                    return true;
                 case ARMING_CONFIG:
                     w.u8(static_cast<uint32_t>(params.value(PARAM_AUTO_DISARM_DELAY)));
                     w.u8(0);
@@ -397,6 +415,12 @@ namespace copter
                     }
                     break;
                 case SET_FAILSAFE_CONFIG: setFailsafeConfig(r); break;
+                case SET_BOARD_ALIGNMENT_CONFIG:
+                    if (r.remaining() < 6) return false;
+                    set(PARAM_ALIGN_BOARD_ROLL, static_cast<int16_t>(r.u16()));
+                    set(PARAM_ALIGN_BOARD_PITCH, static_cast<int16_t>(r.u16()));
+                    set(PARAM_ALIGN_BOARD_YAW, static_cast<int16_t>(r.u16()));
+                    break;
                 case SET_ARMING_CONFIG:
                     set(PARAM_AUTO_DISARM_DELAY, r.u8());
                     r.u8();
@@ -1358,6 +1382,7 @@ namespace copter
         float motorTest[8] = {};
         bool motorTestOn = false;
         uint8_t rebootMode = 0;
+        bool accCalPending = false;
         uint32_t lastFrameMs = 0;
         char txModel[TX_MODEL_LENGTH + 1] = {};
     };

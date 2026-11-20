@@ -210,6 +210,19 @@ namespace copter
         {
             kFlight = flightTauS > 0.0f ? 1.0f / flightTauS : 0.0f;
             kGround = groundTauS > 0.0f ? 1.0f / groundTauS : 0.0f;
+            mahonyFlight = kFlight;
+            mahonyGround = kGround;
+        }
+
+        // Махони отдельно (imu_dcm_kp / imu_dcm_ki, имена BF): сила поправки по
+        // акселерометру в полёте и на земле, 1/с, и интеграл — сам выбирает
+        // смещение гироскопа. MEKF их не берёт (у него своя модель шумов).
+        void setMahonyGains(float flightPerS, float groundPerS, float integralPerS2)
+        {
+            mahonyFlight = fmaxf(0.0f, flightPerS);
+            mahonyGround = fmaxf(0.0f, groundPerS);
+            mahonyKi = fmaxf(0.0f, integralPerS2);
+            if (mahonyKi <= 0.0f) mahonyI = Vec3();
         }
 
         // Фильтр: MEKF (true) или Махони. Переключение на ходу — без скачка:
@@ -226,6 +239,7 @@ namespace copter
             w = 1.0f;
             x = y = z = 0.0f;
             initialized = false;
+            mahonyI = Vec3();
             ekfReset();
         }
 
@@ -342,7 +356,7 @@ namespace copter
                 trust *= fminf(1.0f, fmaxf(0.0f, 1.0f - (spinDps - 30.0f) / 70.0f));
                 trust *= flightTrust();
             }
-            const float k = (grounded ? kGround : kFlight) * trust;
+            const float k = (grounded ? mahonyGround : mahonyFlight) * trust;
             if (k > 0.0f && aLen > 0.1f)
             {
                 const Vec3 measured = { a.x / aLen, a.y / aLen, a.z / aLen };
@@ -352,7 +366,18 @@ namespace copter
                 p += gain * e.x;
                 q += gain * e.y;
                 r += gain * e.z;
+                // интеграл (imu_dcm_ki): копится, только пока поправке верим
+                if (mahonyKi > 0.0f && gain > 0.0f)
+                {
+                    const float ki = mahonyKi * trust * dtS;
+                    mahonyI.x = clampAbs(mahonyI.x + ki * e.x, MAHONY_I_MAX);
+                    mahonyI.y = clampAbs(mahonyI.y + ki * e.y, MAHONY_I_MAX);
+                    mahonyI.z = clampAbs(mahonyI.z + ki * e.z, MAHONY_I_MAX);
+                }
             }
+            p += mahonyI.x;
+            q += mahonyI.y;
+            r += mahonyI.z;
 
             integrate(p, q, r, dtS);
         }
@@ -365,6 +390,7 @@ namespace copter
         void forgetGyroBias()
         {
             bias = Vec3();
+            mahonyI = Vec3();
             for (int i = 0; i < 6; ++i)
             {
                 for (int j = 3; j < 6; ++j) P[i][j] = P[j][i] = 0.0f;
@@ -1134,6 +1160,10 @@ namespace copter
 
         float w = 1.0f, x = 0.0f, y = 0.0f, z = 0.0f;
         float kFlight = 0.5f, kGround = 5.0f;
+        float mahonyFlight = 0.5f, mahonyGround = 5.0f, mahonyKi = 0.0f;
+        Vec3 mahonyI;                                    // интеграл Махони, рад/с
+        static constexpr float MAHONY_I_MAX = 0.35f;     // ±20 °/с: дальше гироскоп не уплывает
+        static float clampAbs(float v, float lim) { return v > lim ? lim : (v < -lim ? -lim : v); }
         bool grounded = true;
         bool initialized = false;
         float groundAccel = -1.0f;

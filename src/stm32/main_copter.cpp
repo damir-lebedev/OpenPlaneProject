@@ -340,6 +340,8 @@ static void fillFenceOsd(copter::OsdData& d, float headingDeg)
     }
 }
 
+static void configureGyroCalibration();
+
 static void applySettings()
 {
     copterParams.rc().setChannelCount(Config::RC_CHANNELS);
@@ -364,6 +366,7 @@ static void applySettings()
     dshotBeacon.configure(static_cast<uint32_t>(copterParams.value(copter::PARAM_DSHOT_BEACON_OFF_FLAGS)),
                           static_cast<uint8_t>(copterParams.value(copter::PARAM_BEEPER_DSHOT_BEACON_TONE)));
     gyroToUse = static_cast<copter::GyroToUse>(static_cast<uint8_t>(copterParams.value(copter::PARAM_GYRO_TO_USE)));
+    configureGyroCalibration();
     stickCommands.configure(static_cast<uint16_t>(copterParams.value(copter::PARAM_MIN_CHECK)),
                             static_cast<uint16_t>(copterParams.value(copter::PARAM_MAX_CHECK)));
     osdMenu.configure(static_cast<uint16_t>(copterParams.value(copter::PARAM_MIN_CHECK)),
@@ -661,6 +664,56 @@ static bool beepFromConsole(copter::BeeperCondition c, bool preview)
     return true;
 }
 
+// Нуль акселерометра (acc_calibration, copter/ImuAlign.h): стики, консоль 'a',
+// MSP_ACC_CALIBRATION. Копится в задаче полёта (feedAccCalibration), итог — писком.
+static copter::AccZeroCalibrator accZeroCal;
+static copter::ImuAlign accCalAlign;   // поворот платы на время калибровки
+static void startAccCalibration()
+{
+    if (copterController.isArmed()) return;
+    copter::ImuAlignSettings a;
+    a.alignRollDeg = static_cast<int16_t>(copterParams.value(copter::PARAM_ALIGN_BOARD_ROLL));
+    a.alignPitchDeg = static_cast<int16_t>(copterParams.value(copter::PARAM_ALIGN_BOARD_PITCH));
+    a.alignYawDeg = static_cast<int16_t>(copterParams.value(copter::PARAM_ALIGN_BOARD_YAW));
+    accCalAlign.configure(a);
+    accZeroCal.start();
+}
+
+static void feedAccCalibration(const copter::CopterSensors& sens, float dt)
+{
+    if (!accZeroCal.running()) return;
+    using St = copter::AccZeroCalibrator::State;
+    const St st = copterController.isArmed() ? St::FAILED : accZeroCal.feed(sens.accel, sens.gyro, dt, accCalAlign);
+    if (st == St::RUNNING) return;
+    if (st == St::DONE)
+    {
+        char text[24];
+        copter::formatAccCalibration(accZeroCal.result(), true, text, sizeof(text));
+        copterParams.setText(copter::PARAM_ACC_CALIBRATION, 0, text);
+        applySettings();
+        copterConsole.saveSettings();
+        Serial.print("Нуль акселерометра: acc_calibration = ");
+        Serial.println(text);
+        beeper.event(copter::BeeperCondition::ACC_CALIBRATION);
+    }
+    else
+    {
+        Serial.println("Нуль акселерометра: не удалось — коптер двигали или стоит с наклоном больше 25°");
+        beeper.event(copter::BeeperCondition::ACC_CALIBRATION_FAIL);
+    }
+    accZeroCal.clear();
+}
+
+// gyro_calib_duration / gyro_calib_noise_limit -> калибровка гироскопа (до 4 попыток,
+// пока не перестанут трясти; порог — в отсчётах чипа на ±2000 °/с: 16.4 на °/с).
+static void configureGyroCalibration()
+{
+    const int samples = static_cast<int>(copterParams.value(copter::PARAM_GYRO_CALIB_DURATION));
+    const float noiseDps = copterParams.value(copter::PARAM_GYRO_CALIB_NOISE_LIMIT) / 16.4f;
+    imuSensor.setGyroCalibration(samples, noiseDps, 4);
+    if (HAS_GYRO2) gyro2Sensor.setGyroCalibration(samples, noiseDps, 4);
+}
+
 // Команда стиками (copter/StickCommands.h) — сделать; подтверждение — писком.
 static void runStickCommand(const copter::StickCommand& c)
 {
@@ -676,20 +729,9 @@ static void runStickCommand(const copter::StickCommand& c)
             beeper.event(BeeperCondition::GYRO_CALIBRATED);
             return;
         case StickAction::CALIBRATE_ACC:
-        {
-            // горизонт = как стоит сейчас: acc_trim_* так, чтобы ANGLE держал этот наклон
-            const CopterStatus& st = copterController.getStatus();
-            if (fabsf(st.roll) > 25.0f || fabsf(st.pitch) > 25.0f)
-            {
-                beeper.event(BeeperCondition::ACC_CALIBRATION_FAIL);
-                return;
-            }
-            copterParams.setValue(PARAM_ACC_TRIM_ROLL, 0, roundf(st.roll * 10.0f));
-            copterParams.setValue(PARAM_ACC_TRIM_PITCH, 0, roundf(-st.pitch * 10.0f));
-            copterConsole.saveSettings();
-            beeper.event(BeeperCondition::ACC_CALIBRATION);
+            // нуль акселерометра (acc_calibration): рама стоит ровно ~0.5 с — как BF
+            startAccCalibration();
             return;
-        }
         case StickAction::PID_PROFILE:
         case StickAction::RATE_PROFILE:
         {
@@ -1093,6 +1135,8 @@ static void flightTask(void*)
         if (copterConsole.cpuPercent() >= 100) blockers |= copter::ARM_BLOCK_LOAD;
         copterController.setExternalBlockers(blockers);
 
+        if (copterConsole.mspHandler().takeAccCalibration()) startAccCalibration();
+        feedAccCalibration(sens, 0.001f);   // задача — раз в 1 мс
         const copter::CopterOutputs out = copterController.update(sens, rc);
         t = lap(TASK_PID, t);
         // ARM — недосланные команды (пищалка, настройки) отменяются; turtle
@@ -1400,6 +1444,7 @@ void setup()
 
     setupCopter(settings);   // выходы на моторы — сразу «стоп»
 
+    configureGyroCalibration();
     if (imuSensor.begin()) imuSensor.calibrate();
     if (HAS_GYRO2)
     {
@@ -1439,6 +1484,7 @@ void setup()
     copterConsole.setRebootHook([]() { NVIC_SystemReset(); });
 #endif
     copterConsole.setApplyHook(applySettings);
+    copterConsole.setAccCalibrationHook(startAccCalibration);
     copterConsole.setBeepHook(beepFromConsole);
     copterConsole.setRxInput(&rxInput);
     copterConsole.setBattery(&battery);

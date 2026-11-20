@@ -32,7 +32,8 @@
 //   m     — проверка моторов: по очереди, на малом газе, с описанием,
 //           где мотор и куда должен крутиться. ПРОПЕЛЛЕРЫ СНЯТЬ — консоль
 //           просит подтвердить клавишей 'y'
-//   i     — калибровка гироскопа (коптер неподвижен ~2 с)
+//   i     — калибровка гироскопа (коптер неподвижен, gyro_calib_duration)
+//   a     — нуль акселерометра (коптер стоит ровно ~0.5 с -> acc_calibration)
 //   o     — калибровка установки платы (три позы)
 //   c     — калибровка компаса (15 с вращать коптер по всем осям)
 //   D     — перезагрузка в загрузчик USB DFU
@@ -91,6 +92,8 @@ public:
     void write(const char* text) override { io.print(text); }
 
     void setBootloaderHook(void (*hook)()) { bootloaderHook = hook; }
+    // 'a': калибровка нуля акселерометра — main_copter.cpp (copter/ImuAlign.h).
+    void setAccCalibrationHook(void (*hook)()) { accCalHook = hook; }
     // Вызывается после save и отмены в CLI и в приложении: приёмник,
     // выходы — по новым настройкам (main_copter.cpp).
     void setApplyHook(void (*hook)()) { applyHook = hook; }
@@ -488,6 +491,16 @@ private:
                 // в приложении по точкам на сфере (здесь коптер 15 с без присмотра никто не крутит)
                 io.println("Калибровка компаса — в OpenPlane Studio: Подготовка -> Компас (или set mag_zero_x/y/z, mag_scale_x/y/z, align_mag).");
                 break;
+            case 'a':
+                if (refuseArmed()) return;
+                if (!accCalHook)
+                {
+                    io.println("Калибровка нуля акселерометра на этой сборке не подключена.");
+                    return;
+                }
+                io.println("Нуль акселерометра: коптер стоит ровно и неподвижно ~0.5 с...");
+                accCalHook();
+                break;
             case 'o':
                 if (refuseArmed()) return;
                 io.println("Калибровка установки: «нос вверх» — передние моторы вверх, «правое крыло вниз» — правые моторы вниз.");
@@ -625,7 +638,8 @@ private:
     {
         io.println("s — состояние, t — настройка, r — каналы пульта, l — живая строка,");
         io.println("m — проверка моторов (без пропеллеров!), i — калибровка гироскопа,");
-        io.println("o — калибровка установки платы, c — калибровка компаса, D — загрузчик DFU,");
+        io.println("a — нуль акселерометра (ровно), o — калибровка установки платы, c — калибровка компаса,");
+        io.println("D — загрузчик DFU,");
         io.println("# — CLI как в Betaflight (set, get, diff, aux, map, profile, save; help — внутри),");
         io.println("k — чёрный ящик (состояние и полёты на карте).");
     }
@@ -785,6 +799,7 @@ private:
     const TaskStats* tasks = nullptr;
     IFlightRecorder* recorder = nullptr;
     void (*bootloaderHook)() = nullptr;
+    void (*accCalHook)() = nullptr;
     void (*applyHook)() = nullptr;
     bool (*beepHook)(copter::BeeperCondition c, bool preview) = nullptr;
     uint32_t loopAvgUs = 0, loopMaxUs = 0, loopHz = 0;

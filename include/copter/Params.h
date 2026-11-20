@@ -526,6 +526,15 @@ namespace copter
         PARAM_YAW_SPIN_RECOVERY,
         PARAM_YAW_SPIN_THRESHOLD,
         PARAM_GYRO_TO_USE,
+        PARAM_ALIGN_BOARD_ROLL,
+        PARAM_ALIGN_BOARD_PITCH,
+        PARAM_ALIGN_BOARD_YAW,
+        PARAM_ACC_CALIBRATION,
+        PARAM_GYRO_CALIB_DURATION,
+        PARAM_GYRO_CALIB_NOISE_LIMIT,
+        PARAM_GYRO_OFFSET_YAW,
+        PARAM_IMU_DCM_KP,
+        PARAM_IMU_DCM_KI,
         PARAM_CHIRP_AMPLITUDE_ROLL,
         PARAM_CHIRP_AMPLITUDE_PITCH,
         PARAM_CHIRP_AMPLITUDE_YAW,
@@ -1309,6 +1318,24 @@ namespace copter
               "порог раскрутки для yaw_spin_recovery = ON; выход — на 100 °/с ниже, 20 мс подряд" },
             { "gyro_to_use", kEnum, kMaster, ParamGroup::OTHER, 0, 2, 0, kTable, "", GYROS_TO_USE, 3,
               "какой гироскоп, если их на плате два: FIRST, SECOND или BOTH (среднее); выбранный отказал — берётся живой" },
+            { "align_board_roll", kInt, kMaster, ParamGroup::OTHER, -180, 360, 0, kTable, "°", nullptr, 0,
+              "плата на раме повёрнута по крену (+ — правый край вниз); поверх установки платы ('o')" },
+            { "align_board_pitch", kInt, kMaster, ParamGroup::OTHER, -180, 360, 0, kTable, "°", nullptr, 0,
+              "плата повёрнута по тангажу (+ — передний край вверх)" },
+            { "align_board_yaw", kInt, kMaster, ParamGroup::OTHER, -180, 360, 0, kTable, "°", nullptr, 0,
+              "плата повёрнута по рысканью (+ — по часовой, если смотреть сверху): стрелка платы вбок — 90, назад — 180" },
+            { "acc_calibration", kText, kMaster, ParamGroup::OTHER, 0, 16, 0, kTable, "1/2048 g", nullptr, 0,
+              "нуль акселерометра «x,y,z,флаг» в осях платы; пишет калибровка (стики газ верх + рысканье влево + тангаж на себя на ровном, кнопка в Studio)" },
+            { "gyro_calib_duration", kInt, kMaster, ParamGroup::OTHER, 50, 3000, 125, kTable, "10 мс", nullptr, 0,
+              "сколько копить нуль гироскопа при включении и по стикам (125 — 1.25 с)" },
+            { "gyro_calib_noise_limit", kInt, kMaster, ParamGroup::OTHER, 0, 200, 48, kTable, "LSB", nullptr, 0,
+              "разброс гироскопа, выше которого коптер считается сдвинутым и калибровка повторяется (в отсчётах чипа ±2000 °/с: 48 ≈ 2.9 °/с); 0 — не проверять" },
+            { "gyro_offset_yaw", kInt, kMaster, ParamGroup::OTHER, -1000, 1000, 0, kTable, "0.01 °/с", nullptr, 0,
+              "добавка к нулю гироскопа по рысканью (+ — нос вправо): если коптер сам медленно крутится" },
+            { "imu_dcm_kp", kInt, kMaster, ParamGroup::OTHER, 0, 32000, 5000, kTable, "×0.0001", nullptr, 0,
+              "запасной фильтр Махони: сила поправки горизонта по акселерометру в полёте (5000 — 0.5 1/с; на земле ×10); у BF 2500" },
+            { "imu_dcm_ki", kInt, kMaster, ParamGroup::OTHER, 0, 32000, 0, kTable, "×0.0001", nullptr, 0,
+              "запасной фильтр Махони: интеграл поправки — сам выбирает смещение гироскопа; 0 — выключен (как BF)" },
             { "chirp_amplitude_roll", kInt, kMaster, kGroupPid, 0, 300, 60, kTable, "0.1 %", nullptr, 0,
               "chirp: размах качания по крену, доля хода моторов (у BF — °/с уставки); 0 — ось пропускается" },
             { "chirp_amplitude_pitch", kInt, kMaster, kGroupPid, 0, 300, 60, kTable, "0.1 %", nullptr, 0,
@@ -1590,6 +1617,18 @@ namespace copter
             s.attitudeEkf = value(PARAM_ATTITUDE_FILTER) > 0.5f;
             s.dragCoef = value(PARAM_ATTITUDE_DRAG) * 0.001f;
             s.accLpfHz = value(PARAM_ACC_LPF_HZ);
+            s.imuAlign.alignRollDeg = static_cast<int16_t>(value(PARAM_ALIGN_BOARD_ROLL));
+            s.imuAlign.alignPitchDeg = static_cast<int16_t>(value(PARAM_ALIGN_BOARD_PITCH));
+            s.imuAlign.alignYawDeg = static_cast<int16_t>(value(PARAM_ALIGN_BOARD_YAW));
+            {
+                int16_t zero[3];
+                bool done = false;
+                parseAccCalibration(text(PARAM_ACC_CALIBRATION, 0), zero, done);
+                for (int i = 0; i < 3; ++i) s.imuAlign.accZeroG[i] = zero[i] / 2048.0f;
+            }
+            s.imuAlign.gyroOffsetYawDps = value(PARAM_GYRO_OFFSET_YAW) * 0.01f;
+            s.dcmKp = value(PARAM_IMU_DCM_KP) * 0.0001f;
+            s.dcmKi = value(PARAM_IMU_DCM_KI) * 0.0001f;
             s.yawSpin = static_cast<YawSpinMode>(static_cast<int>(value(PARAM_YAW_SPIN_RECOVERY)));
             s.yawSpinThresholdDps = value(PARAM_YAW_SPIN_THRESHOLD);
             s.chirp.amplitude[0] = value(PARAM_CHIRP_AMPLITUDE_ROLL) * 0.001f;
@@ -1772,7 +1811,10 @@ namespace copter
         }
 
         // Умолчание строки (пустая строка в хранилище — это оно).
-        static const char* textDefault(ParamId id) { return id == PARAM_RPM_FILTER_WEIGHTS ? "100,100,100" : ""; }
+        static const char* textDefault(ParamId id)
+        {
+            return id == PARAM_RPM_FILTER_WEIGHTS ? "100,100,100" : id == PARAM_ACC_CALIBRATION ? "0,0,0,0" : "";
+        }
 
         // rpm_filter_weights: "a,b,c" (0..100) -> доли; false — не так написано.
         static bool rpmWeights(const char* s, float out[RPM_HARMONICS_MAX])
@@ -1886,6 +1928,18 @@ namespace copter
                 case ParamType::STRING:
                 {
                     const char* s = strcmp(buf, "-") == 0 ? "" : buf;
+                    if (id == PARAM_ACC_CALIBRATION && *s)
+                    {
+                        int16_t zero[3];
+                        bool done = false;
+                        if (!parseAccCalibration(s, zero, done))
+                        {
+                            snprintf(error, errorSize, "четыре целых x,y,z,флаг: x..z от -999 до 999, флаг 0 или 1, например 12,-5,30,1");
+                            return false;
+                        }
+                        formatAccCalibration(zero, done, buf, sizeof(buf));
+                        s = strcmp(buf, "0,0,0,0") == 0 ? "" : buf;
+                    }
                     if (id == PARAM_RPM_FILTER_WEIGHTS && *s)
                     {
                         float w[RPM_HARMONICS_MAX];
@@ -2296,6 +2350,7 @@ namespace copter
             memset(names, 0, sizeof(names));
             memset(craftName, 0, sizeof(craftName));
             memset(rpmWeightsText, 0, sizeof(rpmWeightsText));
+            memset(accCalibrationText, 0, sizeof(accCalibrationText));
             pidIndex = 0;
             rateIndex = 0;
         }
@@ -2519,6 +2574,7 @@ namespace copter
             if (id == PARAM_RATEPROFILE_NAME) return names[1][slot];
             if (id == PARAM_CRAFT_NAME) return slot == 0 ? craftName : nullptr;
             if (id == PARAM_RPM_FILTER_WEIGHTS) return slot == 0 ? rpmWeightsText : nullptr;
+            if (id == PARAM_ACC_CALIBRATION) return slot == 0 ? accCalibrationText : nullptr;
             return nullptr;
         }
         const char* stringSlot(ParamId id, uint8_t slot) const { return const_cast<CopterParams*>(this)->stringSlot(id, slot); }
@@ -2566,6 +2622,7 @@ namespace copter
         char names[2][PROFILES][NAME_LENGTH + 1];
         char craftName[NAME_LENGTH + 1] = {};
         char rpmWeightsText[NAME_LENGTH + 1] = {};   // rpm_filter_weights; пусто — 100,100,100
+        char accCalibrationText[NAME_LENGTH + 1] = {};   // acc_calibration; пусто — 0,0,0,0
         uint8_t pidIndex = 0;
         uint8_t rateIndex = 0;
     };

@@ -97,56 +97,73 @@ public:
         Serial.println(": калибровка гироскопа...");
 
         float sum[6] = {};
-        float gyroSquares[3] = {};
-        float quarterSum[4][3] = {};
-        int quarterCount[4] = {};
         int samples = 0;
-
-        for (int i = 0; i < CALIBRATION_SAMPLES; i++)
-        {
-            RawImuSample s = {};
-            if (readSample(s))
-            {
-                const int16_t gyro[3] = { s.gyroX, s.gyroY, s.gyroZ };
-                const int quarter = i * 4 / CALIBRATION_SAMPLES;
-                for (uint8_t axis = 0; axis < 3; ++axis)
-                {
-                    sum[axis] += gyro[axis];
-                    gyroSquares[axis] += float(gyro[axis]) * gyro[axis];
-                    quarterSum[quarter][axis] += gyro[axis];
-                }
-                quarterCount[quarter]++;
-                sum[3] += s.accelX; sum[4] += s.accelY; sum[5] += s.accelZ;
-                samples++;
-            }
-            delay(10);
-        }
-
-        if (samples < CALIBRATION_SAMPLES / 2)
-        {
-            Serial.print(name);
-            Serial.println(": калибровка не удалась — датчик не отвечает");
-            preflightProblem = PreflightProblem::NotResponding;
-            return;
-        }
-
-        // Двигали ли самолёт: уход среднего по четвертям и разброс отсчётов.
         float gyroNoiseDps = 0;
         float gyroDriftDps = 0;
-        for (uint8_t axis = 0; axis < 3; ++axis)
+        const int total = calSamples;
+        for (uint8_t attempt = 0; attempt < calAttempts; ++attempt)
         {
-            gyroOffset[axis] = sum[axis] / samples;
-            const float variance = gyroSquares[axis] / samples - gyroOffset[axis] * gyroOffset[axis];
-            gyroNoiseDps = max(gyroNoiseDps, sqrtf(max(variance, 0.0f)) / gyroLsbPerDps());
-            float lo = 1e9f, hi = -1e9f;
-            for (uint8_t q = 0; q < 4; ++q)
+            for (float& v : sum) v = 0;
+            float gyroSquares[3] = {};
+            float quarterSum[4][3] = {};
+            int quarterCount[4] = {};
+            samples = 0;
+
+            for (int i = 0; i < total; i++)
             {
-                if (quarterCount[q] == 0) continue;
-                const float mean = quarterSum[q][axis] / quarterCount[q];
-                lo = min(lo, mean);
-                hi = max(hi, mean);
+                RawImuSample s = {};
+                if (readSample(s))
+                {
+                    const int16_t gyro[3] = { s.gyroX, s.gyroY, s.gyroZ };
+                    const int quarter = i * 4 / total;
+                    for (uint8_t axis = 0; axis < 3; ++axis)
+                    {
+                        sum[axis] += gyro[axis];
+                        gyroSquares[axis] += float(gyro[axis]) * gyro[axis];
+                        quarterSum[quarter][axis] += gyro[axis];
+                    }
+                    quarterCount[quarter]++;
+                    sum[3] += s.accelX; sum[4] += s.accelY; sum[5] += s.accelZ;
+                    samples++;
+                }
+                delay(10);
             }
-            if (hi >= lo) gyroDriftDps = max(gyroDriftDps, (hi - lo) / gyroLsbPerDps());
+
+            if (samples < total / 2)
+            {
+                Serial.print(name);
+                Serial.println(": калибровка не удалась — датчик не отвечает");
+                preflightProblem = PreflightProblem::NotResponding;
+                return;
+            }
+
+            // Двигали ли самолёт: уход среднего по четвертям и разброс отсчётов.
+            gyroNoiseDps = 0;
+            gyroDriftDps = 0;
+            for (uint8_t axis = 0; axis < 3; ++axis)
+            {
+                gyroOffset[axis] = sum[axis] / samples;
+                const float variance = gyroSquares[axis] / samples - gyroOffset[axis] * gyroOffset[axis];
+                gyroNoiseDps = max(gyroNoiseDps, sqrtf(max(variance, 0.0f)) / gyroLsbPerDps());
+                float lo = 1e9f, hi = -1e9f;
+                for (uint8_t q = 0; q < 4; ++q)
+                {
+                    if (quarterCount[q] == 0) continue;
+                    const float mean = quarterSum[q][axis] / quarterCount[q];
+                    lo = min(lo, mean);
+                    hi = max(hi, mean);
+                }
+                if (hi >= lo) gyroDriftDps = max(gyroDriftDps, (hi - lo) / gyroLsbPerDps());
+            }
+            // gyro_calib_noise_limit (коптер): разброс выше порога — двигали, ещё раз
+            if (calNoiseLimitDps <= 0 || gyroNoiseDps <= calNoiseLimitDps) break;
+            if (attempt + 1 < calAttempts)
+            {
+                Serial.print(name);
+                Serial.print(": гироскоп трясётся (");
+                Serial.print(gyroNoiseDps, 2);
+                Serial.println(" °/с) — калибровка заново");
+            }
         }
 
         const float accelScale = accelLsbPerG();
@@ -183,6 +200,16 @@ public:
         Serial.print(gyroNoiseDps, 2);
         Serial.println(" °/с");
         printPreflightResult();
+    }
+
+    // Калибровка гироскопа (коптер: gyro_calib_duration, gyro_calib_noise_limit):
+    // отсчётов по 10 мс; разброс выше noiseLimitDps — двигали, повторить (до
+    // attempts раз, потом — последняя попытка и предполётная проверка).
+    void setGyroCalibration(int samples, float noiseLimitDps, uint8_t attempts)
+    {
+        calSamples = samples < 20 ? 20 : samples;
+        calNoiseLimitDps = noiseLimitDps;
+        calAttempts = attempts < 1 ? 1 : attempts;
     }
 
     // Установка платы в самолёте, 3 позы (см. ImuOrientation.h).
@@ -426,6 +453,9 @@ protected:
 private:
 
     static constexpr int CALIBRATION_SAMPLES = 200;
+    int calSamples = CALIBRATION_SAMPLES;    // отсчётов по 10 мс (gyro_calib_duration у коптера)
+    float calNoiseLimitDps = 0;              // разброс «двигали» — повторить; 0 — не повторять
+    uint8_t calAttempts = 1;
 
     // ~0.1 с подряд без ответа при цикле 2 мс -> датчик недоступен.
     static constexpr uint8_t MAX_CONSECUTIVE_ERRORS = 50;

@@ -7,6 +7,7 @@
 #include "copter/Chirp.h"
 #include "copter/GpsRescue.h"
 #include "copter/GyroFilter.h"
+#include "copter/ImuAlign.h"
 #include "copter/Mixer.h"
 #include "copter/PositionEstimator.h"
 #include "copter/GpsIntegrity.h"
@@ -385,6 +386,9 @@ namespace copter
         // измерено (фильтр берёт 0.3 и учит по GPS в полёте)
         float dragCoef = 0.0f;
         float accLpfHz = 20.0f;            // acc_lpf_hz: ФНЧ акселерометра (PT2), 0 — без фильтра
+        ImuAlignSettings imuAlign;         // align_board_*, acc_calibration, gyro_offset_yaw (copter/ImuAlign.h)
+        float dcmKp = 0.5f;                // imu_dcm_kp × 0.0001: Махони в полёте, 1/с (на земле ×10)
+        float dcmKi = 0.0f;                // imu_dcm_ki × 0.0001: интеграл Махони
         // yaw_spin_recovery / yaw_spin_threshold: раскрутка по рысканью (069)
         YawSpinMode yawSpin = YawSpinMode::AUTO;
         float yawSpinThresholdDps = 1950.0f;
@@ -497,6 +501,8 @@ namespace copter
             motionLpf.configure(3.0f, dt);
             voltLpf.configure(2.0f, dt);
             attitude.configure(2.0f, 0.2f);
+            attitude.setMahonyGains(s.dcmKp, s.dcmKp * 10.0f, s.dcmKi);
+            imuAlign.configure(s.imuAlign);
             attitude.reset();
             attitude.setEkf(s.attitudeEkf);
             attitude.setDragCoef(s.dragCoef);
@@ -679,7 +685,10 @@ namespace copter
             ++status.loops;
 
             // ---- датчики ----
-            float rates[3] = { sens.gyro[0], sens.gyro[1], sens.gyro[2] };
+            // плата -> рама: align_board_*, нуль акселерометра, gyro_offset_yaw
+            float gyroIn[3], accIn[3];
+            imuAlign.apply(sens.gyro, sens.accel, gyroIn, accIn);
+            float rates[3] = { gyroIn[0], gyroIn[1], gyroIn[2] };
             if (sens.batteryVolts > 1.0f)
             {
                 if (status.volts <= 1.0f) voltLpf.reset(sens.batteryVolts);
@@ -724,13 +733,13 @@ namespace copter
             // акселерометр на коптере трясётся на 1–2 g от моторов: для
             // горизонта и высоты нужно только медленное
             float accel[3];
-            for (int a = 0; a < 3; ++a) accel[a] = accelLpf[a].apply(sens.accel[a]);
+            for (int a = 0; a < 3; ++a) accel[a] = accelLpf[a].apply(accIn[a]);
             if (!attitude.isInitialized())
             {
                 for (int a = 0; a < 3; ++a)
                 {
-                    accelLpf[a].reset(sens.accel[a]);
-                    accel[a] = sens.accel[a];
+                    accelLpf[a].reset(accIn[a]);
+                    accel[a] = accIn[a];
                 }
             }
             for (int a = 0; a < 3; ++a) accelG[a] = accel[a];
@@ -757,7 +766,7 @@ namespace copter
             // их считали в прошлом цикле: status.yaw)
             if (sens.gps.headingTrusted && !status.magDisagrees) attitude.setCompass(sens.gps.headingDeg - status.yaw);
             else attitude.clearCompass();
-            if (sens.imuOk) attitude.update(sens.gyro, accel, dt);
+            if (sens.imuOk) attitude.update(gyroIn, accel, dt);
             const float accelUp = attitude.isInitialized() ? attitude.verticalAccel(accel) : 0.0f;
             // без барометра смещение акселерометра учится, пока коптер стоит
             // на земле до ARM: ускорение тогда точно ноль
@@ -1986,6 +1995,7 @@ namespace copter
         float accelG[3] = { 0.0f, 0.0f, 1.0f };   // после ФНЧ
         Pt1 motionLpf;
         AttitudeQuat attitude;
+        ImuAlign imuAlign;               // плата -> рама: align_board_*, acc_calibration, gyro_offset_yaw
         // сопротивление винтов меряется выше (над точкой ARM) или на ходу
         static constexpr float DRAG_MIN_HEIGHT_M = 2.0f, DRAG_MIN_SPEED_MS = 2.0f;
         GpsAccel gpsAccel;               // в разгоне по GPS горизонт не тянется к акселерометру (P32)
