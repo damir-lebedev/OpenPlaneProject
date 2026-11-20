@@ -1182,6 +1182,76 @@ void test_crash_recovery_levels_after_a_hit()
     TEST_ASSERT_TRUE(hd.ctl.getStatus().crashed);
 }
 
+// P54: тот же удар, но гироскоп с пределом чипа ±2000 °/с — в кувырке он в
+// упоре и видит меньше настоящего: горизонт уходит на 11–34°. Раньше фильтр
+// этого не знал и ворота 25° держали ошибку навсегда (к 1.5 с: 9–28° у MEKF,
+// с GPS — 7–32°). Теперь MEKF растит неуверенность, пока гироскоп в упоре,
+// и после находит горизонт: с GPS и компасом — за доли секунды, без GPS —
+// по сопротивлению винтов (медленнее, 1/k ≈ 3 с). Махони горизонта в полёте
+// не видит вовсе (акселерометр там меряет тягу) — только печать.
+namespace
+{
+    // угол между настоящим и оценённым «вниз», °
+    double horizonErrDeg(const QuadHarness& h)
+    {
+        const double d2r = M_PI / 180.0;
+        const double r1 = h.sim.rollDeg() * d2r, p1 = h.sim.pitchDeg() * d2r;
+        const double r2 = h.ctl.getStatus().roll * d2r, p2 = h.ctl.getStatus().pitch * d2r;
+        const double a[3] = { -std::sin(p1), std::sin(r1) * std::cos(p1), std::cos(r1) * std::cos(p1) };
+        const double b[3] = { -std::sin(p2), std::sin(r2) * std::cos(p2), std::cos(r2) * std::cos(p2) };
+        const double c = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        return std::acos(std::fmax(-1.0, std::fmin(1.0, c))) / d2r;
+    }
+}
+
+void test_crash_recovery_with_a_saturated_gyro()
+{
+    const QuadPerturb ps[] = { QuadPerturb(), sluggish(), twitchy() };
+    const char* names[] = { "nominal", "sluggish", "twitchy" };
+    for (uint8_t v = 0; v < 3; ++v)
+    {
+        for (uint8_t k = 0; k < 3; ++k)
+        {
+            CopterSettings s;
+            s.attitudeEkf = v != 0;
+            CopterTune t = fiveTune();
+            t.pid.crashRecovery = CrashRecovery::ON;
+            QuadHarness h(five(), ps[k], 38);
+            h.useTune(t, s);
+            h.sim.setGyroRange(2000.0);
+            h.gpsOn = h.compass = v == 2;   // GPS + компас: ускорение и курс видны
+            hoverInAcro(h, 20.0);
+            h.sim.setDisturbance(2.0 * t.kRoll, 1.0 * t.kPitch, 0.0);
+            for (int i = 0; i < 10; ++i) h.step();
+            h.sim.setDisturbance(0.0, 0.0, 0.0);
+            double errPeak = 0, err1 = 0;
+            bool recovered = false;
+            for (int i = 0; i < 1500; ++i)
+            {
+                h.step();
+                errPeak = std::fmax(errPeak, horizonErrDeg(h));
+                recovered = recovered || h.ctl.getStatus().crashRecovery;
+                if (i == 999) err1 = horizonErrDeg(h);
+            }
+            const double err15 = horizonErrDeg(h), tilt = h.sim.tiltDeg();
+            char line[220];
+            snprintf(line, sizeof(line), "saturated hit %s %-8s: horizon error peak %.1f, at 1 s %.1f, at 1.5 s %.1f deg; true tilt %.1f deg",
+                     v == 0 ? "Mahony    " : v == 1 ? "MEKF      " : "MEKF + GPS", names[k], errPeak, err1, err15, tilt);
+            TEST_MESSAGE(line);
+            TEST_ASSERT_TRUE(h.ctl.isArmed());
+            TEST_ASSERT_TRUE_MESSAGE(recovered, line);
+            TEST_ASSERT_TRUE_MESSAGE(errPeak > 10.0, line);   // упор правда сбил горизонт
+            if (v == 0) continue;
+            TEST_ASSERT_TRUE_MESSAGE(h.ctl.getStatus().gyroSaturated, line);
+            TEST_ASSERT_TRUE_MESSAGE(err15 < 0.75 * errPeak, line);
+            if (v == 1) TEST_ASSERT_TRUE_MESSAGE(err15 < 12.0, line);
+            // sluggish: после восстановления наклонён на 36° и разгоняется —
+            // ускорению GPS вера малая (опоздание фикса), ошибка уходит медленно
+            if (v == 2) TEST_ASSERT_TRUE_MESSAGE(err15 < (k == 1 ? 15.0 : 3.0), line);
+        }
+    }
+}
+
 // Yaw spin recovery (069): рама раскручена по рысканью до 2500 °/с —
 // гироскоп в упоре (2000), видит меньше настоящего. С защитой (AUTO, порог
 // от рейтов) вращение гасится одним P рысканья, крен и тангаж без PID,
@@ -2676,6 +2746,7 @@ int main()
     RUN_TEST(test_integrated_yaw_on_big_hexa);
     RUN_TEST(test_absolute_control_holds_attitude_against_torque);
     RUN_TEST(test_crash_recovery_levels_after_a_hit);
+    RUN_TEST(test_crash_recovery_with_a_saturated_gyro);
     RUN_TEST(test_yaw_spin_recovery_stops_a_saturated_spin);
     RUN_TEST(test_runaway_takeoff_disarms_on_wrong_motor_wiring);
     RUN_TEST(test_failsafe_stage1_holds_altitude_then_stage2_descends);

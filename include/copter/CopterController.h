@@ -434,6 +434,7 @@ namespace copter
         bool crashed = false;
         bool crashRecovery = false;    // удар в воздухе — выравнивается (crash_recovery)
         bool yawSpin = false;          // раскрутка по рысканью — останавливается (yaw_spin_recovery)
+        bool gyroSaturated = false;    // гироскоп в упоре сейчас или недавно (3 с): горизонт под вопросом
         float rcFrameHz = 0;           // частота кадров приёмника (измерена)
         float rcSetpointCutoffHz = 0;  // сглаживание стиков: срез PT3 (0 — выключено)
         float rcThrottleCutoffHz = 0;  // и газа
@@ -766,7 +767,16 @@ namespace copter
             // их считали в прошлом цикле: status.yaw)
             if (sens.gps.headingTrusted && !status.magDisagrees) attitude.setCompass(sens.gps.headingDeg - status.yaw);
             else attitude.clearCompass();
-            if (sens.imuOk) attitude.update(gyroIn, accel, dt);
+            if (sens.imuOk)
+            {
+                // упор — по сырому отсчёту чипа (до поворота платы: поворот
+                // смешал бы оси и спрятал предел)
+                bool sat = false;
+                for (int a = 0; a < 3; ++a) sat = sat || fabsf(sens.gyro[a]) >= GYRO_SATURATED_DPS;
+                attitude.setGyroSaturated(sat);
+                attitude.update(gyroIn, accel, dt);
+            }
+            status.gyroSaturated = attitude.gyroSaturatedRecently();
             const float accelUp = attitude.isInitialized() ? attitude.verticalAccel(accel) : 0.0f;
             // без барометра смещение акселерометра учится, пока коптер стоит
             // на земле до ARM: ускорение тогда точно ноль
@@ -1694,8 +1704,10 @@ namespace copter
             sp[0] = fminf(cap, fmaxf(-cap, level[0]));
             sp[1] = fminf(cap, fmaxf(-cap, level[1]));
             sp[2] = fminf(px.crashLimitYaw, fmaxf(-px.crashLimitYaw, sp[2]));
+            // после упора гироскопа горизонт ищется заново (P54): пока MEKF в нём
+            // не уверен, «ровно» по оценке — ещё не ровно; держит до crash_time
             const bool calm = !status.saturated && fabsf(r[0]) < px.crashRecoveryRate && fabsf(r[1]) < px.crashRecoveryRate &&
-                              attitude.tiltDeg() < px.crashRecoveryAngleDeg;
+                              attitude.tiltDeg() < px.crashRecoveryAngleDeg && !(attitude.ekfEnabled() && attitude.horizonUnsure());
             if ((calm && crashRecoveryTimer >= px.crashDelayS) || crashRecoveryTimer >= px.crashTimeS) status.crashRecovery = false;
             return true;
         }
@@ -1998,6 +2010,8 @@ namespace copter
         ImuAlign imuAlign;               // плата -> рама: align_board_*, acc_calibration, gyro_offset_yaw
         // сопротивление винтов меряется выше (над точкой ARM) или на ходу
         static constexpr float DRAG_MIN_HEIGHT_M = 2.0f, DRAG_MIN_SPEED_MS = 2.0f;
+        // гироскоп в упоре: все наши драйверы ставят чип на ±2000 °/с; запас на округление
+        static constexpr float GYRO_SATURATED_DPS = 1960.0f;
         GpsAccel gpsAccel;               // в разгоне по GPS горизонт не тянется к акселерометру (P32)
         VerticalEstimator vertical;
         AltitudeController altCtl;

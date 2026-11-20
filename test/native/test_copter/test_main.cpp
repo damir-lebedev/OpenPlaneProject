@@ -1276,6 +1276,7 @@ void test_attitude_ekf_compass_interference_is_gated();
 void test_attitude_ekf_compass_returns_after_long_outage();
 void test_attitude_ekf_unobservable_states_do_not_drift();
 void test_attitude_ekf_covariance_stays_valid_in_float();
+void test_attitude_ekf_saturated_gyro_raises_uncertainty();
 
 // test_sysid.cpp: идентификация и автонастройка на известных системах (168, 169)
 void test_sysid_fft_finds_a_sine();
@@ -10088,6 +10089,7 @@ int main()
     RUN_TEST(test_attitude_ekf_compass_returns_after_long_outage);
     RUN_TEST(test_attitude_ekf_unobservable_states_do_not_drift);
     RUN_TEST(test_attitude_ekf_covariance_stays_valid_in_float);
+    RUN_TEST(test_attitude_ekf_saturated_gyro_raises_uncertainty);
     RUN_TEST(test_chirp_sweeps_frequency_and_respects_limits);
     RUN_TEST(test_sysid_fft_finds_a_sine);
     RUN_TEST(test_sysid_recovers_a_known_plant_in_closed_loop);

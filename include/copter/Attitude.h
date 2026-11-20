@@ -240,11 +240,34 @@ namespace copter
             x = y = z = 0.0f;
             initialized = false;
             mahonyI = Vec3();
+            gyroSaturated = satSeen = false;
+            satRecover = 0.0f;
             ekfReset();
         }
 
         // На земле до взлёта поправка быстрая.
         void setGrounded(bool g) { grounded = g; }
+
+        // Гироскоп в упоре (чип показывает предел, настоящее вращение быстрее):
+        // звать каждый цикл до update(). Пока в упоре, угол, накопленный
+        // гироскопом, — нижняя граница: MEKF растит неуверенность горизонта и
+        // курса (ворота 25° раздвигаются сами — после кувырка поправка по
+        // GPS и сопротивлению проходит, едва вращение стихнет); Махони
+        // SAT_RECOVER_S после упора не отбрасывает расхождение больше 25°.
+        void setGyroSaturated(bool s)
+        {
+            gyroSaturated = s;
+            if (s) satSeen = true;
+        }
+        // Упор был недавно (SAT_RECOVER_S): ориентация после него под вопросом.
+        bool gyroSaturatedRecently() const { return satRecover > 0.0f; }
+        // Горизонт после упора ещё не найден: MEKF неуверен в нём больше
+        // SAT_UNSURE_DEG (Махони себя не оценивает — по окну после упора).
+        bool horizonUnsure() const
+        {
+            if (satRecover <= 0.0f) return false;
+            return ekf ? tiltSigmaDeg() > SAT_UNSURE_DEG : true;
+        }
 
         // Горизонтальное ускорение по GPS, м/с²; < 0 — GPS нет (тогда — по наклону).
         void setGroundAccel(float ms2)
@@ -325,6 +348,9 @@ namespace copter
                 return;
             }
 
+            if (gyroSaturated) satRecover = SAT_RECOVER_S;
+            else if (satRecover > 0.0f) satRecover = fmaxf(0.0f, satRecover - dtS);
+
             const float d2r = PI_F / 180.0f;
             float p = gyroDps[0] * d2r, q = gyroDps[1] * d2r, r = gyroDps[2] * d2r;
 
@@ -361,7 +387,7 @@ namespace copter
             {
                 const Vec3 measured = { a.x / aLen, a.y / aLen, a.z / aLen };
                 const Vec3 estimated = upBody();
-                const float gain = (!grounded && dot(measured, estimated) < COS_25) ? 0.0f : k;
+                const float gain = (!grounded && satRecover <= 0.0f && dot(measured, estimated) < COS_25) ? 0.0f : k;
                 const Vec3 e = cross(measured, estimated);
                 p += gain * e.x;
                 q += gain * e.y;
@@ -569,6 +595,16 @@ namespace copter
             };
 
             propagate(R, spin, T);
+            if (satSeen)
+            {
+                // гироскоп в упоре: настоящая скорость больше на неизвестное —
+                // угол уходит, гироскоп этого не видит. Добавка независимая по
+                // осям (крест-члены не трогаем), потолок — SAT_TILT_VAR_MAX
+                satSeen = false;
+                P[0][0] = fminf(P[0][0] + EKF_Q_SATURATED * T, EKF_SAT_TILT_VAR_MAX);
+                P[1][1] = fminf(P[1][1] + EKF_Q_SATURATED * T, EKF_SAT_TILT_VAR_MAX);
+                P[2][2] = fminf(P[2][2] + EKF_Q_SATURATED * T, EKF_YAW_VAR_MAX);
+            }
 
             // ---- скорость относительно воздуха по модели ----
             // Тяга идёт точно по оси рамы: в земных осях её горизонтальная часть
@@ -734,7 +770,10 @@ namespace copter
             lastAccelNis = (nuX * nuX * sY + nuY * nuY * sX) / (sX * sY);
             // в полёте расхождение больше 25° (и больше 4σ) — не опора:
             // так далеко гироскоп не уплывает
-            const float gate = fmaxf(SIN_25 * SIN_25, 16.0f * (P[0][0] + P[1][1])) * h * h;
+            // после упора гироскопа (P54) — до 60°: ошибка могла остаться и тогда,
+            // когда неуверенность уже сжалась частичными поправками
+            const float gateSin = satRecover > 0.0f ? SIN_60 : SIN_25;
+            const float gate = fmaxf(gateSin * gateSin, 16.0f * (P[0][0] + P[1][1])) * h * h;
             if (!grounded && nuX * nuX + nuY * nuY > gate) return;
 
             float dx[6] = {};
@@ -1090,6 +1129,16 @@ namespace copter
 
         static constexpr float COS_25 = 0.9063078f;
         static constexpr float SIN_25 = 0.4226183f;
+        static constexpr float SIN_60 = 0.8660254f;
+
+        // ---- гироскоп в упоре (P54) ----
+        // Удар крутит раму быстрее предела чипа (±2000 °/с): лишние 500–1000 °/с
+        // за 20–40 мс упора — десятки градусов, которых гироскоп не видел.
+        // Блуждание угла 4 рад²/с: 30 мс упора — 20° (1σ), потолок 45°.
+        static constexpr float EKF_Q_SATURATED = 4.0f;
+        static constexpr float EKF_SAT_TILT_VAR_MAX = 0.6f;
+        static constexpr float SAT_RECOVER_S = 3.0f;      // после упора столько ориентация под вопросом
+        static constexpr float SAT_UNSURE_DEG = 8.0f;     // MEKF неуверен в горизонте больше — ещё ищет
 
         // ---- MEKF: шумы (обоснование — docs/COPTER.md «Фильтр ориентации») ----
         static constexpr float EKF_STEP_S = 0.001f;            // шаг ковариации и поправки не чаще
@@ -1167,6 +1216,8 @@ namespace copter
         bool grounded = true;
         bool initialized = false;
         float groundAccel = -1.0f;
+        bool gyroSaturated = false, satSeen = false;   // в упоре сейчас; был с прошлого шага MEKF
+        float satRecover = 0.0f;                       // с, сколько ещё ориентация под вопросом
         // MEKF
         bool ekf = false;
         bool accelVector = false;

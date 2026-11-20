@@ -648,3 +648,43 @@ void test_attitude_ekf_covariance_stays_valid_in_float()
     TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.3f, 1.5f, f.a.gyroBiasDps(0), line);
     TEST_ASSERT_FLOAT_WITHIN_MESSAGE(0.3f, -1.0f, f.a.gyroBiasDps(1), line);
 }
+
+// P54: гироскоп в упоре — MEKF растит неуверенность горизонта (нижняя граница
+// угла), окно «под вопросом» SAT_RECOVER_S после упора; без упора то же
+// вращение неуверенность не раздувает. reset() всё забывает.
+void test_attitude_ekf_saturated_gyro_raises_uncertainty()
+{
+    const float level[3] = { 0.0f, 0.0f, 1.0f };
+    const float spin[3] = { 2000.0f, 0.0f, 0.0f };
+    float sigma[2] = {};
+    for (int sat = 0; sat < 2; ++sat)
+    {
+        AttitudeQuat a;
+        a.setEkf(true);
+        a.setGrounded(false);
+        for (int i = 0; i < 200; ++i) a.update(level, level, 0.001f);   // 0.2 с ровно
+        TEST_ASSERT_FALSE(a.gyroSaturatedRecently());
+        for (int i = 0; i < 30; ++i)
+        {
+            a.setGyroSaturated(sat != 0);
+            a.update(spin, level, 0.001f);
+        }
+        a.setGyroSaturated(false);
+        sigma[sat] = a.tiltSigmaDeg();
+        TEST_ASSERT_EQUAL(sat != 0, a.gyroSaturatedRecently());
+        TEST_ASSERT_EQUAL(sat != 0, a.horizonUnsure());
+        if (!sat) continue;
+        for (int i = 0; i < 2900; ++i) a.update(level, level, 0.001f);
+        TEST_ASSERT_TRUE(a.gyroSaturatedRecently());
+        for (int i = 0; i < 200; ++i) a.update(level, level, 0.001f);
+        TEST_ASSERT_FALSE(a.gyroSaturatedRecently());
+        TEST_ASSERT_FALSE(a.horizonUnsure());
+        a.setGyroSaturated(true);
+        a.reset();
+        TEST_ASSERT_FALSE(a.gyroSaturatedRecently());
+    }
+    char line[120];
+    snprintf(line, sizeof(line), "30 ms at 2000 deg/s: horizon sigma %.1f deg saturated, %.1f deg not", sigma[1], sigma[0]);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(sigma[1] > 15.0f && sigma[0] < 5.0f, line);
+}
