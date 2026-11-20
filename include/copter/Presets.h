@@ -287,6 +287,8 @@ namespace copter
     // уставки; *_INC — только пока интеграл растёт (уменьшаться может всегда).
     // crash_recovery: что делать при ударе в воздухе (номера — как в BF)
     enum class CrashRecovery : uint8_t { OFF, ON, BEEP, DISARM };
+    // yaw_spin_recovery: OFF, ON (порог yaw_spin_threshold), AUTO (порог по рейтам)
+    enum class YawSpinMode : uint8_t { OFF, ON, AUTO };
 
     enum class ItermRelax : uint8_t
     {

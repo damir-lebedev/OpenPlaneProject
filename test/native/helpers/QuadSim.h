@@ -73,6 +73,7 @@ struct QuadSimParams
     double vibGAtFull = 1.0;
     double vibFrequency = 1.0;
     double imuAafHz = 400.0;     // фильтр чипа
+    double gyroRangeDps = 0.0;   // предел гироскопа: быстрее чип показывает упор (0 — без предела)
     double baroNoiseM = 0.12;
     int blades = 3;
     uint32_t seed = 1;
@@ -228,6 +229,11 @@ public:
         gyro[0] = static_cast<float>(aaf2.x * 57.29578 + par.gyroNoiseDps * gauss(rng));
         gyro[1] = static_cast<float>(aaf2.y * 57.29578 + par.gyroNoiseDps * gauss(rng));
         gyro[2] = static_cast<float>(aaf2.z * 57.29578 + par.gyroNoiseDps * gauss(rng));
+        if (par.gyroRangeDps > 0.0)
+        {
+            const float r = static_cast<float>(par.gyroRangeDps);
+            for (int a = 0; a < 3; ++a) gyro[a] = std::fmin(r, std::fmax(-r, gyro[a]));
+        }
         accel[0] = static_cast<float>(aafA2.x / 9.80665 + par.accelNoiseG * gauss(rng));
         accel[1] = static_cast<float>(-aafA2.y / 9.80665 + par.accelNoiseG * gauss(rng));
         accel[2] = static_cast<float>(-aafA2.z / 9.80665 + par.accelNoiseG * gauss(rng));
@@ -247,6 +253,8 @@ public:
     Vec position() const { return pos; }
     Vec velocity() const { return vel; }
     Vec rates() const { return omega; }   // рад/с, FRD
+    void setRates(const Vec& w) { omega = w; }   // толчок: рама сразу крутится так (рад/с)
+    void setGyroRange(double dps) { par.gyroRangeDps = dps; }   // предел гироскопа, °/с (0 — без предела)
     double rollDeg() const { return std::atan2(2 * (qy * qz + qw * qx), 1 - 2 * (qx * qx + qy * qy)) * 57.29578; }
     double pitchDeg() const { return std::asin(std::fmax(-1.0, std::fmin(1.0, 2 * (qw * qy - qx * qz)))) * 57.29578; }
     double yawDeg() const { return std::atan2(2 * (qx * qy + qw * qz), 1 - 2 * (qy * qy + qz * qz)) * 57.29578; }

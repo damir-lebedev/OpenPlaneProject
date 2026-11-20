@@ -384,6 +384,10 @@ namespace copter
         // attitude_drag: сопротивление винтов для модели фильтра, 1/с; 0 — не
         // измерено (фильтр берёт 0.3 и учит по GPS в полёте)
         float dragCoef = 0.0f;
+        float accLpfHz = 20.0f;            // acc_lpf_hz: ФНЧ акселерометра (PT2), 0 — без фильтра
+        // yaw_spin_recovery / yaw_spin_threshold: раскрутка по рысканью (069)
+        YawSpinMode yawSpin = YawSpinMode::AUTO;
+        float yawSpinThresholdDps = 1950.0f;
         float autoDisarmS = 5.0f;          // auto_disarm_delay: на земле с газом внизу столько — DISARM; 0 — нет
         // runaway_takeoff_*: «убегает» на взлёте — DISARM; проверка гаснет,
         // когда коптер столько продержался в воздухе спокойно
@@ -425,6 +429,7 @@ namespace copter
         bool saturated = false;
         bool crashed = false;
         bool crashRecovery = false;    // удар в воздухе — выравнивается (crash_recovery)
+        bool yawSpin = false;          // раскрутка по рысканью — останавливается (yaw_spin_recovery)
         float rcFrameHz = 0;           // частота кадров приёмника (измерена)
         float rcSetpointCutoffHz = 0;  // сглаживание стиков: срез PT3 (0 — выключено)
         float rcThrottleCutoffHz = 0;  // и газа
@@ -488,7 +493,7 @@ namespace copter
             throttleHpLpf.configure(t.pid.antiGravityHz, dt);
             throttleBoostLpf.configure(t.pid.throttleBoostHz, dt);
             configureLevelFilters(t.pid);
-            for (auto& f : accelLpf) f.configure(20.0f, dt);
+            for (auto& f : accelLpf) f.configure(s.accLpfHz, dt);
             motionLpf.configure(3.0f, dt);
             voltLpf.configure(2.0f, dt);
             attitude.configure(2.0f, 0.2f);
@@ -980,6 +985,7 @@ namespace copter
             status.posTargetE = posHold.targetEast();
             const RescueCommand* autoCmd = rescuing ? &rescueCmd : posHold.active() ? &posCmd : nullptr;
             rateSetpoints(mode, sticks, sp, stickSp, rc.acroTrainer, autoCmd);
+            yawSpinCheck(rates[2]);
             if (!crashRecovery(mode, sp, rates))
             {
                 out = CopterOutputs();   // crash_recovery = DISARM
@@ -1114,6 +1120,15 @@ namespace copter
             mi.roll = axes[0].update(sp[0], rates[0], tpa, iBoost, holdI, status.saturated, pBoost);
             mi.pitch = axes[1].update(sp[1], rates[1], tpa, iBoost, holdI, status.saturated, pBoost);
             mi.yaw = axes[2].update(sp[2], rates[2], 1.0f, iBoost, holdI, status.saturated);
+            // раскрутка по рысканью: крен и тангаж без PID (их гироскоп при
+            // таком вращении врёт, а D и FF только мешали бы), рысканье —
+            // одно P против вращения, всем ходом (как в BF)
+            if (status.yawSpin)
+            {
+                mi.roll = 0.0f;
+                mi.pitch = 0.0f;
+                mi.yaw = fminf(1.0f, fmaxf(-1.0f, axes[2].lastTerms().p));
+            }
             // chirp: качание частоты поверх суммы PID одной оси (168)
             {
                 const float excite = chirpStep(rc, mode, failsafe || rescue.active(), thrust);
@@ -1125,7 +1140,7 @@ namespace copter
             }
             // на земле — и при выравнивании после удара (как в BF: накопленное
             // за кувырок потом докручивало бы раму мимо горизонта)
-            if (!status.airborne || status.crashRecovery)
+            if (!status.airborne || status.crashRecovery || status.yawSpin)
             {
                 for (auto& ax : axes) ax.resetIntegral();
             }
@@ -1134,7 +1149,7 @@ namespace copter
             // airmode_start_throttle_percent (как в BF: на земле с газом внизу
             // моторы не раскачивают коптер) или коптер уже в воздухе (наше)
             if (sticks[3] >= set.airmodeStartThrottle || status.airborne) airmodeStarted = true;
-            mixer.setAirmode(((set.airmode || rc.airmode) && airmodeStarted) || status.crashRecovery);
+            mixer.setAirmode(((set.airmode || rc.airmode) && airmodeStarted) || status.crashRecovery || status.yawSpin);
             const MixResult mr = mixer.mix(tune.frame, mi);
             status.saturated = mr.saturated;
             status.throttle = thrust;
@@ -1363,6 +1378,8 @@ namespace copter
             crashTimer = 0.0f;
             status.crashRecovery = false;
             crashPrevValid = false;
+            status.yawSpin = false;
+            yawSpinCalmS = 0.0f;
             if (chirp.active()) chirp.stop(ChirpEnd::NOT_FLYING);
             chirpAxisNext = 0;
             chirpSwitch = true;   // тумблер, включённый до ARM, — не команда: выключить и включить
@@ -1674,6 +1691,38 @@ namespace copter
             return true;
         }
 
+        // Порог раскрутки: ON — yaw_spin_threshold; AUTO — рейт рысканья на
+        // полном стике × 1.25 + 200 °/с, в пределах 500…1950 (быстрее своих
+        // рейтов честно не крутят — значит, вращение не от пилота)
+        float yawSpinThreshold() const
+        {
+            if (set.yawSpin == YawSpinMode::ON) return set.yawSpinThresholdDps;
+            return fminf(YAW_SPIN_MAX_DPS, fmaxf(YAW_SPIN_MIN_DPS, 1.25f * tune.rates[2].top() + 200.0f));
+        }
+
+        // Yaw spin recovery (069): рысканье быстрее порога — режим остановки;
+        // выход — когда 20 мс подряд на 100 °/с ниже порога
+        void yawSpinCheck(float yawRate)
+        {
+            if (set.yawSpin == YawSpinMode::OFF)
+            {
+                status.yawSpin = false;
+                return;
+            }
+            const float th = yawSpinThreshold();
+            const float r = fabsf(yawRate);
+            if (r > th)
+            {
+                status.yawSpin = true;
+                yawSpinCalmS = 0.0f;
+            }
+            else if (status.yawSpin)
+            {
+                yawSpinCalmS = r < th - 100.0f ? yawSpinCalmS + dt : 0.0f;
+                if (yawSpinCalmS >= YAW_SPIN_EXIT_S) status.yawSpin = false;
+            }
+        }
+
         // Сел: тяга заметно меньше висения, а коптер не падает и не крутится.
         // Интеграл снова держится (не накручивается о землю), в failsafe — DISARM.
         void checkLanded(float thrust)
@@ -1953,6 +2002,8 @@ namespace copter
         float lastMixSpread = 0.0f;      // разброс моторов прошлого цикла (iterm_windup)
         bool tpaLowDone = false;         // газ после ARM был выше tpa_low_breakpoint
         bool airmodeStarted = false;     // газ после ARM был выше airmode_start_throttle_percent
+        float yawSpinCalmS = 0.0f;       // раскрутка: сколько рысканье уже ниже порога выхода
+        static constexpr float YAW_SPIN_MIN_DPS = 500.0f, YAW_SPIN_MAX_DPS = 1950.0f, YAW_SPIN_EXIT_S = 0.02f;
         uint32_t lastRcFrame = 0;        // кадры приёмника (feedforward_*)
         uint32_t loopsSinceFrame = 0;
         bool frameNow = true;

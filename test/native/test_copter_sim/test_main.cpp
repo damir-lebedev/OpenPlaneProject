@@ -1182,6 +1182,57 @@ void test_crash_recovery_levels_after_a_hit()
     TEST_ASSERT_TRUE(hd.ctl.getStatus().crashed);
 }
 
+// Yaw spin recovery (069): рама раскручена по рысканью до 2500 °/с —
+// гироскоп в упоре (2000), видит меньше настоящего. С защитой (AUTO, порог
+// от рейтов) вращение гасится одним P рысканья, крен и тангаж без PID,
+// после — обычное управление; коптер не разоружается и не валится.
+void test_yaw_spin_recovery_stops_a_saturated_spin()
+{
+    double stopAt[2] = { -1, -1 }, tilt[2] = {};
+    bool seen[2] = {};
+    for (uint8_t on = 0; on < 2; ++on)
+    {
+        CopterSettings s;
+        s.yawSpin = on ? YawSpinMode::AUTO : YawSpinMode::OFF;
+        CopterTune t = fiveTune();
+        QuadHarness h(five(), QuadPerturb(), 41);
+        h.useTune(t, s);
+        h.sim.setGyroRange(2000.0);   // чип в упоре
+        hoverInAcro(h, 30.0);
+        h.sim.setRates({ 0.0, 0.0, 2500.0 / 57.29578 });
+        for (int i = 0; i < 2000; ++i)
+        {
+            h.step();
+            seen[on] = seen[on] || h.ctl.getStatus().yawSpin;
+            if (stopAt[on] < 0 && std::fabs(h.sim.rates().z) * 57.29578 < 200.0) stopAt[on] = (i + 1) * 0.001;
+        }
+        tilt[on] = h.sim.tiltDeg();
+        TEST_ASSERT_TRUE(h.ctl.isArmed());
+        TEST_ASSERT_FALSE(h.ctl.getStatus().yawSpin);
+    }
+    char line[200];
+    snprintf(line, sizeof(line), "yaw spin 2500 deg/s: below 200 deg/s at %.3f s (off %.3f s), tilt after 2 s %.1f deg (off %.1f)",
+             stopAt[1], stopAt[0], tilt[1], tilt[0]);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(seen[1] && !seen[0], line);
+    TEST_ASSERT_TRUE_MESSAGE(stopAt[1] > 0.0 && stopAt[1] < 0.5, line);
+    TEST_ASSERT_TRUE_MESSAGE(tilt[1] < 15.0, line);
+
+    // флип и пируэт полным стиком рысканья на своих рейтах — защита молчит
+    CopterSettings s;
+    QuadHarness h(five(), QuadPerturb(), 41);
+    h.useTune(fiveTune(), s);
+    hoverInAcro(h, 30.0);
+    h.rc.yaw = 1.0f;
+    bool falseHit = false;
+    for (int i = 0; i < 1500; ++i)
+    {
+        h.step();
+        falseHit = falseHit || h.ctl.getStatus().yawSpin;
+    }
+    TEST_ASSERT_FALSE_MESSAGE(falseHit, "full-stick yaw pirouette taken for a spin");
+}
+
 // Runaway takeoff: два мотора на чужих выходах (провода перепутаны) —
 // на газе коптер кувыркается, DISARM меньше чем за 1 с, ARM — после
 // выключения тумблера. Без защиты runaway её DISARM не срабатывает.
@@ -2625,6 +2676,7 @@ int main()
     RUN_TEST(test_integrated_yaw_on_big_hexa);
     RUN_TEST(test_absolute_control_holds_attitude_against_torque);
     RUN_TEST(test_crash_recovery_levels_after_a_hit);
+    RUN_TEST(test_yaw_spin_recovery_stops_a_saturated_spin);
     RUN_TEST(test_runaway_takeoff_disarms_on_wrong_motor_wiring);
     RUN_TEST(test_failsafe_stage1_holds_altitude_then_stage2_descends);
     RUN_TEST(test_failsafe_stage1_rxfail_hold);

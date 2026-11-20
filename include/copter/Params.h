@@ -522,6 +522,9 @@ namespace copter
         PARAM_ACC_TRIM_PITCH,
         PARAM_ATTITUDE_FILTER,
         PARAM_ATTITUDE_DRAG,
+        PARAM_ACC_LPF_HZ,
+        PARAM_YAW_SPIN_RECOVERY,
+        PARAM_YAW_SPIN_THRESHOLD,
         PARAM_GYRO_TO_USE,
         PARAM_CHIRP_AMPLITUDE_ROLL,
         PARAM_CHIRP_AMPLITUDE_PITCH,
@@ -571,6 +574,7 @@ namespace copter
         static const char* const VOLTAGE_METERS[] = { "NONE", "ADC", "ESC" };
         // порядок — как VtxProtocol
         static const char* const VTX_PROTOCOLS[] = { "AUTO", "SMARTAUDIO", "TRAMP", "NONE" };
+        static const char* const YAW_SPIN_MODES[] = { "OFF", "ON", "AUTO" };   // как YawSpinMode
         static const char* const LOW_POWER_DISARM[] = { "OFF", "ON", "UNTIL_FIRST_ARM" };
         // порядок — как OsdDevice и VideoSystem (copter/DisplayPort.h) и в BF
         static const char* const OSD_DEVICES[] = { "NONE", "AUTO", "MAX7456", "MSP" };
@@ -1297,6 +1301,12 @@ namespace copter
               "фильтр ориентации: EKF — Калмана, сам находит смещение гироскопа; MAHONY — прежний, запасной" },
             { "attitude_drag", kInt, kMaster, ParamGroup::OTHER, 0, 1500, 0, kTable, "0.001 1/с", nullptr, 0,
               "сопротивление винтов для фильтра ориентации; 0 — не измерено (берётся 300); фильтр меряет его в полёте по GPS и после посадки записывает сюда" },
+            { "acc_lpf_hz", kInt, kMaster, ParamGroup::OTHER, 0, 500, 20, kTable, "Гц", nullptr, 0,
+              "ФНЧ акселерометра (PT2) для горизонта и высоты: ниже — меньше тряски от моторов, но горизонт догоняет позже; 0 — без фильтра (у BF 10)" },
+            { "yaw_spin_recovery", kEnum, kMaster, kGroupSafety, 0, 2, 2, kTable, "", YAW_SPIN_MODES, 3,
+              "раскрутка по рысканью до упора гироскопа: остановить вращение (крен/тангаж без PID, I в нуле, рысканье — только P); AUTO — порог по своим рейтам" },
+            { "yaw_spin_threshold", kInt, kMaster, kGroupSafety, 500, 1950, 1950, kTable, "°/с", nullptr, 0,
+              "порог раскрутки для yaw_spin_recovery = ON; выход — на 100 °/с ниже, 20 мс подряд" },
             { "gyro_to_use", kEnum, kMaster, ParamGroup::OTHER, 0, 2, 0, kTable, "", GYROS_TO_USE, 3,
               "какой гироскоп, если их на плате два: FIRST, SECOND или BOTH (среднее); выбранный отказал — берётся живой" },
             { "chirp_amplitude_roll", kInt, kMaster, kGroupPid, 0, 300, 60, kTable, "0.1 %", nullptr, 0,
@@ -1579,6 +1589,9 @@ namespace copter
             s.levelTrimPitchDeg = value(PARAM_ACC_TRIM_PITCH) * 0.1f;
             s.attitudeEkf = value(PARAM_ATTITUDE_FILTER) > 0.5f;
             s.dragCoef = value(PARAM_ATTITUDE_DRAG) * 0.001f;
+            s.accLpfHz = value(PARAM_ACC_LPF_HZ);
+            s.yawSpin = static_cast<YawSpinMode>(static_cast<int>(value(PARAM_YAW_SPIN_RECOVERY)));
+            s.yawSpinThresholdDps = value(PARAM_YAW_SPIN_THRESHOLD);
             s.chirp.amplitude[0] = value(PARAM_CHIRP_AMPLITUDE_ROLL) * 0.001f;
             s.chirp.amplitude[1] = value(PARAM_CHIRP_AMPLITUDE_PITCH) * 0.001f;
             s.chirp.amplitude[2] = value(PARAM_CHIRP_AMPLITUDE_YAW) * 0.001f;
