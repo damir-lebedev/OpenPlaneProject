@@ -189,7 +189,7 @@ pio run -e matek-h743-quad -t upload    # 然后在控制台中：t — 参数�
 
 ## 📼 黑匣子
 
-开发板会记录每一次飞行：500 Hz 的 IMU、姿态角和自动驾驶仪的决策、PID、所有输出、摇杆、气压计、罗盘、GPS、电池和各种事件——从解锁（ARM）并推油门开始，一直到降落，并且包含起飞前的 10 秒。**ESP32-S3** 写入片上闪存（13.9 MB，约 11 分钟），**STM32H743** 写入 SD 卡（64 MB，约一小时；SD 卡仍是普通的 FAT32，固件写入预先创建好的文件 `BLACKBOX.BIN`）。擦除只在地面进行。飞行结束后，`python tools/blackbox.py download` 通过 USB 下载飞行记录并拆分成 CSV；SD 卡里的飞行记录也可以不借助开发板直接解析：`python tools/blackbox.py ring E:/BLACKBOX.BIN`。多旋翼每个周期（1 kHz）记录陀螺仪、PID 和电机：在 H743 上写到同一张 SD 卡，在 F405 上写到板载 SPI 闪存（W25Q128 等）；`python tools/blackbox.py download --bfl` 以 Betaflight 格式（`.BFL`）输出多旋翼的飞行记录——供 Blackbox Explorer 和 PIDtoolbox 使用。查看——**OpenPlane Studio 的“黑匣子”页面**：带模式和事件的时间轴、共用光标的曲线、噪声频谱、3D 姿态。详情见 [BLACKBOX.md](BLACKBOX.md)。
+开发板会记录每一次飞行：500 Hz 的 IMU、姿态角和自动驾驶仪的决策、PID、所有输出、摇杆、气压计、罗盘、GPS、电池和各种事件——从解锁（ARM）并推油门开始，一直到降落，并且包含起飞前的 10 秒。**ESP32-S3** 写入片上闪存（11.9 MB，约 9 分钟），**STM32H743** 写入 SD 卡（64 MB，约一小时；SD 卡仍是普通的 FAT32，固件写入预先创建好的文件 `BLACKBOX.BIN`）。擦除只在地面进行。飞行结束后，`python tools/blackbox.py download` 通过 USB 下载飞行记录并拆分成 CSV；SD 卡里的飞行记录也可以不借助开发板直接解析：`python tools/blackbox.py ring E:/BLACKBOX.BIN`。多旋翼每个周期（1 kHz）记录陀螺仪、PID 和电机：在 H743 上写到同一张 SD 卡，在 F405 上写到板载 SPI 闪存（W25Q128 等）；`python tools/blackbox.py download --bfl` 以 Betaflight 格式（`.BFL`）输出多旋翼的飞行记录——供 Blackbox Explorer 和 PIDtoolbox 使用。查看——**OpenPlane Studio 的“黑匣子”页面**：带模式和事件的时间轴、共用光标的曲线、噪声频谱、3D 姿态。详情见 [BLACKBOX.md](BLACKBOX.md)。
 
 ---
 

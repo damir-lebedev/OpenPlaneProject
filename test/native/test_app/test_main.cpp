@@ -265,6 +265,62 @@ void test_oled_task_draws_live_state()
     TEST_ASSERT_FALSE(screenChip.writes.empty());   // байты кадра ушли по Wire1
 }
 
+// Последним: после удачной прошивки по WiFi плата «перезагружается» каждый такт.
+void test_wifi_update_needs_open_window_then_reboots()
+{
+    WebServer* http = fake::webServers().back();
+    std::vector<uint8_t> image(5000, 0x11);
+    image[0] = 0xE9;   // магический байт образа ESP32
+
+    // Окно не открыто — образ не принимается, Update не трогали.
+    TEST_ASSERT_TRUE(http->uploadFile("/update", "plane-esp32-s3.bin", image));
+    TEST_ASSERT_EQUAL(403, http->lastResponse().code);
+    TEST_ASSERT_EQUAL_STRING("CLOSED", http->lastResponse().body.c_str());
+    TEST_ASSERT_FALSE(fake::update().begun);
+
+    http->request(HTTP_GET, "/ota");
+    TEST_ASSERT_TRUE(contains(http->lastResponse().body, "\"board\":\"esp32-s3\""));
+    TEST_ASSERT_TRUE(contains(http->lastResponse().body, "\"open\":false"));
+
+    // Жест с пульта без ARM: газ вниз, рысканье вправо, тангаж на себя — 3 с.
+    RcChannels gesture;
+    gesture.set(Channels::RUDDER, 2000).set(Channels::ELEVATOR, 1000);
+    takeSerial();
+    fly(gesture, Config::OTA_STICK_HOLD_MS / Config::LOOP_PERIOD_MS + 5);
+    TEST_ASSERT_TRUE(contains(takeSerial(), "Прошивка по WiFi с пульта: окно открыто"));
+    TEST_ASSERT_TRUE(otaGate.isOpen());
+    fly(RcChannels(), 2);
+
+    // Чужой файл (не образ ESP32) — отказ, окно остаётся.
+    std::vector<uint8_t> junk(3000, 0x00);
+    http->uploadFile("/update", "junk.bin", junk);
+    TEST_ASSERT_EQUAL(400, http->lastResponse().code);
+    TEST_ASSERT_TRUE(contains(http->lastResponse().body, "IMAGE Magic byte"));
+    TEST_ASSERT_TRUE(otaGate.isOpen());
+
+    // Клиент пропал посреди — приём брошен, можно снова.
+    const unsigned aborts = fake::update().aborts;
+    http->uploadFile("/update", "plane-esp32-s3.bin", image, 2000);
+    TEST_ASSERT_EQUAL(aborts + 1, fake::update().aborts);
+    TEST_ASSERT_FALSE(fake::update().finished);
+
+    // ARM посреди приёма — образ брошен (проверяется в OtaGate), тут — нормальный приём.
+    TEST_ASSERT_TRUE(http->uploadFile("/update", "plane-esp32-s3.bin", image));
+    TEST_ASSERT_EQUAL(200, http->lastResponse().code);
+    TEST_ASSERT_EQUAL_STRING("OK", http->lastResponse().body.c_str());
+    TEST_ASSERT_TRUE(fake::update().finished);
+    TEST_ASSERT_EQUAL(5000u, fake::update().image.size());
+    TEST_ASSERT_FALSE(otaGate.isOpen());   // окно закрыто, дальше перезагрузка
+
+    // Перезагрузка — через секунду, полётным циклом (ответ уже ушёл).
+    const unsigned before = ESP.restarts;
+    fly(RcChannels(), 2);
+    TEST_ASSERT_EQUAL(before, ESP.restarts);
+    fly(RcChannels(), 1000 / Config::LOOP_PERIOD_MS + 5);
+    TEST_ASSERT_TRUE(ESP.restarts > before);
+    TEST_ASSERT_TRUE(contains(takeSerial(), "WiFi-прошивка: перезагрузка в новую прошивку"));
+}
+
 int main()
 {
     wireUpBench();
@@ -279,5 +335,6 @@ int main()
     RUN_TEST(test_dashboard_status_and_mode_command);
     RUN_TEST(test_black_box_keeps_the_session_after_disarm);
     RUN_TEST(test_oled_task_draws_live_state);
+    RUN_TEST(test_wifi_update_needs_open_window_then_reboots);
     return UNITY_END();
 }

@@ -8,7 +8,7 @@ Elle fonctionne sur deux cartes :
 
 | Carte | Où elle enregistre | Combien ça contient (à ~20 Ko/s) |
 |---|---|---|
-| **ESP32-S3 N16R8** | une partition de 13,9 Mo de la flash intégrée | environ **11 minutes** |
+| **ESP32-S3 N16R8** | une partition de 11,9 Mo de la flash intégrée | environ **9 minutes** |
 | **STM32H743** (DevEBox — principale ; WeAct) | un fichier sur une carte SD, [plus bas](#carte-sd-stm32h743) | 64 Mo — environ **55 minutes**, la taille est fixée par le fichier |
 
 Sur les autres cartes (ESP32-C3, ESP32 ordinaire), il n’y a pas de support de stockage : la boîte noire est désactivée et ne gêne pas le vol.
@@ -53,10 +53,10 @@ Au début de chaque vol figurent les paramètres : le firmware (date de compila
 
 ### Avant le vol
 
-Il n’y a rien à faire. À la mise sous tension, le moniteur série affiche l’état (la console écrit en russe ; la ligne ci-dessous signifie « attend l’ARM et les gaz | effacé devant 12,9 Mo (≈ 11 min) sur 13,9 Mo | vols 1 ») :
+Il n’y a rien à faire. À la mise sous tension, le moniteur série affiche l’état (la console écrit en russe ; la ligne ci-dessous signifie « attend l’ARM et les gaz | effacé devant 10,9 Mo (≈ 9 min) sur 11,9 Mo | vols 1 ») :
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 « Effacé devant » indique ce qui tiendra dans le prochain vol. Après la mise sous tension, la boîte noire passe quelques secondes (après un long vol, jusqu’à une minute) à préparer de la place : elle efface les anciens enregistrements. Pendant ce temps, la boucle de vol au sol se fige parfois pendant ~0,15 s — les gouvernes peuvent donner un coup avec retard, c’est normal. **En vol, la flash n’est jamais effacée.**
@@ -197,7 +197,7 @@ La pire écriture de page est le « nettoyage » interne de la carte ; la fil
 | `BLACKBOX_IMU_DIVIDER` | 1 | L’IMU tous les N cycles : 2 donne 250 Hz et un enregistrement ~25 % plus long |
 | `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6,6, 1,667 (Matek H743: 11, 1) | Les diviseurs de la batterie et du capteur de courant sur la carte |
 
-La table des partitions est `partitions_blackbox.csv` : l’application 2 Mo (le firmware fait maintenant ~0,9 Mo), la boîte noire 13,9 Mo, le coredump 64 Ko. La partition NVS est restée à sa place — les calibrations de l’IMU et de la boussole et les trims sont conservés après le passage à cette table. Il n’y a pas de second emplacement pour les mises à jour par voie hertzienne (OTA).
+La table des partitions est `partitions_blackbox.csv` : l’application 2 Mo (le firmware fait maintenant ~0,9 Mo), la boîte noire 11,9 Mo, le coredump 64 Ko. La partition NVS est restée à sa place — les calibrations de l’IMU et de la boussole et les trims sont conservés après le passage à cette table. La seconde partition de firmware `app1` (2 Mo) reçoit les mises à jour par WiFi (PILOT_GUIDE, « Flashage par WiFi ») ; passer à cette table demande un flashage USB et efface les anciens vols.
 
 ---
 

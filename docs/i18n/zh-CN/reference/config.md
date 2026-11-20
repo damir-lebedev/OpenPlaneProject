@@ -224,6 +224,9 @@ STM32duino 内核（以及其他 Arduino 内核）中，`PIN_SPI_SCK/MISO/MOSI` 
 | `LOOP_PERIOD_MS` | 2 | 飞行循环的周期（500 Hz）；同时也是 `PidController` 的名义 `dt` |
 | `WIFI_AP_SSID` / `WIFI_AP_PASSWORD` | `"OpenPlane-Debug"` / `"12345678"` | 仪表盘的接入点（密码很弱——这是试验台用的工具） |
 | `WEB_SERVER_PORT` | 80 | HTTP 端口 |
+| `OTA_WIFI` | true | 通过 WiFi 刷写：仪表板接入点上的 `POST /update`（WifiOta.h） |
+| `OTA_WINDOW_MS` | 300 000 | 手势 / `u` / `ota` 命令之后的刷写窗口，毫秒 |
+| `OTA_STICK_HOLD_MS` | 3000 | 未解锁时的摇杆手势：油门最低、方向向右、俯仰拉杆，毫秒 |
 | `TELEM_BAUDRATE` | 57600 | MAVLink 数传电台的速率（SiK 的默认值） |
 | `MAVLINK_SYSTEM_ID` / `MAVLINK_COMPONENT_ID` | 1 / 1 | 飞机在 MAVLink 中的地址 |
 | `DEBUG_INTERVAL_MS` | 100 | `DebugLogger` 检查日志通道的频率 |

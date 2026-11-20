@@ -8,7 +8,7 @@ Den fungerar på två kort:
 
 | Kort | Var den spelar in | Hur mycket som får plats (vid ~20 KB/s) |
 |---|---|---|
-| **ESP32-S3 N16R8** | en partition på 13,9 MB i det inbyggda flashminnet | ungefär **11 minuter** |
+| **ESP32-S3 N16R8** | en partition på 11,9 MB i det inbyggda flashminnet | ungefär **9 minuter** |
 | **STM32H743** (DevEBox – huvudkort; WeAct) | en fil på ett SD-kort, [nedan](#sd-kort-stm32h743) | 64 MB – ungefär **55 minuter**, storleken bestäms av filen |
 
 På de andra korten (ESP32-C3, den vanliga ESP32) finns inget lagringsutrymme: den svarta lådan är avstängd och stör inte flygningen.
@@ -53,10 +53,10 @@ I början av varje flygning kommer parametrarna: firmwaren (byggdatum), orsaken 
 
 ### Före flygningen
 
-Det finns inget att göra. Vid start visar seriemonitorn statusen (konsolen skriver på ryska; raden nedan betyder ”väntar på ARM och gas | raderat i förväg 12.9 MB (≈11 min) av 13.9 MB | flygningar 1”):
+Det finns inget att göra. Vid start visar seriemonitorn statusen (konsolen skriver på ryska; raden nedan betyder ”väntar på ARM och gas | raderat i förväg 10.9 MB (≈9 min) av 11.9 MB | flygningar 1”):
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 ”Raderat i förväg” är hur mycket som får plats i nästa flygning. Efter start ägnar den svarta lådan några sekunder (efter en lång flygning – upp till en minut) åt att förbereda utrymme: den raderar gamla poster. Under den tiden fryser flygslingan på marken ibland i ~0,15 s – ytorna kan rycka till sent, vilket är normalt. **I luften raderas flashminnet aldrig.**
@@ -197,7 +197,7 @@ Den sämsta sidskrivningen är kortets interna ”städning”; kön i RAM (384 
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU var N:te cykel: 2–250 Hz och ~25 % längre inspelning |
 | `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 (Matek H743: 11, 1) | Spänningsdelarna för batteriet och strömsensorn på kortet |
 
-Partitionstabellen är `partitions_blackbox.csv`: applikationen 2 MB (firmwaren är nu ~0,9 MB), den svarta lådan 13,9 MB, coredump 64 KB. NVS-partitionen stannade där den var – kalibreringarna av IMU och kompass samt trimmen bevaras efter bytet till den här tabellen. Det finns ingen andra plats för trådlösa (OTA) uppdateringar.
+Partitionstabellen är `partitions_blackbox.csv`: applikationen 2 MB (firmwaren är nu ~0,9 MB), den svarta lådan 11,9 MB, coredump 64 KB. NVS-partitionen stannade där den var – kalibreringarna av IMU och kompass samt trimmen bevaras efter bytet till den här tabellen. Den andra firmwareplatsen `app1` (2 MB) tar emot uppdateringar över WiFi (PILOT_GUIDE, ”Flasha över WiFi”); bytet till den här tabellen kräver en USB-flashning och raderar gamla flygningar.
 
 ---
 

@@ -46,7 +46,9 @@
 #include "telemetry/DebugLogger.h"
 #include "telemetry/LoopStats.h"
 #include "telemetry/OledDisplay.h"
+#include "telemetry/OtaGate.h"
 #include "telemetry/WebDebugServer.h"
+#include "telemetry/WifiOta.h"
 
 
 // ------------------------------------------------------------
@@ -129,6 +131,8 @@ DebugLogger debugLogger(flightController, &autopilot, &loopStats);
 DebugConsole debugConsole(flightController, flightOutputs, autopilot, debugLogger, &board, &blackBox);
 AppLink appLink(flightController, &autopilot, &loopStats);   // живая связь с OpenPlane Studio
 WebDebugServer webDebugServer(flightController, &autopilot);
+OtaGate otaGate;              // окно прошивки по WiFi: консоль 'u', "ota", жест стиков
+WifiOta wifiOta(otaGate);     // POST /update на точке дашборда
 OledDisplay oledDisplay(flightController, &autopilot, loopStats);
 
 
@@ -182,6 +186,24 @@ static void setupSensors()
 }
 
 
+// Окно прошивки по WiFi: ARM/таймаут закрывают, жест стиков открывает
+// (ответ кивками: 4 — открыто, 3 — нельзя); после прошивки — перезагрузка.
+static void updateWifiOta()
+{
+    if (!Config::OTA_WIFI) return;
+    const uint32_t nowMs = millis();
+    const bool armed = flightController.isArmed();
+    const RcChannelState& rc = flightController.getRcState();
+    const bool rcAlive = !flightController.isReceiverFailsafe();
+    if (otaGate.update(armed, rc, controlMixer.fromSticks(rc), rcAlive, nowMs))
+    {
+        const OtaGate::Result r = otaGate.lastGesture();
+        Serial.printf("Прошивка по WiFi с пульта: %s\n", r == OtaGate::Result::Ok ? "окно открыто" : OtaGate::text(r));
+        flightController.playSignal(r == OtaGate::Result::Ok ? 4 : 3);
+    }
+    wifiOta.update(armed, nowMs);
+}
+
 // Вызываются ядром Arduino (loopTask), а не из кода проекта.
 // cppcheck-suppress unusedFunction
 void setup()
@@ -204,6 +226,7 @@ void setup()
     flightController.begin();    // приёмник пульта
 
     oledDisplay.begin(OledDisplay::findBus(board));
+    if (Config::OTA_WIFI) wifiOta.attach(webDebugServer.http());
     webDebugServer.begin();
 
     // Последним: задача записи начинает стирать место под полёт, а
@@ -218,6 +241,7 @@ void setup()
     pilotSwitches.printBindings();   // что на каком тумблере — config/Controls.h
     debugLogger.begin();         // что выводить в лог — из NVS
     debugConsole.setAppLink(&appLink);
+    if (Config::OTA_WIFI) debugConsole.setOtaGate(&otaGate);
     debugConsole.printHint();
     Serial.println();
 }
@@ -235,6 +259,7 @@ void loop()
     debugLogger.update();
     debugConsole.update();
     appLink.update(millis());
+    updateWifiOta();
 
     const uint32_t workUs = micros() - start;
     loopStats.record(workUs);

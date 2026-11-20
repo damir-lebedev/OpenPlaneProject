@@ -471,6 +471,8 @@ class EspClass
 {
 public:
     uint32_t getFreeHeap() const { return fake::chip().freeHeap; }
+    void restart() { restarts++; }   // тест смотрит счётчик
+    unsigned restarts = 0;
 };
 
 inline EspClass ESP;

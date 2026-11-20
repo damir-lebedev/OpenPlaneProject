@@ -476,6 +476,17 @@ Eine App muss nicht installiert werden – es ist eine ganz normale Webseite.
 
 Die Reichweite dieses Zugangspunkts beträgt in der Praxis einige Dutzend Meter; es ist das gewöhnliche WLAN des ESP32, keine Telemetrie mit großer Reichweite. Er ist ein Werkzeug zum Abstimmen auf dem Tisch, auf dem Prüfstand und neben dem Feld – nicht zum Steuern des Flugzeugs im Flug aus der Ferne.
 
+### Flashen über WiFi
+
+Ein Flugzeug mit ESP32 lässt sich ohne Kabel neu flashen – über denselben Access Point. Beim ersten Mal (und beim ESP32-S3 nach der Änderung der Flash-Aufteilung: die Blackbox hat jetzt 11,9 MB, alte Flüge werden gelöscht) über USB flashen.
+
+1. Ohne ARM das **Update-Fenster** öffnen: Gas unten, Gier rechts, Nick nach hinten, Querruder in der Mitte – 3 Sekunden halten. Die Ruder nicken **4-mal** – das Fenster ist 5 Minuten offen (3-mal – WiFi-Update ist aus: `OTA_WIFI`). Oder Taste `u` in der Konsole.
+2. **Vom Handy:** OpenPlane Studio → Flugzeug → „Über WiFi flashen“ → eine `.bin`-Datei (erstellt „Export fürs Handy“ in Studio am Computer). Studio verbindet sich selbst mit dem Netz des Flugzeugs – Android fragt nach der Erlaubnis.
+   **Vom Computer:** mit dem Netz des Flugzeugs verbinden und auf der Board-Seite „Über WiFi“ drücken – Studio baut und sendet die Firmware. Ohne Studio: `curl -F firmware=@.pio/build/esp32-s3/firmware.bin http://192.168.4.1/update`.
+3. Das Board schreibt die Firmware in den zweiten Slot, prüft das Image und startet erst dann neu. Bricht die Verbindung ab oder ist die Datei falsch, bleibt die alte Firmware. Kalibrierungen und Einstellungen bleiben unberührt.
+
+ARM während des Empfangs bricht ihn ab; das Fenster schließt sich nach 5 Minuten (`OTA_WINDOW_MS`) und bei ARM von selbst. Das Standardpasswort des Access Points ist schwach – `WIFI_AP_PASSWORD` im Flugzeugprojekt ändern.
+
 ---
 
 ## Blackbox
@@ -486,10 +497,10 @@ Die Firmware des ESP32-S3 schreibt jeden Flug selbst in den Flash: alles, was di
 - sie **endet** 10 s nach dem DISARM – oder wenn ein scharfgeschaltetes Flugzeug 30 s lang bei ausgeschaltetem Motor regungslos steht (gelandet oder abgestürzt, und das DISARM wurde vergessen);
 - Verbindungsverlust, Motor auf null und Gleitflug beenden sie **nicht**.
 
-Beim Einschalten zeigt der serielle Monitor, wie viel Platz für einen Flug vorhanden ist (die Konsole gibt Russisch aus; die Zeile unten bedeutet „wartet auf ARM und Gas | voraus gelöscht: 12,9 MB (≈11 min) von 13,9 MB | Flüge: 1“):
+Beim Einschalten zeigt der serielle Monitor, wie viel Platz für einen Flug vorhanden ist (die Konsole gibt Russisch aus; die Zeile unten bedeutet „wartet auf ARM und Gas | voraus gelöscht: 10,9 MB (≈9 min) von 11,9 MB | Flüge: 1“):
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 **Nach dem Flug** USB anschließen (die COM-Buchse), den seriellen Monitor schließen und den Flug herunterladen:

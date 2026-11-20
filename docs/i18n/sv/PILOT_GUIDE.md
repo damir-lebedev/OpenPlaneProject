@@ -474,6 +474,17 @@ Ingen app behöver installeras – det är en vanlig webbsida.
 
 Räckvidden för den här åtkomstpunkten är i praktiken tiotals meter; det är vanlig ESP32-Wi-Fi, inte telemetri med lång räckvidd. Det är ett verktyg för justering på bordet, på bänken och bredvid fältet – inte för att styra planet under flygning på avstånd.
 
+### Flasha över WiFi
+
+Ett plan med ESP32 kan flashas om utan kabel – via samma åtkomstpunkt. Första gången (och på ESP32-S3 efter ändringen av flashlayouten: svarta lådan är nu 11,9 MB, gamla flygningar raderas) flashar du över USB.
+
+1. Utan ARM, öppna **uppdateringsfönstret**: gas ner, gir höger, tipp bakåt, skevroder i mitten – håll i 3 sekunder. Rodren nickar **4 gånger** – fönstret är öppet i 5 minuter (3 nickningar – WiFi-uppdatering är av: `OTA_WIFI`). Eller tangenten `u` i konsolen.
+2. **Från telefonen:** OpenPlane Studio → planet → ”Flasha över WiFi” → en `.bin`-fil (skapas av ”Exportera till telefon” i Studio på datorn). Studio ansluter själv till planets nätverk – Android ber om tillstånd.
+   **Från datorn:** anslut till planets nätverk och tryck ”Över WiFi” på kortets sida – Studio bygger och skickar firmwaren. Utan Studio: `curl -F firmware=@.pio/build/esp32-s3/firmware.bin http://192.168.4.1/update`.
+3. Kortet skriver firmwaren till den andra platsen, verifierar avbilden och startar om först därefter. Bryts anslutningen eller är filen fel ligger den gamla firmwaren kvar. Kalibreringar och inställningar rörs inte.
+
+ARM under mottagningen avbryter den; fönstret stängs av sig självt efter 5 minuter (`OTA_WINDOW_MS`) och vid ARM. Åtkomstpunktens standardlösenord är svagt – byt `WIFI_AP_PASSWORD` i planets projekt.
+
 ---
 
 ## Svart låda
@@ -484,10 +495,10 @@ ESP32-S3-firmwaren registrerar själv varje flygning i flash: allt som sensorern
 - den **stannar** 10 s efter DISARM – eller om ett armerat plan står orörligt med motorn av i 30 s (det landade eller kraschade, och DISARM glömdes);
 - förlorad förbindelse, motor på noll och glidflykt stoppar **inte** inspelningen.
 
-Vid start visar seriemonitorn hur mycket utrymme det finns för en flygning (konsolen skriver på ryska; raden nedan betyder ”väntar på ARM och gas | raderat i förväg 12.9 MB (≈11 min) av 13.9 MB | flygningar 1”):
+Vid start visar seriemonitorn hur mycket utrymme det finns för en flygning (konsolen skriver på ryska; raden nedan betyder ”väntar på ARM och gas | raderat i förväg 10.9 MB (≈9 min) av 11.9 MB | flygningar 1”):
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 **Efter flygningen**, anslut USB (COM-kontakten), stäng seriemonitorn och hämta flygningen:

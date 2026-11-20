@@ -225,6 +225,9 @@ STM32duino のコア（および他の Arduino コア）では `PIN_SPI_SCK/MISO
 | `LOOP_PERIOD_MS` | 2 | 飛行ループの周期（500 Hz）。`PidController` の公称の `dt` でもある |
 | `WIFI_AP_SSID` / `WIFI_AP_PASSWORD` | `"OpenPlane-Debug"` / `"12345678"` | ダッシュボードのアクセスポイント（パスワードは弱い。テストベンチ用のツール） |
 | `WEB_SERVER_PORT` | 80 | HTTP ポート |
+| `OTA_WIFI` | true | WiFi 書き込み：ダッシュボードのアクセスポイントで `POST /update`（WifiOta.h） |
+| `OTA_WINDOW_MS` | 300 000 | ジェスチャー / `u` / `ota` コマンド後の更新ウィンドウ、ms |
+| `OTA_STICK_HOLD_MS` | 3000 | ARM なしのスティック操作：スロットル最低・ヨー右・ピッチ手前、ms |
 | `TELEM_BAUDRATE` | 57600 | MAVLink 無線モデムの速度（SiK の既定値） |
 | `MAVLINK_SYSTEM_ID` / `MAVLINK_COMPONENT_ID` | 1 / 1 | MAVLink での機体のアドレス |
 | `DEBUG_INTERVAL_MS` | 100 | `DebugLogger` がログのチャンネルを確認する頻度 |

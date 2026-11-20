@@ -8,7 +8,7 @@ Funciona em duas placas:
 
 | Placa | Onde grava | Quanto cabe (a ~20 KB/s) |
 |---|---|---|
-| **ESP32-S3 N16R8** | uma partição de 13,9 MB da flash integrada | cerca de **11 minutos** |
+| **ESP32-S3 N16R8** | uma partição de 11,9 MB da flash integrada | cerca de **9 minutos** |
 | **STM32H743** (DevEBox, a principal; WeAct) | um arquivo em um cartão SD, [abaixo](#cartão-sd-stm32h743) | 64 MB: cerca de **55 minutos**, o tamanho é definido pelo arquivo |
 
 Nas demais placas (ESP32-C3, ESP32 comum) não há mídia de armazenamento: a caixa-preta fica desligada e não interfere no voo.
@@ -53,10 +53,10 @@ No início de cada voo vêm os parâmetros: o firmware (data da compilação), o
 
 ### Antes do voo
 
-Não é preciso fazer nada. Ao ligar, o monitor serial mostra o estado (o console imprime em russo; a linha abaixo diz "espera ARM e acelerador | apagado à frente 12,9 MB (≈11 min) de 13,9 MB | voos 1"):
+Não é preciso fazer nada. Ao ligar, o monitor serial mostra o estado (o console imprime em russo; a linha abaixo diz "espera ARM e acelerador | apagado à frente 10,9 MB (≈9 min) de 11,9 MB | voos 1"):
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 "Apagado à frente" é quanto vai caber no próximo voo. Depois de ligada, a caixa-preta leva alguns segundos (depois de um voo longo, até um minuto) preparando espaço: apaga as gravações antigas. Nesse tempo, o laço de voo no solo às vezes congela por ~0,15 s; as superfícies podem dar um tranco atrasado, e isso é normal. **No ar a flash nunca é apagada.**
@@ -197,7 +197,7 @@ A pior gravação de página é a "faxina" interna do cartão; a fila na RAM (38
 | `BLACKBOX_IMU_DIVIDER` | 1 | O IMU a cada N ciclos: 2 equivale a 250 Hz e a uma gravação ~25% mais longa |
 | `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6,6, 1,667 (Matek H743: 11, 1) | Os divisores da bateria e do sensor de corrente na placa |
 
-A tabela de partições é `partitions_blackbox.csv`: o aplicativo, 2 MB (o firmware ocupa agora ~0,9 MB), a caixa-preta, 13,9 MB, e o coredump, 64 KB. A partição NVS ficou no mesmo lugar: as calibrações do IMU e da bússola e os trims são preservados depois da mudança para esta tabela. Não há um segundo slot para atualizações pelo ar (OTA).
+A tabela de partições é `partitions_blackbox.csv`: o aplicativo, 2 MB (o firmware ocupa agora ~0,9 MB), a caixa-preta, 11,9 MB, e o coredump, 64 KB. A partição NVS ficou no mesmo lugar: as calibrações do IMU e da bússola e os trims são preservados depois da mudança para esta tabela. A segunda partição de firmware `app1` (2 MB) recebe as atualizações por WiFi (PILOT_GUIDE, «Gravação por WiFi»); mudar para esta tabela exige uma gravação por USB e apaga os voos antigos.
 
 ---
 

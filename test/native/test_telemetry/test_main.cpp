@@ -22,6 +22,7 @@
 #include "telemetry/LogSettings.h"
 #include "telemetry/LoopStats.h"
 #include "telemetry/OledDisplay.h"
+#include "telemetry/OtaGate.h"
 #include "telemetry/WebDashboardPage.h"
 #include "telemetry/WebDebugServer.h"
 #include "helpers/TestSupport.h"
@@ -1160,6 +1161,162 @@ void test_oled_and_log_show_calibration_and_takeoff_stage()
     TEST_ASSERT_TRUE(contains(takeSerial(), "AP   AUTO_TAKEOFF/IDLE want"));
 }
 
+// --- Прошивка по WiFi: окно OtaGate ---
+
+#define OTA_EQ(a, b) TEST_ASSERT_EQUAL_INT(static_cast<int>(a), static_cast<int>(b))
+
+namespace
+{
+    RcChannelState otaRc(uint16_t throttle)
+    {
+        RcChannelState rc;
+        rc.set(Channels::THROTTLE, throttle);
+        return rc;
+    }
+
+    // Жест «газ вниз, рысканье вправо, тангаж вниз, элероны в центре».
+    ControlCommand otaSticks()
+    {
+        ControlCommand c;
+        c.yaw = Config::RUDDER_MAX_US;
+        c.pitch = Config::ELEVATOR_MAX_US;
+        return c;
+    }
+}
+
+void test_ota_gate_refuses_without_window_armed_or_throttle()
+{
+    OtaGate gate;
+    const ControlCommand none;
+    gate.update(false, otaRc(1000), none, true, 0);
+    OTA_EQ(OtaGate::Result::Closed, gate.beginUpload());   // окно не открывали
+
+    gate.update(true, otaRc(1000), none, true, 10);
+    OTA_EQ(OtaGate::Result::Armed, gate.open(10));
+    TEST_ASSERT_FALSE(gate.isOpen());
+
+    gate.update(false, otaRc(1500), none, true, 20);
+    OTA_EQ(OtaGate::Result::Throttle, gate.open(20));
+
+    gate.update(false, otaRc(1000), none, true, 30);
+    OTA_EQ(OtaGate::Result::Ok, gate.open(30));
+    TEST_ASSERT_TRUE(gate.isOpen());
+    TEST_ASSERT_EQUAL_UINT32(Config::OTA_WINDOW_MS, gate.remainingMs(30));
+
+    // Газ подняли после открытия — приём не начнётся.
+    gate.update(false, otaRc(1500), none, true, 40);
+    OTA_EQ(OtaGate::Result::Throttle, gate.beginUpload());
+    gate.update(false, otaRc(1000), none, true, 50);
+    OTA_EQ(OtaGate::Result::Ok, gate.beginUpload());
+    OTA_EQ(OtaGate::Result::Busy, gate.beginUpload());   // второй клиент
+    gate.finishUpload(true);
+    TEST_ASSERT_FALSE(gate.isOpen());   // прошито — окно закрыто, дальше перезагрузка
+    TEST_ASSERT_FALSE(gate.isReceiving());
+}
+
+void test_ota_gate_closes_on_timeout_and_arm_aborts_upload()
+{
+    OtaGate gate;
+    const ControlCommand none;
+    gate.update(false, otaRc(1000), none, true, 1000);
+    OTA_EQ(OtaGate::Result::Ok, gate.open(1000));
+    gate.update(false, otaRc(1000), none, true, 1000 + Config::OTA_WINDOW_MS - 1);
+    TEST_ASSERT_TRUE(gate.isOpen());
+    gate.update(false, otaRc(1000), none, true, 1000 + Config::OTA_WINDOW_MS);
+    TEST_ASSERT_FALSE(gate.isOpen());
+    TEST_ASSERT_EQUAL_UINT32(0, gate.remainingMs(1000 + Config::OTA_WINDOW_MS));
+    OTA_EQ(OtaGate::Result::Closed, gate.beginUpload());
+
+    // Окно открыто, ARM — закрыто.
+    const uint32_t t = 2 * Config::OTA_WINDOW_MS;
+    OTA_EQ(OtaGate::Result::Ok, gate.open(t));
+    gate.update(true, otaRc(1000), none, true, t + 1);
+    TEST_ASSERT_FALSE(gate.isOpen());
+
+    // ARM посреди приёма — приём бросают, окно закрыто.
+    gate.update(false, otaRc(1000), none, true, t + 2);
+    OTA_EQ(OtaGate::Result::Ok, gate.open(t + 2));
+    OTA_EQ(OtaGate::Result::Ok, gate.beginUpload());
+    TEST_ASSERT_FALSE(gate.shouldAbort());
+    // Таймаут во время приёма окно не закрывает: образ дописывается.
+    gate.update(false, otaRc(1000), none, true, t + 2 + Config::OTA_WINDOW_MS + 5);
+    TEST_ASSERT_TRUE(gate.isOpen());
+    gate.update(true, otaRc(1000), none, true, t + 2 + Config::OTA_WINDOW_MS + 6);
+    TEST_ASSERT_TRUE(gate.shouldAbort());
+    gate.finishUpload(false);
+    TEST_ASSERT_FALSE(gate.isOpen());
+
+    // Неудачный образ без ARM — окно остаётся, снова полное.
+    const uint32_t u = 4 * Config::OTA_WINDOW_MS;
+    gate.update(false, otaRc(1000), none, true, u);
+    OTA_EQ(OtaGate::Result::Ok, gate.open(u));
+    OTA_EQ(OtaGate::Result::Ok, gate.beginUpload());
+    gate.update(false, otaRc(1000), none, true, u + Config::OTA_WINDOW_MS - 10);
+    gate.finishUpload(false);
+    TEST_ASSERT_TRUE(gate.isOpen());
+    TEST_ASSERT_EQUAL_UINT32(Config::OTA_WINDOW_MS, gate.remainingMs(u + Config::OTA_WINDOW_MS - 10));
+}
+
+void test_ota_gate_stick_gesture_opens_window_once()
+{
+    OtaGate gate;
+    const ControlCommand sticks = otaSticks();
+    TEST_ASSERT_FALSE(gate.update(false, otaRc(1000), sticks, true, 0));
+    TEST_ASSERT_FALSE(gate.update(false, otaRc(1000), sticks, true, Config::OTA_STICK_HOLD_MS - 1));
+    TEST_ASSERT_TRUE(gate.update(false, otaRc(1000), sticks, true, Config::OTA_STICK_HOLD_MS));
+    OTA_EQ(OtaGate::Result::Ok, gate.lastGesture());
+    TEST_ASSERT_TRUE(gate.isOpen());
+    // Держат дальше — повтора нет.
+    TEST_ASSERT_FALSE(gate.update(false, otaRc(1000), sticks, true, 2 * Config::OTA_STICK_HOLD_MS));
+
+    // Рысканье ВЛЕВО — это калибровка гироскопа, не OTA.
+    OtaGate other;
+    ControlCommand left = sticks;
+    left.yaw = -Config::RUDDER_MAX_US;
+    other.update(false, otaRc(1000), left, true, 0);
+    TEST_ASSERT_FALSE(other.update(false, otaRc(1000), left, true, 10 * Config::OTA_STICK_HOLD_MS));
+    TEST_ASSERT_FALSE(other.isOpen());
+
+    // Газ поднят, элероны не в центре, нет связи или ARM — жеста нет.
+    ControlCommand roll = sticks;
+    roll.roll = Config::AILERON_MAX_US;
+    other.update(false, otaRc(1000), roll, true, 0);
+    TEST_ASSERT_FALSE(other.update(false, otaRc(1000), roll, true, 10 * Config::OTA_STICK_HOLD_MS));
+    other.update(false, otaRc(1500), sticks, true, 0);
+    TEST_ASSERT_FALSE(other.update(false, otaRc(1500), sticks, true, 10 * Config::OTA_STICK_HOLD_MS));
+    other.update(false, otaRc(1000), sticks, false, 0);
+    TEST_ASSERT_FALSE(other.update(false, otaRc(1000), sticks, false, 10 * Config::OTA_STICK_HOLD_MS));
+    other.update(true, otaRc(1000), sticks, true, 0);
+    TEST_ASSERT_FALSE(other.update(true, otaRc(1000), sticks, true, 10 * Config::OTA_STICK_HOLD_MS));
+    TEST_ASSERT_FALSE(other.isOpen());
+}
+
+void test_console_opens_ota_window_by_key_and_host_command()
+{
+    ConsoleRig c;
+    // Без OtaGate (не ESP32) — 'u' неизвестна, "ota" отвечает NONE.
+    TEST_ASSERT_TRUE(contains(c.type("u"), "Консоль: h — меню"));
+    TEST_ASSERT_TRUE(contains(c.type("\x02" "ota\n"), "@ota {\"result\":\"NONE\",\"left_ms\":0}"));
+
+    OtaGate gate;
+    c.console.setOtaGate(&gate);
+    gate.update(false, otaRc(1000), ControlCommand(), true, millis());
+    TEST_ASSERT_TRUE(contains(c.type("u"), "окно открыто на 300 с"));
+    TEST_ASSERT_TRUE(gate.isOpen());
+    TEST_ASSERT_TRUE(contains(c.type("h"), "Прошивка по WiFi: открыть окно"));
+    c.type("0");
+
+    gate.close();
+    const std::string out = c.type("\x02" "ota\n");
+    TEST_ASSERT_TRUE_MESSAGE(contains(out, "@ota {\"result\":\"OK\",\"left_ms\":300000}"), out.c_str());
+
+    gate.close();
+    gate.update(true, otaRc(1000), ControlCommand(), true, millis());
+    TEST_ASSERT_TRUE(contains(c.type("u"), "нельзя — заармлено"));
+    TEST_ASSERT_TRUE(contains(c.type("\x02" "ota\n"), "\"result\":\"ARMED\""));
+    TEST_ASSERT_FALSE(gate.isOpen());
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -1198,5 +1355,9 @@ int main()
     RUN_TEST(test_oled_without_bus_or_screen_is_disabled);
     RUN_TEST(test_oled_sends_bytes_over_bus_and_draws_status);
     RUN_TEST(test_oled_mode_names_glide_and_missing_sensors);
+    RUN_TEST(test_ota_gate_refuses_without_window_armed_or_throttle);
+    RUN_TEST(test_ota_gate_closes_on_timeout_and_arm_aborts_upload);
+    RUN_TEST(test_ota_gate_stick_gesture_opens_window_once);
+    RUN_TEST(test_console_opens_ota_window_by_key_and_host_command);
     return UNITY_END();
 }

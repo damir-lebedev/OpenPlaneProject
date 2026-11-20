@@ -8,7 +8,7 @@ It works on two boards:
 
 | Board | Where it records | How much fits (at ~20 KB/s) |
 |---|---|---|
-| **ESP32-S3 N16R8** | a 13.9 MB partition of the built-in flash | about **11 minutes** |
+| **ESP32-S3 N16R8** | a 11.9 MB partition of the built-in flash | about **9 minutes** |
 | **STM32H743** (DevEBox — main; WeAct) | a file on an SD card, [below](#sd-card-stm32h743) | 64 MB — about **55 minutes**, the size is set by the file |
 
 On the other boards (ESP32-C3, the ordinary ESP32) there is no storage: the black box is off and does not interfere with the flight.
@@ -53,10 +53,10 @@ At the start of each flight come the parameters: the firmware (build date), the 
 
 ### Before the flight
 
-There is nothing to do. At power-up the serial monitor shows the status (the console prints in Russian; the line below reads "waits for ARM and throttle | erased ahead 12.9 MB (≈11 min) of 13.9 MB | flights 1"):
+There is nothing to do. At power-up the serial monitor shows the status (the console prints in Russian; the line below reads "waits for ARM and throttle | erased ahead 10.9 MB (≈9 min) of 11.9 MB | flights 1"):
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 "Erased ahead" is how much will fit into the next flight. After power-up the black box spends a few seconds (after a long flight — up to a minute) preparing space: it erases old records. During that time the flight loop on the ground sometimes freezes for ~0.15 s — the surfaces may twitch late, which is normal. **In the air the flash is never erased.**
@@ -197,7 +197,7 @@ The worst page write is the card's internal "housekeeping"; the queue in RAM (38
 | `BLACKBOX_IMU_DIVIDER` | 1 | IMU every Nth cycle: 2–250 Hz and ~25% longer recording |
 | `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 (Matek H743: 11, 1) | The battery and current-sensor dividers on the board |
 
-The partition table is `partitions_blackbox.csv`: the application 2 MB (the firmware is now ~0.9 MB), the black box 13.9 MB, coredump 64 KB. The NVS partition stayed where it was — the IMU and compass calibrations and the trims are preserved after moving to this table. There is no second slot for over-the-air (OTA) updates.
+The partition table is `partitions_blackbox.csv`: the application 2 MB (the firmware is now ~0.9 MB), the black box 11.9 MB, coredump 64 KB. The NVS partition stayed where it was — the IMU and compass calibrations and the trims are preserved after moving to this table. The second 2 MB firmware slot `app1` takes updates over WiFi (PILOT_GUIDE, “Flashing over WiFi”); moving to this table takes one USB flash and erases old flights.
 
 ---
 

@@ -237,6 +237,9 @@ comments; what they mean for the pilot is in [AUTOPILOT_GUIDE.md](../AUTOPILOT_G
 | `LOOP_PERIOD_MS` | 2 | The flight loop period (500 Hz); also the nominal `dt` for `PidController` |
 | `WIFI_AP_SSID` / `WIFI_AP_PASSWORD` | `"OpenPlane-Debug"` / `"12345678"` | The dashboard access point (the password is weak — a bench tool) |
 | `WEB_SERVER_PORT` | 80 | HTTP port |
+| `OTA_WIFI` | true | Flashing over WiFi: `POST /update` on the dashboard access point (WifiOta.h) |
+| `OTA_WINDOW_MS` | 300 000 | Update window after the gesture / `u` / `ota` command, ms |
+| `OTA_STICK_HOLD_MS` | 3000 | Stick gesture while disarmed: throttle down, yaw right, pitch back, ms |
 | `TELEM_BAUDRATE` | 57600 | The MAVLink radio modem speed (the SiK default) |
 | `MAVLINK_SYSTEM_ID` / `MAVLINK_COMPONENT_ID` | 1 / 1 | The aircraft's address in MAVLink |
 | `DEBUG_INTERVAL_MS` | 100 | How often `DebugLogger` checks the log channels |

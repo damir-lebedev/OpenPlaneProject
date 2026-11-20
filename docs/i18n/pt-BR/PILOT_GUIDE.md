@@ -475,6 +475,17 @@ Não é preciso instalar nenhum aplicativo: é uma página web comum.
 
 O alcance desse ponto de acesso é, na prática, de algumas dezenas de metros; é o Wi-Fi comum do ESP32, não uma telemetria de longo alcance. É uma ferramenta para ajustes na mesa, na bancada e ao lado do campo, não para controlar a aeronave em voo à distância.
 
+### Gravação por WiFi
+
+Um avião com ESP32 pode ser regravado sem cabo, pelo mesmo ponto de acesso. Na primeira vez (e no ESP32-S3, após a mudança das partições: a caixa-preta agora tem 11,9 MB e os voos antigos são apagados) grave por USB.
+
+1. Sem ARM, abra a **janela de atualização**: acelerador embaixo, guinada para a direita, arfagem para trás, ailerons no centro; segure 3 segundos. As superfícies acenam **4 vezes**: a janela fica aberta 5 minutos (3 acenos: a atualização por WiFi está desligada, `OTA_WIFI`). Ou tecle `u` no console.
+2. **Pelo celular:** OpenPlane Studio → avião → «Gravar por WiFi» → um arquivo `.bin` (gerado por «Exportar para o celular» no Studio do computador). O Studio se conecta sozinho à rede do avião; o Android pede permissão.
+   **Pelo computador:** conecte-se à rede do avião e clique em «Por WiFi» na página da placa; o Studio compila e envia o firmware. Sem o Studio: `curl -F firmware=@.pio/build/esp32-s3/firmware.bin http://192.168.4.1/update`.
+3. A placa grava o firmware na segunda partição, verifica a imagem e só então reinicia. Se a conexão cair ou o arquivo for errado, o firmware antigo permanece. Calibrações e ajustes não são tocados.
+
+Armar durante o recebimento interrompe a gravação; a janela fecha sozinha após 5 minutos (`OTA_WINDOW_MS`) e ao armar. A senha padrão do ponto de acesso é fraca: troque `WIFI_AP_PASSWORD` no projeto do avião.
+
 ---
 
 ## Caixa-preta
@@ -485,10 +496,10 @@ O firmware do ESP32-S3 grava cada voo na flash por conta própria: tudo o que os
 - **para** 10 s depois do DISARM, ou se uma aeronave armada ficar parada, com o motor desligado, por 30 s (pousou ou caiu, e o DISARM foi esquecido);
 - a perda de link, o motor em zero e o planeio **não** interrompem a gravação.
 
-Ao ligar, o monitor serial mostra quanto espaço há para um voo (o console imprime em russo; a linha abaixo diz "espera ARM e acelerador | apagado à frente 12,9 MB (≈11 min) de 13,9 MB | voos 1"):
+Ao ligar, o monitor serial mostra quanto espaço há para um voo (o console imprime em russo; a linha abaixo diz "espera ARM e acelerador | apagado à frente 10,9 MB (≈9 min) de 11,9 MB | voos 1"):
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 **Depois do voo**, conecte o USB (o conector COM), feche o monitor serial e baixe o voo:

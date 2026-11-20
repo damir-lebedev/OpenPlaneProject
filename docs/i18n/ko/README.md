@@ -189,7 +189,7 @@ pio run -e matek-h743-quad -t upload    # 그다음 콘솔에서: t — 설정, 
 
 ## 📼 블랙박스
 
-보드는 모든 비행을 기록합니다. 500 Hz IMU, 자세각과 오토파일럿의 판단, PID, 모든 출력, 스틱, 기압계, 나침반, GPS, 배터리, 이벤트를 ARM과 스로틀 시점부터 착륙까지, 시작 10초 전부터 남깁니다. **ESP32-S3**는 내장 플래시(13.9 MB, 약 11분)에, **STM32H743**은 SD 카드(64 MB, 약 1시간)에 기록합니다. SD 카드는 평범한 FAT32 그대로이며, 펌웨어는 미리 만들어 둔 파일 `BLACKBOX.BIN`에 씁니다. 삭제는 지상에서만 이루어집니다. 비행이 끝나면 `python tools/blackbox.py download`로 USB를 통해 비행 기록을 내려받아 CSV로 나눕니다. SD 카드의 비행 기록은 보드 없이도 분석할 수 있습니다: `python tools/blackbox.py ring E:/BLACKBOX.BIN`. 콥터는 매 루프(1 kHz) 자이로, PID, 모터를 기록합니다: H743에서는 같은 SD 카드에, F405에서는 보드의 SPI 플래시(W25Q128 등)에. `python tools/blackbox.py download --bfl`은 콥터 비행을 Betaflight 형식(`.BFL`)으로 내줍니다 — Blackbox Explorer와 PIDtoolbox용. 보려면 — **OpenPlane Studio의 “블랙박스” 섹션**: 모드와 이벤트 타임라인, 공통 커서 그래프, 노이즈 스펙트럼, 3D 자세. 자세한 내용은 [BLACKBOX.md](BLACKBOX.md)를 보세요.
+보드는 모든 비행을 기록합니다. 500 Hz IMU, 자세각과 오토파일럿의 판단, PID, 모든 출력, 스틱, 기압계, 나침반, GPS, 배터리, 이벤트를 ARM과 스로틀 시점부터 착륙까지, 시작 10초 전부터 남깁니다. **ESP32-S3**는 내장 플래시(11.9 MB, 약 9분)에, **STM32H743**은 SD 카드(64 MB, 약 1시간)에 기록합니다. SD 카드는 평범한 FAT32 그대로이며, 펌웨어는 미리 만들어 둔 파일 `BLACKBOX.BIN`에 씁니다. 삭제는 지상에서만 이루어집니다. 비행이 끝나면 `python tools/blackbox.py download`로 USB를 통해 비행 기록을 내려받아 CSV로 나눕니다. SD 카드의 비행 기록은 보드 없이도 분석할 수 있습니다: `python tools/blackbox.py ring E:/BLACKBOX.BIN`. 콥터는 매 루프(1 kHz) 자이로, PID, 모터를 기록합니다: H743에서는 같은 SD 카드에, F405에서는 보드의 SPI 플래시(W25Q128 등)에. `python tools/blackbox.py download --bfl`은 콥터 비행을 Betaflight 형식(`.BFL`)으로 내줍니다 — Blackbox Explorer와 PIDtoolbox용. 보려면 — **OpenPlane Studio의 “블랙박스” 섹션**: 모드와 이벤트 타임라인, 공통 커서 그래프, 노이즈 스펙트럼, 3D 자세. 자세한 내용은 [BLACKBOX.md](BLACKBOX.md)를 보세요.
 
 ---
 

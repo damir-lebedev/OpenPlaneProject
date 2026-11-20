@@ -47,6 +47,9 @@ public:
     {
     }
 
+    // Сервер — для дополнительных маршрутов (WifiOta) до begin().
+    WebServer& http() { return webServer; }
+
     bool begin()
     {
         Serial.print("WebDebugServer: запуск точки доступа... ");

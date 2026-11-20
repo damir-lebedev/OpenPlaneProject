@@ -75,7 +75,7 @@ namespace fake
         std::unique_ptr<FlashPartition> p(new FlashPartition());
         p->info.type = ESP_PARTITION_TYPE_DATA;
         p->info.subtype = static_cast<esp_partition_subtype_t>(0x40);
-        p->info.address = 0x210000;
+        p->info.address = 0x410000;   // partitions_blackbox.csv
         p->info.size = size;
         strncpy(p->info.label, label, sizeof(p->info.label) - 1);
         p->data.assign(size, fill);

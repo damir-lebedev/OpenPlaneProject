@@ -476,6 +476,17 @@ Aucune application à installer — c’est une page web ordinaire.
 
 La portée de ce point d’accès est, en pratique, de quelques dizaines de mètres : c’est le Wi-Fi ordinaire d’un ESP32, pas une télémétrie longue portée. C’est un outil de réglage sur la table, sur le banc et à côté du terrain — pas pour piloter l’appareil en vol à distance.
 
+### Flashage par WiFi
+
+Un avion sur ESP32 se reflashe sans câble, par le même point d’accès. La première fois (et sur l’ESP32-S3, après le changement de partitions : la boîte noire fait désormais 11,9 Mo, les anciens vols sont effacés) flashez par USB.
+
+1. Sans ARM, ouvrez la **fenêtre de mise à jour** : gaz en bas, lacet à droite, tangage vers soi, ailerons au centre — maintenez 3 secondes. Les gouvernes hochent **4 fois** : la fenêtre est ouverte 5 minutes (3 hochements : mise à jour WiFi désactivée, `OTA_WIFI`). Ou la touche `u` dans la console.
+2. **Depuis un téléphone :** OpenPlane Studio → avion → « Flasher par WiFi » → un fichier `.bin` (produit par « Export pour téléphone » dans Studio sur l’ordinateur). Studio rejoint seul le réseau de l’avion ; Android demande l’autorisation.
+   **Depuis un ordinateur :** rejoignez le réseau de l’avion et cliquez sur « Par WiFi » sur la page de la carte ; Studio compile et envoie le firmware. Sans Studio : `curl -F firmware=@.pio/build/esp32-s3/firmware.bin http://192.168.4.1/update`.
+3. La carte écrit le firmware dans la seconde partition, vérifie l’image et seulement ensuite redémarre. Connexion coupée ou mauvais fichier : l’ancien firmware reste. Les calibrations et réglages ne sont pas touchés.
+
+Armer pendant la réception l’interrompt ; la fenêtre se ferme seule après 5 minutes (`OTA_WINDOW_MS`) et à l’ARM. Le mot de passe par défaut du point d’accès est faible : changez `WIFI_AP_PASSWORD` dans le projet de l’avion.
+
 ---
 
 ## Boîte noire
@@ -486,10 +497,10 @@ Le firmware de l’ESP32-S3 enregistre lui-même chaque vol en flash : tout ce 
 - elle **s’arrête** 10 s après le DISARM — ou si un avion armé reste immobile, moteur coupé, pendant 30 s (il s’est posé ou écrasé, et le DISARM a été oublié) ;
 - la perte de liaison, le moteur à zéro et le vol plané n’arrêtent **pas** l’enregistrement.
 
-À la mise sous tension, le moniteur série indique combien de place il y a pour un vol (la console écrit en russe ; la ligne ci-dessous signifie « attend l’ARM et les gaz | effacé devant 12,9 Mo (≈ 11 min) sur 13,9 Mo | vols 1 ») :
+À la mise sous tension, le moniteur série indique combien de place il y a pour un vol (la console écrit en russe ; la ligne ci-dessous signifie « attend l’ARM et les gaz | effacé devant 10,9 Mo (≈ 9 min) sur 11,9 Mo | vols 1 ») :
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 **Après le vol**, branchez l’USB (le connecteur COM), fermez le moniteur série et téléchargez le vol :

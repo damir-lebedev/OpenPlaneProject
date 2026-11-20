@@ -237,6 +237,9 @@ STM32duino (и других ядрах Arduino) `PIN_SPI_SCK/MISO/MOSI` — ма
 | `LOOP_PERIOD_MS` | 2 | Период полётного цикла (500 Гц); также номинальный `dt` для `PidController` |
 | `WIFI_AP_SSID` / `WIFI_AP_PASSWORD` | `"OpenPlane-Debug"` / `"12345678"` | Точка доступа дашборда (пароль слабый — инструмент стенда) |
 | `WEB_SERVER_PORT` | 80 | Порт HTTP |
+| `OTA_WIFI` | true | Прошивка по WiFi: `POST /update` на точке дашборда (WifiOta.h) |
+| `OTA_WINDOW_MS` | 300 000 | Окно прошивки после жеста / `u` / команды `ota`, мс |
+| `OTA_STICK_HOLD_MS` | 3000 | Жест стиков без ARM: газ вниз, рысканье вправо, тангаж на себя, мс |
 | `TELEM_BAUDRATE` | 57600 | Скорость радиомодема MAVLink (дефолт SiK) |
 | `MAVLINK_SYSTEM_ID` / `MAVLINK_COMPONENT_ID` | 1 / 1 | Адрес борта в MAVLink |
 | `DEBUG_INTERVAL_MS` | 100 | Как часто `DebugLogger` проверяет каналы лога |

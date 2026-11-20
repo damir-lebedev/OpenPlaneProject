@@ -10,6 +10,7 @@
 #include "sensors/SensorInterface.h"
 #include "telemetry/AppLink.h"
 #include "telemetry/DebugLogger.h"
+#include "telemetry/OtaGate.h"
 #include "telemetry/FirmwareIdentity.h"
 #include "telemetry/IFlightRecorder.h"
 #include "telemetry/LogSettings.h"
@@ -41,6 +42,8 @@
 //   "act X"   — то же, что горячая клавиша X (калибровки, проверка
 //               выходов, сигнал) — мастер наладки приложения;
 //   "live ..." — живая связь с приложением (AppLink.h);
+//   "ota"     — открыть окно прошивки по WiFi, ответ "@ota {...}"
+//               (OtaGate.h; есть только в сборках ESP32);
 //   "bb ..."  — чёрному ящику (выгрузка полётов, tools/blackbox.py).
 //
 // Пока открыто меню, лог молчит (DebugLogger::suspend), чтобы меню
@@ -101,6 +104,9 @@ public:
     // Живая связь с приложением: команды "live" передаются ей.
     void setAppLink(AppLink* link) { appLink = link; }
 
+    // Окно прошивки по WiFi (ESP32): клавиша 'u' и команда "ota".
+    void setOtaGate(OtaGate* otaGate) { ota = otaGate; }
+
     // Вызывать каждый цикл: не блокирует, если ввода нет.
     void update()
     {
@@ -133,6 +139,7 @@ private:
     IFlightRecorder* blackBox;
     void (*bootloaderHook)() = nullptr;
     AppLink* appLink = nullptr;
+    OtaGate* ota = nullptr;
 
     Screen screen = Screen::None;
     bool settingsDirty = false;   // настройки лога изменены, в NVS ещё не записаны
@@ -193,6 +200,14 @@ private:
             printScanJson();
             return;
         }
+        if (strcmp(hostBuffer, "ota") == 0)
+        {
+            const uint32_t nowMs = millis();
+            const OtaGate::Result r = ota ? ota->open(nowMs) : OtaGate::Result::Disabled;
+            Serial.printf("@ota {\"result\":\"%s\",\"left_ms\":%lu}\n", ota ? OtaGate::code(r) : "NONE",
+                          (unsigned long)(ota ? ota->remainingMs(nowMs) : 0));
+            return;
+        }
         if (strncmp(hostBuffer, "act ", 4) == 0 && hostBuffer[4] && !hostBuffer[5])
         {
             runAction(hostBuffer[4]);
@@ -216,10 +231,27 @@ private:
             case 's': case 'i': case 'o': case 'm': case 'p': case 'b': case 'c': case 'e':
                 runAction(key);
                 break;
+            case 'u':
+                if (ota) openOta();
+                else printHint();
+                break;
             default:
                 printHint();
                 break;
         }
+    }
+
+    void openOta()
+    {
+        const uint32_t nowMs = millis();
+        const OtaGate::Result r = ota->open(nowMs);
+        if (r != OtaGate::Result::Ok)
+        {
+            Serial.printf("Прошивка по WiFi: нельзя — %s\n", OtaGate::text(r));
+            return;
+        }
+        Serial.printf("Прошивка по WiFi: окно открыто на %lu с. Точка «%s», http://192.168.4.1/update\n",
+                      (unsigned long)(ota->remainingMs(nowMs) / 1000), Config::WIFI_AP_SSID);
     }
 
     void rebootToBootloader()
@@ -257,6 +289,7 @@ private:
         if (blackBox) printItem('8', "Чёрный ящик: полёты, запись", 'k');
         printItem('9', "Калибровка самолёта на земле (2 шага)", 'c');
         printItem('e', "Сигнал: рули и мелодия ESC (винт снять!)", 'e');
+        if (ota) printItem('u', "Прошивка по WiFi: открыть окно", 'u');
         Serial.println("  0  закрыть меню");
         printRule(logger.isPaused() ? "лог на паузе — пробел, чтобы продолжить"
                                     : "пробел — пауза лога");
@@ -286,6 +319,7 @@ private:
                 return;
             case '9': case 'c': closeMenu(); runAction('c'); return;
             case 'e': closeMenu(); runAction('e'); return;
+            case 'u': if (ota) { closeMenu(); openOta(); } return;
             case '0': case 'q': case 'h':
                 closeMenu();
                 return;

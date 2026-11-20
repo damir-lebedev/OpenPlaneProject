@@ -236,6 +236,9 @@ kommentarer; vad de betyder för piloten finns i [AUTOPILOT_GUIDE.md](../AUTOPIL
 | `LOOP_PERIOD_MS` | 2 | Flygslingans period (500 Hz); också det nominella `dt` för `PidController` |
 | `WIFI_AP_SSID` / `WIFI_AP_PASSWORD` | `"OpenPlane-Debug"` / `"12345678"` | Panelens åtkomstpunkt (lösenordet är svagt – ett bänkverktyg) |
 | `WEB_SERVER_PORT` | 80 | HTTP-port |
+| `OTA_WIFI` | true | Flashning över WiFi: `POST /update` på instrumentpanelens åtkomstpunkt (WifiOta.h) |
+| `OTA_WINDOW_MS` | 300 000 | Uppdateringsfönster efter gesten / `u` / kommandot `ota`, ms |
+| `OTA_STICK_HOLD_MS` | 3000 | Spakgest utan ARM: gas ner, gir höger, tipp bakåt, ms |
 | `TELEM_BAUDRATE` | 57600 | MAVLink-radiomodemets hastighet (SiK-standard) |
 | `MAVLINK_SYSTEM_ID` / `MAVLINK_COMPONENT_ID` | 1 / 1 | Farkostens adress i MAVLink |
 | `DEBUG_INTERVAL_MS` | 100 | Hur ofta `DebugLogger` kontrollerar loggkanalerna |

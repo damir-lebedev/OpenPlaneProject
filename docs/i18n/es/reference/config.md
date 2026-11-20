@@ -241,6 +241,9 @@ comentarios detallados; lo que significan para el piloto está en
 | `LOOP_PERIOD_MS` | 2 | El periodo del ciclo de vuelo (500 Hz); también el `dt` nominal de `PidController` |
 | `WIFI_AP_SSID` / `WIFI_AP_PASSWORD` | `"OpenPlane-Debug"` / `"12345678"` | El punto de acceso del dashboard (la contraseña es débil: una herramienta de banco) |
 | `WEB_SERVER_PORT` | 80 | Puerto HTTP |
+| `OTA_WIFI` | true | Flasheo por WiFi: `POST /update` en el punto de acceso del panel (WifiOta.h) |
+| `OTA_WINDOW_MS` | 300 000 | Ventana de actualización tras el gesto / `u` / comando `ota`, ms |
+| `OTA_STICK_HOLD_MS` | 3000 | Gesto de sticks sin ARM: gas abajo, guiñada a la derecha, cabeceo atrás, ms |
 | `TELEM_BAUDRATE` | 57600 | La velocidad del radiomódem MAVLink (el valor predeterminado de SiK) |
 | `MAVLINK_SYSTEM_ID` / `MAVLINK_COMPONENT_ID` | 1 / 1 | La dirección del aparato en MAVLink |
 | `DEBUG_INTERVAL_MS` | 100 | Cada cuánto comprueba `DebugLogger` los canales del registro |

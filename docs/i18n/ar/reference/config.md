@@ -238,6 +238,9 @@ STM32duino (وسائر أنوية Arduino) تكون `PIN_SPI_SCK/MISO/MOSI` ما
 | `LOOP_PERIOD_MS` | 2 | دورة حلقة الطيران (500 Hz)؛ وهي أيضًا قيمة `dt` الاسمية لـ `PidController` |
 | `WIFI_AP_SSID` / `WIFI_AP_PASSWORD` | `"OpenPlane-Debug"` / `"12345678"` | نقطة وصول لوحة المعلومات (كلمة المرور ضعيفة — أداة للمنصة) |
 | `WEB_SERVER_PORT` | 80 | منفذ HTTP |
+| `OTA_WIFI` | true | التحديث عبر WiFi: ‏`POST /update` على نقطة وصول لوحة المعلومات (WifiOta.h) |
+| `OTA_WINDOW_MS` | 300 000 | نافذة التحديث بعد الإيماءة / `u` / الأمر `ota`، ms |
+| `OTA_STICK_HOLD_MS` | 3000 | إيماءة العصي دون ARM: الخانق للأسفل، الانعراج يمينًا، الانحدار للخلف، ms |
 | `TELEM_BAUDRATE` | 57600 | سرعة مودم راديو MAVLink (الافتراضية في SiK) |
 | `MAVLINK_SYSTEM_ID` / `MAVLINK_COMPONENT_ID` | 1 / 1 | عنوان الطائرة في MAVLink |
 | `DEBUG_INTERVAL_MS` | 100 | كم مرة يفحص `DebugLogger` قنوات السجل |

@@ -8,7 +8,7 @@ Sie funktioniert auf zwei Boards:
 
 | Board | Wohin sie schreibt | Wie viel hineinpasst (bei ~20 KB/s) |
 |---|---|---|
-| **ESP32-S3 N16R8** | eine Partition von 13,9 MB im eingebauten Flash | etwa **11 Minuten** |
+| **ESP32-S3 N16R8** | eine Partition von 11,9 MB im eingebauten Flash | etwa **9 Minuten** |
 | **STM32H743** (DevEBox – Hauptboard; WeAct) | eine Datei auf einer SD-Karte, [weiter unten](#sd-karte-stm32h743) | 64 MB – etwa **55 Minuten**, die Größe legt die Datei fest |
 
 Auf den übrigen Boards (ESP32-C3, gewöhnlicher ESP32) gibt es keinen Speicher: Die Blackbox ist abgeschaltet und stört den Flug nicht.
@@ -53,10 +53,10 @@ Zu Beginn jedes Flugs stehen die Parameter: die Firmware (Build-Datum), der Grun
 
 ### Vor dem Flug
 
-Man muss nichts tun. Beim Einschalten zeigt der serielle Monitor den Zustand (die Konsole gibt Russisch aus; die Zeile unten bedeutet „wartet auf ARM und Gas | voraus gelöscht: 12,9 MB (≈11 min) von 13,9 MB | Flüge: 1“):
+Man muss nichts tun. Beim Einschalten zeigt der serielle Monitor den Zustand (die Konsole gibt Russisch aus; die Zeile unten bedeutet „wartet auf ARM und Gas | voraus gelöscht: 10,9 MB (≈9 min) von 11,9 MB | Flüge: 1“):
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 „Voraus gelöscht“ ist das, was in den nächsten Flug passt. Nach dem Einschalten bereitet die Blackbox einige Sekunden lang (nach einem langen Flug bis zu einer Minute) Platz vor: Sie löscht alte Aufzeichnungen. In dieser Zeit friert die Flugschleife am Boden manchmal für ~0,15 s ein – die Ruder können verspätet zucken, das ist normal. **In der Luft wird der Flash niemals gelöscht.**
@@ -197,7 +197,7 @@ Der schlechteste Schreibvorgang einer Seite ist die interne „Aufräumarbeit“
 | `BLACKBOX_IMU_DIVIDER` | 1 | Die IMU in jedem N-ten Zyklus: 2 bedeutet 250 Hz und eine um ~25 % längere Aufzeichnung |
 | `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6,6, 1,667 (Matek H743: 11, 1) | Die Teiler für Akku und Stromsensor auf dem Board |
 
-Die Partitionstabelle ist `partitions_blackbox.csv`: die Anwendung 2 MB (die Firmware ist jetzt ~0,9 MB groß), die Blackbox 13,9 MB, der Coredump 64 KB. Die NVS-Partition ist an ihrem alten Platz geblieben – die Kalibrierungen von IMU und Kompass sowie die Trimmungen bleiben nach dem Wechsel auf diese Tabelle erhalten. Einen zweiten Slot für Updates über die Luft (OTA) gibt es nicht.
+Die Partitionstabelle ist `partitions_blackbox.csv`: die Anwendung 2 MB (die Firmware ist jetzt ~0,9 MB groß), die Blackbox 11,9 MB, der Coredump 64 KB. Die NVS-Partition ist an ihrem alten Platz geblieben – die Kalibrierungen von IMU und Kompass sowie die Trimmungen bleiben nach dem Wechsel auf diese Tabelle erhalten. Der zweite Firmware-Slot `app1` (2 MB) nimmt Updates über WiFi an (PILOT_GUIDE, „Flashen über WiFi“); der Wechsel auf diese Tabelle braucht einmal USB und löscht alte Flüge.
 
 ---
 

@@ -8,6 +8,7 @@
 // тот же обработчик, ответ сохраняется в lastResponse().
 // ============================================================
 
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <vector>
@@ -27,6 +28,26 @@ enum HTTPMethod
 };
 
 class WebServer;
+
+// Приём файла формой (как HTTPUpload у ESP32): обработчик загрузки зовут
+// по частям — START, WRITE…, END, — затем обычный обработчик маршрута.
+enum HTTPUploadStatus
+{
+    UPLOAD_FILE_START,
+    UPLOAD_FILE_WRITE,
+    UPLOAD_FILE_END,
+    UPLOAD_FILE_ABORTED
+};
+
+struct HTTPUpload
+{
+    HTTPUploadStatus status = UPLOAD_FILE_START;
+    String filename;
+    String name;
+    size_t totalSize = 0;
+    size_t currentSize = 0;
+    uint8_t buf[1436] = {};   // HTTP_UPLOAD_BUFLEN у ESP32
+};
 
 namespace fake
 {
@@ -72,8 +93,13 @@ public:
     void on(const String& uri, THandlerFunction handler) { on(uri, HTTP_ANY, handler); }
     void on(const String& uri, HTTPMethod method, THandlerFunction handler)
     {
-        routes.push_back(Route{ uri.str(), method, handler });
+        routes.push_back(Route{ uri.str(), method, handler, nullptr });
     }
+    void on(const String& uri, HTTPMethod method, THandlerFunction handler, THandlerFunction uploadHandler)
+    {
+        routes.push_back(Route{ uri.str(), method, handler, uploadHandler });
+    }
+    HTTPUpload& upload() { return currentUpload; }
     void onNotFound(THandlerFunction handler) { notFound = handler; }
 
     void begin() { started = true; }
@@ -116,6 +142,47 @@ public:
         return false;
     }
 
+    // POST формой: файл кусками по buf, abortAfter > 0 — клиент пропал после
+    // стольких байт (ABORTED). false — маршрута нет.
+    bool uploadFile(const std::string& uri, const std::string& fileName, const std::vector<uint8_t>& data, size_t abortAfter = 0)
+    {
+        response = Response();
+        hasBody = false;
+        for (const Route& r : routes)
+        {
+            if (r.uri != uri || r.method != HTTP_POST || !r.upload) continue;
+            HTTPUpload& up = currentUpload;
+            up = HTTPUpload();
+            up.filename = String(fileName.c_str());
+            up.name = String("firmware");
+            up.status = UPLOAD_FILE_START;
+            r.upload();
+            size_t at = 0;
+            while (at < data.size())
+            {
+                if (abortAfter && at >= abortAfter)
+                {
+                    up.status = UPLOAD_FILE_ABORTED;
+                    r.upload();
+                    return true;   // клиента нет — ответа тоже
+                }
+                const size_t n = std::min(sizeof(up.buf), data.size() - at);
+                std::copy(data.begin() + static_cast<long>(at), data.begin() + static_cast<long>(at + n), up.buf);
+                up.currentSize = n;
+                up.status = UPLOAD_FILE_WRITE;
+                r.upload();
+                at += n;
+                up.totalSize = at;
+            }
+            up.status = UPLOAD_FILE_END;
+            up.currentSize = 0;
+            r.upload();
+            r.handler();
+            return true;
+        }
+        return false;
+    }
+
     const Response& lastResponse() const { return response; }
     int port() const { return serverPort; }
     bool isStarted() const { return started; }
@@ -128,6 +195,7 @@ private:
         std::string uri;
         HTTPMethod method;
         THandlerFunction handler;
+        THandlerFunction upload;
     };
 
     int serverPort;
@@ -139,4 +207,5 @@ private:
     bool hasBody = false;
     std::string body;
     Response response;
+    HTTPUpload currentUpload;
 };

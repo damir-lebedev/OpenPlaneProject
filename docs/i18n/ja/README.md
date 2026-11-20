@@ -189,7 +189,7 @@ pio run -e matek-h743-quad -t upload    # その後コンソールで：t — �
 
 ## 📼 ブラックボックス
 
-ボードはすべてのフライトを記録します。500 Hz の IMU、姿勢角とオートパイロットの判断、PID、すべての出力、スティック、気圧センサー、コンパス、GPS、バッテリー、イベントを、ARM とスロットルから着陸まで、開始の 10 秒前から残します。**ESP32-S3** は内蔵フラッシュ（13.9 MB、約 11 分）に、**STM32H743** は SD カード（64 MB、約 1 時間）に書き込みます。SD カードは普通の FAT32 のままで、ファームウェアは事前に作っておいたファイル `BLACKBOX.BIN` に書き込みます。消去は地上でのみ行われます。飛行後は `python tools/blackbox.py download` で USB 経由でフライトをダウンロードして CSV に展開できます。SD カードのフライトは、ボードなしでも解析できます：`python tools/blackbox.py ring E:/BLACKBOX.BIN`。コプターは毎ループ（1 kHz）ジャイロ、PID、モーターを記録します：H743 では同じ SD カードへ、F405 ではボードの SPI フラッシュ（W25Q128 など）へ。`python tools/blackbox.py download --bfl` でコプターのフライトを Betaflight 形式（`.BFL`）で取り出せます — Blackbox Explorer と PIDtoolbox 用。見るには — **OpenPlane Studio の「ブラックボックス」セクション**：モードとイベントのタイムライン、共通カーソルのグラフ、ノイズスペクトル、3D の姿勢。詳しくは [BLACKBOX.md](BLACKBOX.md) をご覧ください。
+ボードはすべてのフライトを記録します。500 Hz の IMU、姿勢角とオートパイロットの判断、PID、すべての出力、スティック、気圧センサー、コンパス、GPS、バッテリー、イベントを、ARM とスロットルから着陸まで、開始の 10 秒前から残します。**ESP32-S3** は内蔵フラッシュ（11.9 MB、約 9 分）に、**STM32H743** は SD カード（64 MB、約 1 時間）に書き込みます。SD カードは普通の FAT32 のままで、ファームウェアは事前に作っておいたファイル `BLACKBOX.BIN` に書き込みます。消去は地上でのみ行われます。飛行後は `python tools/blackbox.py download` で USB 経由でフライトをダウンロードして CSV に展開できます。SD カードのフライトは、ボードなしでも解析できます：`python tools/blackbox.py ring E:/BLACKBOX.BIN`。コプターは毎ループ（1 kHz）ジャイロ、PID、モーターを記録します：H743 では同じ SD カードへ、F405 ではボードの SPI フラッシュ（W25Q128 など）へ。`python tools/blackbox.py download --bfl` でコプターのフライトを Betaflight 形式（`.BFL`）で取り出せます — Blackbox Explorer と PIDtoolbox 用。見るには — **OpenPlane Studio の「ブラックボックス」セクション**：モードとイベントのタイムライン、共通カーソルのグラフ、ノイズスペクトル、3D の姿勢。詳しくは [BLACKBOX.md](BLACKBOX.md) をご覧ください。
 
 ---
 

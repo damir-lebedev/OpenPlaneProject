@@ -1308,6 +1308,17 @@ namespace Config
     constexpr const char* WIFI_AP_PASSWORD = "12345678";
     constexpr uint16_t WEB_SERVER_PORT = 80;
 
+    // Прошивка по WiFi (telemetry/WifiOta.h, OtaGate.h): POST /update на
+    // ту же точку доступа. Только на земле и только в открытом окне:
+    // клавиша 'u' в консоли, команда "ota" от Studio или жест стиков без
+    // ARM — газ вниз, рысканье вправо, тангаж вниз (на себя), элероны в
+    // центре, подержать OTA_STICK_HOLD_MS (ответ — 4 кивка рулей). Окно
+    // закрывается через OTA_WINDOW_MS и по ARM. Нужна вторая область
+    // прошивки app1 (partitions_blackbox.csv; у ESP32-C3 — по умолчанию).
+    constexpr bool OTA_WIFI = true;
+    constexpr uint32_t OTA_WINDOW_MS = 300000;  // @range(60000, 1800000)
+    constexpr uint32_t OTA_STICK_HOLD_MS = 3000;  // @range(1000, 10000)
+
 
     // --------------------------------------------------------
     // Телеметрия MAVLink по радиомодему (telemetry/MavlinkTelemetry.h)
@@ -1329,8 +1340,8 @@ namespace Config
     //
     // Пишет полёт на встроенный флеш или на SD-карту, около 20 КБ/с со
     // стендовым набором датчиков:
-    //   ESP32-S3 N16R8 — раздел флеша "blackbox" ~13.9 МБ
-    //     (partitions_blackbox.csv), ~11 минут;
+    //   ESP32-S3 N16R8 — раздел флеша "blackbox" ~11.9 МБ
+    //     (partitions_blackbox.csv), ~9 минут;
     //   STM32H743 — файл BLACKBOX_SD_FILE в корне FAT32-карты (SDMMC1,
     //     4 бита), заранее выделенный на ПК: tools/blackbox.py sd-prepare;
     //     64 МБ — ~55 минут;

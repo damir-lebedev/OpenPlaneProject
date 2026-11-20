@@ -235,6 +235,9 @@ STM32duino वेरिएंट की `PeripheralPins` तालिकाओ�
 | `LOOP_PERIOD_MS` | 2 | उड़ान-चक्र की अवधि (500 Hz); साथ ही `PidController` का नाममात्र `dt` |
 | `WIFI_AP_SSID` / `WIFI_AP_PASSWORD` | `"OpenPlane-Debug"` / `"12345678"` | डैशबोर्ड का एक्सेस पॉइंट (पासवर्ड कमज़ोर है — टेस्ट बेंच का औज़ार) |
 | `WEB_SERVER_PORT` | 80 | HTTP पोर्ट |
+| `OTA_WIFI` | true | WiFi से फ़्लैश: डैशबोर्ड एक्सेस पॉइंट पर `POST /update` (WifiOta.h) |
+| `OTA_WINDOW_MS` | 300 000 | जेस्चर / `u` / `ota` कमांड के बाद अपडेट विंडो, ms |
+| `OTA_STICK_HOLD_MS` | 3000 | ARM के बिना स्टिक जेस्चर: थ्रॉटल नीचे, यॉ दाएँ, पिच पीछे, ms |
 | `TELEM_BAUDRATE` | 57600 | MAVLink रेडियो मॉडेम की गति (SiK का डिफ़ॉल्ट) |
 | `MAVLINK_SYSTEM_ID` / `MAVLINK_COMPONENT_ID` | 1 / 1 | MAVLink में विमान का पता |
 | `DEBUG_INTERVAL_MS` | 100 | `DebugLogger` लॉग के चैनल कितनी बार जाँचता है |

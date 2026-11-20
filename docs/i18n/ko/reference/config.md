@@ -232,6 +232,9 @@
 | `LOOP_PERIOD_MS` | 2 | 비행 루프의 주기(500 Hz). `PidController`의 공칭 `dt`이기도 함 |
 | `WIFI_AP_SSID` / `WIFI_AP_PASSWORD` | `"OpenPlane-Debug"` / `"12345678"` | 대시보드의 액세스 포인트(비밀번호가 약함 — 테스트 벤치용 도구) |
 | `WEB_SERVER_PORT` | 80 | HTTP 포트 |
+| `OTA_WIFI` | true | WiFi 굽기: 대시보드 액세스 포인트의 `POST /update`(WifiOta.h) |
+| `OTA_WINDOW_MS` | 300 000 | 제스처 / `u` / `ota` 명령 후 업데이트 창, ms |
+| `OTA_STICK_HOLD_MS` | 3000 | ARM 없는 스틱 제스처: 스로틀 아래, 요 오른쪽, 피치 당김, ms |
 | `TELEM_BAUDRATE` | 57600 | MAVLink 무선 모뎀의 속도(SiK 기본값) |
 | `MAVLINK_SYSTEM_ID` / `MAVLINK_COMPONENT_ID` | 1 / 1 | MAVLink에서의 기체 주소 |
 | `DEBUG_INTERVAL_MS` | 100 | `DebugLogger`가 로그 채널을 확인하는 빈도 |

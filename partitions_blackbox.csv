@@ -1,12 +1,16 @@
-# ESP32-S3 N16R8, 16 MB flash: 2 MB app + ~13.9 MB black box.
+# ESP32-S3 N16R8, 16 MB flash: two 2 MB app slots (update over WiFi) +
+# ~11.9 MB black box.
 # nvs keeps the offset and size of default_16MB.csv, so calibrations
 # (IMU, compass, trims, log settings) survive the table change.
-# No second app slot: OTA is not used.
+# app1 takes a new image over WiFi (include/telemetry/WifiOta.h); the
+# bootloader switches to it only after the image is verified.
+# Changing this table needs one flash over USB; the old black box is lost.
 # ASCII only: PlatformIO reads this file in the system code page.
 # Layout of the blackbox partition: include/telemetry/BlackBoxStorage.h
 # Name,   Type, SubType,  Offset,   Size,
 nvs,      data, nvs,      0x9000,   0x5000,
 otadata,  data, ota,      0xe000,   0x2000,
 app0,     app,  ota_0,    0x10000,  0x200000,
-blackbox, data, 0x40,     0x210000, 0xDE0000,
+app1,     app,  ota_1,    0x210000, 0x200000,
+blackbox, data, 0x40,     0x410000, 0xBE0000,
 coredump, data, coredump, 0xFF0000, 0x10000,

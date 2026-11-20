@@ -8,7 +8,7 @@ Funciona en dos placas:
 
 | Placa | Dónde graba | Cuánto cabe (a ~20 KB/s) |
 |---|---|---|
-| **ESP32-S3 N16R8** | una partición de 13.9 MB de la flash integrada | unos **11 minutos** |
+| **ESP32-S3 N16R8** | una partición de 11.9 MB de la flash integrada | unos **9 minutos** |
 | **STM32H743** (DevEBox, la principal; WeAct) | un archivo en una tarjeta SD, [más abajo](#tarjeta-sd-stm32h743) | 64 MB: unos **55 minutos**, el tamaño lo fija el archivo |
 
 En las demás placas (ESP32-C3, ESP32 normal) no hay soporte de almacenamiento: la caja negra está desactivada y no interfiere con el vuelo.
@@ -53,10 +53,10 @@ Al comienzo de cada vuelo van los parámetros: el firmware (fecha de compilació
 
 ### Antes del vuelo
 
-No hay que hacer nada. Al encender, el monitor serie muestra el estado (la consola imprime en ruso; la línea de abajo dice «espera ARM y acelerador | borrado por delante 12.9 MB (≈11 min) de 13.9 MB | vuelos 1»):
+No hay que hacer nada. Al encender, el monitor serie muestra el estado (la consola imprime en ruso; la línea de abajo dice «espera ARM y acelerador | borrado por delante 10.9 MB (≈9 min) de 11.9 MB | vuelos 1»):
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 «Borrado por delante» es cuánto cabrá en el siguiente vuelo. Tras el encendido, la caja negra tarda unos segundos (después de un vuelo largo, hasta un minuto) en preparar espacio: borra las grabaciones antiguas. Durante ese tiempo el ciclo de vuelo, en el suelo, a veces se queda congelado unos ~0.15 s: las superficies pueden dar un tirón con retraso, y es normal. **En el aire la flash no se borra nunca.**
@@ -197,7 +197,7 @@ La peor escritura de una página es la «limpieza» interna de la tarjeta; la co
 | `BLACKBOX_IMU_DIVIDER` | 1 | El IMU cada N ciclos: 2 equivale a 250 Hz y a una grabación ~25 % más larga |
 | `BLACKBOX_VBAT_DIVIDER`, `_CURRENT_DIVIDER` | 6.6, 1.667 (Matek H743: 11, 1) | Los divisores de la batería y del sensor de corriente en la placa |
 
-La tabla de particiones es `partitions_blackbox.csv`: la aplicación, 2 MB (el firmware ocupa ahora ~0.9 MB), la caja negra, 13.9 MB, y el coredump, 64 KB. La partición NVS se quedó en su sitio: las calibraciones del IMU y de la brújula y los trims se conservan tras pasar a esta tabla. No hay un segundo slot para las actualizaciones por aire (OTA).
+La tabla de particiones es `partitions_blackbox.csv`: la aplicación, 2 MB (el firmware ocupa ahora ~0.9 MB), la caja negra, 11.9 MB, y el coredump, 64 KB. La partición NVS se quedó en su sitio: las calibraciones del IMU y de la brújula y los trims se conservan tras pasar a esta tabla. La segunda partición de firmware `app1` (2 MB) recibe las actualizaciones por WiFi (PILOT_GUIDE, «Flasheo por WiFi»); pasar a esta tabla requiere un flasheo por USB y borra los vuelos antiguos.
 
 ---
 

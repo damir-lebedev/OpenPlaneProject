@@ -475,6 +475,17 @@ No app needs to be installed — it is an ordinary web page.
 
 The range of this access point is, in practice, tens of meters; it is an ordinary ESP32 Wi-Fi, not long-range telemetry. It is a tool for tuning on the table, on the bench and next to the field — not for controlling the aircraft in flight at a distance.
 
+### Flashing over WiFi
+
+A plane on an ESP32 can be reflashed without a cable — through the same access point. The first time (and on the ESP32-S3 — after the flash layout change: the black box is now 11.9 MB, old flights are erased) flash over USB.
+
+1. While disarmed, open the **update window**: throttle down, yaw right, pitch back, ailerons centred — hold for 3 seconds. The surfaces nod **4 times** — the window is open for 5 minutes (3 nods — WiFi updates are off: `OTA_WIFI`). Or press `u` in the console.
+2. **From a phone:** OpenPlane Studio → plane → “Flash over WiFi” → a `.bin` file (made by “Export for phone” in Studio on a computer). Studio joins the plane's network by itself — Android asks for permission.
+   **From a computer:** join the plane's network and press “Over WiFi” on the board page — Studio builds and sends the firmware. Without Studio: `curl -F firmware=@.pio/build/esp32-s3/firmware.bin http://192.168.4.1/update`.
+3. The board writes the firmware into the second slot, verifies the image and only then reboots. If the connection drops or the file is wrong, the old firmware stays. Calibrations and settings are not touched.
+
+Arming during the upload aborts it; the window closes by itself after 5 minutes (`OTA_WINDOW_MS`) and on ARM. The default access-point password is weak — change `WIFI_AP_PASSWORD` in the plane project.
+
 ---
 
 ## Black box
@@ -485,10 +496,10 @@ The ESP32-S3 firmware records every flight to flash by itself: everything the se
 - it **stops** 10 s after DISARM — or if an armed aircraft sits motionless with the motor off for 30 s (it landed or crashed, and DISARM was forgotten);
 - link loss, motor to zero and gliding do **not** stop the recording.
 
-At power-up the serial monitor shows how much room there is for a flight (the console prints in Russian; the line below reads "waits for ARM and throttle | erased ahead 12.9 MB (≈11 min) of 13.9 MB | flights 1"):
+At power-up the serial monitor shows how much room there is for a flight (the console prints in Russian; the line below reads "waits for ARM and throttle | erased ahead 10.9 MB (≈9 min) of 11.9 MB | flights 1"):
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 **After the flight**, connect USB (the COM connector), close the serial monitor and download the flight:

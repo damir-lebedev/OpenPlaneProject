@@ -476,6 +476,17 @@ No hace falta instalar ninguna aplicación: es una página web normal.
 
 El alcance de este punto de acceso es, en la práctica, de decenas de metros: es el Wi-Fi normal de un ESP32, no una telemetría de largo alcance. Es una herramienta para ajustar sobre la mesa, en el banco y junto al campo, no para controlar la aeronave en vuelo a distancia.
 
+### Flasheo por WiFi
+
+Un avión con ESP32 se puede reflashear sin cable, a través del mismo punto de acceso. La primera vez (y en el ESP32-S3, tras el cambio de particiones: la caja negra ahora mide 11.9 MB y los vuelos antiguos se borran) flashee por USB.
+
+1. Sin ARM, abra la **ventana de actualización**: gas abajo, guiñada a la derecha, cabeceo hacia atrás, alerones centrados; mantenga 3 segundos. Las superficies asienten **4 veces**: la ventana queda abierta 5 minutos (3 asentimientos: la actualización por WiFi está desactivada, `OTA_WIFI`). O pulse `u` en la consola.
+2. **Desde el teléfono:** OpenPlane Studio → avión → «Flashear por WiFi» → un archivo `.bin` (lo genera «Exportar para el teléfono» en Studio en el ordenador). Studio se conecta sola a la red del avión; Android pide permiso.
+   **Desde el ordenador:** conéctese a la red del avión y pulse «Por WiFi» en la página de la placa; Studio compila y envía el firmware. Sin Studio: `curl -F firmware=@.pio/build/esp32-s3/firmware.bin http://192.168.4.1/update`.
+3. La placa escribe el firmware en la segunda partición, verifica la imagen y solo entonces reinicia. Si se corta la conexión o el archivo no es el correcto, queda el firmware anterior. Las calibraciones y los ajustes no se tocan.
+
+Armar durante la recepción la interrumpe; la ventana se cierra sola a los 5 minutos (`OTA_WINDOW_MS`) y al armar. La contraseña por defecto del punto de acceso es débil: cambie `WIFI_AP_PASSWORD` en el proyecto del avión.
+
 ---
 
 ## Caja negra
@@ -486,10 +497,10 @@ El firmware de la ESP32-S3 graba por sí solo cada vuelo en la flash: todo lo qu
 - **deja de grabar** 10 s después del DISARM, o si una aeronave armada permanece inmóvil con el motor apagado durante 30 s (ha aterrizado o se ha estrellado y se ha olvidado el DISARM);
 - la pérdida de enlace, el motor a cero y el planeo **no** detienen la grabación.
 
-Al encender, el monitor serie muestra cuánto espacio hay para un vuelo (la consola imprime en ruso; la línea de abajo dice «espera ARM y acelerador | borrado por delante 12.9 MB (≈11 min) de 13.9 MB | vuelos 1»):
+Al encender, el monitor serie muestra cuánto espacio hay para un vuelo (la consola imprime en ruso; la línea de abajo dice «espera ARM y acelerador | borrado por delante 10.9 MB (≈9 min) de 11.9 MB | vuelos 1»):
 
 ```
-BlackBox: ждёт ARM и газ | стёрто впереди 12.9 МБ (≈11 мин) из 13.9 МБ | полётов 1
+BlackBox: ждёт ARM и газ | стёрто впереди 10.9 МБ (≈9 мин) из 11.9 МБ | полётов 1
 ```
 
 **Después del vuelo**, conecta el USB (el conector COM), cierra el monitor serie y descarga el vuelo:
