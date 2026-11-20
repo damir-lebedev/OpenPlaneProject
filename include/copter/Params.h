@@ -271,6 +271,15 @@ namespace copter
         PARAM_ROLL_SRATE,
         PARAM_PITCH_SRATE,
         PARAM_YAW_SRATE,
+        PARAM_RATES_TYPE,
+        PARAM_QUICKRATES_RC_EXPO,
+        PARAM_ROLL_RATE_LIMIT,
+        PARAM_PITCH_RATE_LIMIT,
+        PARAM_YAW_RATE_LIMIT,
+        PARAM_THR_MID,
+        PARAM_THR_EXPO,
+        PARAM_THROTTLE_LIMIT_TYPE,
+        PARAM_THROTTLE_LIMIT_PERCENT,
         PARAM_SERIALRX_PROVIDER,
         PARAM_RX_MIN_USEC,
         PARAM_RX_MAX_USEC,
@@ -570,6 +579,8 @@ namespace copter
         static const char* const ITERM_RELAX[] = { "OFF", "RP", "RPY", "RP_INC", "RPY_INC" };
         static const char* const ITERM_RELAX_TYPES[] = { "GYRO", "SETPOINT" };
         static const char* const TPA_MODES[] = { "PD", "D", "MODEL" };   // как TpaMode
+        static const char* const RATES_TYPES[] = { "BETAFLIGHT", "RACEFLIGHT", "KISS", "ACTUAL", "QUICK" };   // как RatesType
+        static const char* const THROTTLE_LIMIT_TYPES[] = { "OFF", "SCALE", "CLIP" };   // как ThrottleLimitType
         static const char* const FF_AVERAGING[] = { "OFF", "2_POINT", "3_POINT", "4_POINT" };
         static const char* const LPF_TYPES[] = { "PT1", "BIQUAD", "PT2", "PT3" };   // как LpfType
         // порядок — как в BF (SERIAL у нас нет — пишет только на свой носитель)
@@ -798,6 +809,19 @@ namespace copter
             { "roll_srate", kInt, kRate, kGroupRates, 0, 255, 0, kTune, "x10 °/с", nullptr, 0, "наибольший расход крена (стик до упора)" },
             { "pitch_srate", kInt, kRate, kGroupRates, 0, 255, 0, kTune, "x10 °/с", nullptr, 0, "наибольший расход тангажа (стик до упора)" },
             { "yaw_srate", kInt, kRate, kGroupRates, 0, 255, 0, kTune, "x10 °/с", nullptr, 0, "наибольший расход рысканья (стик до упора)" },
+            { "rates_type", kEnum, kRate, kGroupRates, 0, 4, 3, kTable, "", RATES_TYPES, 5,
+              "формула расходов: как читать rc_rate / srate / expo (ACTUAL — центр и максимум в °/с)" },
+            { "quickrates_rc_expo", kEnum, kRate, kGroupRates, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "QUICK: экспо на сам стик (как у BETAFLIGHT), а не на прибавку к краю" },
+            { "roll_rate_limit", kInt, kRate, kGroupRates, 200, 1998, 1998, kTable, "°/с", nullptr, 0, "потолок расхода крена при любой формуле" },
+            { "pitch_rate_limit", kInt, kRate, kGroupRates, 200, 1998, 1998, kTable, "°/с", nullptr, 0, "потолок расхода тангажа при любой формуле" },
+            { "yaw_rate_limit", kInt, kRate, kGroupRates, 200, 1998, 1998, kTable, "°/с", nullptr, 0, "потолок расхода рысканья при любой формуле" },
+            { "thr_mid", kInt, kRate, kGroupRates, 0, 100, 50, kTable, "%", nullptr, 0, "кривая газа: точка излома (обычно газ висения)" },
+            { "thr_expo", kInt, kRate, kGroupRates, 0, 100, 0, kTable, "%", nullptr, 0, "кривая газа: плоскость у thr_mid — точнее висение" },
+            { "throttle_limit_type", kEnum, kRate, kGroupRates, 0, 2, 0, kTable, "", THROTTLE_LIMIT_TYPES, 3,
+              "предел газа: SCALE — весь ход сжат, CLIP — верх срезан" },
+            { "throttle_limit_percent", kInt, kRate, kGroupRates, 25, 100, 100, kTable, "%", nullptr, 0,
+              "предел газа (обучение, мощная батарея на мелком коптере)" },
             { "serialrx_provider", kEnum, kMaster, kGroupRx, 0, 2, 0, kTable, "", RX_PROVIDERS, 3,
               "протокол приёмника: IBUS — FlySky, SBUS — FrSky и др., CRSF — ExpressLRS, Crossfire" },
             { "rx_min_usec", kInt, kMaster, kGroupRx, 750, 2250, 885, kTable, "мкс", nullptr, 0,
@@ -1996,7 +2020,16 @@ namespace copter
                 t.rates[axis].centerDps = center;
                 t.rates[axis].maxDps = fmaxf(center, top);
                 t.rates[axis].expo = valueIn(static_cast<ParamId>(PARAM_ROLL_EXPO + axis), rateIndex) / 100.0f;
+                t.rates[axis].type = static_cast<RatesType>(static_cast<uint8_t>(valueIn(PARAM_RATES_TYPE, rateIndex)));
+                t.rates[axis].rcRate = valueIn(static_cast<ParamId>(PARAM_ROLL_RC_RATE + axis), rateIndex);
+                t.rates[axis].superRate = valueIn(static_cast<ParamId>(PARAM_ROLL_SRATE + axis), rateIndex);
+                t.rates[axis].limitDps = valueIn(static_cast<ParamId>(PARAM_ROLL_RATE_LIMIT + axis), rateIndex);
+                t.rates[axis].quickRcExpo = valueIn(PARAM_QUICKRATES_RC_EXPO, rateIndex) > 0.5f;
             }
+            t.throttle.mid = valueIn(PARAM_THR_MID, rateIndex) / 100.0f;
+            t.throttle.expo = valueIn(PARAM_THR_EXPO, rateIndex) / 100.0f;
+            t.throttle.limitType = static_cast<ThrottleLimitType>(static_cast<uint8_t>(valueIn(PARAM_THROTTLE_LIMIT_TYPE, rateIndex)));
+            t.throttle.limit = valueIn(PARAM_THROTTLE_LIMIT_PERCENT, rateIndex) / 100.0f;
             t.pid.dMaxGain = valueIn(PARAM_D_MAX_GAIN, pidIndex);
             t.pid.dMaxAdvance = valueIn(PARAM_D_MAX_ADVANCE, pidIndex);
             t.pid.relax = static_cast<ItermRelax>(static_cast<uint8_t>(valueIn(PARAM_ITERM_RELAX, pidIndex)));

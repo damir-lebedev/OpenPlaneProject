@@ -1039,7 +1039,8 @@ namespace copter
             }
             else
             {
-                thrust = fixedThrottle ? set.failsafeThrottle : sticks[3] * (failsafe ? 1.0f : throttleLimit);
+                // кривая и предел газа (thr_mid/thr_expo/throttle_limit) — только у стика пилота
+                thrust = fixedThrottle ? set.failsafeThrottle : tune.throttle.apply(sticks[3]) * (failsafe ? 1.0f : throttleLimit);
                 if (!failsafe) thrust = training.limitThrust(thrust, vertical.climbRate(), hover, cosTilt);
                 thrust = fence.limitThrust(thrust, vertical.climbRate(), hover, cosTilt);   // забор — и в failsafe
                 status.altTarget = vertical.altitude();
@@ -1663,7 +1664,7 @@ namespace copter
             crashRecoveryTimer += dt;
             float level[3];
             levelTo(0.0f, 0.0f, attitude.upBody(), level);
-            const float cap = 0.9f * tune.rates[0].maxDps;
+            const float cap = 0.9f * tune.rates[0].top();
             sp[0] = fminf(cap, fmaxf(-cap, level[0]));
             sp[1] = fminf(cap, fmaxf(-cap, level[1]));
             sp[2] = fminf(px.crashLimitYaw, fmaxf(-px.crashLimitYaw, sp[2]));
@@ -1792,7 +1793,7 @@ namespace copter
 
             const Vec3 up = attitude.upBody();
             const Vec3 down = attitude.downBody();
-            const float cap = 0.9f * tune.rates[0].maxDps;
+            const float cap = 0.9f * tune.rates[0].top();
             // рысканье: вокруг вертикали Земли или оси рамы (angle_earth_ref)
             const float er = fminf(1.0f, fmaxf(0.0f, px.angleEarthRef));
             const float yawRate = rescueCmd ? rescueCmd->yawRateDps : acro[2];

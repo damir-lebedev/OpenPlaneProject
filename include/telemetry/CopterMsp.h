@@ -725,17 +725,17 @@ namespace copter
             w.u8(clampU8(params.value(PARAM_PITCH_SRATE)));
             w.u8(clampU8(params.value(PARAM_YAW_SRATE)));
             w.u8(0);
-            w.u8(50);   // thr_mid
-            w.u8(0);    // thr_expo
+            w.u8(clampU8(params.value(PARAM_THR_MID)));
+            w.u8(clampU8(params.value(PARAM_THR_EXPO)));
             w.u16(0);
             w.u8(clampU8(params.value(PARAM_YAW_EXPO)));
             w.u8(clampU8(params.value(PARAM_YAW_RC_RATE)));
             w.u8(clampU8(params.value(PARAM_PITCH_RC_RATE)));
             w.u8(clampU8(params.value(PARAM_PITCH_EXPO)));
-            w.u8(0);    // throttle_limit_type OFF
-            w.u8(100);
-            for (int a = 0; a < 3; ++a) w.u16(1998);   // rate_limit
-            w.u8(3);    // rates_type ACTUAL
+            w.u8(clampU8(params.value(PARAM_THROTTLE_LIMIT_TYPE)));
+            w.u8(clampU8(params.value(PARAM_THROTTLE_LIMIT_PERCENT)));
+            for (int a = 0; a < 3; ++a) w.u16(static_cast<uint16_t>(params.value(static_cast<ParamId>(PARAM_ROLL_RATE_LIMIT + a))));
+            w.u8(clampU8(params.value(PARAM_RATES_TYPE)));
         }
 
         void setRcTuning(msp::Reader& r)
@@ -746,8 +746,8 @@ namespace copter
             set(PARAM_PITCH_SRATE, r.u8());
             set(PARAM_YAW_SRATE, r.u8());
             r.u8();
-            r.u8();
-            r.u8();
+            set(PARAM_THR_MID, r.u8());
+            set(PARAM_THR_EXPO, r.u8());
             r.u16();
             if (r.remaining() >= 4)
             {
@@ -756,7 +756,16 @@ namespace copter
                 set(PARAM_PITCH_RC_RATE, r.u8());
                 set(PARAM_PITCH_EXPO, r.u8());
             }
-            // throttle_limit, rate_limit, rates_type — у нас нет
+            if (r.remaining() >= 2)
+            {
+                set(PARAM_THROTTLE_LIMIT_TYPE, r.u8());
+                set(PARAM_THROTTLE_LIMIT_PERCENT, r.u8());
+            }
+            if (r.remaining() >= 6)
+            {
+                for (int a = 0; a < 3; ++a) set(static_cast<ParamId>(PARAM_ROLL_RATE_LIMIT + a), r.u16());
+            }
+            if (r.remaining() >= 1) set(PARAM_RATES_TYPE, r.u8());
         }
 
         void pidAdvanced(msp::Writer& w)

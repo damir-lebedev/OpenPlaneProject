@@ -610,13 +610,96 @@ void test_slower_esc_protocol_narrows_the_loop()
     TEST_ASSERT_TRUE(escDelaySeconds(EscProtocol::PWM) > escDelaySeconds(EscProtocol::ONESHOT125));
 }
 
+// 045–049: пять формул BF — точки как в калькуляторе расходов BF
+void test_rates_types()
+{
+    RateCurve c;
+    c.type = RatesType::BETAFLIGHT;
+    c.rcRate = 100; c.superRate = 70; c.expo = 0.0f;
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 666.67f, c.apply(1.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 153.85f, c.apply(0.5f));
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, -666.67f, c.apply(-1.0f));
+    c.rcRate = 250; c.superRate = 0;   // выше 2.00 — RC_RATE_INCREMENTAL
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 200.0f * (2.5f + 14.54f * 0.5f), c.apply(1.0f));
+
+    c.type = RatesType::RACEFLIGHT;
+    c.rcRate = 37; c.superRate = 80; c.expo = 0.5f;
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 666.0f, c.apply(1.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 161.875f, c.apply(0.5f));
+
+    c.type = RatesType::KISS;
+    c.rcRate = 100; c.superRate = 70; c.expo = 0.0f;
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 666.67f, c.apply(1.0f));
+
+    c.type = RatesType::ACTUAL;
+    c.centerDps = 70; c.maxDps = 670; c.expo = 0.5f;
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 670.0f, c.apply(1.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 114.6875f, c.apply(0.5f));
+
+    c.type = RatesType::QUICK;
+    c.rcRate = 100; c.superRate = 67; c.expo = 0.0f;
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 670.0f, c.apply(1.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 2.0f, c.apply(0.01f));   // у центра — 200 °/с на весь ход
+    c.quickRcExpo = true;
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 670.0f, c.apply(1.0f));
+
+    // 050: потолок — при любой формуле
+    c.type = RatesType::BETAFLIGHT;
+    c.rcRate = 100; c.superRate = 99;
+    TEST_ASSERT_EQUAL_FLOAT(1998.0f, c.apply(1.0f));
+    c.limitDps = 800;
+    TEST_ASSERT_EQUAL_FLOAT(800.0f, c.apply(1.0f));
+    TEST_ASSERT_EQUAL_FLOAT(-800.0f, c.apply(-1.0f));
+    TEST_ASSERT_EQUAL_FLOAT(800.0f, c.top());
+
+    // из настроек: rates_type BETAFLIGHT, rc_rate 1.00, super 0.70
+    CopterParams p;
+    p.setValue(PARAM_RATES_TYPE, p.activeSlot(PARAM_RATES_TYPE), 0);
+    p.setValue(PARAM_ROLL_RC_RATE, p.activeSlot(PARAM_ROLL_RC_RATE), 100);
+    p.setValue(PARAM_ROLL_SRATE, p.activeSlot(PARAM_ROLL_SRATE), 70);
+    p.setValue(PARAM_ROLL_EXPO, p.activeSlot(PARAM_ROLL_EXPO), 0);
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 666.67f, p.tune().rates[0].apply(1.0f));
+    p.setValue(PARAM_ROLL_RATE_LIMIT, p.activeSlot(PARAM_ROLL_RATE_LIMIT), 500);
+    TEST_ASSERT_EQUAL_FLOAT(500.0f, p.tune().rates[0].apply(1.0f));
+    TEST_ASSERT_EQUAL_FLOAT(3.0f, CopterParams().value(PARAM_RATES_TYPE));   // по умолчанию ACTUAL, как в BF 4.3+
+}
+
+// 051, 052: кривая газа thr_mid / thr_expo и предел газа
+void test_throttle_curve()
+{
+    ThrottleCurve t;
+    TEST_ASSERT_EQUAL_FLOAT(0.37f, t.apply(0.37f));   // по умолчанию — прямая
+    t.mid = 0.3f; t.expo = 0.5f;
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.0f, t.apply(0.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.3f, t.apply(0.3f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.0f, t.apply(1.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.408163f, t.apply(0.5f));
+    TEST_ASSERT_TRUE(t.apply(0.35f) - 0.3f < 0.05f * 0.6f);   // у излома — плоско
+    t.expo = 0.0f;
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.6f, t.apply(0.6f));     // без экспо thr_mid ничего не ломает
+    t.limitType = ThrottleLimitType::SCALE; t.limit = 0.8f;
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.8f, t.apply(1.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.4f, t.apply(0.5f));
+    t.limitType = ThrottleLimitType::CLIP;
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.5f, t.apply(0.5f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.8f, t.apply(1.0f));
+
+    CopterParams p;
+    p.setValue(PARAM_THR_MID, p.activeSlot(PARAM_THR_MID), 30);
+    p.setValue(PARAM_THR_EXPO, p.activeSlot(PARAM_THR_EXPO), 50);
+    p.setValue(PARAM_THROTTLE_LIMIT_TYPE, p.activeSlot(PARAM_THROTTLE_LIMIT_TYPE), 1);
+    p.setValue(PARAM_THROTTLE_LIMIT_PERCENT, p.activeSlot(PARAM_THROTTLE_LIMIT_PERCENT), 80);
+    const ThrottleCurve tc = p.tune().throttle;
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.408163f * 0.8f, tc.apply(0.5f));
+}
+
 void test_rate_curve()
 {
     const RateCurve c{ 200, 700, 0.5f };
     TEST_ASSERT_EQUAL_FLOAT(0.0f, c.apply(0.0f));
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 700.0f, c.apply(1.0f));
     TEST_ASSERT_FLOAT_WITHIN(0.01f, -700.0f, c.apply(-2.0f));
-    TEST_ASSERT_TRUE(c.apply(0.1f) > 19.0f && c.apply(0.1f) < 21.0f);   // у центра — наклон center
+    TEST_ASSERT_TRUE(c.apply(0.01f) > 1.9f && c.apply(0.01f) < 2.1f);   // у центра — наклон center
     for (uint8_t s = 0; s < 6; ++s)
     {
         TEST_ASSERT_NOT_EQUAL(0, strcmp("?", flyStyleName(static_cast<FlyStyle>(s))));
@@ -9741,6 +9824,8 @@ int main()
     RUN_TEST(test_bad_builds_get_warnings);
     RUN_TEST(test_slower_esc_protocol_narrows_the_loop);
     RUN_TEST(test_rate_curve);
+    RUN_TEST(test_rates_types);
+    RUN_TEST(test_throttle_curve);
     RUN_TEST(test_rate_axis_p_and_i);
     RUN_TEST(test_rate_axis_integral_holds_on_ground_and_in_saturation);
     RUN_TEST(test_rate_axis_relaxes_integral_on_large_error);

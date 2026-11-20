@@ -126,18 +126,126 @@ namespace copter
 
     // ---------------- расходы ----------------
 
-    // Кривая «стик -> угловая скорость», °/с: наклон в центре, максимум, экспо 0..1.
+    // rates_type: порядок как в BF (номер — то же значение в CLI и MSP).
+    enum class RatesType : uint8_t
+    {
+        BETAFLIGHT,
+        RACEFLIGHT,
+        KISS,
+        ACTUAL,
+        QUICK,
+    };
+
+    constexpr float SETPOINT_RATE_LIMIT = 1998.0f;   // потолок уставки BF, °/с
+    constexpr float RC_RATE_INCREMENTAL = 14.54f;    // BETAFLIGHT: rc_rate выше 2.0 растёт быстрее
+
+    // Кривая «стик -> угловая скорость», °/с. ACTUAL (и наш стиль полёта):
+    // наклон в центре, максимум, экспо 0..1. Другие типы BF — по своим
+    // числам rc_rate / srate / expo (как в CLI: целые, rc_rate 100 = 1.00).
+    // Формулы — по описанию расходов BF и его калькулятору (код свой).
     struct RateCurve
     {
         float centerDps = 200.0f;
         float maxDps = 670.0f;
-        float expo = 0.5f;
+        float expo = 0.5f;               // 0..1 для всех типов
+        RatesType type = RatesType::ACTUAL;
+        float rcRate = 0.0f;             // roll_rc_rate как есть (не ACTUAL)
+        float superRate = 0.0f;          // roll_srate как есть (не ACTUAL)
+        float limitDps = SETPOINT_RATE_LIMIT;   // roll_rate_limit
+        bool quickRcExpo = false;        // quickrates_rc_expo
 
         float apply(float stick) const
         {
             const float x = fminf(1.0f, fmaxf(-1.0f, stick));
             const float a = fabsf(x);
-            return centerDps * x + (maxDps - centerDps) * x * powf(a, 1.0f + 4.0f * expo);
+            float r = 0.0f;
+            switch (type)
+            {
+            case RatesType::ACTUAL:
+            {
+                // экспо — смесь x·|x| и x·|x|^5: на краях то же, что и без него
+                const float curve = a * (x * a * a * a * a * expo + x * (1.0f - expo));
+                r = centerDps * x + fmaxf(0.0f, maxDps - centerDps) * curve;
+                break;
+            }
+            case RatesType::BETAFLIGHT:
+            {
+                const float xe = x * a * a * a * expo + x * (1.0f - expo);
+                float rc = rcRate / 100.0f;
+                if (rc > 2.0f) rc += RC_RATE_INCREMENTAL * (rc - 2.0f);
+                r = 200.0f * rc * xe;
+                if (superRate > 0.0f) r /= fminf(1.0f, fmaxf(0.01f, 1.0f - a * superRate / 100.0f));
+                break;
+            }
+            case RatesType::RACEFLIGHT:
+            {
+                const float xe = (1.0f + expo * (x * x - 1.0f)) * x;
+                r = 10.0f * rcRate * xe * (1.0f + a * superRate / 100.0f);
+                break;
+            }
+            case RatesType::KISS:
+            {
+                const float boost = 1.0f / fminf(1.0f, fmaxf(0.01f, 1.0f - a * superRate / 100.0f));
+                const float xc = (x * x * x * expo + x * (1.0f - expo)) * rcRate / 1000.0f;
+                r = 2000.0f * boost * xc;
+                break;
+            }
+            case RatesType::QUICK:
+            {
+                const float rc = fmaxf(1.0f, 2.0f * rcRate);          // наклон в центре, °/с
+                const float top = fmaxf(10.0f * superRate, rc);        // расход у края
+                const float k = (top / rc - 1.0f) / (top / rc);
+                if (quickRcExpo)
+                {
+                    const float c = x * x * x * expo + x * (1.0f - expo);
+                    r = c * rc / fminf(1.0f, fmaxf(0.01f, 1.0f - a * k));
+                }
+                else
+                {
+                    const float c = a * a * a * expo + a * (1.0f - expo);
+                    r = x * rc / fminf(1.0f, fmaxf(0.01f, 1.0f - c * k));
+                }
+                break;
+            }
+            }
+            const float lim = fminf(SETPOINT_RATE_LIMIT, limitDps);
+            return fminf(lim, fmaxf(-lim, r));
+        }
+
+        float top() const { return apply(1.0f); }   // расход при стике до упора
+    };
+
+    // throttle_limit_type: как в BF
+    enum class ThrottleLimitType : uint8_t
+    {
+        OFF,
+        SCALE,   // весь ход стика сжат до throttle_limit_percent
+        CLIP,    // газ выше throttle_limit_percent срезан
+    };
+
+    // Кривая газа BF: thr_mid — точка излома (доля), thr_expo — плоскость
+    // вокруг неё (0..1); затем предел газа. Вход и выход — 0..1.
+    struct ThrottleCurve
+    {
+        float mid = 0.5f;
+        float expo = 0.0f;
+        ThrottleLimitType limitType = ThrottleLimitType::OFF;
+        float limit = 1.0f;
+
+        float apply(float stick) const
+        {
+            const float t = fminf(1.0f, fmaxf(0.0f, stick));
+            float out = t;   // без экспо — прямая, где бы ни стоял thr_mid
+            if (expo > 0.0f)
+            {
+                const float m = fminf(1.0f, fmaxf(0.0f, mid));
+                const float d = t - m;
+                const float span = d > 0.0f ? 1.0f - m : m;
+                out = span > 0.0f ? m + d * ((1.0f - expo) + expo * d * d / (span * span)) : t;
+            }
+            if (limitType == ThrottleLimitType::SCALE) out *= limit;
+            else if (limitType == ThrottleLimitType::CLIP) out = fminf(out, limit);
+            return fminf(1.0f, fmaxf(0.0f, out));
         }
     };
 
@@ -289,6 +397,7 @@ namespace copter
         float levelGain = 8.0f;         // (°/с) на градус ошибки угла
         float maxAngleDeg = 50.0f;
         RateCurve rates[3];
+        ThrottleCurve throttle;         // thr_mid / thr_expo / throttle_limit_*
         float idle = 0.055f;            // холостые: доля команды регулятору
         float thrustLinear = 0.25f;
         float motorOutputLimit = 1.0f;  // motor_output_limit: доля хода от холостых до полного
