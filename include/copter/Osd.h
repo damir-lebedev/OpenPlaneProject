@@ -46,11 +46,16 @@ namespace copter
     namespace osdsym
     {
         constexpr uint8_t RSSI = 0x01;
+        constexpr uint8_t AH_RIGHT = 0x02;        // боковая шкала горизонта: середина справа
+        constexpr uint8_t AH_LEFT = 0x03;         // и слева
         constexpr uint8_t THROTTLE = 0x04;
         constexpr uint8_t VOLT = 0x06;
         constexpr uint8_t MAH = 0x07;
         constexpr uint8_t METRE = 0x0C;
+        constexpr uint8_t TEMP_C = 0x0E;
         constexpr uint8_t HOME = 0x11;
+        constexpr uint8_t RPM = 0x12;
+        constexpr uint8_t AH_DECORATION = 0x13;   // боковая шкала горизонта
         constexpr uint8_t SAT_L = 0x1E;
         constexpr uint8_t SAT_R = 0x1F;
         constexpr uint8_t WATT = 0x57;
@@ -59,9 +64,11 @@ namespace copter
         constexpr uint8_t CROSSHAIR = 0x73;
         constexpr uint8_t LINK_QUALITY = 0x7B;
         constexpr uint8_t ALTITUDE = 0x7F;
+        constexpr uint8_t AH_BAR9_0 = 0x80;       // 9 знаков линии горизонта: 0x80 — у верха знака … 0x88 — у низа
         constexpr uint8_t LAT = 0x89;
         constexpr uint8_t LON = 0x98;
         constexpr uint8_t AMP = 0x9A;
+        constexpr uint8_t ON_M = 0x9B;
         constexpr uint8_t FLY_TIME = 0x9C;
         constexpr uint8_t KPH = 0x9E;
         constexpr uint8_t MPS = 0x9F;
@@ -117,6 +124,11 @@ namespace copter
         OSD_PREFLIGHT,   // своё: до ARM — батарея, GPS, пульт одной строкой (P08)
         OSD_FENCE,       // своё: до края геозабора и стрелка к нему (P44)
         OSD_FENCE_MAP,   // своё: радар геозабора 9 × 5 (P44)
+        OSD_AH,          // искусственный горизонт (osd_ah_pos — середина)
+        OSD_AH_SBAR,     // боковые шкалы горизонта
+        OSD_TIM_1,       // время с включения (таймер 1 BF, ON)
+        OSD_ESC_TMP,     // самый горячий регулятор, °C (EDT)
+        OSD_ESC_RPM,     // обороты каждого мотора (двунаправленный DShot), столбиком
         OSD_ELEMENT_COUNT
     };
 
@@ -155,6 +167,11 @@ namespace copter
             { "preflight", osdPos(1, 8), "до ARM: батарея, GPS, пульт (BATT OK  GPS OK  RX OK)" },
             { "fence", osdPos(22, 8), "до края геозабора, м, и стрелка к нему" },
             { "fence_map", osdPos(20, 3), "радар геозабора 9 × 5: край, дом, нос вверх" },
+            { "ah", osdPos(14, 6, false), "искусственный горизонт (позиция — середина линии в 9 знаков)" },
+            { "ah_sbar", osdPos(14, 6, false), "боковые шкалы горизонта (позиция — середина)" },
+            { "tim_1", osdPos(1, 1, false), "время с включения (таймер 1 BF)" },
+            { "esc_tmp", osdPos(23, 9, false), "температура самого горячего регулятора, °C" },
+            { "esc_rpm", osdPos(1, 5, false), "обороты моторов, по строке на мотор" },
         };
         return table[e < OSD_ELEMENT_COUNT ? e : 0];
     }
@@ -248,6 +265,10 @@ namespace copter
         uint16_t capAlarmMah = 2200;   // osd_cap_alarm: больше — мА·ч мигают (0 — нет)
         uint8_t linkQualityAlarm = 80; // osd_link_quality_alarm: ниже — LQ мигает и предупреждение
         uint8_t rssiAlarm = 20;        // osd_rssi_alarm: ниже — RSSI мигает и предупреждение
+        uint8_t ahMaxPitch = 20;       // osd_ah_max_pit: тангаж, при котором линия уходит на AH_ROWS строк
+        uint8_t ahMaxRoll = 40;        // osd_ah_max_rol: крен больше — линия наклонена как при нём
+        bool ahInvert = false;         // osd_ah_invert: линия в другую сторону
+        uint8_t escTempAlarm = 0;      // osd_esc_temp_alarm: горячее — °C мигают (0 — нет)
 
         OsdLayout()
         {
@@ -319,6 +340,14 @@ namespace copter
         float fenceScaleM = 0.0f;           // радар: столько метров — FENCE_MAP_SPAN знаков
         bool vtxHot = false;                // VTX без ARM греется (copter/Vtx.h, VtxHeatWatch)
         uint16_t escOverloads = 0, batteryOverloads = 0;   // за этот полёт
+        float rollDeg = 0.0f, pitchDeg = 0.0f;              // ориентация: + вправо, + нос вверх
+        uint32_t onSeconds = 0;                             // с включения платы
+        bool hasEscTemp = false;                            // EDT прислал температуру хоть одного
+        int16_t escTempC = 0;                               // самый горячий регулятор
+        static constexpr uint8_t ESC_MAX = 8;
+        static constexpr uint32_t NO_RPM = 0xFFFFFFFFu;     // мотор не ответил
+        uint8_t escRpmCount = 0;                            // 0 — оборотов по DShot нет
+        uint32_t escRpm[ESC_MAX] = {};                      // об/мин
     };
 
     // Статистика полёта для экрана после DISARM.
@@ -440,15 +469,20 @@ namespace copter
                 return;
             }
             char s[32];
+            // горизонт и шкалы — первыми: прицел и цифры остаются поверх линии
+            static const uint8_t under[] = { OSD_AH_SBAR, OSD_AH };
+            for (uint8_t e : under) drawAt(e, d, l, s, sizeof(s));
             for (uint8_t e = 0; e < OSD_ELEMENT_COUNT; ++e)
             {
-                const uint16_t p = l.pos[e];
-                if (!osdPosVisible(p)) continue;
-                const uint8_t x = osdPosX(p), y = osdPosY(p);
-                if (y >= rows || x >= cols) continue;   // NTSC: строки 13–15 не видны
-                drawElement(static_cast<OsdElement>(e), x, y, d, l, s, sizeof(s));
+                if (e != OSD_AH && e != OSD_AH_SBAR) drawAt(e, d, l, s, sizeof(s));
             }
         }
+
+        static constexpr int AH_HALF = 4;          // линия горизонта — 9 знаков
+        static constexpr int AH_ROWS = 4;          // osd_ah_max_pit — на столько строк вверх или вниз
+        static constexpr int AH_LEVELS = 9;        // 9 положений линии внутри знака
+        static constexpr int AH_SIDEBAR_X = 7;     // шкалы — на 7 знаков от середины
+        static constexpr int AH_SIDEBAR_H = 3;     // и по 3 строки вверх и вниз
 
         // Самое важное, что сейчас не так (или nullptr). Все предупреждения включены.
         static const char* warningText(const OsdData& d)
@@ -484,6 +518,54 @@ namespace copter
         }
 
     private:
+        void drawAt(uint8_t e, const OsdData& d, const OsdLayout& l, char* s, size_t n)
+        {
+            const uint16_t p = l.pos[e];
+            if (!osdPosVisible(p)) return;
+            const uint8_t x = osdPosX(p), y = osdPosY(p);
+            if (y >= rows || x >= cols) return;   // NTSC: строки 13–15 не видны
+            drawElement(static_cast<OsdElement>(e), x, y, d, l, s, n);
+        }
+
+        void putAt(int row, int col, uint8_t symbol)
+        {
+            if (row >= 0 && col >= 0 && row < 256 && col < 256) put(static_cast<uint8_t>(row), static_cast<uint8_t>(col), symbol);
+        }
+
+        // Линия горизонта как за окном: нос вверх — линия ниже, крен вправо —
+        // правый край выше. Каждый знак — одна из 9 высот линии, так что она
+        // идёт ровно, без ступенек в целую строку.
+        void drawHorizon(uint8_t x, uint8_t y, const OsdData& d, const OsdLayout& l)
+        {
+            const float maxPit = l.ahMaxPitch > 0 ? static_cast<float>(l.ahMaxPitch) : 1.0f;
+            const float maxRol = fminf(89.0f, static_cast<float>(l.ahMaxRoll));
+            float pitch = fmaxf(-maxPit, fminf(maxPit, d.pitchDeg));
+            float roll = fmaxf(-maxRol, fminf(maxRol, d.rollDeg));
+            if (l.ahInvert)
+            {
+                pitch = -pitch;
+                roll = -roll;
+            }
+            const float shift = pitch / maxPit * AH_ROWS;                       // строк вниз
+            const float slope = tanf(roll * 0.017453293f) / CELL_ASPECT;       // строк вверх на знак вправо
+            for (int i = -AH_HALF; i <= AH_HALF; ++i)
+            {
+                const int sub = static_cast<int>(lroundf((shift - i * slope) * AH_LEVELS)) + AH_LEVELS / 2;
+                const int r = static_cast<int>(floorf(static_cast<float>(sub) / AH_LEVELS));
+                if (r < -AH_ROWS || r > AH_ROWS) continue;
+                putAt(y + r, x + i, static_cast<uint8_t>(osdsym::AH_BAR9_0 + (sub - r * AH_LEVELS)));
+            }
+        }
+
+        void drawSidebars(uint8_t x, uint8_t y)
+        {
+            for (int r = -AH_SIDEBAR_H; r <= AH_SIDEBAR_H; ++r)
+            {
+                putAt(y + r, x - AH_SIDEBAR_X, r ? osdsym::AH_DECORATION : osdsym::AH_LEFT);
+                putAt(y + r, x + AH_SIDEBAR_X, r ? osdsym::AH_DECORATION : osdsym::AH_RIGHT);
+            }
+        }
+
         void drawElement(OsdElement e, uint8_t x, uint8_t y, const OsdData& d, const OsdLayout& l, char* s, size_t n)
         {
             switch (e)
@@ -635,6 +717,31 @@ namespace copter
                     if (!d.armed) return;
                     if (!d.fencePolygon && (!d.home || d.fenceRadiusM <= 0.0f)) return;
                     drawFenceMap(x, y, d);
+                    return;
+                case OSD_AH:
+                    drawHorizon(x, y, d, l);
+                    return;
+                case OSD_AH_SBAR:
+                    drawSidebars(x, y);
+                    return;
+                case OSD_TIM_1:
+                    put(y, x, osdsym::ON_M);
+                    formatTime(s, n, d.onSeconds);
+                    print(y, static_cast<uint8_t>(x + 1), s);
+                    return;
+                case OSD_ESC_TMP:
+                    if (!d.hasEscTemp) return;
+                    if (!d.blink && l.escTempAlarm > 0 && d.escTempC >= l.escTempAlarm) return;
+                    snprintf(s, n, "%d", d.escTempC);
+                    printWithSymbol(y, x, s, osdsym::TEMP_C);
+                    return;
+                case OSD_ESC_RPM:
+                    for (uint8_t m = 0; m < d.escRpmCount && m < OsdData::ESC_MAX; ++m)
+                    {
+                        if (d.escRpm[m] == OsdData::NO_RPM) snprintf(s, n, "---");
+                        else snprintf(s, n, "%lu", static_cast<unsigned long>(d.escRpm[m]));
+                        printWithSymbol(static_cast<uint8_t>(y + m), x, s, osdsym::RPM);
+                    }
                     return;
                 case OSD_ELEMENT_COUNT:
                 default:

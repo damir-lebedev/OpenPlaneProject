@@ -463,6 +463,11 @@ namespace copter
         PARAM_OSD_PREFLIGHT_POS,
         PARAM_OSD_FENCE_POS,
         PARAM_OSD_FENCE_MAP_POS,
+        PARAM_OSD_AH_POS,
+        PARAM_OSD_AH_SBAR_POS,
+        PARAM_OSD_TIM_1_POS,
+        PARAM_OSD_ESC_TMP_POS,
+        PARAM_OSD_ESC_RPM_POS,
         PARAM_OSD_STAT_TIM_2,
         PARAM_OSD_STAT_MAX_ALT,
         PARAM_OSD_STAT_MAX_SPD,
@@ -490,6 +495,10 @@ namespace copter
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
         PARAM_OSD_RSSI_ALARM,
+        PARAM_OSD_AH_MAX_PIT,
+        PARAM_OSD_AH_MAX_ROL,
+        PARAM_OSD_AH_INVERT,
+        PARAM_OSD_ESC_TEMP_ALARM,
         // куда и каким размером рисовать OSD (copter/DisplayPort.h)
         PARAM_OSD_DISPLAYPORT_DEVICE,
         PARAM_VCD_VIDEO_SYSTEM,
@@ -1164,6 +1173,16 @@ namespace copter
               "OSD: до края геозабора, м, и стрелка к нему (своё) — x + 32·y, +2048 — показан" },
             { "osd_fence_map_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2164, kTable, "", nullptr, 0,
               "OSD: радар геозабора 9 x 5 — край, дом, нос вверх (своё; левый верхний угол) — x + 32·y, +2048 — показан" },
+            { "osd_ah_pos", kInt, kMaster, kGroupOsd, 0, 16383, 206, kTable, "", nullptr, 0,
+              "OSD: искусственный горизонт (середина линии в 9 знаков) — x + 32·y, +2048 — показан" },
+            { "osd_ah_sbar_pos", kInt, kMaster, kGroupOsd, 0, 16383, 206, kTable, "", nullptr, 0,
+              "OSD: боковые шкалы горизонта (середина) — x + 32·y, +2048 — показан" },
+            { "osd_tim_1_pos", kInt, kMaster, kGroupOsd, 0, 16383, 33, kTable, "", nullptr, 0,
+              "OSD: время с включения (таймер 1) — x + 32·y, +2048 — показан" },
+            { "osd_esc_tmp_pos", kInt, kMaster, kGroupOsd, 0, 16383, 311, kTable, "", nullptr, 0,
+              "OSD: температура самого горячего регулятора (EDT) — x + 32·y, +2048 — показан" },
+            { "osd_esc_rpm_pos", kInt, kMaster, kGroupOsd, 0, 16383, 161, kTable, "", nullptr, 0,
+              "OSD: обороты моторов по DShot, строка на мотор — x + 32·y, +2048 — показан" },
             { "osd_stat_tim_2", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "статистика после полёта: время в полёте" },
             { "osd_stat_max_alt", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
@@ -1218,6 +1237,14 @@ namespace copter
               "связь хуже — LQ на OSD мигает и предупреждение LINK QUALITY; 0 — нет" },
             { "osd_rssi_alarm", kInt, kMaster, kGroupOsd, 0, 100, 20, kTable, "%", nullptr, 0,
               "сигнал слабее — RSSI на OSD мигает и предупреждение RSSI LOW; 0 — нет" },
+            { "osd_ah_max_pit", kInt, kMaster, kGroupOsd, 0, 90, 20, kTable, "°", nullptr, 0,
+              "горизонт на OSD: при таком тангаже линия уходит на 4 строки (дальше — стоит)" },
+            { "osd_ah_max_rol", kInt, kMaster, kGroupOsd, 0, 90, 40, kTable, "°", nullptr, 0,
+              "горизонт на OSD: крен больше — линия наклонена как при нём" },
+            { "osd_ah_invert", kEnum, kMaster, kGroupOsd, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "горизонт на OSD — в обратную сторону (как в самолётном авиагоризонте)" },
+            { "osd_esc_temp_alarm", kInt, kMaster, kGroupOsd, 0, 150, 0, kTable, "°C", nullptr, 0,
+              "регулятор горячее — его температура на OSD мигает; 0 — нет" },
             { "osd_displayport_device", kEnum, kMaster, kGroupOsd, 0, 3, 1, kTable, "", OSD_DEVICES, 4,
               "куда рисовать OSD: AUTO — чип на плате и очки на порту MSP, когда они объявились; MAX7456 — только чип; "
               "MSP — только цифровые очки (DJI, Walksnail, HDZero); NONE — никуда" },
@@ -2497,7 +2524,7 @@ namespace copter
         uint8_t rateIndex = 0;
     };
 
-    static_assert(PARAM_OSD_FENCE_MAP_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
+    static_assert(PARAM_OSD_ESC_RPM_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
     static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
     static_assert(PARAM_OSD_WARN_GEOFENCE - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 
@@ -2523,6 +2550,10 @@ namespace copter
         l.capAlarmMah = static_cast<uint16_t>(p.value(PARAM_OSD_CAP_ALARM));
         l.linkQualityAlarm = static_cast<uint8_t>(p.value(PARAM_OSD_LINK_QUALITY_ALARM));
         l.rssiAlarm = static_cast<uint8_t>(p.value(PARAM_OSD_RSSI_ALARM));
+        l.ahMaxPitch = static_cast<uint8_t>(p.value(PARAM_OSD_AH_MAX_PIT));
+        l.ahMaxRoll = static_cast<uint8_t>(p.value(PARAM_OSD_AH_MAX_ROL));
+        l.ahInvert = p.value(PARAM_OSD_AH_INVERT) > 0.5f;
+        l.escTempAlarm = static_cast<uint8_t>(p.value(PARAM_OSD_ESC_TEMP_ALARM));
         return l;
     }
 }

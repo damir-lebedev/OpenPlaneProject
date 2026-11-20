@@ -832,6 +832,29 @@ static void composeOsd()
     d.vtxHot = vtxHeat.warn();
     d.escOverloads = escGuard.flightStats().escEvents;
     d.batteryOverloads = escGuard.flightStats().batteryEvents;
+    d.rollDeg = s.roll;
+    d.pitchDeg = s.pitch;
+    d.onSeconds = millis() / 1000;
+    {
+        // обороты и температура регуляторов (dshot_bidir, dshot_edt)
+        const copter::IMotorTelemetry& tel = motors.dshotOutput();
+        const uint8_t poles = static_cast<uint8_t>(copterParams.value(copter::PARAM_MOTOR_POLES));
+        const uint8_t n = tel.telemetryEnabled() ? tel.telemetryMotors() : 0;
+        d.escRpmCount = n < copter::OsdData::ESC_MAX ? n : copter::OsdData::ESC_MAX;
+        for (uint8_t i = 0; i < d.escRpmCount; ++i)
+        {
+            if (!tel.hasTelemetry(i))
+            {
+                d.escRpm[i] = copter::OsdData::NO_RPM;
+                continue;
+            }
+            d.escRpm[i] = static_cast<uint32_t>(lroundf(copter::dshot::erpmToRpm(tel.erpm(i), poles)));
+            const copter::EscExtTelemetry* x = tel.extended(i);
+            if (!x || !x->has(copter::EscExtTelemetry::TEMPERATURE)) continue;
+            if (!d.hasEscTemp || x->temperatureC > d.escTempC) d.escTempC = x->temperatureC;
+            d.hasEscTemp = true;
+        }
+    }
     osdStats.update(d, millis());
     osdScreen.compose(d, copter::osdLayoutFrom(copterParams), &osdStats);
 }

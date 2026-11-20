@@ -5909,6 +5909,130 @@ void test_vtx_heat_watch()
 }
 
 // Статистика после полёта: копится в ARM, показывается после DISARM, уходит по стику.
+// OSD 147/149: горизонт, шкалы, таймер с включения, температура и обороты регуляторов
+void test_osd_horizon_timer_and_esc()
+{
+    OsdLayout l;
+    for (uint8_t e = 0; e < OSD_ELEMENT_COUNT; ++e) l.pos[e] = static_cast<uint16_t>(l.pos[e] & ~OSD_PROFILE_MASK);
+    TEST_ASSERT_FALSE(osdPosVisible(OsdLayout().pos[OSD_AH]));   // по умолчанию спрятаны, как в BF
+    l.pos[OSD_AH] = osdPos(14, 6);
+    l.pos[OSD_CROSSHAIRS] = osdPos(14, 6);
+    OsdData d;
+    d.armed = true;
+    OsdScreen s;
+    // ровно: 9 знаков в строке 6, линия посередине знака (0x84), прицел поверх
+    s.compose(d, l, nullptr);
+    for (int i = -4; i <= 4; ++i)
+    {
+        if (i) TEST_ASSERT_EQUAL_HEX8(osdsym::AH_BAR9_0 + 4, s.at(6, static_cast<uint8_t>(14 + i)));
+    }
+    TEST_ASSERT_EQUAL_HEX8(osdsym::CROSSHAIR, s.at(6, 14));
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(6, 9));
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(6, 19));
+    // нос вверх на osd_ah_max_pit (20°) — линия на 4 строки ниже; больше — там же
+    d.pitchDeg = 20.0f;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(osdsym::AH_BAR9_0 + 4, s.at(10, 10));
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(6, 10));
+    d.pitchDeg = 60.0f;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(osdsym::AH_BAR9_0 + 4, s.at(10, 10));
+    // нос вниз на 2.5° = полстроки вверх: линия у низа знака строкой выше
+    d.pitchDeg = -2.5f;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(osdsym::AH_BAR9_0 + 8, s.at(5, 10));
+    // крен вправо: правый край выше левого, середина на месте
+    d.pitchDeg = 0.0f;
+    d.rollDeg = 30.0f;
+    s.compose(d, l, nullptr);
+    int leftRow = -1, rightRow = -1;
+    for (uint8_t r = 0; r < 16; ++r)
+    {
+        const uint8_t a = s.at(r, 10), b = s.at(r, 18);
+        if (a >= osdsym::AH_BAR9_0 && a <= osdsym::AH_BAR9_0 + 8) leftRow = r;
+        if (b >= osdsym::AH_BAR9_0 && b <= osdsym::AH_BAR9_0 + 8) rightRow = r;
+    }
+    TEST_ASSERT_TRUE(rightRow >= 0 && leftRow > rightRow);
+    TEST_ASSERT_EQUAL_HEX8(osdsym::AH_BAR9_0 + 7, s.at(6, 13));   // знак левее середины — чуть ниже
+    // osd_ah_invert — наоборот
+    l.ahInvert = true;
+    s.compose(d, l, nullptr);
+    for (uint8_t r = 0; r < 16; ++r)
+    {
+        const uint8_t a = s.at(r, 10);
+        if (a >= osdsym::AH_BAR9_0 && a <= osdsym::AH_BAR9_0 + 8) TEST_ASSERT_TRUE(r < 6);
+    }
+    l.ahInvert = false;
+    // крен 80° при osd_ah_max_rol 40 — наклон как при 40°: линия в пределах ±4 строк
+    d.rollDeg = 80.0f;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(osdsym::AH_BAR9_0 + 2, s.at(4, 18));   // 40°: −2,24 строки
+    d.rollDeg = 0.0f;
+
+    // шкалы: ±7 знаков, 7 строк, в середине — стрелки внутрь
+    l.pos[OSD_AH_SBAR] = osdPos(14, 6);
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(osdsym::AH_LEFT, s.at(6, 7));
+    TEST_ASSERT_EQUAL_HEX8(osdsym::AH_RIGHT, s.at(6, 21));
+    TEST_ASSERT_EQUAL_HEX8(osdsym::AH_DECORATION, s.at(3, 7));
+    TEST_ASSERT_EQUAL_HEX8(osdsym::AH_DECORATION, s.at(9, 21));
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(10, 21));
+
+    // таймер 1 — с включения
+    l.pos[OSD_TIM_1] = osdPos(1, 1);
+    d.onSeconds = 125;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(osdsym::ON_M, s.at(1, 1));
+    TEST_ASSERT_EQUAL_HEX8('0', s.at(1, 2));
+    TEST_ASSERT_EQUAL_HEX8('2', s.at(1, 3));
+    TEST_ASSERT_EQUAL_HEX8('0', s.at(1, 5));
+    TEST_ASSERT_EQUAL_HEX8('5', s.at(1, 6));
+
+    // температура: нет EDT — пусто; есть — °C; выше osd_esc_temp_alarm — мигает
+    l.pos[OSD_ESC_TMP] = osdPos(23, 9);
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(9, 23));
+    d.hasEscTemp = true;
+    d.escTempC = 72;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8('7', s.at(9, 23));
+    TEST_ASSERT_EQUAL_HEX8(osdsym::TEMP_C, s.at(9, 25));
+    l.escTempAlarm = 70;
+    d.blink = false;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(9, 23));
+    d.blink = true;
+
+    // обороты: строка на мотор, молчащий — «---»
+    l.pos[OSD_ESC_RPM] = osdPos(1, 5);
+    d.escRpmCount = 4;
+    d.escRpm[0] = 12345;
+    d.escRpm[1] = 0;
+    d.escRpm[2] = OsdData::NO_RPM;
+    d.escRpm[3] = 9800;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8('1', s.at(5, 1));
+    TEST_ASSERT_EQUAL_HEX8(osdsym::RPM, s.at(5, 6));
+    TEST_ASSERT_EQUAL_HEX8('0', s.at(6, 1));
+    TEST_ASSERT_EQUAL_HEX8('-', s.at(7, 1));
+    TEST_ASSERT_EQUAL_HEX8('9', s.at(8, 1));
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(9, 1));
+
+    // настройки BF
+    CopterParams p;
+    TEST_ASSERT_EQUAL_FLOAT(206.0f, p.value(PARAM_OSD_AH_POS));
+    TEST_ASSERT_EQUAL_FLOAT(20.0f, p.value(PARAM_OSD_AH_MAX_PIT));
+    TEST_ASSERT_EQUAL_FLOAT(40.0f, p.value(PARAM_OSD_AH_MAX_ROL));
+    TEST_ASSERT_TRUE(p.setValue(PARAM_OSD_AH_INVERT, 0, 1.0f));
+    TEST_ASSERT_TRUE(p.setValue(PARAM_OSD_ESC_TEMP_ALARM, 0, 85.0f));
+    TEST_ASSERT_TRUE(p.setValue(PARAM_OSD_ESC_RPM_POS, 0, 2209.0f));
+    const OsdLayout pl = osdLayoutFrom(p);
+    TEST_ASSERT_TRUE(pl.ahInvert);
+    TEST_ASSERT_EQUAL_UINT8(85, pl.escTempAlarm);
+    TEST_ASSERT_EQUAL_UINT16(2209, pl.pos[OSD_ESC_RPM]);
+    TEST_ASSERT_EQUAL_INT(PARAM_OSD_TIM_1_POS, findParam("osd_tim_1_pos"));
+}
+
 void test_osd_stats_after_flight()
 {
     OsdStats st;
@@ -9742,6 +9866,7 @@ int main()
     RUN_TEST(test_osd_arrows_and_warnings);
     RUN_TEST(test_osd_screen_layout);
     RUN_TEST(test_osd_layout_from_bf_positions);
+    RUN_TEST(test_osd_horizon_timer_and_esc);
     RUN_TEST(test_osd_stats_after_flight);
     RUN_TEST(test_osd_chip_driver);
     RUN_TEST(test_beeper_events_and_alarms);
