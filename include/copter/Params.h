@@ -423,6 +423,7 @@ namespace copter
         PARAM_AUTOPILOT_MAX_ANGLE,
         PARAM_ALIGN_MAG,
         PARAM_MAG_DECLINATION,
+        PARAM_MAG_DECLINATION_AUTO,
         PARAM_MAG_ZERO_X,
         PARAM_MAG_ZERO_Y,
         PARAM_MAG_ZERO_Z,
@@ -1113,7 +1114,9 @@ namespace copter
             { "align_mag", kEnum, kMaster, kGroupGps, 0, 8, 0, kTable, "", MAG_ALIGN, 9,
               "как стоит компас: CWnn — повёрнут по часовой, FLIP — перевёрнут (мастер калибровки определяет сам)" },
             { "mag_declination", kInt, kMaster, kGroupGps, -1800, 1800, 0, kTable, "0.1°", nullptr, 0,
-              "магнитное склонение: + — магнитный север восточнее истинного" },
+              "магнитное склонение: + — магнитный север восточнее истинного (при mag_declination_auto — только пока нет GPS)" },
+            { "mag_declination_auto", kEnum, kMaster, kGroupGps, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "склонение само по координатам GPS (модель WMM-2025); OFF — берётся mag_declination" },
             { "mag_zero_x", kInt, kMaster, kGroupGps, -30000, 30000, 0, kTable, "0.1 мкТл", nullptr, 0,
               "калибровка компаса: смещение по оси X датчика (все три нуля — не откалиброван)" },
             { "mag_zero_y", kInt, kMaster, kGroupGps, -30000, 30000, 0, kTable, "0.1 мкТл", nullptr, 0,
@@ -1555,6 +1558,7 @@ namespace copter
             CompassSettings c;
             c.align = static_cast<MagAlign>(static_cast<uint8_t>(value(PARAM_ALIGN_MAG)));
             c.declinationDeg = value(PARAM_MAG_DECLINATION) * 0.1f;
+            c.autoDeclination = value(PARAM_MAG_DECLINATION_AUTO) != 0.0f;
             for (uint8_t i = 0; i < 3; ++i)
             {
                 c.zero[i] = value(static_cast<ParamId>(PARAM_MAG_ZERO_X + i)) * 0.1f;

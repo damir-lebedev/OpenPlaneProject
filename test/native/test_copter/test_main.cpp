@@ -32,6 +32,7 @@
 #include "copter/CopterController.h"
 #include "copter/CrsfMsp.h"
 #include "copter/CrsfTelemetry.h"
+#include "copter/Declination.h"
 #include "copter/DisplayPort.h"
 #include "copter/GpsHome.h"
 #include "copter/Osd.h"
@@ -9128,6 +9129,45 @@ void test_position_hold_checks_and_stick_directions()
 
 // Компас: установка датчика как align_mag в BF, наклон не мешает курсу,
 // склонение, без калибровки или с чужим полем — не верим.
+void test_declination_from_gps()
+{
+    // узлы сетки и точки между ними — против полной модели WMM-2025 на 2027.5
+    // (tools/gen_declination.py: declination(model, lat, lon))
+    const struct
+    {
+        double lat, lon;
+        float deg, tol;
+    } pts[] = {
+        { 56.3, 44.0, 13.79f, 0.4f },      // Нижний Новгород
+        { 55.75, 37.6, 12.21f, 0.4f },     // Москва
+        { 40.7, -74.0, -12.44f, 0.5f },    // Нью-Йорк
+        { -33.9, 151.2, 12.85f, 0.5f },    // Сидней
+        { 0.0, 0.0, -3.71f, 0.3f },        // узел
+        { 50.0, 180.0, declinationAt(50.0, -180.0), 0.01f },   // долгота 180 = −180
+    };
+    for (const auto& p : pts) TEST_ASSERT_FLOAT_WITHIN(p.tol, p.deg, declinationAt(p.lat, p.lon));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, declinationAt(10.0, -170.0), declinationAt(10.0, 190.0));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, declinationAt(80.0, 30.0), declinationAt(89.9, 30.0));   // выше 80 — край сетки
+    for (double lat = -80.0; lat <= 80.0; lat += 3.7)   // нигде не выходит за ±180 и не NaN
+        for (double lon = -180.0; lon < 180.0; lon += 7.3)
+        {
+            const float d = declinationAt(lat, lon);
+            TEST_ASSERT_TRUE(d == d && d >= -180.0f && d <= 180.0f);
+        }
+
+    // пересчёт: первый фикс — сразу, потом — после 10 км
+    AutoDeclination a;
+    TEST_ASSERT_FALSE(a.update(false, 56.3, 44.0));
+    TEST_ASSERT_FALSE(a.valid());
+    TEST_ASSERT_TRUE(a.update(true, 56.3, 44.0));
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, declinationAt(56.3, 44.0), a.value());
+    TEST_ASSERT_FALSE(a.update(true, 56.35, 44.05));   // ~6.5 км
+    TEST_ASSERT_FALSE(a.update(false, 60.0, 30.0));    // фикса нет — держим последнее
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, declinationAt(56.3, 44.0), a.value());
+    TEST_ASSERT_TRUE(a.update(true, 56.4, 44.0));      // ~11 км
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, declinationAt(56.4, 44.0), a.value());
+}
+
 void test_compass_alignment_tilt_and_trust()
 {
     // align_mag: поле датчика -> оси рамы (X нос, Y влево, Z вверх)
@@ -9180,7 +9220,19 @@ void test_compass_alignment_tilt_and_trust()
     c.configure(s);
     c.update(shifted, level);
     TEST_ASSERT_FLOAT_WITHIN(0.5f, 100.0f, c.headingDeg(0.0f));
+    TEST_ASSERT_FALSE(c.declinationFromGps());
+    // склонение по GPS (mag_declination_auto) важнее ручного, пока включено
+    c.setAutoDeclination(-5.0f);
+    c.update(shifted, level);
+    TEST_ASSERT_TRUE(c.declinationFromGps());
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 85.0f, c.headingDeg(0.0f));
+    s.autoDeclination = false;   // OFF — снова ручное, даже когда по GPS уже посчитано
+    c.configure(s);
+    c.update(shifted, level);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, 100.0f, c.headingDeg(0.0f));
+    s.autoDeclination = true;
     s.declinationDeg = 0.0f;
+    c = Compass();
 
     // крен 40° вправо, нос на север: курс по плоскому atan2(Y, X) ушёл бы на
     // десятки градусов (вертикальное поле вдвое больше горизонтального)
@@ -10235,6 +10287,7 @@ int main()
     RUN_TEST(test_position_estimator_learns_heading_from_flight);
     RUN_TEST(test_position_estimator_rejects_lying_compass);
     RUN_TEST(test_position_hold_checks_and_stick_directions);
+    RUN_TEST(test_declination_from_gps);
     RUN_TEST(test_compass_alignment_tilt_and_trust);
     RUN_TEST(test_poshold_althold_params_modes_and_osd);
     RUN_TEST(test_altitude_controller_brakes_then_holds_and_limits_throttle);

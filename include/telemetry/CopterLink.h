@@ -444,11 +444,12 @@ public:
         if (magPresent && magCal && magCal->hasSample())
         {
             // компас: сырое поле (мкТл, оси датчика), модуль после калибровки, откалиброван, верим ли,
-            // расходится ли с курсом по полёту
+            // расходится ли с курсом по полёту; склонение (°) и взято ли оно по GPS
             const float* m = magCal->rawUT();
-            w.add(",\"mag\":{\"raw\":[%.1f,%.1f,%.1f],\"f\":%.1f,\"cal\":%s,\"ok\":%s,\"bad\":%s}", m[0], m[1], m[2],
-                  magCal->fieldUT(), magCal->calibrated() ? "true" : "false", magCal->trusted() ? "true" : "false",
-                  s.magDisagrees ? "true" : "false");
+            w.add(",\"mag\":{\"raw\":[%.1f,%.1f,%.1f],\"f\":%.1f,\"cal\":%s,\"ok\":%s,\"bad\":%s,\"decl\":%.1f,\"dgps\":%s}",
+                  m[0], m[1], m[2], magCal->fieldUT(), magCal->calibrated() ? "true" : "false",
+                  magCal->trusted() ? "true" : "false", s.magDisagrees ? "true" : "false", magCal->declinationDeg(),
+                  magCal->declinationFromGps() ? "true" : "false");
         }
         if (s.posValid)
         {

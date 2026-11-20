@@ -42,6 +42,7 @@ namespace copter
         float zero[3] = { 0.0f, 0.0f, 0.0f };    // мкТл, в осях датчика
         float scale[3] = { 1.0f, 1.0f, 1.0f };
         float declinationDeg = 0.0f;             // + — магнитный север восточнее истинного
+        bool autoDeclination = true;             // по координатам GPS (copter/Declination.h), когда они были
     };
 
     // Поле из осей датчика в оси рамы (X к носу, Y влево, Z вверх).
@@ -87,6 +88,17 @@ namespace copter
         static constexpr float FIELD_MIN_UT = 15.0f, FIELD_MAX_UT = 90.0f;
 
         void configure(const CompassSettings& s) { set = s; }
+
+        // Склонение по GPS (copter/Declination.h); действует, пока autoDeclination.
+        void setAutoDeclination(float deg)
+        {
+            autoDeg = deg;
+            autoKnown = true;
+        }
+
+        // Склонение, которое сейчас прибавляется к курсу, градусы.
+        float declinationDeg() const { return set.autoDeclination && autoKnown ? autoDeg : set.declinationDeg; }
+        bool declinationFromGps() const { return set.autoDeclination && autoKnown; }
         const CompassSettings& settings() const { return set; }
 
         // Калибровали ли (mag_zero_* не нулевые — как в BF).
@@ -111,7 +123,7 @@ namespace copter
             horizontal = sqrtf(e.x * e.x + e.y * e.y);
             if (horizontal < 1.0f) return;   // поле вертикально (полюс или мусор) — курса из него нет
             // магнитный север — под углом atan2 к оси «рысканье 0»
-            offset = wrap180(-atan2f(e.y, e.x) * RAD2DEG + set.declinationDeg);
+            offset = wrap180(-atan2f(e.y, e.x) * RAD2DEG + declinationDeg());
             hasOffset = true;
         }
 
@@ -149,6 +161,8 @@ namespace copter
         float field = 0.0f, horizontal = 0.0f;
         float offset = 0.0f;
         bool hasOffset = false;
+        float autoDeg = 0.0f;
+        bool autoKnown = false;
         bool fresh = false;
     };
 }

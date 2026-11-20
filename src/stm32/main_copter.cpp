@@ -39,6 +39,7 @@
 #include "copter/CrsfTelemetry.h"
 #include "copter/DisplayPort.h"
 #include "copter/Compass.h"
+#include "copter/Declination.h"
 #include "copter/GpsHome.h"
 #include "copter/Osd.h"
 #include "copter/Params.h"
@@ -140,6 +141,7 @@ QMC5883L_Sensor magL(magLDevice);
 I2cRegisterDevice magPDevice(board.externalI2c(), QMC5883P_Sensor::DEFAULT_ADDRESS);
 QMC5883P_Sensor magP(magPDevice);
 MagnetometerSensor* compass = nullptr;
+copter::AutoDeclination autoDeclination;   // склонение по координатам GPS (copter/Declination.h)
 copter::Compass copterCompass;   // калибровка, установка, наклон, склонение (copter/Compass.h)
 static uint32_t lastMagStamp = 0;
 
@@ -464,6 +466,7 @@ static void updateGps()
     f.courseDeg = d.heading;
     f.accuracyM = d.horizontalAccuracy;
     gpsHome.update(f, copterController.isArmed());
+    if (autoDeclination.update(f.valid, f.latitude, f.longitude)) copterCompass.setAutoDeclination(autoDeclination.value());
 }
 
 // Компас: новый отсчёт датчика -> курс с поправкой на наклон (copter/Compass.h).

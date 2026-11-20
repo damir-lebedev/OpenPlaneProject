@@ -569,6 +569,9 @@ private:
                   !cal ? " — не откалиброван (приложение: Подготовка -> Компас)"
                        : magCal->trusted() ? "" : " — полю не верим (помеха или не та калибровка)");
         if (magCal && magCal->hasSample()) io.printf("  поле %.0f мкТл (Земля — 25…65)\n", magCal->fieldUT());
+        if (magCal)
+            io.printf("  склонение %+.1f° (%s)\n", magCal->declinationDeg(),
+                      magCal->declinationFromGps() ? "по GPS, WMM-2025" : "mag_declination");
     }
 
     void printVtxLine()
