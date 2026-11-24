@@ -34,7 +34,7 @@ class Stm32MotorOutput
 public:
     static constexpr uint8_t MAX_MOTORS = 8;
 
-    // false — ни один пин не стал выходом. af — AF таймеров (DShot, заголовок платы).
+    // false — ни один пин не стал выходом. af — AF таймеров из заголовка платы (-1 — любой).
     bool begin(const int16_t* pins, uint8_t count, copter::EscProtocol esc, const int8_t* af = nullptr,
                uint8_t afCount = 0)
     {
@@ -54,9 +54,10 @@ public:
             Output& o = outputs[i];
             o.attached = false;
             if (pins[i] < 0) continue;
-            const PinName name = digitalPinToPinName(static_cast<pin_size_t>(pins[i]));
+            const int8_t wantAf = (af && i < afCount) ? af[i] : -1;
+            PinName name;
+            if (!timerPin(digitalPinToPinName(static_cast<pin_size_t>(pins[i])), wantAf, name)) continue;
             auto* instance = static_cast<TIM_TypeDef*>(pinmap_peripheral(name, PinMap_TIM));
-            if (instance == nullptr) continue;
             Slot* slot = acquireTimer(instance, hz);
             if (slot == nullptr) continue;
             o.timer = &slot->timer;
@@ -136,6 +137,23 @@ private:
         HardwareTimer timer;
         float ticksPerUs = 24.0f;
     };
+
+    // Вариант пина (базовый, ALT1, ALT2…) с таймером: AF из заголовка платы —
+    // ровно он (как у DShot: PB0 на SpeedyBee — TIM3, а не первый в таблице
+    // TIM1 CH2N), иначе первый с таймером. false — такого нет.
+    static bool timerPin(PinName base, int8_t wantAf, PinName& out)
+    {
+        for (uint32_t alt = 0; alt <= 3; ++alt)
+        {
+            const PinName name = static_cast<PinName>(base | (alt << 8));   // ALT1 = 0x100 у STM32duino
+            if (pinmap_peripheral(name, PinMap_TIM) == nullptr) continue;
+            const int function = pinmap_function(name, PinMap_TIM);
+            if (wantAf >= 0 && static_cast<int>(STM_PIN_AFNUM(function)) != wantAf) continue;
+            out = name;
+            return true;
+        }
+        return false;
+    }
 
     // Один HardwareTimer на TIMx; делитель — под ~24 МГц от такта таймера
     // (точный шаг считается от настоящего такта).

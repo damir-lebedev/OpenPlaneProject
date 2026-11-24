@@ -673,12 +673,13 @@ void test_gps_begin_switches_baud_and_configures_nav_pvt()
     TEST_ASSERT_TRUE(uart.tx.size() > baud.size());
     TEST_ASSERT_EQUAL_HEX8_ARRAY(baud.data(), uart.tx.data(), baud.size());
 
-    // Второе — 10 Гц, NAV-PVT на UART1, UBX вкл, NMEA выкл.
+    // Второе — 10 Гц, NAV-PVT на UART1, NAV-STATUS раз в секунду (подмена, P43), UBX вкл, NMEA выкл.
     const std::vector<uint8_t> config = ubx(0x06, 0x8A, {
         0x00, 0x01, 0x00, 0x00,
         0x01, 0x00, 0x21, 0x30, 0x64, 0x00,     // RATE_MEAS = 100 мс
         0x02, 0x00, 0x21, 0x30, 0x01, 0x00,     // RATE_NAV = 1
         0x07, 0x00, 0x91, 0x20, 0x01,           // MSGOUT NAV-PVT UART1 = 1
+        0x1B, 0x00, 0x91, 0x20, 0x0A,           // MSGOUT NAV-STATUS UART1 = 10
         0x01, 0x00, 0x74, 0x10, 0x01,           // UART1OUTPROT UBX = 1
         0x02, 0x00, 0x74, 0x10, 0x00 });        // UART1OUTPROT NMEA = 0
     TEST_ASSERT_EQUAL(baud.size() + config.size(), uart.tx.size());

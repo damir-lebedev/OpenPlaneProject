@@ -173,8 +173,11 @@ python tools/bf_board.py restore stack/МОЯПЛАТА_original.bin
 номерам Betaflight, приёмник, GPS и телеметрия — на тех UART, где их держал
 Betaflight; таймер каждого мотора — тот же, что выбрал Betaflight (строки
 `timer B06 AF2` дампа -> `OPB_MOTOR_AF`: у пина бывает два-три таймера, а BF
-подбирал их без конфликтов DMA на этой плате). Флеш чёрного ящика — с шины и CS
-из дампа. Плата уже с нашей прошивкой — `bf_board.py header` и по
+подбирал их без конфликтов DMA на этой плате; для DShot и для PWM/OneShot/Multishot
+одинаково). Флеш чёрного ящика — с шины и CS из дампа; у платы со слотом microSD
+на SPI (SpeedyBee F405 V4, env `speedybee-f405v4-quad`) ящик пишет на карту в файл
+`BLACKBOX.BIN` (`tools/blackbox.py sd-prepare`), каждый второй цикл
+(`blackbox_sample_rate` = 1/2), предзапись — сколько влезет в очередь 40 КБ (~1 с). Плата уже с нашей прошивкой — `bf_board.py header` и по
 `config.h` из [github.com/betaflight/config](https://github.com/betaflight/config).
 
 У F405 один банк флеша: запись настроек на 1–2 с останавливает процессор,

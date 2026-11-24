@@ -38,6 +38,7 @@
 #include "helpers/TestSupport.h"
 #include "rc/RcReceiver.h"
 #include "telemetry/BflEncoder.h"
+#include "telemetry/BlackBoxRing.h"
 #include "telemetry/BlackBoxStorage.h"
 #include "telemetry/CopterBlackBox.h"
 #include "telemetry/LoopStats.h"
@@ -719,9 +720,35 @@ void test_spi_sd_card_driver()
     TEST_ASSERT_EQUAL_UINT8(SpiSdCard::INIT_NOT_READY, slow.initError());
 }
 
+// Предзапись длиннее очереди (F405: 40 КБ на ~1.2 с): в покое старые записи
+// уходят молча, место под такт остаётся — «потеряно записей» не растёт.
+void test_ring_preroll_trim_keeps_headroom_without_drops()
+{
+    uint8_t memory[200];
+    BlackBoxRing ring;
+    ring.begin(memory, sizeof(memory));
+    uint8_t rec[20] = { BlackBoxFormat::REC_EVENT, 18 };
+    for (uint32_t t = 0; t < 100; ++t)
+    {
+        memcpy(rec + 2, &t, 4);
+        ring.trimOlderThan(t, 1000000, 2 * sizeof(rec));
+        TEST_ASSERT_TRUE(ring.push(rec, sizeof(rec)));
+    }
+    TEST_ASSERT_EQUAL_UINT32(0, ring.dropped());
+    TEST_ASSERT_TRUE(ring.freeBytes() >= sizeof(rec));
+    TEST_ASSERT_EQUAL_UINT32(9 * sizeof(rec), ring.used());   // до push свободно ≥ 40, после — 20
+
+    // по возрасту — как раньше; без запаса push выталкивает и считает потерю
+    ring.trimOlderThan(150, 55);
+    TEST_ASSERT_EQUAL_UINT32(5 * sizeof(rec), ring.used());   // остались t = 95..99
+    for (uint32_t t = 100; t < 110; ++t) ring.push(rec, sizeof(rec));
+    TEST_ASSERT_EQUAL_UINT32(5, ring.dropped());
+}
+
 int main()
 {
     UNITY_BEGIN();
+    RUN_TEST(test_ring_preroll_trim_keeps_headroom_without_drops);
     RUN_TEST(test_bfl_writer_encoding);
     RUN_TEST(test_simulated_flight_is_in_the_log);
     RUN_TEST(test_chirp_sweeps_in_the_log_identify_the_copter);

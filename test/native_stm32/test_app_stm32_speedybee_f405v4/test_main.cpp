@@ -140,7 +140,7 @@ void test_flight_goes_to_the_card()
     TEST_ASSERT_TRUE_MESSAGE(gyro > 2200 && gyro < 4200, why);
     TEST_ASSERT_GREATER_THAN_UINT32(100, cardChip.blockWrites);
     TEST_ASSERT_EQUAL_UINT32(0, sdCard.timeoutCount());
-    TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "очередь переполнена"));
+    TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "очередь переполнена"));   // предзапись длиннее очереди — не потеря
 }
 
 void test_bb_list_sees_the_flight()

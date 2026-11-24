@@ -78,11 +78,14 @@ public:
         return length;
     }
 
-    // Предзапись: выбросить записи старше maxAgeUs (по t_us записи).
-    void trimOlderThan(uint32_t nowUs, uint32_t maxAgeUs)
+    // Предзапись: выбросить записи старше maxAgeUs (по t_us записи) и
+    // старые, пока свободно меньше keepFree байт. Это не потери: очередь
+    // меньше предзаписи (F405 — 40 КБ, ~1.2 с) — предзапись просто короче.
+    void trimOlderThan(uint32_t nowUs, uint32_t maxAgeUs, uint32_t keepFree = 0)
     {
+        if (keepFree > capacity) keepFree = capacity;
         lock.enter();
-        while (usedBytes > 0 && nowUs - timestampAt(tail) > maxAgeUs)
+        while (usedBytes > 0 && (nowUs - timestampAt(tail) > maxAgeUs || capacity - usedBytes < keepFree))
         {
             dropOldest();
         }

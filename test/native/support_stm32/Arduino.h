@@ -215,6 +215,7 @@ struct PinMap
 // PA8 — TIM1 CH1, PB10/PB11 — TIM2 CH3/CH4. AF — как у STM32F4/H7 (TIM1/2 —
 // 1, TIM3/4/5 — 2, TIM8 — 3); ALT-варианты — для выбора таймера DShot: PC6–PC9
 // ещё TIM3 (ALT1), PB0/PB1 — TIM3 CH3/CH4 (ALT1), PA5 — TIM2 CH1 и TIM8 CH1N (ALT1).
+// SpeedyBee F405 V4: PB6/PB7 — TIM4 CH1/CH2.
 inline const PinMap PinMap_TIM[] = {
     { PA0, 2, 1, 1 }, { PA1, 2, 2, 1 }, { PA2, 2, 3, 1 }, { PA3, 2, 4, 1 },
     { PD14, 4, 3, 2 }, { PD15, 4, 4, 2 }, { PE9, 1, 1, 1 },
@@ -224,6 +225,7 @@ inline const PinMap PinMap_TIM[] = {
     { PC6 | ALT1, 3, 1, 2 }, { PC7 | ALT1, 3, 2, 2 }, { PC8 | ALT1, 3, 3, 2 }, { PC9 | ALT1, 3, 4, 2 },
     { PB0 | ALT1, 3, 3, 2 }, { PB1 | ALT1, 3, 4, 2 },
     { PA5, 2, 1, 1 }, { PA5 | ALT1, 8, 1, 3 },
+    { PB6, 4, 1, 2 }, { PB7, 4, 2, 2 },
     { 0xFFFFFFFFu, 0, 0, 0 },
 };
 

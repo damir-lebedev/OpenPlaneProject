@@ -54,6 +54,8 @@ public:
 
     static constexpr uint32_t PREROLL_MS = 2000;
     static constexpr uint32_t POSTROLL_MS = 2000;
+    // В покое свободно не меньше: такт (снимки) + события — без вытеснения при push.
+    static constexpr uint32_t IDLE_HEADROOM_BYTES = 4 * BlackBoxFormat::MAX_RECORD;
     static constexpr uint32_t STATE_PERIOD_MS = 20;
     static constexpr uint32_t SYS_PERIOD_MS = 1000;
 
@@ -116,7 +118,8 @@ public:
         if (state != State::Stopping) detectEvents(rc);
         decideStartStop(armed, out.spinning);
 
-        if (state == State::Idle) ring.trimOlderThan(nowUs, PREROLL_MS * 1000UL);
+        // место под такт — за счёт старой предзаписи, без «очередь переполнена»
+        if (state == State::Idle) ring.trimOlderThan(nowUs, PREROLL_MS * 1000UL, IDLE_HEADROOM_BYTES);
         if (state != State::Stopping && enabled) sample(sens, rc, out, workUs);
         cycle++;
         wakeWriter();
