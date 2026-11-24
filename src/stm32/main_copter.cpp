@@ -65,13 +65,21 @@
 #include "telemetry/TaskStats.h"
 
 // Чёрный ящик: H743 — на SD-карту по SDMMC (Matek H743, DevEBox); F405 — на
-// SPI-флеш платы (W25Q128 и т. п., как blackbox_device = SPIFLASH у BF).
+// SPI-флеш платы (W25Q128 и т. п., как blackbox_device = SPIFLASH у BF), а
+// если у платы слот microSD на SPI (SpeedyBee F405 V3/V4) — на карту по SPI.
 // (F405 — первым: тесты на ПК собираются с BOARD_STM32H743 и добавляют F405.)
-#if defined(BOARD_STM32F405)
+#if defined(BOARD_STM32F405) && OPB_SDCARD_SPI == 0
 #define COPTER_BLACKBOX 1
 #define COPTER_BLACKBOX_FLASH 1
 #include "hal/LockedSpiBus.h"
 #include "hal/SpiNorFlash.h"
+#elif defined(BOARD_STM32F405)
+#define COPTER_BLACKBOX 1
+#define COPTER_BLACKBOX_SD 1
+#define COPTER_BLACKBOX_SD_SPI 1
+#define SD_ERASE_CHUNK_BYTES 1024   // ОЗУ F405: кусок стирания 1 КБ вместо 16
+#include "hal/SdFileRegion.h"
+#include "hal/SpiSdCard.h"
 #elif defined(BOARD_STM32H743)
 #define COPTER_BLACKBOX 1
 #define COPTER_BLACKBOX_SD 1
@@ -154,9 +162,22 @@ copter::RxInput rxInput;
 LoopStats loopStats;
 TaskStats taskStats;
 CopterConsole copterConsole(Serial, copterController, copterParams, imuSensor, rcReceiver);
-#if defined(COPTER_BLACKBOX_SD)
+#if defined(COPTER_BLACKBOX_SD_SPI)
+// слот microSD на своей шине SPI (на шине гироскопа или OSD — запрещено в Config.h)
+SPIClass sdSpi;
+Stm32SpiBus sdBus(sdSpi, static_cast<pin_size_t>(Config::BOARD_SDCARD_SCK < 0 ? 0 : Config::BOARD_SDCARD_SCK),
+                  static_cast<pin_size_t>(Config::BOARD_SDCARD_MISO < 0 ? 0 : Config::BOARD_SDCARD_MISO),
+                  static_cast<pin_size_t>(Config::BOARD_SDCARD_MOSI < 0 ? 0 : Config::BOARD_SDCARD_MOSI));
+SpiSdCard sdCard(sdBus, Config::BOARD_SDCARD_CS);
+// 64 МБ (~30 минут при 1/2): сверка секторов при включении берёт из кучи бит на
+// сектор 4 КБ — на 256 МБ это 8 КБ, у F405 столько свободного ОЗУ нет.
+static constexpr uint32_t SD_REGION_MAX_BYTES = 64UL * 1024 * 1024;
+#elif defined(COPTER_BLACKBOX_SD)
 Stm32SdCard sdCard;
-SdFileRegion blackBoxFile(sdCard, Config::BLACKBOX_SD_FILE, Config::BLACKBOX_SD_MAX_BYTES);
+static constexpr uint32_t SD_REGION_MAX_BYTES = Config::BLACKBOX_SD_MAX_BYTES;
+#endif
+#if defined(COPTER_BLACKBOX_SD)
+SdFileRegion blackBoxFile(sdCard, Config::BLACKBOX_SD_FILE, SD_REGION_MAX_BYTES);
 BlackBoxStorage blackBoxStorage(blackBoxFile);
 CopterBlackBox copterBlackBox(copterController, copterParams, blackBoxStorage, loopStats, rcReceiver);
 #endif
@@ -1251,6 +1272,9 @@ static void setupCopter(KeyValueStore& store)
     copterParams.setTableDefault(copter::PARAM_BLACKBOX_SAMPLE_RATE, 1);   // 1/2: 16 МБ флеша — ~8 минут
 #else
     copterParams.setTableDefault(copter::PARAM_BLACKBOX_DEVICE, copter::BLACKBOX_SDCARD);
+#if defined(COPTER_BLACKBOX_SD_SPI)
+    copterParams.setTableDefault(copter::PARAM_BLACKBOX_SAMPLE_RATE, 1);   // 1/2: SPI у F405 медленнее SDMMC
+#endif
 #endif
     copterParams.setTableDefault(copter::PARAM_IBATA_OFFSET, Config::BOARD_IBATA_OFFSET_MV);
     copterParams.setTableDefault(copter::PARAM_VTX_PROTOCOL, static_cast<float>(Config::BOARD_VTX_PIN >= 0 ? copter::VtxProtocol::AUTO
@@ -1316,6 +1340,9 @@ static void setupCopter(KeyValueStore& store)
 static void setupBlackBox()
 {
     Serial.print("SD-карта: ");
+#if defined(COPTER_BLACKBOX_SD_SPI)
+    sdBus.begin();
+#endif
     if (!sdCard.begin())
     {
         Serial.printf("нет ответа (код %lu) — карта не вставлена или не опознана\n",
@@ -1330,7 +1357,14 @@ static void setupBlackBox()
     copterBlackBox.setGuard(&escGuard);
     copterBlackBox.setGps(&gps, &gpsHome);
     copterBlackBox.setSensors(&imuSensor, &baroSensor);
+#if defined(COPTER_BLACKBOX_SD_SPI) && defined(ARDUINO_ARCH_STM32)
+    // F405: очередь — в CCM, как у SPI-флеша (в основных 128 КБ места нет)
+    copterBlackBox.begin(true, reinterpret_cast<uint8_t*>(Config::F405_CCM_BASE), Config::BLACKBOX_RING_F405_BYTES);
+#elif defined(COPTER_BLACKBOX_SD_SPI)
+    copterBlackBox.begin(true, nullptr, Config::BLACKBOX_RING_F405_BYTES);
+#else
     copterBlackBox.begin();
+#endif
     copterConsole.setRecorder(&copterBlackBox);   // и без карты: "bb list" ответит state=off
 }
 #endif

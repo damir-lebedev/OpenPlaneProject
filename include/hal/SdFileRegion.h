@@ -36,8 +36,15 @@ class SdFileRegion : public IFlashRegion
 public:
     static constexpr uint32_t SECTOR_BYTES = 4096;
     // Стирание пишет 0xFF кусками по 16 КБ: SD-карта на мелких записях медленная
-    // (4 КБ — ~3.7 мс, т.е. 1 МБ/с), на крупных быстрее.
+    // (4 КБ — ~3.7 мс, т.е. 1 МБ/с), на крупных быстрее. У F405 со слотом на SPI
+    // ОЗУ мало, а шина и так ~2 МБ/с — там кусок меньше (SD_ERASE_CHUNK_BYTES).
+#if defined(SD_ERASE_CHUNK_BYTES)
+    static constexpr uint32_t ERASE_CHUNK_BYTES = SD_ERASE_CHUNK_BYTES;
+#else
     static constexpr uint32_t ERASE_CHUNK_BYTES = 16384;
+#endif
+    static_assert(ERASE_CHUNK_BYTES % IBlockDevice::BLOCK_SIZE == 0 && ERASE_CHUNK_BYTES <= SECTOR_BYTES * 4,
+                  "кусок стирания — целые блоки по 512 байт");
 
     // maxBytes — потолок размера области, даже если файл больше: время
     // сверки секторов при включении растёт вместе с областью.

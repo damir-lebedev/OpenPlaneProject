@@ -43,6 +43,21 @@ SERIAL_FUNCTIONS = {
 }
 
 BAROS = ("SPL06", "DPS310", "BMP280", "NONE")
+# Таймеры ножек STM32F405 (даташит, таблица альтернативных функций): AF каждого
+# канала таймера по порядку AF — в том же порядке их нумерует TIMER_PIN_MAP(…,
+# номер, …) в config.h Betaflight (1 — первый таймер ножки, 2 — второй…).
+F405_TIMER_AF = {
+    "PA0": (1, 2), "PA1": (1, 2), "PA2": (1, 2, 3), "PA3": (1, 2, 3), "PA5": (1, 3), "PA6": (2, 9),
+    "PA7": (1, 2, 3, 9), "PA8": (1,), "PA9": (1,), "PA10": (1,), "PA11": (1,), "PA15": (1,),
+    "PB0": (1, 2, 3), "PB1": (1, 2, 3), "PB3": (1,), "PB4": (2,), "PB5": (2,), "PB6": (2,), "PB7": (2,),
+    "PB8": (2, 3), "PB9": (2, 3), "PB10": (1,), "PB11": (1,), "PB13": (1,), "PB14": (1, 3, 9),
+    "PB15": (1, 3, 9), "PC6": (2, 3), "PC7": (2, 3), "PC8": (2, 3), "PC9": (2, 3),
+    "PD12": (2,), "PD13": (2,), "PD14": (2,), "PD15": (2,), "PE5": (3,), "PE6": (3,),
+    "PE9": (1,), "PE11": (1,), "PE13": (1,), "PE14": (1,),
+}
+
+# Гироскопы, для которых в прошивке есть драйвер (имена — как у BF: status, USE_GYRO_SPI_*).
+SUPPORTED_GYROS = ("ICM42688P",)
 UARTS = 6
 SPIS = 3
 I2CS = 3
@@ -70,6 +85,9 @@ class Board:
         self.osd_cs = None
         self.flash_spi = None
         self.flash_cs = None
+        self.sdcard_spi = None      # слот microSD на SPI (sdcard_mode = SPI)
+        self.sdcard_cs = None
+        self.gyros = []             # типы гироскопа по BF: ["ICM42688P"], ["MPU6000", "ICM20689"]
         self.baro_i2c = None
         self.mag_i2c = None
         self.baro = None            # тип барометра из `status` (BARO=DPS310)
@@ -135,6 +153,13 @@ def parse_config_h(text, board):
     board.mcu = defines.get("FC_TARGET_MCU", board.mcu)
     if "SYSTEM_HSE_MHZ" in defines:
         board.hse_mhz = int(defines["SYSTEM_HSE_MHZ"])
+    # TIMER_PIN_MAP( 2, PB0, 2, 0) — второй таймер ножки: AF по таблице F405
+    if "F405" in (board.mcu or "F405").upper():
+        for pin_text, occurrence in re.findall(r"TIMER_PIN_MAP\(\s*\d+\s*,\s*(\w+)\s*,\s*(\d+)", text):
+            pin = pin_name(pin_text)
+            afs = F405_TIMER_AF.get(pin, ())
+            if 1 <= int(occurrence) <= len(afs):
+                board.timer_af[pin] = afs[int(occurrence) - 1]
     for key, value in defines.items():
         m = re.fullmatch(r"MOTOR(\d+)_PIN", key)
         if m:
@@ -178,6 +203,17 @@ def parse_config_h(text, board):
         board.osd_spi = number_from(defines["MAX7456_SPI_INSTANCE"], "SPI")
     if "FLASH_SPI_INSTANCE" in defines:
         board.flash_spi = number_from(defines["FLASH_SPI_INSTANCE"], "SPI")
+    if "USE_SDCARD_SPI" in defines and "SDCARD_SPI_INSTANCE" in defines:
+        board.sdcard_spi = number_from(defines["SDCARD_SPI_INSTANCE"], "SPI")
+        if "SDCARD_SPI_CS_PIN" in defines:
+            board.sdcard_cs = pin_name(defines["SDCARD_SPI_CS_PIN"])
+    for key in defines:
+        m = re.fullmatch(r"USE_(?:GYRO_SPI|ACCGYRO)_(\w+)", key)
+        if m and m.group(1) not in board.gyros:
+            board.gyros.append(m.group(1))
+    baros = [b for b in BAROS if "USE_BARO_" + b in defines]
+    if len(baros) == 1:
+        board.baro = baros[0]
     if "BARO_I2C_INSTANCE" in defines:
         board.baro_i2c = number_from(defines["BARO_I2C_INSTANCE"], "I2CDEV_")
     if "MAG_I2C_INSTANCE" in defines:
@@ -203,7 +239,7 @@ def parse_config_h(text, board):
 
 RESOURCE_KEYS = {
     "GYRO_CS": "gyro_cs", "GYRO_EXTI": "gyro_exti", "OSD_CS": "osd_cs", "FLASH_CS": "flash_cs",
-    "ADC_BATT": "adc_vbat", "ADC_CURR": "adc_curr", "ADC_RSSI": "adc_rssi", "BEEPER": "beeper",
+    "SDCARD_CS": "sdcard_cs", "ADC_BATT": "adc_vbat", "ADC_CURR": "adc_curr", "ADC_RSSI": "adc_rssi", "BEEPER": "beeper",
     "LED_STRIP": "led_strip", "USB_DETECT": "usb_detect",
 }
 
@@ -254,6 +290,9 @@ def parse_dump(text, board):
         m = re.search(r"\bBARO=(\w+)", line)
         if m and m.group(1).upper() in BAROS:
             board.baro = m.group(1).upper()
+        m = re.search(r"\bGYRO=(\w+)", line)
+        if m and m.group(1).upper() not in ("NONE",) and m.group(1).upper() not in board.gyros:
+            board.gyros.append(m.group(1).upper())
         # resource MOTOR 1 B06
         m = re.match(r"resource\s+(\w+)\s+(\d+)\s+(\S+)", line, re.I)
         if m and m.group(1).upper() != "SHOW":
@@ -290,6 +329,10 @@ def parse_dump(text, board):
             board.osd_spi = int(value)
         elif key == "flash_spi_bus":
             board.flash_spi = int(value)
+        elif key == "sdcard_spi_bus":
+            board.sdcard_spi = int(value) or None
+        elif key == "sdcard_mode":
+            board.sdcard_mode = value.upper()
         elif key == "baro_i2c_device":
             board.baro_i2c = int(value)
         elif key == "mag_i2c_device":
@@ -314,6 +357,8 @@ def parse_dump(text, board):
         elif key == "pinio_config":
             for i, v in enumerate(list_values(value), start=1):
                 board.pinio_config[i] = v
+    if getattr(board, "sdcard_mode", "SPI") != "SPI":
+        board.sdcard_cs = board.sdcard_spi = None   # SDIO/SDMMC — не слот SPI
 
 
 # Аппаратный NSS шин SPI у F405/F722/H743: ножка CS устройства почти всегда
@@ -326,7 +371,7 @@ def infer_spi_buses(board):
     """Шины гироскопа, OSD и флеша, если дамп их не назвал: по NSS, иначе —
     свободная шина с ножками (гироскоп первым). Что выведено — в board.guessed."""
     have = [n for n in range(1, SPIS + 1) if all(board.spi.get((n, r)) for r in ("SCK", "SDI", "SDO"))]
-    devices = [("gyro", "гироскоп"), ("osd", "OSD"), ("flash", "флеш")]
+    devices = [("gyro", "гироскоп"), ("osd", "OSD"), ("flash", "флеш"), ("sdcard", "SD-карта")]
     taken = {getattr(board, k + "_spi") for k, _ in devices} - {None}
     # сперва — у кого NSS однозначен, потом остальные
     order = sorted(devices, key=lambda d: len(SPI_NSS.get(getattr(board, d[0] + "_cs") or "", (0, 0, 0))))
@@ -373,6 +418,9 @@ def check(board):
         problems.append("нет гироскопа на SPI (GYRO_CS и шина)")
     elif not all(board.spi.get((board.gyro_spi, r)) for r in ("SCK", "SDI", "SDO")):
         problems.append("нет ножек SPI{} гироскопа".format(board.gyro_spi))
+    if board.gyros and not any(g in SUPPORTED_GYROS for g in board.gyros):
+        problems.append("гироскоп {} — драйвера в прошивке пока нет (есть: {})".format(
+            "/".join(board.gyros), ", ".join(SUPPORTED_GYROS)))
     if board.roles.get("RX") is None:
         problems.append("не задан UART приёмника (serial … 64 …) — по умолчанию UART2")
     return problems
@@ -445,6 +493,16 @@ def generate(board, baro=None, source_note=""):
     w("#define OPB_OSD_CS {}".format(c_pin(board.osd_cs)))
     w("#define OPB_FLASH_SPI {}".format(board.flash_spi or 0))
     w("#define OPB_FLASH_CS {}".format(c_pin(board.flash_cs)))
+    if board.sdcard_spi and board.sdcard_cs:
+        w("// Слот microSD на SPI (sdcard_mode = SPI): чёрный ящик — файл BLACKBOX.BIN на карте.")
+        w("#define OPB_SDCARD_SPI {}".format(board.sdcard_spi))
+        w("#define OPB_SDCARD_CS {}".format(board.sdcard_cs))
+    if board.gyros:
+        w("// Гироскоп по BF (какой из них стоит — опрос при старте); драйвер есть для: {}.".format(
+            ", ".join(SUPPORTED_GYROS)))
+        w('#define OPB_GYRO_TYPES "{}"'.format("/".join(board.gyros)))
+        for g in board.gyros:
+            w("#define OPB_GYRO_{} 1".format(g))
     w("")
     w("// I2C1…I2C3: SCL, SDA; барометр и компас — на шине OPB_I2C_SENSORS.")
     for n in range(1, I2CS + 1):

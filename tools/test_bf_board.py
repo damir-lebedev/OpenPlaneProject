@@ -212,6 +212,38 @@ class BfBoardTest(unittest.TestCase):
         self.assertIn("#define OPB_PINIO_BOX 40, 41, 255, 255", text)
         self.assertIn("#define OPB_PINIO_INVERTED 0, 1, 0, 0", text)
 
+    def test_sdcard_gyro_and_baro(self):
+        # SpeedyBee F405 V4: SD по SPI3, ICM42688P, DPS310 — из config.h
+        sb = parsed("""
+#define BOARD_NAME SPEEDYBEEF405V4
+#define USE_GYRO_SPI_ICM42688P
+#define USE_ACC_SPI_ICM42688P
+#define USE_BARO_DPS310
+#define USE_GYRO_EXTI
+#define SPI3_SCK_PIN PB3
+#define SDCARD_SPI_CS_PIN PC14
+#define USE_SDCARD_SPI
+#define SDCARD_SPI_INSTANCE SPI3
+""")
+        self.assertEqual((3, "PC14"), (sb.sdcard_spi, sb.sdcard_cs))
+        self.assertEqual(["ICM42688P"], sb.gyros)
+        self.assertEqual("DPS310", sb.baro)
+        text = bf_board.generate(sb)
+        self.assertIn("#define OPB_SDCARD_SPI 3", text)
+        self.assertIn("#define OPB_SDCARD_CS PC14", text)
+        self.assertIn("#define OPB_GYRO_ICM42688P 1", text)
+        self.assertIn("#define OPB_BARO_DPS310 1", text)
+        self.assertNotIn("драйвера", " ".join(bf_board.check(sb)))
+        # дамп: SD по SPI, гироскоп без драйвера — в списке проблем
+        d = parsed("# status\nGYRO=MPU6000, ACC=MPU6000\nresource SDCARD_CS 1 A15\nset sdcard_mode = SPI\n"
+                   "set sdcard_spi_bus = 2\n")
+        self.assertEqual((2, "PA15"), (d.sdcard_spi, d.sdcard_cs))
+        self.assertIn("гироскоп MPU6000", " ".join(bf_board.check(d)))
+        # SD по SDIO (F7/H7) — не наш слот SPI
+        sdio = parsed("resource SDCARD_CS 1 A15\nset sdcard_mode = SDIO\nset sdcard_spi_bus = 2\n")
+        self.assertIsNone(sdio.sdcard_spi)
+        self.assertNotIn("OPB_SDCARD_SPI", bf_board.generate(sdio))
+
     def test_missing_parts_are_reported(self):
         b = parsed("resource MOTOR 1 B00\n")
         problems = " ".join(bf_board.check(b))

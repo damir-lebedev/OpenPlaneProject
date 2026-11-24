@@ -27,6 +27,10 @@
 #include "hal/IFlashRegion.h"
 #include "hal/SpiNorFlash.h"
 #include "helpers/SpiNorFlashChip.h"
+#include "hal/SdFileRegion.h"
+#include "hal/SpiSdCard.h"
+#include "helpers/FatImage.h"
+#include "helpers/SpiSdCardChip.h"
 #include "helpers/BflParse.h"
 #include "helpers/BlackBoxParse.h"
 #include "helpers/ChirpFlight.h"
@@ -621,6 +625,100 @@ void test_spi_nor_flash_driver()
     TEST_ASSERT_EQUAL_UINT32(16u * 1024 * 1024, flash256.size());
 }
 
+// P57: SD-карта по SPI (hal/SpiSdCard.h) — слот microSD у SpeedyBee F405 V3/V4.
+// SDHC: запуск, блоки по одному и подряд (CMD18/CMD25), файл BLACKBOX.BIN на
+// FAT32 и кольцо ящика поверх; SDSC v1 — адреса байтами; нет карты, нет пина,
+// за концом, карта отвергла запись.
+void test_spi_sd_card_driver()
+{
+    SPIClass spi;
+    TestSpiBus bus(spi);
+    chips::SpiSdCardChip chip(32768);   // 16 МБ SDHC
+    chip.attach(spi, 9);
+    SpiSdCard card(bus, 9);
+    TEST_ASSERT_TRUE(card.begin());
+    TEST_ASSERT_EQUAL_UINT8(SpiSdCard::INIT_OK, card.initError());
+    TEST_ASSERT_TRUE(card.highCapacity());
+    TEST_ASSERT_EQUAL_UINT32(32768, card.blockCount());
+
+    std::vector<uint8_t> one(512), back(512);
+    for (size_t i = 0; i < one.size(); ++i) one[i] = static_cast<uint8_t>(i * 3 + 1);
+    TEST_ASSERT_TRUE(card.write(100, one.data(), 1));
+    TEST_ASSERT_EQUAL_UINT8(one[7], chip.data[100 * 512 + 7]);
+    TEST_ASSERT_TRUE(card.read(100, back.data(), 1));
+    TEST_ASSERT_TRUE(one == back);
+
+    std::vector<uint8_t> many(512 * 5), manyBack(512 * 5);
+    for (size_t i = 0; i < many.size(); ++i) many[i] = static_cast<uint8_t>(i * 13 + 5);
+    TEST_ASSERT_TRUE(card.write(2000, many.data(), 5));
+    TEST_ASSERT_EQUAL_UINT32(1, chip.multiWrites);
+    TEST_ASSERT_EQUAL_UINT32(2004, chip.lastWriteBlock);
+    TEST_ASSERT_TRUE(card.read(2000, manyBack.data(), 5));
+    TEST_ASSERT_EQUAL_UINT32(1, chip.multiReads);
+    TEST_ASSERT_TRUE(chip.sawCmd12);
+    TEST_ASSERT_TRUE(many == manyBack);
+    // после чтения подряд карта снова слушает команды
+    TEST_ASSERT_TRUE(card.read(100, back.data(), 1));
+    TEST_ASSERT_TRUE(one == back);
+
+    TEST_ASSERT_FALSE(card.read(32768, back.data(), 1));        // за концом
+    TEST_ASSERT_FALSE(card.write(32766, many.data(), 5));
+    TEST_ASSERT_FALSE(card.read(0, back.data(), 0));
+    TEST_ASSERT_EQUAL_UINT32(0, card.timeoutCount());
+
+    // файл ящика на FAT32 и кольцо секторов поверх — как у H743
+    const fat_image::Result img = fat_image::format(chip, { { "BLACKBOX.BIN", 4u * 1024 * 1024 } });
+    std::fill_n(chip.data.begin() + static_cast<size_t>(img.firstBlock.at("BLACKBOX.BIN")) * 512, 4u * 1024 * 1024, 0xFF);
+    SdFileRegion file(card, "BLACKBOX.BIN");
+    TEST_ASSERT_EQUAL(static_cast<int>(Fat32::Result::Ok), static_cast<int>(file.begin()));
+    BlackBoxStorage storage(file);
+    TEST_ASSERT_TRUE(storage.begin());
+    TEST_ASSERT_TRUE(storage.totalSectors() > 0);
+
+    // SDSC (v1, без CMD8): адреса — байтами, блок 512 — CMD16
+    SPIClass spi2;
+    TestSpiBus bus2(spi2);
+    chips::SpiSdCardChip old(4096, false);
+    old.v2 = false;
+    old.attach(spi2, 10);
+    SpiSdCard sdsc(bus2, 10);
+    TEST_ASSERT_TRUE(sdsc.begin());
+    TEST_ASSERT_FALSE(sdsc.highCapacity());
+    TEST_ASSERT_EQUAL_UINT32(4096, sdsc.blockCount());
+    TEST_ASSERT_TRUE(sdsc.write(5, one.data(), 1));
+    TEST_ASSERT_EQUAL_UINT8(one[0], old.data[5 * 512]);
+    TEST_ASSERT_EQUAL_UINT8(one[511], old.data[5 * 512 + 511]);
+    TEST_ASSERT_TRUE(sdsc.read(5, back.data(), 1));
+    TEST_ASSERT_TRUE(one == back);
+
+    // карта отвергла запись — false, не зависает
+    old.rejectWrites = true;
+    TEST_ASSERT_FALSE(sdsc.write(6, one.data(), 1));
+    TEST_ASSERT_FALSE(sdsc.write(6, many.data(), 3));
+
+    // нет карты, нет пина
+    SPIClass empty;
+    TestSpiBus emptyBus(empty);
+    SpiSdCard none(emptyBus, 11);
+    TEST_ASSERT_FALSE(none.begin());
+    TEST_ASSERT_EQUAL_UINT8(SpiSdCard::INIT_NO_IDLE, none.initError());
+    TEST_ASSERT_EQUAL_UINT32(0, none.blockCount());
+    TEST_ASSERT_FALSE(none.read(0, back.data(), 1));
+    SpiSdCard noPin(bus, -1);
+    TEST_ASSERT_FALSE(noPin.begin());
+    TEST_ASSERT_EQUAL_UINT8(SpiSdCard::INIT_NO_PIN, noPin.initError());
+
+    // карта, что не выходит из ожидания, — отказ за секунду, не вечный цикл
+    SPIClass spi3;
+    TestSpiBus bus3(spi3);
+    chips::SpiSdCardChip stuck(4096);
+    stuck.readyPolls = 1000000;
+    stuck.attach(spi3, 12);
+    SpiSdCard slow(bus3, 12);
+    TEST_ASSERT_FALSE(slow.begin());
+    TEST_ASSERT_EQUAL_UINT8(SpiSdCard::INIT_NOT_READY, slow.initError());
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -628,5 +726,6 @@ int main()
     RUN_TEST(test_simulated_flight_is_in_the_log);
     RUN_TEST(test_chirp_sweeps_in_the_log_identify_the_copter);
     RUN_TEST(test_spi_nor_flash_driver);
+    RUN_TEST(test_spi_sd_card_driver);
     return UNITY_END();
 }

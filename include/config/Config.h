@@ -14,6 +14,11 @@
 #error "F405: не задан заголовок платы — -D OP_BOARD_FILE=\"config/boards/ИМЯ.h\" (tools/bf_board.py)"
 #endif
 #include OP_BOARD_FILE
+// Тип гироскопа по BF (OPB_GYRO_TYPES) есть, а драйвера под него нет — не собирать
+// прошивку, которая не взлетит (BMI270, MPU6000, ICM20689 — в плане P57).
+#if defined(OPB_GYRO_TYPES) && !defined(OPB_GYRO_ICM42688P)
+#error "F405: гироскопа платы (OPB_GYRO_TYPES) прошивка пока не знает — есть драйвер ICM42688P"
+#endif
 #endif
 
 #include "config/Channels.h"
@@ -503,6 +508,19 @@ namespace Config
     constexpr int16_t BOARD_FLASH_CS = OPB_FLASH_SPI ? OPB_FLASH_CS : -1;       // @fixed
     constexpr bool BOARD_FLASH_SHARES_OSD = OPB_FLASH_SPI == OPB_OSD_SPI;       // @fixed
     constexpr bool BOARD_FLASH_SHARES_GYRO = OPB_FLASH_SPI == OPB_GYRO_SPI;     // @fixed
+    // Слот microSD на SPI (SpeedyBee F405 V3/V4: sdcard_mode = SPI у BF) — ящик
+    // пишется на карту, а не во флеш; шина 0 — слота нет.
+#if !defined(OPB_SDCARD_SPI)
+#define OPB_SDCARD_SPI 0
+#define OPB_SDCARD_CS -1
+#endif
+    constexpr uint8_t BOARD_SDCARD_SPI = OPB_SDCARD_SPI;                        // @fixed
+    constexpr int16_t BOARD_SDCARD_SCK = BOARD_SPI_SCK[OPB_SDCARD_SPI];         // @fixed
+    constexpr int16_t BOARD_SDCARD_MISO = BOARD_SPI_MISO[OPB_SDCARD_SPI];       // @fixed
+    constexpr int16_t BOARD_SDCARD_MOSI = BOARD_SPI_MOSI[OPB_SDCARD_SPI];       // @fixed
+    constexpr int16_t BOARD_SDCARD_CS = OPB_SDCARD_SPI ? OPB_SDCARD_CS : -1;    // @fixed
+    static_assert(OPB_SDCARD_SPI == 0 || (OPB_SDCARD_SPI != OPB_GYRO_SPI && OPB_SDCARD_SPI != OPB_OSD_SPI),
+                  "SD-карта на шине гироскопа или OSD — так ещё не умеем (блок держал бы шину миллисекундами)");
     constexpr bool BOARD_BEEPER_ACTIVE_HIGH = OPB_BEEPER_INVERTED != 0;  // @fixed
     constexpr int16_t BOARD_GYRO2_SCK = -1;   // второго гироскопа нет @fixed
     constexpr int16_t BOARD_GYRO2_MISO = -1;  // @fixed
