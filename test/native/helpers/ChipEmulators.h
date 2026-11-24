@@ -234,6 +234,33 @@ namespace chips
         }
     };
 
+    // MPU6000 / ICM-20689 (SPI у полётников под BF): WHO_AM_I 0x68 / 0x98
+    // (0x75), данные BE с 0x3B: акселерометр ±16g, температура, гироскоп
+    // ±2000°/с. Ловит запись USER_CTRL — драйвер обязан выключить I2C.
+    struct Mpu6000 : Chip
+    {
+        uint16_t rotationCwDeg = Config::IMU_ROTATION_CW_DEG;
+        uint8_t whoAmI = 0x68;
+
+        void install() { regs()[0x75] = whoAmI; }
+
+        void update(const World& w)
+        {
+            float ax, ay, az, gx, gy, gz;
+            w.accelBody(ax, ay, az);
+            w.gyroBody(gx, gy, gz);
+            float a[3], g[3];
+            World::toChip(rotationCwDeg, ax, ay, az, a);
+            World::toChip(rotationCwDeg, gx, gy, gz, g);
+            uint8_t* r = regs();
+            for (int i = 0; i < 3; ++i) putBe16(r, static_cast<uint8_t>(0x3B + 2 * i), a[i] * 2048.0f);
+            putBe16(r, 0x41, (w.temperatureC - 36.53f) * 340.0f);
+            for (int i = 0; i < 3; ++i) putBe16(r, static_cast<uint8_t>(0x43 + 2 * i), g[i] * 16.4f);
+        }
+
+        bool i2cDisabled() { return (regs()[0x6A] & 0x10) != 0; }
+    };
+
     // QMC6309 (I2C 0x7C): ID 0x90, NVM готова, данные LE с 0x01, 40.96 LSB/мкТл.
     struct Qmc6309 : Chip
     {

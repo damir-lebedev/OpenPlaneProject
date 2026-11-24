@@ -26,6 +26,7 @@
 //   IMU (гироскоп + акселерометр):
 //     • MPU6050 / MPU6500 (GY-521) — I2C 0x68; чип по WHO_AM_I
 //     • ICM42688 ("601N1")        — SPI, CS = PIN_SPI_CS_IMU
+//     • MPU6000 / ICM-20689 / MPU6500 — SPI (полётники под BF, SENSOR_IMU_MPU6000_SPI)
 //     • LSM6DSV / 16X / 32X       — I2C 0x6A или 0x6B (сам находит), или SPI
 //     • ICM-45686                 — I2C 0x68 или 0x69 (сам находит), или SPI
 //   Барометр:
@@ -67,6 +68,7 @@
 #define SENSOR_IMU_LSM6DSV_SPI   4
 #define SENSOR_IMU_ICM45686      5   // I2C
 #define SENSOR_IMU_ICM45686_SPI  6
+#define SENSOR_IMU_MPU6000_SPI   7   // MPU6000 / ICM-20689 / MPU6500 на SPI (полётники под BF)
 
 #define SENSOR_BARO_NONE        0
 #define SENSOR_BARO_BME280      1
@@ -139,8 +141,13 @@
     #define KIT_AIRSPEED SENSOR_AIRSPEED_NONE
     #define KIT_GPS      SENSOR_GPS_UBLOX_M10
 #elif SENSOR_KIT == SENSOR_KIT_BF_BOARD
-    // Тип барометра — в заголовке платы (OPB_BARO_*, флаг tools/bf_board.py --baro).
-    #define KIT_IMU      SENSOR_IMU_ICM42688
+    // Тип барометра — в заголовке платы (OPB_BARO_*, флаг tools/bf_board.py --baro),
+    // гироскопа — OPB_GYRO_* (как в BF); без них — ICM-42688-P (старые заголовки).
+    #if defined(OPB_GYRO_ICM42688P) || !defined(OPB_GYRO_TYPES)
+        #define KIT_IMU  SENSOR_IMU_ICM42688
+    #else
+        #define KIT_IMU  SENSOR_IMU_MPU6000_SPI
+    #endif
     #if defined(OPB_BARO_DPS310)
         #define KIT_BARO SENSOR_BARO_DPS310
     #else
@@ -247,6 +254,11 @@ template <> struct ImuChip<SENSOR_IMU_ICM42688>
 {
     using Type = ICM42688_Sensor;
     template <class B> static SpiRegisterDevice device(B& b) { return ICM42688_Sensor::spiDevice(b.spi(), Config::PIN_SPI_CS_IMU); }
+};
+template <> struct ImuChip<SENSOR_IMU_MPU6000_SPI>
+{
+    using Type = MPU6050_Sensor;
+    template <class B> static SpiRegisterDevice device(B& b) { return MPU6050_Sensor::spiDevice(b.spi(), Config::PIN_SPI_CS_IMU); }
 };
 template <> struct ImuChip<SENSOR_IMU_LSM6DSV>
 {

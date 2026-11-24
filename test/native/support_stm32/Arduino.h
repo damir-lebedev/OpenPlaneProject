@@ -225,7 +225,7 @@ inline const PinMap PinMap_TIM[] = {
     { PC6 | ALT1, 3, 1, 2 }, { PC7 | ALT1, 3, 2, 2 }, { PC8 | ALT1, 3, 3, 2 }, { PC9 | ALT1, 3, 4, 2 },
     { PB0 | ALT1, 3, 3, 2 }, { PB1 | ALT1, 3, 4, 2 },
     { PA5, 2, 1, 1 }, { PA5 | ALT1, 8, 1, 3 },
-    { PB6, 4, 1, 2 }, { PB7, 4, 2, 2 },
+    { PB6, 4, 1, 2 }, { PB7, 4, 2, 2 }, { PA10, 1, 3, 1 },
     { 0xFFFFFFFFu, 0, 0, 0 },
 };
 

@@ -58,6 +58,10 @@ public:
     // Шина I2C (а не SPI): драйверам, у которых настройки интерфейса разные.
     virtual bool isI2c() const { return false; }
 
+    // Частота SPI для следующих обменов (у I2C ничего не делает): MPU6000
+    // пишется только на 1 МГц, а данные читаются на 20 МГц.
+    virtual void setClockHz(uint32_t) {}
+
     // Где устройство, для консоли: "I2C PB11/PB10 0x6A", "SPI CS 28".
     virtual void describe(char* out, size_t size) const = 0;
 };
@@ -213,6 +217,9 @@ public:
     {
         snprintf(out, size, "SPI CS %u", static_cast<unsigned>(csPin));
     }
+
+    void setClockHz(uint32_t hz) override { clockHz = hz; }
+    uint32_t clock() const { return clockHz; }
 
     bool writeRegister(uint8_t reg, uint8_t value) override
     {

@@ -17,6 +17,12 @@
 // акселерометра (ACCEL_CONFIG2, есть только у 6500) и формула
 // температуры — драйвер определяет чип по WHO_AM_I.
 //
+// По SPI (spiDevice) — гироскопы полётников под Betaflight с той же картой
+// регистров: MPU6000 (WHO_AM_I 0x68), ICM-20689 (0x98), MPU6500. Там
+// интерфейс I2C выключается (USER_CTRL.I2C_IF_DIS), настройка пишется на
+// 1 МГц (MPU6000 быстрее регистры настройки не принимает), данные читаются
+// на 20 МГц (MPU6000) / 8 МГц (остальные). Нет ответа по SPI — 0x00/0xFF.
+//
 // Калибровка, поворот осей, знаки и фильтр ориентации — в
 // ImuSensorBase, здесь только регистры.
 // ============================================================
@@ -24,6 +30,16 @@
 class MPU6050_Sensor : public ImuSensorBase
 {
 public:
+
+    static constexpr uint32_t SPI_CONFIG_HZ = 1000000;     // настройка MPU6000 — не быстрее 1 МГц
+    static constexpr uint32_t SPI_READ_HZ_MPU6000 = 20000000;
+    static constexpr uint32_t SPI_READ_HZ = 8000000;       // ICM-20689, MPU6500: 8 МГц
+
+    // SPI, режим 0 (чип умеет 0 и 3): начинаем на частоте настройки.
+    static SpiRegisterDevice spiDevice(ISpiBus& bus, uint8_t chipSelectPin)
+    {
+        return SpiRegisterDevice(bus, chipSelectPin, SPI_CONFIG_HZ, 0);
+    }
 
     explicit MPU6050_Sensor(IRegisterDevice& registerDevice)
         : ImuSensorBase("MPU6050", "imu_mpu6050"),
@@ -34,9 +50,17 @@ public:
     bool begin() override
     {
         device.begin();
+        onSpi = !device.isI2c();
+        if (onSpi)
+        {
+            device.setClockHz(SPI_CONFIG_HZ);   // повторный begin() — снова медленно
+            // Пока чип не знает, что он на SPI, I2C-часть может перехватить
+            // линии: сначала выключаем её (датащит MPU6000 §7.5).
+            device.writeRegister(REG_USER_CTRL, USER_CTRL_I2C_IF_DIS);
+        }
 
         const int whoAmI = device.readRegister(REG_WHO_AM_I);
-        if (whoAmI < 0)
+        if (whoAmI < 0 || (onSpi && (whoAmI == 0x00 || whoAmI == 0xFF)))
         {
             Serial.println("MPU6050: датчик не отвечает, IMU недоступен");
             setAvailable(false);
@@ -44,18 +68,24 @@ public:
         }
 
         isMpu6500Family = (whoAmI != WHO_AM_I_MPU6050);
-        setName(chipName(whoAmI));
+        isIcm20689 = (whoAmI == WHO_AM_I_ICM20689);
+        setName(chipName(whoAmI, onSpi));
 
         Serial.print("MPU6050: WHO_AM_I=0x");
         Serial.print(whoAmI, HEX);
         Serial.print(" -> ");
-        Serial.println(chipName(whoAmI));
+        Serial.println(chipName(whoAmI, onSpi));
 
         if (!configure())
         {
             Serial.println("MPU6050: ошибка записи регистров, IMU недоступен");
             setAvailable(false);
             return false;
+        }
+
+        if (onSpi)
+        {
+            device.setClockHz(whoAmI == WHO_AM_I_MPU6050 ? SPI_READ_HZ_MPU6000 : SPI_READ_HZ);
         }
 
         setAvailable(true);
@@ -86,9 +116,10 @@ protected:
 
     float temperatureC(int16_t raw) const override
     {
+        if (isIcm20689) return raw / 326.8f + 25.0f;   // датащит ICM-20689
         return isMpu6500Family
             ? raw / 333.87f + 21.0f     // датащит MPU6500
-            : raw / 340.0f + 36.53f;    // датащит MPU6050
+            : raw / 340.0f + 36.53f;    // датащит MPU6050 / MPU6000
     }
 
 
@@ -100,13 +131,19 @@ private:
     static constexpr uint8_t REG_ACCEL_CONFIG  = 0x1C;
     static constexpr uint8_t REG_ACCEL_CONFIG2 = 0x1D;  // только MPU6500-семейство
     static constexpr uint8_t REG_ACCEL_XOUT_H  = 0x3B;
+    static constexpr uint8_t REG_SIGNAL_PATH_RESET = 0x68;
+    static constexpr uint8_t REG_USER_CTRL     = 0x6A;
     static constexpr uint8_t REG_PWR_MGMT_1    = 0x6B;
+    static constexpr uint8_t USER_CTRL_I2C_IF_DIS = 0x10;
     static constexpr uint8_t REG_WHO_AM_I      = 0x75;
 
-    static constexpr int WHO_AM_I_MPU6050 = 0x68;
+    static constexpr int WHO_AM_I_MPU6050 = 0x68;   // и MPU6000
+    static constexpr int WHO_AM_I_ICM20689 = 0x98;
 
     IRegisterDevice& device;
     bool isMpu6500Family = false;
+    bool isIcm20689 = false;
+    bool onSpi = false;
 
     bool configure()
     {
@@ -114,6 +151,14 @@ private:
         delay(100);
 
         bool ok = true;
+        if (onSpi)
+        {
+            // Сброс возвращает I2C-интерфейс — снова выключаем; по SPI
+            // датащит велит ещё сбросить тракты гироскопа/акселерометра/температуры.
+            ok &= device.writeRegister(REG_USER_CTRL, USER_CTRL_I2C_IF_DIS);
+            ok &= device.writeRegister(REG_SIGNAL_PATH_RESET, 0x07);
+            delay(100);
+        }
         ok &= device.writeRegister(REG_PWR_MGMT_1, 0x01);    // выход из sleep, такт от PLL гироскопа
         delay(10);
 
@@ -141,11 +186,12 @@ private:
         return ok;
     }
 
-    static const char* chipName(int whoAmI)
+    static const char* chipName(int whoAmI, bool spi)
     {
         switch (whoAmI)
         {
-            case 0x68: return "MPU6050";
+            case 0x68: return spi ? "MPU6000" : "MPU6050";   // у MPU6050 SPI нет
+            case 0x98: return "ICM20689";
             case 0x70: return "MPU6500";
             case 0x71: return "MPU9250";
             case 0x73: return "MPU9255";

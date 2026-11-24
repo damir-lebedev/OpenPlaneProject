@@ -10,6 +10,8 @@
 #include <Arduino.h>
 #include <unity.h>
 
+#include <vector>
+
 #include "sensors/imu/AttitudeEstimator.h"
 #include "sensors/imu/ICM42688_Sensor.h"
 #include "sensors/imu/ImuOrientation.h"
@@ -419,6 +421,79 @@ void test_icm42688_over_spi_is_configured_and_read()
     TEST_ASSERT_FLOAT_WITHIN(0.05f, 35.0f, icm.getImuData().temperature);
 }
 
+static void putBe(uint8_t* regs, uint8_t reg, int16_t v)
+{
+    regs[reg] = static_cast<uint8_t>(static_cast<uint16_t>(v) >> 8);
+    regs[reg + 1] = static_cast<uint8_t>(v & 0xFF);
+}
+
+// MPU6000 по SPI (HAKRC F405, P57b): I2C выключен, настройка на 1 МГц,
+// данные — на 20 МГц; карта регистров та же, что у MPU6050.
+void test_mpu6000_over_spi_is_configured_and_read()
+{
+    SpiRig rig(Config::PIN_SPI_CS_IMU, 0);
+    rig.chip.regs[0x75] = 0x68;
+    std::vector<uint32_t> writeClocks;
+    rig.chip.onRegisterWrite = [&](uint8_t, uint8_t) { writeClocks.push_back(SPI.settings().clock); };
+    for (int i = 0; i < 7; ++i) putBe(rig.chip.regs, static_cast<uint8_t>(0x3B + 2 * i), 0);
+    putBe(rig.chip.regs, 0x3F, static_cast<int16_t>(ACCEL_LSB));
+
+    SpiRegisterDevice device = MPU6050_Sensor::spiDevice(rig.bus, Config::PIN_SPI_CS_IMU);
+    MPU6050_Sensor mpu(device);
+    TEST_ASSERT_TRUE(mpu.begin());
+    TEST_ASSERT_EQUAL_STRING("MPU6000", mpu.getSensorType());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "WHO_AM_I=0x68 -> MPU6000"));
+    TEST_ASSERT_EQUAL(0x10, rig.chip.lastWrite(0x6A));   // I2C_IF_DIS
+    TEST_ASSERT_EQUAL(0x07, rig.chip.lastWrite(0x68));   // SIGNAL_PATH_RESET
+    TEST_ASSERT_EQUAL(0x18, rig.chip.lastWrite(0x1B));   // ±2000°/с
+    TEST_ASSERT_EQUAL(0x18, rig.chip.lastWrite(0x1C));   // ±16g
+    TEST_ASSERT_EQUAL(-1, rig.chip.lastWrite(0x1D));     // у MPU6000 нет ACCEL_CONFIG2
+    TEST_ASSERT_FALSE(writeClocks.empty());
+    for (uint32_t hz : writeClocks) TEST_ASSERT_EQUAL_UINT32(1000000, hz);
+
+    mpu.calibrate();
+    TEST_ASSERT_EQUAL_UINT32(20000000, SPI.settings().clock);   // чтение данных
+    putBe(rig.chip.regs, 0x43, static_cast<int16_t>(10 * GYRO_LSB));
+    putBe(rig.chip.regs, 0x41, 340);
+    mpu.update();
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 10.0f, mpu.getImuData().gyroY);   // поворот 90°, как у MPU6050
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, 37.53f, mpu.getImuData().temperature);
+
+    // повторный begin() (после сбоя шины) снова пишет на 1 МГц
+    writeClocks.clear();
+    TEST_ASSERT_TRUE(mpu.begin());
+    for (uint32_t hz : writeClocks) TEST_ASSERT_EQUAL_UINT32(1000000, hz);
+}
+
+void test_icm20689_over_spi_and_missing_spi_chip()
+{
+    SpiRig rig(Config::PIN_SPI_CS_IMU, 0);
+    rig.chip.regs[0x75] = 0x98;
+    putBe(rig.chip.regs, 0x3F, static_cast<int16_t>(ACCEL_LSB));
+    SpiRegisterDevice device = MPU6050_Sensor::spiDevice(rig.bus, Config::PIN_SPI_CS_IMU);
+    MPU6050_Sensor icm(device);
+    TEST_ASSERT_TRUE(icm.begin());
+    TEST_ASSERT_EQUAL_STRING("ICM20689", icm.getSensorType());
+    TEST_ASSERT_EQUAL(0x03, rig.chip.lastWrite(0x1D));   // свой ФНЧ акселерометра
+    icm.calibrate();
+    TEST_ASSERT_EQUAL_UINT32(8000000, SPI.settings().clock);
+    putBe(rig.chip.regs, 0x41, 327);   // 327/326.8 + 25 ≈ 26 °C
+    icm.update();
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 26.0f, icm.getImuData().temperature);
+
+    // на SPI нет ACK: пустая линия читается как 0x00 / 0xFF — чипа нет
+    for (uint8_t empty : { 0x00, 0xFF })
+    {
+        resetWorld();
+        SpiRig none(Config::PIN_SPI_CS_IMU, 0);
+        none.chip.regs[0x75] = empty;
+        SpiRegisterDevice d = MPU6050_Sensor::spiDevice(none.bus, Config::PIN_SPI_CS_IMU);
+        MPU6050_Sensor absent(d);
+        TEST_ASSERT_FALSE(absent.begin());
+        TEST_ASSERT_TRUE(contains(takeSerial(), "датчик не отвечает"));
+    }
+}
+
 // Гироскоп ещё не запустился — чип отдаёт 0x8000. Это не данные: в нуль
 // калибровки их брать нельзя (стол, GETFUN F405V3: нуль был −454 °/с).
 void test_icm42688_ignores_not_ready_samples()
@@ -608,6 +683,8 @@ int main()
     RUN_TEST(test_mounting_mismatch_after_board_moved);
     RUN_TEST(test_icm42688_over_spi_is_configured_and_read);
     RUN_TEST(test_icm42688_ignores_not_ready_samples);
+    RUN_TEST(test_mpu6000_over_spi_is_configured_and_read);
+    RUN_TEST(test_icm20689_over_spi_and_missing_spi_chip);
     RUN_TEST(test_icm42688_rejects_wrong_or_missing_chip);
     RUN_TEST(test_orientation_nvs_round_trip_and_validation);
     RUN_TEST(test_orientation_describe_and_degenerate_inputs);

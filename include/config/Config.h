@@ -15,9 +15,10 @@
 #endif
 #include OP_BOARD_FILE
 // Тип гироскопа по BF (OPB_GYRO_TYPES) есть, а драйвера под него нет — не собирать
-// прошивку, которая не взлетит (BMI270, MPU6000, ICM20689 — в плане P57).
-#if defined(OPB_GYRO_TYPES) && !defined(OPB_GYRO_ICM42688P)
-#error "F405: гироскопа платы (OPB_GYRO_TYPES) прошивка пока не знает — есть драйвер ICM42688P"
+// прошивку, которая не взлетит (BMI270 — в плане P57c).
+#if defined(OPB_GYRO_TYPES) && !defined(OPB_GYRO_ICM42688P) && !defined(OPB_GYRO_MPU6000) && \
+    !defined(OPB_GYRO_ICM20689) && !defined(OPB_GYRO_MPU6500)
+#error "F405: гироскопа платы (OPB_GYRO_TYPES) прошивка пока не знает — есть драйверы ICM42688P, MPU6000, ICM20689, MPU6500"
 #endif
 #endif
 

@@ -235,10 +235,35 @@ class BfBoardTest(unittest.TestCase):
         self.assertIn("#define OPB_BARO_DPS310 1", text)
         self.assertNotIn("драйвера", " ".join(bf_board.check(sb)))
         # дамп: SD по SPI, гироскоп без драйвера — в списке проблем
-        d = parsed("# status\nGYRO=MPU6000, ACC=MPU6000\nresource SDCARD_CS 1 A15\nset sdcard_mode = SPI\n"
+        d = parsed("# status\nGYRO=BMI270, ACC=BMI270\nresource SDCARD_CS 1 A15\nset sdcard_mode = SPI\n"
                    "set sdcard_spi_bus = 2\n")
         self.assertEqual((2, "PA15"), (d.sdcard_spi, d.sdcard_cs))
-        self.assertIn("гироскоп MPU6000", " ".join(bf_board.check(d)))
+        self.assertIn("гироскоп BMI270", " ".join(bf_board.check(d)))
+
+    def test_hakrc_mpu6000_no_baro_rx_on_inverted_uart(self):
+        # HAKRC F405: MPU6000/ICM20689, барометра нет, SERIALRX_UART не задан,
+        # инвертор — только у UART1 (площадка SBUS)
+        h = parsed("""
+#define BOARD_NAME HAKRCF405
+#define USE_GYRO_SPI_MPU6000
+#define USE_GYRO_SPI_ICM20689
+#define UART1_RX_PIN PB7
+#define UART2_RX_PIN PA3
+#define INVERTER_PIN_UART1 PB4
+""")
+        self.assertEqual(["MPU6000", "ICM20689"], h.gyros)
+        self.assertEqual(1, h.roles["RX"])
+        self.assertTrue(h.no_baro)
+        self.assertNotIn("драйвера", " ".join(bf_board.check(h)))
+        self.assertNotIn("UART приёмника", " ".join(bf_board.check(h)))
+        text = bf_board.generate(h)
+        self.assertIn("#define OPB_GYRO_MPU6000 1", text)
+        self.assertIn("#define OPB_GYRO_ICM20689 1", text)
+        self.assertIn("#define OPB_UART_RX 1", text)
+        self.assertIn("барометра нет", text)
+        # инвертор на двух UART — не угадываем
+        two = parsed("#define INVERTER_PIN_UART1 PB4\n#define INVERTER_PIN_UART3 PB5\n")
+        self.assertNotIn("RX", two.roles)
         # SD по SDIO (F7/H7) — не наш слот SPI
         sdio = parsed("resource SDCARD_CS 1 A15\nset sdcard_mode = SDIO\nset sdcard_spi_bus = 2\n")
         self.assertIsNone(sdio.sdcard_spi)

@@ -57,7 +57,7 @@ F405_TIMER_AF = {
 }
 
 # Гироскопы, для которых в прошивке есть драйвер (имена — как у BF: status, USE_GYRO_SPI_*).
-SUPPORTED_GYROS = ("ICM42688P",)
+SUPPORTED_GYROS = ("ICM42688P", "MPU6000", "ICM20689", "MPU6500")
 UARTS = 6
 SPIS = 3
 I2CS = 3
@@ -91,6 +91,7 @@ class Board:
         self.baro_i2c = None
         self.mag_i2c = None
         self.baro = None            # тип барометра из `status` (BARO=DPS310)
+        self.no_baro = False        # config.h без USE_BARO_*: барометра на плате нет
         self.guessed = []           # что выведено, а не прочитано (строки в заголовок)
         self.adc_vbat = None
         self.adc_curr = None
@@ -214,6 +215,7 @@ def parse_config_h(text, board):
     baros = [b for b in BAROS if "USE_BARO_" + b in defines]
     if len(baros) == 1:
         board.baro = baros[0]
+    board.no_baro = not any(k.startswith("USE_BARO") for k in defines)
     if "BARO_I2C_INSTANCE" in defines:
         board.baro_i2c = number_from(defines["BARO_I2C_INSTANCE"], "I2CDEV_")
     if "MAG_I2C_INSTANCE" in defines:
@@ -231,6 +233,11 @@ def parse_config_h(text, board):
                       ("VTX_TRAMP", "VTX_TRAMP_UART")):
         if key in defines and uart_number(defines[key]):
             board.roles[role] = uart_number(defines[key])
+    # Приёмник не назначен (BF оставляет это вкладке Ports), но инвертор SBUS
+    # стоит ровно на одном UART — площадка SBUS/RX платы на нём.
+    inverted = [n for n, pin in board.inverter.items() if pin]
+    if "RX" not in board.roles and len(inverted) == 1:
+        board.roles["RX"] = inverted[0]
 
 
 # ------------------------------------------------------------
@@ -509,8 +516,13 @@ def generate(board, baro=None, source_note=""):
         w("#define OPB_I2C{0}_SCL {1}".format(n, c_pin(board.i2c.get((n, "SCL")))))
         w("#define OPB_I2C{0}_SDA {1}".format(n, c_pin(board.i2c.get((n, "SDA")))))
     w("#define OPB_I2C_SENSORS {}".format(i2c_bus))
-    w("#define OPB_BARO_{} 1   // тип — {}".format(
-        baro, "как его нашёл Betaflight (status)" if board.baro == baro else "по описанию платы (у BF драйвера SPL06 нет)"))
+    if board.baro == baro:
+        why = "как его нашёл Betaflight (status)"
+    elif board.no_baro:
+        why = "на плате барометра нет (config.h BF): ищется внешний на площадках I2C"
+    else:
+        why = "по описанию платы (у BF драйвера SPL06 нет)"
+    w("#define OPB_BARO_{} 1   // тип — {}".format(baro, why))
     w("")
     w("// Батарея и ток: масштабы — как vbat_scale, vbat_divider, vbat_multiplier,")
     w("// ibata_scale, ibata_offset в BF.")
