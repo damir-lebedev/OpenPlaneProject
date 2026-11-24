@@ -272,6 +272,25 @@ DfuSe, стирание только секторов прошивки, свер
   вернулся в свой WiFi. (5) Обрыв: выключить WiFi телефона посреди — старая прошивка грузится, окно снова свободно.
   (6) Замерить скорость (ожидание ~50–150 КБ/с) и что полётный цикл не рвётся во время приёма (LoopStats). — Стенд: да
 
+### A00. Сейчас первым: SpeedyBee / HAKRC для тестера (остаток 2026-11-24)
+
+- [ ] **P57a · SpeedyBee F405 V4 — довести до зелёного теста.** Сделано (коммит «SpeedyBee F405 V4»):
+  `hal/SpiSdCard.h` (SD по SPI, тест на эмуляторе `helpers/SpiSdCardChip.h` — зелёный), ящик F405 на SD
+  (`COPTER_BLACKBOX_SD_SPI`, очередь в CCM, область 64 МБ, стирание кусками 1 КБ), `bf_board.py`: SD-слот,
+  тип гироскопа/барометра, AF таймеров из `TIMER_PIN_MAP` (таблица F405), файл платы
+  `SPEEDYBEEF405V4.h`, env `speedybee-f405v4-quad` (собирается, RAM 95.3 %).
+  **Осталось:** тест `native_stm32/test_app_stm32_speedybee_f405v4` красный — «настроено 2 выходов из 4»:
+  выход OneShot/PWM в `hal/stm32/Stm32MotorOutput.h:58` берёт первый таймер ножки (PB0/PB1 → TIM1 CH2N/CH3N),
+  а `OPB_MOTOR_AF` (2 = TIM3) учитывает только DShot. Сделать выбор таймера по AF и для PWM
+  (в фейке PB0|ALT1 = TIM3 уже есть), прогнать тест, затем полный `pio test -e native -e native-stm32`.
+  Потом: прошить у тестера через Studio (env в списке плат Studio), `tools/blackbox.py sd-prepare` на карту.
+- [ ] **P57b · HAKRC F405** (MPU6000 / ICM20689 на SPI, флеш W25Q128): драйвер MPU6000/ICM20689 по SPI
+  (регистры как у MPU6050), выбор по `OPB_GYRO_*` в SensorSelection (сейчас BF-набор = только ICM42688,
+  Config.h даёт #error), файл платы из `configs/HARC/HAKRCF405/config.h`, env, тест.
+- [ ] **P57c · SpeedyBee F405 V3** (BMI270 — нужен файл конфигурации Bosch, BSD-3; SD на SPI2 CS PA15).
+- Прошивки BF тестера — `hexBETA/` (не в git). config.h трёх плат: `gh api repos/betaflight/config/...`
+  (`configs/SPBE/SPEEDYBEEF405V4`, `SPBE/SPEEDYBEEF405V3`, `HARC/HAKRCF405`).
+
 ### A1. Железо 7" и первые полёты (с 22.11, только с пользователем)
 
 Железо (полётник — **Matek H743-SLIM V4**, придёт ~2026-12-02; GETFUN F405V3
