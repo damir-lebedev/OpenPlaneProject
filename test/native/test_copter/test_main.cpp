@@ -3306,6 +3306,9 @@ void test_cli_set_get_diff_save_and_paste()
     TEST_ASSERT_TRUE_MESSAGE(has(out, "# diff\r\n\r\n# version\r\n# OpenPlane copter / test"), out.c_str());
     TEST_ASSERT_TRUE(has(out, "\r\nprofile 0\r\n\r\n# profile 0\r\nset p_roll = 50\r\n"));
     TEST_ASSERT_TRUE(has(out, "rateprofile 0"));
+    // P65: пустой раздел — «без изменений», а не голый заголовок
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# rateprofile 0\r\n# без изменений (всё по умолчанию"), out.c_str());
+    TEST_ASSERT_FALSE(has(out, "# profile 0\r\n# без изменений"));
     TEST_ASSERT_FALSE(has(out, "i_roll"));
     TEST_ASSERT_FALSE(has(out, "profile 1"));
     cli.execute("dump all");

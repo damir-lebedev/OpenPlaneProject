@@ -793,19 +793,19 @@ namespace copter
             print("# %s%s\r\n\r\n# version\r\n# %s\r\n", onlyChanged ? "diff" : "dump", all ? " all" : "", version);
             dumpTables(onlyChanged);
             print("\r\n# master\r\n");
-            dumpScope(ParamScope::MASTER, 0, onlyChanged);
+            emptyNote(dumpScope(ParamScope::MASTER, 0, onlyChanged), onlyChanged);
             const uint8_t pidActive = params.pidProfile(), rateActive = params.rateProfile();
             for (uint8_t n = 0; n < CopterParams::PROFILES; ++n)
             {
                 if (!all && n != pidActive) continue;
                 print("\r\nprofile %u\r\n\r\n# profile %u\r\n", n, n);
-                dumpScope(ParamScope::PID_PROFILE, n, onlyChanged);
+                emptyNote(dumpScope(ParamScope::PID_PROFILE, n, onlyChanged), onlyChanged);
             }
             for (uint8_t n = 0; n < CopterParams::PROFILES; ++n)
             {
                 if (!all && n != rateActive) continue;
                 print("\r\nrateprofile %u\r\n\r\n# rateprofile %u\r\n", n, n);
-                dumpScope(ParamScope::RATE_PROFILE, n, onlyChanged);
+                emptyNote(dumpScope(ParamScope::RATE_PROFILE, n, onlyChanged), onlyChanged);
             }
             if (all)
             {
@@ -814,8 +814,15 @@ namespace copter
             print("\r\n");
         }
 
-        void dumpScope(ParamScope scope, uint8_t slot, bool onlyChanged)
+        // P65: пустой раздел diff — не «параметров нет», а «всё по умолчанию».
+        void emptyNote(uint16_t shown, bool onlyChanged)
         {
+            if (onlyChanged && shown == 0) print("# без изменений (всё по умолчанию; dump — все значения)\r\n");
+        }
+
+        uint16_t dumpScope(ParamScope scope, uint8_t slot, bool onlyChanged)
+        {
+            uint16_t shown = 0;
             for (uint16_t i = 0; i < PARAM_COUNT; ++i)
             {
                 const ParamId id = static_cast<ParamId>(i);
@@ -825,7 +832,9 @@ namespace copter
                 char value[48];
                 params.format(id, slot, value, sizeof(value));
                 print("set %s = %s\r\n", paramInfo(id).name, value);
+                ++shown;
             }
+            return shown;
         }
 
         bool changed(ParamId id, uint8_t slot) const
