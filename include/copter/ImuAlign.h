@@ -62,6 +62,15 @@ namespace copter
         return true;
     }
 
+    // Нет калибровки установки (ARM_BLOCK_NO_ACC_CAL): плата требует её
+    // (IMU распаян на полётнике), три позы 'o' не сняты и не выполнено
+    // «как у BF» — поворот чипа известен из файла платы (OPB_GYRO_ALIGN)
+    // и снят нуль акселерометра на ровном (acc_calibration с флагом 1).
+    inline bool mountCalibrationMissing(bool required, bool posesDone, bool boardAlignKnown, bool accZeroDone)
+    {
+        return required && !posesDone && !(boardAlignKnown && accZeroDone);
+    }
+
     // Нули -> текст для acc_calibration (буфер ≥ 17).
     inline void formatAccCalibration(const int16_t zero[3], bool done, char* out, size_t size)
     {

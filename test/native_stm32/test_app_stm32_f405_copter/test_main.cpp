@@ -100,6 +100,34 @@ void test_receiver_on_uart2_and_battery()
     TEST_ASSERT_TRUE(contains(status, "связь есть (iBUS)"));
 }
 
+// P55: поворот чипа из файла платы (OPB_GYRO_ALIGN = CW90_DEG) + нуль
+// акселерометра на ровном ('a') снимают NO_ACC_CAL без трёх поз — как у BF.
+void test_board_align_and_acc_zero_replace_mount_calibration()
+{
+    TEST_ASSERT_FALSE(imuSensor.isMountCalibrated());
+    TEST_ASSERT_TRUE(imuSensor.isMountFromBoard());
+    ImuOrientation o;
+    TEST_ASSERT_TRUE(imuSensor.getOrientation(o));
+    float chipX[3] = { 1, 0, 0 }, body[3];
+    o.apply(chipX, body);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, -1.0f, body[1]);   // CW90: ось X чипа — вправо
+
+    RcChannels rc;
+    run(rc, 0.5);
+    TEST_ASSERT_TRUE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_NO_ACC_CAL);
+    takeSerial();
+    Serial.pushRx("a");
+    run(rc, 1.5);
+    TEST_ASSERT_TRUE_MESSAGE(contains(takeSerial(), "Нуль акселерометра: acc_calibration = "), "нуль не снят");
+    TEST_ASSERT_FALSE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_NO_ACC_CAL);
+
+    // флаг 0 — снова нужна калибровка
+    copterParams.setText(copter::PARAM_ACC_CALIBRATION, 0, "0,0,0,0");
+    applySettings();
+    run(rc, 0.1);
+    TEST_ASSERT_TRUE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_NO_ACC_CAL);
+}
+
 void test_mount_calibration_then_arm_spins_m1_to_m4()
 {
     const uint64_t startUs = fake::nowUs();
@@ -141,6 +169,7 @@ int main()
     UNITY_BEGIN();
     RUN_TEST(test_board_header_reaches_the_hardware);
     RUN_TEST(test_receiver_on_uart2_and_battery);
+    RUN_TEST(test_board_align_and_acc_zero_replace_mount_calibration);
     RUN_TEST(test_mount_calibration_then_arm_spins_m1_to_m4);
     return UNITY_END();
 }

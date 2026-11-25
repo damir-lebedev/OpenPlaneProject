@@ -10179,6 +10179,17 @@ void test_mahony_integral_removes_gyro_bias()
 }
 
 // MSP 38/43 (поворот платы для конфигуратора BF) и 205 (калибровка акселерометра).
+// P55: NO_ACC_CAL снимают три позы или (поворот чипа из файла платы + нуль на ровном).
+void test_mount_calibration_missing_rule()
+{
+    TEST_ASSERT_FALSE(mountCalibrationMissing(false, false, false, false));   // плата не требует
+    TEST_ASSERT_TRUE(mountCalibrationMissing(true, false, false, false));
+    TEST_ASSERT_FALSE(mountCalibrationMissing(true, true, false, false));      // три позы 'o'
+    TEST_ASSERT_TRUE(mountCalibrationMissing(true, false, false, true));       // нуль без файла платы — мало
+    TEST_ASSERT_TRUE(mountCalibrationMissing(true, false, true, false));       // файл платы без нуля — мало
+    TEST_ASSERT_FALSE(mountCalibrationMissing(true, false, true, true));       // как у BF
+}
+
 void test_msp_board_alignment_and_acc_calibration()
 {
     MspBench m;
@@ -10382,6 +10393,7 @@ int main()
     RUN_TEST(test_controller_applies_board_alignment);
     RUN_TEST(test_mahony_integral_removes_gyro_bias);
     RUN_TEST(test_msp_board_alignment_and_acc_calibration);
+    RUN_TEST(test_mount_calibration_missing_rule);
     RUN_TEST(test_rpm_filter_per_motor);
     RUN_TEST(test_dyn_notch_and_rpm_filter_params);
     RUN_TEST(test_msp_filter_config_dyn_notch_and_rpm);

@@ -187,7 +187,7 @@ namespace copter
             case ARM_BLOCK_RPM_FILTER: return "нет оборотов от регуляторов для фильтра";
             case ARM_BLOCK_REBOOT: return "нужна перезагрузка (сменилась рама или выходы)";
             case ARM_BLOCK_DSHOT_BITBANG: return "DShot не запустился";
-            case ARM_BLOCK_NO_ACC_CAL: return "не откалибрована установка платы ('o' в консоли)";
+            case ARM_BLOCK_NO_ACC_CAL: return "не откалибрована установка платы ('o' в консоли; плата из BF — нуль 'a' на ровном)";
             case ARM_BLOCK_MOTOR_PROTOCOL: return "протокол моторов не выбран или не работает";
             case ARM_BLOCK_SWITCH: return "ARM был включён заранее — выключить и включить снова";
             case ARM_BLOCK_MOVING: return "коптер качают — поставить на землю";

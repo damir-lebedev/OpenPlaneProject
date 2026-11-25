@@ -215,6 +215,7 @@ WRITE_ONCE: после записи в этом режиме мастер пер
 |---|---|
 | `ImuOrientation()` | Единичная (эквивалент `fromYawSteps(0)`) |
 | `static ImuOrientation fromYawSteps(uint16_t cwDeg)` | Поворот вокруг вертикали шагами 90°, плата чипом вверх |
+| `static bool fromBfAlign(const char* name, ImuOrientation& out)` | Поворот чипа строкой BF (`CW0_DEG`…`CW270_DEG`, `_FLIP` — чип на обороте, `DEFAULT`); источник — `OPB_GYRO_ALIGN` файла платы F405, если трёх поз нет (`ImuSensorBase::isMountFromBoard()`). `false` — строка незнакома |
 | `static const char* fromPoses(level[3], noseUp[3], rightWingDown[3], ImuOrientation& out)` | Калибровка по трём позам (показания акселерометра «верх» в осях чипа). `nullptr` — успех, иначе причина отказа |
 | `void apply(const float chip[3], float body[3]) const` | Применить поворот |
 | `void applyInverse(const float body[3], float chip[3]) const` | Обратный поворот (транспонированная `R`) |

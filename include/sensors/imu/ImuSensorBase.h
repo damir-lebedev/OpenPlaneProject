@@ -279,6 +279,10 @@ public:
 
     bool isMountCalibrated() const override { return orientationCalibrated; }
 
+    // Установка без трёх поз взята из файла платы BF (OPB_GYRO_ALIGN):
+    // тогда калибровку установки заменяет нуль акселерометра на ровном.
+    bool isMountFromBoard() const { return orientationFromBoard; }
+
     const char* getPreflightProblem() const override
     {
         switch (preflightProblem)
@@ -480,6 +484,7 @@ private:
 
     ImuOrientation orientation;
     bool orientationCalibrated = false;
+    bool orientationFromBoard = false;   // поворот чипа из файла платы (OPB_GYRO_ALIGN)
 
     // Стоянка из наземной калибровки: "верх" на колёсах в осях чипа.
     static constexpr const char* PARK_KEY = "park";
@@ -508,9 +513,13 @@ private:
     void loadOrientation()
     {
         orientationCalibrated = orientation.load(nvsNamespace);
+        orientationFromBoard = false;
         if (!orientationCalibrated)
         {
             orientation = ImuOrientation::fromYawSteps(Config::IMU_ROTATION_CW_DEG);
+#ifdef OPB_GYRO_ALIGN
+            orientationFromBoard = ImuOrientation::fromBfAlign(OPB_GYRO_ALIGN, orientation);
+#endif
         }
 
         Serial.print(name);
@@ -520,6 +529,14 @@ private:
             orientation.describe(Serial);
             Serial.println();
         }
+#ifdef OPB_GYRO_ALIGN
+        else if (orientationFromBoard)
+        {
+            Serial.print(": установка из файла платы (" OPB_GYRO_ALIGN "): ");
+            orientation.describe(Serial);
+            Serial.println();
+        }
+#endif
         else
         {
             Serial.print(": установка из Config (поворот ");

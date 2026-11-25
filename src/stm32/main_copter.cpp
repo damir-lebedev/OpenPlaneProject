@@ -370,8 +370,15 @@ static void fillFenceOsd(copter::OsdData& d, float headingDeg)
 
 static void configureGyroCalibration();
 
+static bool accZeroDone = false;   // acc_calibration с флагом 1 (обновляет applySettings)
+
 static void applySettings()
 {
+    {
+        int16_t zero[3];
+        accZeroDone = false;
+        copter::parseAccCalibration(copterParams.text(copter::PARAM_ACC_CALIBRATION, 0), zero, accZeroDone);
+    }
     copterParams.rc().setChannelCount(Config::RC_CHANNELS);
     rxInput.configure(copterParams.rc(), static_cast<uint16_t>(copterParams.value(copter::PARAM_RX_MIN_USEC)),
                       static_cast<uint16_t>(copterParams.value(copter::PARAM_RX_MAX_USEC)));
@@ -1155,7 +1162,9 @@ static void flightTask(void*)
         // цикл не успевает
         uint32_t blockers = 0;
         if (!configOk) blockers |= copter::ARM_BLOCK_CONFIG;
-        if (Config::IMU_MOUNT_CALIBRATION_REQUIRED && !imuSensor.isMountCalibrated()) blockers |= copter::ARM_BLOCK_NO_ACC_CAL;
+        if (copter::mountCalibrationMissing(Config::IMU_MOUNT_CALIBRATION_REQUIRED, imuSensor.isMountCalibrated(),
+                                            imuSensor.isMountFromBoard(), accZeroDone))
+            blockers |= copter::ARM_BLOCK_NO_ACC_CAL;
         if (copterConsole.cliActive()) blockers |= copter::ARM_BLOCK_CLI;
         if (osdMenu.isOpen()) blockers |= copter::ARM_BLOCK_CMS;
         // приложение или конфигуратор BF (MSP) не сохранили настройки, конфигуратор запретил ARM

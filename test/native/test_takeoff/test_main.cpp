@@ -179,6 +179,51 @@ namespace
 // Горизонт и стоянка: ImuOrientation
 // ------------------------------------------------------------
 
+// P55: строки поворота BF (OPB_GYRO_ALIGN) -> матрица. Таблица BF:
+// CW90: X=y, Y=-x; CW180: X=-x, Y=-y; CW270: X=-y, Y=x; _FLIP: Z=-z и
+// CW0_FLIP X=-x,Y=y; CW90_FLIP X=y,Y=x; CW180_FLIP X=x,Y=-y; CW270_FLIP X=-y,Y=-x.
+void test_bf_align_strings_to_orientation()
+{
+    struct Case { const char* name; float x[3]; };   // (body X, Y, Z) для chip = (1, 2, 3)
+    const Case cases[] = {
+        { "CW0_DEG",         {  1,  2,  3 } },
+        { "CW90_DEG",        {  2, -1,  3 } },
+        { "CW180_DEG",       { -1, -2,  3 } },
+        { "CW270_DEG",       { -2,  1,  3 } },
+        { "CW0_DEG_FLIP",    { -1,  2, -3 } },
+        { "CW90_DEG_FLIP",   {  2,  1, -3 } },
+        { "CW180_DEG_FLIP",  {  1, -2, -3 } },
+        { "CW270_DEG_FLIP",  { -2, -1, -3 } },
+        { "DEFAULT",         {  1,  2,  3 } },
+    };
+    const float chip[3] = { 1, 2, 3 };
+    for (const Case& c : cases)
+    {
+        ImuOrientation o = ImuOrientation::fromYawSteps(180);
+        TEST_ASSERT_TRUE_MESSAGE(ImuOrientation::fromBfAlign(c.name, o), c.name);
+        float body[3];
+        o.apply(chip, body);
+        for (int i = 0; i < 3; ++i) TEST_ASSERT_FLOAT_WITHIN_MESSAGE(1e-5f, c.x[i], body[i], c.name);
+    }
+    // без поворота по рысканью — то же, что IMU_ROTATION_CW_DEG
+    ImuOrientation a, b = ImuOrientation::fromYawSteps(270);
+    TEST_ASSERT_TRUE(ImuOrientation::fromBfAlign("CW270_DEG", a));
+    float pa[3], pb[3];
+    a.apply(chip, pa);
+    b.apply(chip, pb);
+    for (int i = 0; i < 3; ++i) TEST_ASSERT_FLOAT_WITHIN(1e-6f, pb[i], pa[i]);
+
+    const char* bad[] = { "CW45_DEG", "CW90_DEG_", "CW90_DEGX", "cw90_deg", "CUSTOM" };
+    for (const char* name : bad)
+    {
+        ImuOrientation o = ImuOrientation::fromYawSteps(90);
+        TEST_ASSERT_FALSE_MESSAGE(ImuOrientation::fromBfAlign(name, o), name);
+        float body[3];
+        o.apply(chip, body);
+        TEST_ASSERT_FLOAT_WITHIN(1e-6f, 2.0f, body[0]);   // out не тронут
+    }
+}
+
 void test_level_pose_refines_horizon_and_keeps_nose()
 {
     const ImuOrientation base = ImuOrientation::fromYawSteps(0);
@@ -1075,6 +1120,7 @@ void test_takeoff_names()
 int main(int, char**)
 {
     UNITY_BEGIN();
+    RUN_TEST(test_bf_align_strings_to_orientation);
     RUN_TEST(test_level_pose_refines_horizon_and_keeps_nose);
     RUN_TEST(test_estimator_without_accelerometer_ignores_runway_acceleration);
     RUN_TEST(test_imu_stores_ground_calibration_and_uses_it_after_power_on);

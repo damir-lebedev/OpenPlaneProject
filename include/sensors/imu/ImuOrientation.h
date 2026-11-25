@@ -14,6 +14,9 @@
 // Два источника:
 //   • Config::IMU_ROTATION_CW_DEG — поворот вокруг вертикали шагами
 //     по 90°, плата обязательно чипом вверх (fromYawSteps);
+//   • строка поворота из файла платы BF (OPB_GYRO_ALIGN: CW90_DEG,
+//     CW180_DEG_FLIP…) — fromBfAlign; плата из BF известна, поэтому
+//     вместо трёх поз хватает нуля акселерометра на ровном (как у BF);
 //   • калибровка по трём позам (fromPoses) — плата стоит КАК УГОДНО:
 //     под любым углом, вверх ногами, на боку. Акселерометр в покое
 //     показывает направление "вверх" в осях чипа:
@@ -59,6 +62,43 @@ public:
         o.r[1][0] = chipXtoBodyY; o.r[1][1] = chipYtoBodyY; o.r[1][2] = 0;
         o.r[2][0] = 0;            o.r[2][1] = 0;            o.r[2][2] = 1;
         return o;
+    }
+
+    // Поворот чипа строкой BF (gyro_1_sensor_align, OPB_GYRO_ALIGN):
+    // CW0_DEG / CW90_DEG / CW180_DEG / CW270_DEG — чип лицом вверх,
+    // повёрнут по часовой (сверху) — то же, что fromYawSteps; суффикс
+    // _FLIP — чип на обороте платы: сначала переворот вокруг оси Y чипа
+    // (X и Z меняют знак), потом поворот. DEFAULT и пусто — CW0_DEG.
+    // false — строка не из этого списка (out не меняется).
+    static bool fromBfAlign(const char* name, ImuOrientation& out)
+    {
+        if (!name || !*name || strcmp(name, "DEFAULT") == 0)
+        {
+            out = fromYawSteps(0);
+            return true;
+        }
+        static const char* const kSteps[] = { "CW0_DEG", "CW90_DEG", "CW180_DEG", "CW270_DEG" };
+        for (uint16_t i = 0; i < 4; ++i)
+        {
+            const size_t n = strlen(kSteps[i]);
+            if (strncmp(name, kSteps[i], n) != 0) continue;
+            const char* rest = name + n;
+            const bool flip = strcmp(rest, "_FLIP") == 0;
+            if (!flip && *rest != '\0') continue;
+            ImuOrientation o = fromYawSteps(static_cast<uint16_t>(i * 90));
+            if (flip)
+            {
+                // столбцы — оси чипа в осях рамы: X и Z чипа смотрят наоборот
+                for (int row = 0; row < 3; ++row)
+                {
+                    o.r[row][0] = -o.r[row][0];
+                    o.r[row][2] = -o.r[row][2];
+                }
+            }
+            out = o;
+            return true;
+        }
+        return false;
     }
 
     // level, noseUp, rightWingDown — "верх" (среднее показание
