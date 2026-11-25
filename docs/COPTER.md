@@ -1336,7 +1336,9 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 
 | Что | Сообщения | Как у нас |
 |---|---|---|
-| Вход и плата | `API_VERSION`, `FC_VARIANT`, `FC_VERSION`, `BOARD_INFO`, `BUILD_INFO`, `UID`, `NAME`/`SET_NAME` | имя — `craft_name` |
+| Вход и плата | `API_VERSION`, `FC_VARIANT`, `FC_VERSION`, `BOARD_INFO`, `BUILD_INFO`, `UID`, `NAME`/`SET_NAME`, `MSP2_GET_TEXT`/`SET_TEXT` | имя — `craft_name`; имени пилота, имён профилей и ключа сборки нет — пустые строки (облако BF не спрашивается) |
+| Датчики | `SENSOR_ALIGNMENT`, `ACC_TRIM`, `BOARD_ALIGNMENT_CONFIG`, `ACC_CALIBRATION` | поворот чипа — из файла платы (`OPB_GYRO_ALIGN`), подстройки горизонта углом нет — 0, 0 |
+| Чёрный ящик | `BLACKBOX_CONFIG`/`SET_*`, `DATAFLASH_SUMMARY`, `SDCARD_SUMMARY` | `blackbox_device`, `blackbox_sample_rate`; флеш и карта — «не поддерживаются»: скачать ящик по MSP и включить флешку USB конфигуратор у нас не может — журналы через Studio или `tools/blackbox.py` |
 | Живые данные | `STATUS`, `STATUS_EX`, `RAW_IMU`, `ATTITUDE`, `ALTITUDE`, `ANALOG`, `BATTERY_STATE`, `RC`, `MOTOR`, `BOXNAMES`, `BOXIDS` | флаги запрета ARM — номерами BF (`status`), режимы — наша таблица |
 | PID, расходы | `PID`, `RC_TUNING`, `PID_ADVANCED` и `SET_*` | в реестр, единицы BF; тип расходов — `ACTUAL` (наша кривая), LEVEL и MAG — дефолты BF, не меняются |
 | Фильтры | `FILTER_CONFIG`, `SET_FILTER_CONFIG` | ФНЧ гироскопа и D (типы, срезы, динамика по газу), статические режекторы, `yaw_lowpass_hz`, динамический режектор (`dyn_notch_*`) и RPM-фильтр (`rpm_filter_harmonics`, `rpm_filter_min_hz`) — как в BF 4.5 |
@@ -1355,6 +1357,26 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 `SET_MOTOR` (1000 — стоп, 2000 — полный, у нас не выше 30 % тяги) держится,
 пока конфигуратор на связи, — замолчал, и через 1 с моторы встают. Как
 конфигуратор всё это покажет — пункт 160 плана (стенд).
+
+**Подключение (сверено с исходниками BF App 2025.12 и Configurator 10.10).**
+Конфигуратор спрашивает по цепочке: `API_VERSION` → `FC_VARIANT` →
+`FC_VERSION` → `BUILD_INFO` → `BOARD_INFO` → `STATUS` → `UID` →
+`MSP2_GET_TEXT` (ключ сборки, имя модели, имя пилота) →
+`SET_ARMING_DISABLED` → `SET_RTC`, потом сводки ящика и раз в 250 мс строку
+состояния (`ANALOG`, `BATTERY_STATE`, `BOXNAMES`, `STATUS_EX`). На «!» он идёт
+дальше, на молчание — переспрашивает один раз и встаёт, поэтому ответ есть
+на всё. Тест `test_msp_bf_configurator_connects` прогоняет ту же цепочку.
+Если «конфигуратор открывает, но ничего не читает» — сначала имя платы в
+логе конфигуратора (`OPLN / … / <сборка>`: не та сборка — нет датчиков, так
+было у тестера с V4, прошитой сборкой AOCODARC), затем на живой плате:
+
+```
+python tools/msp_probe.py COM5            # закрыть Studio и конфигуратор
+```
+
+Печатает каждый запрос конфигуратора: ответ, «!» (команды нет), молчит или
+короче, чем он читает, и итог «Конфигуратор BF подключится: да / нет». Только
+чтение — настройки и ARM не трогает; на BF той же платы — для сравнения.
 
 ### Настройка с пульта (MSP через CRSF)
 

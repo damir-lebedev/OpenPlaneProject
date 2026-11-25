@@ -33,6 +33,17 @@
 // MSP2_SEND_DSHOT_COMMAND (мастер направления моторов) — в очередь команд
 // DShot, как dshotprog (CopterCli::queueDshot).
 //
+// Подключение конфигуратора (BF App 2025.12, Configurator 10.10 — сверено по
+// их исходникам, P64): API_VERSION → FC_VARIANT → FC_VERSION → BUILD_INFO →
+// BOARD_INFO → STATUS → UID → MSP2_GET_TEXT (ключ сборки, имя модели, имя
+// пилота) → SET_ARMING_DISABLED → SET_RTC; затем FEATURE/BATTERY/BLACKBOX_CONFIG,
+// DATAFLASH/SDCARD_SUMMARY и раз в 250 мс ANALOG, BATTERY_STATE, BOXNAMES,
+// STATUS_EX. На каждый запрос — ответ, «!» тоже (конфигуратор на «!» идёт
+// дальше; на молчание переспрашивает один раз и встаёт). Ящик конфигуратор
+// скачать не может (MSP_DATAFLASH_READ, флешка USB) — в сводках флеш и карта
+// «не поддерживаются», журналы — через Studio или tools/blackbox.py.
+// Проверка на живой плате — tools/msp_probe.py.
+//
 // Те же команды приходят с пульта — MSP через CRSF (copter/CrsfMsp.h):
 // Lua-скрипты Betaflight на EdgeTX (PID, расходы, VTX) и VTX Admin
 // ExpressLRS (MSP_SET_VTX_CONFIG + MSP_EEPROM_WRITE).
@@ -57,6 +68,8 @@ namespace copter
         {
             API_VERSION = 1, FC_VARIANT = 2, FC_VERSION = 3, BOARD_INFO = 4, BUILD_INFO = 5,
             NAME = 10, SET_NAME = 11,
+            DATAFLASH_SUMMARY = 70, SDCARD_SUMMARY = 79, BLACKBOX_CONFIG = 80, SET_BLACKBOX_CONFIG = 81,
+            SENSOR_ALIGNMENT = 126, ACC_TRIM = 240,
             BATTERY_CONFIG = 32, SET_BATTERY_CONFIG = 33, MODE_RANGES = 34, SET_MODE_RANGE = 35,
             FEATURE_CONFIG = 36, SET_FEATURE_CONFIG = 37, BOARD_ALIGNMENT_CONFIG = 38,
             SET_BOARD_ALIGNMENT_CONFIG = 43, ACC_CALIBRATION = 205, MIXER_CONFIG = 42, RX_CONFIG = 44, SET_RX_CONFIG = 45,
@@ -72,6 +85,7 @@ namespace copter
             STATUS_EX = 150, UID = 160, SET_RAW_RC = 200, SET_PID = 202, SET_RC_TUNING = 204, SELECT_SETTING = 210,
             SET_MOTOR = 214, SET_MOTOR_CONFIG = 222, EEPROM_WRITE = 250,
             SEND_DSHOT_COMMAND = 0x3003,   // MSP2: мастер направления моторов конфигуратора
+            GET_TEXT = 0x3006, SET_TEXT = 0x3007,   // MSP2: имя модели и пилота, ключ сборки
             // MSP2 OpenPlane (свой Lua-скрипт EdgeTX, tools/edgetx): настройка по имени, модель пульта.
             OP_PARAM_GET = 0x4F00, OP_PARAM_SET = 0x4F01, OP_TX_MODEL = 0x4F02,
         };
@@ -89,12 +103,29 @@ namespace copter
         bool osd = false;                      // AT7456E на плате (board type 2)
         bool gps = false;
         uint8_t rcChannels = 10;
+        const char* gyroAlign = nullptr;       // OPB_GYRO_ALIGN из файла платы («CW90_DEG»), nullptr — DEFAULT
     };
+
+    // Поворот чипа строкой BF → номер в MSP_SENSOR_ALIGNMENT (enum sensor_align_e
+    // BF): DEFAULT 0, CW0…CW270 — 1…4, с _FLIP — 5…8, остальное — CUSTOM 9.
+    inline uint8_t bfAlignCode(const char* name)
+    {
+        if (!name || !*name || strcmp(name, "DEFAULT") == 0) return 0;
+        static const char* const kNames[] = { "CW0_DEG", "CW90_DEG", "CW180_DEG", "CW270_DEG",
+                                              "CW0_DEG_FLIP", "CW90_DEG_FLIP", "CW180_DEG_FLIP", "CW270_DEG_FLIP" };
+        for (uint8_t i = 0; i < 8; ++i)
+        {
+            if (strcmp(name, kNames[i]) == 0) return static_cast<uint8_t>(i + 1);
+        }
+        return 9;
+    }
 
     class CopterMsp
     {
     public:
         static constexpr uint32_t ARMING_HOLD_MS = 3000;   // конфигуратор молчит столько — флаг MSP снят
+        // MSP2_GET_TEXT / SET_TEXT: типы текста (как у BF)
+        static constexpr uint8_t TEXT_PILOT_NAME = 1, TEXT_CRAFT_NAME = 2, TEXT_BUILD_KEY = 5;
 
         CopterMsp(CopterController& controller, CopterParams& paramsRef, CopterCli& cliRef)
             : ctl(controller), params(paramsRef), cli(cliRef)
@@ -248,6 +279,52 @@ namespace copter
                 case BOARD_INFO: boardInfo(w); return true;
                 case BUILD_INFO: buildInfo(w); return true;
                 case NAME: w.text(params.text(PARAM_CRAFT_NAME, 0)); return true;
+                case GET_TEXT:
+                {
+                    // тип, затем длина и текст; имени пилота, имён профилей и ключа
+                    // сборки у нас нет — пусто (ключ не из 32 знаков — облако BF не спрашивается)
+                    const uint8_t type = r.remaining() ? static_cast<uint8_t>(r.u8()) : 0;
+                    if (type < TEXT_PILOT_NAME || type > TEXT_BUILD_KEY) return false;
+                    w.u8(type);
+                    w.lenText(type == TEXT_CRAFT_NAME ? params.text(PARAM_CRAFT_NAME, 0) : "");
+                    return true;
+                }
+                case ACC_TRIM:   // подстройки горизонта углом у нас нет — нуль акселерометра (ACC_CALIBRATION)
+                    w.u16(0);
+                    w.u16(0);
+                    return true;
+                case SENSOR_ALIGNMENT:
+                {
+                    // как в BF 4.5 (API 1.46): гироскоп, акселерометр, компас, найденные гироскопы,
+                    // какой в работе, поворот первого и второго
+                    const uint8_t a = bfAlignCode(board.gyroAlign);
+                    w.u8(a);
+                    w.u8(a);
+                    w.u8(0);
+                    w.u8(1);   // найден первый
+                    w.u8(0);   // в работе первый
+                    w.u8(a);
+                    w.u8(0);
+                    return true;
+                }
+                case DATAFLASH_SUMMARY:   // флаги 0 — «нет»: читать флеш по MSP конфигуратор у нас не может
+                    for (int i = 0; i < 13; ++i) w.u8(0);
+                    return true;
+                case SDCARD_SUMMARY:      // так же: флешки USB (MSC) нет
+                    for (int i = 0; i < 11; ++i) w.u8(0);
+                    return true;
+                case BLACKBOX_CONFIG:
+                {
+                    const uint8_t rate = static_cast<uint8_t>(params.value(PARAM_BLACKBOX_SAMPLE_RATE));
+                    w.u8(1);   // ящик есть
+                    w.u8(static_cast<uint8_t>(params.value(PARAM_BLACKBOX_DEVICE)));
+                    w.u8(1);
+                    w.u8(1u << rate);
+                    w.u16(1u << rate);
+                    w.u8(rate);
+                    w.u32(0);   // выбор полей — пока весь набор (140)
+                    return true;
+                }
                 case UID:
                     for (uint32_t u : board.uid) w.u32(u);
                     return true;
@@ -391,6 +468,37 @@ namespace copter
                     char name[17] = {};
                     for (size_t i = 0; i < 16 && r.remaining(); ++i) name[i] = static_cast<char>(r.u8());
                     params.setText(PARAM_CRAFT_NAME, 0, name);
+                    break;
+                }
+                case SET_TEXT:
+                {
+                    // только имя модели; имени пилота у нас нет — «!»
+                    if (r.remaining() < 2 || r.u8() != TEXT_CRAFT_NAME) return false;
+                    const uint8_t n = static_cast<uint8_t>(r.u8());
+                    char name[17] = {};
+                    for (size_t i = 0; i < n && r.remaining(); ++i)
+                    {
+                        const char c = static_cast<char>(r.u8());
+                        if (i < 16) name[i] = c;
+                    }
+                    params.setText(PARAM_CRAFT_NAME, 0, name);
+                    break;
+                }
+                case SET_BLACKBOX_CONFIG:
+                {
+                    // устройство, числитель и знаменатель (устарели), P-кадры, частота (1.44)
+                    if (r.remaining() < 1) return false;
+                    const uint8_t device = static_cast<uint8_t>(r.u8());
+                    if (device > 3) return false;
+                    set(PARAM_BLACKBOX_DEVICE, device);
+                    if (r.remaining() >= 5)
+                    {
+                        r.u8();
+                        r.u8();
+                        r.u8();
+                        r.u8();
+                        set(PARAM_BLACKBOX_SAMPLE_RATE, r.u8());
+                    }
                     break;
                 }
                 case SET_PID: setPid(r); break;

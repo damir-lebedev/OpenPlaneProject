@@ -1502,6 +1502,9 @@ static void setupMsp()
     b.gps = gps.isAvailable();
     b.osd = Config::BOARD_OSD_CS >= 0;
     b.rcChannels = Config::RC_CHANNELS;
+#if defined(OPB_GYRO_ALIGN)
+    b.gyroAlign = OPB_GYRO_ALIGN;
+#endif
     copterConsole.mspHandler().setBoard(b);
 }
 

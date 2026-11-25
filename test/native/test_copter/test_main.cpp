@@ -4231,7 +4231,7 @@ void test_msp_identity_and_status()
 
     // незнакомая команда — '!'
     std::vector<uint8_t> none;
-    TEST_ASSERT_FALSE(m.ask(240, {}, none));
+    TEST_ASSERT_FALSE(m.ask(241, {}, none));
     TEST_ASSERT_EQUAL_UINT32(1, m.msp.errors);
 }
 
@@ -10208,6 +10208,130 @@ void test_msp_board_alignment_and_acc_calibration()
     m.params.resetAll();
 }
 
+// P64: конфигуратор BF (App 2025.12, Configurator 10.10) подключается — та же
+// цепочка запросов, что у них в serial_backend.js, и вкладка «Настройка»: на
+// каждый — ответ, нужные для подключения — без «!» и не короче, чем он читает.
+namespace
+{
+    // Запрос v1 или v2 (команда > 254), ответ разобран: '>' / '!' в dir.
+    bool bfExchange(MspBench& m, uint16_t cmd, const std::vector<uint8_t>& data, std::vector<uint8_t>& payload, char& dir)
+    {
+        const std::vector<uint8_t> req = cmd <= 254 ? mspRequest(static_cast<uint8_t>(cmd), data) : mspV2Request(cmd, data);
+        bool done = false;
+        for (uint8_t b : req) done = m.parser.feed(b);
+        if (!done) return false;
+        uint8_t out[600];
+        const size_t n = m.msp.handle(m.parser, out, sizeof(out), m.nowMs);
+        if (n < 6 || out[0] != '$') return false;
+        dir = static_cast<char>(out[2]);
+        if (out[1] == 'M')
+        {
+            const bool jumbo = out[3] == 255;
+            const size_t len = jumbo ? static_cast<size_t>(out[5] | out[6] << 8) : out[3];
+            const size_t at = jumbo ? 7 : 5;
+            if (out[4] != cmd || at + len + 1 != n) return false;
+            payload.assign(out + at, out + at + len);
+            return true;
+        }
+        const uint16_t code = static_cast<uint16_t>(out[4] | out[5] << 8);
+        const size_t len = static_cast<size_t>(out[6] | out[7] << 8);
+        if (code != cmd || 8 + len + 1 != n) return false;
+        uint8_t crc = 0;
+        for (size_t i = 3; i < 8 + len; ++i) crc = msp::crc8DvbS2(crc, out[i]);
+        if (crc != out[8 + len]) return false;
+        payload.assign(out + 8, out + 8 + len);
+        return true;
+    }
+}
+
+void test_msp_bf_configurator_connects()
+{
+    MspBench m;
+    MspBoard b;
+    b.boardName = "speedybee-f405v4-quad";
+    b.target = "OPENPLANE_F405";
+    b.mcuType = 1;
+    b.sensors = 0x23;
+    b.gyroAlign = "CW90_DEG";
+    m.msp.setBoard(b);
+    m.params.setText(PARAM_CRAFT_NAME, 0, "SEVEN");
+
+    struct Step
+    {
+        uint16_t cmd;
+        std::vector<uint8_t> data;
+        size_t minLen;   // столько читает конфигуратор (API 1.46)
+        bool mustBeOk;
+    };
+    const Step steps[] = {
+        // подключение
+        { 1, {}, 3, true }, { 2, {}, 4, true }, { 3, {}, 3, true }, { 5, {}, 26, true }, { 4, {}, 0, true },
+        { 101, {}, 11, true }, { 160, {}, 12, true },
+        { 0x3006, { 5 }, 2, true }, { 0x3006, { 2 }, 2, true }, { 0x3006, { 1 }, 2, true },
+        { 99, { 1, 0 }, 0, true }, { 246, { 0x10, 0x20, 0x30, 0x40, 0, 0 }, 0, true },
+        // после подключения
+        { 36, {}, 4, true }, { 32, {}, 13, true }, { 80, {}, 11, true }, { 70, {}, 13, true }, { 79, {}, 11, true },
+        // раз в 250 мс
+        { 110, {}, 9, true }, { 130, {}, 11, true }, { 116, {}, 1, true }, { 150, {}, 24, true },
+        // вкладка «Настройка»
+        { 240, {}, 4, true }, { 0x300C, {}, 0, false }, { 42, {}, 2, true }, { 126, {}, 7, true }, { 108, {}, 6, true },
+    };
+    char msg[64];
+    for (const Step& st : steps)
+    {
+        std::vector<uint8_t> p;
+        char dir = 0;
+        snprintf(msg, sizeof(msg), "команда %u", static_cast<unsigned>(st.cmd));
+        TEST_ASSERT_TRUE_MESSAGE(bfExchange(m, st.cmd, st.data, p, dir), msg);
+        if (!st.mustBeOk) continue;
+        TEST_ASSERT_EQUAL_CHAR_MESSAGE('>', dir, msg);
+        TEST_ASSERT_TRUE_MESSAGE(p.size() >= st.minLen, msg);
+        if (st.cmd == 4)
+        {
+            // BOARD_INFO — поля по порядку, как их читает конфигуратор
+            size_t at = 4 + 2 + 1 + 1;
+            for (int t = 0; t < 3; ++t) at += 1 + p.at(at);
+            at += 32 + 1 + 1 + 2 + 4;
+            TEST_ASSERT_TRUE_MESSAGE(p.size() >= at, "BOARD_INFO короче, чем читает конфигуратор");
+        }
+        if (st.cmd == 0x3006)
+        {
+            TEST_ASSERT_EQUAL_UINT8(st.data[0], p[0]);
+            TEST_ASSERT_EQUAL_UINT32(p.size(), 2u + p[1]);
+            if (st.data[0] == 2) TEST_ASSERT_EQUAL_STRING_LEN("SEVEN", reinterpret_cast<const char*>(&p[2]), 5);
+            if (st.data[0] == 5) TEST_ASSERT_EQUAL_UINT8(0, p[1]);   // ключа сборки нет — облако BF не спрашивается
+        }
+        if (st.cmd == 126) TEST_ASSERT_EQUAL_UINT8(2, p[0]);   // CW90_DEG
+        if (st.cmd == 70 || st.cmd == 79) TEST_ASSERT_EQUAL_UINT8(0, p[0]);   // флеш и карту по MSP не читаем
+    }
+    TEST_ASSERT_FALSE(m.msp.hasUnsaved());   // подключение ничего не поменяло
+
+    // имя модели и ящик — запись из вкладок конфигуратора
+    std::vector<uint8_t> p;
+    char dir = 0;
+    TEST_ASSERT_TRUE(bfExchange(m, 0x3007, { 2, 3, 'Q', '7', 'X' }, p, dir));
+    TEST_ASSERT_EQUAL_CHAR('>', dir);
+    TEST_ASSERT_EQUAL_STRING("Q7X", m.params.text(PARAM_CRAFT_NAME, 0));
+    TEST_ASSERT_TRUE(bfExchange(m, 0x3007, { 1, 2, 'D', 'R' }, p, dir));
+    TEST_ASSERT_EQUAL_CHAR('!', dir);   // имени пилота у нас нет
+    TEST_ASSERT_TRUE(bfExchange(m, 81, { 2, 1, 1, 2, 0, 1 }, p, dir));
+    TEST_ASSERT_EQUAL_CHAR('>', dir);
+    TEST_ASSERT_EQUAL_FLOAT(2.0f, m.params.value(PARAM_BLACKBOX_DEVICE));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, m.params.value(PARAM_BLACKBOX_SAMPLE_RATE));
+    TEST_ASSERT_TRUE(bfExchange(m, 80, {}, p, dir));
+    TEST_ASSERT_EQUAL_UINT8(2, p[1]);
+    TEST_ASSERT_EQUAL_UINT8(2, p[3]);   // 1/2
+    TEST_ASSERT_EQUAL_UINT8(1, p[6]);
+    TEST_ASSERT_TRUE(bfExchange(m, 81, { 7 }, p, dir));
+    TEST_ASSERT_EQUAL_CHAR('!', dir);
+    TEST_ASSERT_TRUE(m.msp.hasUnsaved());
+
+    TEST_ASSERT_EQUAL_UINT8(0, bfAlignCode(nullptr));
+    TEST_ASSERT_EQUAL_UINT8(8, bfAlignCode("CW270_DEG_FLIP"));
+    TEST_ASSERT_EQUAL_UINT8(9, bfAlignCode("CUSTOM"));
+    m.params.resetAll();
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -10393,6 +10517,7 @@ int main()
     RUN_TEST(test_controller_applies_board_alignment);
     RUN_TEST(test_mahony_integral_removes_gyro_bias);
     RUN_TEST(test_msp_board_alignment_and_acc_calibration);
+    RUN_TEST(test_msp_bf_configurator_connects);
     RUN_TEST(test_mount_calibration_missing_rule);
     RUN_TEST(test_rpm_filter_per_motor);
     RUN_TEST(test_dyn_notch_and_rpm_filter_params);
