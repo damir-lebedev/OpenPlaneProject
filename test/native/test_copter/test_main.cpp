@@ -3396,6 +3396,13 @@ void test_cli_set_get_diff_save_and_paste()
     cli.feed('t');
     cli.feed('\r');
     TEST_ASSERT_TRUE(has(port.take(), "tune_source = MODEL"));   // «set» после забоя
+    // Studio раз в секунду шлёт "\x02live\n" — посреди набранной пилотом строки: молча мимо
+    for (const char c : std::string("se\x02live\nt\r")) cli.feed(c);
+    {
+        const std::string out = port.take();
+        TEST_ASSERT_FALSE(has(out, "live"));
+        TEST_ASSERT_TRUE(has(out, "tune_source = MODEL"));
+    }
     cli.execute("exit");
     TEST_ASSERT_TRUE(b.armAfterBoot());
     TEST_ASSERT_FALSE(cli.enter());

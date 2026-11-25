@@ -134,6 +134,7 @@ namespace copter
             dirty = false;
             lineLength = 0;
             overflow = false;
+            hostLine = false;
             print("\r\nCLI коптера, как в Betaflight: help — команды, exit — выход. ARM запрещён, пока CLI открыт.\r\n# ");
             return true;
         }
@@ -142,6 +143,18 @@ namespace copter
         void feed(char c)
         {
             if (!open) return;
+            // Строка приложения (STX, "live", '\n' — Studio спрашивает живые кадры раз в секунду):
+            // не команда пилота — без эха и без «нет команды live»; набранное пилотом не трогаем.
+            if (c == 0x02)
+            {
+                hostLine = true;
+                return;
+            }
+            if (hostLine)
+            {
+                if (c == '\r' || c == '\n') hostLine = false;
+                return;
+            }
             if (c == '\r' || c == '\n')
             {
                 if (c == '\n' && lastWasCr)
@@ -1049,6 +1062,7 @@ namespace copter
         char skipped[320] = {};
         bool overflow = false;
         bool lastWasCr = false;
+        bool hostLine = false;   // внутри строки приложения после STX
         char line[LINE_MAX] = {};
         size_t lineLength = 0;
     };
