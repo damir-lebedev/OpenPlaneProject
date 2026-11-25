@@ -27,6 +27,7 @@
 //     • MPU6050 / MPU6500 (GY-521) — I2C 0x68; чип по WHO_AM_I
 //     • ICM42688 ("601N1")        — SPI, CS = PIN_SPI_CS_IMU
 //     • MPU6000 / ICM-20689 / MPU6500 — SPI (полётники под BF, SENSOR_IMU_MPU6000_SPI)
+//     • BMI270                    — SPI (полётники под BF, SENSOR_IMU_BMI270_SPI)
 //     • LSM6DSV / 16X / 32X       — I2C 0x6A или 0x6B (сам находит), или SPI
 //     • ICM-45686                 — I2C 0x68 или 0x69 (сам находит), или SPI
 //   Барометр:
@@ -69,6 +70,7 @@
 #define SENSOR_IMU_ICM45686      5   // I2C
 #define SENSOR_IMU_ICM45686_SPI  6
 #define SENSOR_IMU_MPU6000_SPI   7   // MPU6000 / ICM-20689 / MPU6500 на SPI (полётники под BF)
+#define SENSOR_IMU_BMI270_SPI    8   // BMI270 на SPI (SpeedyBee F405 V3 и др.)
 
 #define SENSOR_BARO_NONE        0
 #define SENSOR_BARO_BME280      1
@@ -145,6 +147,8 @@
     // гироскопа — OPB_GYRO_* (как в BF); без них — ICM-42688-P (старые заголовки).
     #if defined(OPB_GYRO_ICM42688P) || !defined(OPB_GYRO_TYPES)
         #define KIT_IMU  SENSOR_IMU_ICM42688
+    #elif defined(OPB_GYRO_BMI270)
+        #define KIT_IMU  SENSOR_IMU_BMI270_SPI
     #else
         #define KIT_IMU  SENSOR_IMU_MPU6000_SPI
     #endif
@@ -232,6 +236,7 @@
 #include "sensors/imu/ICM45686_Sensor.h"
 #include "sensors/imu/LSM6DSV_Sensor.h"
 #include "sensors/imu/MPU6050_Sensor.h"
+#include "sensors/imu/BMI270_Sensor.h"
 #include "sensors/mag/QMC5883L_Sensor.h"
 #include "sensors/mag/QMC5883P_Sensor.h"
 #include "sensors/mag/QMC6309_Sensor.h"
@@ -254,6 +259,11 @@ template <> struct ImuChip<SENSOR_IMU_ICM42688>
 {
     using Type = ICM42688_Sensor;
     template <class B> static SpiRegisterDevice device(B& b) { return ICM42688_Sensor::spiDevice(b.spi(), Config::PIN_SPI_CS_IMU); }
+};
+template <> struct ImuChip<SENSOR_IMU_BMI270_SPI>
+{
+    using Type = BMI270_Sensor;
+    template <class B> static SpiRegisterDevice device(B& b) { return BMI270_Sensor::spiDevice(b.spi(), Config::PIN_SPI_CS_IMU); }
 };
 template <> struct ImuChip<SENSOR_IMU_MPU6000_SPI>
 {

@@ -57,7 +57,7 @@ F405_TIMER_AF = {
 }
 
 # Гироскопы, для которых в прошивке есть драйвер (имена — как у BF: status, USE_GYRO_SPI_*).
-SUPPORTED_GYROS = ("ICM42688P", "MPU6000", "ICM20689", "MPU6500")
+SUPPORTED_GYROS = ("ICM42688P", "MPU6000", "ICM20689", "MPU6500", "BMI270")
 UARTS = 6
 SPIS = 3
 I2CS = 3

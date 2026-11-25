@@ -720,6 +720,72 @@ void test_spi_sd_card_driver()
     TEST_ASSERT_EQUAL_UINT8(SpiSdCard::INIT_NOT_READY, slow.initError());
 }
 
+// SpeedyBee F405 V3 (P57c): SD и OSD на одной SPI2. Карта долго занята после
+// блока — на время сна шина отпущена: CS карты поднят, транзакция закрыта,
+// другой на этой SPI (OSD) делает свои обмены; запись при этом цела.
+void test_spi_sd_card_releases_shared_bus_while_busy()
+{
+    class SharedBus : public ISpiBus
+    {
+    public:
+        SharedBus(SPIClass& b, uint8_t sdCs, uint8_t otherCs) : bus(b), sd(sdCs), other(otherCs) {}
+        void begin() override { bus.begin(); }
+        void beginTransaction(uint32_t hz, uint8_t) override { bus.beginTransaction(SPISettings(hz, MSBFIRST, SPI_MODE0)); }
+        uint8_t transfer(uint8_t d) override { return bus.transfer(d); }
+        void endTransaction() override
+        {
+            bus.endTransaction();
+            if (digitalRead(sd) == LOW)
+            {
+                ++heldByCard;   // карта осталась выбранной — чужой обмен её бы испортил
+                return;
+            }
+            // пауза на шине — обмен OSD: запись регистра
+            bus.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+            digitalWrite(other, LOW);
+            bus.transfer(0x01);
+            bus.transfer(static_cast<uint8_t>(++foreign));
+            digitalWrite(other, HIGH);
+            bus.endTransaction();
+        }
+        uint32_t foreign = 0, heldByCard = 0;
+
+    private:
+        SPIClass& bus;
+        uint8_t sd, other;
+    };
+
+    SPIClass spi;
+    SharedBus bus(spi, 9, 13);
+    chips::SpiSdCardChip chip(32768);
+    chip.attach(spi, 9);
+    fake::SpiRegisterMapDevice osd;
+    spi.attach(13, &osd);
+    pinMode(13, OUTPUT);
+    digitalWrite(13, HIGH);
+    SpiSdCard card(bus, 9);
+    TEST_ASSERT_TRUE(card.begin());
+
+    std::vector<uint8_t> blocks(512 * 3);
+    for (size_t i = 0; i < blocks.size(); ++i) blocks[i] = static_cast<uint8_t>(i * 7 + 3);
+    chip.busyBytes = 512 + 100;   // ~100 мс занятости после каждого блока
+    const uint32_t before = bus.foreign;
+    TEST_ASSERT_TRUE(card.write(300, blocks.data(), 3));
+    TEST_ASSERT_TRUE(card.write(400, blocks.data(), 1));
+    TEST_ASSERT_EQUAL_UINT32(0, card.timeoutCount());
+    TEST_ASSERT_EQUAL_UINT32(0, bus.heldByCard);
+    char why[64];
+    snprintf(why, sizeof(why), "чужих обменов %u", static_cast<unsigned>(bus.foreign - before));
+    TEST_ASSERT_TRUE_MESSAGE(bus.foreign - before > 300, why);   // 4 блока × ~100 пауз
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(bus.foreign), osd.regs[0x01]);
+    std::vector<uint8_t> back(512 * 3);
+    chip.busyBytes = 4;
+    TEST_ASSERT_TRUE(card.read(300, back.data(), 3));
+    TEST_ASSERT_TRUE(blocks == back);
+    TEST_ASSERT_TRUE(card.read(400, back.data(), 1));
+    TEST_ASSERT_TRUE(std::equal(back.begin(), back.begin() + 512, blocks.begin()));
+}
+
 // Предзапись длиннее очереди (F405: 40 КБ на ~1.2 с): в покое старые записи
 // уходят молча, место под такт остаётся — «потеряно записей» не растёт.
 void test_ring_preroll_trim_keeps_headroom_without_drops()
@@ -754,5 +820,6 @@ int main()
     RUN_TEST(test_chirp_sweeps_in_the_log_identify_the_copter);
     RUN_TEST(test_spi_nor_flash_driver);
     RUN_TEST(test_spi_sd_card_driver);
+    RUN_TEST(test_spi_sd_card_releases_shared_bus_while_busy);
     return UNITY_END();
 }

@@ -58,6 +58,8 @@ namespace fake
         std::vector<std::pair<uint8_t, uint8_t>> writes;
         std::function<void(uint8_t reg, uint8_t value)> onRegisterWrite;
         std::function<void(uint8_t reg)> beforeRead;   // перед выдачей каждого байта
+        // Регистр-порт (FIFO, INIT_DATA у BMI270): адрес после байта не растёт.
+        std::function<bool(uint8_t reg)> holdsAddress;
 
         void select() override
         {
@@ -82,7 +84,7 @@ namespace fake
                         regs[address] = mosi;
                         writes.emplace_back(address, mosi);
                         if (onRegisterWrite) onRegisterWrite(address, mosi);
-                        address++;
+                        if (!holdsAddress || !holdsAddress(address)) address++;
                         return 0xFF;
                     }
                     if (dummyLeft > 0)

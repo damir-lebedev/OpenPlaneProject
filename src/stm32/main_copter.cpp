@@ -78,6 +78,7 @@
 #define COPTER_BLACKBOX_SD 1
 #define COPTER_BLACKBOX_SD_SPI 1
 #define SD_ERASE_CHUNK_BYTES 1024   // ОЗУ F405: кусок стирания 1 КБ вместо 16
+#include "hal/LockedSpiBus.h"
 #include "hal/SdFileRegion.h"
 #include "hal/SpiSdCard.h"
 #elif defined(BOARD_STM32H743)
@@ -162,13 +163,28 @@ copter::RxInput rxInput;
 LoopStats loopStats;
 TaskStats taskStats;
 CopterConsole copterConsole(Serial, copterController, copterParams, imuSensor, rcReceiver);
+// OSD (AT7456E/MAX7456 на своей шине SPI) — рисуется фоновой задачей.
+SPIClass osdSpi;
+Stm32SpiBus osdBus(osdSpi, static_cast<pin_size_t>(Config::BOARD_OSD_SCK < 0 ? 0 : Config::BOARD_OSD_SCK),
+                   static_cast<pin_size_t>(Config::BOARD_OSD_MISO < 0 ? 0 : Config::BOARD_OSD_MISO),
+                   static_cast<pin_size_t>(Config::BOARD_OSD_MOSI < 0 ? 0 : Config::BOARD_OSD_MOSI));
+#if defined(COPTER_BLACKBOX_FLASH) || defined(COPTER_BLACKBOX_SD_SPI)
+// флеш или SD-карта ящика бывают на одной SPI с OSD (HAKRC F405, SpeedyBee F405 V3): тогда каждая транзакция — под мьютексом
+LockedSpiBus osdLockedBus(osdBus);
+ISpiBus& osdAccess = osdLockedBus;
+#else
+ISpiBus& osdAccess = osdBus;
+#endif
+Max7456 osdChip(osdAccess, Config::BOARD_OSD_CS);
 #if defined(COPTER_BLACKBOX_SD_SPI)
-// слот microSD на своей шине SPI (на шине гироскопа или OSD — запрещено в Config.h)
+// слот microSD: своя шина SPI или общая с OSD (SpeedyBee F405 V3 — SPI2 с MAX7456;
+// пока карта пишет блок, шину она отпускает — SpiSdCard::waitIdle); на шине
+// гироскопа — запрещено в Config.h.
 SPIClass sdSpi;
 Stm32SpiBus sdBus(sdSpi, static_cast<pin_size_t>(Config::BOARD_SDCARD_SCK < 0 ? 0 : Config::BOARD_SDCARD_SCK),
                   static_cast<pin_size_t>(Config::BOARD_SDCARD_MISO < 0 ? 0 : Config::BOARD_SDCARD_MISO),
                   static_cast<pin_size_t>(Config::BOARD_SDCARD_MOSI < 0 ? 0 : Config::BOARD_SDCARD_MOSI));
-SpiSdCard sdCard(sdBus, Config::BOARD_SDCARD_CS);
+SpiSdCard sdCard(Config::BOARD_SDCARD_SHARES_OSD ? osdAccess : static_cast<ISpiBus&>(sdBus), Config::BOARD_SDCARD_CS);
 // 64 МБ (~30 минут при 1/2): сверка секторов при включении берёт из кучи бит на
 // сектор 4 КБ — на 256 МБ это 8 КБ, у F405 столько свободного ОЗУ нет.
 static constexpr uint32_t SD_REGION_MAX_BYTES = 64UL * 1024 * 1024;
@@ -209,19 +225,6 @@ static bool crsfTelemetryOn = false;
 static copter::CopterMode switchMode = copter::CopterMode::ACRO;   // режим на тумблерах (без ARM — для пульта)
 static volatile bool sticksUp = false;   // газ или тангаж вверх — убрать статистику OSD
 
-// OSD (AT7456E/MAX7456 на своей шине SPI) — рисуется фоновой задачей.
-SPIClass osdSpi;
-Stm32SpiBus osdBus(osdSpi, static_cast<pin_size_t>(Config::BOARD_OSD_SCK < 0 ? 0 : Config::BOARD_OSD_SCK),
-                   static_cast<pin_size_t>(Config::BOARD_OSD_MISO < 0 ? 0 : Config::BOARD_OSD_MISO),
-                   static_cast<pin_size_t>(Config::BOARD_OSD_MOSI < 0 ? 0 : Config::BOARD_OSD_MOSI));
-#if defined(COPTER_BLACKBOX_FLASH)
-// флеш ящика бывает на одной SPI с OSD: тогда каждая транзакция — под мьютексом
-LockedSpiBus osdLockedBus(osdBus);
-ISpiBus& osdAccess = osdLockedBus;
-#else
-ISpiBus& osdAccess = osdBus;
-#endif
-Max7456 osdChip(osdAccess, Config::BOARD_OSD_CS);
 
 #if defined(COPTER_BLACKBOX_FLASH)
 // SPI-флеш ящика: своя шина или общая с OSD; на шине гироскопа — не берём
@@ -1341,7 +1344,8 @@ static void setupBlackBox()
 {
     Serial.print("SD-карта: ");
 #if defined(COPTER_BLACKBOX_SD_SPI)
-    sdBus.begin();
+    if (Config::BOARD_SDCARD_SHARES_OSD) osdAccess.begin();
+    else sdBus.begin();
 #endif
     if (!sdCard.begin())
     {
@@ -1531,6 +1535,21 @@ void setup()
     copterConsole.setGps(&gps, &gpsHome);
     copterConsole.setCompass(compass, &copterCompass);
     setupMsp();
+    // CS всех чипов на SPI OSD — вверх до первого обмена: карта или флеш с
+    // неподнятым CS (вход после сброса) приняли бы байты OSD (как spiPreinit у BF).
+#if defined(COPTER_BLACKBOX_SD_SPI)
+    if (Config::BOARD_SDCARD_SHARES_OSD && Config::BOARD_SDCARD_CS >= 0)
+    {
+        pinMode(static_cast<uint32_t>(Config::BOARD_SDCARD_CS), OUTPUT);
+        digitalWrite(static_cast<uint32_t>(Config::BOARD_SDCARD_CS), HIGH);
+    }
+#elif defined(COPTER_BLACKBOX_FLASH)
+    if (Config::BOARD_FLASH_SHARES_OSD && Config::BOARD_FLASH_CS >= 0)
+    {
+        pinMode(static_cast<uint32_t>(Config::BOARD_FLASH_CS), OUTPUT);
+        digitalWrite(static_cast<uint32_t>(Config::BOARD_FLASH_CS), HIGH);
+    }
+#endif
     if (Config::BOARD_OSD_CS >= 0)
     {
         osdAccess.begin();

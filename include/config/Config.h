@@ -15,10 +15,10 @@
 #endif
 #include OP_BOARD_FILE
 // Тип гироскопа по BF (OPB_GYRO_TYPES) есть, а драйвера под него нет — не собирать
-// прошивку, которая не взлетит (BMI270 — в плане P57c).
+// прошивку, которая не взлетит.
 #if defined(OPB_GYRO_TYPES) && !defined(OPB_GYRO_ICM42688P) && !defined(OPB_GYRO_MPU6000) && \
-    !defined(OPB_GYRO_ICM20689) && !defined(OPB_GYRO_MPU6500)
-#error "F405: гироскопа платы (OPB_GYRO_TYPES) прошивка пока не знает — есть драйверы ICM42688P, MPU6000, ICM20689, MPU6500"
+    !defined(OPB_GYRO_ICM20689) && !defined(OPB_GYRO_MPU6500) && !defined(OPB_GYRO_BMI270)
+#error "F405: гироскопа платы (OPB_GYRO_TYPES) прошивка пока не знает — есть драйверы ICM42688P, MPU6000, ICM20689, MPU6500, BMI270"
 #endif
 #endif
 
@@ -520,8 +520,10 @@ namespace Config
     constexpr int16_t BOARD_SDCARD_MISO = BOARD_SPI_MISO[OPB_SDCARD_SPI];       // @fixed
     constexpr int16_t BOARD_SDCARD_MOSI = BOARD_SPI_MOSI[OPB_SDCARD_SPI];       // @fixed
     constexpr int16_t BOARD_SDCARD_CS = OPB_SDCARD_SPI ? OPB_SDCARD_CS : -1;    // @fixed
-    static_assert(OPB_SDCARD_SPI == 0 || (OPB_SDCARD_SPI != OPB_GYRO_SPI && OPB_SDCARD_SPI != OPB_OSD_SPI),
-                  "SD-карта на шине гироскопа или OSD — так ещё не умеем (блок держал бы шину миллисекундами)");
+    // На шине OSD — можно (SpeedyBee F405 V3): транзакции под мьютексом, OSD подождёт блок.
+    constexpr bool BOARD_SDCARD_SHARES_OSD = OPB_SDCARD_SPI != 0 && OPB_SDCARD_SPI == OPB_OSD_SPI;   // @fixed
+    static_assert(OPB_SDCARD_SPI == 0 || OPB_SDCARD_SPI != OPB_GYRO_SPI,
+                  "SD-карта на шине гироскопа — нельзя (блок держал бы шину посреди чтения гироскопа)");
     constexpr bool BOARD_BEEPER_ACTIVE_HIGH = OPB_BEEPER_INVERTED != 0;  // @fixed
     constexpr int16_t BOARD_GYRO2_SCK = -1;   // второго гироскопа нет @fixed
     constexpr int16_t BOARD_GYRO2_MISO = -1;  // @fixed

@@ -13,9 +13,11 @@
 #include <vector>
 
 #include "sensors/imu/AttitudeEstimator.h"
+#include "sensors/imu/BMI270_Sensor.h"
 #include "sensors/imu/ICM42688_Sensor.h"
 #include "sensors/imu/ImuOrientation.h"
 #include "sensors/imu/MPU6050_Sensor.h"
+#include "helpers/ChipEmulators.h"
 #include "helpers/TestSupport.h"
 
 void setUp() { resetWorld(); }
@@ -465,6 +467,72 @@ void test_mpu6000_over_spi_is_configured_and_read()
     for (uint32_t hz : writeClocks) TEST_ASSERT_EQUAL_UINT32(1000000, hz);
 }
 
+// BMI270 по SPI (SpeedyBee F405 V3, P57c): мягкий сброс, файл конфигурации
+// Bosch целиком (8 КБ кусками по INIT_ADDR), «init ok», ±2000°/с / ±16g,
+// данные LE, температура; битый файл и пустая линия — IMU недоступен.
+void test_bmi270_over_spi_uploads_config_and_reads()
+{
+    Esp32SpiBus bus(12, 13, 11);
+    chips::Bmi270 chip;
+    chip.attach(SPI, Config::PIN_SPI_CS_IMU);
+    chip.install();
+    bus.begin();
+    World world;
+    chip.update(world);
+
+    SpiRegisterDevice device = BMI270_Sensor::spiDevice(bus, Config::PIN_SPI_CS_IMU);
+    BMI270_Sensor bmi(device);
+    TEST_ASSERT_TRUE(bmi.begin());
+    const std::string log = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "CHIP_ID=0x24 -> BMI270"), log.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "файл конфигурации загружен"), log.c_str());
+    TEST_ASSERT_EQUAL_STRING("BMI270", bmi.getSensorType());
+    TEST_ASSERT_EQUAL_UINT32(1, chip.resets);
+    TEST_ASSERT_EQUAL_UINT32(bmi270::CONFIG_SIZE, chip.configBytes);
+    TEST_ASSERT_TRUE(chip.initialized);
+    TEST_ASSERT_TRUE(chip.sensorsOn());
+    TEST_ASSERT_EQUAL(0x00, chip.spi.lastWrite(0x43));   // ±2000°/с
+    TEST_ASSERT_EQUAL(0x03, chip.spi.lastWrite(0x41));   // ±16g
+    TEST_ASSERT_EQUAL(Config::IMU_WIDE_BANDWIDTH ? 0xEC : 0xCC, chip.spi.lastWrite(0x42));
+    TEST_ASSERT_EQUAL(0x02, chip.spi.lastWrite(0x7C));   // без энергосбережения
+    TEST_ASSERT_EQUAL_UINT32(8000000, SPI.settings().clock);
+
+    chip.update(world);
+    bmi.calibrate();
+    world.temperatureC = 31.0f;
+    chip.update(world);
+    bmi.update();
+    TEST_ASSERT_FLOAT_WITHIN(0.05f, 31.0f, bmi.getImuData().temperature);
+    // вращение по тангажу видно гироскопом (оси — как у остальных чипов)
+    world.pitchRateDps = 10.0f;
+    chip.update(world);
+    bmi.update();
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 10.0f, bmi.getImuData().gyroY);
+
+    // повторный begin() (сбой шины): снова сброс и файл
+    TEST_ASSERT_TRUE(bmi.begin());
+    TEST_ASSERT_EQUAL_UINT32(2, chip.resets);
+    TEST_ASSERT_TRUE(chip.initialized);
+
+    // файл не принят — IMU недоступен
+    chip.corruptUpload = true;
+    TEST_ASSERT_FALSE(bmi.begin());
+    TEST_ASSERT_TRUE(contains(takeSerial(), "файл конфигурации не принят (INTERNAL_STATUS=0x2)"));
+    TEST_ASSERT_FALSE(bmi.isAvailable());
+
+    // пустая линия (0x00 / 0xFF) — чипа нет
+    for (uint8_t empty : { 0x00, 0xFF })
+    {
+        resetWorld();
+        SpiRig none(Config::PIN_SPI_CS_IMU, 1);
+        none.chip.regs[0x00] = empty;
+        SpiRegisterDevice d = BMI270_Sensor::spiDevice(none.bus, Config::PIN_SPI_CS_IMU);
+        BMI270_Sensor absent(d);
+        TEST_ASSERT_FALSE(absent.begin());
+        TEST_ASSERT_TRUE(contains(takeSerial(), "BMI270: датчик не отвечает"));
+    }
+}
+
 void test_icm20689_over_spi_and_missing_spi_chip()
 {
     SpiRig rig(Config::PIN_SPI_CS_IMU, 0);
@@ -685,6 +753,7 @@ int main()
     RUN_TEST(test_icm42688_ignores_not_ready_samples);
     RUN_TEST(test_mpu6000_over_spi_is_configured_and_read);
     RUN_TEST(test_icm20689_over_spi_and_missing_spi_chip);
+    RUN_TEST(test_bmi270_over_spi_uploads_config_and_reads);
     RUN_TEST(test_icm42688_rejects_wrong_or_missing_chip);
     RUN_TEST(test_orientation_nvs_round_trip_and_validation);
     RUN_TEST(test_orientation_describe_and_degenerate_inputs);

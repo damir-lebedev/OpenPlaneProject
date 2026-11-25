@@ -229,14 +229,25 @@ private:
         return r;
     }
 
-    // Ждать, пока карта отпустит MISO (0xFF) после записи.
+    // Ждать, пока карта отпустит MISO (0xFF) после записи. Долгая запись (карта
+    // занята до сотен мс) — шину на время сна отпускаем: CS вверх, транзакция
+    // закрыта, другие на этой SPI (OSD у SpeedyBee F405 V3) работают; занятость
+    // карта держит и без CS и снова покажет её, когда CS опустится.
     bool waitIdle(uint32_t timeoutMs)
     {
         const uint32_t start = millis();
         uint32_t polls = 0;
         while (bus.transfer(0xFF) != 0xFF)
         {
-            if (++polls > 512) Rtos::sleepMs(1);
+            if (++polls > 512)
+            {
+                digitalWrite(static_cast<uint32_t>(cs), HIGH);
+                bus.transfer(0xFF);
+                bus.endTransaction();
+                Rtos::sleepMs(1);
+                bus.beginTransaction(speed, 0);
+                digitalWrite(static_cast<uint32_t>(cs), LOW);
+            }
             if (millis() - start > timeoutMs)
             {
                 ++timeouts;

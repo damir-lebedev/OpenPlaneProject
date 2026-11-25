@@ -234,11 +234,14 @@ class BfBoardTest(unittest.TestCase):
         self.assertIn("#define OPB_GYRO_ICM42688P 1", text)
         self.assertIn("#define OPB_BARO_DPS310 1", text)
         self.assertNotIn("драйвера", " ".join(bf_board.check(sb)))
-        # дамп: SD по SPI, гироскоп без драйвера — в списке проблем
+        # дамп: SD по SPI, BMI270 (драйвер есть с P57c); гироскоп без драйвера — в списке проблем
         d = parsed("# status\nGYRO=BMI270, ACC=BMI270\nresource SDCARD_CS 1 A15\nset sdcard_mode = SPI\n"
                    "set sdcard_spi_bus = 2\n")
         self.assertEqual((2, "PA15"), (d.sdcard_spi, d.sdcard_cs))
-        self.assertIn("гироскоп BMI270", " ".join(bf_board.check(d)))
+        self.assertNotIn("драйвера", " ".join(bf_board.check(d)))
+        self.assertIn("#define OPB_GYRO_BMI270 1", bf_board.generate(d))
+        d = parsed("# status\nGYRO=BMI088, ACC=BMI088\n")
+        self.assertIn("гироскоп BMI088", " ".join(bf_board.check(d)))
 
     def test_hakrc_mpu6000_no_baro_rx_on_inverted_uart(self):
         # HAKRC F405: MPU6000/ICM20689, барометра нет, SERIALRX_UART не задан,

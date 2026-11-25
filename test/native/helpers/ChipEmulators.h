@@ -22,6 +22,7 @@
 #include <SPI.h>
 #include <Wire.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -29,6 +30,7 @@
 #include <vector>
 
 #include "config/Config.h"
+#include "sensors/imu/Bmi270Config.h"
 
 struct World
 {
@@ -231,6 +233,73 @@ namespace chips
             putBe16(r, 0x1D, (temperatureC - 25.0f) * 132.48f);
             for (int i = 0; i < 3; ++i) putBe16(r, static_cast<uint8_t>(0x1F + 2 * i), a[i] * 2048.0f);
             for (int i = 0; i < 3; ++i) putBe16(r, static_cast<uint8_t>(0x25 + 2 * i), g[i] * 16.4f);
+        }
+    };
+
+    // BMI270 (SPI, SpeedyBee F405 V3): CHIP_ID 0x24 (0x00), перед данными —
+    // мусорный байт. Пока не залит файл конфигурации Bosch (INIT_CTRL 0x59,
+    // адрес куска в словах — INIT_ADDR_0/1, порт INIT_DATA 0x5E без
+    // автоинкремента) и не включены датчики (PWR_CTRL 0x7D), данные — нули.
+    // Данные LE с 0x0C: акселерометр ±16g, гироскоп ±2000°/с; температура —
+    // 0x22 (1/512 °C от 23). Мягкий сброс (CMD 0x7E = 0xB6) стирает файл.
+    struct Bmi270 : Chip
+    {
+        uint16_t rotationCwDeg = Config::IMU_ROTATION_CW_DEG;
+        std::vector<uint8_t> config = std::vector<uint8_t>(bmi270::CONFIG_SIZE, 0);
+        uint32_t configPos = 0, configBytes = 0, resets = 0;
+        bool initialized = false;
+        bool corruptUpload = false;   // «битая» загрузка: чип не принимает файл
+
+        void attach(SPIClass& bus, uint8_t csPin) { Chip::attach(bus, csPin, 1); }
+
+        void install()
+        {
+            regs()[0x00] = 0x24;
+            spi.holdsAddress = [](uint8_t reg) { return reg == 0x5E; };
+            onWrite([this](uint8_t reg, uint8_t value) {
+                uint8_t* r = regs();
+                if (reg == 0x5B || reg == 0x5C)
+                {
+                    configPos = 2u * ((static_cast<uint32_t>(r[0x5C]) << 4) | (r[0x5B] & 0x0F));
+                }
+                else if (reg == 0x5E)
+                {
+                    if (configPos < config.size()) config[configPos] = corruptUpload ? 0 : value;
+                    ++configPos;
+                    ++configBytes;
+                }
+                else if (reg == 0x59 && value == 0x01)
+                {
+                    initialized = std::equal(config.begin(), config.end(), bmi270::CONFIG_FILE);
+                    r[0x21] = initialized ? 0x01 : 0x02;   // init_ok / init_err
+                }
+                else if (reg == 0x7E && value == 0xB6)
+                {
+                    ++resets;
+                    initialized = false;
+                    configBytes = 0;
+                    std::fill(config.begin(), config.end(), 0);
+                    r[0x21] = 0x00;
+                    r[0x7D] = 0x00;
+                }
+            });
+        }
+
+        bool sensorsOn() { return initialized && (regs()[0x7D] & 0x06) == 0x06; }
+
+        void update(const World& w)
+        {
+            float ax, ay, az, gx, gy, gz, a[3], g[3];
+            w.accelBody(ax, ay, az);
+            w.gyroBody(gx, gy, gz);
+            World::toChip(rotationCwDeg, ax, ay, az, a);
+            World::toChip(rotationCwDeg, gx, gy, gz, g);
+            const bool on = sensorsOn();
+            uint8_t* r = regs();
+            for (int i = 0; i < 3; ++i) putLe16(r, static_cast<uint8_t>(0x0C + 2 * i), on ? a[i] * 2048.0f : 0.0f);
+            for (int i = 0; i < 3; ++i) putLe16(r, static_cast<uint8_t>(0x12 + 2 * i), on ? g[i] * 16.4f : 0.0f);
+            if (on) putLe16(r, 0x22, (w.temperatureC - 23.0f) * 512.0f);
+            else { r[0x22] = 0x00; r[0x23] = 0x80; }   // 0x8000 — нет данных
         }
     };
 
