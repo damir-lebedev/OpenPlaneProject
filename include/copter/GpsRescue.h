@@ -81,6 +81,18 @@ namespace copter
         uint8_t receiverSpoof = 0;      // spoofDetState приёмника (0 — не знает)
     };
 
+    // Общая оценка контроллера (copter/PositionEstimator.h): положение и
+    // скорость между фиксами по акселерометру, с поправкой на задержку GPS;
+    // курс — компас, сверенный с полётом, или выученный по разгонам без него.
+    struct NavEstimate
+    {
+        bool valid = false;                  // положение и скорость годятся
+        float northM = 0.0f, eastM = 0.0f;   // от дома
+        float velN = 0.0f, velE = 0.0f;
+        bool headingKnown = false;           // курс есть (компас или полёт)
+        float headingDeg = 0.0f;
+    };
+
     enum class RescuePhase : uint8_t { IDLE, CLIMB, FLY_HOME, DESCEND, LAND, ABORT };
 
     inline const char* rescuePhaseName(RescuePhase p)
@@ -246,6 +258,13 @@ namespace copter
         }
         float headingCorrection() const { return headingOffset; }
 
+        // Каждый цикл до update(): общая оценка положения и курса. Есть она —
+        // возврат летит по ней (курс без компаса уже выучен в полёте, плохой
+        // компас уже отброшен); нет — по сырому фиксу и своей поправке курса.
+        void setEstimate(const NavEstimate& e) { est = e; }
+        // курс сейчас берётся из общей оценки
+        bool usesEstimateHeading() const { return est.headingKnown; }
+
         // Один цикл возврата: altM и climb — высота над точкой ARM и скорость
         // подъёма (барометр с акселерометром); yawDeg — рысканье гироскопа.
         // track() в этом цикле уже позван.
@@ -268,16 +287,27 @@ namespace copter
                 }
             }
 
-            const float dist = distance(last);
+            // положение и скорость: общая оценка, без неё — последний фикс
+            const float pN = est.valid ? est.northM : last.northM, pE = est.valid ? est.eastM : last.eastM;
+            const float vN = est.valid ? est.velN : last.velN, vE = est.valid ? est.velE : last.velE;
+            const float dist = sqrtf(pN * pN + pE * pE);
+            if (est.headingKnown)
+            {
+                // поправка гироскопа — из оценки (её же видно в статусе); если
+                // оценка курс потеряет, возврат продолжит с ней
+                headingOffset = wrap180(est.headingDeg - yawDeg);
+                headingAligned = true;
+            }
+            const bool headingSure = est.headingKnown || last.headingTrusted;
             const float heading = headingNow(yawDeg);
             // направление на дом и ошибка носа
-            const float homeBearing = atan2f(-last.eastM, -last.northM) * RAD2DEG;
-            const float groundSpeed = sqrtf(last.velN * last.velN + last.velE * last.velE);
+            const float homeBearing = atan2f(-pE, -pN) * RAD2DEG;
+            const float groundSpeed = sqrtf(vN * vN + vE * vE);
             const float err = wrap180(homeBearing - heading);
             // скорость в осях носа
             const float h = heading * DEG2RAD;
-            const float fwd = last.velN * cosf(h) + last.velE * sinf(h);
-            const float side = -last.velN * sinf(h) + last.velE * cosf(h);
+            const float fwd = vN * cosf(h) + vE * sinf(h);
+            const float side = -vN * sinf(h) + vE * cosf(h);
 
             // прогресс: дом приближается
             if (phase_ == RescuePhase::FLY_HOME || phase_ == RescuePhase::DESCEND)
@@ -325,7 +355,7 @@ namespace copter
                         targetAlt = set.landingAltM + (returnAlt - set.landingAltM) * k;
                     }
                     c.climbRate = climbTo(altM);
-                    if (!last.headingTrusted && !headingAligned)
+                    if (!headingSure && !headingAligned)
                     {
                         // без компаса: сначала прямо, без рысканья, — на скорости
                         // курс GPS и есть нос: поправка гироскопа ставится сразу
@@ -333,7 +363,7 @@ namespace copter
                         straightTimer = groundSpeed > ALIGN_SPEED ? straightTimer + dt : 0.0f;
                         if (straightTimer > ALIGN_STRAIGHT_S)
                         {
-                            headingOffset = wrap180(atan2f(last.velE, last.velN) * RAD2DEG - yawDeg);
+                            headingOffset = wrap180(atan2f(vE, vN) * RAD2DEG - yawDeg);
                             headingAligned = true;
                             straightTimer = 0.0f;
                         }
@@ -344,14 +374,15 @@ namespace copter
                     // у самого дома пеленг на него скачет — нос больше не крутим
                     c.yawRateDps = yawTowards(err) * fminf(1.0f, dist / NO_YAW_DIST_M);
                     // тангаж держит скорость именно к дому
-                    const float toward = dist > 1.0f ? -(last.velN * last.northM + last.velE * last.eastM) / dist : fwd;
+                    const float toward = dist > 1.0f ? -(vN * pN + vE * pE) / dist : fwd;
                     c.pitchDeg = -speedControl(speed, toward, dt);
-                    // снос вбок гасим только с компасом: без него крен спрятал
-                    // бы ошибку курса (коптер шёл бы боком туда, куда «смотрит»)
-                    c.rollDeg = last.headingTrusted ? sideControl(0.0f, side, dt) : 0.0f;
+                    // снос вбок гасим только с настоящим курсом (компас или
+                    // выученный оценкой): с поправкой «курс GPS = нос» крен спрятал
+                    // бы её ошибку (коптер шёл бы боком туда, куда «смотрит»)
+                    c.rollDeg = headingSure ? sideControl(0.0f, side, dt) : 0.0f;
                     // курс GPS отстаёт от носа на поворотах — учиться только на прямой
                     straightTimer = fabsf(c.yawRateDps) < ALIGN_MAX_YAW_RATE && c.pitchDeg < -ALIGN_PITCH_DEG ? straightTimer + dt : 0.0f;
-                    if (straightTimer > ALIGN_STRAIGHT_S) alignHeading(yawDeg, dt);
+                    if (straightTimer > ALIGN_STRAIGHT_S && !headingSure) alignHeading(vN, vE, yawDeg, dt);
                     if (dist < LAND_RADIUS_M)
                     {
                         phase_ = RescuePhase::LAND;
@@ -362,9 +393,9 @@ namespace copter
                 case RescuePhase::LAND:
                 {
                     // над домом: скорость — к точке дома (ветер сносит — возвращает)
-                    const float vN = fmaxf(-LAND_SPEED, fminf(LAND_SPEED, -LAND_GAIN * last.northM));
-                    const float vE = fmaxf(-LAND_SPEED, fminf(LAND_SPEED, -LAND_GAIN * last.eastM));
-                    holdPosition(fwd, side, vN * cosf(h) + vE * sinf(h), -vN * sinf(h) + vE * cosf(h), c, dt);
+                    const float tN = fmaxf(-LAND_SPEED, fminf(LAND_SPEED, -LAND_GAIN * pN));
+                    const float tE = fmaxf(-LAND_SPEED, fminf(LAND_SPEED, -LAND_GAIN * pE));
+                    holdPosition(fwd, side, tN * cosf(h) + tE * sinf(h), -tN * sinf(h) + tE * cosf(h), c, dt);
                     c.climbRate = -(altM > set.landingAltM ? set.descendRate : 0.5f * set.descendRate);
                     // у самой земли — ровно: наклон в опору мешает понять, что сел
                     if (altM < GROUND_LEVEL_M)
@@ -400,17 +431,17 @@ namespace copter
 
         float headingNow(float yawDeg) const
         {
+            if (est.headingKnown) return est.headingDeg;
             return last.headingTrusted ? last.headingDeg : wrap180(yawDeg + headingOffset);
         }
 
-        // Без компаса: летим вперёд одним тангажом — курс GPS и есть курс носа
+        // Без курса: летим вперёд одним тангажом — курс GPS и есть курс носа
         // (с точностью до сноса ветром), поправка гироскопа тянется к нему.
-        void alignHeading(float yawDeg, float dt)
+        void alignHeading(float vN, float vE, float yawDeg, float dt)
         {
-            if (last.headingTrusted) return;
-            const float speed = sqrtf(last.velN * last.velN + last.velE * last.velE);
+            const float speed = sqrtf(vN * vN + vE * vE);
             if (speed < ALIGN_SPEED) return;
-            const float course = atan2f(last.velE, last.velN) * RAD2DEG;
+            const float course = atan2f(vE, vN) * RAD2DEG;
             const float e = wrap180(course - (yawDeg + headingOffset));
             headingOffset = wrap180(headingOffset + e * fminf(1.0f, dt / ALIGN_TAU_S));
         }
@@ -460,6 +491,7 @@ namespace copter
 
         GpsRescueSettings set;
         GpsInput last;
+        NavEstimate est;
         RescuePhase phase_ = RescuePhase::IDLE;
         RescueFail fail_ = RescueFail::NONE;
         bool byFailsafe = false;

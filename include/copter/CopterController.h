@@ -896,6 +896,18 @@ namespace copter
             // GPS подменяют — по нему не лететь, даже если проверки выключены
             if (gpsMasked) rescue.fail(RescueFail::GPS_SPOOF);
             RescueCommand rescueCmd;
+            // возврат летит по общей оценке положения и курса (P39)
+            {
+                NavEstimate ne;
+                ne.valid = position.valid();
+                ne.northM = position.north();
+                ne.eastM = position.east();
+                ne.velN = position.velN();
+                ne.velE = position.velE();
+                ne.headingKnown = position.headingSource() != HeadingSource::NONE;
+                ne.headingDeg = position.headingDeg();
+                rescue.setEstimate(ne);
+            }
             if (rescue.active() && !deadReck.active()) rescueCmd = rescue.update(vertical.altitude(), status.yaw, dt);
             // GPS не годится (подмена, глушение) — домой вслепую по своим датчикам
             if (wantRescue && !deadReck.active() && rescue.phase() == RescuePhase::ABORT && gpsFailure(rescue.failure()) &&

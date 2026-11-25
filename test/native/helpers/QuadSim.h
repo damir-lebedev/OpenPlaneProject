@@ -74,6 +74,7 @@ struct QuadSimParams
     double vibFrequency = 1.0;
     double imuAafHz = 400.0;     // фильтр чипа
     double gyroRangeDps = 0.0;   // предел гироскопа: быстрее чип показывает упор (0 — без предела)
+    double gyroJunk = 0.0;       // мусор в упоре: доля превышения предела, что утекает в другие оси
     double baroNoiseM = 0.12;
     int blades = 3;
     uint32_t seed = 1;
@@ -143,6 +144,16 @@ public:
             {
                 vibDir[i][h] = { u(rng), u(rng), 0.6 * u(rng) };
                 vibPhase[i][h] = 3.14159 * u(rng);
+            }
+        }
+        std::mt19937 jr(par.seed * 31u + 7u);   // свой поток: шум прочих тестов не сдвигается
+        for (int a = 0; a < 3; ++a)
+        {
+            for (int b = 0; b < 3; ++b)
+            {
+                junkDir[a][b] = u(jr);
+                junkHz[a][b] = 30.0 + 10.0 * u(jr);
+                junkPhase[a][b] = 3.14159 * u(jr);
             }
         }
         reset();
@@ -232,6 +243,28 @@ public:
         if (par.gyroRangeDps > 0.0)
         {
             const float r = static_cast<float>(par.gyroRangeDps);
+            // реальный чип в упоре не только режет ось: подвес датчика бьётся
+            // о стопоры, петля привода срывается — в другие оси течёт
+            // перекрёстная утечка (постоянная часть) и наложение (качание
+            // ~20–40 Гц), тем больше, чем дальше за пределом
+            if (par.gyroJunk > 0.0)
+            {
+                const double w[3] = { aaf2.x * 57.29578, aaf2.y * 57.29578, aaf2.z * 57.29578 };
+                double leak[3] = {};
+                for (int a = 0; a < 3; ++a)
+                {
+                    const double over = std::fabs(w[a]) - par.gyroRangeDps;
+                    if (over <= 0.0) continue;
+                    const double sign = w[a] > 0 ? 1.0 : -1.0;
+                    for (int b = 0; b < 3; ++b)
+                    {
+                        if (b == a) continue;
+                        const double wobble = std::sin(2.0 * M_PI * junkHz[a][b] * time + junkPhase[a][b]);
+                        leak[b] += par.gyroJunk * over * (junkDir[a][b] * sign + wobble);
+                    }
+                }
+                for (int a = 0; a < 3; ++a) gyro[a] += static_cast<float>(leak[a]);
+            }
             for (int a = 0; a < 3; ++a) gyro[a] = std::fmin(r, std::fmax(-r, gyro[a]));
         }
         accel[0] = static_cast<float>(aafA2.x / 9.80665 + par.accelNoiseG * gauss(rng));
@@ -255,6 +288,7 @@ public:
     Vec rates() const { return omega; }   // рад/с, FRD
     void setRates(const Vec& w) { omega = w; }   // толчок: рама сразу крутится так (рад/с)
     void setGyroRange(double dps) { par.gyroRangeDps = dps; }   // предел гироскопа, °/с (0 — без предела)
+    void setGyroJunk(double fraction) { par.gyroJunk = fraction; }   // мусор в упоре (доля превышения в другие оси)
     double rollDeg() const { return std::atan2(2 * (qy * qz + qw * qx), 1 - 2 * (qx * qx + qy * qy)) * 57.29578; }
     double pitchDeg() const { return std::asin(std::fmax(-1.0, std::fmin(1.0, 2 * (qw * qy - qx * qz)))) * 57.29578; }
     double yawDeg() const { return std::atan2(2 * (qx * qy + qw * qz), 1 - 2 * (qy * qy + qz * qz)) * 57.29578; }
@@ -592,6 +626,7 @@ private:
     Vec aaf1, aaf2, aafA1, aafA2;
     Vec vibDir[copter::MAX_MOTORS][3];
     double vibPhase[copter::MAX_MOTORS][3] = {};
+    double junkDir[3][3] = {}, junkHz[3][3] = {}, junkPhase[3][3] = {};   // мусор гироскопа в упоре
     Vec windBase, gust, disturb;
     double gustLevel = 0;
     double baroHeld = 0, baroTimer = 0;

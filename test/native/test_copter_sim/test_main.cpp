@@ -1303,6 +1303,59 @@ void test_yaw_spin_recovery_stops_a_saturated_spin()
     TEST_ASSERT_FALSE_MESSAGE(falseHit, "full-stick yaw pirouette taken for a spin");
 }
 
+// P56: тот же раскрут, но чип в упоре ведёт себя как настоящий — в крен и
+// тангаж течёт мусор (перекрёстная утечка и наложение, доля превышения
+// предела). Без защиты PID крена и тангажа гоняются за мусором: на 3500 и
+// 5000 °/с раму валит на 11–18°, горизонт уезжает на 7–10°, остановка
+// вдвое дольше. С защитой (крен и тангаж без PID) — наклон 0, горизонт ≤ 3°.
+void test_yaw_spin_recovery_ignores_saturation_junk()
+{
+    const double spins[] = { 2500.0, 3500.0, 5000.0 };
+    for (double spin : spins)
+    {
+        double stopAt[2] = { -1, -1 }, tiltPeak[2] = {}, tilt[2] = {}, drop[2] = {}, horizon[2] = {};
+        bool armed[2] = {};
+        for (uint8_t on = 0; on < 2; ++on)
+        {
+            CopterSettings s;
+            s.yawSpin = on ? YawSpinMode::AUTO : YawSpinMode::OFF;
+            QuadHarness h(five(), QuadPerturb(), 41);
+            h.useTune(fiveTune(), s);
+            h.sim.setGyroRange(2000.0);
+            h.sim.setGyroJunk(0.3);
+            hoverInAcro(h, 30.0);
+            const double h0 = h.sim.height();
+            h.sim.setRates({ 0.0, 0.0, spin / 57.29578 });
+            for (int i = 0; i < 2000; ++i)
+            {
+                h.step();
+                tiltPeak[on] = std::fmax(tiltPeak[on], h.sim.tiltDeg());
+                drop[on] = std::fmax(drop[on], h0 - h.sim.height());
+                if (stopAt[on] < 0 && std::fabs(h.sim.rates().z) * 57.29578 < 200.0) stopAt[on] = (i + 1) * 0.001;
+            }
+            tilt[on] = h.sim.tiltDeg();
+            horizon[on] = horizonErrDeg(h);
+            armed[on] = h.ctl.isArmed();
+        }
+        char line[300];
+        snprintf(line, sizeof(line),
+                 "yaw spin %.0f + junk: below 200 deg/s at %.3f s (off %.3f), tilt peak %.0f (off %.0f), after 2 s %.1f (off %.1f), "
+                 "height lost %.1f m (off %.1f), horizon error %.1f (off %.1f) deg, armed %d (off %d)",
+                 spin, stopAt[1], stopAt[0], tiltPeak[1], tiltPeak[0], tilt[1], tilt[0], drop[1], drop[0], horizon[1], horizon[0],
+                 armed[1], armed[0]);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(armed[0] && armed[1], line);
+        TEST_ASSERT_TRUE_MESSAGE(stopAt[1] > 0.0 && stopAt[1] < 0.6, line);
+        TEST_ASSERT_TRUE_MESSAGE(tiltPeak[1] < 3.0, line);   // крен и тангаж мусор не видят
+        if (spin < 3000.0) continue;
+        // чем дальше за пределом, тем больше мусора: без защиты раму валит,
+        // горизонт уезжает, а остановка вдвое дольше (рули тратятся на мусор)
+        TEST_ASSERT_TRUE_MESSAGE(tiltPeak[0] > 8.0, line);
+        TEST_ASSERT_TRUE_MESSAGE(stopAt[1] < 0.75 * stopAt[0], line);
+        TEST_ASSERT_TRUE_MESSAGE(horizon[1] < 0.5 * horizon[0], line);
+    }
+}
+
 // Runaway takeoff: два мотора на чужих выходах (провода перепутаны) —
 // на газе коптер кувыркается, DISARM меньше чем за 1 с, ARM — после
 // выключения тумблера. Без защиты runaway её DISARM не срабатывает.
@@ -1702,11 +1755,36 @@ void test_gps_rescue_without_compass_aligns_heading()
     TEST_ASSERT_TRUE(flyAway(h, 120.0, -0.4f, 1.5));
     const RescueRun r = linkLostRescue(h, 120.0);
     char line[200];
-    snprintf(line, sizeof(line), "GPS rescue without compass (70 deg off): landed %.1f m from home in %.0f s",
-             r.homeDist, r.seconds);
+    snprintf(line, sizeof(line), "GPS rescue without compass (70 deg off): heading by %s, landed %.1f m from home in %.0f s",
+             headingSourceName(h.ctl.getStatus().headingSource), r.homeDist, r.seconds);
     TEST_MESSAGE(line);
     TEST_ASSERT_TRUE_MESSAGE(r.disarmed, line);
     TEST_ASSERT_TRUE_MESSAGE(r.homeDist < 8.0, line);
+}
+
+// P39: возврат летит по общей оценке курса. Компас врёт на 100° (не
+// откалиброван, силовой провод рядом), боковой ветер: оценка по первым
+// манёврам отбрасывает компас и учит курс по полёту — возврат идёт по нему,
+// а не по компасу: 48 с, 1.4 м от дома. До P39 (по компасу) — дуга 102 с,
+// наклон до 50°, ложная «подмена GPS» и посадка в 13.7 м от дома.
+void test_gps_rescue_with_lying_compass()
+{
+    QuadHarness h(five(), QuadPerturb(), 63, EscProtocol::DSHOT600, 1000.0f, rescueSettings());
+    h.gpsOn = true;
+    h.compassErrorDeg = 100.0;
+    TEST_ASSERT_TRUE(flyAway(h, 120.0, 0.5f, 1.0));
+    h.sim.setWind(0.0, 4.0, 0.5);
+    const bool rejected = h.ctl.getStatus().magDisagrees;
+    const RescueRun r = linkLostRescue(h, 150.0);
+    const CopterStatus& st = h.ctl.getStatus();
+    char line[260];
+    snprintf(line, sizeof(line), "GPS rescue, compass 100 deg off, crosswind 4 m/s: compass rejected %s, landed %.1f m from home in %.0f s, max tilt %.0f (%s %s)",
+             rejected ? "yes" : "no", r.homeDist, r.seconds, r.maxTilt, rescuePhaseName(r.lastPhase), rescueFailName(st.rescueFail));
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(rejected, line);
+    TEST_ASSERT_TRUE_MESSAGE(r.disarmed, line);
+    TEST_ASSERT_TRUE_MESSAGE(r.homeDist < 8.0, line);
+    TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(RescuePhase::LAND), static_cast<int>(r.lastPhase), line);
 }
 
 // GPS пропал на пути домой, полёт вслепую выключен (deadreck_max_s = 0) —
@@ -2748,6 +2826,7 @@ int main()
     RUN_TEST(test_crash_recovery_levels_after_a_hit);
     RUN_TEST(test_crash_recovery_with_a_saturated_gyro);
     RUN_TEST(test_yaw_spin_recovery_stops_a_saturated_spin);
+    RUN_TEST(test_yaw_spin_recovery_ignores_saturation_junk);
     RUN_TEST(test_runaway_takeoff_disarms_on_wrong_motor_wiring);
     RUN_TEST(test_failsafe_stage1_holds_altitude_then_stage2_descends);
     RUN_TEST(test_failsafe_stage1_rxfail_hold);
@@ -2759,6 +2838,7 @@ int main()
     RUN_TEST(test_acro_trainer_limits_tilt);
     RUN_TEST(test_gps_rescue_returns_home_in_crosswind);
     RUN_TEST(test_gps_rescue_without_compass_aligns_heading);
+    RUN_TEST(test_gps_rescue_with_lying_compass);
     RUN_TEST(test_gps_rescue_gps_loss_lands_in_place);
     RUN_TEST(test_dead_reckon_home_when_gps_jammed_or_spoofed);
     RUN_TEST(test_dead_reckon_hands_back_to_gps);
