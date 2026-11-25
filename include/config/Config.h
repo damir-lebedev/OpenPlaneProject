@@ -487,6 +487,32 @@ namespace Config
     constexpr int16_t BOARD_IBATA_OFFSET_MV = 0;  // @fixed
 #endif
 
+    // P63 · Порты коптера: какие UART разведены (номер 1…8 → ножки TX/RX,
+    // −1 — нет) и что на каком по умолчанию — {приёмник, GPS, MSP, телеметрия
+    // ESC, VTX}, 0 — нигде. Меняется настройками serial_*_uart и командой
+    // `serial` без пересборки (copter/SerialPorts.h). Matek H743 — как таргет
+    // MATEKH743 у BF (UART5 нет: его ножки у SD-карты); DevEBox — только три
+    // разведённых UART (UART1 PA9/PA10 — консоль).
+#if defined(BOARD_STM32F405)
+    constexpr int16_t PORT_UART_TX[9] = { -1, BOARD_UART_TX[1], BOARD_UART_TX[2], BOARD_UART_TX[3],
+                                          BOARD_UART_TX[4], BOARD_UART_TX[5], BOARD_UART_TX[6], -1, -1 };
+    constexpr int16_t PORT_UART_RX[9] = { -1, BOARD_UART_RX[1], BOARD_UART_RX[2], BOARD_UART_RX[3],
+                                          BOARD_UART_RX[4], BOARD_UART_RX[5], BOARD_UART_RX[6], -1, -1 };
+    constexpr uint8_t PORT_DEFAULT[5] = { OPB_UART_RX, OPB_UART_GPS, OPB_UART_MSP, OPB_UART_ESC_SENSOR, OPB_UART_VTX };
+#elif defined(BOARD_MATEK_H743)
+    constexpr int16_t PORT_UART_TX[9] = { -1, PA9, PD5, PD8, PB9, -1, PC6, PE8, PE1 };
+    constexpr int16_t PORT_UART_RX[9] = { -1, PA10, PD6, PD9, PB8, -1, PC7, PE7, PE0 };
+    constexpr uint8_t PORT_DEFAULT[5] = { 6, 2, 7, 0, 0 };
+#elif defined(BOARD_STM32H743)
+    constexpr int16_t PORT_UART_TX[9] = { -1, -1, -1, PD8, PD1, -1, -1, PE8, -1 };
+    constexpr int16_t PORT_UART_RX[9] = { -1, -1, -1, PD9, PD0, -1, -1, PE7, -1 };
+    constexpr uint8_t PORT_DEFAULT[5] = { 7, 3, 4, 0, 0 };
+#else
+    constexpr int16_t PORT_UART_TX[9] = { -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+    constexpr int16_t PORT_UART_RX[9] = { -1, -1, -1, -1, -1, -1, -1, -1, -1 };
+    constexpr uint8_t PORT_DEFAULT[5] = { 0, 0, 0, 0, 0 };
+#endif
+
     // Провод управления видеопередатчиком (SmartAudio/Tramp — TX UART в
     // полудуплексе) и ножки PINIO (режимы USER1…USER4: камера, 12 В…) — у
     // полётников из Betaflight из заголовка платы, у остальных их нет.

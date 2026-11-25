@@ -153,6 +153,8 @@ MagnetometerSensor* compass = nullptr;
 copter::AutoDeclination autoDeclination;   // склонение по координатам GPS (copter/Declination.h)
 copter::Compass copterCompass;   // калибровка, установка, наклон, склонение (copter/Compass.h)
 static uint32_t lastMagStamp = 0;
+static bool gpsPortOn = Config::PIN_GPS_RX >= 0;   // GPS на каком-то UART (setupPorts)
+static bool mspPortOn = Config::PIN_TELEM_TX >= 0;  // MSP (очки) на каком-то UART
 
 RcReceiver rcReceiver(board.rcUart());
 Stm32MotorOutput motors;
@@ -1249,6 +1251,50 @@ static void storageTask(void*)
 }
 
 // Описание коптера -> настройка (+ заданное в CLI); что не так — в консоль и запрет ARM.
+// P63: роли UART из настроек serial_*_uart — до begin() приёмника, GPS и MSP.
+// Карта не годится (UART нет на плате, две роли на одном) — как в прошивке платы.
+static copter::BoardUarts boardUarts()
+{
+    copter::BoardUarts b;
+    for (uint8_t n = 1; n <= copter::MAX_UARTS; ++n)
+    {
+        b.rx[n] = Config::PORT_UART_RX[n] >= 0;
+        b.tx[n] = Config::PORT_UART_TX[n] >= 0;
+    }
+    return b;
+}
+
+static void setupPorts()
+{
+    const copter::BoardUarts uarts = boardUarts();
+    copterConsole.setBoardUarts(uarts);
+    if (!uarts.any()) return;
+    copter::PortMap m = copter::portMap(copterParams);
+    char error[96];
+    if (!copter::checkPortMap(m, uarts, error, sizeof(error)))
+    {
+        Serial.printf("Порты: %s — беру как в прошивке платы.\n", error);
+        m = copter::portMap(copterParams, true);
+    }
+    const auto pins = [&](copter::PortRole r, int16_t out[2]) {
+        const uint8_t n = m[r];
+        out[0] = n ? Config::PORT_UART_RX[n] : -1;
+        out[1] = n ? Config::PORT_UART_TX[n] : -1;
+    };
+    int16_t rc[2], gpsPins[2], msp[2];
+    pins(copter::PortRole::RX, rc);
+    pins(copter::PortRole::GPS, gpsPins);
+    pins(copter::PortRole::MSP, msp);
+    board.rebindUarts(rc, gpsPins, msp);
+    const uint8_t vtxUart = m[copter::PortRole::VTX];
+    vtxPort.rebind(vtxUart ? Config::PORT_UART_TX[vtxUart] : -1);
+    gpsPortOn = gpsPins[0] >= 0;
+    mspPortOn = msp[1] >= 0;
+    Serial.printf("Порты: приёмник UART%u, GPS UART%u, MSP UART%u, ESC UART%u, VTX UART%u (0 — нет; serial — как в BF)\n",
+                  m[copter::PortRole::RX], m[copter::PortRole::GPS], m[copter::PortRole::MSP],
+                  m[copter::PortRole::ESC_SENSOR], vtxUart);
+}
+
 static void setupCopter(KeyValueStore& store)
 {
     configOk = CopterConfig::build(copterBuild);
@@ -1280,8 +1326,10 @@ static void setupCopter(KeyValueStore& store)
 #endif
 #endif
     copterParams.setTableDefault(copter::PARAM_IBATA_OFFSET, Config::BOARD_IBATA_OFFSET_MV);
-    copterParams.setTableDefault(copter::PARAM_VTX_PROTOCOL, static_cast<float>(Config::BOARD_VTX_PIN >= 0 ? copter::VtxProtocol::AUTO
-                                                                                                        : copter::VtxProtocol::NONE));
+    // провод VTX теперь можно назначить на любой UART (P63): без него протокол и так NONE
+    copterParams.setTableDefault(copter::PARAM_VTX_PROTOCOL, static_cast<float>(copter::VtxProtocol::AUTO));
+    for (uint8_t i = 0; i < copter::PORT_ROLES; ++i)
+        copterParams.setTableDefault(copter::portParam(static_cast<copter::PortRole>(i)), Config::PORT_DEFAULT[i]);
     copter::AuxRange fallback[copter::RcConfig::AUX_SLOTS];
     copterParams.rc().setFallback(fallback, CopterConfig::defaultAux(fallback, copter::RcConfig::AUX_SLOTS));
     copterParams.begin(copterBuild, CopterConfig::LOOP_HZ, CopterConfig::ESC_PROTOCOL, CopterConfig::applyOverrides);
@@ -1484,6 +1532,7 @@ void setup()
     if (settings.wasCorrupt()) Serial.println("Настройки во флеше повреждены — значения по умолчанию.");
 
     setupCopter(settings);   // выходы на моторы — сразу «стоп»
+    setupPorts();
 
     configureGyroCalibration();
     if (imuSensor.begin()) imuSensor.calibrate();
@@ -1500,7 +1549,7 @@ void setup()
     }
     if (baroSensor.begin()) baroSensor.calibrateAltitude();
     copterConsole.setBaro(&baroSensor);
-    if (Config::PIN_GPS_RX >= 0) gps.begin();
+    if (gpsPortOn) gps.begin();
     if (magL.begin()) compass = &magL;
     else if (magP.begin()) compass = &magP;
 
@@ -1558,7 +1607,7 @@ void setup()
                                                      : "чип не отвечает");
     }
     // порт очков: слушаем всегда (на опрос MSP отвечаем), OSD шлём по osd_displayport_device
-    if (Config::PIN_TELEM_TX >= 0)
+    if (mspPortOn)
     {
         devicePort.begin();
         Serial.println("Порт MSP для очков и видеопередатчика: 115200");

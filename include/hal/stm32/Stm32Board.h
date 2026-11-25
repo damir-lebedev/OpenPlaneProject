@@ -41,12 +41,9 @@ public:
           secondBus(secondWire, pinOf(Config::PIN_I2C2_SDA), pinOf(Config::PIN_I2C2_SCL), Config::I2C_CLOCK_KHZ * 1000UL),
           externalBus(externalWire, pinOf(Config::PIN_I2C_EXT_SDA), pinOf(Config::PIN_I2C_EXT_SCL), Config::I2C_CLOCK_KHZ * 1000UL),
           spiBus(SPI, pinOf(Config::PIN_SENSOR_SPI_SCK), pinOf(Config::PIN_SENSOR_SPI_MISO), pinOf(Config::PIN_SENSOR_SPI_MOSI)),
-          rcSerial(pinOf(Config::PIN_RC_RX), pinOf(Config::PIN_RC_TX)),
-          gpsSerial(pinOf(Config::PIN_GPS_RX), pinOf(Config::PIN_GPS_TX)),
-          telemetrySerial(pinOf(Config::PIN_TELEM_RX), pinOf(Config::PIN_TELEM_TX)),
-          rcPort(rcSerial),
-          gpsPort(gpsSerial),
-          telemetryPort(telemetrySerial),
+          rcPort(Config::PIN_RC_RX, Config::PIN_RC_TX),
+          gpsPort(Config::PIN_GPS_RX, Config::PIN_GPS_TX),
+          telemetryPort(Config::PIN_TELEM_RX, Config::PIN_TELEM_TX),
           servos{
               Stm32ServoOutput(Config::PIN_AILERON_LEFT),
               Stm32ServoOutput(Config::PIN_AILERON_RIGHT),
@@ -79,6 +76,15 @@ public:
     IUartPort& gpsUart() override { return gpsPort; }
     IUartPort* telemetryUart() override { return &telemetryPort; }
 
+    // P63 (коптер): приёмник, GPS и MSP — на UART из настроек serial_*_uart;
+    // пара ножек {rx, tx}, −1 −1 — роли нет. До begin() портов.
+    void rebindUarts(const int16_t rc[2], const int16_t gps[2], const int16_t msp[2])
+    {
+        rcPort.rebind(rc[0], rc[1]);
+        gpsPort.rebind(gps[0], gps[1]);
+        telemetryPort.rebind(msp[0], msp[1]);
+    }
+
     IServoOutput& servo(uint8_t channel) override { return servos[channel]; }
 
     void setBuzzer(bool on) override
@@ -101,12 +107,9 @@ private:
     Stm32I2CBus externalBus;
     Stm32SpiBus spiBus;
 
-    Uart rcSerial;
-    Uart gpsSerial;
-    Uart telemetrySerial;   // UART4: радиомодем MAVLink
     Stm32UartPort rcPort;
     Stm32UartPort gpsPort;
-    Stm32UartPort telemetryPort;
+    Stm32UartPort telemetryPort;   // самолёт: радиомодем MAVLink; коптер: MSP (очки)
 
     Stm32ServoOutput servos[ServoChannel::COUNT];
 

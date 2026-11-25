@@ -8,6 +8,7 @@
 #include "copter/Beeper.h"
 #include "copter/CopterController.h"
 #include "copter/Params.h"
+#include "copter/SerialPorts.h"
 #include "storage/KeyValueStore.h"
 
 // ============================================================
@@ -96,6 +97,9 @@ namespace copter
         // Регуляторы DShot (main_copter.cpp); нет — dshotprog недоступна.
         void setEscCommands(IEscCommands* e) { esc = e; }
         bool dshotCommandsAvailable() const { return esc && esc->commandsAvailable(); }
+        // P63: какие UART разведены на плате (main_copter.cpp); пусто — порты не настраиваются.
+        void setBoardUarts(const BoardUarts& b) { boardPorts = b; }
+        const BoardUarts& boardUarts() const { return boardPorts; }
         // Писк условия пищалки «послушать» — только без ARM.
         bool previewBeeper(BeeperCondition c) { return !ctl.isArmed() && port.beeperPreview(c); }
 
@@ -233,6 +237,7 @@ namespace copter
             else if (is(cmd, "profile")) cmdProfile(args, false);
             else if (is(cmd, "rateprofile")) cmdProfile(args, true);
             else if (is(cmd, "aux")) cmdAux(args);
+            else if (is(cmd, "serial")) cmdSerial(args);
             else if (is(cmd, "geozone")) cmdGeozone(args);
             else if (is(cmd, "map")) cmdMap(args);
             else if (is(cmd, "rxrange")) cmdRxrange(args);
@@ -305,6 +310,7 @@ namespace copter
             print("get часть_имени       — значение, границы, умолчание\r\n");
             print("diff [all] · dump [all] — изменённое · всё (all — все профили)\r\n");
             print("profile [0-3] · rateprofile [0-3] — профиль PID · расходов\r\n");
+            print("serial [№ функции скорости…] — что на каком UART, как в BF: № 0 = UART1; 64 приёмник, 2 GPS, 1 MSP, 1024 ESC, 2048 SmartAudio, 8192 Tramp\r\n");
             print("aux [№ режим канал от до логика связь] — режимы на тумблерах (режимы: aux help)\r\n");
             print("geozone [зона FIELD|NOFLY|clear · зона точка широта долгота] — поле и запретные зоны геозабора\r\n");
             print("map [AETR1234] · rxrange [0-3 мин макс] — порядок каналов · концы стиков\r\n");
@@ -611,6 +617,7 @@ namespace copter
         // diff/dump: map, aux, rxrange, vtx, rxfail, beeper, beacon — как в BF, перед # master.
         void dumpTables(bool onlyChanged)
         {
+            dumpSerial(onlyChanged);
             const RcConfig& rc = params.rc();
             if (!onlyChanged || !rc.mapIsDefault())
             {
@@ -731,8 +738,17 @@ namespace copter
             }
             const ParamId id = static_cast<ParamId>(found);
             char error[96];
+            const PortMap portsBefore = portMap(params);
             if (!params.parse(id, params.activeSlot(id), valueText, error, sizeof(error)))
             {
+                printError("%s: %s", paramInfo(id).name, error);
+                noteSkipped(paramInfo(id).name);
+                return;
+            }
+            if (paramInfo(id).group == ParamGroup::PORTS && boardPorts.any() &&
+                !checkPortMap(portMap(params), boardPorts, error, sizeof(error)))
+            {
+                setPortMap(params, portsBefore);
                 printError("%s: %s", paramInfo(id).name, error);
                 noteSkipped(paramInfo(id).name);
                 return;
@@ -828,6 +844,7 @@ namespace copter
                 const ParamId id = static_cast<ParamId>(i);
                 if (paramInfo(id).scope != scope) continue;
                 if (id == PARAM_BEEPER_OFF_FLAGS || id == PARAM_DSHOT_BEACON_OFF_FLAGS) continue;   // строками beeper / beacon
+                if (paramInfo(id).group == ParamGroup::PORTS && boardPorts.any()) continue;          // строками serial
                 if (onlyChanged && !changed(id, slot)) continue;
                 char value[48];
                 params.format(id, slot, value, sizeof(value));
@@ -841,6 +858,71 @@ namespace copter
         {
             if (!params.isSet(id, slot)) return false;
             return paramInfo(id).type == ParamType::STRING || params.valueIn(id, slot) != params.defaultValue(id);
+        }
+
+        // P63: `serial` — как в BF; без аргументов — все UART платы и USB.
+        bool vtxIsTramp() const { return lroundf(params.value(PARAM_VTX_PROTOCOL)) == 2; }   // VtxProtocol::TRAMP
+
+        void dumpSerial(bool onlyChanged)
+        {
+            if (!boardPorts.any()) return;
+            const PortMap now = portMap(params), def = portMap(params, true);
+            const bool tramp = vtxIsTramp();
+            bool header = false;
+            char row[48];
+            for (uint8_t n = 1; n <= MAX_UARTS; ++n)
+            {
+                if (!boardPorts.exists(n)) continue;
+                if (onlyChanged && now.functions(n, tramp) == def.functions(n, tramp)) continue;
+                if (!header) print("\r\n# serial\r\n");
+                header = true;
+                formatSerialLine(now, n, tramp, row, sizeof(row));
+                print("%s\r\n", row);
+            }
+            if (!onlyChanged)
+            {
+                formatSerialLine(now, SERIAL_VCP_ID, tramp, row, sizeof(row));
+                print("%s\r\n", row);
+            }
+        }
+
+        void cmdSerial(const char* args)
+        {
+            if (!boardPorts.any())
+            {
+                printError("на этой сборке порты заданы платой и не меняются");
+                noteSkipped("serial");
+                return;
+            }
+            if (*args == '\0')
+            {
+                dumpSerial(false);
+                return;
+            }
+            PortMap m = portMap(params);
+            SerialLineResult r;
+            char error[96];
+            if (!parseSerialLine(args, boardPorts, m, r, error, sizeof(error)))
+            {
+                printError("%s", error);
+                noteSkipped("serial");
+                return;
+            }
+            if (r.ignored)
+            {
+                char where[8];
+                if (r.uart == SERIAL_VCP_ID) snprintf(where, sizeof(where), "USB");
+                else snprintf(where, sizeof(where), "UART%u", r.uart);
+                print("# serial %s: функций 0x%lx у нас нет (FrSky, MAVLink, софт-телеметрия…) — пропущено\r\n", where,
+                      static_cast<unsigned long>(r.ignored));
+            }
+            if (r.uart == SERIAL_VCP_ID) return;
+            if (!(m == portMap(params)))
+            {
+                setPortMap(params, m);
+                dirty = true;
+                if (!batchOpen) print("# UART%u: после save и перезагрузки\r\n", r.uart);
+            }
         }
 
         void cmdProfile(const char* args, bool rates)
@@ -1015,7 +1097,7 @@ namespace copter
         static bool isBfHardware(const char* cmd)
         {
             static const char* const LIST[] = { "board_name", "manufacturer_id", "mcu_id", "signature", "resource", "timer",
-                                                "dma", "serial", "feature", "mixer", "mmix", "smix",
+                                                "dma", "feature", "mixer", "mmix", "smix",
                                                 "led", "color", "mode_color", "adjrange", "vtxtable", "servo", "dshot_prog" };
             for (const char* name : LIST)
             {
@@ -1062,6 +1144,7 @@ namespace copter
         CliPort& port;
         KeyValueStore* kv = nullptr;
         IEscCommands* esc = nullptr;
+        BoardUarts boardPorts;
         const char* version = "OpenPlane copter";
         bool open = false;
         bool dirty = false;

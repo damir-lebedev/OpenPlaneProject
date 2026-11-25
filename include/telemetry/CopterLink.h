@@ -623,6 +623,17 @@ private:
             }
             w.add("]},\"motorTestMax\":%.0f,\"dshotCommands\":%s", copter::CopterController::MOTOR_TEST_MAX * 100.0f,
                   cli.dshotCommandsAvailable() ? "true" : "false");
+            // P63: UART платы для вкладки «Порты»: [номер, есть RX, есть TX]
+            const BoardUarts& u = cli.boardUarts();
+            w.add(",\"uarts\":[");
+            bool first = true;
+            for (uint8_t n = 1; n <= MAX_UARTS; ++n)
+            {
+                if (!u.exists(n)) continue;
+                w.add("%s[%u,%u,%u]", first ? "" : ",", n, u.rx[n] ? 1u : 0u, u.tx[n] ? 1u : 0u);
+                first = false;
+            }
+            w.add("]");
             margin(w);
             w.add("}\n");
             return w.overflow ? 0 : w.length;
@@ -789,7 +800,15 @@ private:
         else
         {
             const ParamId id = static_cast<ParamId>(found);
-            const bool ok = params.parse(id, params.activeSlot(id), value, error, sizeof(error));
+            const PortMap portsBefore = portMap(params);
+            bool ok = params.parse(id, params.activeSlot(id), value, error, sizeof(error));
+            // P63: UART, которого нет на плате, или занятый другой ролью — нельзя
+            if (ok && paramInfo(id).group == ParamGroup::PORTS && cli.boardUarts().any() &&
+                !checkPortMap(portMap(params), cli.boardUarts(), error, sizeof(error)))
+            {
+                setPortMap(params, portsBefore);
+                ok = false;
+            }
             if (ok) dirty = true;
             w.add(",\"ok\":%s", ok ? "true" : "false");
             if (!ok)

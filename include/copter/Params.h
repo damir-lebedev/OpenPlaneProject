@@ -91,6 +91,7 @@ namespace copter
         OTHER,
         BEEPER,
         AUTOPILOT,
+        PORTS,
     };
 
     inline const char* paramGroupName(ParamGroup g)
@@ -113,6 +114,7 @@ namespace copter
             case ParamGroup::OTHER: return "other";
             case ParamGroup::BEEPER: return "beeper";
             case ParamGroup::AUTOPILOT: return "autopilot";
+            case ParamGroup::PORTS: return "ports";
         }
         return "other";
     }
@@ -550,6 +552,12 @@ namespace copter
         PARAM_BEEPER_INVERSION,
         PARAM_BEEPER_OD,
         PARAM_BEEPER_FREQUENCY,
+        // P63: роли UART (copter/SerialPorts.h, порядок — как PortRole)
+        PARAM_SERIAL_RX_UART,
+        PARAM_SERIAL_GPS_UART,
+        PARAM_SERIAL_MSP_UART,
+        PARAM_SERIAL_ESC_UART,
+        PARAM_SERIAL_VTX_UART,
         PARAM_COUNT
     };
 
@@ -1367,6 +1375,16 @@ namespace copter
               "вывод пищалки — открытый сток" },
             { "beeper_frequency", kInt, kMaster, ParamGroup::BEEPER, 0, 16000, 0, kTable, "Гц", nullptr, 0,
               "0 — активная пищалка (сама звучит), иначе — частота для пассивной" },
+            { "serial_rx_uart", kInt, kMaster, ParamGroup::PORTS, 0, 8, 0, kTable, "UART", nullptr, 0,
+              "UART приёмника (1 — UART1…), 0 — нет; после save и перезагрузки; в diff — строками serial, как в BF" },
+            { "serial_gps_uart", kInt, kMaster, ParamGroup::PORTS, 0, 8, 0, kTable, "UART", nullptr, 0,
+              "UART модуля GPS, 0 — нет" },
+            { "serial_msp_uart", kInt, kMaster, ParamGroup::PORTS, 0, 8, 0, kTable, "UART", nullptr, 0,
+              "UART MSP: цифровые очки (DJI, Walksnail, HDZero) и OSD по DisplayPort, 0 — нет" },
+            { "serial_esc_uart", kInt, kMaster, ParamGroup::PORTS, 0, 8, 0, kTable, "UART", nullptr, 0,
+              "UART телеметрии регуляторов (провод TLM, BLHeli_32/AM32), 0 — нет; занимает порт, данные пока не читаются" },
+            { "serial_vtx_uart", kInt, kMaster, ParamGroup::PORTS, 0, 8, 0, kTable, "UART", nullptr, 0,
+              "UART провода SmartAudio/Tramp видеопередатчика (ножка TX), 0 — нет" },
         };
         static_assert(sizeof(table) / sizeof(table[0]) == PARAM_COUNT, "таблица настроек и ParamId разошлись");
         return table;

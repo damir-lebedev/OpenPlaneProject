@@ -98,19 +98,39 @@ void test_pulse_self_test_and_motor_signal_on_stm32()
 // SBUS на STM32: 8E2 и инверсия RX самим USART (RXINV) — до begin().
 void test_stm32_uart_opens_sbus_with_rx_inversion()
 {
-    Uart serial(200, 201);
-    Stm32UartPort sbus(serial);
+    Stm32UartPort sbus(200, 201);
     TEST_ASSERT_TRUE(sbus.begin(Config::SBUS_BAUDRATE, UartFormat::SBUS_8E2_INVERTED));
+    Uart& serial = *fake::uartByRx(200);
     TEST_ASSERT_EQUAL_UINT32(100000, serial.baud());
     TEST_ASSERT_EQUAL_HEX32(SERIAL_8E2, serial.config());
     TEST_ASSERT_TRUE(serial.isRxInverted());
 
-    Uart plain(202, 203);
-    Stm32UartPort crsf(plain);
+    Stm32UartPort crsf(202, 203);
     TEST_ASSERT_TRUE(crsf.begin(Config::CRSF_BAUDRATE, UartFormat::STANDARD_8N1));
+    Uart& plain = *fake::uartByRx(202);
     TEST_ASSERT_EQUAL_UINT32(420000, plain.baud());
     TEST_ASSERT_EQUAL_HEX32(SERIAL_8N1, plain.config());
     TEST_ASSERT_FALSE(plain.isRxInverted());
+}
+
+// P63: порт на других ножках (роль UART из настроек) — до begin();
+// обе ножки −1 — порта нет: begin не удаётся, чтение пусто, запись в никуда.
+void test_stm32_uart_rebinds_to_other_pins_and_can_be_off()
+{
+    Stm32UartPort port(210, 211);
+    TEST_ASSERT_NOT_NULL(fake::uartByRx(210));
+    port.rebind(212, 213);
+    TEST_ASSERT_NULL(fake::uartByRx(210));
+    TEST_ASSERT_TRUE(port.begin(Config::CRSF_BAUDRATE, UartFormat::STANDARD_8N1));
+    TEST_ASSERT_EQUAL_UINT32(420000, fake::uartByRx(212)->baud());
+
+    port.rebind(-1, -1);
+    TEST_ASSERT_NULL(fake::uartByRx(212));
+    TEST_ASSERT_FALSE(port.isAttached());
+    TEST_ASSERT_FALSE(port.begin(Config::CRSF_BAUDRATE, UartFormat::STANDARD_8N1));
+    TEST_ASSERT_EQUAL(0, port.available());
+    TEST_ASSERT_EQUAL(-1, port.read());
+    TEST_ASSERT_EQUAL(0, static_cast<int>(port.write(0x55)));
 }
 
 int main()
@@ -120,5 +140,6 @@ int main()
     RUN_TEST(test_the_plane_still_flies_and_the_console_menu_does_not_break);
     RUN_TEST(test_pulse_self_test_and_motor_signal_on_stm32);
     RUN_TEST(test_stm32_uart_opens_sbus_with_rx_inversion);
+    RUN_TEST(test_stm32_uart_rebinds_to_other_pins_and_can_be_off);
     return UNITY_END();
 }

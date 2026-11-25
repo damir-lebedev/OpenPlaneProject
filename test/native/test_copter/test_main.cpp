@@ -3737,6 +3737,108 @@ void test_copter_description_is_params()
     TEST_ASSERT_EQUAL_FLOAT(885.0f, p.value(PARAM_RX_MIN_USEC));
 }
 
+// P63: `serial` как в BF — что на каком UART; роли — настройки serial_*_uart.
+// Плата как SpeedyBee F405 V4: UART1…6, у UART5 только RX; приёмник UART2,
+// MSP UART4, телеметрия ESC UART5.
+void test_cli_serial_ports_like_betaflight()
+{
+    CopterParams& p = five5Params();
+    const float defaults[PORT_ROLES] = { 2, 0, 4, 5, 0 };
+    for (uint8_t i = 0; i < PORT_ROLES; ++i) p.setTableDefault(portParam(static_cast<PortRole>(i)), defaults[i]);
+    Bench b;
+    b.ctl.configure(p.tune());
+    CliCapture port;
+    CopterCli cli(p, b.ctl, port);
+    BoardUarts uarts;
+    for (uint8_t n = 1; n <= 6; ++n) uarts.rx[n] = uarts.tx[n] = true;
+    uarts.tx[5] = false;
+    cli.setBoardUarts(uarts);
+    TEST_ASSERT_TRUE(cli.enter());
+    port.take();
+
+    cli.execute("serial");
+    std::string out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "serial 0 0 115200 57600 0 115200\r\nserial 1 64 115200 57600 0 115200\r\n"), out.c_str());
+    TEST_ASSERT_TRUE(has(out, "serial 3 1 115200 57600 0 115200\r\nserial 4 1024 115200 57600 0 115200\r\n"));
+    TEST_ASSERT_TRUE(has(out, "serial 20 1 115200 57600 0 115200\r\n"));
+    TEST_ASSERT_FALSE(has(out, "serial 6 "));   // UART7 на плате нет
+    cli.execute("diff");
+    out = port.take();
+    TEST_ASSERT_FALSE_MESSAGE(has(out, "serial"), out.c_str());   // всё по умолчанию: ни serial, ни set serial_*
+
+    // GPS на UART1, телеметрию ESC — снять, приёмник — на UART6
+    cli.execute("serial 0 2 115200 57600 0 115200");
+    TEST_ASSERT_TRUE(has(port.take(), "# UART1: после save и перезагрузки"));
+    cli.execute("serial 4 0 115200 57600 0 115200");
+    cli.execute("serial 5 64 115200 57600 0 115200");
+    port.take();
+    TEST_ASSERT_EQUAL_FLOAT(1, p.value(PARAM_SERIAL_GPS_UART));
+    TEST_ASSERT_EQUAL_FLOAT(0, p.value(PARAM_SERIAL_ESC_UART));
+    TEST_ASSERT_EQUAL_FLOAT(6, p.value(PARAM_SERIAL_RX_UART));
+    TEST_ASSERT_TRUE(cli.hasUnsaved());
+    cli.execute("diff");
+    out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# serial\r\nserial 0 2 115200 57600 0 115200\r\nserial 1 0 115200 57600 0 115200\r\n"),
+                             out.c_str());
+    TEST_ASSERT_TRUE(has(out, "serial 4 0 115200 57600 0 115200\r\nserial 5 64 115200 57600 0 115200\r\n"));
+    TEST_ASSERT_FALSE(has(out, "serial 3 "));    // MSP на месте
+    TEST_ASSERT_FALSE(has(out, "set serial_"));
+
+    // ошибки: две функции на одном UART, VTX без TX, порта нет — карта не меняется
+    cli.execute("serial 2 3 115200 57600 0 115200");
+    TEST_ASSERT_TRUE(has(port.take(), "на одном UART — одна функция"));
+    cli.execute("serial 4 2048 115200 57600 0 115200");
+    TEST_ASSERT_TRUE(has(port.take(), "у UART5 не разведён TX"));
+    cli.execute("serial 7 64");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: порта 7 нет на плате"));
+    cli.execute("serial 30 64");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: порта 30 нет на плате"));
+    TEST_ASSERT_EQUAL_FLOAT(1, p.value(PARAM_SERIAL_GPS_UART));
+    TEST_ASSERT_EQUAL_FLOAT(0, p.value(PARAM_SERIAL_VTX_UART));
+
+    // чужие биты (FrSky 4, iBUS-телеметрия 4096) — пропущены, своё применено; USB — только MSP
+    cli.execute("serial 1 4160 115200 57600 0 115200");
+    TEST_ASSERT_TRUE(has(port.take(), "# serial UART2: функций 0x1000 у нас нет"));
+    TEST_ASSERT_EQUAL_FLOAT(2, p.value(PARAM_SERIAL_RX_UART));
+    cli.execute("serial 20 5 115200 57600 0 115200");
+    out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# serial USB: функций 0x4 у нас нет"), out.c_str());
+    TEST_ASSERT_FALSE(has(out, "ОШИБКА"));
+
+    // set serial_*: занятый UART — ошибка, значение прежнее; Tramp — бит 8192
+    cli.execute("set serial_gps_uart = 2");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: serial_gps_uart: UART2 уже занят: приёмник"));
+    TEST_ASSERT_EQUAL_FLOAT(1, p.value(PARAM_SERIAL_GPS_UART));
+    cli.execute("set serial_vtx_uart = 6");
+    cli.execute("set vtx_protocol = TRAMP");
+    port.take();
+    cli.execute("serial");
+    TEST_ASSERT_TRUE(has(port.take(), "serial 5 8192 115200 57600 0 115200\r\n"));
+
+    // diff Betaflight той же платы в batch: строки по одной, перестановка ролей без ошибок
+    cli.execute("batch start");
+    cli.execute("serial 0 64 115200 57600 0 115200");   // приёмник на UART1, где был GPS
+    cli.execute("serial 1 2 115200 57600 0 115200");    // GPS — на UART2, где был приёмник
+    cli.execute("serial 20 1 115200 57600 0 115200");
+    cli.execute("batch end");
+    out = port.take();
+    TEST_ASSERT_FALSE_MESSAGE(has(out, "ОШИБКА"), out.c_str());
+    TEST_ASSERT_EQUAL_FLOAT(1, p.value(PARAM_SERIAL_RX_UART));
+    TEST_ASSERT_EQUAL_FLOAT(2, p.value(PARAM_SERIAL_GPS_UART));
+
+    // сборка без таблицы UART: serial — честная ошибка, настройки — обычными set в dump
+    CliCapture port2;
+    CopterCli plain(p, b.ctl, port2);
+    TEST_ASSERT_TRUE(plain.enter());
+    port2.take();
+    plain.execute("serial");
+    TEST_ASSERT_TRUE(has(port2.take(), "###ОШИБКА: на этой сборке порты заданы платой"));
+    plain.execute("dump");
+    TEST_ASSERT_TRUE(has(port2.take(), "set serial_rx_uart = 1\r\n"));
+
+    for (uint8_t i = 0; i < PORT_ROLES; ++i) p.setTableDefault(portParam(static_cast<PortRole>(i)), 0);
+}
+
 void test_cli_aux_map_rxrange_and_diff()
 {
     CopterParams& p = five5Params();
@@ -10209,6 +10311,7 @@ int main()
     RUN_TEST(test_rc_tables_survive_flash);
     RUN_TEST(test_copter_description_is_params);
     RUN_TEST(test_cli_aux_map_rxrange_and_diff);
+    RUN_TEST(test_cli_serial_ports_like_betaflight);
     RUN_TEST(test_rxfail_table_like_betaflight);
     RUN_TEST(test_rx_input_rxfail_values);
     RUN_TEST(test_cli_rxfail_and_diff);

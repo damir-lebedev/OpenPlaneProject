@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include <new>
 
 #include "copter/Vtx.h"
 
@@ -15,31 +16,51 @@ class Stm32VtxPort : public copter::VtxPort
 {
 public:
     // pin — TX UART; −1 — провода нет (порт молчит).
-    explicit Stm32VtxPort(int16_t pin)
-        : serial(static_cast<pin_size_t>(pin < 0 ? 0 : pin)), connected(pin >= 0)
+    explicit Stm32VtxPort(int16_t pin) { attach(pin); }
+
+    Stm32VtxPort(const Stm32VtxPort&) = delete;
+    Stm32VtxPort& operator=(const Stm32VtxPort&) = delete;
+
+    // P63: провод на другом UART (настройка serial_vtx_uart), до open().
+    void rebind(int16_t pin)
     {
+        if (serial)
+        {
+            if (begun) serial->end();
+            serial->~Uart();
+            serial = nullptr;
+        }
+        begun = false;
+        attach(pin);
     }
 
     void open(uint32_t baud, bool twoStopBits) override
     {
-        if (!connected) return;
-        serial.end();
-        serial.begin(baud, twoStopBits ? SERIAL_8N2 : SERIAL_8N1);
-        serial.enableHalfDuplexRx();
+        if (!serial) return;
+        if (begun) serial->end();
+        serial->begin(baud, twoStopBits ? SERIAL_8N2 : SERIAL_8N1);
+        serial->enableHalfDuplexRx();
+        begun = true;
     }
 
     void send(const uint8_t* data, uint8_t length) override
     {
-        if (!connected) return;
-        serial.write(data, length);
-        serial.enableHalfDuplexRx();   // ждёт, пока уйдёт последний байт
+        if (!begun) return;
+        serial->write(data, length);
+        serial->enableHalfDuplexRx();   // ждёт, пока уйдёт последний байт
     }
 
-    int read() override { return connected ? serial.read() : -1; }
+    int read() override { return begun ? serial->read() : -1; }
 
-    bool isConnected() const { return connected; }
+    bool isConnected() const { return serial != nullptr; }
 
 private:
-    Uart serial;   // один пин — полудуплекс
-    bool connected;
+    void attach(int16_t pin)
+    {
+        if (pin >= 0) serial = new (storage) Uart(static_cast<pin_size_t>(pin));   // один пин — полудуплекс
+    }
+
+    alignas(Uart) uint8_t storage[sizeof(Uart)];
+    Uart* serial = nullptr;
+    bool begun = false;
 };

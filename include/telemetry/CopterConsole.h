@@ -63,6 +63,8 @@ public:
 
     // Куда CLI сохраняет настройки (save); без него — только до перезагрузки.
     void setStore(KeyValueStore* store) { cli.setStore(store); }
+    // P63: какие UART разведены — для `serial`, проверки serial_*_uart и вкладки «Порты».
+    void setBoardUarts(const copter::BoardUarts& b) { cli.setBoardUarts(b); }
     bool cliActive() const { return cli.active(); }
     // Сохранить и применить (команды стиками: профиль, save, горизонт) — как save.
     copter::CopterCli::SaveResult saveSettings() { return cli.saveAndApply(); }
