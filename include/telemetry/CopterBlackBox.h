@@ -58,6 +58,7 @@ public:
     static constexpr uint32_t IDLE_HEADROOM_BYTES = 4 * BlackBoxFormat::MAX_RECORD;
     static constexpr uint32_t STATE_PERIOD_MS = 20;
     static constexpr uint32_t SYS_PERIOD_MS = 1000;
+    static constexpr uint32_t NAV_PERIOD_MS = 100;
 
     CopterBlackBox(copter::CopterController& controller, copter::CopterParams& paramsRef, BlackBoxStorage& flightStorage,
                    LoopStats& stats, RcReceiver& receiver)
@@ -263,7 +264,8 @@ private:
 
     ResetCause resetReason = ResetCause::Unknown;
     bool resetStartPending = false;
-    uint32_t lastStateMs = 0, lastSysMs = 0;
+    uint32_t lastStateMs = 0, lastSysMs = 0, lastNavMs = 0;
+    uint8_t lastNavFlags = 0;
     uint32_t lastGpsStamp = 0;
     uint32_t armRequestMs = 0;
     static constexpr uint32_t ARM_REFUSE_MS = 100;
@@ -287,6 +289,9 @@ private:
         bool trainer = false;    // режим ACRO TRAINER
         bool chirp = false;      // идёт качание частоты
         uint8_t gpsSpoof = 0;    // GpsSpoof::NONE
+        bool crashRecovery = false, yawSpin = false, gyroSaturated = false;
+        uint8_t headingSource = 0xFF;
+        uint8_t posFail = 0;     // PosHoldFail::NONE
     } seen;
 
     bool vehicleArmed() const override { return ctl.isArmed(); }
@@ -421,6 +426,36 @@ private:
                 event("chirp: конец — %s", copter::chirpEndName(s.chirpEnd));
             seen.chirp = s.chirpActive;
         }
+        // защиты (P56): когда сработали — Studio ставит метку на шкале
+        if (s.crashRecovery != seen.crashRecovery)
+        {
+            if (s.crashRecovery) event("crash recovery: удар в воздухе — выравнивание");
+            seen.crashRecovery = s.crashRecovery;
+        }
+        if (s.yawSpin != seen.yawSpin)
+        {
+            if (s.yawSpin) event("yaw spin recovery: раскрутка по рысканью — останавливаю");
+            seen.yawSpin = s.yawSpin;
+        }
+        if (s.gyroSaturated != seen.gyroSaturated)
+        {
+            event(s.gyroSaturated ? "гироскоп в упоре: горизонт под вопросом" : "гироскоп: из упора вышел");
+            seen.gyroSaturated = s.gyroSaturated;
+        }
+        if (static_cast<uint8_t>(s.headingSource) != seen.headingSource)
+        {
+            if (seen.headingSource != 0xFF || s.headingSource != copter::HeadingSource::NONE)
+                event("курс: %s", copter::headingSourceName(s.headingSource));
+            seen.headingSource = static_cast<uint8_t>(s.headingSource);
+        }
+        if (static_cast<uint8_t>(s.posHoldFail) != seen.posFail)
+        {
+            if (s.posHoldFail != copter::PosHoldFail::NONE)
+                event("POS HOLD: не держит — %s", copter::posHoldFailName(s.posHoldFail));
+            else
+                event("POS HOLD: держит");
+            seen.posFail = static_cast<uint8_t>(s.posHoldFail);
+        }
         if (s.crashed != seen.crashed)
         {
             if (s.crashed) event("авария: переворот или потеря управления — моторы выключены");
@@ -525,6 +560,50 @@ private:
         return f;
     }
 
+    static uint8_t navFlags(const copter::CopterStatus& s)
+    {
+        namespace F = BlackBoxFormat::CopterNavFlag;
+        uint8_t f = 0;
+        if (s.posValid) f |= F::POS_VALID;
+        if (s.crashRecovery) f |= F::CRASH_RECOVERY;
+        if (s.yawSpin) f |= F::YAW_SPIN;
+        if (s.gyroSaturated) f |= F::GYRO_SATURATED;
+        if (s.magDisagrees) f |= F::MAG_DISAGREES;
+        if (s.gpsSpoof != copter::GpsSpoof::NONE) f |= F::GPS_SPOOF;
+        if (s.runawayCheck) f |= F::RUNAWAY_CHECK;
+        if (s.turtle) f |= F::TURTLE;
+        return f;
+    }
+
+    static int32_t cm(float metres)
+    {
+        if (!(metres == metres)) return 0;
+        return static_cast<int32_t>(lroundf(constrain(metres, -2.0e7f, 2.0e7f) * 100.0f));
+    }
+
+    void navRecord(const copter::CopterStatus& s, uint8_t f)
+    {
+        BlackBoxFormat::CopterNavRecord r;
+        r.tUs = nowUs;
+        r.posNcm = cm(s.posN);
+        r.posEcm = cm(s.posE);
+        r.velNcms = i16(s.velN * 100.0f);
+        r.velEcms = i16(s.velE * 100.0f);
+        const bool holding = s.posHoldPhase != copter::PosHoldPhase::OFF;
+        r.tgtNcm = holding ? cm(s.posTargetN) : 0;
+        r.tgtEcm = holding ? cm(s.posTargetE) : 0;
+        float heading = fmodf(s.heading, 360.0f);
+        if (heading < 0.0f) heading += 360.0f;
+        r.heading = u16(heading * 100.0f);
+        r.headingSource = static_cast<uint8_t>(s.headingSource);
+        r.holdPhase = static_cast<uint8_t>(s.posHoldPhase);
+        r.holdFail = static_cast<uint8_t>(s.posHoldFail);
+        r.rescuePhase = static_cast<uint8_t>(s.rescuePhase);
+        r.gpsTrust = s.gpsTrust;
+        r.flags = f;
+        pushRecord(BlackBoxFormat::REC_QNAV, r);
+    }
+
     void sample(const copter::CopterSensors& sens, const copter::CopterRc& rc, const copter::CopterOutputs& out, uint32_t workUs)
     {
         countRate();
@@ -611,6 +690,18 @@ private:
             pushRecord(BlackBoxFormat::REC_QSTATE, r);
         }
 
+        // навигация: 10 Гц, а защита сработала — сразу (крах и раскрутка короче 100 мс не бывают,
+        // но метка на шкале должна стоять точно)
+        {
+            const uint8_t nf = navFlags(s);
+            if (nowMs - lastNavMs >= NAV_PERIOD_MS || nf != lastNavFlags)
+            {
+                lastNavMs = nowMs;
+                lastNavFlags = nf;
+                navRecord(s, nf);
+            }
+        }
+
         if (gps && gps->isAvailable() && gps->getGpsData().timestamp != lastGpsStamp)
         {
             const GpsData& d = gps->getGpsData();
@@ -672,11 +763,17 @@ private:
         info("loop_hz=%.0f", static_cast<double>(t.loopHz));
         info("rate.gyro_hz=%.0f", static_cast<double>(t.loopHz / divider));
         info("rate.state_hz=%lu", static_cast<unsigned long>(1000 / STATE_PERIOD_MS));
+        info("rate.nav_hz=%lu", static_cast<unsigned long>(1000 / NAV_PERIOD_MS));
         static const char* const MODES[] = { "NORMAL", "MOTOR_TEST", "ALWAYS" };
         info("blackbox_mode=%s", MODES[static_cast<uint8_t>(mode) % 3]);
         info("bits.flags=%s", BlackBoxFormat::CopterFlag::NAMES);
         info("names.mode=ACRO HORIZON ANGLE ALT_HOLD POS_HOLD");
         info("names.state=DISARMED ARMED FAILSAFE");
+        info("bits.nav_flags=%s", BlackBoxFormat::CopterNavFlag::NAMES);
+        info("names.hsrc=NONE GPS MAG");
+        info("names.hold=OFF MOVE BRAKE HOLD");
+        info("names.hold_fail=NONE NO_GPS NO_HEADING DRIFT");
+        info("names.rescue=IDLE CLIMB FLY_HOME DESCEND LAND ABORT");
         // всё одной записью не влезает (255 байт): флаги BF — биты 0–25, наши — с 26-го
         char codes[240];
         blockerCodes(copter::ARM_BLOCK_BF_MASK, codes, sizeof(codes));

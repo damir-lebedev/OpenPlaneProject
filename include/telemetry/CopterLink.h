@@ -375,6 +375,16 @@ public:
         w.add("@live {\"t\":%lu,\"arm\":%s,\"state\":\"%s\",\"mode\":\"%s\"", static_cast<unsigned long>(nowMs),
               ctl.isArmed() ? "true" : "false", stateName(s.state), copterModeName(s.mode));
         if (s.turtle) w.add(",\"turtle\":true");   // моторы наоборот (FLIP OVER AFTER CRASH)
+        // защиты, пока работают: crash recovery, yaw spin recovery, гироскоп в упоре
+        if (s.crashRecovery || s.yawSpin || s.gyroSaturated)
+        {
+            const char* sep = "";
+            w.add(",\"prot\":[");
+            if (s.crashRecovery) { w.add("\"crash\""); sep = ","; }
+            if (s.yawSpin) { w.add("%s\"yawspin\"", sep); sep = ","; }
+            if (s.gyroSaturated) w.add("%s\"gyrosat\"", sep);
+            w.add("]");
+        }
         w.add(",\"rx\":\"%s\"", rc.isFrameTimeout() ? "lost" : rc.isFailsafeReported() ? "fs" : "ok");
         if (rc.getLinkQuality() >= 0) w.add(",\"lq\":%d", static_cast<int>(rc.getLinkQuality()));
         if (rssi && rssi->percent() >= 0)

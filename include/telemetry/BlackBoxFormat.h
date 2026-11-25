@@ -121,6 +121,7 @@ namespace BlackBoxFormat
         REC_QSTATE = 0x23,   // 50 Гц: углы, высота, стики, батарея, режим, флаги, запреты ARM
         REC_CAM    = 0x24,   // кадр камеры (JPEG) кусками: номер, смещение, длина, байты (telemetry/CameraStream.h)
         REC_QCHIRP = 0x25,   // каждый цикл, пока идёт chirp: возбуждение, команда оси, гироскоп (copter/Chirp.h)
+        REC_QNAV   = 0x26,   // 10 Гц и при смене флагов: оценка положения, POS HOLD, источник курса, защиты
         REC_ERASED = 0xFF,   // стёртый флеш: дальше в секторе записей нет
     };
 
@@ -290,6 +291,21 @@ namespace BlackBoxFormat
             "bat_warn bat_crit motor_test manual overload";
     }
 
+    // Биты CopterNavRecord::flags (имена — в INFO "bits.nav_flags").
+    namespace CopterNavFlag
+    {
+        constexpr uint8_t POS_VALID      = 1u << 0;   // оценка положения годна (copter/PositionEstimator.h)
+        constexpr uint8_t CRASH_RECOVERY = 1u << 1;   // удар в воздухе — выравнивается (crash_recovery)
+        constexpr uint8_t YAW_SPIN       = 1u << 2;   // раскрутка по рысканью — останавливается (yaw_spin_recovery)
+        constexpr uint8_t GYRO_SATURATED = 1u << 3;   // гироскоп в упоре сейчас или недавно
+        constexpr uint8_t MAG_DISAGREES  = 1u << 4;   // компас расходится с курсом по полёту — не верим
+        constexpr uint8_t GPS_SPOOF      = 1u << 5;   // подмена GPS — GPS выключен из навигации
+        constexpr uint8_t RUNAWAY_CHECK  = 1u << 6;   // проверка runaway takeoff ещё идёт
+        constexpr uint8_t TURTLE         = 1u << 7;   // turtle mode
+        constexpr const char* NAMES =
+            "pos_valid crash_recovery yaw_spin gyro_saturated mag_disagrees gps_spoof runaway_check turtle";
+    }
+
     struct CopterGyroRecord
     {
         uint32_t tUs;
@@ -348,6 +364,23 @@ namespace BlackBoxFormat
         uint8_t profiles;       // PID-профиль << 4 | профиль расходов
         uint16_t flags;         // CopterFlag::*
         uint32_t armBlockers;   // copter::ArmBlock
+    };
+
+    // Навигация: где коптер по своей оценке, что делает удержание позиции,
+    // откуда курс и какие защиты сработали (P39 (б), P56).
+    struct CopterNavRecord
+    {
+        uint32_t tUs;
+        int32_t posNcm, posEcm;     // оценка положения от дома, см (север, восток)
+        int16_t velNcms, velEcms;   // скорость, см/с
+        int32_t tgtNcm, tgtEcm;     // точка удержания POS HOLD, см
+        uint16_t heading;           // 0.01°, курс носа 0..360
+        uint8_t headingSource;      // copter::HeadingSource
+        uint8_t holdPhase;          // copter::PosHoldPhase
+        uint8_t holdFail;           // copter::PosHoldFail
+        uint8_t rescuePhase;        // copter::RescuePhase
+        uint8_t gpsTrust;           // доверие GPS, %
+        uint8_t flags;              // CopterNavFlag::*
     };
 
 #pragma pack(pop)
@@ -435,6 +468,11 @@ namespace BlackBoxFormat
         "rc_roll:h/1000 rc_pitch:h/1000 rc_yaw:h/1000 rc_throttle:H/1000 hover:H/1000 "
         "vbat_v:H/1000 amps:H/100 mah:H rot_hz:H lq:h mode:B state:B profiles:B flags:H arm_blockers:I";
 
+    constexpr const char* QNAV_FIELDS =
+        "t_us:I pos_n:i/100 pos_e:i/100 vel_n:h/100 vel_e:h/100 tgt_n:i/100 tgt_e:i/100 heading:H/100 "
+        "hsrc:B hold:B hold_fail:B rescue:B gps_trust:B flags:B";
+
+    static_assert(schemaSize(QNAV_FIELDS) == sizeof(CopterNavRecord), "QNAV: схема != struct");
     static_assert(schemaSize(QGYRO_FIELDS) == sizeof(CopterGyroRecord), "QGYRO: схема != struct");
     static_assert(schemaSize(QCTRL_FIELDS) == sizeof(CopterCtrlRecord), "QCTRL: схема != struct");
     static_assert(schemaSize(QMOT8_FIELDS) == sizeof(CopterMotor8Record), "QMOT8: схема != struct");
@@ -462,6 +500,7 @@ namespace BlackBoxFormat
         { REC_QMOT8,  "QMOT8",  QMOT8_FIELDS, sizeof(CopterMotor8Record) },
         { REC_QSTATE, "QSTATE", QSTATE_FIELDS, sizeof(CopterStateRecord) },
         { REC_QCHIRP, "QCHIRP", QCHIRP_FIELDS, sizeof(CopterChirpRecord) },
+        { REC_QNAV,   "QNAV",   QNAV_FIELDS,   sizeof(CopterNavRecord) },
         // y — байты до конца записи (кусок JPEG)
         { REC_CAM,    "CAM",    "t_us:I frame:H off:I size:I data:y", 0 },
     };

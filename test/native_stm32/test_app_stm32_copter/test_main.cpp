@@ -625,6 +625,7 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE(contains(live[0], "\"hsrc\":\"NONE\""));
     TEST_ASSERT_FALSE(contains(live[0], "\"mag\":"));
     TEST_ASSERT_FALSE(contains(live[0], "\"pos\":"));
+    TEST_ASSERT_FALSE(contains(live[0], "\"prot\":"));   // защиты не работают
 
     // проверка моторов: ползунок держится, пока приложение повторяет
     host("motor 1 12");

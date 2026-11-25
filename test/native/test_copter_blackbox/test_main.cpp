@@ -462,6 +462,32 @@ void test_simulated_flight_is_in_the_log()
     TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "авария"));
     TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "ARM отклонён"));
     TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "vehicle=copter"));
+
+    // P39 (б): навигация — 10 Гц; без GPS оценки положения нет, курса нет, POS HOLD не включался
+    {
+        const double navHz = countType(recs, REC_QNAV) / seconds;
+        uint8_t anyFlags = 0, anyHold = 0, anySrc = 0;
+        for (const Rec& r : recs)
+        {
+            if (r.type != REC_QNAV) continue;
+            const BlackBoxFormat::CopterNavRecord n = r.as<BlackBoxFormat::CopterNavRecord>();
+            anyFlags |= n.flags & BlackBoxFormat::CopterNavFlag::POS_VALID;
+            anyHold |= n.holdPhase;
+            anySrc |= n.headingSource;
+            TEST_ASSERT_TRUE(n.heading < 36000);
+        }
+        snprintf(line, sizeof(line), "QNAV %.1f Hz, pos_valid %u, hold %u, hsrc %u", navHz, anyFlags, anyHold, anySrc);
+        TEST_MESSAGE(line);
+        TEST_ASSERT_TRUE_MESSAGE(navHz > 9.5 && navHz < 11.0, line);
+        TEST_ASSERT_EQUAL(0, anyFlags);
+        TEST_ASSERT_EQUAL(0, anyHold);
+        TEST_ASSERT_EQUAL(0, anySrc);
+        TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "bits.nav_flags=pos_valid crash_recovery yaw_spin"));
+        TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "names.hold=OFF MOVE BRAKE HOLD"));
+        TEST_ASSERT_TRUE(hasText(recs, REC_SCHEMA, "QNAV"));
+        TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "курс:"));
+        TEST_ASSERT_FALSE(hasText(recs, REC_EVENT, "POS HOLD"));
+    }
     TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "frame=QUAD_X") || hasText(recs, REC_INFO, "frame="));
 
 }
