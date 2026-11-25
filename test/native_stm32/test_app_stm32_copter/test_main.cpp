@@ -626,6 +626,10 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_FALSE(contains(live[0], "\"mag\":"));
     TEST_ASSERT_FALSE(contains(live[0], "\"pos\":"));
     TEST_ASSERT_FALSE(contains(live[0], "\"prot\":"));   // защиты не работают
+    // вкладка «Датчики»: гироскоп и акселерометр в осях рамы, температура чипа, барометр
+    TEST_ASSERT_TRUE_MESSAGE(contains(live[0], "\"sens\":{\"ok\":true,\"g\":["), live[0].c_str());
+    TEST_ASSERT_TRUE_MESSAGE(contains(live[0], ",\"it\":"), live[0].c_str());
+    TEST_ASSERT_TRUE_MESSAGE(contains(live[0], ",\"baro\":["), live[0].c_str());
 
     // проверка моторов: ползунок держится, пока приложение повторяет
     host("motor 1 12");

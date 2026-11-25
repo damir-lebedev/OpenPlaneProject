@@ -421,6 +421,9 @@ namespace copter
         uint32_t armBlockers = 0;
         float roll = 0, pitch = 0, yaw = 0;     // °
         float rates[3] = {};                    // °/с после фильтров
+        float gyroIn[3] = {};                   // °/с в осях рамы, до фильтров (вкладка «Датчики»)
+        float accIn[3] = {};                    // g в осях рамы, после нуля акселерометра
+        bool imuOk = false;                     // гироскоп отвечает
         float setpoint[3] = {};                 // °/с
         float altitude = 0, climbRate = 0;      // м, м/с (от точки ARM)
         float altTarget = 0;
@@ -689,6 +692,12 @@ namespace copter
             // плата -> рама: align_board_*, нуль акселерометра, gyro_offset_yaw
             float gyroIn[3], accIn[3];
             imuAlign.apply(sens.gyro, sens.accel, gyroIn, accIn);
+            for (int i = 0; i < 3; ++i)
+            {
+                status.gyroIn[i] = gyroIn[i];
+                status.accIn[i] = accIn[i];
+            }
+            status.imuOk = sens.imuOk;
             float rates[3] = { gyroIn[0], gyroIn[1], gyroIn[2] };
             if (sens.batteryVolts > 1.0f)
             {

@@ -1499,6 +1499,7 @@ void setup()
         else Serial.println("Второй гироскоп (SPI4) не ответил — у SLIM V3/WING его и нет");
     }
     if (baroSensor.begin()) baroSensor.calibrateAltitude();
+    copterConsole.setBaro(&baroSensor);
     if (Config::PIN_GPS_RX >= 0) gps.begin();
     if (magL.begin()) compass = &magL;
     else if (magP.begin()) compass = &magP;

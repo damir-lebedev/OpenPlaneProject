@@ -58,6 +58,7 @@ public:
     {
         cli.setVersion("OpenPlane copter / " OP_BOARD_ENV " / " OP_SOURCE_COMMIT);
         link.setTxModel(msp.txModelName());
+        link.setSensors(&imu, nullptr);
     }
 
     // Куда CLI сохраняет настройки (save); без него — только до перезагрузки.
@@ -125,6 +126,8 @@ public:
     }
     // Перегрузка по току (copter/EscGuard.h) — в живые кадры.
     void setGuard(const copter::EscGuard* g) { link.setGuard(g); }
+    // Барометр — во вкладку «Датчики» (давление, температура, высота).
+    void setBaro(const BarometerSensor* b) { link.setSensors(&imu, b); }
     void setGyros(const copter::GyroPick* pick, const uint8_t* aliveMask, const copter::GyroAgreement* agreement, ImuSensor* second)
     {
         link.setGyros(pick, aliveMask, agreement);

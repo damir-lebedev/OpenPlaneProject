@@ -102,6 +102,12 @@ public:
         magPresent = present;
     }
     void setOutputs(const copter::CopterOutputs& out) { outputs = out; }
+    // Датчики для вкладки «Датчики»: температура гироскопа, барометр (давление, температура, высота).
+    void setSensors(const ImuSensor* imuSensor, const BarometerSensor* baroSensor)
+    {
+        imu = imuSensor;
+        baro = baroSensor;
+    }
     // Два гироскопа на плате (copter/GyroSelect.h): маска живых и маска взятых в контур.
     void setGyros(const copter::GyroPick* pick, const uint8_t* aliveMask, const copter::GyroAgreement* agreement)
     {
@@ -398,6 +404,17 @@ public:
         for (uint8_t i = 0; i < Config::RC_CHANNELS; ++i) w.add(i ? ",%u" : "%u", static_cast<unsigned>(rc.getState().get(i)));
         w.add("],\"att\":[%.1f,%.1f,%.1f],\"alt\":%.2f,\"vz\":%.2f,\"thr\":%.3f,\"v\":%.2f", s.roll, s.pitch, s.yaw,
               s.altitude, s.climbRate, s.throttle, s.volts);
+        // вкладка «Датчики»: гироскоп (°/с, до фильтров) и акселерометр (g) в осях рамы, температура
+        // гироскопа; барометр — давление (Па), температура, высота над морем (м)
+        w.add(",\"sens\":{\"ok\":%s,\"g\":[%.1f,%.1f,%.1f],\"a\":[%.3f,%.3f,%.3f]", s.imuOk ? "true" : "false",
+              s.gyroIn[0], s.gyroIn[1], s.gyroIn[2], s.accIn[0], s.accIn[1], s.accIn[2]);
+        if (imu && imu->isAvailable()) w.add(",\"it\":%.1f", imu->getImuData().temperature);
+        if (baro && baro->isAvailable())
+        {
+            const BarometerData& b = baro->getBarometerData();
+            w.add(",\"baro\":[%.0f,%.1f,%.2f]", b.pressure, b.temperature, b.altitude);
+        }
+        w.add("}");
         // chirp: идёт ли качание, по какой оси (или какая следующая), частота, чем кончилось прошлое
         if (s.chirpActive || s.chirpRun > 0)
         {
@@ -1030,6 +1047,8 @@ private:
     float headingDeg = 0.0f;
     const char* txModel = nullptr;
     const copter::Compass* magCal = nullptr;
+    const ImuSensor* imu = nullptr;
+    const BarometerSensor* baro = nullptr;
     bool magPresent = false;
     const copter::GyroPick* gyroPick = nullptr;
     const uint8_t* gyroAlive = nullptr;
