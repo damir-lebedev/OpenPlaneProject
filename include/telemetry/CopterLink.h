@@ -507,7 +507,14 @@ public:
             const copter::GpsFix& f = gpsHome->fix();
             w.add(",\"gps\":{\"fix\":%s,\"sats\":%u,\"lat\":%.7f,\"lon\":%.7f,\"spd\":%.1f", f.valid ? "true" : "false",
                   f.satellites, f.latitude, f.longitude, f.speedMs);
-            if (gpsHome->hasHome()) w.add(",\"home\":%.0f,\"dir\":%.0f", gpsHome->distanceM(), gpsHome->bearingHomeDeg());
+            if (gpsHome->hasHome())
+            {
+                // расстояние и направление на дом + где коптер от дома (м на север/восток) — карта в Studio
+                float north = 0.0f, east = 0.0f;
+                gpsHome->offsetFromHome(north, east);
+                w.add(",\"home\":%.0f,\"dir\":%.0f,\"n\":%.1f,\"e\":%.1f", gpsHome->distanceM(), gpsHome->bearingHomeDeg(),
+                      static_cast<double>(north), static_cast<double>(east));
+            }
             if (!f.valid && gpsHome->hasLastGood())   // фикс пропал — где был (найти упавший)
                 w.add(",\"last\":[%.7f,%.7f]", gpsHome->lastGood().latitude, gpsHome->lastGood().longitude);
             // подмена (copter/GpsIntegrity.h): доверие 0…100 и причина, если GPS выключен из навигации
