@@ -245,6 +245,16 @@ namespace copter
             return true;
         }
 
+        // Отрезки AB и CD пересекаются (касание не считается).
+        static bool segmentsCross(float an, float ae, float bn, float be, float cn, float ce, float dn, float de)
+        {
+            auto cross = [](float x1, float y1, float x2, float y2, float x3, float y3) {
+                return (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
+            };
+            const float d1 = cross(cn, ce, dn, de, an, ae), d2 = cross(cn, ce, dn, de, bn, be);
+            const float d3 = cross(an, ae, bn, be, cn, ce), d4 = cross(an, ae, bn, be, dn, de);
+            return ((d1 > 0) != (d2 > 0)) && ((d3 > 0) != (d4 > 0)) && d1 != 0 && d2 != 0 && d3 != 0 && d4 != 0;
+        }
     private:
         bool fail()
         {
@@ -306,15 +316,6 @@ namespace copter
             outE7 = static_cast<int32_t>(neg ? -v : v);
             *end = const_cast<char*>(p);
             return true;
-        }
-        static bool segmentsCross(float an, float ae, float bn, float be, float cn, float ce, float dn, float de)
-        {
-            auto cross = [](float x1, float y1, float x2, float y2, float x3, float y3) {
-                return (x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1);
-            };
-            const float d1 = cross(cn, ce, dn, de, an, ae), d2 = cross(cn, ce, dn, de, bn, be);
-            const float d3 = cross(an, ae, bn, be, cn, ce), d4 = cross(an, ae, bn, be, dn, de);
-            return ((d1 > 0) != (d2 > 0)) && ((d3 > 0) != (d4 > 0)) && d1 != 0 && d2 != 0 && d3 != 0 && d4 != 0;
         }
         static void put32(uint8_t* p, int32_t v)
         {

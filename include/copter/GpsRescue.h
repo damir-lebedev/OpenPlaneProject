@@ -2,6 +2,8 @@
 #include <math.h>
 #include <stdint.h>
 
+#include "copter/RescueTrail.h"
+
 // ============================================================
 // GPS Rescue — возврат домой по GPS, как в Betaflight: по потере связи
 // (failsafe_procedure = GPS-RESCUE, этап 2) или режимом GPS RESCUE с
@@ -24,6 +26,20 @@
 //               месте (AUTO-LAND). У BF здесь DISARM — мы выбираем посадку.
 //
 // Ближе min_start_dist — сразу LAND (BF: «слишком близко»).
+//
+// Своё (P45, P44 б2; в BF нет):
+//   TRAIL     — назад по своему следу (copter/RescueTrail.h): путь заведомо
+//               свободен. Включается в начале, если коптер ниже, чем летал на
+//               ближайших rth_path_m метрах пути (rth_breadcrumbs ON: залетел
+//               под кроны — не лезть вверх в ветки), или если прямая домой
+//               пересекает запретную зону / край поля геозабора (всегда).
+//               Высота — высота точки следа, скорость не больше TRAIL_SPEED,
+//               петли срезаются. Сошёл со следа, когда выше всего на
+//               ближайших rth_path_m метрах пути (без TRAIL_ALT_TOL) и прямая
+//               свободна, — дальше как обычно: CLIMB → FLY_HOME;
+//   высота возврата не ниже наибольшей высоты на rth_path_m метрах пути +
+//   initial_climb (при любом alt_mode); с rth_breadcrumbs у дома не
+//   скользить вниз (DESCEND держит высоту) — снижение только над домом (LAND).
 //
 // Проверки (gps_rescue_sanity_checks: OFF / ON / FS_ONLY — только при потере
 // связи): нет дома или фикса, спутников меньше min_sats, GPS молчит 2 с,
@@ -62,6 +78,8 @@ namespace copter
         RescueSanity sanity = RescueSanity::FS_ONLY;
         bool allowArmingWithoutFix = false;
         float velocityP = 8.0f, velocityI = 40.0f, velocityD = 12.0f;   // gps_rescue_velocity_*
+        bool breadcrumbs = true;        // rth_breadcrumbs: ниже, чем летал, — назад по следу
+        float pathM = 100.0f;           // rth_path_m: сколько метров пути помнить для высоты; 0 — нет
     };
 
     // Что знает коптер о GPS и курсе (main_copter.cpp, симулятор — тестам).
@@ -93,7 +111,7 @@ namespace copter
         float headingDeg = 0.0f;
     };
 
-    enum class RescuePhase : uint8_t { IDLE, CLIMB, FLY_HOME, DESCEND, LAND, ABORT };
+    enum class RescuePhase : uint8_t { IDLE, CLIMB, FLY_HOME, DESCEND, LAND, ABORT, TRAIL };
 
     inline const char* rescuePhaseName(RescuePhase p)
     {
@@ -104,6 +122,7 @@ namespace copter
             case RescuePhase::DESCEND: return "DESCEND";
             case RescuePhase::LAND: return "LAND";
             case RescuePhase::ABORT: return "ABORT";
+            case RescuePhase::TRAIL: return "TRAIL";
             case RescuePhase::IDLE:
             default: return "IDLE";
         }
@@ -162,22 +181,29 @@ namespace copter
         static constexpr float NO_YAW_DIST_M = 12.0f;
         static constexpr float LAND_GAIN = 0.5f;    // 1/с: скорость к точке дома на посадке
         static constexpr float LAND_SPEED = 2.0f;   // м/с, не быстрее
+        static constexpr float TRAIL_SPEED = 3.0f;      // м/с: по следу не быстрее
+        static constexpr float TRAIL_REACH_M = 2.5f;    // точка следа пройдена (по земле)
+        static constexpr float TRAIL_ALT_REACH_M = 1.5f; // и ниже неё не больше чем на столько
+        static constexpr float TRAIL_ALT_TOL = 2.0f;    // «не ниже пути»: шум барометра
 
         void configure(const GpsRescueSettings& s) { set = s; }
         const GpsRescueSettings& settings() const { return set; }
 
         // Каждый цикл, пока заармлен (и вне возврата): наибольшая высота
-        // полёта (для MAX_ALT) и последний фикс.
-        void track(const GpsInput& g, float altM, float dt)
+        // полёта (для MAX_ALT) и последний фикс; trailOk — фикс достоверный и
+        // коптер в воздухе: пишется след (не во время возврата).
+        void track(const GpsInput& g, float altM, float dt, bool trailOk = false)
         {
             if (altM > maxAltM) maxAltM = altM;
             sinceFix = g.fresh ? 0.0f : sinceFix + dt;
             if (g.fresh) last = g;
+            if (trailOk && g.fresh && g.fix && g.home && !active()) trail_.record(g.northM, g.eastM, altM);
         }
 
         void resetFlight()
         {
             maxAltM = 0.0f;
+            trail_.reset();
             phase_ = RescuePhase::IDLE;
             fail_ = RescueFail::NONE;
             headingOffset = 0.0f;
@@ -217,10 +243,23 @@ namespace copter
             }
             const float dist = distance(last);
             bestDist = dist;
+            ceiling = ceilingM;
+            trailAt = trail_.size() ? static_cast<uint8_t>(trail_.size() - 1) : 0;
             targetAlt = returnAltitude(altM, ceilingM);
             returnAlt = targetAlt;
             phase_ = dist < set.minStartDistM ? RescuePhase::LAND : RescuePhase::CLIMB;
+            if (phase_ == RescuePhase::CLIMB && beginTrail(altM)) phase_ = RescuePhase::TRAIL;
         }
+
+        // Каждый цикл до update() (контроллер, по геозабору): прямая отсюда
+        // домой пересекает запретную зону или край поля — идти по следу.
+        void setDirectBlocked(bool b) { directBlocked = b; }
+        // Точка следа, к которой идёт TRAIL (номер; 0 — самая старая, у дома).
+        uint8_t trailIndex() const { return trailAt; }
+        const RescueTrail& trail() const { return trail_; }
+        // Последний фикс: от дома, м (для проверки прямой по геозабору).
+        float fixNorth() const { return last.northM; }
+        float fixEast() const { return last.eastM; }
 
         void stop() { phase_ = RescuePhase::IDLE; }
         // Прервать снаружи (GPS подменяют — по нему лететь нельзя даже без проверок).
@@ -240,6 +279,8 @@ namespace copter
                 case RescueAltMode::MAX_ALT:
                 default: t = fmaxf(maxAltM, altM) + set.initialClimbM; break;
             }
+            // не ниже того, на чём летал на ближайших rth_path_m метрах пути
+            if (set.pathM > 0.0f && trail_.size()) t = fmaxf(t, trail_.maxAltAhead(active() ? trailAt : static_cast<uint8_t>(trail_.size() - 1), set.pathM) + set.initialClimbM);
             return ceilingM > 0.0f ? fminf(t, ceilingM) : t;
         }
 
@@ -335,6 +376,42 @@ namespace copter
 
             switch (phase_)
             {
+                case RescuePhase::TRAIL:
+                {
+                    float tn, te, ta;
+                    trail_.point(trailAt, tn, te, ta);
+                    const float dN = tn - pN, dE = te - pE, d = sqrtf(dN * dN + dE * dE);
+                    trailTimer += dt;
+                    if (d < TRAIL_REACH_M && altM > ta - TRAIL_ALT_REACH_M)
+                    {
+                        trailTimer = 0.0f;
+                        if (trailAt == 0)
+                        {
+                            leaveTrail(altM, dist);
+                            break;
+                        }
+                        trailAt = trail_.cutLoop(static_cast<uint8_t>(trailAt - 1), pN, pE, altM);
+                        if (!needTrail(altM)) leaveTrail(altM, dist);
+                        break;
+                    }
+                    // застрял (ветер, точка недостижима) — дальше как обычно
+                    if (trailTimer > PROGRESS_WINDOW_S)
+                    {
+                        leaveTrail(altM, dist);
+                        break;
+                    }
+                    targetAlt = ceiling > 0.0f ? fminf(ta, ceiling) : ta;
+                    c.climbRate = climbTo(altM);
+                    // ниже точки — сначала подняться, потом вперёд
+                    const float low = ta - TRAIL_ALT_REACH_M - altM;
+                    float speed = fminf(set.groundSpeed, TRAIL_SPEED) * fmaxf(0.0f, fminf(1.0f, 1.0f - low / 2.0f));
+                    speed = fminf(speed, 0.8f * d + 0.5f);
+                    const float wN = d > 0.1f ? dN / d * speed : 0.0f, wE = d > 0.1f ? dE / d * speed : 0.0f;
+                    holdPosition(fwd, side, wN * cosf(h) + wE * sinf(h), -wN * sinf(h) + wE * cosf(h), c, dt);
+                    // нос — по ходу (камера смотрит, куда летит)
+                    if (d > TRAIL_REACH_M) c.yawRateDps = 0.5f * yawTowards(wrap180(atan2f(dE, dN) * RAD2DEG - heading));
+                    break;
+                }
                 case RescuePhase::CLIMB:
                 {
                     c.yawRateDps = yawTowards(err);
@@ -352,7 +429,8 @@ namespace copter
                     {
                         const float k = fmaxf(0.0f, fminf(1.0f, dist / fmaxf(1.0f, set.descentDistM)));
                         speed = fmaxf(1.0f, set.groundSpeed * k);
-                        targetAlt = set.landingAltM + (returnAlt - set.landingAltM) * k;
+                        // со следом — не скользить вниз к дому (там деревья): снижение только над домом
+                        targetAlt = set.breadcrumbs ? returnAlt : set.landingAltM + (returnAlt - set.landingAltM) * k;
                     }
                     c.climbRate = climbTo(altM);
                     if (!headingSure && !headingAligned)
@@ -429,6 +507,34 @@ namespace copter
             phase_ = RescuePhase::ABORT;
         }
 
+        // Начало возврата: нужен ли след и можно ли по нему идти (курс известен).
+        bool beginTrail(float altM)
+        {
+            if (trail_.size() < 2 || !(est.headingKnown || last.headingTrusted)) return false;
+            const float pN = est.valid ? est.northM : last.northM, pE = est.valid ? est.eastM : last.eastM;
+            trailAt = trail_.cutLoop(static_cast<uint8_t>(trail_.size() - 1), pN, pE, altM);
+            trailTimer = 0.0f;
+            integral = sideIntegral = 0.0f;
+            return needTrail(altM);
+        }
+
+        bool needTrail(float altM) const
+        {
+            if (directBlocked) return true;
+            return set.breadcrumbs && set.pathM > 0.0f && altM < trail_.maxAltAhead(trailAt, set.pathM) - TRAIL_ALT_TOL;
+        }
+
+        // Со следа — как обычно: высота возврата отсюда, набор, домой.
+        void leaveTrail(float altM, float dist)
+        {
+            targetAlt = returnAltitude(altM, ceiling);
+            returnAlt = targetAlt;
+            bestDist = dist;
+            progressTimer = 0.0f;
+            integral = sideIntegral = 0.0f;
+            phase_ = dist < set.minStartDistM ? RescuePhase::LAND : RescuePhase::CLIMB;
+        }
+
         float headingNow(float yawDeg) const
         {
             if (est.headingKnown) return est.headingDeg;
@@ -501,6 +607,11 @@ namespace copter
         float bestDist = 0.0f, progressTimer = 0.0f;
         float integral = 0.0f, prevSpeedErr = 0.0f, sideIntegral = 0.0f;
         float straightTimer = 0.0f;
+        RescueTrail trail_;
+        uint8_t trailAt = 0;
+        float trailTimer = 0.0f;
+        float ceiling = 0.0f;
+        bool directBlocked = false;
         bool headingAligned = false;   // без компаса: поправка курса уже поставлена по GPS
         float headingOffset = 0.0f;
     };

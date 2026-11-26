@@ -2194,6 +2194,156 @@ void test_geofence_blocks_arming_without_gps()
     TEST_ASSERT_TRUE(h.armOnGround());
 }
 
+// P45 а: залетел под кроны и потерял связь. 5" на 15 м отлетел на 50 м,
+// спустился до 3 м и ушёл вбок на 25 м «под деревья». Возврат идёт назад
+// по следу на 3 м, поднимается там, где спускался, и только потом — домой.
+// С rth_breadcrumbs OFF (как BF) — набор высоты прямо под кронами.
+namespace
+{
+    struct CanopyRun
+    {
+        bool disarmed = false, trail = false;
+        double homeDist = 0, forestTop = 0, seconds = 0;
+    };
+
+    CanopyRun canopyRescue(bool breadcrumbs)
+    {
+        CopterSettings cs = rescueSettings();
+        cs.rescue.breadcrumbs = breadcrumbs;
+        QuadHarness h(five(), QuadPerturb(), 91, EscProtocol::DSHOT600, 1000.0f, cs);
+        h.gpsOn = true;
+        CanopyRun r;
+        if (!h.takeoffTo(15.0)) return r;
+        h.rc.pitch = -0.5f;
+        for (int i = 0; i < 60000 && homeDistance(h) < 50.0; ++i) h.step();
+        h.rc.pitch = 0.0f;
+        h.run(4.0);
+        // вниз до 3 м
+        h.rc.throttle = 0.15f;
+        for (int i = 0; i < 60000 && h.sim.height() > 3.5; ++i) h.step();
+        h.rc.throttle = 0.5f;
+        h.run(3.0);
+        const double en = h.sim.position().x - h.homeN, ee = h.sim.position().y - h.homeE;
+        const double el = std::hypot(en, ee);
+        // вбок 25 м
+        h.rc.roll = 0.4f;
+        for (int i = 0; i < 60000; ++i)
+        {
+            h.step();
+            const double n = h.sim.position().x - h.homeN, e = h.sim.position().y - h.homeE;
+            if (std::hypot(n - en, e - ee) > 25.0) break;
+        }
+        h.rc.roll = 0.0f;
+        h.run(3.0);
+        h.rc.linkOk = false;
+        const double t0 = h.sim.now();
+        while (h.ctl.isArmed() && h.sim.now() - t0 < 200.0)
+        {
+            h.step();
+            const double n = h.sim.position().x - h.homeN, e = h.sim.position().y - h.homeE;
+            // «лес» — сбоку от линии дом → место спуска дальше 6 м
+            const double lateral = std::fabs(en / el * e - ee / el * n);
+            if (lateral > 6.0) r.forestTop = std::fmax(r.forestTop, h.sim.height());
+            if (h.ctl.getStatus().rescuePhase == RescuePhase::TRAIL) r.trail = true;
+        }
+        r.disarmed = !h.ctl.isArmed();
+        r.homeDist = homeDistance(h);
+        r.seconds = h.sim.now() - t0;
+        return r;
+    }
+}
+
+void test_gps_rescue_breadcrumbs_out_of_canopy()
+{
+    const CanopyRun on = canopyRescue(true), off = canopyRescue(false);
+    char line[260];
+    snprintf(line, sizeof(line), "under canopy (3 m, 25 m aside): breadcrumbs ON - max height under trees %.1f m, landed %.1f m from home in %.0f s; OFF - %.1f m",
+             on.forestTop, on.homeDist, on.seconds, off.forestTop);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(on.trail, line);
+    TEST_ASSERT_TRUE_MESSAGE(on.disarmed, line);
+    TEST_ASSERT_TRUE_MESSAGE(on.homeDist < 6.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(on.forestTop < 7.0, line);    // под кронами не поднимался
+    TEST_ASSERT_TRUE_MESSAGE(off.forestTop > 12.0, line);  // без следа — полез вверх в ветки
+}
+
+// P44 б2: запретная зона между коптером и домом. Коптер облетел её
+// (60 м на север, 60 на восток, 60 на юг), связь пропала: прямо домой —
+// через зону, поэтому назад по следу, пока прямая не станет свободной.
+void test_gps_rescue_goes_around_nofly_zone()
+{
+    static GeoZoneTable zones;
+    zones.reset();
+    char err[64];
+    auto pt = [&](int i, double n, double e) {
+        char s[80];
+        snprintf(s, sizeof(s), "0 %d %.7f %.7f", i, 55.75 + n / 111194.93,
+                 37.62 + e / (111194.93 * std::cos(55.75 * 0.017453293)));
+        TEST_ASSERT_TRUE(zones.parse(s, err, sizeof(err)));
+    };
+    TEST_ASSERT_TRUE(zones.parse("0 NOFLY", err, sizeof(err)));
+    pt(0, -20, 15);
+    pt(1, 20, 15);
+    pt(2, 20, 45);
+    pt(3, -20, 45);
+    CopterSettings cs = rescueSettings();
+    cs.geofence.enabled = true;
+    cs.geofence.radiusM = 0.0f;
+    cs.geofence.ceilingM = 0.0f;
+    cs.geofence.zones = &zones;
+    QuadHarness h(five(), QuadPerturb(), 92, EscProtocol::DSHOT600, 1000.0f, cs);
+    h.gpsOn = true;
+    TEST_ASSERT_TRUE(h.takeoffTo(12.0));
+    auto pos = [&](double& n, double& e) {
+        n = h.sim.position().x - h.homeN;
+        e = h.sim.position().y - h.homeE;
+    };
+    double n = 0, e = 0;
+    // ALT_HOLD без GPS-удержания: отпущенный стик — коптер ещё катится, поэтому
+    // стик убирается заранее (по скорости)
+    auto leg = [&](float CopterRc::*axis, float stick, int axisN, double until) {
+        h.rc.*axis = stick;
+        for (int i = 0; i < 60000; ++i)
+        {
+            pos(n, e);
+            const double p = axisN ? n : e;
+            const double v = axisN ? h.sim.velocity().x : h.sim.velocity().y;
+            if ((until - p) * (stick > 0 ? 1 : -1) * (axisN ? -1 : 1) <= std::fabs(v) * 1.5) break;
+            h.step();
+        }
+        h.rc.*axis = 0.0f;
+        h.run(5.0);
+    };
+    leg(&CopterRc::pitch, -0.25f, 1, 60.0);
+    leg(&CopterRc::roll, 0.25f, 0, 60.0);
+    leg(&CopterRc::pitch, 0.25f, 1, 0.0);
+    pos(n, e);
+    const double startN = n, startE = e;
+    h.rc.linkOk = false;
+    bool trail = false, entered = false;
+    double nearest = 1e9;
+    const double t0 = h.sim.now();
+    while (h.ctl.isArmed() && h.sim.now() - t0 < 200.0)
+    {
+        h.step();
+        pos(n, e);
+        if (n > -20 && n < 20 && e > 15 && e < 45) entered = true;
+        const double dn = n < -20 ? -20 - n : n > 20 ? n - 20 : 0, de = e < 15 ? 15 - e : e > 45 ? e - 45 : 0;
+        nearest = std::fmin(nearest, std::hypot(dn, de));
+        if (h.ctl.getStatus().rescuePhase == RescuePhase::TRAIL) trail = true;
+    }
+    char line[260];
+    snprintf(line, sizeof(line), "NOFLY between: start %.0f/%.0f m, trail %d, entered zone %d, closest %.1f m, landed %.1f m from home in %.0f s",
+             startN, startE, trail, entered, nearest, homeDistance(h), h.sim.now() - t0);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_TRUE_MESSAGE(std::fabs(startN) < 12.0 && startE > 50.0, line);   // правда за зоной
+    TEST_ASSERT_TRUE_MESSAGE(nearest > 2.0, line);
+    TEST_ASSERT_TRUE_MESSAGE(trail, line);
+    TEST_ASSERT_FALSE_MESSAGE(entered, line);
+    TEST_ASSERT_FALSE_MESSAGE(h.ctl.isArmed(), line);
+    TEST_ASSERT_TRUE_MESSAGE(homeDistance(h) < 6.0, line);
+}
+
 // P32: долгий разгон в ALT_HOLD с удержанием высоты — модуль ускорения
 // около 1 g, а «верх» акселерометра наклонён меньше настоящего. Горизонт
 // не должен уходить (раньше — на 12°: лимит 30°, реально 42°), а высота —
@@ -2850,6 +3000,8 @@ int main()
     RUN_TEST(test_geofence_ceiling_in_acro);
     RUN_TEST(test_geofence_gps_lost_takes_control);
     RUN_TEST(test_geofence_blocks_arming_without_gps);
+    RUN_TEST(test_gps_rescue_breadcrumbs_out_of_canopy);
+    RUN_TEST(test_gps_rescue_goes_around_nofly_zone);
     RUN_TEST(test_horizon_and_altitude_hold_in_long_acceleration);
     RUN_TEST(test_training_speed_limit);
     RUN_TEST(test_pos_hold_keeps_place_in_wind);

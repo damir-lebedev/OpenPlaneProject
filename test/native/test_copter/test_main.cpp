@@ -7716,6 +7716,10 @@ void test_geofence_polygon_zones()
     f.update(0, false, 0, 0, 10, true, true, 0.01f);
     TEST_ASSERT_TRUE(f.wantReturn());
     TEST_ASSERT_FLOAT_WITHIN(1.0f, 0.0f, f.edgeBearingDeg());
+    // прямая отсюда через зону — нельзя (P44 б2), вдоль поля — можно, за край — нельзя
+    TEST_ASSERT_TRUE(f.lineBlocked(60.0f, 0.0f));
+    TEST_ASSERT_FALSE(f.lineBlocked(0.0f, 100.0f));
+    TEST_ASSERT_TRUE(f.lineBlocked(0.0f, 200.0f));
     f.updatePosition(polyLat(80), polyLon(150), 0, 0);    // внутри зоны — не армить
     TEST_ASSERT_TRUE(f.armOutside());
     TEST_ASSERT_TRUE(f.marginM() < 0.0f);
@@ -7796,6 +7800,158 @@ void test_geofence_polygon_zones()
         TEST_ASSERT_TRUE(cp.zones().isDefault());
     }
     TEST_ASSERT_EQUAL_STRING("FENCE", armBlockCode(ARM_BLOCK_FENCE));
+}
+
+// P45 а: след для возврата — запись по 3 м, прореживание, петли, высота пути.
+void test_rescue_trail_record_thin_cut()
+{
+    RescueTrail t;
+    t.record(0, 0, 0);
+    t.record(1, 0, 0.5f);   // ближе 3 м — не пишется
+    TEST_ASSERT_EQUAL(1, t.size());
+    t.record(3.2f, 0, 0);
+    t.record(3.2f, 0, 3.5f);   // вверх на 3.5 м — тоже точка
+    TEST_ASSERT_EQUAL(3, t.size());
+    float n, e, a;
+    t.point(2, n, e, a);
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 3.2f, n);
+    TEST_ASSERT_FLOAT_WITHIN(0.06f, 3.5f, a);
+    // 1.5 км на север: след не длиннее SIZE, первая точка — у дома, новая — последняя
+    t.reset();
+    for (int i = 0; i <= 500; ++i) t.record(i * 3.0f, 0, 10.0f);
+    TEST_ASSERT_TRUE(t.size() <= RescueTrail::SIZE);
+    TEST_ASSERT_TRUE(t.size() > RescueTrail::SIZE / 2);
+    t.point(0, n, e, a);
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 0.0f, n);
+    t.point(static_cast<uint8_t>(t.size() - 1), n, e, a);
+    TEST_ASSERT_FLOAT_WITHIN(0.3f, 1500.0f, n);
+    // новые точки — подробно (по 3 м), старые — реже
+    float n2, e2, a2;
+    t.point(static_cast<uint8_t>(t.size() - 2), n2, e2, a2);
+    TEST_ASSERT_FLOAT_WITHIN(0.6f, 3.0f, n - n2);
+    // туда и обратно: петля срезается — от конца сразу к точке у начала
+    t.reset();
+    for (int i = 0; i <= 10; ++i) t.record(i * 3.0f, 0, 10.0f);
+    for (int i = 9; i >= 1; --i) t.record(i * 3.0f, 1.0f, 10.0f);
+    const uint8_t cut = t.cutLoop(static_cast<uint8_t>(t.size() - 1), 6.0f, 1.0f, 10.0f);
+    TEST_ASSERT_EQUAL(1, cut);
+    TEST_ASSERT_EQUAL(t.size() - 1, t.cutLoop(static_cast<uint8_t>(t.size() - 1), 6.0f, 1.0f, 20.0f));   // по высоте далеко — нет
+    // высота пути: 100 м на 20 м, потом вниз до 3 м
+    t.reset();
+    for (int i = 0; i <= 40; ++i) t.record(i * 3.0f, 0, 20.0f);
+    for (int k = 18; k >= 3; k -= 3) t.record(120.0f, 0, static_cast<float>(k));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 20.0f, t.maxAltRecent(50.0f));
+    TEST_ASSERT_FLOAT_WITHIN(0.1f, 3.0f, t.maxAltAhead(static_cast<uint8_t>(t.size() - 1), 0.0f));
+}
+
+namespace
+{
+    // Полёт для следа: 30 м на север на 20 м, вниз до 3 м, 30 м на восток на 3 м.
+    void trailFlight(GpsRescue& r, GpsInput& g, float lowAlt)
+    {
+        g.fix = true;
+        g.sats = 12;
+        g.home = true;
+        g.headingTrusted = true;
+        auto at = [&](float n, float e, float alt) {
+            g.fresh = true;
+            g.northM = n;
+            g.eastM = e;
+            r.track(g, alt, 0.1f, true);
+        };
+        for (int n = 0; n <= 30; ++n) at(static_cast<float>(n), 0, 20.0f);
+        for (float alt = 20.0f; alt >= lowAlt; alt -= 1.0f) at(30.0f, 0, alt);
+        for (int e = 0; e <= 30; ++e) at(30.0f, static_cast<float>(e), lowAlt);
+    }
+
+    // Возврат по следу «телепортом» — коптер ровно в точке, к которой идёт.
+    int walkTrail(GpsRescue& r, GpsInput& g, float& alt)
+    {
+        int steps = 0;
+        while (r.phase() == RescuePhase::TRAIL && steps < 300)
+        {
+            float n, e, a;
+            r.trail().point(r.trailIndex(), n, e, a);
+            g.fresh = true;
+            g.northM = n;
+            g.eastM = e;
+            alt = a;
+            r.track(g, alt, 0.1f, true);
+            r.update(alt, 0, 0.1f);
+            ++steps;
+        }
+        return steps;
+    }
+}
+
+// Залетел под кроны (ниже, чем летал на последних 100 м) — домой сначала по
+// следу до места, где был высоко, потом вверх и напрямую; над полем — как BF.
+void test_gps_rescue_trail_under_canopy()
+{
+    {
+        GpsRescue r;
+        GpsInput g;
+        trailFlight(r, g, 3.0f);
+        r.start(3.0f, true);
+        TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::TRAIL), static_cast<int>(r.phase()));
+        float alt = 3.0f;
+        const int steps = walkTrail(r, g, alt);
+        TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::CLIMB), static_cast<int>(r.phase()));
+        TEST_ASSERT_TRUE(steps > 10);
+        TEST_ASSERT_FLOAT_WITHIN(1.0f, 30.0f, g.northM);   // вышел там, где спускался
+        TEST_ASSERT_FLOAT_WITHIN(1.0f, 0.0f, g.eastM);
+        TEST_ASSERT_TRUE(alt >= 17.5f);
+        TEST_ASSERT_FLOAT_WITHIN(0.5f, 30.0f, r.targetAltitude());   // 20 + initial_climb 10
+    }
+    {
+        // весь полёт на 20 м — по следу незачем
+        GpsRescue r;
+        GpsInput g;
+        trailFlight(r, g, 20.0f);
+        r.start(20.0f, true);
+        TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::CLIMB), static_cast<int>(r.phase()));
+        // но прямая домой через запретную зону — по следу (P44 б2)
+        r.stop();
+        r.setDirectBlocked(true);
+        r.start(20.0f, true);
+        TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::TRAIL), static_cast<int>(r.phase()));
+        r.setDirectBlocked(false);
+        float alt = 20.0f;
+        walkTrail(r, g, alt);
+        TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::CLIMB), static_cast<int>(r.phase()));   // сразу, как прямая свободна
+        TEST_ASSERT_TRUE(g.eastM > 25.0f);
+    }
+    {
+        // rth_breadcrumbs OFF — как BF
+        GpsRescue r;
+        GpsRescueSettings s;
+        s.breadcrumbs = false;
+        r.configure(s);
+        GpsInput g;
+        trailFlight(r, g, 3.0f);
+        r.start(3.0f, true);
+        TEST_ASSERT_EQUAL(static_cast<int>(RescuePhase::CLIMB), static_cast<int>(r.phase()));
+        TEST_ASSERT_FLOAT_WITHIN(0.5f, 30.0f, r.targetAltitude());   // MAX_ALT
+    }
+    {
+        // P45 б: FIXED_ALT 5 м, а на последних 100 м летал на 20 — не ниже 30
+        GpsRescue r;
+        GpsRescueSettings s;
+        s.altMode = RescueAltMode::FIXED_ALT;
+        s.returnAltM = 5.0f;
+        r.configure(s);
+        GpsInput g;
+        trailFlight(r, g, 20.0f);
+        TEST_ASSERT_FLOAT_WITHIN(0.5f, 30.0f, r.returnAltitude(20.0f));
+        TEST_ASSERT_FLOAT_WITHIN(0.5f, 25.0f, r.returnAltitude(20.0f, 25.0f));   // потолок важнее
+        s.pathM = 0.0f;
+        r.configure(s);
+        TEST_ASSERT_FLOAT_WITHIN(0.01f, 5.0f, r.returnAltitude(20.0f));
+        // и без следа (не в воздухе) — как раньше
+        GpsRescue r2;
+        r2.configure(s);
+        TEST_ASSERT_FLOAT_WITHIN(0.01f, 5.0f, r2.returnAltitude(20.0f));
+    }
 }
 
 // Меню в очках стиками (CMS): вход, отпустить в центр, ходить, менять, выйти.
@@ -10578,6 +10734,8 @@ int main()
     RUN_TEST(test_training_limits_params_and_logic);
     RUN_TEST(test_geofence_params_logic_and_osd);
     RUN_TEST(test_geofence_polygon_zones);
+    RUN_TEST(test_rescue_trail_record_thin_cut);
+    RUN_TEST(test_gps_rescue_trail_under_canopy);
     RUN_TEST(test_cli_pastes_betaflight_diff);
     RUN_TEST(test_vbat_sag_compensation_percent);
     RUN_TEST(test_battery_voltage_current_and_mah);

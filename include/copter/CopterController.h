@@ -820,7 +820,9 @@ namespace copter
             motionLpf.apply(motion);
             motionTimer = motion > 15.0f ? 0.0f : motionTimer + dt;
 
-            rescue.track(sens.gps, vertical.altitude(), dt);
+            // след для возврата (P45 а): только достоверный фикс и в воздухе
+            rescue.track(sens.gps, vertical.altitude(), dt,
+                         status.state != CopterState::DISARMED && status.airborne && !gpsIntegrity.spoofed());
             // поле геозабора: где коптер (и без ARM — ARM только внутри)
             if (sens.gps.fresh && sens.gps.fix && !gpsIntegrity.spoofed())
                 fence.updatePosition(sens.gps.latitude, sens.gps.longitude, sens.gps.velN, sens.gps.velE);
@@ -890,6 +892,12 @@ namespace copter
                                     ((rc.gpsRescue || training.wantReturn()) && status.state == CopterState::ARMED &&
                                      status.airborne) ||
                                     (fence.wantReturn() && status.airborne);
+            // прямая домой через запретную зону или край поля — по следу (P44 б2)
+            // (на старте и на свежем фиксе: стороны зон — до 128 отрезков)
+            {
+                const bool need = wantRescue || rescue.active();
+                if (!need || sens.gps.fresh || !rescue.active()) rescue.setDirectBlocked(need && fence.lineBlocked(-rescue.fixNorth(), -rescue.fixEast()));
+            }
             if (wantRescue && !rescue.active()) rescue.start(vertical.altitude(), failsafe, rescueCeiling());
             if (!wantRescue && rescue.active()) rescue.stop();
             if (!wantRescue) deadReck.stop();

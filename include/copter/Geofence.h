@@ -88,6 +88,7 @@ namespace copter
         static constexpr float GPS_BACK_S = 2.0f;       // место снова есть столько подряд — ему можно верить
         static constexpr float GPS_STALE_S = 0.5f;      // столько без нового фикса — места не знаем (фикс 5–10 Гц)
         static constexpr float LOST_ACCEL = 8.0f;       // м/с²: так может разгоняться пилот (ACRO), пока места не знаем
+        static constexpr float LINE_CLEAR_M = 5.0f;     // прямая домой — не ближе к вершине зоны
         static constexpr float POLY_RELEASE_K = 0.5f;   // поле: отпустить, когда до края больше половины того, что было при ARM
 
         void configure(const GeofenceSettings& s)
@@ -297,6 +298,35 @@ namespace copter
         }
         // Куда ближняя сторона поля, градусы от севера.
         float edgeBearingDeg() const { return edgeDeg; }
+
+        // Прямая от коптера на (toN, toE) м пересекает сторону поля или
+        // запретной зоны или проходит ближе LINE_CLEAR_M (P44 б2: домой
+        // напрямую нельзя — по следу).
+        bool lineBlocked(float toN, float toE) const
+        {
+            if (!polys || !posKnown) return false;
+            const float bN = posN + toN, bE = posE + toE;
+            for (uint8_t i = 0; i < zoneCount; ++i)
+            {
+                const LocalZone& z = local[i];
+                for (uint8_t k = 0; k < z.count; ++k)
+                {
+                    const uint8_t k2 = static_cast<uint8_t>((k + 1) % z.count);
+                    if (GeoZoneTable::segmentsCross(posN, posE, bN, bE, z.n[k], z.e[k], z.n[k2], z.e[k2])) return true;
+                    // вершина зоны у самой прямой (срезать угол)
+                    if (pointSegmentM(z.n[k], z.e[k], posN, posE, bN, bE) < LINE_CLEAR_M) return true;
+                }
+            }
+            return false;
+        }
+
+        static float pointSegmentM(float pn, float pe, float an, float ae, float bn, float be)
+        {
+            const float dn = bn - an, de = be - ae, l2 = dn * dn + de * de;
+            float t = l2 > 1e-6f ? ((pn - an) * dn + (pe - ae) * de) / l2 : 0.0f;
+            t = fmaxf(0.0f, fminf(1.0f, t));
+            return hypotf(pn - an - t * dn, pe - ae - t * de);
+        }
 
         // ARM: поле есть — только внутри и вне запретных зон (место известно).
         bool armOutside() const { return polys && (!posKnown || polyMargin <= 0.0f); }
