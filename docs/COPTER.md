@@ -350,6 +350,12 @@ BF его не назначает, а инвертор SBUS стоит толь�
 | `ez_landing_threshold` | PID-профиль | 0–200 % | 25 | EZLANDING: газ или любой стик дальше — ход моторов полный |
 | `ez_landing_limit` | PID-профиль | 0–75 % | 15 | EZLANDING: наибольшая разница моторов при стиках в нуле. В симуляторе удар о землю на нулевом газе: LEGACY задирает одну сторону на ~19°, EZLANDING — 0° |
 | `ez_landing_speed` | PID-профиль | 0–250 ×0,1 м/с | 50 | EZLANDING: быстрее по GPS — ограничения нет; 0 — только по стикам |
+| `dyn_idle_min_rpm` | PID-профиль | 0–200 ×100 об/мин | 0 | dynamic idle: самый медленный мотор не ниже (регулятор PI(D) поднимает холостые); только по оборотам двунаправленного DShot, без них — выключен; 0 — выключен |
+| `dyn_idle_p_gain` | PID-профиль | 1–250 | 50 | dynamic idle: P — как резко поднимать холостые при провале оборотов |
+| `dyn_idle_i_gain` | PID-профиль | 1–250 | 50 | dynamic idle: I — держать обороты на спуске и в кувырке |
+| `dyn_idle_d_gain` | PID-профиль | 0–250 | 50 | dynamic idle: D — встречать провал оборотов по его скорости |
+| `dyn_idle_max_increase` | PID-профиль | 10–255 ×0,1 % | 150 | dynamic idle: предел подъёма холостых в полёте |
+| `dyn_idle_start_increase` | PID-профиль | 10–255 ×0,1 % | 50 | dynamic idle: предел до airmode (газ после ARM ещё не поднимали) — на земле коптер не подпрыгивает |
 | `launch_control_mode` | PID-профиль | NORMAL / PITCHONLY / FULL | NORMAL | LAUNCH CONTROL: NORMAL — стики всех осей, I только тангажа; PITCHONLY — только нос вниз, задними моторами; FULL — стики и I всех осей |
 | `launch_trigger_allow_reset` | PID-профиль | OFF / ON | ON | после старта газ вниз на земле — снова ждать рывка |
 | `launch_trigger_throttle_percent` | PID-профиль | 0–90 % | 20 | газ выше — старт |

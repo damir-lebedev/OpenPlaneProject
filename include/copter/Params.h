@@ -267,6 +267,12 @@ namespace copter
         PARAM_EZ_LANDING_THRESHOLD,
         PARAM_EZ_LANDING_LIMIT,
         PARAM_EZ_LANDING_SPEED,
+        PARAM_DYN_IDLE_MIN_RPM,
+        PARAM_DYN_IDLE_P_GAIN,
+        PARAM_DYN_IDLE_I_GAIN,
+        PARAM_DYN_IDLE_D_GAIN,
+        PARAM_DYN_IDLE_MAX_INCREASE,
+        PARAM_DYN_IDLE_START_INCREASE,
         PARAM_LAUNCH_CONTROL_MODE,
         PARAM_LAUNCH_TRIGGER_ALLOW_RESET,
         PARAM_LAUNCH_TRIGGER_THROTTLE_PERCENT,
@@ -843,6 +849,18 @@ namespace copter
               "EZLANDING: наибольшая разница моторов при стиках в нуле — у земли коптер не подпрыгивает" },
             { "ez_landing_speed", kInt, kPid, kGroupMotors, 0, 250, 50, kTable, "x0.1 м/с", nullptr, 0,
               "EZLANDING: быстрее по GPS — ограничения нет (0 — только по стикам)" },
+            { "dyn_idle_min_rpm", kInt, kPid, kGroupMotors, 0, 200, 0, kTable, "x100 об/мин", nullptr, 0,
+              "dynamic idle: самый медленный мотор не ниже (нужен двунаправленный DShot); 0 — выключен" },
+            { "dyn_idle_p_gain", kInt, kPid, kGroupMotors, 1, 250, 50, kTable, "", nullptr, 0,
+              "dynamic idle: P — как резко поднимать холостые при провале оборотов" },
+            { "dyn_idle_i_gain", kInt, kPid, kGroupMotors, 1, 250, 50, kTable, "", nullptr, 0,
+              "dynamic idle: I — держать обороты на спуске и в кувырке" },
+            { "dyn_idle_d_gain", kInt, kPid, kGroupMotors, 0, 250, 50, kTable, "", nullptr, 0,
+              "dynamic idle: D — встречать провал оборотов заранее, по его скорости" },
+            { "dyn_idle_max_increase", kInt, kPid, kGroupMotors, 10, 255, 150, kTable, "x0.1 %", nullptr, 0,
+              "dynamic idle: насколько можно поднять холостые в полёте" },
+            { "dyn_idle_start_increase", kInt, kPid, kGroupMotors, 10, 255, 50, kTable, "x0.1 %", nullptr, 0,
+              "dynamic idle: предел до airmode (на земле газ ещё не поднимали) — коптер не прыгает" },
             { "launch_control_mode", kEnum, kPid, kGroupPid, 0, 2, 0, kTable, "", LAUNCH_MODES, 3,
               "LAUNCH CONTROL: NORMAL — стики всех осей, I тангажа; PITCHONLY — только нос вниз задними моторами; FULL — I всех осей" },
             { "launch_trigger_allow_reset", kEnum, kPid, kGroupPid, 0, 1, 1, kTable, "", OFF_ON, 2,
@@ -2204,6 +2222,12 @@ namespace copter
             t.launch.triggerThrottle = valueIn(PARAM_LAUNCH_TRIGGER_THROTTLE_PERCENT, pidIndex) / 100.0f;
             t.launch.angleLimitDeg = valueIn(PARAM_LAUNCH_ANGLE_LIMIT, pidIndex);
             t.launch.gainBf = valueIn(PARAM_LAUNCH_CONTROL_GAIN, pidIndex);
+            t.dynIdle.minRpm = valueIn(PARAM_DYN_IDLE_MIN_RPM, pidIndex) * 100.0f;
+            t.dynIdle.pGain = valueIn(PARAM_DYN_IDLE_P_GAIN, pidIndex);
+            t.dynIdle.iGain = valueIn(PARAM_DYN_IDLE_I_GAIN, pidIndex);
+            t.dynIdle.dGain = valueIn(PARAM_DYN_IDLE_D_GAIN, pidIndex);
+            t.dynIdle.maxIncrease = valueIn(PARAM_DYN_IDLE_MAX_INCREASE, pidIndex) / 1000.0f;
+            t.dynIdle.startIncrease = valueIn(PARAM_DYN_IDLE_START_INCREASE, pidIndex) / 1000.0f;
             t.vbatSagCompensation = valueIn(PARAM_VBAT_SAG_COMPENSATION, pidIndex) / 100.0f;
             // ANGLE/HORIZON/ACRO TRAINER (BF 4.5); наклон и сила выравнивания не
             // заданы — точные значения модели (или BF), без округления

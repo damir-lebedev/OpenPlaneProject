@@ -2554,6 +2554,85 @@ void test_dyn_notch_catches_vibration_the_rpm_model_misses()
     }
 }
 
+// 041: dynamic idle. По оборотам DShot самый медленный мотор на газу в ноль
+// (спуск в ACRO) не проваливается ниже dyn_idle_min_rpm; на земле до airmode
+// подъём не больше dyn_idle_start_increase и коптер не подпрыгивает; без
+// телеметрии добавки нет.
+static double slowestRotorHz(QuadHarness& h)
+{
+    double lo = 1e9;
+    for (uint8_t m = 0; m < h.tune.frame.count; ++m) lo = std::fmin(lo, h.sim.rotorHz(m));
+    return lo;
+}
+
+static void dynIdleRun(float minRpm, bool telemetry, double& slowest, float& increase, float& groundIncrease,
+                       double& groundHeight)
+{
+    QuadHarness h(five(), QuadPerturb(), 41);
+    copter::CopterTune t = h.tune;
+    t.dynIdle.minRpm = minRpm;
+    h.useTune(t);
+    h.rpmTelemetry = telemetry;
+    TEST_ASSERT_TRUE(h.armOnGround(CopterMode::ACRO));
+    groundIncrease = 0.0f;
+    groundHeight = 0.0;
+    for (int i = 0; i < 1000; ++i)
+    {
+        h.step();
+        groundIncrease = std::fmax(groundIncrease, h.ctl.getStatus().dynIdleIncrease);
+        groundHeight = std::fmax(groundHeight, h.sim.height());
+    }
+    h.rc.armSwitch = false;
+    h.run(0.5);
+    TEST_ASSERT_TRUE(h.takeoffTo(6.0));
+    h.rc.mode = CopterMode::ACRO;
+    h.rc.throttle = 0.0f;
+    slowest = 1e9;
+    increase = 0.0f;
+    for (int i = 0; i < 600; ++i)
+    {
+        h.step();
+        if (i < 250) continue;
+        slowest = std::fmin(slowest, slowestRotorHz(h));
+        increase = std::fmax(increase, h.ctl.getStatus().dynIdleIncrease);
+    }
+    TEST_ASSERT_TRUE(h.ctl.isArmed());
+}
+
+void test_dynamic_idle_holds_min_rpm_on_throttle_cut()
+{
+    // холостые сборки без dynamic idle — от них и берём минимум (в 1,6 раза выше)
+    double idleHz = 0;
+    {
+        QuadHarness h(five(), QuadPerturb(), 41);
+        TEST_ASSERT_TRUE(h.armOnGround(CopterMode::ACRO));
+        h.run(1.0);
+        idleHz = slowestRotorHz(h);
+    }
+    const double targetHz = idleHz * 1.6;
+    const float minRpm = static_cast<float>(targetHz * 60.0);
+    double slowOff = 0, slowOn = 0, slowNoTel = 0, hOn = 0, hOff = 0, hNoTel = 0;
+    float incOff = 0, incOn = 0, incNoTel = 0, gOff = 0, gOn = 0, gNoTel = 0;
+    dynIdleRun(0.0f, true, slowOff, incOff, gOff, hOff);
+    dynIdleRun(minRpm, true, slowOn, incOn, gOn, hOn);
+    dynIdleRun(minRpm, false, slowNoTel, incNoTel, gNoTel, hNoTel);
+    const copter::DynIdleSettings def;
+    char msg[220];
+    snprintf(msg, sizeof(msg),
+             "dynamic idle: idle %.0f Hz, min %.0f Hz; throttle cut slowest motor off %.0f / on %.0f / no DShot %.0f Hz, "
+             "increase %.3f (ground %.3f, max %.3f/%.3f)",
+             idleHz, targetHz, slowOff, slowOn, slowNoTel, incOn, gOn, def.startIncrease, def.maxIncrease);
+    TEST_MESSAGE(msg);
+    TEST_ASSERT_TRUE_MESSAGE(slowOn >= 0.85 * targetHz, msg);     // минимум держится
+    TEST_ASSERT_TRUE_MESSAGE(slowOn > slowOff * 1.2, msg);        // а без dynamic idle обороты ниже
+    TEST_ASSERT_TRUE_MESSAGE(incOn > 0.0f && incOn <= def.maxIncrease + 1e-6f, msg);
+    TEST_ASSERT_TRUE_MESSAGE(gOn <= def.startIncrease + 1e-6f, msg);   // на земле до airmode — малый предел
+    TEST_ASSERT_TRUE_MESSAGE(hOn < 0.01, msg);                         // и коптер стоит
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, incOff);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, incNoTel);                           // без телеметрии — выключен
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, gNoTel);
+}
+
 // 063: обороты по DShot — режекторы на каждом моторе там, где он крутится;
 // модель — на средних и по команде. В манёвре на «вялой» физике моторы тише.
 void test_rpm_filter_per_motor_from_dshot_in_manoeuvre()
@@ -3078,6 +3157,7 @@ int main()
     RUN_TEST(test_whoop_on_fast_loop);
     RUN_TEST(test_dyn_notch_catches_vibration_the_rpm_model_misses);
     RUN_TEST(test_rpm_filter_per_motor_from_dshot_in_manoeuvre);
+    RUN_TEST(test_dynamic_idle_holds_min_rpm_on_throttle_cut);
     RUN_TEST(test_link_glitch_and_recovery_in_flight);
     RUN_TEST(test_upside_down_crash_disarms);
     RUN_TEST(test_turtle_mode_flips_back_over);

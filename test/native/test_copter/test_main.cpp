@@ -33,6 +33,7 @@
 #include "copter/CrsfMsp.h"
 #include "copter/CrsfTelemetry.h"
 #include "copter/Declination.h"
+#include "copter/DynamicIdle.h"
 #include "copter/DisplayPort.h"
 #include "copter/GpsHome.h"
 #include "copter/Osd.h"
@@ -3403,6 +3404,43 @@ void test_mixer_ez_landing()
     const float ezWide = widestAfterKick(s), legacyWide = widestAfterKick(legacySet);
     TEST_ASSERT_TRUE(ezWide > 0.0f);
     TEST_ASSERT_TRUE(ezWide < 0.6f * legacyWide);
+}
+
+// 041: dynamic idle — настройки BF в tune; регулятор поднимает холостые
+// только по настоящим оборотам, не выше предела (до airmode — start_increase).
+void test_dynamic_idle_params_and_limits()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, p.tune().dynIdle.minRpm);   // по умолчанию выключен (как BF)
+    TEST_ASSERT_FALSE(p.tune().dynIdle.enabled());
+    TEST_ASSERT_TRUE(p.parse(PARAM_DYN_IDLE_MIN_RPM, 0, "35", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_DYN_IDLE_MIN_RPM, 0, "201", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_DYN_IDLE_MAX_INCREASE, 0, "120", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_DYN_IDLE_START_INCREASE, 0, "9", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_DYN_IDLE_D_GAIN, 0, "0", err, sizeof(err)));
+    const CopterTune t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 3500.0f, t.dynIdle.minRpm);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.120f, t.dynIdle.maxIncrease);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.050f, t.dynIdle.startIncrease);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 50.0f, t.dynIdle.pGain);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, t.dynIdle.dGain);
+
+    DynamicIdle d;
+    const float slow[4] = { 40.0f, 58.0f, 60.0f, 61.0f };   // мотор 0 провалился (минимум — 58,3 Гц)
+    const float fast[4] = { 70.0f, 70.0f, 70.0f, 70.0f };
+    float out = 0.0f;
+    for (int i = 0; i < 2000; ++i) out = d.update(t.dynIdle, slow, 4, true, false, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, t.dynIdle.startIncrease, out);   // до airmode — малый предел
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 40.0f, d.slowestHz());
+    for (int i = 0; i < 2000; ++i) out = d.update(t.dynIdle, slow, 4, true, true, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, t.dynIdle.maxIncrease, out);     // в полёте — полный
+    for (int i = 0; i < 3000; ++i) out = d.update(t.dynIdle, fast, 4, true, true, 0.001f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, out);                      // обороты выше минимума — добавки нет
+    for (int i = 0; i < 100; ++i) d.update(t.dynIdle, slow, 4, true, true, 0.001f);
+    TEST_ASSERT_TRUE(d.output() > 0.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, d.update(t.dynIdle, slow, 4, false, true, 0.001f));   // нет DShot
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, d.output());
 }
 
 // 037: launch control — состояния: ARM с режимом в ACRO — ждёт; газ выше
@@ -11002,6 +11040,7 @@ int main()
     RUN_TEST(test_thrust_linear_and_motor_output_limit);
     RUN_TEST(test_mixer_types_legacy_linear_dynamic);
     RUN_TEST(test_mixer_ez_landing);
+    RUN_TEST(test_dynamic_idle_params_and_limits);
     RUN_TEST(test_launch_control_states);
     RUN_TEST(test_launch_control_setpoints);
     RUN_TEST(test_launch_control_in_controller);

@@ -646,6 +646,20 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE_MESSAGE(contains(live[0], "\"sens\":{\"ok\":true,\"g\":["), live[0].c_str());
     TEST_ASSERT_TRUE_MESSAGE(contains(live[0], ",\"it\":"), live[0].c_str());
     TEST_ASSERT_TRUE_MESSAGE(contains(live[0], ",\"baro\":["), live[0].c_str());
+    TEST_ASSERT_FALSE(contains(live[0], "\"dynidle\":"));   // dynamic idle выключен — поля нет
+    // включили: добавка 0, оборотов нет (моторы стоят, DShot молчит)
+    host("set dyn_idle_min_rpm 35");
+    host("save");
+    run(rc, 0.2);
+    log = takeSerial();
+    TEST_ASSERT_EQUAL_FLOAT(3500.0f, copterController.getTune().dynIdle.minRpm);
+    const auto liveDyn = linesWith(log, "@live ");
+    TEST_ASSERT_TRUE(liveDyn.size() >= 1);
+    TEST_ASSERT_TRUE_MESSAGE(contains(liveDyn.back(), "\"dynidle\":{\"inc\":0.000,\"rpm\":0}"), liveDyn.back().c_str());
+    host("set dyn_idle_min_rpm 0");
+    host("save");
+    run(rc, 0.1);
+    takeSerial();
 
     // проверка моторов: ползунок держится, пока приложение повторяет
     host("motor 1 12");

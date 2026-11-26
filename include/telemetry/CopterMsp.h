@@ -955,7 +955,7 @@ namespace copter
             w.u8(clampU8(params.value(PARAM_ITERM_RELAX_CUTOFF)));
             w.u8(clampU8(params.value(PARAM_MOTOR_OUTPUT_LIMIT)));
             w.u8(0);    // auto_profile_cell_count
-            w.u8(0);    // dyn_idle_min_rpm
+            w.u8(clampU8(params.value(PARAM_DYN_IDLE_MIN_RPM)));
             w.u8(clampU8(params.value(PARAM_FEEDFORWARD_AVERAGING)));
             w.u8(clampU8(params.value(PARAM_FEEDFORWARD_SMOOTH_FACTOR)));
             w.u8(clampU8(params.value(PARAM_FEEDFORWARD_BOOST)));
@@ -1023,8 +1023,8 @@ namespace copter
             if (r.remaining() >= 3)
             {
                 set(PARAM_MOTOR_OUTPUT_LIMIT, r.u8());
-                r.u8();
-                r.u8();
+                r.u8();    // auto_profile_cell_count
+                set(PARAM_DYN_IDLE_MIN_RPM, r.u8());
             }
             if (r.remaining() >= 7)
             {

@@ -493,6 +493,9 @@ public:
         spectrum(w);
         if (const char* tl = copter::trainingText(s.trainingFlags)) w.add(",\"train\":\"%s\"", tl);
         if (s.launch != copter::LaunchState::OFF) w.add(",\"launch\":\"%s\"", copter::launchStateName(s.launch));
+        // dynamic idle (041): добавка к холостым, доля; самый медленный мотор, об/мин (0 — нет оборотов DShot)
+        if (ctl.getTune().dynIdle.enabled())
+            w.add(",\"dynidle\":{\"inc\":%.3f,\"rpm\":%.0f}", s.dynIdleIncrease, s.dynIdleSlowestHz * 60.0f);
         if (ctl.getGeofence().enabled()) w.add(",\"fence\":{\"f\":%u,\"m\":%.0f}", s.fenceFlags, s.fenceMarginM);
         if (s.rescuePhase != RescuePhase::IDLE)
         {

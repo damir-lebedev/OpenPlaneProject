@@ -435,6 +435,8 @@ namespace copter
         float volts = 0;
         float rotationHz = 0;                   // средние обороты моторов, Гц
         bool rpmTelemetry = false;              // обороты — по DShot, а не по модели
+        float dynIdleIncrease = 0;              // dynamic idle: добавка к холостым сейчас, доля команды
+        float dynIdleSlowestHz = 0;             // dynamic idle: самый медленный мотор, об/с (0 — нет телеметрии)
         bool airborne = false;
         bool saturated = false;
         bool crashed = false;
@@ -739,6 +741,10 @@ namespace copter
             }
             status.rotationHz = rotHz;
             status.rpmTelemetry = sens.motorHzOk;
+            // dynamic idle — только по настоящим оборотам и пока моторы крутятся
+            status.dynIdleIncrease = dynIdle.update(tune.dynIdle, sens.motorHz, motors, sens.motorHzOk && spinning(),
+                                                    airmodeStarted, dt);
+            status.dynIdleSlowestHz = dynIdle.slowestHz();
             // по телеметрии — режекторы на каждый мотор (063); по модели — один
             // набор на средние обороты: каждый режектор стоит фазы у полосы
             // контура, а модель моторы между собой всё равно не различит
@@ -1285,7 +1291,7 @@ namespace copter
             {
                 sum += mr.motor[i];
                 const float signal = Mixer::linearize(mr.motor[i], tune.thrustLinear) * vComp;
-                out.motor[i] = Mixer::withIdle(signal, tune.idle, tune.motorOutputLimit * outputScale);
+                out.motor[i] = Mixer::withIdle(signal, tune.idle + status.dynIdleIncrease, tune.motorOutputLimit * outputScale);
             }
             avgThrust = out.count ? sum / out.count : 0.0f;
             out.spinning = true;
@@ -2124,6 +2130,7 @@ namespace copter
         bool tpaLowDone = false;         // газ после ARM был выше tpa_low_breakpoint
         bool airmodeStarted = false;     // газ после ARM был выше airmode_start_throttle_percent
         LaunchControl launch;            // режим LAUNCH CONTROL
+        DynamicIdle dynIdle;             // dyn_idle_*: подъём холостых по оборотам
         bool launchCarry = false;        // рывок уже был, а коптер ещё на земле: I тангажа держит наклон
         bool wasLaunching = false;
         float yawSpinCalmS = 0.0f;       // раскрутка: сколько рысканье уже ниже порога выхода

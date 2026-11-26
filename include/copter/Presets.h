@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "copter/DynamicIdle.h"
 #include "copter/EscProtocol.h"
 #include "copter/Frames.h"
 #include "copter/GyroFilter.h"
@@ -406,6 +407,7 @@ namespace copter
         float motorOutputLimit = 1.0f;  // motor_output_limit: доля хода от холостых до полного
         EzLanding ezLanding;            // ez_landing_* (mixer_type = EZLANDING)
         LaunchControlSettings launch;   // launch_* (режим LAUNCH CONTROL)
+        DynIdleSettings dynIdle;        // dyn_idle_*: холостые по оборотам (нужен DShot с телеметрией)
         float vbatSagCompensation = 1.0f;   // vbat_sag_compensation: доля компенсации просадки (1 — полная)
         float hoverThrust = 0.4f;       // доля тяги (выход смесителя) на висении
         float tpa[TPA_POINTS] = {};     // поправка PD по газу из модели (tpa_mode = MODEL)
