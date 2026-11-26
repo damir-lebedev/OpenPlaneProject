@@ -3138,6 +3138,142 @@ void test_alt_hold_with_noisy_barometer()
     TEST_ASSERT_TRUE_MESSAGE(top - bottom < 0.6, line);
 }
 
+// ---------------- 042: что дали функции BF регулятора (весь каталог × 3 физики) ----------------
+
+namespace
+{
+    // Регулятор без функций BF 011–026: D постоянный, без I-relax,
+    // anti-gravity, throttle boost и тонкостей feedforward.
+    CopterTune bfFeaturesOff(CopterTune t)
+    {
+        for (uint8_t a = 0; a < 3; ++a) t.pid.dMax[a] = 0.0f;
+        t.pid.relax = ItermRelax::OFF;
+        t.pid.antiGravityI = 0.0f;
+        t.pid.antiGravityP = 0.0f;
+        t.pid.throttleBoost = 0.0f;
+        t.pid.ffSmoothFactor = 0.0f;
+        t.pid.ffJitterFactor = 0.0f;
+        t.pid.ffBoost = 0.0f;
+        t.pid.ffMaxRateLimit = 0.0f;
+        return t;
+    }
+
+    // Те же PID из модели, функции — с умолчаниями BF 4.5: d_max (D в покое
+    // 70 %), iterm_relax RP SETPOINT 15 Гц, anti_gravity_gain 80 + p_gain 100,
+    // throttle_boost 5, feedforward smooth 25 / jitter 7 / boost 15 / max_rate_limit 90.
+    CopterTune bfFeaturesOn(CopterTune t)
+    {
+        t = withDMax(t);
+        t.pid.relax = ItermRelax::RP;
+        t.pid.relaxType = ItermRelaxType::SETPOINT;
+        t.pid.relaxCutoffHz = 15.0f;
+        t.pid.antiGravityI = 8.0f;
+        t.pid.antiGravityP = 1.0f;
+        t.pid.throttleBoost = 0.5f;
+        t.pid.ffSmoothFactor = 0.25f;
+        t.pid.ffJitterFactor = 7.0f;
+        t.pid.ffBoost = 15.0f;
+        t.pid.ffMaxRateLimit = 0.9f;
+        return t;
+    }
+
+    struct FeatureFlight
+    {
+        bool ok = false;
+        double noise = 0, rateRmsDps = 0;   // висение 3 с
+        double punchDeg = 0;                // рывок газом до полного 0.3 с: уход наклона
+        double t90 = -1, overshoot = 0;     // флик полстика за 20 мс, кадры 250 Гц
+    };
+
+    FeatureFlight flyFeatures(const BuildSpec& b, const QuadPerturb& p, const CopterTune& t, uint32_t seed)
+    {
+        FeatureFlight r;
+        bool hoverOk = false;
+        {
+            QuadHarness h(b, p, seed);
+            h.useTune(t);
+            if (!h.takeoffTo(5.0)) return r;
+            h.stats.reset();
+            h.run(3.0);
+            r.noise = h.stats.motorNoiseRms();
+            r.rateRmsDps = h.stats.rateRms() * 57.29578;
+            hoverOk = h.ctl.isArmed() && h.stats.maxTilt < 3.0 && r.rateRmsDps < 3.0;
+            h.rc.mode = CopterMode::ACRO;
+            h.rc.throttle = h.ctl.getStatus().hoverLearned;
+            h.run(1.0);
+            const double pitch0 = h.sim.pitchDeg(), roll0 = h.sim.rollDeg();
+            h.rc.throttle = 1.0f;
+            for (int i = 0; i < 300; ++i)
+            {
+                h.step();
+                r.punchDeg = std::fmax(r.punchDeg, std::fmax(std::fabs(h.sim.pitchDeg() - pitch0), std::fabs(h.sim.rollDeg() - roll0)));
+            }
+        }
+        QuadHarness h(b, p, seed + 1);
+        h.useTune(t);
+        if (!h.takeoffTo(20.0)) return r;
+        h.rc.mode = CopterMode::ACRO;
+        h.rc.throttle = h.ctl.getStatus().hoverLearned;
+        h.run(0.3);
+        const double goal = h.tune.rates[0].apply(0.5f);
+        const double t0 = h.sim.now();
+        double next = t0, maxW = 0;
+        while (h.sim.now() - t0 < 0.5)
+        {
+            const double now = h.sim.now();
+            if (now >= next)
+            {
+                next += 1.0 / 250.0;
+                ++h.rc.frame;
+                h.rc.roll = static_cast<float>(std::fmin(1.0, (now - t0) / 0.02) * 0.5);
+            }
+            h.step();
+            const double w = h.sim.rates().x * 57.29578;
+            maxW = std::fmax(maxW, w);
+            if (r.t90 < 0 && w > 0.9 * goal) r.t90 = h.sim.now() - t0;
+        }
+        r.overshoot = maxW / goal - 1.0;
+        r.ok = hoverOk && h.ctl.isArmed() && r.t90 > 0 && r.t90 < 0.2;
+        return r;
+    }
+}
+
+// 042: каждая сборка каталога × 3 физики (как в описании, вялая, резвая),
+// PID из модели — с функциями BF и без. Строки BF042 — таблица «Что дали
+// функции BF» в docs/COPTER.md. С функциями летает всё; шум моторов на
+// висении не растёт (d_max снижает D в покое), рывок газом не валит нос
+// сильнее, флик не медленнее.
+void test_bf_regulator_features_on_every_build()
+{
+    static int failed;
+    failed = 0;
+    static const char* names[] = { "nominal", "sluggish", "twitchy" };
+    forEachBuild([](const BuildSpec& b) {
+        const QuadPerturb ps[] = { QuadPerturb(), sluggish(), twitchy() };
+        const CopterTune base = deriveTune(b, 1000.0f, EscProtocol::DSHOT600);
+        const CopterTune off = bfFeaturesOff(base), on = bfFeaturesOn(base);
+        for (uint8_t k = 0; k < 3; ++k)
+        {
+            const FeatureFlight a = flyFeatures(b, ps[k], off, 61 + k);
+            const FeatureFlight c = flyFeatures(b, ps[k], on, 61 + k);
+            char line[260];
+            snprintf(line, sizeof(line),
+                     "BF042 %-12s %-8s | noise %.4f -> %.4f | rate rms %.2f -> %.2f dps | punch %.2f -> %.2f deg | flick t90 %.0f -> %.0f ms, overshoot %.1f -> %.1f %%",
+                     b.id, names[k], a.noise, c.noise, a.rateRmsDps, c.rateRmsDps, a.punchDeg, c.punchDeg, a.t90 * 1000.0,
+                     c.t90 * 1000.0, a.overshoot * 100.0, c.overshoot * 100.0);
+            // вуп с моторами быстрее половины частоты цикла (WARN_VIBRATION_ALIAS)
+            // на 1 кГц видит вибрацию в полосе контура — D от d_max растёт от шума
+            const bool alias = base.warnings & WARN_VIBRATION_ALIAS;
+            const bool good = c.ok && (alias || c.noise <= a.noise * 1.02 + 1e-4) &&
+                              (k == 0 ? c.punchDeg < 1.0 : c.punchDeg < a.punchDeg) && c.t90 < a.t90 + 0.003 &&
+                              c.overshoot < a.overshoot + 0.05;
+            TEST_MESSAGE(good ? line : (std::string("BAD ") + line).c_str());
+            if (!good) ++failed;
+        }
+    });
+    TEST_ASSERT_EQUAL_INT(0, failed);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -3173,6 +3309,7 @@ int main()
     RUN_TEST(test_betaflight_defaults_on_our_loop);
     RUN_TEST(test_feedforward_settings_on_a_real_flick);
     RUN_TEST(test_feedforward_max_rate_limit_on_a_full_stick_flip);
+    RUN_TEST(test_bf_regulator_features_on_every_build);
     RUN_TEST(test_integrated_yaw_on_big_hexa);
     RUN_TEST(test_absolute_control_holds_attitude_against_torque);
     RUN_TEST(test_crash_recovery_levels_after_a_hit);
