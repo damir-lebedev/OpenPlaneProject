@@ -3266,6 +3266,145 @@ void test_thrust_linear_and_motor_output_limit()
     TEST_ASSERT_TRUE(highest > top - 0.01f);
 }
 
+namespace
+{
+    float mixYaw(const Frame& f, const MixResult& r)
+    {
+        float y = 0.0f;
+        for (uint8_t i = 0; i < f.count; ++i) y += r.motor[i] * f.mix[i].yaw;
+        return y;
+    }
+
+    float mixSpan(const Frame& f, const MixResult& r)
+    {
+        float lo = 1.0f, hi = 0.0f;
+        for (uint8_t i = 0; i < f.count; ++i)
+        {
+            lo = fminf(lo, r.motor[i]);
+            hi = fmaxf(hi, r.motor[i]);
+        }
+        return hi - lo;
+    }
+}
+
+// 040: mixer_type. Мелкие команды — одинаково во всех типах; на упоре
+// LINEAR не урезает рысканье (газ в середину), LEGACY — урезает;
+// DYNAMIC — LEGACY у середины газа и LINEAR на полном.
+void test_mixer_types_legacy_linear_dynamic()
+{
+    const Frame f = buildFrame(FrameType::QUAD_X);
+    Mixer legacy, linear, dynamic;
+    linear.setType(MixerType::LINEAR);
+    dynamic.setType(MixerType::DYNAMIC);
+    MixInput small;
+    small.throttle = 0.5f;
+    small.roll = 0.1f;
+    small.yaw = 0.05f;
+    const MixResult a = legacy.mix(f, small), b = linear.mix(f, small), c = dynamic.mix(f, small);
+    for (uint8_t i = 0; i < 4; ++i)
+    {
+        TEST_ASSERT_FLOAT_WITHIN(1e-5f, a.motor[i], b.motor[i]);
+        TEST_ASSERT_FLOAT_WITHIN(1e-5f, a.motor[i], c.motor[i]);
+    }
+    TEST_ASSERT_FALSE(b.saturated);
+
+    MixInput big;
+    big.throttle = 0.5f;
+    big.roll = 0.3f;
+    big.yaw = 0.3f;
+    const MixResult la = legacy.mix(f, big), li = linear.mix(f, big);
+    TEST_ASSERT_TRUE(la.saturated);
+    TEST_ASSERT_TRUE(li.saturated);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 0.5f, li.throttle);
+    TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.0f, mixSpan(f, li));
+    TEST_ASSERT_TRUE(mixYaw(f, li) > mixYaw(f, la) + 0.05f);
+
+    // DYNAMIC: у середины газа — LEGACY, на полном — LINEAR
+    const MixResult dm = dynamic.mix(f, big);
+    for (uint8_t i = 0; i < 4; ++i) TEST_ASSERT_FLOAT_WITHIN(1e-5f, la.motor[i], dm.motor[i]);
+    big.throttle = 1.0f;
+    const MixResult lf = linear.mix(f, big), df = dynamic.mix(f, big);
+    for (uint8_t i = 0; i < 4; ++i) TEST_ASSERT_FLOAT_WITHIN(1e-5f, lf.motor[i], df.motor[i]);
+
+    // LINEAR без airmode: газ внизу — команды ослаблены, моторы стоят
+    linear.setAirmode(false);
+    big.throttle = 0.0f;
+    const MixResult off = linear.mix(f, big);
+    for (uint8_t i = 0; i < 4; ++i) TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, off.motor[i]);
+}
+
+// 039: EZLANDING — стики в нуле и газ внизу: разница моторов не больше
+// ez_landing_limit, airmode коптер не подбрасывает; стик за порогом или
+// скорость по GPS — полный ход; настройки — из реестра.
+void test_mixer_ez_landing()
+{
+    const Frame f = buildFrame(FrameType::QUAD_X);
+    Mixer m;
+    m.setType(MixerType::EZLANDING);
+    MixInput in;
+    in.throttle = 0.0f;
+    in.roll = 0.3f;
+    in.stick = 0.0f;
+    const MixResult calm = m.mix(f, in);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.15f, mixSpan(f, calm));
+    TEST_ASSERT_TRUE(calm.throttle < 0.08f);
+    in.stick = 0.125f;   // полпути до порога
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.575f, m.ezLimit(in));
+    in.stick = 0.3f;
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.6f, mixSpan(f, m.mix(f, in)));
+    in.stick = 0.0f;
+    in.speedMs = 6.0f;
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.6f, mixSpan(f, m.mix(f, in)));
+    in.speedMs = -1.0f;
+    Mixer plain;
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.6f, mixSpan(f, plain.mix(f, in)));
+
+    CopterParams& p = five5Params();
+    char err[96];
+    CopterSettings s;
+    p.applyTo(s);
+    TEST_ASSERT_TRUE(s.mixerType == MixerType::LEGACY);
+    TEST_ASSERT_TRUE(p.parse(PARAM_MIXER_TYPE, 0, "EZLANDING", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_EZ_LANDING_LIMIT, 0, "76", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_EZ_LANDING_LIMIT, 0, "10", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_EZ_LANDING_SPEED, 0, "30", err, sizeof(err)));
+    p.applyTo(s);
+    TEST_ASSERT_TRUE(s.mixerType == MixerType::EZLANDING);
+    const CopterTune t = p.tune();
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.25f, t.ezLanding.threshold);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.10f, t.ezLanding.limit);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 3.0f, t.ezLanding.speedMs);
+
+    // в контроллере: газ и стики в нуле, раму качнуло — PID тянет назад;
+    // с EZLANDING моторы расходятся заметно меньше, чем с LEGACY
+    auto widestAfterKick = [&](const CopterSettings& cs) {
+        Bench b;
+        b.ctl.configure(t, cs);
+        armInAcro(b, 0.3f);
+        b.rc.throttle = 0.0f;
+        b.run(0.2f);
+        b.sens.gyro[0] = 200.0f;
+        float widest = 0.0f;
+        for (int i = 0; i < 50; ++i)
+        {
+            b.run(0.001f);
+            float lo = 1.0f, hi = 0.0f;
+            for (uint8_t k = 0; k < b.out.count; ++k)
+            {
+                lo = fminf(lo, b.out.motor[k]);
+                hi = fmaxf(hi, b.out.motor[k]);
+            }
+            widest = fmaxf(widest, hi - lo);
+        }
+        return widest;
+    };
+    CopterSettings legacySet = s;
+    legacySet.mixerType = MixerType::LEGACY;
+    const float ezWide = widestAfterKick(s), legacyWide = widestAfterKick(legacySet);
+    TEST_ASSERT_TRUE(ezWide > 0.0f);
+    TEST_ASSERT_TRUE(ezWide < 0.6f * legacyWide);
+}
+
 void test_cli_set_get_diff_save_and_paste()
 {
     RamFlash flash;
@@ -10711,6 +10850,8 @@ int main()
     RUN_TEST(test_integrated_yaw);
     RUN_TEST(test_absolute_control);
     RUN_TEST(test_thrust_linear_and_motor_output_limit);
+    RUN_TEST(test_mixer_types_legacy_linear_dynamic);
+    RUN_TEST(test_mixer_ez_landing);
     RUN_TEST(test_cli_set_get_diff_save_and_paste);
     RUN_TEST(test_rc_map_and_rxrange);
     RUN_TEST(test_rx_input_modes_like_betaflight);

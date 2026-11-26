@@ -263,6 +263,10 @@ namespace copter
         PARAM_ABS_CONTROL_CUTOFF,
         PARAM_THRUST_LINEAR,
         PARAM_MOTOR_OUTPUT_LIMIT,
+        PARAM_MIXER_TYPE,
+        PARAM_EZ_LANDING_THRESHOLD,
+        PARAM_EZ_LANDING_LIMIT,
+        PARAM_EZ_LANDING_SPEED,
         PARAM_RATEPROFILE_NAME,
         PARAM_ROLL_RC_RATE,
         PARAM_PITCH_RC_RATE,
@@ -604,6 +608,7 @@ namespace copter
         static const char* const ITERM_RELAX_TYPES[] = { "GYRO", "SETPOINT" };
         static const char* const TPA_MODES[] = { "PD", "D", "MODEL" };   // как TpaMode
         static const char* const RATES_TYPES[] = { "BETAFLIGHT", "RACEFLIGHT", "KISS", "ACTUAL", "QUICK" };   // как RatesType
+        static const char* const MIXER_TYPES[] = { "LEGACY", "LINEAR", "DYNAMIC", "EZLANDING" };   // как MixerType
         static const char* const THROTTLE_LIMIT_TYPES[] = { "OFF", "SCALE", "CLIP" };   // как ThrottleLimitType
         static const char* const FF_AVERAGING[] = { "OFF", "2_POINT", "3_POINT", "4_POINT" };
         static const char* const LPF_TYPES[] = { "PT1", "BIQUAD", "PT2", "PT3" };   // как LpfType
@@ -823,6 +828,14 @@ namespace copter
               "линеаризация тяги: малый газ отвечает так же резко, как большой (у мелких винтов больше)" },
             { "motor_output_limit", kInt, kPid, kGroupMotors, 1, 100, 100, kTable, "%", nullptr, 0,
               "предел хода моторов выше холостых: батарея 6S на моторах под 4S — 66" },
+            { "mixer_type", kEnum, kMaster, kGroupMotors, 0, 3, 0, kTable, "", MIXER_TYPES, 4,
+              "смеситель на упоре: LEGACY — урезать команды, LINEAR — газ в середину, DYNAMIC — смесь, EZLANDING — мягкая посадка" },
+            { "ez_landing_threshold", kInt, kPid, kGroupMotors, 0, 200, 25, kTable, "%", nullptr, 0,
+              "EZLANDING: стик (газ или крен/тангаж/рысканье) дальше — ход моторов полный" },
+            { "ez_landing_limit", kInt, kPid, kGroupMotors, 0, 75, 15, kTable, "%", nullptr, 0,
+              "EZLANDING: наибольшая разница моторов при стиках в нуле — у земли коптер не подпрыгивает" },
+            { "ez_landing_speed", kInt, kPid, kGroupMotors, 0, 250, 50, kTable, "x0.1 м/с", nullptr, 0,
+              "EZLANDING: быстрее по GPS — ограничения нет (0 — только по стикам)" },
             { "rateprofile_name", kText, kRate, kGroupRates, 0, 8, 0, kTable, "", nullptr, 0, "имя профиля расходов" },
             { "roll_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход крена у центра стика" },
             { "pitch_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход тангажа у центра стика" },
@@ -1690,6 +1703,7 @@ namespace copter
             s.geofence.noGps = static_cast<GeofenceNoGps>(static_cast<uint8_t>(value(PARAM_GEOFENCE_NO_GPS)));
             s.geofence.zones = &geoZones;
             s.airmodeStartThrottle = value(PARAM_AIRMODE_START_THROTTLE_PERCENT) * 0.01f;
+            s.mixerType = static_cast<MixerType>(static_cast<uint8_t>(value(PARAM_MIXER_TYPE)));
             s.turtle.otherMotors = value(PARAM_CRASHFLIP_MOTOR_PERCENT) * 0.01f;
             s.turtle.expo = value(PARAM_CRASHFLIP_EXPO) * 0.01f;
             RcSmoothingSettings& rs = s.rcSmoothing;
@@ -2163,6 +2177,9 @@ namespace copter
             if (isSet(PARAM_YAW_LOWPASS_HZ, pidIndex)) t.yawLpfHz = valueIn(PARAM_YAW_LOWPASS_HZ, pidIndex);
             if (isSet(PARAM_THRUST_LINEAR, pidIndex)) t.thrustLinear = valueIn(PARAM_THRUST_LINEAR, pidIndex) / 100.0f;
             t.motorOutputLimit = valueIn(PARAM_MOTOR_OUTPUT_LIMIT, pidIndex) / 100.0f;
+            t.ezLanding.threshold = valueIn(PARAM_EZ_LANDING_THRESHOLD, pidIndex) / 100.0f;
+            t.ezLanding.limit = valueIn(PARAM_EZ_LANDING_LIMIT, pidIndex) / 100.0f;
+            t.ezLanding.speedMs = valueIn(PARAM_EZ_LANDING_SPEED, pidIndex) / 10.0f;
             t.vbatSagCompensation = valueIn(PARAM_VBAT_SAG_COMPENSATION, pidIndex) / 100.0f;
             // ANGLE/HORIZON/ACRO TRAINER (BF 4.5); наклон и сила выравнивания не
             // заданы — точные значения модели (или BF), без округления

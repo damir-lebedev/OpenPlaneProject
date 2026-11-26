@@ -244,6 +244,57 @@ void test_airmode_keeps_control_at_zero_throttle()
     TEST_ASSERT_FLOAT_WITHIN(0.1 * target, target, maxRate);
 }
 
+// 039: EZLANDING. Посадка в ACRO на сброшенном газе; удар о землю —
+// гироскоп на 40 мс «видит» рывок по крену, ACRO-PID разводит моторы, и
+// airmode поднимает газ. С EZLANDING моторы расходятся меньше и коптер не
+// задирает одну сторону, как с LEGACY (там ~19°).
+static const double KICK_DPS = 300.0;
+static void ezLandingRun(copter::MixerType type, double& bounce, double& tilt, float& spread)
+{
+    copter::CopterSettings cs;
+    cs.mixerType = type;
+    QuadHarness h(five(), QuadPerturb(), 23, copter::EscProtocol::DSHOT600, 1000.0f, cs);
+    TEST_ASSERT_TRUE(h.takeoffTo(1.5));
+    h.rc.mode = CopterMode::ACRO;
+    h.rc.throttle = 0.1f;
+    for (int i = 0; i < 10000 && !h.sim.grounded(); ++i) h.step();
+    TEST_ASSERT_TRUE(h.sim.grounded());
+    h.rc.throttle = 0.0f;
+    bounce = 0.0;
+    tilt = 0.0;
+    spread = 0.0f;
+    for (int i = 0; i < 1500; ++i)
+    {
+        h.gyroBiasDps[0] = i < 40 ? KICK_DPS : 0.0;
+        h.step();
+        bounce = std::fmax(bounce, h.sim.height());
+        tilt = std::fmax(tilt, h.sim.tiltDeg());
+        float lo = 1e9f, hi = -1e9f;
+        for (uint8_t m = 0; m < h.out.count; ++m)
+        {
+            lo = std::fmin(lo, h.out.motor[m]);
+            hi = std::fmax(hi, h.out.motor[m]);
+        }
+        if (h.out.count) spread = std::fmax(spread, hi - lo);
+    }
+}
+
+void test_ez_landing_touchdown_without_bounce()
+{
+    double bounceLegacy = 0, bounceEz = 0, tiltLegacy = 0, tiltEz = 0;
+    float spreadLegacy = 0, spreadEz = 0;
+    ezLandingRun(copter::MixerType::LEGACY, bounceLegacy, tiltLegacy, spreadLegacy);
+    ezLandingRun(copter::MixerType::EZLANDING, bounceEz, tiltEz, spreadEz);
+    char msg[160];
+    snprintf(msg, sizeof(msg), "EZ landing: bounce LEGACY %.3f m EZ %.3f m, tilt %.1f / %.1f deg, motor spread %.3f / %.3f",
+             bounceLegacy, bounceEz, tiltLegacy, tiltEz, spreadLegacy, spreadEz);
+    TEST_MESSAGE(msg);
+    TEST_ASSERT_TRUE_MESSAGE(bounceEz <= bounceLegacy + 0.005, msg);
+    TEST_ASSERT_TRUE_MESSAGE(tiltEz < 3.0, msg);                 // рама осталась на земле ровно
+    TEST_ASSERT_TRUE_MESSAGE(tiltLegacy > tiltEz + 5.0, msg);    // а без EZ одна сторона приподнялась
+    TEST_ASSERT_TRUE_MESSAGE(spreadEz < 0.6f * spreadLegacy, msg);
+}
+
 // 098: airmode_start_throttle_percent — на земле после ARM газ внизу, стик
 // крена в сторону: без airmode моторы на холостых одинаково (коптер не
 // прыгает); газ хоть раз выше 25 % — airmode работает и на нуле газа.
@@ -2949,6 +3000,7 @@ int main()
     RUN_TEST(test_every_build_tracks_acro_rate);
     RUN_TEST(test_airmode_keeps_control_at_zero_throttle);
     RUN_TEST(test_airmode_starts_after_throttle_threshold);
+    RUN_TEST(test_ez_landing_touchdown_without_bounce);
     RUN_TEST(test_yaw_rate_follows_stick_and_stays_level);
     RUN_TEST(test_hover_in_gusty_wind);
     RUN_TEST(test_failsafe_without_barometer);

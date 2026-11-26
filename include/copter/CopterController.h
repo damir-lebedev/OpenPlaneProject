@@ -360,6 +360,7 @@ namespace copter
     {
         bool airmode = true;
         float airmodeStartThrottle = 0.25f;   // airmode_start_throttle_percent: airmode — после газа выше (с ARM)
+        MixerType mixerType = MixerType::LEGACY;   // mixer_type
         bool voltageCompensation = true;
         bool rpmNotches = true;
         RcSmoothingSettings rcSmoothing;   // rc_smoothing_*, deadband (copter/RcSmoothing.h)
@@ -486,6 +487,8 @@ namespace copter
             set = s;
             dt = 1.0f / t.loopHz;
             mixer.setAirmode(s.airmode);
+            mixer.setType(s.mixerType);
+            mixer.setEzLanding(t.ezLanding);
             gyroFilter.configure(t.loopHz, t.gyroLpfHz, t.notchQ, t.prop.prop.blades, t.minNotchHz);
             axes[0].configure(t.roll, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[1].configure(t.pitch, t.dtermLpfHz, 0.0f, t.iLimit, dt);
@@ -572,6 +575,8 @@ namespace copter
             tune.yawLpfHz = t.yawLpfHz;
             tune.thrustLinear = t.thrustLinear;
             tune.motorOutputLimit = t.motorOutputLimit;
+            tune.ezLanding = t.ezLanding;
+            mixer.setEzLanding(t.ezLanding);
             tune.vbatSagCompensation = t.vbatSagCompensation;
             for (int a = 0; a < 3; ++a) tune.rates[a] = t.rates[a];
             axes[0].setGains(t.roll);
@@ -1165,6 +1170,9 @@ namespace copter
             }
             MixInput mi;
             mi.throttle = mixThrust;
+            // EZLANDING: насколько пилот «просит» — газ или любой стик
+            mi.stick = fmaxf(sticks[3], fmaxf(fabsf(sticks[0]), fmaxf(fabsf(sticks[1]), fabsf(sticks[2]))));
+            mi.speedMs = rescue.gpsOk() ? rescue.groundSpeed() : -1.0f;
             mi.roll = axes[0].update(sp[0], rates[0], tpa, iBoost, holdI, status.saturated, pBoost);
             mi.pitch = axes[1].update(sp[1], rates[1], tpa, iBoost, holdI, status.saturated, pBoost);
             mi.yaw = axes[2].update(sp[2], rates[2], 1.0f, iBoost, holdI, status.saturated);
