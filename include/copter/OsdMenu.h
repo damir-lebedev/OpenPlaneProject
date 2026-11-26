@@ -141,6 +141,7 @@ namespace copter
             PAGE_SLIDERS,
             PAGE_VTX,
             PAGE_TRAINING,
+            PAGE_AUTOPILOT,
             PAGE_COUNT
         };
 
@@ -163,9 +164,11 @@ namespace copter
             const char* label;
             Kind kind;
             uint16_t value;   // PAGE: страница, PARAM: ParamId
+            uint8_t step = 0;   // PARAM: шаг стиком (0 — 1, у дробных 0.1)
         };
 
         static constexpr uint8_t FIRST_ROW = 2;
+        static constexpr float HOVER_MIN_US = 1050.0f;   // ниже — «из описания» (Params.h)
 
         static const Item* items(uint8_t p)
         {
@@ -176,6 +179,7 @@ namespace copter
                 { "SLIDERS", Kind::PAGE, PAGE_SLIDERS },
                 { "VTX", Kind::PAGE, PAGE_VTX },
                 { "TRAINING", Kind::PAGE, PAGE_TRAINING },
+                { "AUTOPILOT", Kind::PAGE, PAGE_AUTOPILOT },
                 { "SAVE+EXIT", Kind::SAVE_EXIT, 0 },
                 { "EXIT", Kind::EXIT, 0 },
             };
@@ -224,6 +228,26 @@ namespace copter
                 { "MAX ANGLE", Kind::PARAM, PARAM_TRAINING_MAX_ANGLE },
                 { "MAX KMH", Kind::PARAM, PARAM_TRAINING_MAX_SPEED },
             };
+            // POS HOLD / ALT HOLD и общие газ, угол, коэффициенты автопилота (BF 2025: autopilot_*)
+            static const Item AUTOPILOT[] = {
+                { "ALT RATE 0.1M/S", Kind::PARAM, PARAM_ALT_HOLD_ADJUST_RATE },
+                { "ALT DEADBAND %", Kind::PARAM, PARAM_ALT_HOLD_DEADBAND },
+                { "POS RATE 0.1M/S", Kind::PARAM, PARAM_POS_HOLD_ADJUST_RATE },
+                { "POS DEADBAND %", Kind::PARAM, PARAM_POS_HOLD_DEADBAND },
+                { "POS NO MAG", Kind::PARAM, PARAM_POS_HOLD_WITHOUT_MAG },
+                { "HOVER THR", Kind::PARAM, PARAM_AUTOPILOT_HOVER_THROTTLE, 5 },
+                { "THR MIN", Kind::PARAM, PARAM_AUTOPILOT_THROTTLE_MIN, 5 },
+                { "THR MAX", Kind::PARAM, PARAM_AUTOPILOT_THROTTLE_MAX, 5 },
+                { "MAX ANGLE", Kind::PARAM, PARAM_AUTOPILOT_MAX_ANGLE },
+                { "ALT P", Kind::PARAM, PARAM_AUTOPILOT_ALTITUDE_P },
+                { "ALT I", Kind::PARAM, PARAM_AUTOPILOT_ALTITUDE_I },
+                { "ALT D", Kind::PARAM, PARAM_AUTOPILOT_ALTITUDE_D },
+                { "ALT F", Kind::PARAM, PARAM_AUTOPILOT_ALTITUDE_F },
+                { "POS P", Kind::PARAM, PARAM_AUTOPILOT_POSITION_P },
+                { "POS I", Kind::PARAM, PARAM_AUTOPILOT_POSITION_I },
+                { "POS D", Kind::PARAM, PARAM_AUTOPILOT_POSITION_D },
+                { "POS A", Kind::PARAM, PARAM_AUTOPILOT_POSITION_A },
+            };
             switch (p)
             {
                 case PAGE_PROFILES: return PROFILES;
@@ -232,6 +256,7 @@ namespace copter
                 case PAGE_SLIDERS: return SLIDERS;
                 case PAGE_VTX: return VTX;
                 case PAGE_TRAINING: return TRAINING;
+                case PAGE_AUTOPILOT: return AUTOPILOT;
                 default: return MAIN;
             }
         }
@@ -246,14 +271,15 @@ namespace copter
                 case PAGE_SLIDERS: return 11;
                 case PAGE_VTX: return 4;
                 case PAGE_TRAINING: return 5;
-                default: return 8;
+                case PAGE_AUTOPILOT: return 17;
+                default: return 9;
             }
         }
 
         static const char* pageName(uint8_t p)
         {
             static const char* const names[PAGE_COUNT] = { "MENU", "PROFILES", "PID", "RATES",
-                                                           "SLIDERS", "VTX", "TRAINING" };
+                                                           "SLIDERS", "VTX", "TRAINING", "AUTOPILOT" };
             return p < PAGE_COUNT ? names[p] : "MENU";
         }
 
@@ -280,6 +306,11 @@ namespace copter
                     {
                         const uint8_t b = static_cast<uint8_t>(params.value(id));
                         snprintf(out, n, "%c", b >= 1 && b <= VTX_BANDS ? vtxBandLetters()[b - 1] : 'U');
+                        return true;
+                    }
+                    if (id == PARAM_AUTOPILOT_HOVER_THROTTLE && params.value(id) < HOVER_MIN_US)
+                    {
+                        snprintf(out, n, "AUTO");   // 0 — газ висения из описания коптера
                         return true;
                     }
                     params.format(id, params.activeSlot(id), out, n);
@@ -344,8 +375,10 @@ namespace copter
                         {
                             const ParamId id = static_cast<ParamId>(it.value);
                             const ParamInfo& info = paramInfo(id);
-                            const float inc = info.type == ParamType::FLOAT ? 0.1f : 1.0f;
-                            const float v = fminf(info.max, fmaxf(info.min, params.value(id) + dir * inc));
+                            const float inc = it.step ? it.step : info.type == ParamType::FLOAT ? 0.1f : 1.0f;
+                            float v = fminf(info.max, fmaxf(info.min, params.value(id) + dir * inc));
+                            if (id == PARAM_AUTOPILOT_HOVER_THROTTLE && v > 0.0f && v < HOVER_MIN_US)
+                                v = dir > 0 ? HOVER_MIN_US : 0.0f;   // AUTO <-> 1050 без пустых шагов
                             params.setValue(id, params.activeSlot(id), v);
                             return Exit::NONE;
                         }

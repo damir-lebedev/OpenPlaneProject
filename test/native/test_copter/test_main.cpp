@@ -4335,6 +4335,52 @@ void test_msp_settings_roundtrip()
     TEST_ASSERT_EQUAL_FLOAT(1.0f, m.params.value(PARAM_FAILSAFE_PROCEDURE));
     TEST_ASSERT_TRUE(m.ask(62, { 7, 0, 40 }, p));
     TEST_ASSERT_EQUAL_FLOAT(7.0f, m.params.value(PARAM_AUTO_DISARM_DELAY));
+
+    // P39 (д): GPS Rescue и коэффициенты автопилота — как BF 2025.12 (вкладки Failsafe/GPS конфигуратора)
+    {
+        const float hover0 = m.params.value(PARAM_AUTOPILOT_HOVER_THROTTLE);
+        m.params.setValue(PARAM_AUTOPILOT_HOVER_THROTTLE, 0, 0);
+        std::vector<uint8_t> g = m.get(135);
+        TEST_ASSERT_EQUAL_UINT32(26, g.size());
+        TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(m.params.value(PARAM_GPS_RESCUE_MAX_ANGLE)), le16(g, 0));
+        TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(m.params.value(PARAM_GPS_RESCUE_RETURN_ALT)), le16(g, 2));
+        const uint16_t hoverUs = le16(g, 12);   // AUTO — газ висения из описания коптера
+        TEST_ASSERT_TRUE(hoverUs > 1100 && hoverUs < 1700);
+        TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(m.params.value(PARAM_GPS_RESCUE_MIN_START_DIST)), le16(g, 22));
+        // назад без правок — AUTO остаётся 0; новые высота возврата и газ висения — пишутся
+        TEST_ASSERT_TRUE(m.ask(225, g, p));
+        TEST_ASSERT_EQUAL_FLOAT(0.0f, m.params.value(PARAM_AUTOPILOT_HOVER_THROTTLE));
+        g[2] = 55;
+        g[3] = 0;
+        g[12] = static_cast<uint8_t>(1320 & 0xFF);
+        g[13] = static_cast<uint8_t>(1320 >> 8);
+        TEST_ASSERT_TRUE(m.ask(225, g, p));
+        TEST_ASSERT_EQUAL_FLOAT(55.0f, m.params.value(PARAM_GPS_RESCUE_RETURN_ALT));
+        TEST_ASSERT_EQUAL_FLOAT(1320.0f, m.params.value(PARAM_AUTOPILOT_HOVER_THROTTLE));
+        TEST_ASSERT_EQUAL_UINT16(1320, le16(m.get(135), 12));
+        // старый конфигуратор (API 1.42): только первые 16 байт — остальное не трогается
+        const float climb0 = m.params.value(PARAM_GPS_RESCUE_ASCEND_RATE);
+        TEST_ASSERT_TRUE(m.ask(225, std::vector<uint8_t>(g.begin(), g.begin() + 16), p));
+        TEST_ASSERT_EQUAL_FLOAT(climb0, m.params.value(PARAM_GPS_RESCUE_ASCEND_RATE));
+        m.params.setValue(PARAM_AUTOPILOT_HOVER_THROTTLE, 0, hover0);
+        m.params.setValue(PARAM_GPS_RESCUE_RETURN_ALT, 0, 30);
+
+        std::vector<uint8_t> pid = m.get(136);
+        TEST_ASSERT_EQUAL_UINT32(14, pid.size());
+        TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(m.params.value(PARAM_AUTOPILOT_ALTITUDE_P)), le16(pid, 0));
+        TEST_ASSERT_EQUAL_UINT16(static_cast<uint16_t>(m.params.value(PARAM_AUTOPILOT_POSITION_P)), le16(pid, 6));
+        const float posP0 = m.params.value(PARAM_AUTOPILOT_POSITION_P);
+        pid[6] = 42;
+        pid[7] = 0;
+        TEST_ASSERT_TRUE(m.ask(226, pid, p));
+        TEST_ASSERT_EQUAL_FLOAT(42.0f, m.params.value(PARAM_AUTOPILOT_POSITION_P));
+        m.params.setValue(PARAM_AUTOPILOT_POSITION_P, 0, posP0);
+
+        std::vector<uint8_t> gc = m.get(132);
+        TEST_ASSERT_EQUAL_UINT32(6, gc.size());
+        TEST_ASSERT_EQUAL_UINT8(1, gc[0]);   // UBLOX
+        TEST_ASSERT_TRUE(m.ask(223, gc, p));
+    }
     TEST_ASSERT_EQUAL_FLOAT(40.0f, m.params.value(PARAM_SMALL_ANGLE));
 
     // карта каналов: TAER (газ — CH1)
@@ -7809,7 +7855,7 @@ void test_osd_menu_by_sticks()
     run(sticks(CE, CE, CE, CE), 0.05f);
     run(sticks(CE, CE, HI, CE), 0.05f);
     run(sticks(CE, CE, CE, CE), 0.05f);
-    TEST_ASSERT_EQUAL(6, m.cursorRow());
+    TEST_ASSERT_EQUAL(7, m.cursorRow());
     run(sticks(CE, CE, CE, HI), 0.05f);
     TEST_ASSERT_FALSE(m.isOpen());
     TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::Exit::SAVE), static_cast<int>(last));
@@ -7846,6 +7892,72 @@ void test_osd_menu_by_sticks()
     run(sticks(CE, LO, CE, CE), 0.05f);
     TEST_ASSERT_FALSE(m.isOpen());
     TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::Exit::DISCARD), static_cast<int>(last));
+}
+
+// P39 (д): страница AUTOPILOT в меню очков — POS HOLD / ALT HOLD; газ висения AUTO <-> 1050.
+void test_osd_menu_autopilot_page()
+{
+    CopterParams& p = five5Params();
+    const float hover0 = p.value(PARAM_AUTOPILOT_HOVER_THROTTLE);
+    const float posRate0 = p.value(PARAM_POS_HOLD_ADJUST_RATE);
+    p.setValue(PARAM_AUTOPILOT_HOVER_THROTTLE, 0, 0);
+    OsdMenu m;
+    const int LO = 1000, CE = 1500, HI = 2000;
+    auto run = [&](CopterRc rc, float seconds) {
+        for (int i = 0; i < static_cast<int>(seconds * 100.0f); ++i) m.update(rc, false, 0.01f, p);
+    };
+    auto tap = [&](CopterRc rc) {
+        run(rc, 0.05f);
+        run(sticks(CE, CE, CE, CE), 0.05f);
+    };
+    run(sticks(CE, LO, HI, CE), 0.6f);
+    run(sticks(CE, CE, CE, CE), 0.05f);
+    for (int i = 0; i < 6; ++i) tap(sticks(CE, CE, LO, CE));
+    tap(sticks(CE, CE, CE, HI));
+    TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::PAGE_AUTOPILOT), m.currentPage());
+
+    OsdScreen scr;
+    scr.setRows(16);
+    auto rowText = [&](int r) {
+        std::string t;
+        for (int c = 0; c < OsdScreen::COLS; ++c) t += static_cast<char>(scr.at(r, c));
+        return t;
+    };
+    m.draw(scr, p);
+    TEST_ASSERT_NOT_NULL(strstr(rowText(0).c_str(), "AUTOPILOT"));
+    TEST_ASSERT_NOT_NULL(strstr(rowText(2).c_str(), "ALT RATE"));
+
+    // POS RATE (3-я строка) +1
+    tap(sticks(CE, CE, LO, CE));
+    tap(sticks(CE, CE, LO, CE));
+    tap(sticks(CE, CE, CE, HI));
+    TEST_ASSERT_EQUAL_FLOAT(posRate0 + 1.0f, p.value(PARAM_POS_HOLD_ADJUST_RATE));
+
+    // HOVER THR: 0 пишется AUTO, вправо — сразу 1050, потом шагом 5; влево с 1050 — снова AUTO
+    for (int i = 0; i < 3; ++i) tap(sticks(CE, CE, LO, CE));
+    TEST_ASSERT_EQUAL(5, m.cursorRow());
+    m.draw(scr, p);
+    TEST_ASSERT_NOT_NULL(strstr(rowText(7).c_str(), "HOVER THR"));
+    TEST_ASSERT_NOT_NULL(strstr(rowText(7).c_str(), "AUTO"));
+    tap(sticks(CE, CE, CE, HI));
+    TEST_ASSERT_EQUAL_FLOAT(1050.0f, p.value(PARAM_AUTOPILOT_HOVER_THROTTLE));
+    tap(sticks(CE, CE, CE, HI));
+    TEST_ASSERT_EQUAL_FLOAT(1055.0f, p.value(PARAM_AUTOPILOT_HOVER_THROTTLE));
+    tap(sticks(CE, CE, CE, LO));
+    tap(sticks(CE, CE, CE, LO));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.value(PARAM_AUTOPILOT_HOVER_THROTTLE));
+
+    // 17 строк: вниз до последней (POS A) — список прокручивается
+    for (int i = 0; i < 11; ++i) tap(sticks(CE, CE, LO, CE));
+    TEST_ASSERT_EQUAL(16, m.cursorRow());
+    m.draw(scr, p);
+    TEST_ASSERT_EQUAL('^', scr.at(1, OsdScreen::COLS - 2));
+    // назад — в главное на строку AUTOPILOT
+    tap(sticks(CE, LO, CE, CE));
+    TEST_ASSERT_EQUAL(static_cast<int>(OsdMenu::PAGE_MAIN), m.currentPage());
+    TEST_ASSERT_EQUAL(6, m.cursorRow());
+    p.setValue(PARAM_AUTOPILOT_HOVER_THROTTLE, 0, hover0);
+    p.setValue(PARAM_POS_HOLD_ADJUST_RATE, 0, posRate0);
 }
 
 namespace
@@ -10507,6 +10619,7 @@ int main()
     RUN_TEST(test_crsf_msp_from_radio);
     RUN_TEST(test_crsf_msp_param_by_name_and_tx_model);
     RUN_TEST(test_osd_menu_by_sticks);
+    RUN_TEST(test_osd_menu_autopilot_page);
     RUN_TEST(test_filter_chain_like_betaflight);
     RUN_TEST(test_gyro_spectrum_finds_vibration_peak);
     RUN_TEST(test_dyn_notch_cuts_unmodelled_vibration);

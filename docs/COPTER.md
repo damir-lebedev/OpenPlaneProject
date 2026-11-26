@@ -764,7 +764,10 @@ QUALITY), RSSI ниже `osd_rssi_alarm` (и RSSI LOW), напряжение —
 ниже, крен вправо — войти или больше, влево — меньше, рыск влево — назад.
 Страницы: профили PID и расходов, P/I/D/F текущего профиля, расходы
 (rc_rate, super rate, expo), ползунки `simplified_*`, VTX (полоса, канал,
-мощность, `vtx_low_power_disarm`), учебные ограничения. SAVE+EXIT —
+мощность, `vtx_low_power_disarm`), учебные ограничения, AUTOPILOT
+(POS HOLD / ALT HOLD: скорость стиком и мёртвая зона, `pos_hold_without_mag`,
+газ висения — `AUTO` ↔ 1050 шагом 5, мин./макс. газ, угол, P/I/D/F высоты
+и P/I/D/A положения `autopilot_*`). SAVE+EXIT —
 записать и применить; EXIT, ARM или потеря связи — изменённое в меню
 отменяется. Пока меню открыто, ARM запрещён (`CMS`), команды стиками молчат.
 В Studio («OSD») — картинка стиков и тренажёр того же экрана клавишами.
@@ -1349,6 +1352,7 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 | Живые данные | `STATUS`, `STATUS_EX`, `RAW_IMU`, `ATTITUDE`, `ALTITUDE`, `ANALOG`, `BATTERY_STATE`, `RC`, `MOTOR`, `BOXNAMES`, `BOXIDS` | флаги запрета ARM — номерами BF (`status`), режимы — наша таблица |
 | PID, расходы | `PID`, `RC_TUNING`, `PID_ADVANCED` и `SET_*` | в реестр, единицы BF; тип расходов — `ACTUAL` (наша кривая), LEVEL и MAG — дефолты BF, не меняются |
 | Фильтры | `FILTER_CONFIG`, `SET_FILTER_CONFIG` | ФНЧ гироскопа и D (типы, срезы, динамика по газу), статические режекторы, `yaw_lowpass_hz`, динамический режектор (`dyn_notch_*`) и RPM-фильтр (`rpm_filter_harmonics`, `rpm_filter_min_hz`) — как в BF 4.5 |
+| GPS Rescue, автопилот | `GPS_RESCUE`, `GPS_RESCUE_PIDS`, `GPS_CONFIG` и `SET_*` | как в BF 2025.12: угол — `gps_rescue_max_angle`, газ — `autopilot_throttle_*`, висение `autopilot_hover_throttle` (0 = «из описания» — конфигуратору число, которым летим; вернулось то же — остаётся 0), PID — `autopilot_altitude_*`/`position_*`; GPS — UBLOX, настраивается сам, запись принимается без изменений. У POS/ALT HOLD своих MSP в BF нет — CLI, Studio или меню в очках |
 | Режимы, приёмник | `MODE_RANGES`, `SET_MODE_RANGE`, `RX_CONFIG`, `RX_MAP`, `RXFAIL_CONFIG` и `SET_*` | таблицы `aux`, `map`, `rxfail`, `serialrx_provider`, `rx_min/max_usec` |
 | Моторы, безопасность, батарея | `MOTOR_CONFIG`, `ADVANCED_CONFIG`, `FAILSAFE_CONFIG`, `ARMING_CONFIG`, `BATTERY_CONFIG`, `MIXER_CONFIG`, `FEATURE_CONFIG` и `SET_*` | `motor_poles`, `dshot_bidir`, `failsafe_*`, `small_angle`, `auto_disarm_delay`, `vbat_*`; протокол регуляторов — сборкой, features — только показываются |
 | Профили, сохранение, перезагрузка | `SELECT_SETTING`, `EEPROM_WRITE`, `REBOOT` (0 — плата, 1 — DFU), `SET_ARMING_DISABLED` | как `save` в CLI |

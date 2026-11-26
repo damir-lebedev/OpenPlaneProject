@@ -76,6 +76,8 @@ namespace copter
             ARMING_CONFIG = 61, SET_ARMING_CONFIG = 62, RX_MAP = 64, SET_RX_MAP = 65, REBOOT = 68,
             RAW_GPS = 106, COMP_GPS = 107, DISPLAYPORT = 182, SET_OSD_CANVAS = 188, OSD_CANVAS = 189,
             VTX_CONFIG = 88, SET_VTX_CONFIG = 89,
+            GPS_CONFIG = 132, GPS_RESCUE = 135, GPS_RESCUE_PIDS = 136,
+            SET_GPS_CONFIG = 223, SET_GPS_RESCUE = 225, SET_GPS_RESCUE_PIDS = 226,
             FAILSAFE_CONFIG = 75, SET_FAILSAFE_CONFIG = 76, RXFAIL_CONFIG = 77, SET_RXFAIL_CONFIG = 78,
             ADVANCED_CONFIG = 90, SET_ADVANCED_CONFIG = 91, FILTER_CONFIG = 92, SET_FILTER_CONFIG = 93,
             PID_ADVANCED = 94, SET_PID_ADVANCED = 95, SET_ARMING_DISABLED = 99,
@@ -357,6 +359,16 @@ namespace copter
                 case MODE_RANGES: modeRanges(w); return true;
                 case MOTOR_CONFIG: motorConfig(w); return true;
                 case FAILSAFE_CONFIG: failsafeConfig(w); return true;
+                case GPS_CONFIG:   // провайдер UBLOX, SBAS AUTO, автонастройка — u-blox M10 настраиваем сами
+                    w.u8(1);
+                    w.u8(0);
+                    w.u8(1);
+                    w.u8(0);
+                    w.u8(0);   // gps_set_home_point_once — дом на каждом ARM
+                    w.u8(1);   // Galileo — у M10 включён
+                    return true;
+                case GPS_RESCUE: gpsRescue(w); return true;
+                case GPS_RESCUE_PIDS: gpsRescuePids(w); return true;
                 case BOARD_ALIGNMENT_CONFIG:   // align_board_roll / _pitch / _yaw, int16
                     w.u16(static_cast<uint16_t>(static_cast<int16_t>(params.value(PARAM_ALIGN_BOARD_ROLL))));
                     w.u16(static_cast<uint16_t>(static_cast<int16_t>(params.value(PARAM_ALIGN_BOARD_PITCH))));
@@ -523,6 +535,9 @@ namespace copter
                     }
                     break;
                 case SET_FAILSAFE_CONFIG: setFailsafeConfig(r); break;
+                case SET_GPS_CONFIG: break;   // GPS настраивается сам — принять и ничего не менять
+                case SET_GPS_RESCUE: setGpsRescue(r); break;
+                case SET_GPS_RESCUE_PIDS: setGpsRescuePids(r); break;
                 case SET_BOARD_ALIGNMENT_CONFIG:
                     if (r.remaining() < 6) return false;
                     set(PARAM_ALIGN_BOARD_ROLL, static_cast<int16_t>(r.u16()));
@@ -1213,6 +1228,88 @@ namespace copter
             set(PARAM_FAILSAFE_SWITCH_MODE, r.u8());
             set(PARAM_FAILSAFE_THROTTLE_LOW_DELAY, r.u16());
             set(PARAM_FAILSAFE_PROCEDURE, r.u8());
+        }
+
+        // MSP_GPS_RESCUE как в BF 2025.12 (API 1.46). Угол — gps_rescue_max_angle: им летит наш Rescue.
+        void gpsRescue(msp::Writer& w)
+        {
+            w.u16(u16Of(PARAM_GPS_RESCUE_MAX_ANGLE));
+            w.u16(u16Of(PARAM_GPS_RESCUE_RETURN_ALT));
+            w.u16(u16Of(PARAM_GPS_RESCUE_DESCENT_DIST));
+            w.u16(u16Of(PARAM_GPS_RESCUE_GROUND_SPEED));
+            w.u16(u16Of(PARAM_AUTOPILOT_THROTTLE_MIN));
+            w.u16(u16Of(PARAM_AUTOPILOT_THROTTLE_MAX));
+            w.u16(hoverReport());
+            w.u8(clampU8(params.value(PARAM_GPS_RESCUE_SANITY_CHECKS)));
+            w.u8(clampU8(params.value(PARAM_GPS_RESCUE_MIN_SATS)));
+            w.u16(u16Of(PARAM_GPS_RESCUE_ASCEND_RATE));
+            w.u16(u16Of(PARAM_GPS_RESCUE_DESCEND_RATE));
+            w.u8(clampU8(params.value(PARAM_GPS_RESCUE_ALLOW_ARMING_WITHOUT_FIX)));
+            w.u8(clampU8(params.value(PARAM_GPS_RESCUE_ALT_MODE)));
+            w.u16(u16Of(PARAM_GPS_RESCUE_MIN_START_DIST));
+            w.u16(u16Of(PARAM_GPS_RESCUE_INITIAL_CLIMB));
+        }
+
+        void setGpsRescue(msp::Reader& r)
+        {
+            set(PARAM_GPS_RESCUE_MAX_ANGLE, r.u16());
+            set(PARAM_GPS_RESCUE_RETURN_ALT, r.u16());
+            set(PARAM_GPS_RESCUE_DESCENT_DIST, r.u16());
+            set(PARAM_GPS_RESCUE_GROUND_SPEED, r.u16());
+            set(PARAM_AUTOPILOT_THROTTLE_MIN, r.u16());
+            set(PARAM_AUTOPILOT_THROTTLE_MAX, r.u16());
+            const uint16_t hover = r.u16();
+            // газ висения «из описания» (0) конфигуратор вернёт тем числом, что мы ему показали, —
+            // тогда оставить 0, иначе записать его число
+            if (hover != hoverReport()) set(PARAM_AUTOPILOT_HOVER_THROTTLE, hover);
+            set(PARAM_GPS_RESCUE_SANITY_CHECKS, r.u8());
+            set(PARAM_GPS_RESCUE_MIN_SATS, r.u8());
+            if (r.remaining() >= 6)
+            {
+                set(PARAM_GPS_RESCUE_ASCEND_RATE, r.u16());
+                set(PARAM_GPS_RESCUE_DESCEND_RATE, r.u16());
+                set(PARAM_GPS_RESCUE_ALLOW_ARMING_WITHOUT_FIX, r.u8() ? 1 : 0);
+                set(PARAM_GPS_RESCUE_ALT_MODE, r.u8());
+            }
+            if (r.remaining() >= 2) set(PARAM_GPS_RESCUE_MIN_START_DIST, r.u16());
+            if (r.remaining() >= 2) set(PARAM_GPS_RESCUE_INITIAL_CLIMB, r.u16());
+        }
+
+        // MSP_GPS_RESCUE_PIDS BF 2025: P/I/D высоты и положения автопилота, последнее — бывший yaw_p.
+        void gpsRescuePids(msp::Writer& w)
+        {
+            w.u16(u16Of(PARAM_AUTOPILOT_ALTITUDE_P));
+            w.u16(u16Of(PARAM_AUTOPILOT_ALTITUDE_I));
+            w.u16(u16Of(PARAM_AUTOPILOT_ALTITUDE_D));
+            w.u16(u16Of(PARAM_AUTOPILOT_POSITION_P));
+            w.u16(u16Of(PARAM_AUTOPILOT_POSITION_I));
+            w.u16(u16Of(PARAM_AUTOPILOT_POSITION_D));
+            w.u16(u16Of(PARAM_GPS_RESCUE_YAW_P));
+        }
+
+        void setGpsRescuePids(msp::Reader& r)
+        {
+            set(PARAM_AUTOPILOT_ALTITUDE_P, r.u16());
+            set(PARAM_AUTOPILOT_ALTITUDE_I, r.u16());
+            set(PARAM_AUTOPILOT_ALTITUDE_D, r.u16());
+            set(PARAM_AUTOPILOT_POSITION_P, r.u16());
+            set(PARAM_AUTOPILOT_POSITION_I, r.u16());
+            set(PARAM_AUTOPILOT_POSITION_D, r.u16());
+            if (r.remaining() >= 2) r.u16();   // yaw_p: BF 2025 его больше не пишет
+        }
+
+        // autopilot_hover_throttle 0 = «из описания коптера»: конфигуратору — то число, которым летим.
+        uint16_t hoverReport() const
+        {
+            const float v = params.value(PARAM_AUTOPILOT_HOVER_THROTTLE);
+            if (v >= 1050.0f) return static_cast<uint16_t>(v + 0.5f);
+            return static_cast<uint16_t>(1000.0f + ctl.getTune().hoverThrust * 1000.0f + 0.5f);
+        }
+
+        uint16_t u16Of(ParamId id) const
+        {
+            const float v = params.value(id);
+            return static_cast<uint16_t>(v < 0.0f ? 0.0f : v > 65535.0f ? 65535.0f : v + 0.5f);
         }
 
         void batteryConfig(msp::Writer& w)
