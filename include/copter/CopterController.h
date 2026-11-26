@@ -857,10 +857,10 @@ namespace copter
                 if (testLeft > 0.0f)
                 {
                     testLeft -= dt;
+                    // остальные — «стоп»: 0 у DShot — минимальный газ (48), регулятор
+                    // крутил бы их на холостых (стенд 2026-11-26: крутились все четыре)
                     for (uint8_t i = 0; i < out.count && i < MAX_MOTORS; ++i)
-                    {
-                        if (testThrust[i] > 0.0f) out.motor[i] = tune.motorCommand(testThrust[i]);
-                    }
+                        out.motor[i] = testThrust[i] > 0.0f ? tune.motorCommand(testThrust[i]) : MOTOR_STOP;
                     out.spinning = true;
                     if (testLeft <= 0.0f) stopMotorTest();
                 }

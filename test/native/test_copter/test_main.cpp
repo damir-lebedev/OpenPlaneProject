@@ -1616,7 +1616,11 @@ void test_motor_test_only_disarmed_and_times_out()
     TEST_ASSERT_TRUE(b.ctl.motorTestActive());
     TEST_ASSERT_TRUE(b.out.spinning);
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, b.ctl.getTune().motorCommand(0.3f), b.out.motor[2]);
-    TEST_ASSERT_EQUAL_FLOAT(0.0f, b.out.motor[0]);
+    // остальные — «стоп», а не 0: у DShot 0 — минимальный газ, мотор крутится
+    TEST_ASSERT_TRUE(b.out.motor[0] < 0.0f);
+    TEST_ASSERT_TRUE(b.out.motor[1] < 0.0f);
+    TEST_ASSERT_TRUE(b.out.motor[3] < 0.0f);
+    TEST_ASSERT_EQUAL_UINT16(dshot::STOP, dshot::throttleValue(b.out.motor[0], b.out.spinning));
     TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_MOTOR_TEST);
     b.run(1.0f);
     TEST_ASSERT_FALSE(b.ctl.motorTestActive());
@@ -1641,7 +1645,7 @@ void test_motor_test_sliders_per_motor()
     TEST_ASSERT_TRUE(b.ctl.setMotorTest(1, 0.1f, 1.0f));
     TEST_ASSERT_TRUE(b.ctl.setMotorTest(3, 0.2f, 1.0f));
     b.run(0.1f);
-    TEST_ASSERT_EQUAL_FLOAT(0.0f, b.out.motor[0]);
+    TEST_ASSERT_TRUE(b.out.motor[0] < 0.0f);
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, b.ctl.getTune().motorCommand(0.1f), b.out.motor[1]);
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, b.ctl.getTune().motorCommand(0.2f), b.out.motor[3]);
     TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.2f, b.ctl.motorTestValue(3));
