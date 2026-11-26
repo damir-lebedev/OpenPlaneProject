@@ -295,6 +295,75 @@ void test_ez_landing_touchdown_without_bounce()
     TEST_ASSERT_TRUE_MESSAGE(spreadEz < 0.6f * spreadLegacy, msg);
 }
 
+// 037: launch control. ARM в ACRO с режимом LAUNCH CONTROL, стик тангажа
+// вперёд — рама встаёт на передние ноги до launch_angle_limit и стоит так и
+// с отпущенным стиком (держит I); рывок газом — старт уже с наклоном: коптер
+// сразу разгоняется вперёд и не кувыркается. Без режима рама на земле ровная.
+struct LaunchRun
+{
+    double groundPitch = 0, heldPitch = 0, maxTilt = 0, height = 0, forward = 0, estPitch = 0;
+    double groundLift = 0;   // выше всего до рывка, м
+    LaunchState before = LaunchState::OFF, after = LaunchState::OFF;
+};
+static LaunchRun launchRun(bool mode)
+{
+    QuadHarness h(five(), QuadPerturb(), 29);
+    h.sim.legPivot = true;
+    CopterTune t = h.tune;
+    t.launch.angleLimitDeg = 30.0f;
+    h.useTune(t);
+    h.rc.launchControl = mode;
+    LaunchRun r;
+    if (!h.armOnGround(CopterMode::ACRO)) return r;
+    r.before = h.ctl.getStatus().launch;
+    h.rc.pitch = -0.5f;   // стик от себя
+    for (int i = 0; i < 3000; ++i)
+    {
+        h.step();
+        r.groundLift = std::fmax(r.groundLift, h.sim.height());
+    }
+    r.groundPitch = h.sim.pitchDeg();
+    r.estPitch = h.ctl.getStatus().pitch;
+    h.rc.pitch = 0.0f;
+    for (int i = 0; i < 1000; ++i)
+    {
+        h.step();
+        r.groundLift = std::fmax(r.groundLift, h.sim.height());
+    }
+    r.heldPitch = h.sim.pitchDeg();
+    h.rc.throttle = 0.8f;
+    for (int i = 0; i < 600; ++i)
+    {
+        h.step();
+        r.maxTilt = std::fmax(r.maxTilt, h.sim.tiltDeg());
+    }
+    r.after = h.ctl.getStatus().launch;
+    r.height = h.sim.height();
+    const auto p = h.sim.position();
+    r.forward = std::sqrt(p.x * p.x + p.y * p.y);
+    return r;
+}
+
+void test_launch_control_holds_tilt_then_launches()
+{
+    const LaunchRun lc = launchRun(true);
+    const LaunchRun plain = launchRun(false);
+    char msg[220];
+    snprintf(msg, sizeof(msg),
+             "launch: ground pitch %.1f (est %.1f) held %.1f, max tilt %.1f, lift %.3f, h %.2f m, forward %.2f m; without: pitch %.1f, forward %.2f m",
+             lc.groundPitch, lc.estPitch, lc.heldPitch, lc.maxTilt, lc.groundLift, lc.height, lc.forward, plain.groundPitch, plain.forward);
+    TEST_MESSAGE(msg);
+    TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(LaunchState::ACTIVE), static_cast<int>(lc.before), msg);
+    TEST_ASSERT_EQUAL_MESSAGE(static_cast<int>(LaunchState::TRIGGERED), static_cast<int>(lc.after), msg);
+    TEST_ASSERT_TRUE_MESSAGE(lc.groundLift < 0.02, msg);                       // до рывка не взлетел
+    TEST_ASSERT_TRUE_MESSAGE(lc.groundPitch < -24.0 && lc.groundPitch > -33.0, msg);   // предел 30°
+    TEST_ASSERT_TRUE_MESSAGE(lc.heldPitch < -20.0, msg);                       // стик отпущен — стоит
+    TEST_ASSERT_TRUE_MESSAGE(lc.maxTilt < 60.0, msg);                          // без кувырка
+    TEST_ASSERT_TRUE_MESSAGE(lc.height > 0.3, msg);
+    TEST_ASSERT_TRUE_MESSAGE(lc.forward > plain.forward + 0.3, msg);           // разгон сразу
+    TEST_ASSERT_TRUE_MESSAGE(std::fabs(plain.groundPitch) < 3.0, msg);
+}
+
 // 098: airmode_start_throttle_percent — на земле после ARM газ внизу, стик
 // крена в сторону: без airmode моторы на холостых одинаково (коптер не
 // прыгает); газ хоть раз выше 25 % — airmode работает и на нуле газа.
@@ -3001,6 +3070,7 @@ int main()
     RUN_TEST(test_airmode_keeps_control_at_zero_throttle);
     RUN_TEST(test_airmode_starts_after_throttle_threshold);
     RUN_TEST(test_ez_landing_touchdown_without_bounce);
+    RUN_TEST(test_launch_control_holds_tilt_then_launches);
     RUN_TEST(test_yaw_rate_follows_stick_and_stays_level);
     RUN_TEST(test_hover_in_gusty_wind);
     RUN_TEST(test_failsafe_without_barometer);

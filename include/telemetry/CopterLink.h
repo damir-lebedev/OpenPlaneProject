@@ -492,6 +492,7 @@ public:
         if (s.posHoldFail != copter::PosHoldFail::NONE) w.add(",\"posfail\":\"%s\"", copter::posHoldFailName(s.posHoldFail));
         spectrum(w);
         if (const char* tl = copter::trainingText(s.trainingFlags)) w.add(",\"train\":\"%s\"", tl);
+        if (s.launch != copter::LaunchState::OFF) w.add(",\"launch\":\"%s\"", copter::launchStateName(s.launch));
         if (ctl.getGeofence().enabled()) w.add(",\"fence\":{\"f\":%u,\"m\":%.0f}", s.fenceFlags, s.fenceMarginM);
         if (s.rescuePhase != RescuePhase::IDLE)
         {

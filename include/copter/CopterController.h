@@ -8,6 +8,7 @@
 #include "copter/GpsRescue.h"
 #include "copter/GyroFilter.h"
 #include "copter/ImuAlign.h"
+#include "copter/LaunchControl.h"
 #include "copter/Mixer.h"
 #include "copter/PositionEstimator.h"
 #include "copter/GpsIntegrity.h"
@@ -332,6 +333,7 @@ namespace copter
         CopterMode mode = CopterMode::ANGLE;
         bool airmode = false;          // режим AIR MODE с тумблера (поверх настройки)
         bool acroTrainer = false;      // режим ACRO TRAINER: в ACRO наклон не больше acro_trainer_angle_limit
+        bool launchControl = false;    // режим LAUNCH CONTROL: на земле ждать рывка газом (copter/LaunchControl.h)
         bool gpsRescue = false;        // режим GPS RESCUE: возврат домой с тумблера
         bool failsafeSwitch = false;   // режим FAILSAFE: как потеря связи
         bool flipOverAfterCrash = false;   // режим FLIP OVER AFTER CRASH: ARM — turtle mode (copter/Turtle.h)
@@ -445,6 +447,7 @@ namespace copter
         bool runaway = false;          // DISARM защитой runaway takeoff (до выключения тумблера)
         bool runawayCheck = false;     // проверка runaway takeoff ещё работает (после ARM, до уверенного взлёта)
         bool turtle = false;           // заармлен в turtle mode: моторы наоборот, стик — какой стороной переворачиваться
+        LaunchState launch = LaunchState::OFF;   // launch control: ждёт рывка (ACTIVE) или уже стартовал
         uint8_t failsafeStage = 0;     // 0 — нет, 1 — ровно и держит высоту, 2 — процедура
         RescuePhase rescuePhase = RescuePhase::IDLE;   // возврат домой: этап
         RescueFail rescueFail = RescueFail::NONE;      // и почему прерван
@@ -489,6 +492,7 @@ namespace copter
             mixer.setAirmode(s.airmode);
             mixer.setType(s.mixerType);
             mixer.setEzLanding(t.ezLanding);
+            launch.configure(t.launch);
             gyroFilter.configure(t.loopHz, t.gyroLpfHz, t.notchQ, t.prop.prop.blades, t.minNotchHz);
             axes[0].configure(t.roll, t.dtermLpfHz, 0.0f, t.iLimit, dt);
             axes[1].configure(t.pitch, t.dtermLpfHz, 0.0f, t.iLimit, dt);
@@ -577,6 +581,8 @@ namespace copter
             tune.motorOutputLimit = t.motorOutputLimit;
             tune.ezLanding = t.ezLanding;
             mixer.setEzLanding(t.ezLanding);
+            tune.launch = t.launch;
+            launch.configure(t.launch);
             tune.vbatSagCompensation = t.vbatSagCompensation;
             for (int a = 0; a < 3; ++a) tune.rates[a] = t.rates[a];
             axes[0].setGains(t.roll);
@@ -855,7 +861,7 @@ namespace copter
             trackFrames(rc.frame);
             const bool rcValid = handleLink(rc);
             handleArming(rc, sens, rcValid);
-            if (status.state == CopterState::ARMED && !status.turtle) autoDisarm(rc);
+            if (status.state == CopterState::ARMED && !status.turtle && !launch.active()) autoDisarm(rc);
             if (status.state != CopterState::DISARMED && !status.turtle) detectCrash();
 
             if (status.state == CopterState::DISARMED)
@@ -1038,6 +1044,23 @@ namespace copter
             status.posTargetE = posHold.targetEast();
             const RescueCommand* autoCmd = rescuing ? &rescueCmd : posHold.active() ? &posCmd : nullptr;
             rateSetpoints(mode, sticks, sp, stickSp, rc.acroTrainer, autoCmd);
+            // launch control: только ACRO с тумблера, без автоматов
+            launch.update(rc.launchControl,
+                          mode == CopterMode::ACRO && !failsafe && !rescuing && !status.turtle && !status.crashRecovery,
+                          rc.throttle, status.airborne);
+            const bool launching = launch.active();
+            if (launching)
+            {
+                launch.setpoints(sticks, status.pitch, sp);
+                for (uint8_t a = 0; a < 3; ++a) stickSp[a] = sp[a];
+            }
+            // рывок газом: пока не в воздухе, наклон держит накопленный I
+            if (launching) launchCarry = false;
+            else if (launch.state() == LaunchState::TRIGGERED && wasLaunching) launchCarry = true;
+            if (status.airborne || rc.throttle <= LaunchControl::RESET_THROTTLE || launch.state() == LaunchState::OFF)
+                launchCarry = false;
+            wasLaunching = launching;
+            status.launch = launch.state();
             yawSpinCheck(rates[2]);
             if (!crashRecovery(mode, sp, rates))
             {
@@ -1105,6 +1128,10 @@ namespace copter
                 status.altTarget = vertical.altitude();
             }
 
+            // launch control: до рывка газ коптер не поднимает — работают только
+            // поправки регулятора (airmode)
+            if (launching) thrust = 0.0f;
+
             // в воздухе ли: газ выше 60 % висения (сел — ниже 55 %, checkLanded)
             if (!status.airborne && thrust > 0.6f * hover) status.airborne = true;
 
@@ -1137,7 +1164,7 @@ namespace copter
             // моторы догоняют стик раньше, плавный газ не меняется. Удержанию
             // высоты — нет: у него свой контур, рассчитанный без добавки
             float mixThrust = thrust;
-            if (!altitudeMode(mode) && tune.pid.throttleBoost > 0.0f)
+            if (!altitudeMode(mode) && tune.pid.throttleBoost > 0.0f && !launching)
             {
                 mixThrust = fminf(1.0f, fmaxf(0.0f, thrust + tune.pid.throttleBoost * (sticks[3] - stickSlow)));
             }
@@ -1168,14 +1195,34 @@ namespace copter
                 rotateIterm(v, rates, dt);
                 for (uint8_t a = 0; a < 3; ++a) axes[a].setIntegral(v[a]);
             }
+            // launch control: I копится на земле с launch_control_gain (тангаж,
+            // в FULL — все оси); после рывка, пока не в воздухе, — замирает
+            bool axisHoldI[3] = { holdI, holdI, holdI };
+            float axisIBoost[3] = { iBoost, iBoost, iBoost };
+            if (launching || launchCarry)
+            {
+                const AxisGains* g[3] = { &tune.roll, &tune.pitch, &tune.yaw };
+                for (uint8_t a = 0; a < 3; ++a)
+                {
+                    axisHoldI[a] = launchCarry || !launch.integrates(a);
+                    if (launching && g[a]->i > 0.0f)
+                        axisIBoost[a] = bfToGain(PidTerm::I, a, tune.launch.gainBf) / g[a]->i;
+                }
+            }
             MixInput mi;
             mi.throttle = mixThrust;
             // EZLANDING: насколько пилот «просит» — газ или любой стик
             mi.stick = fmaxf(sticks[3], fmaxf(fabsf(sticks[0]), fmaxf(fabsf(sticks[1]), fabsf(sticks[2]))));
             mi.speedMs = rescue.gpsOk() ? rescue.groundSpeed() : -1.0f;
-            mi.roll = axes[0].update(sp[0], rates[0], tpa, iBoost, holdI, status.saturated, pBoost);
-            mi.pitch = axes[1].update(sp[1], rates[1], tpa, iBoost, holdI, status.saturated, pBoost);
-            mi.yaw = axes[2].update(sp[2], rates[2], 1.0f, iBoost, holdI, status.saturated);
+            mi.roll = axes[0].update(sp[0], rates[0], tpa, axisIBoost[0], axisHoldI[0], status.saturated, pBoost);
+            mi.pitch = axes[1].update(sp[1], rates[1], tpa, axisIBoost[1], axisHoldI[1], status.saturated, pBoost);
+            mi.yaw = axes[2].update(sp[2], rates[2], 1.0f, axisIBoost[2], axisHoldI[2], status.saturated);
+            // PITCHONLY: только задние моторы — нос вниз, крен и рысканье молчат
+            if (launching && tune.launch.mode == LaunchControlMode::PITCHONLY)
+            {
+                mi.roll = mi.yaw = 0.0f;
+                mi.pitch = fminf(0.0f, mi.pitch);
+            }
             // раскрутка по рысканью: крен и тангаж без PID (их гироскоп при
             // таком вращении врёт, а D и FF только мешали бы), рысканье —
             // одно P против вращения, всем ходом (как в BF)
@@ -1198,14 +1245,21 @@ namespace copter
             // за кувырок потом докручивало бы раму мимо горизонта)
             if (!status.airborne || status.crashRecovery || status.yawSpin)
             {
-                for (auto& ax : axes) ax.resetIntegral();
+                for (uint8_t a = 0; a < 3; ++a)
+                {
+                    // launch control держит наклон интегралом — его не трогать
+                    const bool keep = (launching || launchCarry) && launch.integrates(a) && !status.crashRecovery &&
+                                      !status.yawSpin;
+                    if (!keep) axes[a].resetIntegral();
+                }
             }
 
             // airmode — когда после ARM стик газа хоть раз был выше
             // airmode_start_throttle_percent (как в BF: на земле с газом внизу
             // моторы не раскачивают коптер) или коптер уже в воздухе (наше)
             if (sticks[3] >= set.airmodeStartThrottle || status.airborne) airmodeStarted = true;
-            mixer.setAirmode(((set.airmode || rc.airmode) && airmodeStarted) || status.crashRecovery || status.yawSpin);
+            mixer.setAirmode(((set.airmode || rc.airmode) && airmodeStarted) || status.crashRecovery || status.yawSpin ||
+                             launching || launchCarry);
             const MixResult mr = mixer.mix(tune.frame, mi);
             status.saturated = mr.saturated;
             status.throttle = thrust;
@@ -1217,7 +1271,7 @@ namespace copter
                 hi = fmaxf(hi, mr.motor[i]);
             }
             lastMixSpread = tune.frame.count ? hi - lo : 0.0f;
-            checkRunaway(thrust, rates);
+            if (!launching && !launchCarry) checkRunaway(thrust, rates);
 
             // ---- моторы ----
             float vComp = 1.0f;
@@ -1272,6 +1326,9 @@ namespace copter
             status.failsafeStage = 0;
             status.runawayCheck = false;
             status.turtle = false;
+            launch.disarm();
+            launchCarry = wasLaunching = false;
+            status.launch = LaunchState::OFF;
         }
 
     private:
@@ -1643,6 +1700,9 @@ namespace copter
                 stopMotorTest();
                 status.turtle = turtleWanted(rc);
                 status.runawayCheck = set.runawayPrevention && !status.turtle;
+                launch.arm(rc.launchControl, rc.mode == CopterMode::ACRO && !status.turtle);
+                launchCarry = wasLaunching = false;
+                status.launch = launch.state();
                 runawayTimer = runawayFlown = 0.0f;
                 groundIdleTimer = lowThrottleTimer = 0.0f;
                 attitude.setGrounded(true);
@@ -2063,6 +2123,9 @@ namespace copter
         float lastMixSpread = 0.0f;      // разброс моторов прошлого цикла (iterm_windup)
         bool tpaLowDone = false;         // газ после ARM был выше tpa_low_breakpoint
         bool airmodeStarted = false;     // газ после ARM был выше airmode_start_throttle_percent
+        LaunchControl launch;            // режим LAUNCH CONTROL
+        bool launchCarry = false;        // рывок уже был, а коптер ещё на земле: I тангажа держит наклон
+        bool wasLaunching = false;
         float yawSpinCalmS = 0.0f;       // раскрутка: сколько рысканье уже ниже порога выхода
         static constexpr float YAW_SPIN_MIN_DPS = 500.0f, YAW_SPIN_MAX_DPS = 1950.0f, YAW_SPIN_EXIT_S = 0.02f;
         uint32_t lastRcFrame = 0;        // кадры приёмника (feedforward_*)

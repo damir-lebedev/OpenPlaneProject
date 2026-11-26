@@ -3405,6 +3405,156 @@ void test_mixer_ez_landing()
     TEST_ASSERT_TRUE(ezWide < 0.6f * legacyWide);
 }
 
+// 037: launch control — состояния: ARM с режимом в ACRO — ждёт; газ выше
+// launch_trigger_throttle_percent — старт; газ вниз на земле — снова ждёт
+// (launch_trigger_allow_reset); тумблер выключили — нет.
+void test_launch_control_states()
+{
+    LaunchControl lc;
+    lc.arm(true, true);
+    TEST_ASSERT_TRUE(lc.state() == LaunchState::ACTIVE);
+    lc.update(true, true, 0.19f, false);
+    TEST_ASSERT_TRUE(lc.active());
+    lc.update(true, true, 0.21f, false);
+    TEST_ASSERT_TRUE(lc.state() == LaunchState::TRIGGERED);
+    lc.update(true, true, 0.10f, true);   // в воздухе газ убрали — не взводится
+    TEST_ASSERT_TRUE(lc.state() == LaunchState::TRIGGERED);
+    lc.update(true, true, 0.0f, false);   // сел, газ вниз — снова ждёт
+    TEST_ASSERT_TRUE(lc.active());
+    lc.update(false, true, 0.0f, false);
+    TEST_ASSERT_TRUE(lc.state() == LaunchState::OFF);
+    lc.update(true, true, 0.0f, false);   // тумблер включили на земле — ждёт
+    TEST_ASSERT_TRUE(lc.active());
+    lc.update(true, false, 0.0f, false);  // ушли из ACRO
+    TEST_ASSERT_FALSE(lc.active());
+    lc.update(true, true, 0.0f, false);
+    TEST_ASSERT_TRUE(lc.active());
+
+    LaunchControlSettings noReset;
+    noReset.allowReset = false;
+    lc.configure(noReset);
+    lc.arm(true, false);                  // не ACRO — не ждёт
+    TEST_ASSERT_TRUE(lc.state() == LaunchState::OFF);
+    lc.arm(true, true);
+    lc.update(true, true, 0.5f, false);
+    lc.update(true, true, 0.0f, false);
+    TEST_ASSERT_TRUE(lc.state() == LaunchState::TRIGGERED);   // без reset — до DISARM
+    lc.disarm();
+    TEST_ASSERT_TRUE(lc.state() == LaunchState::OFF);
+    TEST_ASSERT_EQUAL_STRING("ACTIVE", launchStateName(LaunchState::ACTIVE));
+    TEST_ASSERT_EQUAL_STRING("TRIGGERED", launchStateName(LaunchState::TRIGGERED));
+}
+
+// 037: уставки — 100 °/с на половине стика (от расходов не зависят);
+// PITCHONLY — только тангаж носом вниз; у launch_angle_limit медленнее, за
+// ним — назад к пределу.
+void test_launch_control_setpoints()
+{
+    LaunchControl lc;
+    float sp[3];
+    const float half[3] = { 0.25f, -0.5f, 1.0f };
+    lc.setpoints(half, 0.0f, sp);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 50.0f, sp[0]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, -100.0f, sp[1]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 100.0f, sp[2]);
+
+    LaunchControlSettings po;
+    po.mode = LaunchControlMode::PITCHONLY;
+    po.angleLimitDeg = 30.0f;
+    lc.configure(po);
+    lc.setpoints(half, 0.0f, sp);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, sp[0]);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, sp[2]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, -100.0f, sp[1]);
+    const float back[3] = { 0.0f, 0.5f, 0.0f };
+    lc.setpoints(back, 0.0f, sp);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, sp[1]);                // нос вверх — нет
+    lc.setpoints(half, -25.0f, sp);                      // до предела 5° из окна 10°
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, -(5.0f + 0.5f * 95.0f), sp[1]);
+    lc.setpoints(half, -35.0f, sp);                      // за пределом на 5° — назад
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 5.0f * LaunchControl::BACK_GAIN, sp[1]);
+    TEST_ASSERT_FALSE(lc.integrates(0));
+    TEST_ASSERT_TRUE(lc.integrates(1));
+    LaunchControlSettings full;
+    full.mode = LaunchControlMode::FULL;
+    lc.configure(full);
+    TEST_ASSERT_TRUE(lc.integrates(0) && lc.integrates(2));
+}
+
+// 037: в контроллере — настройки из реестра, режим с тумблера; на земле
+// моторы задние выше передних (рама наклоняется вперёд), коптер не
+// взлетает и не разоружается сам; рывок газом — старт, обычный полёт.
+void test_launch_control_in_controller()
+{
+    CopterParams& p = five5Params();
+    char err[96];
+    CopterTune t0 = p.tune();
+    TEST_ASSERT_TRUE(t0.launch.mode == LaunchControlMode::NORMAL);
+    TEST_ASSERT_TRUE(t0.launch.allowReset);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.20f, t0.launch.triggerThrottle);
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, t0.launch.angleLimitDeg);
+    TEST_ASSERT_EQUAL_FLOAT(40.0f, t0.launch.gainBf);
+    TEST_ASSERT_FALSE(p.parse(PARAM_LAUNCH_TRIGGER_THROTTLE_PERCENT, 0, "91", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_LAUNCH_CONTROL_MODE, 0, "PITCHONLY", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_LAUNCH_TRIGGER_THROTTLE_PERCENT, 0, "30", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_LAUNCH_ANGLE_LIMIT, 0, "45", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_LAUNCH_CONTROL_GAIN, 0, "80", err, sizeof(err)));
+    TEST_ASSERT_TRUE(p.parse(PARAM_LAUNCH_TRIGGER_ALLOW_RESET, 0, "OFF", err, sizeof(err)));
+    const CopterTune t = p.tune();
+    TEST_ASSERT_TRUE(t.launch.mode == LaunchControlMode::PITCHONLY);
+    TEST_ASSERT_FALSE(t.launch.allowReset);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.30f, t.launch.triggerThrottle);
+    TEST_ASSERT_EQUAL_FLOAT(45.0f, t.launch.angleLimitDeg);
+    TEST_ASSERT_EQUAL_FLOAT(80.0f, t.launch.gainBf);
+    TEST_ASSERT_TRUE(findBox(BOX_LAUNCH_CONTROL)->works);
+
+    Bench b;
+    b.ctl.configure(t);
+    b.rc.mode = CopterMode::ACRO;
+    b.rc.launchControl = true;
+    TEST_ASSERT_TRUE(b.armAfterBoot());
+    TEST_ASSERT_TRUE(b.ctl.getStatus().launch == LaunchState::ACTIVE);
+    const Frame& f = t.frame;
+    auto frontRear = [&](float& front, float& rear) {
+        front = rear = 0.0f;
+        for (uint8_t i = 0; i < b.out.count; ++i) (f.mix[i].pitch > 0.0f ? front : rear) += b.out.motor[i] * 0.5f;
+    };
+    b.rc.pitch = 0.5f;   // нос вверх в PITCHONLY не работает
+    b.run(0.3f);
+    float front = 0, rear = 0;
+    frontRear(front, rear);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, front, rear);
+    b.rc.pitch = -0.5f;  // от себя: рама не наклоняется (стенд) — I растёт, задние выше
+    b.run(0.3f);
+    frontRear(front, rear);
+    TEST_ASSERT_TRUE(rear > front + 0.05f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, b.ctl.axisTerms(0).i);
+    b.rc.pitch = 0.0f;
+    b.run(8.0f);         // дольше auto_disarm_delay — ждёт, не разоружился
+    TEST_ASSERT_TRUE(b.ctl.isArmed());
+    TEST_ASSERT_FALSE(b.ctl.getStatus().airborne);
+    TEST_ASSERT_TRUE(b.ctl.getStatus().launch == LaunchState::ACTIVE);
+    b.rc.throttle = 0.6f;
+    b.run(0.5f);
+    TEST_ASSERT_TRUE(b.ctl.getStatus().launch == LaunchState::TRIGGERED);
+    TEST_ASSERT_TRUE(b.ctl.getStatus().airborne);
+
+    // OSD: LAUNCH, пока ждёт
+    OsdData d;
+    d.armed = true;
+    d.launchControl = true;
+    TEST_ASSERT_EQUAL_STRING("LAUNCH", OsdScreen::warningText(d));
+
+    // не ACRO — режима нет
+    Bench a;
+    a.ctl.configure(t);
+    a.rc.mode = CopterMode::ANGLE;
+    a.rc.launchControl = true;
+    TEST_ASSERT_TRUE(a.armAfterBoot());
+    TEST_ASSERT_TRUE(a.ctl.getStatus().launch == LaunchState::OFF);
+    p.resetAll();
+}
+
 void test_cli_set_get_diff_save_and_paste()
 {
     RamFlash flash;
@@ -10852,6 +11002,9 @@ int main()
     RUN_TEST(test_thrust_linear_and_motor_output_limit);
     RUN_TEST(test_mixer_types_legacy_linear_dynamic);
     RUN_TEST(test_mixer_ez_landing);
+    RUN_TEST(test_launch_control_states);
+    RUN_TEST(test_launch_control_setpoints);
+    RUN_TEST(test_launch_control_in_controller);
     RUN_TEST(test_cli_set_get_diff_save_and_paste);
     RUN_TEST(test_rc_map_and_rxrange);
     RUN_TEST(test_rx_input_modes_like_betaflight);

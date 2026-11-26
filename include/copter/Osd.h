@@ -232,6 +232,7 @@ namespace copter
         OSD_WARN_POSHOLD,    // своё: POS HOLD включён, а держать нечем (copter/PositionHold.h)
         OSD_WARN_GPS_SPOOF,  // своё: GPS подменяют (copter/GpsIntegrity.h)
         OSD_WARN_GEOFENCE,   // своё: геозабор (copter/Geofence.h)
+        OSD_WARN_LAUNCH_CONTROL,   // LAUNCH: launch control ждёт рывка (copter/LaunchControl.h)
         OSD_WARN_COUNT
     };
 
@@ -251,6 +252,7 @@ namespace copter
             { "poshold", true, "POS HOLD не держит место: POSHOLD NO GPS, POSHOLD NO MAG, POSHOLD FAIL — летит как ALTHOLD" },
             { "gps_spoof", true, "GPS подменяют: GPS SPOOF — GPS выключен из навигации до посадки" },
             { "geofence", true, "геозабор: FENCE у края, FENCE RETURN — ведёт назад, FENCE NO GPS, FENCE LAND, FENCE ALT" },
+            { "launch_control", true, "launch control ждёт рывка газом (LAUNCH)" },
         };
         return table[w < OSD_WARN_COUNT ? w : 0];
     }
@@ -325,6 +327,7 @@ namespace copter
         const char* overload = nullptr;     // ESC OVERLOAD / BATT OVERLOAD / CURRENT LIMIT (copter/EscGuard.h) или nullptr
         const char* posHold = nullptr;      // POSHOLD NO GPS / NO MAG / FAIL (copter/PositionHold.h) или nullptr
         bool gpsSpoof = false;              // GPS подменяют (copter/GpsIntegrity.h)
+        bool launchControl = false;         // launch control ждёт рывка газом
         const char* training = nullptr;     // учебные ограничения: ALT LIMIT, FENCE… (copter/TrainingLimits.h) или nullptr
         // геозабор (copter/Geofence.h): радиус (0 — нет), предупреждение; место — homeDistanceM/homeRelativeDeg
         float fenceRadiusM = 0.0f;
@@ -503,6 +506,7 @@ namespace copter
             if (l.warn(OSD_WARN_POSHOLD) && d.armed && d.posHold) return d.posHold;
             if (l.warn(OSD_WARN_OVERLOAD) && d.armed && d.overload) return d.overload;
             if (l.warn(OSD_WARN_TRAINING) && d.armed && d.training) return d.training;
+            if (l.warn(OSD_WARN_LAUNCH_CONTROL) && d.armed && d.launchControl) return "LAUNCH";
             if (l.warn(OSD_WARN_BATT_WARNING) && d.batteryState == 2) return "LOW BATTERY";
             if (l.warn(OSD_WARN_LINK_QUALITY) && d.armed && d.linkQuality >= 0 && l.linkQualityAlarm > 0 &&
                 d.linkQuality < l.linkQualityAlarm)

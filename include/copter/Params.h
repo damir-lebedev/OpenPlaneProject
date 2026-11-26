@@ -267,6 +267,11 @@ namespace copter
         PARAM_EZ_LANDING_THRESHOLD,
         PARAM_EZ_LANDING_LIMIT,
         PARAM_EZ_LANDING_SPEED,
+        PARAM_LAUNCH_CONTROL_MODE,
+        PARAM_LAUNCH_TRIGGER_ALLOW_RESET,
+        PARAM_LAUNCH_TRIGGER_THROTTLE_PERCENT,
+        PARAM_LAUNCH_ANGLE_LIMIT,
+        PARAM_LAUNCH_CONTROL_GAIN,
         PARAM_RATEPROFILE_NAME,
         PARAM_ROLL_RC_RATE,
         PARAM_PITCH_RC_RATE,
@@ -509,6 +514,7 @@ namespace copter
         PARAM_OSD_WARN_POSHOLD,
         PARAM_OSD_WARN_GPS_SPOOF,
         PARAM_OSD_WARN_GEOFENCE,
+        PARAM_OSD_WARN_LAUNCH_CONTROL,
         PARAM_OSD_ALT_ALARM,
         PARAM_OSD_CAP_ALARM,
         PARAM_OSD_LINK_QUALITY_ALARM,
@@ -609,6 +615,7 @@ namespace copter
         static const char* const TPA_MODES[] = { "PD", "D", "MODEL" };   // как TpaMode
         static const char* const RATES_TYPES[] = { "BETAFLIGHT", "RACEFLIGHT", "KISS", "ACTUAL", "QUICK" };   // как RatesType
         static const char* const MIXER_TYPES[] = { "LEGACY", "LINEAR", "DYNAMIC", "EZLANDING" };   // как MixerType
+        static const char* const LAUNCH_MODES[] = { "NORMAL", "PITCHONLY", "FULL" };   // как LaunchControlMode
         static const char* const THROTTLE_LIMIT_TYPES[] = { "OFF", "SCALE", "CLIP" };   // как ThrottleLimitType
         static const char* const FF_AVERAGING[] = { "OFF", "2_POINT", "3_POINT", "4_POINT" };
         static const char* const LPF_TYPES[] = { "PT1", "BIQUAD", "PT2", "PT3" };   // как LpfType
@@ -836,6 +843,16 @@ namespace copter
               "EZLANDING: наибольшая разница моторов при стиках в нуле — у земли коптер не подпрыгивает" },
             { "ez_landing_speed", kInt, kPid, kGroupMotors, 0, 250, 50, kTable, "x0.1 м/с", nullptr, 0,
               "EZLANDING: быстрее по GPS — ограничения нет (0 — только по стикам)" },
+            { "launch_control_mode", kEnum, kPid, kGroupPid, 0, 2, 0, kTable, "", LAUNCH_MODES, 3,
+              "LAUNCH CONTROL: NORMAL — стики всех осей, I тангажа; PITCHONLY — только нос вниз задними моторами; FULL — I всех осей" },
+            { "launch_trigger_allow_reset", kEnum, kPid, kGroupPid, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "LAUNCH CONTROL: после старта газ вниз на земле — снова ждать рывка (без DISARM)" },
+            { "launch_trigger_throttle_percent", kInt, kPid, kGroupPid, 0, 90, 20, kTable, "%", nullptr, 0,
+              "LAUNCH CONTROL: газ выше — старт" },
+            { "launch_angle_limit", kInt, kPid, kGroupPid, 0, 80, 0, kTable, "°", nullptr, 0,
+              "LAUNCH CONTROL: наклон носом вниз не больше (0 — без предела)" },
+            { "launch_control_gain", kInt, kPid, kGroupPid, 0, 200, 40, kTable, "BF", nullptr, 0,
+              "LAUNCH CONTROL: I, которым рама держит наклон на земле" },
             { "rateprofile_name", kText, kRate, kGroupRates, 0, 8, 0, kTable, "", nullptr, 0, "имя профиля расходов" },
             { "roll_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход крена у центра стика" },
             { "pitch_rc_rate", kInt, kRate, kGroupRates, 1, 255, 0, kTune, "x10 °/с", nullptr, 0, "расход тангажа у центра стика" },
@@ -1296,6 +1313,8 @@ namespace copter
               "предупреждение OSD: GPS подменяют — GPS SPOOF (выключен из навигации)" },
             { "osd_warn_geofence", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "предупреждение OSD: геозабор — FENCE, FENCE RETURN, FENCE NO GPS, FENCE LAND, FENCE ALT" },
+            { "osd_warn_launch_control", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
+              "предупреждение OSD: LAUNCH — launch control ждёт рывка газом" },
             { "osd_alt_alarm", kInt, kMaster, kGroupOsd, 0, 10000, 100, kTable, "м", nullptr, 0,
               "выше — высота на OSD мигает; 0 — нет" },
             { "osd_cap_alarm", kInt, kMaster, kGroupOsd, 0, 20000, 2200, kTable, "мА·ч", nullptr, 0,
@@ -2180,6 +2199,11 @@ namespace copter
             t.ezLanding.threshold = valueIn(PARAM_EZ_LANDING_THRESHOLD, pidIndex) / 100.0f;
             t.ezLanding.limit = valueIn(PARAM_EZ_LANDING_LIMIT, pidIndex) / 100.0f;
             t.ezLanding.speedMs = valueIn(PARAM_EZ_LANDING_SPEED, pidIndex) / 10.0f;
+            t.launch.mode = static_cast<LaunchControlMode>(static_cast<uint8_t>(valueIn(PARAM_LAUNCH_CONTROL_MODE, pidIndex)));
+            t.launch.allowReset = valueIn(PARAM_LAUNCH_TRIGGER_ALLOW_RESET, pidIndex) > 0.5f;
+            t.launch.triggerThrottle = valueIn(PARAM_LAUNCH_TRIGGER_THROTTLE_PERCENT, pidIndex) / 100.0f;
+            t.launch.angleLimitDeg = valueIn(PARAM_LAUNCH_ANGLE_LIMIT, pidIndex);
+            t.launch.gainBf = valueIn(PARAM_LAUNCH_CONTROL_GAIN, pidIndex);
             t.vbatSagCompensation = valueIn(PARAM_VBAT_SAG_COMPENSATION, pidIndex) / 100.0f;
             // ANGLE/HORIZON/ACRO TRAINER (BF 4.5); наклон и сила выравнивания не
             // заданы — точные значения модели (или BF), без округления
@@ -2676,7 +2700,7 @@ namespace copter
 
     static_assert(PARAM_OSD_ESC_RPM_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
     static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
-    static_assert(PARAM_OSD_WARN_GEOFENCE - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
+    static_assert(PARAM_OSD_WARN_LAUNCH_CONTROL - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 
     // Раскладка OSD из настроек osd_* (copter/Osd.h).
     inline OsdLayout osdLayoutFrom(const CopterParams& p)

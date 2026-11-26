@@ -305,6 +305,10 @@ public:
     double batteryVolts() const { return volts; }
     double totalCurrent() const { return current; }
     bool grounded() const { return onGround; }
+    // На земле рама может стоять на одной паре ног (передней или задней) и
+    // наклоняться вокруг неё по тангажу — моторы против веса (launch control).
+    // Выключено — на земле всегда ровно на всех ногах.
+    bool legPivot = false;
     double now() const { return time; }
     // ветер сейчас (с порывом), м/с: север, восток
     Vec wind() const { return { windBase.x + gust.x, windBase.y + gust.y, 0 }; }
@@ -409,6 +413,7 @@ private:
         tz -= damp * omega.z;
         const Vec jw = { par.jx * omega.x, par.jy * omega.y, par.jz * omega.z };
         const Vec gyroT = { omega.y * jw.z - omega.z * jw.y, omega.z * jw.x - omega.x * jw.z, omega.x * jw.y - omega.y * jw.x };
+        const double omegaY0 = omega.y;
         omega.x += (tx - gyroT.x) / par.jx * dt;
         omega.y += (ty - gyroT.y) / par.jy * dt;
         omega.z += (tz - gyroT.z) / par.jz * dt;
@@ -431,7 +436,7 @@ private:
             {
                 // встаёт на ноги, курс сохраняется
                 const double yaw = yawDeg();
-                setAttitude(0, 0, yaw);
+                if (!(legPivot && pivotOnLegs(ty, omegaY0, yaw))) setAttitude(0, 0, yaw);
                 flipAxis = -1;
             }
             else
@@ -601,6 +606,22 @@ private:
         qz = fq[3] * ca + fq[1] * by - fq[2] * bx;
         const double w = (flipAxis == 0 ? flipSide : -flipSide) * flipRate;
         omega = { flipAxis == 0 ? w : 0.0, flipAxis == 1 ? w : 0.0, 0.0 };
+    }
+
+    // Наклон по тангажу вокруг пары ног (под моторами): вес возвращает раму
+    // на все ноги, моторы — наклоняют. true — стоит наклонённой.
+    bool pivotOnLegs(double ty, double w0, double yaw)
+    {
+        const double p = pitchDeg() / 57.29578;
+        const double r = par.armM;
+        const double side = p > 1e-9 ? 1.0 : p < -1e-9 ? -1.0 : (ty > 0.0 ? 1.0 : -1.0);
+        const double grav = -side * par.massKg * 9.80665 * r * std::cos(p);
+        const double w = w0 + (ty + grav) / (par.jy + par.massKg * r * r) * dt;
+        const double np = p + w * dt;
+        if (np * side <= 0.0) return false;
+        setAttitude(0, np * 57.29578, yaw);
+        omega = { 0.0, w, 0.0 };
+        return true;
     }
 
     QuadSimParams par;

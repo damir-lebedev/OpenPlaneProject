@@ -903,6 +903,7 @@ static void composeOsd()
     d.gpsSpoof = s.gpsSpoof != copter::GpsSpoof::NONE;
     if (!d.overload && escGuard.limiting()) d.overload = "CURRENT LIMIT";
     d.training = copter::trainingText(s.trainingFlags);
+    d.launchControl = s.launch == copter::LaunchState::ACTIVE;
     d.fence = copter::geofenceText(s.fenceFlags);
     d.fenceRadiusM = copterController.getGeofence().settings().circle() ? copterController.getGeofence().settings().radiusM : 0.0f;
     fillFenceOsd(d, headingDeg());

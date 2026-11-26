@@ -124,7 +124,7 @@ namespace copter
             { BOX_GPS_RESCUE, "GPS RESCUE", true },
             { BOX_ACRO_TRAINER, "ACRO TRAINER", true },
             { BOX_CHIRP, "CHIRP", true },
-            { BOX_LAUNCH_CONTROL, "LAUNCH CONTROL", false },
+            { BOX_LAUNCH_CONTROL, "LAUNCH CONTROL", true },
             { BOX_BEEPER_MUTE, "BEEPER MUTE", true },
             { BOX_GPS_BEEP_SATELLITE_COUNT, "GPS BEEP SATELLITE COUNT", true },
             { BOX_STICK_COMMANDS_DISABLE, "STICK COMMANDS DISABLE", true },
@@ -848,6 +848,7 @@ namespace copter
             else rc.mode = CopterMode::ACRO;
             rc.airmode = isActive(BOX_AIRMODE);
             rc.acroTrainer = isActive(BOX_ACRO_TRAINER);
+            rc.launchControl = isActive(BOX_LAUNCH_CONTROL);
             rc.gpsRescue = isActive(BOX_GPS_RESCUE);
             rc.chirp = isActive(BOX_CHIRP);
             rc.failsafeSwitch = isActive(BOX_FAILSAFE);

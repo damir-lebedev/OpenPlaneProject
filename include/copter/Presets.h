@@ -6,6 +6,7 @@
 #include "copter/EscProtocol.h"
 #include "copter/Frames.h"
 #include "copter/GyroFilter.h"
+#include "copter/LaunchControl.h"
 #include "copter/Mixer.h"
 #include "copter/Propulsion.h"
 
@@ -404,6 +405,7 @@ namespace copter
         float thrustLinear = 0.25f;
         float motorOutputLimit = 1.0f;  // motor_output_limit: доля хода от холостых до полного
         EzLanding ezLanding;            // ez_landing_* (mixer_type = EZLANDING)
+        LaunchControlSettings launch;   // launch_* (режим LAUNCH CONTROL)
         float vbatSagCompensation = 1.0f;   // vbat_sag_compensation: доля компенсации просадки (1 — полная)
         float hoverThrust = 0.4f;       // доля тяги (выход смесителя) на висении
         float tpa[TPA_POINTS] = {};     // поправка PD по газу из модели (tpa_mode = MODEL)
