@@ -1510,6 +1510,120 @@ static void setupMsp()
 
 // Вызывается ядром Arduino, а не из кода проекта.
 // cppcheck-suppress unusedFunction
+#if defined(STM32H7xx) || defined(STM32F4xx)
+// 'x' в консоли: выходы DShot на железе — регистры таймера и потока DMA каждого
+// таймера моторов и уровни их ног (GPIO IDR читается и в режиме AF): без
+// осциллографа видно, уходят ли кадры на ноги (стенд, PLAN 082).
+static TIM_TypeDef* diagTimer(uint8_t n)
+{
+    switch (n)
+    {
+        case 1: return TIM1;
+        case 2: return TIM2;
+        case 3: return TIM3;
+        case 4: return TIM4;
+        case 5: return TIM5;
+        case 8: return TIM8;
+        default: return nullptr;
+    }
+}
+
+static void printDshotDiag()
+{
+    Stm32Dshot& d = motors.dshotOutput();
+    Serial.printf("Выходы: %s, моторов DShot %u, таймеров %u, такт таймеров %lu Гц\n",
+                  copter::escProtocolName(CopterConfig::ESC_PROTOCOL), d.attached(), d.timerCount(),
+                  static_cast<unsigned long>(HAL_RCC_GetPCLK1Freq()));
+    // консоль — в задаче полёта: кадры между двумя нажатиями 'x'
+    static uint32_t lastMs = 0, lastSent = 0, lastSkipped = 0;
+    const uint32_t nowMs = millis();
+    if (lastMs != 0)
+        Serial.printf("С прошлого 'x' (%lu мс): кадров ушло %lu, пропущено %lu\n",
+                      static_cast<unsigned long>(nowMs - lastMs), static_cast<unsigned long>(d.framesSent() - lastSent),
+                      static_cast<unsigned long>(d.framesSkipped() - lastSkipped));
+    else
+        Serial.printf("Кадров всего: ушло %lu, пропущено %lu (нажмите 'x' ещё раз — за промежуток)\n",
+                      static_cast<unsigned long>(d.framesSent()), static_cast<unsigned long>(d.framesSkipped()));
+    lastMs = nowMs;
+    lastSent = d.framesSent();
+    lastSkipped = d.framesSkipped();
+    for (uint8_t i = 0; i < CopterConfig::MOTOR_PIN_COUNT && i < Stm32Dshot::MAX_MOTORS; ++i)
+    {
+        if (!d.isAttached(i)) continue;
+        Serial.printf(" M%u: ножка P%c%u, TIM%u CH%u, значение %u, кадр 0x%04X\n", i + 1,
+                      'A' + STM_PORT(digitalPinToPinName(CopterConfig::MOTOR_PINS[i])),
+                      STM_PIN(digitalPinToPinName(CopterConfig::MOTOR_PINS[i])), d.timerOf(i), d.channelOf(i),
+                      d.value(i), d.frame(i));
+    }
+    for (uint8_t g = 0; g < d.timerCount(); ++g)
+    {
+        const copter::dshot::BitTicks t = d.bitTicks(g);
+        Serial.printf(" группа %u: бит %lu тактов, «1» %lu, «0» %lu\n", g, static_cast<unsigned long>(t.period),
+                      static_cast<unsigned long>(t.one), static_cast<unsigned long>(t.zero));
+    }
+    uint8_t seen[9] = {};
+    for (uint8_t i = 0; i < CopterConfig::MOTOR_PIN_COUNT && i < Stm32Dshot::MAX_MOTORS; ++i)
+    {
+        const uint8_t n = d.timerOf(i);
+        if (!d.isAttached(i) || n > 8 || seen[n]) continue;
+        seen[n] = 1;
+        TIM_TypeDef* tim = diagTimer(n);
+        dshot_dma::Route r;
+        if (!tim || !dshot_dma::route(n, r)) continue;
+        Serial.printf(" TIM%u: CR1 %08lX ARR %lu PSC %lu CNT %lu CCER %04lX CCMR1 %08lX CCMR2 %08lX DIER %04lX DCR %04lX\n",
+                      n, (unsigned long)tim->CR1, (unsigned long)tim->ARR, (unsigned long)tim->PSC,
+                      (unsigned long)tim->CNT, (unsigned long)tim->CCER, (unsigned long)tim->CCMR1,
+                      (unsigned long)tim->CCMR2, (unsigned long)tim->DIER, (unsigned long)tim->DCR);
+        Serial.printf("        CCR1..4 %lu %lu %lu %lu, BDTR %08lX\n", (unsigned long)tim->CCR1,
+                      (unsigned long)tim->CCR2, (unsigned long)tim->CCR3, (unsigned long)tim->CCR4,
+                      (unsigned long)tim->BDTR);
+        DMA_TypeDef* dma = r.dma == 1 ? DMA1 : DMA2;
+        DMA_Stream_TypeDef* st = reinterpret_cast<DMA_Stream_TypeDef*>(
+            reinterpret_cast<uint32_t>(dma) + 0x10u + 0x18u * r.stream);
+        Serial.printf(" DMA%u S%u: CR %08lX NDTR %lu PAR %08lX M0AR %08lX FCR %08lX LISR %08lX HISR %08lX",
+                      r.dma, r.stream, (unsigned long)st->CR, (unsigned long)st->NDTR, (unsigned long)st->PAR,
+                      (unsigned long)st->M0AR, (unsigned long)st->FCR, (unsigned long)dma->LISR,
+                      (unsigned long)dma->HISR);
+#if defined(STM32H7xx)
+        auto* mux = reinterpret_cast<DMAMUX_Channel_TypeDef*>(DMAMUX1_Channel0_BASE +
+                                                              4u * ((r.dma == 2 ? 8u : 0u) + r.stream));
+        Serial.printf(" MUX %08lX", (unsigned long)mux->CCR);
+#endif
+        Serial.println();
+    }
+    // уровни ног: свой кадр «стоп» (прошлый уже ушёл) и сразу 20000 отсчётов
+    // IDR подряд без прерываний (~0.75 мс; кадр DShot300 — ~50 мкс)
+    const float zeros[Stm32Dshot::MAX_MOTORS] = {};
+    for (uint8_t i = 0; i < CopterConfig::MOTOR_PIN_COUNT && i < Stm32Dshot::MAX_MOTORS; ++i)
+    {
+        if (!d.isAttached(i)) continue;
+        const PinName pn = digitalPinToPinName(CopterConfig::MOTOR_PINS[i]);
+        GPIO_TypeDef* port = get_GPIO_Port(STM_PORT(pn));
+        const uint32_t mask = STM_GPIO_PIN(pn);
+        const uint8_t pin = STM_PIN(pn);
+        noInterrupts();
+        const uint32_t sentBefore = d.framesSent();
+        d.write(zeros, false);
+        const bool started = d.framesSent() != sentBefore;
+        uint32_t high = 0, edges = 0, last = port->IDR & mask;
+        const uint32_t t0 = micros();
+        for (uint32_t k = 0; k < 20000; ++k)
+        {
+            const uint32_t v = port->IDR & mask;
+            if (v) ++high;
+            if (v != last) ++edges;
+            last = v;
+        }
+        interrupts();
+        const uint32_t us = micros() - t0;
+        Serial.printf(" M%u нога (кадр %s): высокий %lu из 20000, фронтов %lu за %lu мкс; MODER %lu AF %lu\n", i + 1,
+                      started ? "ушёл" : "НЕ ушёл", (unsigned long)high, (unsigned long)edges, (unsigned long)us,
+                      (unsigned long)((port->MODER >> (2u * pin)) & 3u),
+                      (unsigned long)((port->AFR[pin >> 3] >> (4u * (pin & 7u))) & 15u));
+    }
+}
+#endif
+
 void setup()
 {
     // порядок — как номера TASK_*
@@ -1584,6 +1698,9 @@ void setup()
     Serial.println(" иначе ACRO.");
 #if defined(ARDUINO_ARCH_STM32)
     copterConsole.setBootloaderHook(stm32RebootToBootloader);
+#if defined(STM32H7xx) || defined(STM32F4xx)
+    copterConsole.setOutputDiagHook(printDshotDiag);
+#endif
     copterConsole.setRebootHook([]() { NVIC_SystemReset(); });
 #endif
     copterConsole.setApplyHook(applySettings);

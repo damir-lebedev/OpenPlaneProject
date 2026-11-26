@@ -95,6 +95,8 @@ public:
     void write(const char* text) override { io.print(text); }
 
     void setBootloaderHook(void (*hook)()) { bootloaderHook = hook; }
+    // 'x': диагностика выходов на моторы (регистры таймера/DMA, уровни ног) — main_copter.cpp.
+    void setOutputDiagHook(void (*hook)()) { outputDiagHook = hook; }
     // 'a': калибровка нуля акселерометра — main_copter.cpp (copter/ImuAlign.h).
     void setAccCalibrationHook(void (*hook)()) { accCalHook = hook; }
     // Вызывается после save и отмены в CLI и в приложении: приёмник,
@@ -524,6 +526,14 @@ private:
                 recorder->printStatus(io);
                 recorder->printFlights(io);
                 return;
+            case 'x':
+                if (!outputDiagHook)
+                {
+                    io.println("Диагностика выходов на этой сборке не подключена.");
+                    return;
+                }
+                outputDiagHook();
+                break;
             case 'D':
                 if (refuseArmed() || !bootloaderHook) return;
                 io.println("Перезагрузка в загрузчик USB DFU...");
@@ -807,6 +817,7 @@ private:
     const TaskStats* tasks = nullptr;
     IFlightRecorder* recorder = nullptr;
     void (*bootloaderHook)() = nullptr;
+    void (*outputDiagHook)() = nullptr;
     void (*accCalHook)() = nullptr;
     void (*applyHook)() = nullptr;
     bool (*beepHook)(copter::BeeperCondition c, bool preview) = nullptr;
