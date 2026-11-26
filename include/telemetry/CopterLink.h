@@ -826,7 +826,12 @@ private:
         send(w);
     }
 
-    // ,"margin":{"gm":дБ,"pm":°,"hz":срез} — запасы контура для PID, что работают.
+    // ,"margin":{"gm":дБ,"pm":°,"hz":срез,"min":дБ,"model":{...}} — запасы контура
+    // для PID, что работают, и модель для ступеньки во вкладке «PID» Studio:
+    // "loop" Гц, "tau" — мотор, с, "delay" — задержка без фильтров гироскопа, с,
+    // "iy" — integrated yaw (рысканье не моделируется), "ax" — по осям
+    // [K (°/с²) на единицу команды, P, I, D (с d_max), FF] — коэффициенты в
+    // миллионных долях единиц прошивки (без экспонент: %g на плате не нужен).
     // Флеш настроек: занято и всего, байт (вкладка «Прочее»).
     void flashUse(JsonWriter& w) const
     {
@@ -836,9 +841,27 @@ private:
 
     void margin(JsonWriter& w) const
     {
-        const copter::LoopCheck c = copter::checkLoop(params.tune());
-        w.add(",\"margin\":{\"gm\":%.1f,\"pm\":%.0f,\"hz\":%.1f,\"min\":%.0f}", c.gainMarginDb, c.phaseMarginDeg,
+        const copter::CopterTune t = params.tune();
+        const copter::LoopCheck c = copter::checkLoop(t);
+        w.add(",\"margin\":{\"gm\":%.1f,\"pm\":%.0f,\"hz\":%.1f,\"min\":%.0f", c.gainMarginDb, c.phaseMarginDeg,
               c.crossoverHz, copter::MIN_GAIN_MARGIN_DB);
+        if (t.kRoll > 0.0f && t.loopHz > 0.0f)
+        {
+            // та же задержка, что у checkLoop: полтора цикла, ESC, полмиллисекунды на DShot
+            w.add(",\"model\":{\"loop\":%.0f,\"tau\":%.4f,\"delay\":%.5f,\"iy\":%d,\"ax\":[", t.loopHz, t.motorTauS,
+                  1.5f / t.loopHz + t.escDelayS + 0.0005f, t.pid.integratedYaw ? 1 : 0);
+            const copter::AxisGains* g[3] = { &t.roll, &t.pitch, &t.yaw };
+            const float k[3] = { t.kRoll, t.kPitch, t.kYaw };
+            constexpr float DEG = 180.0f / 3.14159265f;
+            for (uint8_t a = 0; a < 3; ++a)
+            {
+                constexpr float U = 1e6f;
+                w.add("%s[%.0f,%.2f,%.2f,%.3f,%.3f]", a ? "," : "", k[a] * DEG, g[a]->p * U, g[a]->i * U,
+                      fmaxf(g[a]->d, t.pid.dMax[a]) * U, g[a]->ff * U);
+            }
+            w.add("]}");
+        }
+        w.add("}");
     }
 
     void doProfile(const char* cmd, const char* args)
@@ -905,7 +928,7 @@ private:
     void doSave()
     {
         const copter::CopterCli::SaveResult r = cli.saveAndApply();
-        char line[224];
+        char line[LINE_CAPACITY];   // запасы и модель для ступеньки (margin) — ~300 байт
         JsonWriter w(line, sizeof(line));
         w.add("@save {\"ok\":%s,\"stored\":%s", r == copter::CopterCli::SaveResult::FLASH_FULL ? "false" : "true",
               r == copter::CopterCli::SaveResult::SAVED ? "true" : "false");

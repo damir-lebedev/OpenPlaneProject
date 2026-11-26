@@ -576,6 +576,22 @@ void test_app_protocol_params_set_save()
     run(rc, 0.05);
     log = takeSerial();
     TEST_ASSERT_TRUE_MESSAGE(contains(log, "@set {\"name\":\"p_pitch\",\"ok\":true,\"value\":47,\"margin\":{\"gm\":"), log.c_str());
+    // модель для ступеньки во вкладке «PID»: P тангажа — уже новый (47 в единицах прошивки)
+    {
+        const auto set = linesWith(log, "@set ");
+        TEST_ASSERT_EQUAL(1, static_cast<int>(set.size()));
+        TEST_ASSERT_TRUE(contains(set[0], "\"name\":\"p_pitch\""));
+        TEST_ASSERT_TRUE_MESSAGE(isJson(set[0]), set[0].c_str());
+        TEST_ASSERT_TRUE_MESSAGE(contains(set[0], "\"model\":{\"loop\":"), set[0].c_str());
+        TEST_ASSERT_TRUE(contains(set[0], "\"ax\":[["));
+        const size_t at = set[0].find("\"ax\":[[");
+        TEST_ASSERT_TRUE(at != std::string::npos);
+        double k = 0, p = 0;
+        TEST_ASSERT_EQUAL(2, sscanf(set[0].c_str() + set[0].find("],[", at) + 3, "%lf,%lf", &k, &p));
+        TEST_ASSERT_TRUE(k > 0.0);
+        TEST_ASSERT_FLOAT_WITHIN(0.02, copter::bfToGain(copter::PidTerm::P, 1, 47.0f) * 1e6, p);
+        TEST_ASSERT_TRUE(set[0].size() < 1000);
+    }
     TEST_ASSERT_TRUE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_MSP);
     host("set p_pitch = 300");
     host("set nonsense 1");
