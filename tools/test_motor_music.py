@@ -100,6 +100,22 @@ class ArrangeTest(unittest.TestCase):
         self.assertEqual(rows[0][3], 0.5)          # 466 Гц — почти полутон мимо
         self.assertEqual(rows[1][1], 0)
 
+    def test_live_voices(self):
+        lv = mm.LiveVoices(2, 250.0, 1100.0)
+        self.assertEqual(lv.on(69), [(0, 440.0)])
+        v, hz = lv.on(45)[0]                        # A2 — октавами внутрь диапазона
+        self.assertEqual(v, 1)
+        self.assertAlmostEqual(hz, 440.0)
+        self.assertEqual(lv.on(40), [])             # ниже всех занятых — не вытесняет
+        self.assertEqual(lv.on(76)[0][0], 1)        # выше — вытесняет самую низкую (45)
+        self.assertEqual(lv.off(45), [])            # её уже нет
+        self.assertEqual(lv.off(69), [(0, 0.0)])
+        self.assertEqual([v for v, _ in lv.current()], [1])
+
+    @unittest.skipUnless(sys.platform == "win32", "только Windows")
+    def test_midi_inputs_lists(self):
+        self.assertIsInstance(mm.midi_inputs(), list)
+
     def test_write_midi_roundtrip(self):
         notes = [(0.0, 0.5, 69, 0, 0), (0.25, 1.0, 76, 0, 0)]
         with tempfile.TemporaryDirectory() as d:

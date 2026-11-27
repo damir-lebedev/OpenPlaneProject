@@ -577,7 +577,8 @@ Cobra X) — в `git show 4f95d72:PLAN_QUAD7.md`. Все «на 7" GETFUN» ни
 - [ ] 176b · Свой звук включения самих регуляторов: стартовая мелодия Bluejay через passthrough (после 094); проверка мелодии на стенде (пищалка и тоны моторами) — Стенд: да
 - [ ] 176d · **Стенд: музыка моторами по оборотам** (176c сделан в коде): винты сняты, ЛБП, `dshot_bidir = ON`;
   `python tools/motor_music.py трек.mp3 --to-mid t.mid --wav t.wav` (системный python) → послушать t.wav →
-  `~/.platformio/penv/Scripts/python.exe tools/motor_music.py t.mid --port COM13 --live`. Записать звук телефоном:
+  `~/.platformio/penv/Scripts/python.exe tools/motor_music.py t.mid --port COM13 --live` (вживую: Signal → loopMIDI →
+  `--midi-in loopMIDI`). Записать звук телефоном:
   поёт ли мотор на электрической частоте (k = motor_poles/2) или громче другая линия (подобрать `--k`); точность
   `--live` (цель: медиана < 30 центов), нижняя/верхняя нота (`--lo/--hi`), грев за минуту. Критерий — трек узнаётся.
   Не узнаётся — путь Б: мелодии Bluejay по регулятору на голос через passthrough (094), 62 пары, только при включении. Стенд: да

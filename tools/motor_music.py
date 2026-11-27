@@ -10,6 +10,7 @@
     python tools/motor_music.py track.mid --port COM13 --live      # сыграть на плате
     python tools/motor_music.py track.mid --list                   # дорожки и каналы
     python tools/motor_music.py track.mp3 --to-mid track.mid       # звук -> ноты (numpy, ffmpeg)
+    python tools/motor_music.py --midi-in loopMIDI --port COM13    # играть вживую из Signal
 
 Винты снять. ARM, любая клавиша приложения или Ctrl+C — стоп. pyserial —
 в ~/.platformio/penv/Scripts/python.exe.
@@ -392,21 +393,195 @@ def accuracy(frames, voices):
     return rows
 
 
+# ---------------- живой MIDI (Signal -> loopMIDI -> сюда) ----------------
+# Как у AlexGyver (GyverMIDI: Signal → loopMIDI → Hairless MIDI-Serial → плата),
+# только вместо Hairless — этот скрипт: сырой MIDI в порт платы смешался бы с
+# протоколом приложения, поэтому ноты уходят командами `note`. Вход — winmm
+# через ctypes (Windows), без лишних пакетов.
+
+class LiveVoices:
+    """Ноты MIDI на лету -> голоса: свободный голос с меньшим номером; все
+    заняты — новая нота вытесняет самую низкую (мелодия сверху важнее)."""
+
+    def __init__(self, voices, lo_hz, hi_hz, shift=0):
+        self.n, self.lo, self.hi, self.shift = voices, lo_hz, hi_hz, shift
+        self.held = {}   # нота MIDI -> голос
+
+    def hz(self, note):
+        hz = note_hz(note + self.shift)
+        while hz > self.hi and hz / 2 >= self.lo * 0.999:
+            hz /= 2
+        while hz < self.lo and hz * 2 <= self.hi * 1.001:
+            hz *= 2
+        return hz
+
+    def on(self, note):
+        """-> [(голос, Гц)] — что послать."""
+        if note in self.held:
+            return [(self.held[note], self.hz(note))]
+        used = set(self.held.values())
+        free = [v for v in range(self.n) if v not in used]
+        if free:
+            v = free[0]
+        else:
+            low = min(self.held)
+            if note < low:
+                return []
+            v = self.held.pop(low)
+        self.held[note] = v
+        return [(v, self.hz(note))]
+
+    def off(self, note):
+        v = self.held.pop(note, None)
+        return [] if v is None else [(v, 0.0)]
+
+    def current(self):
+        return sorted((v, self.hz(n)) for n, v in self.held.items())
+
+
+def midi_inputs():
+    """Входы MIDI Windows (loopMIDI создаёт свой) -> [имя]."""
+    import ctypes
+    from ctypes import wintypes
+
+    class MIDIINCAPSW(ctypes.Structure):
+        _fields_ = [("wMid", wintypes.WORD), ("wPid", wintypes.WORD), ("vDriverVersion", wintypes.UINT),
+                    ("szPname", wintypes.WCHAR * 32), ("dwSupport", wintypes.DWORD)]
+
+    winmm = ctypes.WinDLL("winmm")
+    names = []
+    for i in range(winmm.midiInGetNumDevs()):
+        caps = MIDIINCAPSW()
+        if winmm.midiInGetDevCapsW(i, ctypes.byref(caps), ctypes.sizeof(caps)) == 0:
+            names.append(caps.szPname)
+    return names
+
+
+class MidiIn:
+    """Открыть вход MIDI по номеру или части имени; сообщения -> queue (status, d1, d2)."""
+
+    def __init__(self, which):
+        import ctypes
+        import queue
+        from ctypes import wintypes
+        names = midi_inputs()
+        idx = None
+        if str(which).isdigit():
+            idx = int(which)
+        else:
+            for i, n in enumerate(names):
+                if str(which).lower() in n.lower():
+                    idx = i
+                    break
+        if idx is None or idx >= len(names):
+            raise ValueError("нет входа MIDI %r, есть: %s" % (which, names or "ни одного"))
+        self.name = names[idx]
+        self.q = queue.Queue()
+        self.winmm = ctypes.WinDLL("winmm")
+        CB = ctypes.WINFUNCTYPE(None, wintypes.HANDLE, wintypes.UINT, ctypes.c_size_t, ctypes.c_size_t, ctypes.c_size_t)
+
+        def cb(h, msg, inst, p1, p2):
+            if msg == 0x3C3:   # MIM_DATA
+                self.q.put((p1 & 0xFF, (p1 >> 8) & 0x7F, (p1 >> 16) & 0x7F))
+
+        self._cb = CB(cb)   # держать ссылку, иначе сборщик мусора уронит процесс
+        self.h = wintypes.HANDLE()
+        r = self.winmm.midiInOpen(ctypes.byref(self.h), idx, self._cb, 0, 0x30000)   # CALLBACK_FUNCTION
+        if r != 0:
+            raise OSError("midiInOpen %d: вход занят другой программой?" % r)
+        self.winmm.midiInStart(self.h)
+
+    def close(self):
+        self.winmm.midiInStop(self.h)
+        self.winmm.midiInClose(self.h)
+
+
+def start_music(b, a):
+    b.send("music off")
+    time.sleep(0.2)
+    b.send("music on" + (" %g" % a.k if a.k else ""))
+    t0 = time.monotonic()
+    while b.reply is None and not b.errors and time.monotonic() - t0 < 2.0:
+        time.sleep(0.02)
+    if b.errors or not b.reply or not b.reply.get("on"):
+        print("плата не включила музыку:", b.errors or b.reply)
+        return False
+    print("музыка: k=%s, мотор берёт до ~%s Гц (по KV и напряжению)" % (b.reply.get("k"), b.reply.get("max")))
+    if a.live:
+        b.send("live")
+    return True
+
+
+def finish_music(b, a, voices):
+    try:
+        b.send("note all -1")
+        b.send("music off")
+        if a.live:
+            b.send("live 0")
+        time.sleep(0.2)
+    finally:
+        b.close()
+    if a.live:
+        print("точность по оборотам (медиана ошибки, центов; доля кадров в пределах 50 центов):")
+        for m, n, med, share in accuracy(b.music, voices):
+            if n:
+                print("  мотор %d: %d кадров, %.0f ц, %.0f %%" % (m, n, med, 100 * share))
+            else:
+                print("  мотор %d: нет оборотов (dshot_bidir выключен?)" % m)
+
+
+def play_live(a):
+    """Играть с клавиатуры/редактора: вход MIDI -> моторы (без --port — только печать)."""
+    mi = MidiIn(a.midi_in)
+    lv = LiveVoices(a.voices, a.lo, a.hi, a.shift)
+    print("вход MIDI: %s; Ctrl+C — стоп" % mi.name)
+    b = Board(a.port) if a.port else None
+    try:
+        if b and not start_music(b, a):
+            return 1
+        if b:
+            b.send("note " + " ".join("%d 0" % v for v in range(a.voices)))   # все на холостые
+        last = time.monotonic()
+        while True:
+            try:
+                st, d1, d2 = mi.q.get(timeout=0.05)
+            except Exception:
+                st = None
+            out = []
+            if st is not None and (a.drums or (st & 0x0F) != 9):   # канал 10 — ударные
+                kind = st & 0xF0
+                if kind == 0x90 and d2 > 0:
+                    out = lv.on(d1)
+                elif kind == 0x80 or (kind == 0x90 and d2 == 0):
+                    out = lv.off(d1)
+            if out:
+                line = "note " + " ".join("%d %.1f" % (v, hz) for v, hz in out)
+                if b:
+                    b.send(line)
+                else:
+                    print(line)
+                last = time.monotonic()
+            elif b and time.monotonic() - last > 0.3:
+                held = {v: hz for v, hz in lv.current()}
+                b.send("note " + " ".join("%d %.1f" % (v, held.get(v, 0.0)) for v in range(a.voices)))
+                last = time.monotonic()
+            if b and b.errors:
+                print("ошибка платы:", b.errors[-1])
+                return 1
+    except KeyboardInterrupt:
+        print("стоп")
+    finally:
+        mi.close()
+        if b:
+            finish_music(b, a, a.voices)
+    return 0
+
+
 def play(a, lanes):
     b = Board(a.port)
     try:
-        b.send("music off")
-        time.sleep(0.2)
-        b.send("music on" + (" %g" % a.k if a.k else ""))
-        t0 = time.monotonic()
-        while b.reply is None and not b.errors and time.monotonic() - t0 < 2.0:
-            time.sleep(0.02)
-        if b.errors or not b.reply or not b.reply.get("on"):
-            print("плата не включила музыку:", b.errors or b.reply)
+        if not start_music(b, a):
             return 1
-        print("музыка: k=%s, мотор берёт до ~%s Гц (по KV и напряжению)" % (b.reply.get("k"), b.reply.get("max")))
-        if a.live:
-            b.send("live")
         ev = events(lanes, a.gap)
         cur = [None] * len(lanes)
         # разгон с места: все голоса на холостые до первой ноты
@@ -435,27 +610,13 @@ def play(a, lanes):
     except KeyboardInterrupt:
         print("стоп")
     finally:
-        try:
-            b.send("note all -1")
-            b.send("music off")
-            if a.live:
-                b.send("live 0")
-            time.sleep(0.2)
-        finally:
-            b.close()
-    if a.live:
-        print("точность по оборотам (медиана ошибки, центов; доля кадров в пределах 50 центов):")
-        for m, n, med, share in accuracy(b.music, len(lanes)):
-            if n:
-                print("  мотор %d: %d кадров, %.0f ц, %.0f %%" % (m, n, med, 100 * share))
-            else:
-                print("  мотор %d: нет оборотов (dshot_bidir выключен?)" % m)
+        finish_music(b, a, len(lanes))
     return 0
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("midi")
+    ap.add_argument("midi", nargs="?", help="MIDI или звук (mp3/wav)")
     ap.add_argument("--voices", type=int, default=4, help="голосов = моторов (4)")
     ap.add_argument("--tracks", help="дорожки через запятую (по умолчанию все)")
     ap.add_argument("--channels", help="каналы 0–15 через запятую")
@@ -472,7 +633,19 @@ def main(argv=None):
     ap.add_argument("--to-mid", help="записать ноты в MIDI (из mp3/wav — потом играть им же из penv)")
     ap.add_argument("--port", help="порт платы — сыграть")
     ap.add_argument("--live", action="store_true", help="снять точность по оборотам")
+    ap.add_argument("--midi-in", help="живой вход MIDI (номер или часть имени, например loopMIDI)")
+    ap.add_argument("--midi-list", action="store_true", help="показать входы MIDI")
+    ap.add_argument("--shift", type=int, default=0, help="живой вход: перенос, полутонов")
     a = ap.parse_args(argv)
+
+    if a.midi_list:
+        for i, n in enumerate(midi_inputs()):
+            print("%d: %s" % (i, n))
+        return 0
+    if a.midi_in is not None:
+        return play_live(a)
+    if not a.midi:
+        ap.error("нужен файл MIDI/звука или --midi-in")
 
     with open(a.midi, "rb") as f:
         data = f.read()
