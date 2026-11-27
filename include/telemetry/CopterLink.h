@@ -577,7 +577,7 @@ private:
         }
         w.add("],\"rpm\":[");
         for (uint8_t m = 0; m < f.motorCount(); ++m) w.add(m ? ",%.0f" : "%.0f", f.motorRotationHz(m));
-        w.add("],\"src\":\"%s\"}", ctl.getStatus().rpmTelemetry ? "dshot" : "model");
+        w.add("],\"src\":\"%s\",\"ms\":%.3f}", ctl.getStatus().rpmTelemetry ? "dshot" : "model", ctl.getStatus().rpmModelScale);
     }
 
     // EDT регуляторов (dshot_edt): "esc":[[°C, В, А, статус], …] по моторам,

@@ -2685,6 +2685,42 @@ void test_rpm_filter_per_motor_from_dshot_in_manoeuvre()
 }
 
 
+// 090: модель оборотов учится у DShot. Винт тяжелее, чем думает модель
+// (kQ ×1.4 — обороты ниже): на висении поправка уходит ниже 1, а когда
+// телеметрия пропала — режекторы едут по поправленной модели, ближе к правде.
+void test_rpm_model_learns_from_dshot()
+{
+    QuadPerturb p;
+    p.torque = 1.4;
+    QuadHarness h(five(), p, 7);
+    h.rpmTelemetry = true;
+    TEST_ASSERT_TRUE(h.takeoffTo(5.0));
+    h.run(6.0);
+    const float scale = h.ctl.getStatus().rpmModelScale;
+    TEST_ASSERT_TRUE(h.ctl.getStatus().rpmTelemetry);
+    h.rpmTelemetry = false;
+    double errScaled = 0, errRaw = 0;
+    long n = 0;
+    h.afterStep = [&]() {
+        double truth = 0;
+        for (int i = 0; i < 4; ++i) truth += h.sim.rotorHz(i) / 4;
+        const double est = h.ctl.getStatus().rotationHz;
+        errScaled += std::fabs(est - truth);
+        errRaw += std::fabs(est / scale - truth);
+        ++n;
+    };
+    h.run(2.0);
+    h.afterStep = nullptr;
+    char line[160];
+    snprintf(line, sizeof(line), "rpm model scale %.3f, model error without DShot %.1f -> %.1f Hz", scale, errRaw / n, errScaled / n);
+    TEST_MESSAGE(line);
+    TEST_ASSERT_FALSE(h.ctl.getStatus().rpmTelemetry);
+    TEST_ASSERT_TRUE_MESSAGE(scale < 0.97f && scale > 0.6f, line);
+    TEST_ASSERT_TRUE_MESSAGE(errScaled < 0.5 * errRaw, line);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, scale, h.ctl.getStatus().rpmModelScale);   // без DShot не учится
+}
+
+
 // 128, 130–132: оценка положения (GPS + акселерометр), удержание позиции
 // (POS HOLD) и высоты как в BF 2025 — в симуляторе. GPS: 10 Гц, шум, фикс
 // опаздывает на 0.12 с (если не сказано иное).
@@ -3293,6 +3329,7 @@ int main()
     RUN_TEST(test_whoop_on_fast_loop);
     RUN_TEST(test_dyn_notch_catches_vibration_the_rpm_model_misses);
     RUN_TEST(test_rpm_filter_per_motor_from_dshot_in_manoeuvre);
+    RUN_TEST(test_rpm_model_learns_from_dshot);
     RUN_TEST(test_dynamic_idle_holds_min_rpm_on_throttle_cut);
     RUN_TEST(test_link_glitch_and_recovery_in_flight);
     RUN_TEST(test_upside_down_crash_disarms);

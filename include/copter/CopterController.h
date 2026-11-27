@@ -435,6 +435,7 @@ namespace copter
         float volts = 0;
         float rotationHz = 0;                   // средние обороты моторов, Гц
         bool rpmTelemetry = false;              // обороты — по DShot, а не по модели
+        float rpmModelScale = 1;                // поправка модели оборотов по DShot (090): настоящие / модель
         float dynIdleIncrease = 0;              // dynamic idle: добавка к холостым сейчас, доля команды
         float dynIdleSlowestHz = 0;             // dynamic idle: самый медленный мотор, об/с (0 — нет телеметрии)
         bool airborne = false;
@@ -738,6 +739,19 @@ namespace copter
                 float sum = 0.0f;
                 for (uint8_t i = 0; i < motors; ++i) sum += sens.motorHz[i];
                 rotHz = motors ? sum / motors : 0.0f;
+                // модель учится у телеметрии (090): винт не тот, KV, износ —
+                // отношение настоящих оборотов к модели, медленно (2 с).
+                // Пропала телеметрия — режекторы едут по поправленной модели,
+                // а не прыгают на её ошибку
+                if (spinning() && rotEstimate > RPM_LEARN_MIN_HZ && rotHz > RPM_LEARN_MIN_HZ)
+                {
+                    const float ratio = fminf(RPM_SCALE_MAX, fmaxf(RPM_SCALE_MIN, rotHz / rotEstimate));
+                    status.rpmModelScale += (ratio - status.rpmModelScale) * dt / (RPM_LEARN_TAU_S + dt);
+                }
+            }
+            else if (spinning())
+            {
+                rotHz *= status.rpmModelScale;
             }
             status.rotationHz = rotHz;
             status.rpmTelemetry = sens.motorHzOk;
@@ -2125,6 +2139,9 @@ namespace copter
         float avgThrust = 0.0f;
         float outputScale = 1.0f;        // current_limit_a (EscGuard::outputScale)
         float rotEstimate = 0.0f;
+        static constexpr float RPM_LEARN_MIN_HZ = 20.0f;   // ниже — холостые на столе, модель там грубая
+        static constexpr float RPM_LEARN_TAU_S = 2.0f;
+        static constexpr float RPM_SCALE_MIN = 0.6f, RPM_SCALE_MAX = 1.6f;
         float lastMixThrottle = 0.0f;
         float lastMixSpread = 0.0f;      // разброс моторов прошлого цикла (iterm_windup)
         bool tpaLowDone = false;         // газ после ARM был выше tpa_low_breakpoint
