@@ -120,7 +120,7 @@ namespace copter
             { BOX_TELEMETRY, "TELEMETRY", false },
             { BOX_BLACKBOX, "BLACKBOX", false },
             { BOX_FLIP_OVER_AFTER_CRASH, "FLIP OVER AFTER CRASH", true },
-            { BOX_PARALYZE, "PARALYZE", false },
+            { BOX_PARALYZE, "PARALYZE", true },
             { BOX_GPS_RESCUE, "GPS RESCUE", true },
             { BOX_ACRO_TRAINER, "ACRO TRAINER", true },
             { BOX_CHIRP, "CHIRP", true },
@@ -854,6 +854,7 @@ namespace copter
             rc.failsafeSwitch = isActive(BOX_FAILSAFE);
             rc.flipOverAfterCrash = isActive(BOX_FLIP_OVER_AFTER_CRASH);
             rc.prearm = !cfg.hasMode(BOX_PREARM) || isActive(BOX_PREARM);
+            rc.paralyze = isActive(BOX_PARALYZE);
             rc.armAssigned = cfg.hasMode(BOX_ARM);
             return rc;
         }

@@ -112,7 +112,7 @@ namespace copter
     // Почему не армится (битовая маска). Биты 0–25 — номера флагов запрета
     // ARM Betaflight 4.5 (`status`, MSP_STATUS_EX: конфигуратор BF читает
     // маску по номерам), коды — их имена. Наши проверки, которых в BF нет, —
-    // с бита 26. Флаги BF, которые пока ставить нечему (CMS, PARALYZE, GPS…),
+    // с бита 26. Флаги BF, которые пока ставить нечему (CMS, BST…),
     // зарезервированы — их ставит снаружи то, что появится (setExternalBlockers).
     enum ArmBlock : uint32_t
     {
@@ -158,7 +158,7 @@ namespace copter
 
     constexpr uint32_t ARM_BLOCK_EXTERNAL_MASK = ARM_BLOCK_CLI | ARM_BLOCK_MSP | ARM_BLOCK_NO_ACC_CAL | ARM_BLOCK_REBOOT |
                                                  ARM_BLOCK_CONFIG | ARM_BLOCK_LOAD | ARM_BLOCK_BOOT_GRACE | ARM_BLOCK_CMS |
-                                                 ARM_BLOCK_BST | ARM_BLOCK_PARALYZE | ARM_BLOCK_GPS | ARM_BLOCK_RESCUE_SWITCH |
+                                                 ARM_BLOCK_BST | ARM_BLOCK_GPS | ARM_BLOCK_RESCUE_SWITCH |
                                                  ARM_BLOCK_RPM_FILTER | ARM_BLOCK_DSHOT_BITBANG | ARM_BLOCK_MOTOR_PROTOCOL;
 
     inline const char* armBlockText(uint32_t bit)
@@ -182,7 +182,7 @@ namespace copter
             case ARM_BLOCK_CMS: return "открыто меню OSD";
             case ARM_BLOCK_BST: return "шина BST";
             case ARM_BLOCK_MSP: return "в приложении несохранённые настройки";
-            case ARM_BLOCK_PARALYZE: return "включён режим PARALYZE";
+            case ARM_BLOCK_PARALYZE: return "PARALYZE: ARM запрещён до перезагрузки";
             case ARM_BLOCK_GPS: return "нет GPS для возврата домой";
             case ARM_BLOCK_RESCUE_SWITCH: return "включён тумблер возврата домой";
             case ARM_BLOCK_RPM_FILTER: return "нет оборотов от регуляторов для фильтра";
@@ -339,6 +339,7 @@ namespace copter
         bool flipOverAfterCrash = false;   // режим FLIP OVER AFTER CRASH: ARM — turtle mode (copter/Turtle.h)
         bool chirp = false;            // режим CHIRP: качание частоты по одной оси (copter/Chirp.h)
         bool prearm = true;            // PREARM включён или его нет в таблице
+        bool paralyze = false;         // режим PARALYZE на тумблере (защёлкивается в контроллере)
         bool armAssigned = true;       // ARM есть в таблице режимов
         uint32_t frame = 0;            // счётчик кадров приёмника; 0 — неизвестно (кадр — раз в 1/FF_NOMINAL_FRAME_HZ)
         // rxfail стиков = HOLD: на этапе 1 failsafe — последнее верное значение
@@ -1672,6 +1673,7 @@ namespace copter
             if (status.runaway) b |= ARM_BLOCK_RUNAWAY;
             if (rc.failsafeSwitch) b |= ARM_BLOCK_FAILSAFE_SWITCH;
             if (!rc.prearm) b |= ARM_BLOCK_NO_PREARM;
+            if (paralyzed) b |= ARM_BLOCK_PARALYZE;
             if (!rc.armAssigned) b |= ARM_BLOCK_NO_ARM_SWITCH;
             // GPS-RESCUE по потере связи без GPS не вернёт — не армить (как BF)
             if (set.failsafeProcedure == FailsafeProcedure::GPS_RESCUE && !set.rescue.allowArmingWithoutFix && !rescue.gpsOk())
@@ -1689,8 +1691,26 @@ namespace copter
         // ничего не делает — как в BF). Лежит на спине — это и нужно: наклон не проверяется.
         bool turtleWanted(const CopterRc& rc) const { return rc.flipOverAfterCrash && set.turtleAvailable; }
 
+        // PARALYZE (как в BF): после посадки или аварии тумблер навсегда, до
+        // перезагрузки, запрещает ARM — коптер не взлетит, пока его подбирают.
+        // Срабатывает только на земле, только после хотя бы одного ARM и только
+        // если тумблер после включения питания был выключен: включённый при
+        // загрузке он не запирает коптер на столе. В полёте не действует —
+        // защёлкнется после DISARM, если так и включён.
+        void updateParalyze(const CopterRc& rc, bool rcValid)
+        {
+            if (paralyzed || !rcValid) return;
+            if (!rc.paralyze)
+            {
+                paralyzeSeenOff = true;
+                return;
+            }
+            if (paralyzeSeenOff && status.armCount > 0 && status.state == CopterState::DISARMED) paralyzed = true;
+        }
+
         void handleArming(const CopterRc& rc, const CopterSensors& sens, bool rcValid)
         {
+            updateParalyze(rc, rcValid);
             status.armBlockers = computeBlockers(rc, sens);
             if (!rcValid)
             {
@@ -2186,6 +2206,8 @@ namespace copter
         float baroHome = 0.0f;
         bool switchSeenOff = false;
         bool prevSwitch = false;
+        bool paralyzeSeenOff = false;   // PARALYZE: тумблер был выключен после загрузки
+        bool paralyzed = false;         // PARALYZE защёлкнут — до перезагрузки
         uint32_t externalBlockers = 0;
 
         float testThrust[MAX_MOTORS] = {};

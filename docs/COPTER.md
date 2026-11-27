@@ -616,6 +616,7 @@ SwA (CH5), как у самолёта. **Режим** — SwC (CH7):
 | FAILSAFE | 27 | как потеря связи (проверка failsafe на земле) |
 | AIR MODE | 28 | airmode и при выключенном `AIRMODE` в `CopterConfig.h` |
 | PREARM | 36 | есть в таблице — ARM только при включённом PREARM |
+| PARALYZE | 45 | на земле после хотя бы одного ARM — ARM запрещён до перезагрузки (подобрать коптер после аварии); включённый при загрузке не действует, пока его не выключат; в полёте — защёлкнется после DISARM |
 | USER1 … USER4 | 40 … 43 | ножки PINIO платы (у GETFUN F405V3: USER1 — камера CAM1/CAM2, USER2 — питание 12 В) |
 | VTX PIT MODE · VTX CONTROL DISABLE | 39 · 48 | видеопередатчик в PIT · не трогать передатчик |
 | GPS RESCUE | 46 | возврат домой по GPS с тумблера (раздел «GPS Rescue») |
@@ -1595,7 +1596,7 @@ CRSF, видеопередатчик с потолком мощности, ту�
   номерам) и тот же код в `status` (`NOGYRO`, `FAILSAFE`, `RXLOSS`,
   `NOT_DISARMED`, `BOXFAILSAFE`, `RUNAWAY`, `CRASH`, `THROTTLE`, `ANGLE`,
   `NOPREARM`, `LOAD`, `CALIB`, `CLI`, `MSP`, `REBOOT_REQD`, `NO_ACC_CAL`,
-  `ARMSWITCH`; `BOOTGRACE`, `CMS`, `BST`, `PARALYZE`, `GPS`, `RESC`,
+  `ARMSWITCH`, `PARALYZE`; `BOOTGRACE`, `CMS`, `BST`, `GPS`, `RESC`,
   `RPMFILTER`, `DSHOT_BBANG`, `MOTOR_PROTO` — зарезервированы под то, что их
   будет ставить). Свои, которых в BF нет, — с бита 26: `MOVING`,
   `BATTERY`, `MOTOR_TEST`, `NO_ARM_AUX`, `CONFIG`. И у каждой — слова.

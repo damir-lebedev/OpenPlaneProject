@@ -1575,6 +1575,38 @@ void test_arm_blockers()
         TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_NO_PREARM);
     }
     {
+        // PARALYZE: только после ARM и на земле, держится до перезагрузки
+        Bench b;
+        b.rc.paralyze = true;   // включён при загрузке — не запирает
+        TEST_ASSERT_TRUE(b.armAfterBoot());
+        b.rc.paralyze = false;
+        b.run(0.05f);
+        b.rc.paralyze = true;   // в полёте — не действует
+        b.run(0.05f);
+        TEST_ASSERT_TRUE(b.ctl.isArmed());
+        TEST_ASSERT_FALSE(b.ctl.getStatus().armBlockers & ARM_BLOCK_PARALYZE);
+        b.rc.armSwitch = false;  // DISARM — защёлкнулся
+        b.run(0.05f);
+        TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_PARALYZE);
+        b.rc.paralyze = false;   // выключить тумблер — не помогает
+        b.run(0.05f);
+        b.rc.armSwitch = true;
+        b.run(0.05f);
+        TEST_ASSERT_FALSE(b.ctl.isArmed());
+        TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_PARALYZE);
+    }
+    {
+        // до первого ARM PARALYZE ничего не делает
+        Bench b;
+        b.run(2.5f);
+        b.rc.paralyze = true;
+        b.run(0.05f);
+        TEST_ASSERT_FALSE(b.ctl.getStatus().armBlockers & ARM_BLOCK_PARALYZE);
+        b.rc.armSwitch = true;
+        b.run(0.01f);
+        TEST_ASSERT_TRUE(b.ctl.isArmed());
+    }
+    {
         Bench b;
         b.rc.armAssigned = false;
         TEST_ASSERT_FALSE(b.armAfterBoot());
