@@ -182,6 +182,16 @@ public:
             doTone(args);
             return true;
         }
+        if (strcmp(cmd, "music") == 0)
+        {
+            doMusic(args);
+            return true;
+        }
+        if (strcmp(cmd, "note") == 0)
+        {
+            doNote(args);
+            return true;
+        }
         const bool changes = strcmp(cmd, "set") == 0 || strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0 ||
                              strcmp(cmd, "aux") == 0 || strcmp(cmd, "map") == 0 || strcmp(cmd, "rxrange") == 0 ||
                              strcmp(cmd, "vtx") == 0 || strcmp(cmd, "rxfail") == 0 || strcmp(cmd, "calibrate") == 0 ||
@@ -544,6 +554,15 @@ public:
         // dynamic idle (041): добавка к холостым, доля; самый медленный мотор, об/мин (0 — нет оборотов DShot)
         if (ctl.getTune().dynIdle.enabled())
             w.add(",\"dynidle\":{\"inc\":%.3f,\"rpm\":%.0f}", s.dynIdleIncrease, s.dynIdleSlowestHz * 60.0f);
+        // музыка моторами (176c): цель и звук по оборотам, Гц; команда, доля
+        if (ctl.motorMusic().active())
+        {
+            const copter::MotorMusic& m = ctl.motorMusic();
+            w.add(",\"music\":{\"k\":%.1f,\"v\":[", m.mult());
+            for (uint8_t i = 0; i < m.count(); ++i)
+                w.add("%s[%.0f,%.0f,%.3f]", i ? "," : "", m.targetHz(i), m.measuredHz(i), m.command(i));
+            w.add("]}");
+        }
         if (ctl.getGeofence().enabled()) w.add(",\"fence\":{\"f\":%u,\"m\":%.0f}", s.fenceFlags, s.fenceMarginM);
         if (s.rescuePhase != RescuePhase::IDLE)
         {
@@ -837,6 +856,77 @@ private:
         }
         const char* error = n == 0 ? "tone N|all тон(1…5) [N тон…]" : cli.queueTones(motors, tones, n);
         if (error) sendError("tone", error);
+    }
+
+    // music on [k] | music off — музыка моторами по оборотам (176c), только без
+    // ARM и без винтов. k — звук / обороты (по умолчанию motor_poles / 2).
+    void doMusic(const char* args)
+    {
+        while (args && *args == ' ') ++args;
+        if (args && strncmp(args, "off", 3) == 0)
+        {
+            ctl.stopMusic();
+            char line[48];
+            JsonWriter w(line, sizeof(line));
+            w.add("@music {\"ok\":true,\"on\":false}\n");
+            send(w);
+            return;
+        }
+        if (!args || strncmp(args, "on", 2) != 0)
+        {
+            sendError("music", "music on [k] | music off");
+            return;
+        }
+        if (cli.active())
+        {
+            sendError("music", "открыт CLI");
+            return;
+        }
+        const float k = static_cast<float>(atof(args + 2));
+        const uint8_t poles = static_cast<uint8_t>(params.value(copter::PARAM_MOTOR_POLES));
+        if (!ctl.startMusic(poles, k))
+        {
+            sendError("music", ctl.isArmed() ? "только без ARM" : "k — 0.5…64");
+            return;
+        }
+        const copter::MotorMusic& m = ctl.motorMusic();
+        char line[96];
+        JsonWriter w(line, sizeof(line));
+        w.add("@music {\"ok\":true,\"on\":true,\"k\":%.1f,\"max\":%.0f}\n", m.mult(), m.maxSoundHz());
+        send(w);
+    }
+
+    // note N Гц [N Гц …] — ноты моторам потоком (0 — пауза на холостых, -1 —
+    // мотор стоит, N — мотор с 0 или all). Без ответа, ошибка — @error.
+    void doNote(char* args)
+    {
+        const char* p = args;
+        uint8_t n = 0;
+        while (n < 8)
+        {
+            while (*p == ' ') ++p;
+            if (!*p) break;
+            char* next = nullptr;
+            long m;
+            if (strncmp(p, "all", 3) == 0)
+            {
+                m = copter::MotorMusic::ALL;
+                next = const_cast<char*>(p + 3);
+            }
+            else m = strtol(p, &next, 10);
+            if (next == p) break;
+            p = next;
+            const float hz = strtof(p, &next);
+            if (next == p) break;
+            p = next;
+            if (!ctl.musicNote(static_cast<uint8_t>(m < 0 || m > 255 ? 254 : m), hz))
+            {
+                sendError("note", ctl.motorMusic().active() ? "нет такого мотора или Гц" : "music on сначала");
+                return;
+            }
+            ++n;
+        }
+        if (n == 0) sendError("note", "note N|all Гц [N Гц…]");
     }
 
     // melody — сыграть beeper_melody раз, melody stop — замолчать.

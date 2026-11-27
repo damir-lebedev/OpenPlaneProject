@@ -1807,6 +1807,131 @@ void test_motor_test_only_disarmed_and_times_out()
     TEST_ASSERT_FALSE(b.ctl.startMotorTest(0, 0.1f, 1.0f));
 }
 
+// 176c: мотор без винта — инерция 25 мс, «Гц на команду» на 20 % больше
+// модели из KV (модель учится по телеметрии), холостые — 10 % хода.
+struct MusicMotor
+{
+    float hz = 0.0f;
+    void step(float cmd, float gain, float dt)
+    {
+        const float want = cmd < 0.0f ? 0.0f : gain * fmaxf(cmd, 0.1f * 0.35f);
+        hz += (want - hz) * dt / 0.025f;
+    }
+};
+
+void test_motor_music_tracks_notes_by_rpm()
+{
+    MotorMusic m;
+    const float g = 400.0f;   // модель: 400 об/с на единицу команды
+    TEST_ASSERT_FALSE(m.start(4, g, 0.1f));   // k вне 0.5…64
+    TEST_ASSERT_TRUE(m.start(4, g, 7.0f));
+    TEST_ASSERT_TRUE(m.note(0, 440.0f));
+    TEST_ASSERT_TRUE(m.note(1, 660.0f));
+    TEST_ASSERT_TRUE(m.note(2, 0.0f));        // пауза — холостые
+    TEST_ASSERT_FALSE(m.note(4, 440.0f));     // нет мотора
+    MusicMotor mot[4];
+    float hz[MAX_MOTORS] = {}, cmd[MAX_MOTORS] = {};
+    auto run = [&](float seconds, bool tel) {
+        for (int k = 0; k < static_cast<int>(seconds * 1000.0f); ++k)
+        {
+            for (int i = 0; i < 4; ++i) hz[i] = mot[i].hz;
+            m.update(0.001f, hz, tel, cmd);
+            for (int i = 0; i < 4; ++i) mot[i].step(cmd[i], g * 1.2f, 0.001f);
+        }
+    };
+    for (int k = 0; k < 3; ++k)
+    {
+        m.note(0, 440.0f);
+        m.note(1, 660.0f);
+        run(0.5f, true);
+    }
+    TEST_ASSERT_FLOAT_WITHIN(440.0f * 0.02f, 440.0f, mot[0].hz * 7.0f);
+    TEST_ASSERT_FLOAT_WITHIN(660.0f * 0.02f, 660.0f, mot[1].hz * 7.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.0f, cmd[2]);                  // холостые
+    TEST_ASSERT_TRUE(cmd[3] < 0.0f);                                 // не играет — стоит
+    TEST_ASSERT_FLOAT_WITHIN(g * 0.2f * 0.15f, g * 1.2f, m.gain()); // модель выучилась
+    // смена ноты: через 80 мс — в пределах полутона (6 %)
+    m.note(0, 523.0f);
+    run(0.08f, true);
+    TEST_ASSERT_FLOAT_WITHIN(523.0f * 0.06f, 523.0f, mot[0].hz * 7.0f);
+    // выше предела команды — упор MAX_COMMAND и флаг
+    m.note(1, 5000.0f);
+    run(0.3f, true);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, MotorMusic::MAX_COMMAND, cmd[1]);
+    TEST_ASSERT_TRUE(m.tooHigh(1));
+    // нот нет HOLD_S — музыка встала сама
+    run(MotorMusic::HOLD_S + 0.05f, true);
+    TEST_ASSERT_FALSE(m.active());
+    TEST_ASSERT_FALSE(m.note(0, 440.0f));
+}
+
+// цикл 8 кГц (dt 125 мкс): модель учится, без нот музыка встаёт через HOLD_S
+void test_motor_music_fast_loop()
+{
+    MotorMusic m;
+    const float g = 400.0f, dt = 1.0f / 8000.0f;
+    TEST_ASSERT_TRUE(m.start(4, g, 7.0f));
+    MusicMotor mot;
+    float hz[MAX_MOTORS] = {}, cmd[MAX_MOTORS] = {};
+    for (int k = 0; k < 3; ++k)
+    {
+        m.note(0, 500.0f);
+        for (int j = 0; j < 4000; ++j)
+        {
+            hz[0] = mot.hz;
+            TEST_ASSERT_TRUE(m.update(dt, hz, true, cmd));
+            mot.step(cmd[0], g * 0.8f, dt);
+        }
+    }
+    TEST_ASSERT_FLOAT_WITHIN(500.0f * 0.02f, 500.0f, m.measuredHz(0));
+    TEST_ASSERT_FLOAT_WITHIN(g * 0.8f * 0.1f, g * 0.8f, m.gain());
+    int left = 0;
+    while (m.update(dt, hz, true, cmd)) ++left;
+    TEST_ASSERT_INT_WITHIN(20, static_cast<int>(MotorMusic::HOLD_S * 8000.0f) - 4000, left);   // 0,5 с уже прошло
+    TEST_ASSERT_FALSE(m.active());
+}
+
+void test_motor_music_open_loop_without_telemetry()
+{
+    MotorMusic m;
+    TEST_ASSERT_TRUE(m.start(4, 400.0f, 7.0f));
+    m.note(MotorMusic::ALL, 700.0f);
+    float cmd[MAX_MOTORS] = {};
+    TEST_ASSERT_TRUE(m.update(0.001f, nullptr, false, cmd));
+    for (int i = 0; i < 4; ++i) TEST_ASSERT_FLOAT_WITHIN(1e-5f, 700.0f / 7.0f / 400.0f, cmd[i]);
+    m.note(2, MotorMusic::OFF);
+    m.update(0.001f, nullptr, false, cmd);
+    TEST_ASSERT_TRUE(cmd[2] < 0.0f);
+}
+
+void test_motor_music_in_controller_only_disarmed()
+{
+    Bench b;
+    b.run(2.5f);
+    TEST_ASSERT_TRUE(b.ctl.startMusic(14, 0.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 7.0f, b.ctl.motorMusic().mult());   // пар полюсов
+    TEST_ASSERT_TRUE(b.ctl.musicNote(0, 600.0f));
+    b.run(0.1f);
+    TEST_ASSERT_TRUE(b.ctl.motorTestActive());
+    TEST_ASSERT_TRUE(b.ctl.getStatus().armBlockers & ARM_BLOCK_MOTOR_TEST);
+    TEST_ASSERT_TRUE(b.out.spinning);
+    TEST_ASSERT_TRUE(b.out.motor[0] > 0.0f && b.out.motor[0] <= MotorMusic::MAX_COMMAND);
+    TEST_ASSERT_TRUE(b.out.motor[1] < 0.0f);
+    // ползунок мотора останавливает музыку
+    TEST_ASSERT_TRUE(b.ctl.setMotorTest(1, 0.1f, 1.0f));
+    TEST_ASSERT_FALSE(b.ctl.motorMusic().active());
+    b.ctl.stopMotorTest();
+    // ARM: музыка встаёт, заармленному не запускается
+    TEST_ASSERT_TRUE(b.ctl.startMusic(14, 0.0f));
+    b.ctl.stopMusic();
+    b.run(0.01f);
+    b.rc.armSwitch = true;
+    b.run(0.01f);
+    TEST_ASSERT_TRUE(b.ctl.isArmed());
+    TEST_ASSERT_FALSE(b.ctl.startMusic(14, 0.0f));
+    TEST_ASSERT_FALSE(b.ctl.musicNote(0, 440.0f));
+}
+
 // 079: ползунки моторов — каждый свой, «все сразу», продление и стоп.
 void test_motor_test_sliders_per_motor()
 {
@@ -11678,6 +11803,10 @@ int main()
     RUN_TEST(test_pinio_box_and_config_like_bf);
     RUN_TEST(test_motor_test_only_disarmed_and_times_out);
     RUN_TEST(test_motor_test_sliders_per_motor);
+    RUN_TEST(test_motor_music_tracks_notes_by_rpm);
+    RUN_TEST(test_motor_music_fast_loop);
+    RUN_TEST(test_motor_music_open_loop_without_telemetry);
+    RUN_TEST(test_motor_music_in_controller_only_disarmed);
     RUN_TEST(test_link_loss_on_ground_disarms_and_needs_switch_toggle);
     RUN_TEST(test_arm_block_bits_are_betaflight_flags);
     RUN_TEST(test_small_angle_setting);

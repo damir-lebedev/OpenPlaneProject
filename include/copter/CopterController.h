@@ -10,6 +10,7 @@
 #include "copter/ImuAlign.h"
 #include "copter/LaunchControl.h"
 #include "copter/Mixer.h"
+#include "copter/MotorMusic.h"
 #include "copter/PositionEstimator.h"
 #include "copter/GpsIntegrity.h"
 #include "copter/DeadReckonHome.h"
@@ -663,6 +664,7 @@ namespace copter
         bool setMotorTest(uint8_t index, float thrust, float seconds)
         {
             if (status.state != CopterState::DISARMED) return false;
+            music.stop();
             if (index != MOTOR_TEST_ALL && index >= tune.frame.count) return false;
             const float v = fminf(MOTOR_TEST_MAX, fmaxf(0.0f, thrust));
             for (uint8_t i = 0; i < MAX_MOTORS; ++i)
@@ -679,12 +681,33 @@ namespace copter
         {
             testLeft = 0.0f;
             for (float& t : testThrust) t = 0.0f;
+            music.stop();
         }
-        bool motorTestActive() const { return testLeft > 0.0f; }
+        bool motorTestActive() const { return testLeft > 0.0f || music.active(); }
         float motorTestValue(uint8_t index) const
         {
+            if (music.active()) return index < music.count() && music.targetHz(index) >= 0.0f ? music.command(index) : 0.0f;
             return testLeft > 0.0f && index < MAX_MOTORS ? testThrust[index] : 0.0f;
         }
+
+        // Музыка моторами по оборотам (copter/MotorMusic.h, 176c): только без
+        // ARM и без винтов. mult — звук / обороты, 0 — пар полюсов (poles / 2).
+        bool startMusic(uint8_t poles, float mult)
+        {
+            if (status.state != CopterState::DISARMED) return false;
+            testLeft = 0.0f;
+            for (float& t : testThrust) t = 0.0f;
+            const float volts = status.volts > 1.0f ? status.volts : tune.volts;
+            const float hzPerCommand = tune.prop.kvRad * volts / (2.0f * PI_F);
+            if (!(mult > 0.0f)) mult = poles >= 2 ? poles * 0.5f : 7.0f;
+            return music.start(tune.frame.count, hzPerCommand, mult);
+        }
+        void stopMusic() { music.stop(); }
+        bool musicNote(uint8_t motor, float soundHz)
+        {
+            return status.state == CopterState::DISARMED && music.note(motor, soundHz);
+        }
+        const MotorMusic& motorMusic() const { return music; }
 
         // Один цикл стабилизации.
         CopterOutputs update(const CopterSensors& sensIn, const CopterRc& rcIn)
@@ -920,7 +943,16 @@ namespace copter
             if (status.state == CopterState::DISARMED)
             {
                 resetFlight(sens);
-                if (testLeft > 0.0f)
+                if (music.active())
+                {
+                    float cmd[MAX_MOTORS];
+                    if (music.update(dt, sens.motorHz, sens.motorHzOk, cmd))
+                    {
+                        for (uint8_t i = 0; i < out.count && i < MAX_MOTORS; ++i) out.motor[i] = cmd[i];
+                        out.spinning = true;
+                    }
+                }
+                else if (testLeft > 0.0f)
                 {
                     testLeft -= dt;
                     // остальные — «стоп»: 0 у DShot — минимальный газ (48), регулятор
@@ -1708,7 +1740,7 @@ namespace copter
                 const float cells = tune.cells ? tune.cells : roundf(tune.volts / 3.75f);
                 if (cells >= 1.0f && status.volts / cells < set.minCellVolts) b |= ARM_BLOCK_BATTERY;
             }
-            if (testLeft > 0.0f) b |= ARM_BLOCK_MOTOR_TEST;
+            if (testLeft > 0.0f || music.active()) b |= ARM_BLOCK_MOTOR_TEST;
             if (status.crashed) b |= ARM_BLOCK_CRASH;
             if (status.runaway) b |= ARM_BLOCK_RUNAWAY;
             if (rc.failsafeSwitch) b |= ARM_BLOCK_FAILSAFE_SWITCH;
@@ -2254,5 +2286,6 @@ namespace copter
 
         float testThrust[MAX_MOTORS] = {};
         float testLeft = 0.0f;
+        MotorMusic music;
     };
 }
