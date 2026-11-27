@@ -87,6 +87,7 @@ namespace copter
         BOX_STICK_COMMANDS_DISABLE = 51,
         BOX_BEEPER_MUTE = 52,
         BOX_CHIRP = 55,   // BF 2025: качание частоты (copter/Chirp.h)
+        BOX_MELODY = 60,  // своё: мелодия по тумблеру без ARM (copter/Melody.h); у BF такого номера нет
         BOX_COUNT = 64,   // номера 0..63
     };
 
@@ -132,6 +133,8 @@ namespace copter
             { BOX_BEEPER_MUTE, "BEEPER MUTE", true },
             { BOX_GPS_BEEP_SATELLITE_COUNT, "GPS BEEP SATELLITE COUNT", true },
             { BOX_STICK_COMMANDS_DISABLE, "STICK COMMANDS DISABLE", true },
+            // своё — после всех BF (MSP: вторая страница режимов, первая — как была)
+            { BOX_MELODY, "MELODY", true },
         };
         count = sizeof(table) / sizeof(table[0]);
         return table;

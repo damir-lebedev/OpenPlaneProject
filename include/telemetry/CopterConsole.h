@@ -105,6 +105,8 @@ public:
     // Пищалка (main_copter.cpp): «послушать» из приложения (preview) и
     // события консоли (стёрт ящик — BLACKBOX_ERASE). false — пищалки нет.
     void setBeepHook(bool (*hook)(copter::BeeperCondition c, bool preview)) { beepHook = hook; }
+    // Мелодия (main_copter.cpp): start — сыграть раз, иначе стоп. false — нечем.
+    void setMelodyHook(bool (*hook)(bool start)) { melodyHook = hook; }
     void setTaskStats(const TaskStats* stats) { tasks = stats; }
     void setMotorTelemetry(const copter::IMotorTelemetry* t)
     {
@@ -407,6 +409,7 @@ public:
 
     // CliPort: «послушать» писк из приложения.
     bool beeperPreview(copter::BeeperCondition c) override { return beepHook && beepHook(c, true); }
+    bool melodyPreview(bool start) override { return melodyHook && melodyHook(start); }
 
     // CliPort: tasks — части полётного цикла, как в Betaflight.
     void printTasks() override
@@ -821,6 +824,7 @@ private:
     void (*accCalHook)() = nullptr;
     void (*applyHook)() = nullptr;
     bool (*beepHook)(copter::BeeperCondition c, bool preview) = nullptr;
+    bool (*melodyHook)(bool start) = nullptr;
     uint32_t loopAvgUs = 0, loopMaxUs = 0, loopHz = 0;
     uint32_t rxRateHz = 0, rxFramesAtWindow = 0, rxWindowMs = 0;
     bool hostLine = false;

@@ -33,6 +33,7 @@
 #include "copter/Adjustments.h"
 #include "copter/Battery.h"
 #include "copter/Beeper.h"
+#include "copter/Melody.h"
 #include "copter/StickCommands.h"
 #include "copter/OsdMenu.h"
 #include "copter/CopterController.h"
@@ -256,6 +257,10 @@ static uint32_t armedMs = 0;   // время в полёте (заармлен),
 // copter/StickCommands.h.
 copter::Beeper beeper;
 copter::DshotBeacon dshotBeacon;
+// Мелодия по тумблеру MELODY / «послушать» / при включении (copter/Melody.h).
+static copter::Melody melody;
+static copter::MelodyPlayer melodyPlayer;
+static bool melodyStartup = false;
 copter::StickCommands stickCommands;
 // Меню настроек в очках стиками (CMS, copter/OsdMenu.h).
 copter::OsdMenu osdMenu;
@@ -282,6 +287,7 @@ static uint32_t lastBeeperMs = 0;
 static bool buzzerActiveHigh = Config::BOARD_BEEPER_ACTIVE_HIGH;   // beeper_inversion
 static bool buzzerOpenDrain = false;                               // beeper_od
 static uint16_t buzzerHz = 0;                                      // beeper_frequency: 0 — активная
+static uint16_t buzzerToneHz = 0;                                  // что сейчас звучит на пассивной
 static bool buzzerOn = false;
 static bool rcSeen = false;     // связь с пультом хоть раз была (RX_LOST — только после)
 static bool rcLinkOk = false;
@@ -312,17 +318,20 @@ static copter::CopterRc readRc()
 }
 
 // Вывод пищалки: beeper_inversion (пищит высоким), beeper_od (открытый
-// сток), beeper_frequency (пассивной — меандр этой частоты).
-static void writeBuzzer(bool on)
+// сток), beeper_frequency (пассивной — меандр этой частоты; нота мелодии —
+// своей частотой noteHz).
+static void writeBuzzer(bool on, uint16_t noteHz = 0)
 {
     if (Config::PIN_BUZZER < 0) return;
     const uint32_t pin = static_cast<uint32_t>(Config::PIN_BUZZER);
     if (buzzerHz > 0)
     {
-        if (on != buzzerOn)
+        const uint16_t hz = noteHz ? noteHz : buzzerHz;
+        if (on != buzzerOn || (on && hz != buzzerToneHz))
         {
-            if (on) tone(static_cast<uint8_t>(pin), buzzerHz);
+            if (on) tone(static_cast<uint8_t>(pin), hz);
             else noTone(static_cast<uint8_t>(pin));
+            buzzerToneHz = on ? hz : 0;
         }
         buzzerOn = on;
         return;
@@ -414,6 +423,11 @@ static void applySettings()
     beeper.setOffFlags(static_cast<uint32_t>(copterParams.value(copter::PARAM_BEEPER_OFF_FLAGS)));
     dshotBeacon.configure(static_cast<uint32_t>(copterParams.value(copter::PARAM_DSHOT_BEACON_OFF_FLAGS)),
                           static_cast<uint8_t>(copterParams.value(copter::PARAM_BEEPER_DSHOT_BEACON_TONE)));
+    if (!copter::parseRtttl(copterParams.text(copter::PARAM_BEEPER_MELODY, 0), melody))
+        copter::parseRtttl(copter::MELODY_DEFAULT, melody);   // в хранилище не та строка — своя
+    melodyPlayer.setMelody(melody);
+    melodyPlayer.configure(copterParams.value(copter::PARAM_BEEPER_MELODY_MOTORS) > 0.5f);
+    melodyStartup = copterParams.value(copter::PARAM_BEEPER_MELODY_STARTUP) > 0.5f;
     gyroToUse = static_cast<copter::GyroToUse>(static_cast<uint8_t>(copterParams.value(copter::PARAM_GYRO_TO_USE)));
     configureGyroCalibration();
     stickCommands.configure(static_cast<uint16_t>(copterParams.value(copter::PARAM_MIN_CHECK)),
@@ -684,11 +698,18 @@ static copter::BeeperCondition armingBeep()
 
 // Пищалка раз в 10 мс (copter/Beeper.h): ARM/DISARM/готов, батарея, связь,
 // режимы BEEPER, BEEPER MUTE, GPS BEEP SATELLITE COUNT; что выключено — beeper_off_flags.
-static void updateBeeper()
+static void updateBeeper(bool armSwitch)
 {
-    if (Config::PIN_BUZZER < 0) return;
     const copter::CopterStatus& st = copterController.getStatus();
     const bool armed = copterController.isArmed();
+    // мелодия: тумблер MELODY — только со связью (без связи тумблер «застыл»,
+    // а пищать должен RX_LOST); моторами — пока моторы не проверяют
+    const copter::MelodyOut tune =
+        melodyPlayer.tick(millis(), armed, armSwitch, rcLinkOk && rxInput.isActive(copter::BOX_MELODY));
+    if (tune.dshotTone && motors.dshotOutput().commandsAvailable() && !copterController.motorTestActive() &&
+        motors.dshotOutput().commandsFree() > 0)
+        motors.dshotOutput().queueCommand(copter::dshot::CommandQueue::ALL, tune.dshotTone);
+    if (Config::PIN_BUZZER < 0) return;
     if (armed != wasArmedForBeeper) beeper.event(armed ? armingBeep() : copter::BeeperCondition::DISARMING);
     wasArmedForBeeper = armed;
     if (!readyBeeped && !armed && st.armBlockers == 0)
@@ -711,7 +732,20 @@ static void updateBeeper()
     in.gpsSats = gpsHome.fix().satellites;
     in.disarmRepeat = stickCommands.disarmPosition();
     in.usbOnly = battery.state() == copter::BatteryState::NOT_PRESENT;
-    writeBuzzer(beeper.tick(in));
+    const bool beep = beeper.tick(in);
+    if (tune.active) writeBuzzer(tune.hz != 0, tune.hz);
+    else writeBuzzer(beep);
+}
+
+// «Послушать» мелодию (приложение, CLI `melody`): start — сыграть раз, иначе — стоп.
+static bool melodyFromConsole(bool start)
+{
+    if (!start)
+    {
+        melodyPlayer.stop();
+        return true;
+    }
+    return melodyPlayer.playOnce(copterController.isArmed());
 }
 
 // «Послушать» из приложения и события консоли (стёрт ящик).
@@ -851,7 +885,7 @@ static bool handleSticks(copter::CopterRc& rc)
     const StickCommand cmd = stickCommands.update(rc, armed, copterController.getStatus().airborne,
                                                   rc.mode != CopterMode::ACRO, disabled, dt);
     const bool armSwitch = rc.armSwitch;
-    if (!armed && dshotBeacon.holdArm(millis())) rc.armSwitch = false;
+    if (!armed && (dshotBeacon.holdArm(millis()) || melodyPlayer.holdArm(millis()))) rc.armSwitch = false;
     runStickCommand(cmd);
     return armSwitch;
 }
@@ -1268,7 +1302,7 @@ static void flightTask(void*)
         if (millis() - lastBeeperMs >= 10)
         {
             lastBeeperMs = millis();
-            updateBeeper();
+            updateBeeper(pilotArmSwitch);
         }
         updatePinio(false);
         const copter::VtxRequest vtxWanted = vtxRequest();
@@ -1793,6 +1827,7 @@ void setup()
     copterConsole.setApplyHook(applySettings);
     copterConsole.setAccCalibrationHook(startAccCalibration);
     copterConsole.setBeepHook(beepFromConsole);
+    copterConsole.setMelodyHook(melodyFromConsole);
     copterConsole.setRxInput(&rxInput);
     copterConsole.setBattery(&battery);
     copterConsole.setGuard(&escGuard);
@@ -1835,7 +1870,10 @@ void setup()
 #endif
     copterConsole.printHint();
     beeper.event(copter::BeeperCondition::GYRO_CALIBRATED);   // гироскоп откалиброван при включении
-    beeper.event(copter::BeeperCondition::SYSTEM_INIT);
+    // своя мелодия при включении (beeper_melody_startup) — пищалкой, без моторов:
+    // регуляторы в это время ещё пищат своё
+    if (!(melodyStartup && Config::PIN_BUZZER >= 0 && melodyPlayer.playOnce(false, false)))
+        beeper.event(copter::BeeperCondition::SYSTEM_INIT);
 
     // Стеки задач берутся из остатка ОЗУ: не хватило — сказать прямо, а не молчать
     // (на F405 его мало; без задачи OSD нет экрана, без flight не летает ничего).

@@ -11,6 +11,7 @@
 #include "copter/Compass.h"
 #include "copter/CopterController.h"
 #include "copter/EscGuard.h"
+#include "copter/Melody.h"
 #include "copter/Osd.h"
 #include "copter/Presets.h"
 #include "copter/RateController.h"
@@ -620,6 +621,9 @@ namespace copter
         PARAM_BEEPER_INVERSION,
         PARAM_BEEPER_OD,
         PARAM_BEEPER_FREQUENCY,
+        PARAM_BEEPER_MELODY,           // 176: своё (copter/Melody.h)
+        PARAM_BEEPER_MELODY_MOTORS,
+        PARAM_BEEPER_MELODY_STARTUP,
         // P63: роли UART (copter/SerialPorts.h, порядок — как PortRole)
         PARAM_SERIAL_RX_UART,
         PARAM_SERIAL_GPS_UART,
@@ -1517,6 +1521,12 @@ namespace copter
               "вывод пищалки — открытый сток" },
             { "beeper_frequency", kInt, kMaster, ParamGroup::BEEPER, 0, 16000, 0, kTable, "Гц", nullptr, 0,
               "0 — активная пищалка (сама звучит), иначе — частота для пассивной" },
+            { "beeper_melody", kText, kMaster, ParamGroup::BEEPER, 0, MELODY_TEXT_MAX, 0, kTable, "", nullptr, 0,
+              "мелодия RTTTL (имя:d=4,o=5,b=120:8c,8e,g) — режим MELODY без ARM; пусто — своя" },
+            { "beeper_melody_motors", kEnum, kMaster, ParamGroup::BEEPER, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "мелодия и моторами (тоны DShot BEACON1..5 — грубо, не чаще 0.28 с)" },
+            { "beeper_melody_startup", kEnum, kMaster, ParamGroup::BEEPER, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "при включении — мелодия пищалкой вместо писка SYSTEM_INIT" },
             { "serial_rx_uart", kInt, kMaster, ParamGroup::PORTS, 0, 8, 0, kTable, "UART", nullptr, 0,
               "UART приёмника (1 — UART1…), 0 — нет; после save и перезагрузки; в diff — строками serial, как в BF" },
             { "serial_gps_uart", kInt, kMaster, ParamGroup::PORTS, 0, 8, 0, kTable, "UART", nullptr, 0,
@@ -1598,6 +1608,7 @@ namespace copter
     public:
         static constexpr uint8_t PROFILES = 4;
         static constexpr uint8_t NAME_LENGTH = 16;   // craft_name; имена профилей — до 8 (profile_name)
+        static constexpr size_t TEXT_MAX = MELODY_TEXT_MAX;   // самая длинная строка (beeper_melody)
         // Запись во флеш (serialize): число — хэш имени 2 + слот 1 + значение 4,
         // строка — хэш 2 + слот 1 + длина 1 + текст. Больше ёмкости хранилища
         // записать нельзя.
@@ -2015,8 +2026,14 @@ namespace copter
         // Умолчание строки (пустая строка в хранилище — это оно).
         static const char* textDefault(ParamId id)
         {
-            return id == PARAM_RPM_FILTER_WEIGHTS ? "100,100,100" : id == PARAM_ACC_CALIBRATION ? "0,0,0,0" : "";
+            return id == PARAM_RPM_FILTER_WEIGHTS ? "100,100,100"
+                   : id == PARAM_ACC_CALIBRATION  ? "0,0,0,0"
+                   : id == PARAM_BEEPER_MELODY    ? MELODY_DEFAULT
+                                                  : "";
         }
+
+        // Сколько букв помещается в строку настройки.
+        static size_t textCapacity(ParamId id) { return id == PARAM_BEEPER_MELODY ? MELODY_TEXT_MAX : NAME_LENGTH; }
 
         // rpm_filter_weights: "a,b,c" (0..100) -> доли; false — не так написано.
         static bool rpmWeights(const char* s, float out[RPM_HARMONICS_MAX])
@@ -2072,7 +2089,7 @@ namespace copter
         bool setText(ParamId id, uint8_t slot, const char* s)
         {
             char* dst = stringSlot(id, slot);
-            if (!dst || !s || strlen(s) > NAME_LENGTH || strlen(s) > paramInfo(id).max) return false;
+            if (!dst || !s || strlen(s) > textCapacity(id) || strlen(s) > paramInfo(id).max) return false;
             strcpy(dst, s);
             return true;
         }
@@ -2222,7 +2239,7 @@ namespace copter
         bool parse(ParamId id, uint8_t slot, const char* textIn, char* error, size_t errorSize)
         {
             const ParamInfo& info = paramInfo(id);
-            char buf[48];
+            char buf[TEXT_MAX + 2];   // на букву длиннее — чтобы «слишком длинно» не обрезалось молча
             trimCopy(textIn, buf, sizeof(buf));
             switch (info.type)
             {
@@ -2272,6 +2289,16 @@ namespace copter
                         for (uint8_t i = 0; i < n; ++i)
                             len += static_cast<size_t>(snprintf(buf + len, sizeof(buf) - len, i ? ",%u" : "%u", v[i]));
                         s = buf;
+                    }
+                    if (id == PARAM_BEEPER_MELODY && *s)
+                    {
+                        MelodyError e;
+                        if (strlen(s) <= MELODY_TEXT_MAX && !checkRtttl(s, &e))
+                        {
+                            snprintf(error, errorSize, "мелодия RTTTL, символ %u: %s", static_cast<unsigned>(e.at + 1), e.text);
+                            return false;
+                        }
+                        if (strcmp(s, MELODY_DEFAULT) == 0) s = "";
                     }
                     if (id == PARAM_RPM_FILTER_WEIGHTS && *s)
                     {
@@ -2674,8 +2701,8 @@ namespace copter
                         if (at >= length) break;
                         const uint8_t len = data[at++];
                         if (at + len > length) break;
-                        char s[NAME_LENGTH + 1] = {};
-                        if (found >= 0 && len <= NAME_LENGTH)
+                        char s[TEXT_MAX + 1] = {};
+                        if (found >= 0 && len <= TEXT_MAX)
                         {
                             memcpy(s, data + at, len);
                             setText(static_cast<ParamId>(found), slot, s);
@@ -2714,6 +2741,7 @@ namespace copter
             memset(motorOrderText, 0, sizeof(motorOrderText));
             memset(pinioBoxText, 0, sizeof(pinioBoxText));
             memset(pinioConfigText, 0, sizeof(pinioConfigText));
+            memset(melodyText, 0, sizeof(melodyText));
             pidIndex = 0;
             rateIndex = 0;
         }
@@ -2942,6 +2970,7 @@ namespace copter
             if (id == PARAM_MOTOR_OUTPUT_REORDERING) return slot == 0 ? motorOrderText : nullptr;
             if (id == PARAM_PINIO_BOX) return slot == 0 ? pinioBoxText : nullptr;
             if (id == PARAM_PINIO_CONFIG) return slot == 0 ? pinioConfigText : nullptr;
+            if (id == PARAM_BEEPER_MELODY) return slot == 0 ? melodyText : nullptr;
             return nullptr;
         }
         const char* stringSlot(ParamId id, uint8_t slot) const { return const_cast<CopterParams*>(this)->stringSlot(id, slot); }
@@ -2995,6 +3024,7 @@ namespace copter
         char motorOrderText[NAME_LENGTH + 1] = {};   // motor_output_reordering; пусто — по порядку
         char pinioBoxText[NAME_LENGTH + 1] = {};     // pinio_box; пусто — как в файле платы
         char pinioConfigText[NAME_LENGTH + 1] = {};  // pinio_config; пусто — как в файле платы
+        char melodyText[MELODY_TEXT_MAX + 1] = {};   // beeper_melody; пусто — MELODY_DEFAULT
         uint8_t pidIndex = 0;
         uint8_t rateIndex = 0;
     };

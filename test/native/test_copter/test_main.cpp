@@ -48,6 +48,7 @@
 #include "telemetry/CopterMsp.h"
 #include "telemetry/Msp.h"
 #include "telemetry/MspPort.h"
+#include "copter/Melody.h"
 #include "copter/Presets.h"
 #include "copter/Propulsion.h"
 #include "copter/GyroSelect.h"
@@ -7556,6 +7557,213 @@ void test_dshot_beacon_timing()
     TEST_ASSERT_EQUAL(5, beacon.toneCommand());
 }
 
+// ---- 176: мелодия по тумблеру ----
+
+void test_melody_rtttl_parse()
+{
+    Melody m;
+    MelodyError e;
+    // b=120: четверть 500 мс; d=8 — 250; точка — ×1.5; # — полутон
+    TEST_ASSERT_TRUE(parseRtttl("t:d=8,o=5,b=120:c,4e,g.,a#6,p,2c7,b#4,h", m, &e));
+    TEST_ASSERT_EQUAL(8, m.count);
+    TEST_ASSERT_EQUAL_UINT16(523, m.notes[0].hz);   // C5
+    TEST_ASSERT_EQUAL_UINT16(250, m.notes[0].ms);
+    TEST_ASSERT_EQUAL_UINT8(72, m.notes[0].key);
+    TEST_ASSERT_EQUAL_UINT16(659, m.notes[1].hz);   // E5
+    TEST_ASSERT_EQUAL_UINT16(500, m.notes[1].ms);
+    TEST_ASSERT_EQUAL_UINT16(784, m.notes[2].hz);   // G5
+    TEST_ASSERT_EQUAL_UINT16(375, m.notes[2].ms);
+    TEST_ASSERT_EQUAL_UINT16(1865, m.notes[3].hz);  // A#6
+    TEST_ASSERT_EQUAL_UINT16(0, m.notes[4].hz);     // пауза
+    TEST_ASSERT_EQUAL_UINT16(250, m.notes[4].ms);
+    TEST_ASSERT_EQUAL_UINT16(2093, m.notes[5].hz);  // C7
+    TEST_ASSERT_EQUAL_UINT16(1000, m.notes[5].ms);
+    TEST_ASSERT_EQUAL_UINT16(523, m.notes[6].hz);   // B#4 = C5
+    TEST_ASSERT_EQUAL_UINT16(988, m.notes[7].hz);   // H = B5
+    TEST_ASSERT_EQUAL_UINT32(250 + 500 + 375 + 250 + 250 + 1000 + 250 + 250, m.totalMs());
+    // точка после октавы, пробелы, заглавные; без имени и без умолчаний (d=4, o=6, b=63)
+    TEST_ASSERT_TRUE(parseRtttl("D=4,O=4,B=60: 8A4. , C", m));
+    TEST_ASSERT_EQUAL_UINT16(440, m.notes[0].hz);
+    TEST_ASSERT_EQUAL_UINT16(750, m.notes[0].ms);
+    TEST_ASSERT_EQUAL_UINT16(262, m.notes[1].hz);
+    TEST_ASSERT_TRUE(parseRtttl("a", m));
+    TEST_ASSERT_EQUAL_UINT16(1760, m.notes[0].hz);
+    TEST_ASSERT_EQUAL_UINT16(240000 / 63 / 4, m.notes[0].ms);
+    TEST_ASSERT_TRUE(parseRtttl(MELODY_DEFAULT, m));
+
+    // ошибки: что и с какого символа
+    TEST_ASSERT_FALSE(parseRtttl("x:d=4,o=5,b=100:c,k,e", m, &e));
+    TEST_ASSERT_EQUAL(0, m.count);
+    TEST_ASSERT_EQUAL(18, static_cast<int>(e.at));
+    TEST_ASSERT_EQUAL_STRING("нота — c d e f g a b или p", e.text);
+    TEST_ASSERT_FALSE(parseRtttl("x:d=3:c", m, &e));
+    TEST_ASSERT_EQUAL_STRING("d — 1, 2, 4, 8, 16 или 32", e.text);
+    TEST_ASSERT_FALSE(parseRtttl("x:q=3:c", m, &e));
+    TEST_ASSERT_FALSE(parseRtttl("x:b=5:c", m, &e));
+    TEST_ASSERT_FALSE(parseRtttl("x:o=5:c9", m, &e));
+    TEST_ASSERT_FALSE(parseRtttl("x:o=5:c e", m, &e));
+    TEST_ASSERT_EQUAL_STRING("ноты — через запятую", e.text);
+    TEST_ASSERT_FALSE(parseRtttl("a:b:c:d", m, &e));
+    TEST_ASSERT_FALSE(parseRtttl("x:d=4:", m, &e));
+    TEST_ASSERT_EQUAL_STRING("нет ни одной ноты", e.text);
+    TEST_ASSERT_FALSE(parseRtttl("x:d=4:p#", m, &e));
+    std::string many = "x:d=32:c";
+    for (int i = 0; i < 64; ++i) many += ",c";
+    TEST_ASSERT_FALSE(parseRtttl(many.c_str(), m, &e));
+    TEST_ASSERT_EQUAL_STRING("больше 64 нот", e.text);
+
+    // тоны маяка: от низкой ноты до высокой — 1..5, пауза — 0, одна высота — 3
+    TEST_ASSERT_TRUE(parseRtttl("x:o=5:c,e,g,c6,p", m));
+    TEST_ASSERT_EQUAL(1, melodyBeaconTone(m, m.notes[0]));
+    TEST_ASSERT_EQUAL(2, melodyBeaconTone(m, m.notes[1]));   // 4/12·4 = 1.33 -> 1+1
+    TEST_ASSERT_EQUAL(3, melodyBeaconTone(m, m.notes[2]));   // 7/12·4 = 2.33 -> 1+2
+    TEST_ASSERT_EQUAL(5, melodyBeaconTone(m, m.notes[3]));
+    TEST_ASSERT_EQUAL(0, melodyBeaconTone(m, m.notes[4]));
+    TEST_ASSERT_TRUE(parseRtttl("x:o=5:c,c", m));
+    TEST_ASSERT_EQUAL(3, melodyBeaconTone(m, m.notes[0]));
+}
+
+void test_melody_player_switch_arm_and_motors()
+{
+    Melody m;
+    TEST_ASSERT_TRUE(parseRtttl("x:d=4,o=5,b=600:c,p,p,e", m));   // по 100 мс
+    MelodyPlayer pl;
+    pl.setMelody(m);
+    pl.configure(true);
+    auto run = [&](uint32_t& now, int ticks, bool armed, bool armSw, bool sw, std::vector<uint16_t>* hz = nullptr,
+                   std::vector<uint8_t>* tones = nullptr) {
+        for (int i = 0; i < ticks; ++i, now += 10)
+        {
+            const MelodyOut o = pl.tick(now, armed, armSw, sw);
+            if (hz) hz->push_back(o.active ? o.hz : 0xFFFF);
+            if (tones && o.dshotTone) tones->push_back(o.dshotTone);
+        }
+    };
+    uint32_t now = 1000;
+    // в ARM тумблер не играет
+    std::vector<uint16_t> hz;
+    run(now, 100, true, true, true, &hz);
+    for (uint16_t h : hz) TEST_ASSERT_EQUAL_UINT16(0xFFFF, h);
+    TEST_ASSERT_FALSE(pl.isPlaying());
+    // DISARM, тумблер включён: сразу играет — нота 80 мс + 20 мс тишины, пауза, нота
+    hz.clear();
+    std::vector<uint8_t> tones;
+    run(now, 45, false, false, true, &hz, &tones);
+    TEST_ASSERT_EQUAL_UINT16(523, hz[1]);
+    TEST_ASSERT_EQUAL_UINT16(523, hz[9]);
+    TEST_ASSERT_EQUAL_UINT16(0, hz[10]);    // промежуток в конце ноты
+    TEST_ASSERT_EQUAL_UINT16(0, hz[15]);    // пауза
+    TEST_ASSERT_EQUAL_UINT16(0, hz[25]);
+    TEST_ASSERT_EQUAL_UINT16(659, hz[31]);
+    // моторами — не раньше 1.2 с после DISARM: пока тонов нет
+    TEST_ASSERT_TRUE(tones.empty());
+    TEST_ASSERT_FALSE(pl.holdArm(now));
+    // конец мелодии — пауза 1 с и снова (только пока тумблер включён)
+    hz.clear();
+    run(now, 120, false, false, true, &hz, &tones);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFF, hz[50]);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFF, hz[95]);
+    TEST_ASSERT_EQUAL_UINT16(523, hz[96]);
+    TEST_ASSERT_EQUAL_UINT16(523, hz[100]);
+    // через 1.2 с после DISARM — тоны моторами (C — 1, E — 5); ARM ждёт 1.2 с
+    TEST_ASSERT_EQUAL(1, static_cast<int>(tones.size()));
+    TEST_ASSERT_EQUAL(1, tones[0]);
+    run(now, 30, false, false, true, nullptr, &tones);
+    TEST_ASSERT_EQUAL(2, static_cast<int>(tones.size()));
+    TEST_ASSERT_EQUAL(5, tones[1]);
+    TEST_ASSERT_TRUE(pl.holdArm(now));
+    // пилот держит ARM — не играет; 1.2 с после тонов — ARM можно
+    hz.clear();
+    run(now, 130, false, true, true, &hz);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFF, hz[129]);
+    TEST_ASSERT_FALSE(pl.isPlaying());
+    TEST_ASSERT_FALSE(pl.holdArm(now));
+    // играет — включили ARM: замолчал сразу
+    run(now, 5, false, false, true);
+    TEST_ASSERT_TRUE(pl.isPlaying());
+    run(now, 1, false, true, true);
+    TEST_ASSERT_FALSE(pl.isPlaying());
+    // тумблер выключили — замолчал
+    run(now, 1, false, false, true);
+    TEST_ASSERT_TRUE(pl.isPlaying());
+    run(now, 1, false, false, false);
+    TEST_ASSERT_FALSE(pl.isPlaying());
+    // «послушать» — один раз, без повтора; без моторов (при включении)
+    TEST_ASSERT_TRUE(pl.playOnce(false, false));
+    tones.clear();
+    hz.clear();
+    run(now, 200, false, false, false, &hz, &tones);
+    TEST_ASSERT_EQUAL_UINT16(523, hz[1]);
+    TEST_ASSERT_EQUAL_UINT16(0xFFFF, hz[150]);
+    TEST_ASSERT_TRUE(tones.empty());
+    TEST_ASSERT_FALSE(pl.playOnce(true));   // в ARM — нет
+    TEST_ASSERT_TRUE(pl.playOnce(false));
+    pl.stop();
+    TEST_ASSERT_FALSE(pl.isPlaying());
+}
+
+void test_melody_param_cli_and_storage()
+{
+    CopterParams& p = five5Params();
+    TEST_ASSERT_EQUAL_STRING(MELODY_DEFAULT, p.text(PARAM_BEEPER_MELODY, 0));
+    TEST_ASSERT_FALSE(p.isSet(PARAM_BEEPER_MELODY, 0));
+    char error[96] = {};
+    // длинная (больше 16 букв) — целиком
+    std::string tune = "song:d=8,o=5,b=140:";
+    while (tune.size() + 4 <= MELODY_TEXT_MAX) tune += "c6,";
+    tune += "e";
+    TEST_ASSERT_TRUE(tune.size() > 100 && tune.size() <= MELODY_TEXT_MAX);
+    TEST_ASSERT_TRUE_MESSAGE(p.parse(PARAM_BEEPER_MELODY, 0, tune.c_str(), error, sizeof(error)), error);
+    TEST_ASSERT_EQUAL_STRING(tune.c_str(), p.text(PARAM_BEEPER_MELODY, 0));
+    // не RTTTL — ошибка с номером символа, прежняя цела
+    TEST_ASSERT_FALSE(p.parse(PARAM_BEEPER_MELODY, 0, "x:d=4:c,z", error, sizeof(error)));
+    TEST_ASSERT_EQUAL_STRING("мелодия RTTTL, символ 9: нота — c d e f g a b или p", error);
+    TEST_ASSERT_EQUAL_STRING(tune.c_str(), p.text(PARAM_BEEPER_MELODY, 0));
+    // длиннее 128 — нет
+    TEST_ASSERT_FALSE(p.parse(PARAM_BEEPER_MELODY, 0, (tune + ",c,c").c_str(), error, sizeof(error)));
+    TEST_ASSERT_EQUAL_STRING("не длиннее 128 символов", error);
+
+    // во флеш и обратно — целиком
+    RamFlash flash;
+    KeyValueStore kv(flash);
+    TEST_ASSERT_TRUE(p.parse(PARAM_BEEPER_MELODY_MOTORS, 0, "ON", error, sizeof(error)));
+    TEST_ASSERT_TRUE(p.save(kv));
+    CopterParams q;
+    TEST_ASSERT_TRUE(q.load(kv));
+    TEST_ASSERT_EQUAL_STRING(tune.c_str(), q.text(PARAM_BEEPER_MELODY, 0));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, q.value(PARAM_BEEPER_MELODY_MOTORS));
+
+    // CLI: diff показывает строку целиком; melody — «послушать» через порт
+    struct MelodyPort : CliCapture
+    {
+        int plays = 0, stops = 0;
+        bool melodyPreview(bool start) override
+        {
+            ++(start ? plays : stops);
+            return true;
+        }
+    };
+    Bench b;
+    b.ctl.configure(p.tune());
+    MelodyPort port;
+    CopterCli cli(p, b.ctl, port);
+    TEST_ASSERT_TRUE(cli.enter());
+    port.take();
+    cli.execute("diff");
+    TEST_ASSERT_TRUE(has(port.take(), (std::string("set beeper_melody = ") + tune + "\r\n").c_str()));
+    cli.execute("melody");
+    TEST_ASSERT_TRUE(has(port.take(), "melody: song:"));
+    cli.execute("melody stop");
+    TEST_ASSERT_EQUAL(1, port.plays);
+    TEST_ASSERT_EQUAL(1, port.stops);
+    // своя по умолчанию — то же, что пусто
+    cli.execute((std::string("set beeper_melody = ") + MELODY_DEFAULT).c_str());
+    TEST_ASSERT_FALSE(p.isSet(PARAM_BEEPER_MELODY, 0));
+    // режим MELODY — в списке режимов
+    TEST_ASSERT_NOT_NULL(findBox(BOX_MELODY));
+    TEST_ASSERT_EQUAL_STRING("MELODY", findBox(BOX_MELODY)->name);
+}
+
 // ---- 105: команды стиками ----
 
 namespace
@@ -11549,6 +11757,9 @@ int main()
     RUN_TEST(test_dshotprog_cli_and_msp);
     RUN_TEST(test_beeper_conditions_like_betaflight);
     RUN_TEST(test_dshot_beacon_timing);
+    RUN_TEST(test_melody_rtttl_parse);
+    RUN_TEST(test_melody_player_switch_arm_and_motors);
+    RUN_TEST(test_melody_param_cli_and_storage);
     RUN_TEST(test_stick_commands_like_betaflight);
     RUN_TEST(test_stick_arming_without_arm_switch);
     RUN_TEST(test_cli_beeper_and_beacon);

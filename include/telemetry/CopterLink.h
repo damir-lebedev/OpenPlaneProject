@@ -172,6 +172,11 @@ public:
             doBeep(args);
             return true;
         }
+        if (strcmp(cmd, "melody") == 0)
+        {
+            doMelody(args);
+            return true;
+        }
         const bool changes = strcmp(cmd, "set") == 0 || strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0 ||
                              strcmp(cmd, "aux") == 0 || strcmp(cmd, "map") == 0 || strcmp(cmd, "rxrange") == 0 ||
                              strcmp(cmd, "vtx") == 0 || strcmp(cmd, "rxfail") == 0 || strcmp(cmd, "calibrate") == 0 ||
@@ -791,6 +796,21 @@ private:
         send(w);
     }
 
+    // melody — сыграть beeper_melody раз, melody stop — замолчать.
+    void doMelody(const char* args)
+    {
+        const bool start = !(args && strncmp(args, "stop", 4) == 0);
+        if (!cli.previewMelody(start))
+        {
+            sendError("melody", ctl.isArmed() ? "только без ARM" : "пищалки нет");
+            return;
+        }
+        char line[64];
+        JsonWriter w(line, sizeof(line));
+        w.add("@melody {\"ok\":true,\"playing\":%s}\n", start ? "true" : "false");
+        send(w);
+    }
+
     void doBeep(const char* args)
     {
         const copter::BeeperCondition c = copter::beeperConditionByName(args);
@@ -1056,7 +1076,7 @@ private:
     {
         using namespace copter;
         const ParamInfo& info = paramInfo(id);
-        char text[48];
+        char text[copter::CopterParams::TEXT_MAX + 1];
         params.format(id, slot, text, sizeof(text));
         if (info.type == ParamType::ENUM || info.type == ParamType::STRING) w.str(text);
         else w.add("%s", text);

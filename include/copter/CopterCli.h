@@ -73,6 +73,12 @@ namespace copter
             (void)c;
             return false;
         }
+        // мелодия beeper_melody: start — сыграть раз, иначе стоп; false — нечем
+        virtual bool melodyPreview(bool start)
+        {
+            (void)start;
+            return false;
+        }
     };
 
     class CopterCli
@@ -102,6 +108,8 @@ namespace copter
         const BoardUarts& boardUarts() const { return boardPorts; }
         // Писк условия пищалки «послушать» — только без ARM.
         bool previewBeeper(BeeperCondition c) { return !ctl.isArmed() && port.beeperPreview(c); }
+        // Мелодия beeper_melody «послушать» (start) или стоп — только без ARM.
+        bool previewMelody(bool start) { return (!start || !ctl.isArmed()) && port.melodyPreview(start); }
 
         // Команды DShot мотору (255 — всем) в очередь — и CLI, и приложение,
         // и MSP2_SEND_DSHOT_COMMAND. Только без ARM и без проверки моторов,
@@ -246,6 +254,7 @@ namespace copter
             else if (is(cmd, "adjrange")) cmdAdjrange(args);
             else if (is(cmd, "beeper")) cmdBeeper(args, false);
             else if (is(cmd, "beacon")) cmdBeeper(args, true);
+            else if (is(cmd, "melody")) cmdMelody(args);
             else if (is(cmd, "motor")) cmdMotor(args);
             else if (is(cmd, "dshotprog")) cmdDshotprog(args);
             else if (is(cmd, "rc_smoothing_info")) cmdRcSmoothingInfo();
@@ -323,6 +332,7 @@ namespace copter
             print("flash_info · flash_erase — флеш чёрного ящика: что за микросхема и полёты · стереть всё\r\n");
             print("vtx [№ канал полоса канал_VTX мощность от до] · vtx_info — видеопередатчик с тумблера · что он ответил\r\n");
             print("beeper [list | [-]УСЛОВИЕ | [-]ALL] — что пищит (- — выключить) · beacon [-]RX_LOST|RX_SET — маяк моторами\r\n");
+            print("melody [stop] — сыграть beeper_melody раз (без ARM) или замолчать\r\n");
             print("rc_smoothing_info — частота кадров приёмника и сглаживание стиков\r\n");
             print("save — сохранить и пересчитать настройку · defaults [nosave] — всё по умолчанию\r\n");
             print("status · tasks · version · exit (несохранённое отменяется)\r\n");
@@ -899,7 +909,7 @@ namespace copter
                 if (id == PARAM_BEEPER_OFF_FLAGS || id == PARAM_DSHOT_BEACON_OFF_FLAGS) continue;   // строками beeper / beacon
                 if (paramInfo(id).group == ParamGroup::PORTS && boardPorts.any()) continue;          // строками serial
                 if (onlyChanged && !changed(id, slot)) continue;
-                char value[48];
+                char value[CopterParams::TEXT_MAX + 1];
                 params.format(id, slot, value, sizeof(value));
                 print("set %s = %s\r\n", paramInfo(id).name, value);
                 ++shown;
@@ -1060,9 +1070,21 @@ namespace copter
             port.settingsApplied();
         }
 
+        // melody — «послушать» beeper_melody; melody stop — замолчать.
+        void cmdMelody(const char* args)
+        {
+            const bool start = !(args && is(args, "stop"));
+            if (!previewMelody(start))
+            {
+                printError("%s", ctl.isArmed() ? "только без ARM" : "пищалки нет");
+                return;
+            }
+            print(start ? "melody: %s\r\n" : "melody: stop\r\n", params.text(PARAM_BEEPER_MELODY, 0));
+        }
+
         void printValue(ParamId id)
         {
-            char value[48];
+            char value[CopterParams::TEXT_MAX + 1];
             params.format(id, params.activeSlot(id), value, sizeof(value));
             print("%s = %s\r\n", paramInfo(id).name, value);
         }
