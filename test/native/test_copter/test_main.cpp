@@ -1480,6 +1480,48 @@ struct Bench
     }
 };
 
+void test_headfree_rotates_sticks_by_heading()
+{
+    // нос ушёл вправо на 90°: «от себя» — туда, где был нос, то есть влево
+    float roll = 0.0f, pitch = -1.0f;
+    headfreeRotate(roll, pitch, 90.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, -1.0f, roll);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.0f, pitch);
+    // «вправо» — туда, куда смотрит нос сейчас: вперёд
+    roll = 1.0f;
+    pitch = 0.0f;
+    headfreeRotate(roll, pitch, 90.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.0f, roll);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, -1.0f, pitch);
+    // разворот на 180°: всё наоборот; по диагонали — прижато к ±1
+    roll = 0.5f;
+    pitch = 0.3f;
+    headfreeRotate(roll, pitch, 180.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, -0.5f, roll);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, -0.3f, pitch);
+    roll = 1.0f;
+    pitch = 1.0f;
+    headfreeRotate(roll, pitch, 45.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, roll);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.0f, pitch);
+
+    // в контроллере: курс запоминается при ARM, в ACRO HEADFREE не действует
+    Bench b;
+    b.rc.headfree = true;
+    TEST_ASSERT_TRUE(b.armAfterBoot());
+    TEST_ASSERT_TRUE(b.ctl.getStatus().headfree);
+    TEST_ASSERT_FLOAT_WITHIN(0.5f, b.ctl.getStatus().yaw, b.ctl.getStatus().headfreeRefDeg);
+    b.rc.mode = CopterMode::ACRO;
+    b.run(0.02f);
+    TEST_ASSERT_FALSE(b.ctl.getStatus().headfree);
+    b.rc.mode = CopterMode::HORIZON;
+    b.run(0.02f);
+    TEST_ASSERT_TRUE(b.ctl.getStatus().headfree);
+    b.rc.headfree = false;
+    b.run(0.02f);
+    TEST_ASSERT_FALSE(b.ctl.getStatus().headfree);
+}
+
 void test_arm_requires_settling_then_arms_with_switch()
 {
     Bench b;
@@ -11104,6 +11146,7 @@ int main()
     RUN_TEST(test_gyro_filter_removes_motor_vibration);
     RUN_TEST(test_arm_requires_settling_then_arms_with_switch);
     RUN_TEST(test_arm_blockers);
+    RUN_TEST(test_headfree_rotates_sticks_by_heading);
     RUN_TEST(test_motor_test_only_disarmed_and_times_out);
     RUN_TEST(test_motor_test_sliders_per_motor);
     RUN_TEST(test_link_loss_on_ground_disarms_and_needs_switch_toggle);

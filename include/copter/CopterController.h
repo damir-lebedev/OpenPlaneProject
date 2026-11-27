@@ -109,6 +109,19 @@ namespace copter
     // Режимы, где газ — это высота (центр стика — висеть).
     inline bool altitudeMode(CopterMode m) { return m == CopterMode::ALT_HOLD || m == CopterMode::POS_HOLD; }
 
+    // HEADFREE: стики крена и тангажа — в осях курса refDeg, а не носа.
+    // deltaDeg — на сколько нос ушёл вправо от того курса: «от себя» ведёт
+    // туда, куда смотрел нос при ARM (или HEADADJ), как бы коптер ни повернулся.
+    // roll + вправо, pitch + на себя; каждая ось прижата к ±1.
+    inline void headfreeRotate(float& roll, float& pitch, float deltaDeg)
+    {
+        const float d = deltaDeg * 3.14159265f / 180.0f, c = cosf(d), s = sinf(d);
+        const float r = roll * c + pitch * s;
+        const float p = pitch * c - roll * s;
+        roll = r > 1.0f ? 1.0f : r < -1.0f ? -1.0f : r;
+        pitch = p > 1.0f ? 1.0f : p < -1.0f ? -1.0f : p;
+    }
+
     // Почему не армится (битовая маска). Биты 0–25 — номера флагов запрета
     // ARM Betaflight 4.5 (`status`, MSP_STATUS_EX: конфигуратор BF читает
     // маску по номерам), коды — их имена. Наши проверки, которых в BF нет, —
@@ -340,6 +353,8 @@ namespace copter
         bool chirp = false;            // режим CHIRP: качание частоты по одной оси (copter/Chirp.h)
         bool prearm = true;            // PREARM включён или его нет в таблице
         bool paralyze = false;         // режим PARALYZE на тумблере (защёлкивается в контроллере)
+        bool headfree = false;         // режим HEADFREE: стики — от курса при ARM
+        bool headAdjust = false;       // режим HEADADJ: курс для HEADFREE — нынешний
         bool armAssigned = true;       // ARM есть в таблице режимов
         uint32_t frame = 0;            // счётчик кадров приёмника; 0 — неизвестно (кадр — раз в 1/FF_NOMINAL_FRAME_HZ)
         // rxfail стиков = HOLD: на этапе 1 failsafe — последнее верное значение
@@ -450,6 +465,8 @@ namespace copter
         float rcThrottleCutoffHz = 0;  // и газа
         bool runaway = false;          // DISARM защитой runaway takeoff (до выключения тумблера)
         bool runawayCheck = false;     // проверка runaway takeoff ещё работает (после ARM, до уверенного взлёта)
+        bool headfree = false;         // HEADFREE действует (режим с горизонтом, не автомат)
+        float headfreeRefDeg = 0.0f;   // курс, от которого считаются стики HEADFREE
         bool turtle = false;           // заармлен в turtle mode: моторы наоборот, стик — какой стороной переворачиваться
         LaunchState launch = LaunchState::OFF;   // launch control: ждёт рывка (ACTIVE) или уже стартовал
         uint8_t failsafeStage = 0;     // 0 — нет, 1 — ровно и держит высоту, 2 — процедура
@@ -1045,6 +1062,11 @@ namespace copter
             rcSmooth.track(framePeriod);
             float sticks[4] = { rc.roll, rc.pitch, rc.yaw, rc.throttle };
             rcSmooth.apply(sticks);
+            // HEADFREE (BF): в ACRO стик — скорость вращения, поворачивать её
+            // по курсу бессмысленно — только в режимах с горизонтом
+            if (rc.headAdjust) status.headfreeRefDeg = attitude.yawDeg();
+            status.headfree = rc.headfree && mode != CopterMode::ACRO && !rescuing && !failsafe && !status.turtle;
+            if (status.headfree) headfreeRotate(sticks[0], sticks[1], attitude.yawDeg() - status.headfreeRefDeg);
             status.rcFrameHz = rcSmooth.frameRateHz();
             status.rcSetpointCutoffHz = rcSmooth.setpointCutoffHz();
             status.rcThrottleCutoffHz = rcSmooth.throttleCutoffHz();
@@ -1737,6 +1759,7 @@ namespace copter
                 status.state = CopterState::ARMED;
                 status.mode = rc.mode;
                 ++status.armCount;
+                status.headfreeRefDeg = attitude.yawDeg();
                 stopMotorTest();
                 status.turtle = turtleWanted(rc);
                 status.runawayCheck = set.runawayPrevention && !status.turtle;

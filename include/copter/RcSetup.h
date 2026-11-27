@@ -62,6 +62,7 @@ namespace copter
         BOX_ANTIGRAVITY = 4,
         BOX_MAG = 5,
         BOX_HEADFREE = 6,
+        BOX_HEADADJ = 7,
         BOX_POSHOLD = 11,   // BF 2025: POS HOLD (раньше — GPS HOLD)
         BOX_BEEPER = 13,
         BOX_OSD = 19,
@@ -114,7 +115,8 @@ namespace copter
             { BOX_VTX_CONTROL_DISABLE, "VTX CONTROL DISABLE", true },
             { BOX_ANTIGRAVITY, "ANTI GRAVITY", false },
             { BOX_MAG, "MAG", false },
-            { BOX_HEADFREE, "HEADFREE", false },
+            { BOX_HEADFREE, "HEADFREE", true },
+            { BOX_HEADADJ, "HEADADJ", true },
             { BOX_BEEPER, "BEEPER", true },
             { BOX_OSD, "OSD DISABLE", true },
             { BOX_TELEMETRY, "TELEMETRY", false },
@@ -855,6 +857,8 @@ namespace copter
             rc.flipOverAfterCrash = isActive(BOX_FLIP_OVER_AFTER_CRASH);
             rc.prearm = !cfg.hasMode(BOX_PREARM) || isActive(BOX_PREARM);
             rc.paralyze = isActive(BOX_PARALYZE);
+            rc.headfree = isActive(BOX_HEADFREE);
+            rc.headAdjust = isActive(BOX_HEADADJ);
             rc.armAssigned = cfg.hasMode(BOX_ARM);
             return rc;
         }
