@@ -21,3 +21,8 @@ BLACKBOX.BIN
 
 # Python: кэш байткода tools/*.py
 __pycache__/
+
+# KiCad: локальные настройки и резервные копии
+*.kicad_prl
+*-backups/
+fp-info-cache

@@ -366,7 +366,7 @@ DevEBox: на плате нет кнопки BOOT0 — перед первой �
 - [ ] Коптер: DShot и двунаправленный DShot на стенде, цикл 4 кГц, MAVLink, лётные испытания
 - [ ] Популярные полётники на STM32F405: SpeedyBee F405 WING, Matek F405-WTE
 - [ ] Лётные испытания автопилота на новом планере
-- [ ] Своя плата полётника на STM32H743: носитель под DevEBox ([FC_BOARD_H743.md](docs/FC_BOARD_H743.md))
+- [ ] Своя плата полётника на STM32H743: носитель под DevEBox разведён ([FC_BOARD_H743.md](docs/FC_BOARD_H743.md), файлы для EasyEDA/KiCad и лазера — [hardware/fc-carrier-h743/](hardware/fc-carrier-h743/))
 - [ ] Полёт по маршрутным точкам, миссии MAVLink
 - [ ] Адаптивная обратная связь (заготовка уже проверена в симуляции)
 - [ ] Датчик тока и батареи, телеметрия на пульт (iBUS-SENS)
@@ -396,6 +396,7 @@ DevEBox: на плате нет кнопки BOOT0 — перед первой �
 | [TESTING.md](docs/TESTING.md) | тесты, симуляции, покрытие, анализ |
 | [reference/](docs/reference/README.md) | справочник по каждому классу |
 | [FC_BOARD_H743.md](docs/FC_BOARD_H743.md) · [FC_BOARD.md](docs/FC_BOARD.md) · [ROADMAP.md](docs/ROADMAP.md) | носитель под DevEBox H743 · прежняя плата под ESP32-S3 · куда движется проект |
+| [hardware/fc-carrier-h743/](hardware/fc-carrier-h743/) | плата-носитель под DevEBox H743: KiCad/EasyEDA, рисунок меди для лазера, генератор |
 | [airframe/](airframe/README.md) | планер Astro-Cargo: проект Fusion 360 и STL для печати, известные недостатки версии v2 |
 
 > **Приложение:** [OpenPlane Studio](https://github.com/damir-lebedev/openplane-studio) — настройка платы по шагам, сборка и прошивка одной кнопкой, наладка на земле по живым данным; интерфейс на русском и английском.
