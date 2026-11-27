@@ -62,6 +62,11 @@ namespace copter
             holdLeft = 0.0f;
         }
         bool active() const { return on; }
+        // Проигрыватель трека на плате (copter/MotorTrack.h) держит музыку сам.
+        void keepAlive()
+        {
+            if (on) holdLeft = HOLD_S;
+        }
 
         // Нота мотору (Гц звука): 0 — пауза на холостых, OFF — мотор стоит.
         // Любая нота продлевает музыку на HOLD_S.

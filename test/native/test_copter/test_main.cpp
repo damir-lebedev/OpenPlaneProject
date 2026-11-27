@@ -1909,7 +1909,7 @@ void test_motor_music_in_controller_only_disarmed()
     Bench b;
     b.run(2.5f);
     TEST_ASSERT_TRUE(b.ctl.startMusic(14, 0.0f));
-    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 7.0f, b.ctl.motorMusic().mult());   // пар полюсов
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 7.0f, b.ctl.motorMusic()->mult());   // пар полюсов
     TEST_ASSERT_TRUE(b.ctl.musicNote(0, 600.0f));
     b.run(0.1f);
     TEST_ASSERT_TRUE(b.ctl.motorTestActive());
@@ -1919,7 +1919,7 @@ void test_motor_music_in_controller_only_disarmed()
     TEST_ASSERT_TRUE(b.out.motor[1] < 0.0f);
     // ползунок мотора останавливает музыку
     TEST_ASSERT_TRUE(b.ctl.setMotorTest(1, 0.1f, 1.0f));
-    TEST_ASSERT_FALSE(b.ctl.motorMusic().active());
+    TEST_ASSERT_FALSE(b.ctl.motorMusic()->active());
     b.ctl.stopMotorTest();
     // ARM: музыка встаёт, заармленному не запускается
     TEST_ASSERT_TRUE(b.ctl.startMusic(14, 0.0f));
@@ -2271,6 +2271,92 @@ void test_params_set_get_bounds_and_enums()
     TEST_ASSERT_FALSE(p.parse(PARAM_PROFILE_NAME, 1, "123456789", err, sizeof(err)));
     TEST_ASSERT_TRUE(p.parse(PARAM_PROFILE_NAME, 1, "-", err, sizeof(err)));
     TEST_ASSERT_FALSE(p.isSet(PARAM_PROFILE_NAME, 1));
+}
+
+// 176c: треки моторами — встроенные проходят проверку формата, трек играется
+// контроллером до конца, свой трек — кусками во флеш и после перезагрузки.
+void test_motor_tracks_builtin_and_custom_upload()
+{
+    for (uint8_t i = 0; i < MOTOR_TRACK_COUNT; ++i)
+    {
+        MotorTrack t;
+        auto fetch = +[](void* c, uint16_t chunk, uint16_t* len) -> const uint8_t* {
+            const MotorTrackInfo* info = static_cast<const MotorTrackInfo*>(c);
+            *len = info->size;
+            return chunk == 0 ? info->data : nullptr;
+        };
+        TEST_ASSERT_TRUE_MESSAGE(t.start(fetch, const_cast<MotorTrackInfo*>(&MOTOR_TRACKS[i]), MOTOR_TRACKS[i].size,
+                                         MOTOR_TRACKS[i].size, 220.0f, 1000.0f, false),
+                                 MOTOR_TRACKS[i].name);
+        // перенос октавами: каждая нота — в диапазоне
+        for (uint8_t n = 40; n < 100; ++n)
+        {
+            const float hz = t.fold(n);
+            TEST_ASSERT_TRUE(hz >= 220.0f * 0.999f && hz <= 1000.0f * 1.001f);
+        }
+    }
+    RamFlash flash;
+    KeyValueStore kv(flash);
+    CopterParams& p = five5Params();
+    CopterSettings s;
+    p.applyTo(s);
+    Bench b;
+    b.ctl.configure(p.tune(), s);
+    b.run(2.5f);
+    CliCapture port;
+    CopterCli cli(p, b.ctl, port);
+    cli.setStore(&kv);
+    TEST_ASSERT_NOT_NULL(cli.playTrack("nope", false));
+    TEST_ASSERT_NOT_NULL(cli.playTrack("custom", false));   // своего ещё нет
+    TEST_ASSERT_NULL(cli.playTrack("scale", false));
+    TEST_ASSERT_TRUE(b.ctl.motorTrack()->isPlaying());
+    b.run(0.3f);
+    TEST_ASSERT_TRUE(b.out.motor[0] > 0.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, b.out.motor[0], b.out.motor[3]);   // один голос — все четыре мотора
+    const float first = b.ctl.motorMusic()->targetHz(0);
+    b.run(0.5f);
+    TEST_ASSERT_TRUE(b.ctl.motorMusic()->targetHz(0) > first);           // гамма идёт вверх
+    // 30 нот по 0.5 с: через 16 с трек кончился, музыка выключилась сама
+    b.run(16.0f);
+    TEST_ASSERT_FALSE(b.ctl.motorMusic()->active());
+    TEST_ASSERT_FALSE(b.ctl.motorTrack()->isPlaying());
+    TEST_ASSERT_FALSE(b.out.spinning);
+
+    // свой трек: 1 голос, 120 нот по 100 мс = 244 байта = 6 кусков
+    std::vector<uint8_t> t = { 'T', 1, 100, 0, 120, 0 };
+    for (int k = 0; k < 120; ++k)
+    {
+        t.push_back(static_cast<uint8_t>(60 + k % 12));
+        t.push_back(1);
+    }
+    for (size_t off = 0, i = 0; off < t.size(); off += CopterCli::TRACK_CHUNK, ++i)
+    {
+        const uint8_t len = static_cast<uint8_t>(std::min<size_t>(CopterCli::TRACK_CHUNK, t.size() - off));
+        TEST_ASSERT_NULL(cli.trackChunk(static_cast<uint16_t>(i), &t[off], len));
+    }
+    TEST_ASSERT_NOT_NULL(cli.trackSave(static_cast<uint16_t>(t.size() - 1)));   // длина не та — отказ
+    TEST_ASSERT_NULL(cli.trackSave(static_cast<uint16_t>(t.size())));
+    TEST_ASSERT_EQUAL_UINT16(t.size(), cli.customTrackSize());
+    {
+        KeyValueStore kv2(flash);   // «перезагрузка»
+        cli.setStore(&kv2);
+        TEST_ASSERT_EQUAL_UINT16(t.size(), cli.customTrackSize());
+        TEST_ASSERT_NULL(cli.playTrackIndex(MOTOR_TRACK_COUNT + 1, true));   // custom, по кругу
+        b.run(13.0f);                                                        // 12 с трека + круг
+        TEST_ASSERT_TRUE(b.ctl.motorTrack()->isPlaying());
+        // тумблер ARM: тишина, ARM — следующим включением
+        b.rc.armSwitch = true;
+        b.run(0.05f);
+        TEST_ASSERT_FALSE(b.ctl.motorMusic()->active());
+        TEST_ASSERT_FALSE(b.ctl.isArmed());
+        b.rc.armSwitch = false;
+        b.run(0.05f);
+        b.rc.armSwitch = true;
+        b.run(0.05f);
+        TEST_ASSERT_TRUE(b.ctl.isArmed());
+        TEST_ASSERT_NOT_NULL(cli.playTrack("scale", false));   // заармленному — нет
+        cli.setStore(nullptr);
+    }
 }
 
 // attitude_drag: сопротивление винтов, которое фильтр ориентации выучил в
@@ -11807,6 +11893,7 @@ int main()
     RUN_TEST(test_motor_music_fast_loop);
     RUN_TEST(test_motor_music_open_loop_without_telemetry);
     RUN_TEST(test_motor_music_in_controller_only_disarmed);
+    RUN_TEST(test_motor_tracks_builtin_and_custom_upload);
     RUN_TEST(test_link_loss_on_ground_disarms_and_needs_switch_toggle);
     RUN_TEST(test_arm_block_bits_are_betaflight_flags);
     RUN_TEST(test_small_angle_setting);

@@ -9,6 +9,7 @@
 #include "copter/AdjRanges.h"
 #include "copter/Battery.h"
 #include "copter/Compass.h"
+#include "copter/MotorTracks.h"
 #include "copter/CopterController.h"
 #include "copter/EscGuard.h"
 #include "copter/Melody.h"
@@ -1523,8 +1524,10 @@ namespace copter
               "0 — активная пищалка (сама звучит), иначе — частота для пассивной" },
             { "beeper_melody", kText, kMaster, ParamGroup::BEEPER, 0, MELODY_TEXT_MAX, 0, kTable, "", nullptr, 0,
               "мелодия RTTTL (имя:d=4,o=5,b=120:8c,8e,g) — режим MELODY без ARM; пусто — своя" },
-            { "beeper_melody_motors", kEnum, kMaster, ParamGroup::BEEPER, 0, 1, 0, kTable, "", OFF_ON, 2,
-              "мелодия и моторами (тоны DShot BEACON1..5 — грубо, не чаще 0.28 с)" },
+            { "beeper_melody_motors", kEnum, kMaster, ParamGroup::BEEPER, 0, MOTOR_TRACK_COUNT + 2, 0, kTable, "",
+              MOTOR_TRACK_PARAM_NAMES, MOTOR_TRACK_COUNT + 3,
+              "ON — мелодия и тонами DShot (грубо); имя трека — тумблер MELODY играет его моторами по оборотам, "
+              "ТОЛЬКО БЕЗ ВИНТОВ (176c)" },
             { "beeper_melody_startup", kEnum, kMaster, ParamGroup::BEEPER, 0, 1, 0, kTable, "", OFF_ON, 2,
               "при включении — мелодия пищалкой вместо писка SYSTEM_INIT" },
             { "serial_rx_uart", kInt, kMaster, ParamGroup::PORTS, 0, 8, 0, kTable, "UART", nullptr, 0,

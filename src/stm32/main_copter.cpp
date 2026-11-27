@@ -26,6 +26,7 @@
 #if defined(VEHICLE_MULTIROTOR)
 
 #include <Arduino.h>
+#include <new>   // placement new: музыка моторами в CCM у F405
 
 #include "config/Channels.h"
 #include "config/Config.h"
@@ -261,6 +262,9 @@ copter::DshotBeacon dshotBeacon;
 static copter::Melody melody;
 static copter::MelodyPlayer melodyPlayer;
 static bool melodyStartup = false;
+// beeper_melody_motors = трек (176c): тумблер MELODY играет его моторами по оборотам.
+static uint8_t motorMusicTrack = 0;
+static bool motorMusicSwitch = false;
 copter::StickCommands stickCommands;
 // Меню настроек в очках стиками (CMS, copter/OsdMenu.h).
 copter::OsdMenu osdMenu;
@@ -426,7 +430,10 @@ static void applySettings()
     if (!copter::parseRtttl(copterParams.text(copter::PARAM_BEEPER_MELODY, 0), melody))
         copter::parseRtttl(copter::MELODY_DEFAULT, melody);   // в хранилище не та строка — своя
     melodyPlayer.setMelody(melody);
-    melodyPlayer.configure(copterParams.value(copter::PARAM_BEEPER_MELODY_MOTORS) > 0.5f);
+    // beeper_melody_motors: 0 OFF, 1 ON (тоны DShot), 2… — трек моторами (176c)
+    const int melodyMotors = static_cast<int>(copterParams.value(copter::PARAM_BEEPER_MELODY_MOTORS) + 0.5f);
+    melodyPlayer.configure(melodyMotors == 1);
+    motorMusicTrack = static_cast<uint8_t>(melodyMotors >= 2 ? melodyMotors - 1 : 0);
     melodyStartup = copterParams.value(copter::PARAM_BEEPER_MELODY_STARTUP) > 0.5f;
     gyroToUse = static_cast<copter::GyroToUse>(static_cast<uint8_t>(copterParams.value(copter::PARAM_GYRO_TO_USE)));
     configureGyroCalibration();
@@ -704,8 +711,18 @@ static void updateBeeper(bool armSwitch)
     const bool armed = copterController.isArmed();
     // мелодия: тумблер MELODY — только со связью (без связи тумблер «застыл»,
     // а пищать должен RX_LOST); моторами — пока моторы не проверяют
+    const bool melodySwitch = rcLinkOk && rxInput.isActive(copter::BOX_MELODY);
+    // motor_music_track: тумблер — трек моторами (по кругу, пока включён), пищалка молчит
+    if (motorMusicTrack)
+    {
+        if (melodySwitch && !motorMusicSwitch && !armed && !armSwitch)
+            copterConsole.commands().playTrackIndex(motorMusicTrack, true);
+        if (!melodySwitch && motorMusicSwitch && copterController.motorTrack() && copterController.motorTrack()->isPlaying())
+            copterController.stopMusic();
+        motorMusicSwitch = melodySwitch;
+    }
     const copter::MelodyOut tune =
-        melodyPlayer.tick(millis(), armed, armSwitch, rcLinkOk && rxInput.isActive(copter::BOX_MELODY));
+        melodyPlayer.tick(millis(), armed, armSwitch, melodySwitch && !motorMusicTrack);
     if (tune.dshotTone && motors.dshotOutput().commandsAvailable() && !copterController.motorTestActive() &&
         motors.dshotOutput().commandsFree() > 0)
         motors.dshotOutput().queueTone(copter::dshot::ToneLanes::ALL, tune.dshotTone);
@@ -1889,6 +1906,15 @@ void setup()
     auto start = [](TaskFunction_t fn, const char* name, uint32_t bytes, UBaseType_t prio) {
         return Rtos::startTask(fn, name, bytes, nullptr, prio);
     };
+#endif
+#if defined(BOARD_STM32F405)
+    // музыка моторами (176c) — тоже в CCM: в основных 128 КБ на неё места нет
+#if defined(__arm__)
+    if (void* m = ccm.take(sizeof(copter::MotorMusicParts))) copterController.attachMusic(new (m) copter::MotorMusicParts());
+#else
+    static copter::MotorMusicParts hostMusic;   // прошивка на ПК (тесты платы): CCM по этому адресу нет
+    copterController.attachMusic(&hostMusic);
+#endif
 #endif
     bool tasksOk = start(flightTask, "flight", 16384, Rtos::PRIORITY_FLIGHT);
     tasksOk = start(storageTask, "storage", 2048, Rtos::PRIORITY_BACKGROUND) && tasksOk;

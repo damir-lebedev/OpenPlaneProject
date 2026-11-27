@@ -66,6 +66,7 @@ public:
     // P63: какие UART разведены — для `serial`, проверки serial_*_uart и вкладки «Порты».
     void setBoardUarts(const copter::BoardUarts& b) { cli.setBoardUarts(b); }
     bool cliActive() const { return cli.active(); }
+    copter::CopterCli& commands() { return cli; }
     // Сохранить и применить (команды стиками: профиль, save, горизонт) — как save.
     copter::CopterCli::SaveResult saveSettings() { return cli.saveAndApply(); }
     // Записать во флеш выученное в полёте, контроллер не трогая; false — не

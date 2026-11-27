@@ -11,6 +11,8 @@
     python tools/motor_music.py track.mid --list                   # дорожки и каналы
     python tools/motor_music.py track.mp3 --to-mid track.mid       # звук -> ноты (numpy, ffmpeg)
     python tools/motor_music.py --midi-in loopMIDI --port COM13    # играть вживую из Signal
+    python tools/motor_music.py song.mid --upload --port COM13     # свой трек во флеш платы (custom)
+    python tools/motor_music.py --play korobeiniki --port COM13    # трек играет сама плата
 
 Винты снять. ARM, любая клавиша приложения или Ctrl+C — стоп. pyserial —
 в ~/.platformio/penv/Scripts/python.exe.
@@ -614,6 +616,99 @@ def play(a, lanes):
     return 0
 
 
+# ---------------- трек на плату ----------------
+
+TRACK_MAX = 1024     # copter/MotorTrack.h MAX_SIZE
+TRACK_CHUNK = 48     # CopterCli::TRACK_CHUNK
+
+
+def lanes_to_track(lanes, unit_ms=20, max_bytes=TRACK_MAX):
+    """Голоса [(start_s, end_s, нота MIDI)] -> байты трека (tools/motor_tracks.py).
+    Не влезает — трек укорачивается (-> (байты, секунд вошло))."""
+    import motor_tracks as mt
+    end = max((e for lane in lanes for (_, e, _) in lane), default=0.0)
+    voices = [lane for lane in lanes if lane] or [[]]
+    while True:
+        out = []
+        for lane in voices:
+            ev, t = [], 0
+            for s0, e0, n in lane:
+                if s0 >= end:
+                    break
+                a = int(round(s0 * 1000 / unit_ms))
+                b = int(round(min(e0, end) * 1000 / unit_ms))
+                if a > t:
+                    ev.append((0, a - t))
+                    t = a
+                if b > t:
+                    ev.append((n, b - t))
+                    t = b
+            out.append(ev)
+        data = mt.encode(out, unit_ms)
+        if len(data) <= max_bytes or end <= 1.0:
+            return data, end
+        end *= 0.9
+
+
+def upload(a, data):
+    b = Board(a.port)
+    try:
+        for i in range(0, len(data), TRACK_CHUNK):
+            b.reply = None
+            b.send("music up %d %s" % (i // TRACK_CHUNK, data[i:i + TRACK_CHUNK].hex()))
+            t0 = time.monotonic()
+            while b.reply is None and not b.errors and time.monotonic() - t0 < 2.0:
+                time.sleep(0.01)
+            if b.errors or not b.reply or b.reply.get("up") != i // TRACK_CHUNK:
+                print("кусок %d не принят:" % (i // TRACK_CHUNK), b.errors or b.reply)
+                return 1
+        b.reply = None
+        b.send("music save %d" % len(data))
+        t0 = time.monotonic()
+        while b.reply is None and not b.errors and time.monotonic() - t0 < 3.0:
+            time.sleep(0.01)
+        if b.errors or not b.reply or b.reply.get("saved") != len(data):
+            print("не сохранилось:", b.errors or b.reply)
+            return 1
+        print("свой трек на плате: %d байт (music play custom, motor_music_track = custom)" % len(data))
+        return 0
+    finally:
+        b.close()
+
+
+def play_on_board(a):
+    """music play ИМЯ [loop]: играет сама плата; Ctrl+C или конец трека — стоп."""
+    b = Board(a.port)
+    try:
+        b.send("music play %s%s" % (a.play, " loop" if a.loop else ""))
+        t0 = time.monotonic()
+        while b.reply is None and not b.errors and time.monotonic() - t0 < 2.0:
+            time.sleep(0.02)
+        if b.errors or not b.reply or not b.reply.get("on"):
+            print("плата не играет:", b.errors or b.reply)
+            return 1
+        r = b.reply
+        print("играет %s: голосов %s, перенос %+d октав, верх ~%s Гц; Ctrl+C — стоп" %
+              (r.get("track"), r.get("voices"), r.get("oct", 0), r.get("max")))
+        b.send("live")
+        quiet = 0
+        while True:   # трек кончился — из живых кадров пропало поле music
+            time.sleep(0.2)
+            if b.music and time.monotonic() - b.music[-1][0] > 0.6:
+                break
+            quiet = quiet + 1 if not b.music else 0
+            if quiet > 25:
+                break
+    except KeyboardInterrupt:
+        print("стоп")
+    finally:
+        b.send("music off")
+        b.send("live 0")
+        time.sleep(0.2)
+        b.close()
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("midi", nargs="?", help="MIDI или звук (mp3/wav)")
@@ -636,6 +731,10 @@ def main(argv=None):
     ap.add_argument("--midi-in", help="живой вход MIDI (номер или часть имени, например loopMIDI)")
     ap.add_argument("--midi-list", action="store_true", help="показать входы MIDI")
     ap.add_argument("--shift", type=int, default=0, help="живой вход: перенос, полутонов")
+    ap.add_argument("--upload", action="store_true", help="записать трек в слот custom на плате (с --port)")
+    ap.add_argument("--save-track", help="записать байты трека в файл")
+    ap.add_argument("--play", help="сыграть трек самой платой: korobeiniki, ode, grieg, elise, scale, custom")
+    ap.add_argument("--loop", action="store_true", help="--play по кругу")
     a = ap.parse_args(argv)
 
     if a.midi_list:
@@ -644,6 +743,10 @@ def main(argv=None):
         return 0
     if a.midi_in is not None:
         return play_live(a)
+    if a.play:
+        if not a.port:
+            ap.error("--play нужен --port")
+        return play_on_board(a)
     if not a.midi:
         ap.error("нужен файл MIDI/звука или --midi-in")
 
@@ -681,6 +784,18 @@ def main(argv=None):
     if a.wav:
         render_wav(a.wav, lanes)
         print("предпрослушка:", a.wav)
+    if a.upload or a.save_track:
+        notes_lanes = allocate(sel, min(4, a.voices))
+        data, secs = lanes_to_track(notes_lanes)
+        print("трек: %d байт, %.1f с%s" % (len(data), secs, "" if secs >= a.len - 0.01 else " (укорочен, не влез)"))
+        if a.save_track:
+            with open(a.save_track, "wb") as f:
+                f.write(data)
+        if a.upload:
+            if not a.port:
+                ap.error("--upload нужен --port")
+            return upload(a, data)
+        return 0
     if a.port:
         return play(a, lanes)
     return 0

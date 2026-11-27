@@ -116,6 +116,32 @@ class ArrangeTest(unittest.TestCase):
     def test_midi_inputs_lists(self):
         self.assertIsInstance(mm.midi_inputs(), list)
 
+    def test_lanes_to_track_roundtrip_and_shortening(self):
+        import motor_tracks as mt
+        lanes = [[(0.0, 0.5, 69), (0.6, 1.0, 72)], [(0.2, 1.0, 57)]]
+        data, secs = mm.lanes_to_track(lanes, unit_ms=20)
+        unit, voices = mt.decode(data)
+        self.assertEqual(unit, 20)
+        self.assertEqual(voices[0], [(69, 25), (0, 5), (72, 20)])
+        self.assertEqual(voices[1], [(0, 10), (57, 40)])
+        self.assertAlmostEqual(secs, 1.0)
+        # длинный трек не влезает в 1024 байта — укорачивается
+        many = [[(k * 0.05, k * 0.05 + 0.04, 60 + k % 12) for k in range(2000)]]
+        data, secs = mm.lanes_to_track(many)
+        self.assertLessEqual(len(data), mm.TRACK_MAX)
+        self.assertLess(secs, 100.0)
+        mt.decode(data)
+
+    def test_builtin_tracks_and_header(self):
+        import motor_tracks as mt
+        for name, _, data in mt.built():
+            unit, voices = mt.decode(data)
+            self.assertTrue(1 <= len(voices) <= 4, name)
+            lens = {sum(d for _, d in v) for v in voices}
+            self.assertEqual(len(lens), 1, "%s: голоса разной длины %s" % (name, lens))
+        with open(mt.HEADER, encoding="utf-8") as f:
+            self.assertEqual(f.read(), mt.header_text(), "MotorTracks.h разошёлся — python tools/motor_tracks.py")
+
     def test_write_midi_roundtrip(self):
         notes = [(0.0, 0.5, 69, 0, 0), (0.25, 1.0, 76, 0, 0)]
         with tempfile.TemporaryDirectory() as d:

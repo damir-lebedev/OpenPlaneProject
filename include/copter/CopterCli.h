@@ -7,6 +7,7 @@
 
 #include "copter/Beeper.h"
 #include "copter/CopterController.h"
+#include "copter/MotorTracks.h"
 #include "copter/Params.h"
 #include "copter/SerialPorts.h"
 #include "storage/KeyValueStore.h"
@@ -144,6 +145,85 @@ namespace copter
             for (uint8_t i = 0; i < count; ++i) esc->queueTone(motors[i], tones[i]);
             return nullptr;
         }
+        // ---- музыка моторами: треки (176c) ----
+        // Свой трек — кусками по TRACK_CHUNK байт в хранилище ("music", t0, t1…),
+        // длина — ключ "n"; копии в ОЗУ нет, проигрыватель читает куски сам.
+        static constexpr const char* TRACK_SPACE = "music";
+        static constexpr uint16_t TRACK_CHUNK = 48;
+
+        // name — встроенный (MOTOR_TRACKS) или "custom"; index (motor_music_track) — 1..COUNT+1.
+        const char* playTrack(const char* name, bool loop)
+        {
+            if (ctl.isArmed()) return "только без ARM";
+            if (open) return "открыт CLI";
+            const uint8_t poles = static_cast<uint8_t>(params.value(PARAM_MOTOR_POLES));
+            if (strcmp(name, "custom") == 0)
+            {
+                const uint16_t size = customTrackSize();
+                if (!size) return "своего трека нет (motor_music.py --upload)";
+                return ctl.playTrack(fetchCustom, this, TRACK_CHUNK, size, poles, loop) ? nullptr : "свой трек битый";
+            }
+            for (uint8_t i = 0; i < MOTOR_TRACK_COUNT; ++i)
+            {
+                if (strcmp(name, MOTOR_TRACKS[i].name) != 0) continue;
+                const MotorTrackInfo& t = MOTOR_TRACKS[i];
+                return ctl.playTrack(fetchBuiltin, const_cast<MotorTrackInfo*>(&t), t.size, t.size, poles, loop)
+                           ? nullptr
+                           : "трек не играется";
+            }
+            return "нет такого трека";
+        }
+        const char* playTrackIndex(uint8_t index, bool loop)
+        {
+            if (index == 0 || index > MOTOR_TRACK_COUNT + 1) return "трек не выбран";
+            return playTrack(index > MOTOR_TRACK_COUNT ? "custom" : MOTOR_TRACKS[index - 1].name, loop);
+        }
+
+        uint16_t customTrackSize()
+        {
+            if (!kv) return 0;
+            size_t len = 0;
+            const uint8_t* p = kv->get(TRACK_SPACE, "n", &len);
+            return p && len == 2 ? static_cast<uint16_t>(p[0] | (p[1] << 8)) : 0;
+        }
+
+        // Кусок своего трека (во флеш — только trackSave). Играет — стоп.
+        const char* trackChunk(uint16_t index, const uint8_t* data, uint8_t length)
+        {
+            if (!kv) return "некуда сохранить";
+            if (ctl.isArmed()) return "только без ARM";
+            if (index * TRACK_CHUNK >= MotorTrack::MAX_SIZE || length == 0 || length > TRACK_CHUNK) return "кусок вне трека";
+            ctl.stopMusic();
+            char key[8];
+            snprintf(key, sizeof(key), "t%u", index);
+            return kv->put(TRACK_SPACE, key, data, length) ? nullptr : "флеш настроек переполнен";
+        }
+        // Проверить загруженное и записать во флеш (лишние старые куски — убрать).
+        const char* trackSave(uint16_t size)
+        {
+            if (!kv) return "некуда сохранить";
+            if (ctl.isArmed()) return "только без ARM";
+            if (size > MotorTrack::MAX_SIZE) return "трек больше 1024 байт";
+            for (uint16_t i = static_cast<uint16_t>((size + TRACK_CHUNK - 1) / TRACK_CHUNK);
+                 i * TRACK_CHUNK < MotorTrack::MAX_SIZE; ++i)
+            {
+                char key[8];
+                snprintf(key, sizeof(key), "t%u", i);
+                kv->remove(TRACK_SPACE, key);
+            }
+            if (size == 0)
+            {
+                kv->remove(TRACK_SPACE, "n");
+                return kv->commit() ? nullptr : "флеш не записался";
+            }
+            MotorTrack probe;
+            // проверка формата: start() читает весь трек
+            if (!probe.start(fetchCustom, this, TRACK_CHUNK, size, 200.0f, 1000.0f, false)) return "трек битый (куски не те?)";
+            const uint8_t n[2] = { static_cast<uint8_t>(size & 0xFF), static_cast<uint8_t>(size >> 8) };
+            if (!kv->put(TRACK_SPACE, "n", n, 2)) return "флеш настроек переполнен";
+            return kv->commit() ? nullptr : "флеш не записался";
+        }
+
         void setVersion(const char* text) { version = text; }
 
         bool active() const { return open; }
@@ -1233,6 +1313,25 @@ namespace copter
         CopterController& ctl;
         CliPort& port;
         KeyValueStore* kv = nullptr;
+
+        static const uint8_t* fetchBuiltin(void* ctx, uint16_t chunk, uint16_t* length)
+        {
+            const MotorTrackInfo* t = static_cast<const MotorTrackInfo*>(ctx);
+            if (chunk != 0) return nullptr;
+            *length = t->size;
+            return t->data;
+        }
+        static const uint8_t* fetchCustom(void* ctx, uint16_t chunk, uint16_t* length)
+        {
+            CopterCli* self = static_cast<CopterCli*>(ctx);
+            if (!self->kv) return nullptr;
+            char key[8];
+            snprintf(key, sizeof(key), "t%u", chunk);
+            size_t len = 0;
+            const uint8_t* p = self->kv->get(TRACK_SPACE, key, &len);
+            *length = static_cast<uint16_t>(len);
+            return p;
+        }
         IEscCommands* esc = nullptr;
         BoardUarts boardPorts;
         const char* version = "OpenPlane copter";

@@ -11,6 +11,7 @@
 #include "copter/LaunchControl.h"
 #include "copter/Mixer.h"
 #include "copter/MotorMusic.h"
+#include "copter/MotorTrack.h"
 #include "copter/PositionEstimator.h"
 #include "copter/GpsIntegrity.h"
 #include "copter/DeadReckonHome.h"
@@ -664,7 +665,7 @@ namespace copter
         bool setMotorTest(uint8_t index, float thrust, float seconds)
         {
             if (status.state != CopterState::DISARMED) return false;
-            music.stop();
+            if (mp) mp->music.stop();
             if (index != MOTOR_TEST_ALL && index >= tune.frame.count) return false;
             const float v = fminf(MOTOR_TEST_MAX, fmaxf(0.0f, thrust));
             for (uint8_t i = 0; i < MAX_MOTORS; ++i)
@@ -681,12 +682,16 @@ namespace copter
         {
             testLeft = 0.0f;
             for (float& t : testThrust) t = 0.0f;
-            music.stop();
+            if (mp) mp->music.stop();
         }
-        bool motorTestActive() const { return testLeft > 0.0f || music.active(); }
+        bool motorTestActive() const { return testLeft > 0.0f || musicActive(); }
         float motorTestValue(uint8_t index) const
         {
-            if (music.active()) return index < music.count() && music.targetHz(index) >= 0.0f ? music.command(index) : 0.0f;
+            if (musicActive())
+            {
+                const MotorMusic& m = mp->music;
+                return index < m.count() && m.targetHz(index) >= 0.0f ? m.command(index) : 0.0f;
+            }
             return testLeft > 0.0f && index < MAX_MOTORS ? testThrust[index] : 0.0f;
         }
 
@@ -694,20 +699,44 @@ namespace copter
         // ARM и без винтов. mult — звук / обороты, 0 — пар полюсов (poles / 2).
         bool startMusic(uint8_t poles, float mult)
         {
-            if (status.state != CopterState::DISARMED) return false;
+            if (!mp || status.state != CopterState::DISARMED) return false;
             testLeft = 0.0f;
             for (float& t : testThrust) t = 0.0f;
             const float volts = status.volts > 1.0f ? status.volts : tune.volts;
             const float hzPerCommand = tune.prop.kvRad * volts / (2.0f * PI_F);
             if (!(mult > 0.0f)) mult = poles >= 2 ? poles * 0.5f : 7.0f;
-            return music.start(tune.frame.count, hzPerCommand, mult);
+            return mp->music.start(tune.frame.count, hzPerCommand, mult);
         }
-        void stopMusic() { music.stop(); }
+        void stopMusic()
+        {
+            if (!mp) return;
+            mp->track.stop();
+            mp->music.stop();
+        }
+
+        // Трек на плате (copter/MotorTrack.h): диапазон — от верхней ноты по
+        // KV и напряжению вниз на 2,2 октавы (ниже — холостые регулятора).
+        bool playTrack(MotorTrack::Fetch fetch, void* ctx, uint16_t chunk, uint16_t size, uint8_t poles, bool loop)
+        {
+            if (!startMusic(poles, 0.0f)) return false;
+            const float hi = fminf(1400.0f, mp->music.maxSoundHz() * 0.9f);
+            if (!mp->track.start(fetch, ctx, chunk, size, fmaxf(150.0f, hi / 4.5f), hi, loop))
+            {
+                mp->music.stop();
+                return false;
+            }
+            return true;
+        }
+        // nullptr — музыки на этой плате нет (F405: ещё не выделена в CCM).
+        const MotorTrack* motorTrack() const { return mp ? &mp->track : nullptr; }
+        bool musicActive() const { return mp && mp->music.active(); }
+        // F405: музыка — в CCM (main_copter), в основных 128 КБ места нет.
+        void attachMusic(MotorMusicParts* parts) { mp = parts; }
         bool musicNote(uint8_t motor, float soundHz)
         {
-            return status.state == CopterState::DISARMED && music.note(motor, soundHz);
+            return mp && status.state == CopterState::DISARMED && mp->music.note(motor, soundHz);
         }
-        const MotorMusic& motorMusic() const { return music; }
+        const MotorMusic* motorMusic() const { return mp ? &mp->music : nullptr; }
 
         // Один цикл стабилизации.
         CopterOutputs update(const CopterSensors& sensIn, const CopterRc& rcIn)
@@ -943,10 +972,11 @@ namespace copter
             if (status.state == CopterState::DISARMED)
             {
                 resetFlight(sens);
-                if (music.active())
+                if (musicActive())
                 {
+                    if (mp->track.isPlaying()) mp->track.tick(dt, mp->music);
                     float cmd[MAX_MOTORS];
-                    if (music.update(dt, sens.motorHz, sens.motorHzOk, cmd))
+                    if (mp->music.update(dt, sens.motorHz, sens.motorHzOk, cmd))
                     {
                         for (uint8_t i = 0; i < out.count && i < MAX_MOTORS; ++i) out.motor[i] = cmd[i];
                         out.spinning = true;
@@ -1740,7 +1770,7 @@ namespace copter
                 const float cells = tune.cells ? tune.cells : roundf(tune.volts / 3.75f);
                 if (cells >= 1.0f && status.volts / cells < set.minCellVolts) b |= ARM_BLOCK_BATTERY;
             }
-            if (testLeft > 0.0f || music.active()) b |= ARM_BLOCK_MOTOR_TEST;
+            if (testLeft > 0.0f || musicActive()) b |= ARM_BLOCK_MOTOR_TEST;
             if (status.crashed) b |= ARM_BLOCK_CRASH;
             if (status.runaway) b |= ARM_BLOCK_RUNAWAY;
             if (rc.failsafeSwitch) b |= ARM_BLOCK_FAILSAFE_SWITCH;
@@ -1802,6 +1832,8 @@ namespace copter
                 return;
             }
             const bool rising = !prevSwitch;
+            // тумблер ARM под музыкой моторами — сначала тишина, армит следующее включение
+            if (rising && musicActive()) stopMusic();
             prevSwitch = true;
             if (status.state != CopterState::DISARMED) return;
             if (rising && status.armBlockers == 0)
@@ -2286,6 +2318,11 @@ namespace copter
 
         float testThrust[MAX_MOTORS] = {};
         float testLeft = 0.0f;
-        MotorMusic music;
+#if defined(BOARD_STM32F405)
+        MotorMusicParts* mp = nullptr;
+#else
+        MotorMusicParts ownMusic;
+        MotorMusicParts* mp = &ownMusic;
+#endif
     };
 }

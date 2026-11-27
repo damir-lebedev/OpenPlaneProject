@@ -555,9 +555,9 @@ public:
         if (ctl.getTune().dynIdle.enabled())
             w.add(",\"dynidle\":{\"inc\":%.3f,\"rpm\":%.0f}", s.dynIdleIncrease, s.dynIdleSlowestHz * 60.0f);
         // музыка моторами (176c): цель и звук по оборотам, Гц; команда, доля
-        if (ctl.motorMusic().active())
+        if (ctl.musicActive())
         {
-            const copter::MotorMusic& m = ctl.motorMusic();
+            const copter::MotorMusic& m = *ctl.motorMusic();
             w.add(",\"music\":{\"k\":%.1f,\"v\":[", m.mult());
             for (uint8_t i = 0; i < m.count(); ++i)
                 w.add("%s[%.0f,%.0f,%.3f]", i ? "," : "", m.targetHz(i), m.measuredHz(i), m.command(i));
@@ -860,6 +860,9 @@ private:
 
     // music on [k] | music off — музыка моторами по оборотам (176c), только без
     // ARM и без винтов. k — звук / обороты (по умолчанию motor_poles / 2).
+    // music list — треки на плате; music play ТРЕК [loop] — играть трек платой
+    // (встроенный или custom); music up N HEX / music save БАЙТ — свой трек
+    // кусками во флеш (tools/motor_music.py --upload).
     void doMusic(const char* args)
     {
         while (args && *args == ' ') ++args;
@@ -872,9 +875,91 @@ private:
             send(w);
             return;
         }
+        if (args && strncmp(args, "list", 4) == 0)
+        {
+            char line[200];
+            JsonWriter w(line, sizeof(line));
+            w.add("@music {\"tracks\":[");
+            for (uint8_t i = 0; i < copter::MOTOR_TRACK_COUNT; ++i) w.add("%s\"%s\"", i ? "," : "", copter::MOTOR_TRACKS[i].name);
+            w.add("],\"custom\":%u}\n", cli.customTrackSize());
+            send(w);
+            return;
+        }
+        if (args && strncmp(args, "play ", 5) == 0)
+        {
+            char name[24] = {};
+            const char* p = args + 5;
+            while (*p == ' ') ++p;
+            size_t n = 0;
+            while (p[n] && p[n] != ' ' && n + 1 < sizeof(name)) { name[n] = p[n]; ++n; }
+            const bool loop = strstr(p + n, "loop") != nullptr;
+            if (const char* e = cli.playTrack(name, loop))
+            {
+                sendError("music", e);
+                return;
+            }
+            const copter::MotorTrack& t = *ctl.motorTrack();
+            char line[120];
+            JsonWriter w(line, sizeof(line));
+            w.add("@music {\"ok\":true,\"on\":true,\"track\":\"%s\",\"voices\":%u,\"oct\":%d,\"max\":%.0f}\n", name, t.voiceCount(),
+                  t.octaveShift(), ctl.motorMusic()->maxSoundHz());
+            send(w);
+            return;
+        }
+        if (args && strncmp(args, "up ", 3) == 0)
+        {
+            // music up N HEX — кусок N своего трека (до 48 байт)
+            char* next = nullptr;
+            const long idx = strtol(args + 3, &next, 10);
+            uint8_t buf[copter::CopterCli::TRACK_CHUNK];
+            uint8_t len = 0;
+            const char* h = next;
+            while (*h == ' ') ++h;
+            auto hex = [](char c) -> int {
+                if (c >= '0' && c <= '9') return c - '0';
+                if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+                if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+                return -1;
+            };
+            while (h[0] && h[1] && len < sizeof(buf))
+            {
+                const int a = hex(h[0]), b = hex(h[1]);
+                if (a < 0 || b < 0) break;
+                buf[len++] = static_cast<uint8_t>(a * 16 + b);
+                h += 2;
+            }
+            const char* e = (next == args + 3 || idx < 0 || idx > 1000 || (*h && *h != ' ' && *h != '\r'))
+                                ? "music up N HEX (до 48 байт)"
+                                : cli.trackChunk(static_cast<uint16_t>(idx), buf, len);
+            if (e)
+            {
+                sendError("music", e);
+                return;
+            }
+            char line[48];
+            JsonWriter w(line, sizeof(line));
+            w.add("@music {\"up\":%ld}\n", idx);
+            send(w);
+            return;
+        }
+        if (args && strncmp(args, "save ", 5) == 0)
+        {
+            const long size = strtol(args + 5, nullptr, 10);
+            const char* e = size < 0 || size > 65535 ? "music save БАЙТ" : cli.trackSave(static_cast<uint16_t>(size));
+            if (e)
+            {
+                sendError("music", e);
+                return;
+            }
+            char line[48];
+            JsonWriter w(line, sizeof(line));
+            w.add("@music {\"saved\":%ld}\n", size);
+            send(w);
+            return;
+        }
         if (!args || strncmp(args, "on", 2) != 0)
         {
-            sendError("music", "music on [k] | music off");
+            sendError("music", "music on [k] | off | list | play ТРЕК [loop] | up N HEX | save БАЙТ");
             return;
         }
         if (cli.active())
@@ -886,10 +971,10 @@ private:
         const uint8_t poles = static_cast<uint8_t>(params.value(copter::PARAM_MOTOR_POLES));
         if (!ctl.startMusic(poles, k))
         {
-            sendError("music", ctl.isArmed() ? "только без ARM" : "k — 0.5…64");
+            sendError("music", ctl.isArmed() ? "только без ARM" : !ctl.motorMusic() ? "музыки на плате нет" : "k — 0.5…64");
             return;
         }
-        const copter::MotorMusic& m = ctl.motorMusic();
+        const copter::MotorMusic& m = *ctl.motorMusic();
         char line[96];
         JsonWriter w(line, sizeof(line));
         w.add("@music {\"ok\":true,\"on\":true,\"k\":%.1f,\"max\":%.0f}\n", m.mult(), m.maxSoundHz());
@@ -921,7 +1006,7 @@ private:
             p = next;
             if (!ctl.musicNote(static_cast<uint8_t>(m < 0 || m > 255 ? 254 : m), hz))
             {
-                sendError("note", ctl.motorMusic().active() ? "нет такого мотора или Гц" : "music on сначала");
+                sendError("note", ctl.musicActive() ? "нет такого мотора или Гц" : "music on сначала");
                 return;
             }
             ++n;
