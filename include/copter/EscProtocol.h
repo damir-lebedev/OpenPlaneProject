@@ -165,6 +165,9 @@ namespace copter
         virtual bool queueCommand(uint8_t motor, uint16_t command) = 0;
         virtual bool commandsPending() const = 0;
         virtual uint8_t commandsFree() const = 0;     // сколько ещё влезет в очередь
+        // Тон BEACON1..5 мотору «своей дорожкой» (dshot::ToneLanes): разные моторы
+        // пищат одновременно, новый тон заменяет не ушедший. Нет дорожек — в очередь.
+        virtual bool queueTone(uint8_t motor, uint16_t tone) { return queueCommand(motor, tone); }
     };
 
     // ---------------- DShot ----------------
@@ -298,6 +301,55 @@ namespace copter
             uint32_t stoppedSince = 0;
             uint32_t quietUntil = 0;
             uint32_t lastNow = 0;
+        };
+
+        // Музыка моторами (176): тоны BEACON1..5 по дорожке на мотор. У
+        // каждого мотора своя пауза после писка (регулятор пищит ~260 мс и в
+        // это время не слушает), поэтому разные моторы звучат одновременно —
+        // четыре голоса у квадрика. Новый тон заменяет ещё не ушедший (музыке
+        // нужен тон «сейчас», а не очередь). Тоны уходят, только когда общая
+        // очередь (направление, настройки) молчит и моторы стоят.
+        class ToneLanes
+        {
+        public:
+            static constexpr uint8_t MAX = 8;
+            static constexpr uint8_t ALL = 0xFF;
+
+            bool push(uint8_t motor, uint16_t tone)
+            {
+                if (tone < BEEP1 || tone > BEEP5) return false;
+                if (motor == ALL)
+                {
+                    for (uint8_t i = 0; i < MAX; ++i) want[i] = tone;
+                    return true;
+                }
+                if (motor >= MAX) return false;
+                want[motor] = tone;
+                return true;
+            }
+            void clear()
+            {
+                for (uint8_t i = 0; i < MAX; ++i) want[i] = STOP;
+            }
+            bool waiting(uint8_t motor) const { return motor < MAX && want[motor] != STOP; }
+
+            // Кадр мотора motor. idle — общая очередь молчит и моторы стоят.
+            // Возвращает тон, который послать сейчас (STOP — ничего).
+            uint16_t step(uint8_t motor, uint32_t nowUs, bool idle)
+            {
+                if (motor >= MAX || !idle || want[motor] == STOP) return STOP;
+                if (beeped[motor] && static_cast<int32_t>(quietUntil[motor] - nowUs) > 0) return STOP;
+                const uint16_t t = want[motor];
+                want[motor] = STOP;
+                beeped[motor] = true;
+                quietUntil[motor] = nowUs + commandGapUs(t);
+                return t;
+            }
+
+        private:
+            uint16_t want[MAX] = {};
+            uint32_t quietUntil[MAX] = {};
+            bool beeped[MAX] = {};
         };
 
         // Команда 0..1 -> значение кадра (0 — мотор стоит). Меньше нуля —

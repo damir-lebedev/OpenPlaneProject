@@ -708,7 +708,7 @@ static void updateBeeper(bool armSwitch)
         melodyPlayer.tick(millis(), armed, armSwitch, rcLinkOk && rxInput.isActive(copter::BOX_MELODY));
     if (tune.dshotTone && motors.dshotOutput().commandsAvailable() && !copterController.motorTestActive() &&
         motors.dshotOutput().commandsFree() > 0)
-        motors.dshotOutput().queueCommand(copter::dshot::CommandQueue::ALL, tune.dshotTone);
+        motors.dshotOutput().queueTone(copter::dshot::ToneLanes::ALL, tune.dshotTone);
     if (Config::PIN_BUZZER < 0) return;
     if (armed != wasArmedForBeeper) beeper.event(armed ? armingBeep() : copter::BeeperCondition::DISARMING);
     wasArmedForBeeper = armed;

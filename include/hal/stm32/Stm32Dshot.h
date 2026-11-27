@@ -276,6 +276,7 @@ public:
         }
         for (uint8_t i = 0; i < MAX_MOTORS; ++i) motors[i] = Motor();
         queue = copter::dshot::CommandQueue();
+        tones = copter::dshot::ToneLanes();
         reversed = false;
         if (!copter::isDshot(esc)) return 0;
         for (uint8_t i = 0; i < motorCount; ++i)
@@ -297,15 +298,29 @@ public:
         if (queue.pendingAt(nowUs)) spinning = false;
         uint8_t who = copter::dshot::CommandQueue::ALL;
         const uint16_t command = queue.step(nowUs, !spinning, who);
+        // дорожки тонов: моторы стоят дольше START_DELAY_US, общая очередь молчит
+        if (spinning)
+        {
+            tones.clear();
+            stoppedSinceUs = nowUs;
+        }
+        const bool tonesIdle = !spinning && command == copter::dshot::STOP && !queue.pendingAt(nowUs) &&
+                               nowUs - stoppedSinceUs >= copter::dshot::CommandQueue::START_DELAY_US;
         for (uint8_t i = 0; i < motorCount; ++i)
         {
             Motor& m = motors[i];
             bool telemetry = false;
             uint16_t value;
+            const uint16_t tone = tones.step(i, nowUs, tonesIdle);
             if (command != copter::dshot::STOP && (who == copter::dshot::CommandQueue::ALL || who == i))
             {
                 value = command;
                 telemetry = true;   // команды BLHeli_32/Bluejay принимают только с битом телеметрии
+            }
+            else if (tone != copter::dshot::STOP)
+            {
+                value = tone;
+                telemetry = true;
             }
             else
             {
@@ -375,11 +390,20 @@ public:
                    on ? copter::dshot::SPIN_DIRECTION_REVERSED : copter::dshot::SPIN_DIRECTION_NORMAL);
     }
     bool isReversed() const { return reversed; }
-    void clearCommands() { queue.clear(); }
+    void clearCommands()
+    {
+        queue.clear();
+        tones.clear();
+    }
 
     // copter::IEscCommands
     bool commandsAvailable() const override { return attachedCount > 0; }
     bool queueCommand(uint8_t motor, uint16_t command) override { return sendCommand(motor, command); }
+    bool queueTone(uint8_t motor, uint16_t tone) override
+    {
+        if (attachedCount == 0 || (motor != copter::dshot::ToneLanes::ALL && motor >= motorCount)) return false;
+        return tones.push(motor, tone);
+    }
     bool commandsPending() const override { return queue.pending(); }
     uint8_t commandsFree() const override { return queue.freeSlots(); }
 
@@ -597,5 +621,7 @@ private:
     bool bidir = false;
     bool reversed = false;
     copter::dshot::CommandQueue queue;
+    copter::dshot::ToneLanes tones;   // музыка моторами: тон на мотор, паузы — свои
+    uint32_t stoppedSinceUs = 0;
     copter::EscProtocol protocol = copter::EscProtocol::DSHOT600;
 };

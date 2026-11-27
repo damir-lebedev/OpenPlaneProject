@@ -7559,6 +7559,35 @@ void test_dshot_beacon_timing()
 
 // ---- 176: мелодия по тумблеру ----
 
+void test_dshot_tone_lanes_polyphony()
+{
+    using namespace dshot;
+    ToneLanes lanes;
+    TEST_ASSERT_FALSE(lanes.push(0, 6));   // только BEACON1..5
+    TEST_ASSERT_FALSE(lanes.push(9, 1));
+    // разные моторы — разные тоны в одном кадре
+    TEST_ASSERT_TRUE(lanes.push(0, 1));
+    TEST_ASSERT_TRUE(lanes.push(1, 5));
+    TEST_ASSERT_EQUAL(STOP, lanes.step(0, 1000, false));   // очередь занята / моторы крутятся — ждём
+    TEST_ASSERT_TRUE(lanes.waiting(0));
+    TEST_ASSERT_EQUAL(1, lanes.step(0, 2000, true));
+    TEST_ASSERT_EQUAL(5, lanes.step(1, 2000, true));
+    TEST_ASSERT_EQUAL(STOP, lanes.step(2, 2000, true));
+    // мотор 0 пищит 260 мс: новый тон ждёт, следующий заменяет ждущий; мотор 2 — сразу
+    TEST_ASSERT_TRUE(lanes.push(0, 2));
+    TEST_ASSERT_TRUE(lanes.push(0, 3));
+    TEST_ASSERT_TRUE(lanes.push(2, 4));
+    TEST_ASSERT_EQUAL(STOP, lanes.step(0, 100000, true));
+    TEST_ASSERT_EQUAL(4, lanes.step(2, 100000, true));
+    TEST_ASSERT_EQUAL(3, lanes.step(0, 262000, true));
+    TEST_ASSERT_EQUAL(STOP, lanes.step(0, 263000, true));
+    // всем
+    TEST_ASSERT_TRUE(lanes.push(ToneLanes::ALL, 2));
+    TEST_ASSERT_EQUAL(2, lanes.step(5, 300000, true));
+    lanes.clear();
+    TEST_ASSERT_FALSE(lanes.waiting(7));
+}
+
 void test_melody_rtttl_parse()
 {
     Melody m;
@@ -11757,6 +11786,7 @@ int main()
     RUN_TEST(test_dshotprog_cli_and_msp);
     RUN_TEST(test_beeper_conditions_like_betaflight);
     RUN_TEST(test_dshot_beacon_timing);
+    RUN_TEST(test_dshot_tone_lanes_polyphony);
     RUN_TEST(test_melody_rtttl_parse);
     RUN_TEST(test_melody_player_switch_arm_and_motors);
     RUN_TEST(test_melody_param_cli_and_storage);

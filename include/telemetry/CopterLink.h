@@ -177,6 +177,11 @@ public:
             doMelody(args);
             return true;
         }
+        if (strcmp(cmd, "tone") == 0)
+        {
+            doTone(args);
+            return true;
+        }
         const bool changes = strcmp(cmd, "set") == 0 || strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0 ||
                              strcmp(cmd, "aux") == 0 || strcmp(cmd, "map") == 0 || strcmp(cmd, "rxrange") == 0 ||
                              strcmp(cmd, "vtx") == 0 || strcmp(cmd, "rxfail") == 0 || strcmp(cmd, "calibrate") == 0 ||
@@ -794,6 +799,44 @@ private:
         for (uint8_t i = 0; i < n; ++i) w.add(i ? ",%u" : "%u", commands[i]);
         w.add("]}\n");
         send(w);
+    }
+
+    // tone N t [N t …] — тоны BEACON1..5 моторам дорожками (музыка моторами с
+    // ПК: строки идут потоком, поэтому без ответа; ошибка — @error).
+    void doTone(char* args)
+    {
+        if (cli.active())
+        {
+            sendError("tone", "открыт CLI");
+            return;
+        }
+        uint8_t motors[8];
+        uint16_t tones[8];
+        uint8_t n = 0;
+        const char* p = args;
+        while (n < 8)
+        {
+            while (*p == ' ') ++p;
+            if (!*p) break;
+            char* next = nullptr;
+            long m;
+            if (strncmp(p, "all", 3) == 0)
+            {
+                m = 255;
+                next = const_cast<char*>(p + 3);
+            }
+            else m = strtol(p, &next, 10);
+            if (next == p) break;
+            p = next;
+            const long t = strtol(p, &next, 10);
+            if (next == p || m < 0 || m > 255) break;
+            p = next;
+            motors[n] = static_cast<uint8_t>(m);
+            tones[n] = static_cast<uint16_t>(t < 0 || t > 5 ? 0 : t);
+            ++n;
+        }
+        const char* error = n == 0 ? "tone N|all тон(1…5) [N тон…]" : cli.queueTones(motors, tones, n);
+        if (error) sendError("tone", error);
     }
 
     // melody — сыграть beeper_melody раз, melody stop — замолчать.

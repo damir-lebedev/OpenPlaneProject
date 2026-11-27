@@ -129,6 +129,21 @@ namespace copter
             for (uint8_t i = 0; i < count; ++i) esc->queueCommand(motor, commands[i]);
             return nullptr;
         }
+        // Тоны BEACON1..5 моторам дорожками (музыка моторами): пары мотор-тон.
+        const char* queueTones(const uint8_t* motors, const uint16_t* tones, uint8_t count)
+        {
+            if (!esc || !esc->commandsAvailable()) return "регуляторы не DShot";
+            if (ctl.isArmed()) return "только без ARM";
+            if (ctl.motorTestActive()) return "идёт проверка моторов";
+            if (count == 0) return "нет тона";
+            for (uint8_t i = 0; i < count; ++i)
+            {
+                if (motors[i] != 255 && motors[i] >= ctl.getTune().frame.count) return "нет такого мотора";
+                if (tones[i] < 1 || tones[i] > 5) return "тон — 1…5";
+            }
+            for (uint8_t i = 0; i < count; ++i) esc->queueTone(motors[i], tones[i]);
+            return nullptr;
+        }
         void setVersion(const char* text) { version = text; }
 
         bool active() const { return open; }
