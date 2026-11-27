@@ -147,6 +147,40 @@ namespace copter
     // blackbox_device: номера — как в BF.
     constexpr uint8_t BLACKBOX_NONE = 0, BLACKBOX_SPIFLASH = 1, BLACKBOX_SDCARD = 2;
 
+    // debug_mode: что ящик пишет в debug[0..7] (запись QDEBUG, в BFL — поля
+    // debug[]). Порядок свой; номер BF (debugType_e 4.5) — DEBUG_MODE_BF: его
+    // отдаёт MSP и видит Blackbox Explorer (подписи полей — по нему).
+    enum class DebugMode : uint8_t
+    {
+        NONE, BATTERY, GYRO_FILTERED, ACCELEROMETER, GYRO_SCALED, ALTITUDE, FFT_FREQ,
+        RC_SMOOTHING, RPM_FILTER, D_MIN, DYN_IDLE, FEEDFORWARD, COUNT
+    };
+    constexpr uint8_t DEBUG_MODE_BF[] = { 0, 2, 3, 4, 6, 14, 17, 39, 46, 47, 57, 59 };
+    static_assert(sizeof(DEBUG_MODE_BF) == static_cast<size_t>(DebugMode::COUNT), "DEBUG_MODE_BF и DebugMode разошлись");
+    inline uint8_t debugModeBf(DebugMode m)
+    {
+        return static_cast<uint8_t>(m) < sizeof(DEBUG_MODE_BF) ? DEBUG_MODE_BF[static_cast<uint8_t>(m)] : 0;
+    }
+    // номер BF -> наш; такого у нас нет — NONE
+    inline DebugMode debugModeFromBf(uint8_t bf)
+    {
+        for (uint8_t i = 0; i < sizeof(DEBUG_MODE_BF); ++i)
+        {
+            if (DEBUG_MODE_BF[i] == bf) return static_cast<DebugMode>(i);
+        }
+        return DebugMode::NONE;
+    }
+
+    // Что пишет ящик сверх обязательного (blackbox_disable_*, debug_mode).
+    struct LogFields
+    {
+        DebugMode debug = DebugMode::NONE;   // NONE — запись QDEBUG не пишется
+        bool pids = true;                    // P I D F в QCTRL; нет — моторы и газ записью QMOT4
+        bool gps = true;                     // решения GPS
+    };
+    // Биты MSP_BLACKBOX_CONFIG fieldsDisabledMask (FLIGHT_LOG_FIELD_SELECT_* BF), что у нас выключается.
+    constexpr uint32_t BB_FIELD_PID = 1u << 0, BB_FIELD_DEBUG = 1u << 9, BB_FIELD_GPS = 1u << 11;
+
     // Сборки каталога по именам — варианты copter_build.
     inline const char* const* buildIds(uint8_t& count)
     {
@@ -366,6 +400,10 @@ namespace copter
         PARAM_BLACKBOX_DEVICE,
         PARAM_BLACKBOX_MODE,
         PARAM_BLACKBOX_SAMPLE_RATE,
+        PARAM_DEBUG_MODE,
+        PARAM_BLACKBOX_DISABLE_PIDS,
+        PARAM_BLACKBOX_DISABLE_GPS,
+        PARAM_BLACKBOX_DISABLE_DEBUG,
         PARAM_SMALL_ANGLE,
         PARAM_AUTO_DISARM_DELAY,
         PARAM_RUNAWAY_TAKEOFF_PREVENTION,
@@ -642,6 +680,10 @@ namespace copter
         static const char* const BLACKBOX_DEVICES[] = { "NONE", "SPIFLASH", "SDCARD", "SERIAL" };
         static const char* const BLACKBOX_MODES[] = { "NORMAL", "MOTOR_TEST", "ALWAYS" };
         static const char* const BLACKBOX_RATES[] = { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" };
+        // порядок — как DebugMode
+        static const char* const DEBUG_MODES[] = { "NONE", "BATTERY", "GYRO_FILTERED", "ACCELEROMETER", "GYRO_SCALED",
+                                                   "ALTITUDE", "FFT_FREQ", "RC_SMOOTHING", "RPM_FILTER", "D_MIN",
+                                                   "DYN_IDLE", "FEEDFORWARD" };
         // порядок — как FailsafeProcedure и FailsafeSwitchMode (CopterController.h) и в BF
         static const char* const FS_PROCEDURES[] = { "AUTO-LAND", "DROP", "GPS-RESCUE" };
         static const char* const FS_SWITCH_MODES[] = { "STAGE1", "KILL", "STAGE2" };
@@ -1034,6 +1076,14 @@ namespace copter
               "когда писать: NORMAL — пока ARM, MOTOR_TEST — пока крутятся моторы, ALWAYS — всегда" },
             { "blackbox_sample_rate", kEnum, kMaster, kGroupBlackbox, 0, 5, 0, kTable, "", BLACKBOX_RATES, 6,
               "гироскоп, PID и моторы — каждый какой цикл (1/1 — каждый: шум виден до половины частоты цикла)" },
+            { "debug_mode", kEnum, kMaster, kGroupBlackbox, 0, 11, 0, kTable, "", DEBUG_MODES, 12,
+              "что писать в debug[0..7] ящика каждый цикл, как в BF: GYRO_SCALED — гироскоп до фильтров, RPM_FILTER — частоты режекторов по оборотам, FFT_FREQ — пики динамического режектора, D_MIN — подъём D, NONE — не писать" },
+            { "blackbox_disable_pids", kEnum, kMaster, kGroupBlackbox, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "не писать P, I, D, F по осям — запись цикла короче (моторы и газ пишутся)" },
+            { "blackbox_disable_gps", kEnum, kMaster, kGroupBlackbox, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "не писать решения GPS (навигация и возврат пишутся)" },
+            { "blackbox_disable_debug", kEnum, kMaster, kGroupBlackbox, 0, 1, 0, kTable, "", OFF_ON, 2,
+              "не писать debug[], даже если debug_mode выбран" },
             { "small_angle", kInt, kMaster, kGroupSafety, 0, 180, 25, kTable, "°", nullptr, 0,
               "стоит наклонённым больше — не армить; 180 — без проверки" },
             { "auto_disarm_delay", kInt, kMaster, kGroupSafety, 0, 60, 5, kTable, "с", nullptr, 0,
@@ -1854,6 +1904,19 @@ namespace copter
         const GeoZoneTable& zones() const { return geoZones; }
         AdjRangeTable& adjRanges() { return adjTable; }
         const AdjRangeTable& adjRanges() const { return adjTable; }
+
+        // Поля ящика: debug_mode и blackbox_disable_*.
+        LogFields logFields() const
+        {
+            LogFields f;
+            const uint8_t m = static_cast<uint8_t>(value(PARAM_DEBUG_MODE));
+            f.debug = value(PARAM_BLACKBOX_DISABLE_DEBUG) > 0.5f || m >= static_cast<uint8_t>(DebugMode::COUNT)
+                          ? DebugMode::NONE
+                          : static_cast<DebugMode>(m);
+            f.pids = value(PARAM_BLACKBOX_DISABLE_PIDS) < 0.5f;
+            f.gps = value(PARAM_BLACKBOX_DISABLE_GPS) < 0.5f;
+            return f;
+        }
 
         // ---- профили ----
         uint8_t pidProfile() const { return pidIndex; }

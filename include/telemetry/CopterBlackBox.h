@@ -25,13 +25,16 @@
 //   QGYRO  каждый цикл (blackbox_sample_rate): гироскоп до и после
 //          фильтров, уставки, время работы цикла — для настройки PID и
 //          спектра шума;
-//   QCTRL  тогда же: P, I, D, F по осям, команды моторам 1–4, газ;
+//   QCTRL  тогда же: P, I, D, F по осям, команды моторам 1–4, газ
+//          (blackbox_disable_pids — вместо неё QMOT4: моторы и газ);
+//   QDEBUG тогда же, если выбран debug_mode: debug[0..7] как в BF;
 //   QMOT8  тогда же, если моторов больше четырёх: моторы 5–8;
 //   QCHIRP тогда же, пока идёт chirp: возбуждение, команда оси, гироскоп
 //          до и после фильтров — для частотной характеристики (168);
 //   QSTATE 50 Гц: углы, высота, стики, батарея, обороты, связь, режим,
 //          флаги, запреты ARM;
-//   GPS    каждое новое решение; SYS — 1 Гц: цикл, приёмник, сам ящик;
+//   GPS    каждое новое решение (кроме blackbox_disable_gps); SYS — 1 Гц:
+//          цикл, приёмник, сам ящик;
 //   EVENT  ARM/DISARM, режим, failsafe, авария, связь, батарея, профили,
 //          запрет ARM, GPS и дом, проверка моторов;
 //   в начале полёта — схема, сборка, PID и фильтры, всё, что задано в CLI.
@@ -85,7 +88,10 @@ public:
         enabled = on;
         mode = m;
         divider = sampleDivider ? sampleDivider : 1;
+        fields = params.logFields();
     }
+
+    const copter::LogFields& logFields() const { return fields; }
 
     // Носитель, очередь, задача записи. false — места нет (карты, файла
     // BLACKBOX.BIN или флеша нет): ящик выключен, полёту это не мешает.
@@ -261,6 +267,7 @@ private:
     bool enabled = true;
     Mode mode = Mode::NORMAL;
     uint8_t divider = 1;
+    copter::LogFields fields;
 
     ResetCause resetReason = ResetCause::Unknown;
     bool resetStartPending = false;
@@ -604,6 +611,70 @@ private:
         pushRecord(BlackBoxFormat::REC_QNAV, r);
     }
 
+    // debug[0..7] для debug_mode — как в BF (единицы — docs/COPTER.md, «Чёрный ящик»).
+    void debugRecord(const copter::CopterSensors& sens, const copter::CopterStatus& s)
+    {
+        using copter::DebugMode;
+        BlackBoxFormat::CopterDebugRecord r{};
+        r.tUs = nowUs;
+        r.mode = copter::debugModeBf(fields.debug);
+        int16_t* d = r.debug;
+        const copter::GyroFilter& f = ctl.getGyroFilter();
+        switch (fields.debug)
+        {
+            case DebugMode::BATTERY:
+                d[0] = i16((battery ? battery->volts() : s.volts) * 100.0f);   // 0.01 В
+                d[1] = battery ? i16(battery->amps() * 100.0f) : 0;           // 0.01 А
+                d[2] = battery ? i16(battery->mahDrawn()) : 0;                // мА·ч
+                break;
+            case DebugMode::GYRO_FILTERED:
+                for (uint8_t a = 0; a < 3; ++a) d[a] = i16(s.rates[a]);       // °/с
+                break;
+            case DebugMode::ACCELEROMETER:
+                for (uint8_t a = 0; a < 3; ++a) d[a] = i16(s.accIn[a] * 2048.0f);   // acc_1G = 2048
+                break;
+            case DebugMode::GYRO_SCALED:
+                for (uint8_t a = 0; a < 3; ++a) d[a] = i16(sens.gyro[a]);     // °/с до фильтров
+                break;
+            case DebugMode::ALTITUDE:
+                d[0] = i16(s.altitude * 100.0f);    // см
+                d[1] = i16(s.climbRate * 100.0f);   // см/с
+                d[2] = i16(s.altTarget * 100.0f);
+                break;
+            case DebugMode::FFT_FREQ:
+                for (uint8_t i = 0; i < 3; ++i) d[i] = i16(f.dynNotchHz(0, i));   // Гц, пики по крену
+                d[3] = i16(sens.gyro[0]);
+                break;
+            case DebugMode::RC_SMOOTHING:
+                d[0] = i16(s.rcFrameHz);
+                d[1] = i16(s.rcSetpointCutoffHz);
+                d[2] = i16(s.rcThrottleCutoffHz);
+                break;
+            case DebugMode::RPM_FILTER:
+                for (uint8_t m = 0; m < 4; ++m) d[m] = i16(f.motorNotchHz(m, 0));   // Гц, основной режектор мотора
+                break;
+            case DebugMode::D_MIN:
+                d[0] = i16(ctl.dBoost(0) * 100.0f);   // % подъёма к d_max
+                d[1] = i16(ctl.dBoost(1) * 100.0f);
+                d[2] = i16(ctl.axisTerms(0).d * 1000.0f);   // D, как axisD в BF
+                d[3] = i16(ctl.axisTerms(1).d * 1000.0f);
+                break;
+            case DebugMode::DYN_IDLE:
+                d[0] = i16(s.dynIdleIncrease * 1000.0f);   // добавка, 0.1 %
+                d[3] = i16(s.dynIdleSlowestHz * 10.0f);    // самый медленный мотор, 0.1 об/с
+                break;
+            case DebugMode::FEEDFORWARD:
+                d[0] = i16(s.setpoint[0]);
+                d[1] = i16(ctl.axisTerms(0).ff * 1000.0f);
+                d[2] = i16(s.setpoint[1]);
+                d[3] = i16(ctl.axisTerms(1).ff * 1000.0f);
+                break;
+            default:
+                break;
+        }
+        pushRecord(BlackBoxFormat::REC_QDEBUG, r);
+    }
+
     void sample(const copter::CopterSensors& sens, const copter::CopterRc& rc, const copter::CopterOutputs& out, uint32_t workUs)
     {
         countRate();
@@ -621,19 +692,31 @@ private:
             g.workUs = static_cast<uint16_t>(workUs > 65535 ? 65535 : workUs);
             pushRecord(BlackBoxFormat::REC_QGYRO, g);
 
-            BlackBoxFormat::CopterCtrlRecord c;
-            c.tUs = nowUs;
-            for (uint8_t a = 0; a < 3; ++a)
+            if (fields.pids)
             {
-                const copter::AxisTerms& t = ctl.axisTerms(a);
-                c.pid[a][0] = i16(t.p * 10000.0f);
-                c.pid[a][1] = i16(t.i * 10000.0f);
-                c.pid[a][2] = i16(t.d * 10000.0f);
-                c.pid[a][3] = i16(t.ff * 10000.0f);
+                BlackBoxFormat::CopterCtrlRecord c;
+                c.tUs = nowUs;
+                for (uint8_t a = 0; a < 3; ++a)
+                {
+                    const copter::AxisTerms& t = ctl.axisTerms(a);
+                    c.pid[a][0] = i16(t.p * 10000.0f);
+                    c.pid[a][1] = i16(t.i * 10000.0f);
+                    c.pid[a][2] = i16(t.d * 10000.0f);
+                    c.pid[a][3] = i16(t.ff * 10000.0f);
+                }
+                for (uint8_t m = 0; m < 4; ++m) c.motor[m] = u16(out.motor[m] * 1000.0f);
+                c.thrust = u16(s.throttle * 1000.0f);
+                pushRecord(BlackBoxFormat::REC_QCTRL, c);
             }
-            for (uint8_t m = 0; m < 4; ++m) c.motor[m] = u16(out.motor[m] * 1000.0f);
-            c.thrust = u16(s.throttle * 1000.0f);
-            pushRecord(BlackBoxFormat::REC_QCTRL, c);
+            else
+            {
+                BlackBoxFormat::CopterMotorRecord c;
+                c.tUs = nowUs;
+                for (uint8_t m = 0; m < 4; ++m) c.motor[m] = u16(out.motor[m] * 1000.0f);
+                c.thrust = u16(s.throttle * 1000.0f);
+                pushRecord(BlackBoxFormat::REC_QMOT4, c);
+            }
+            if (fields.debug != copter::DebugMode::NONE) debugRecord(sens, s);
 
             if (s.chirpActive)
             {
@@ -702,7 +785,7 @@ private:
             }
         }
 
-        if (gps && gps->isAvailable() && gps->getGpsData().timestamp != lastGpsStamp)
+        if (fields.gps && gps && gps->isAvailable() && gps->getGpsData().timestamp != lastGpsStamp)
         {
             const GpsData& d = gps->getGpsData();
             lastGpsStamp = d.timestamp;
@@ -766,6 +849,8 @@ private:
         info("rate.nav_hz=%lu", static_cast<unsigned long>(1000 / NAV_PERIOD_MS));
         static const char* const MODES[] = { "NORMAL", "MOTOR_TEST", "ALWAYS" };
         info("blackbox_mode=%s", MODES[static_cast<uint8_t>(mode) % 3]);
+        info("debug_mode_bf=%u", static_cast<unsigned>(copter::debugModeBf(fields.debug)));
+        info("fields=%s%s", fields.pids ? "pids " : "", fields.gps ? "gps" : "");
         info("bits.flags=%s", BlackBoxFormat::CopterFlag::NAMES);
         info("names.mode=ACRO HORIZON ANGLE ALT_HOLD POS_HOLD");
         info("names.state=DISARMED ARMED FAILSAFE");

@@ -122,6 +122,8 @@ namespace BlackBoxFormat
         REC_CAM    = 0x24,   // кадр камеры (JPEG) кусками: номер, смещение, длина, байты (telemetry/CameraStream.h)
         REC_QCHIRP = 0x25,   // каждый цикл, пока идёт chirp: возбуждение, команда оси, гироскоп (copter/Chirp.h)
         REC_QNAV   = 0x26,   // 10 Гц и при смене флагов: оценка положения, POS HOLD, источник курса, защиты
+        REC_QMOT4  = 0x27,   // каждый цикл вместо QCTRL, если blackbox_disable_pids: моторы 1–4, газ
+        REC_QDEBUG = 0x28,   // каждый цикл, если выбран debug_mode: debug[0..7] и номер режима BF
         REC_ERASED = 0xFF,   // стёртый флеш: дальше в секторе записей нет
     };
 
@@ -329,6 +331,22 @@ namespace BlackBoxFormat
         uint16_t motor[4];      // моторы 5–8
     };
 
+    // QCTRL без PID (blackbox_disable_pids): поля и единицы — те же.
+    struct CopterMotorRecord
+    {
+        uint32_t tUs;
+        uint16_t motor[4];      // 1e-3: моторы 1–4
+        uint16_t thrust;        // 1e-3: газ на входе смесителя
+    };
+
+    // debug[0..7] — как в BF для выбранного debug_mode (единицы — в docs/COPTER.md).
+    struct CopterDebugRecord
+    {
+        uint32_t tUs;
+        int16_t debug[8];
+        uint8_t mode;           // номер debug_mode в BF (DEBUG_MODE_BF)
+    };
+
     // Chirp: всё, что нужно для частотной характеристики одной оси, в одной
     // записи одного цикла (возбуждение и команда — на входе смесителя).
     struct CopterChirpRecord
@@ -462,6 +480,9 @@ namespace BlackBoxFormat
         "p_yaw:h/10000 i_yaw:h/10000 d_yaw:h/10000 f_yaw:h/10000 "
         "motor1:H/1000 motor2:H/1000 motor3:H/1000 motor4:H/1000 thrust:H/1000";
     constexpr const char* QMOT8_FIELDS = "t_us:I motor5:H/1000 motor6:H/1000 motor7:H/1000 motor8:H/1000";
+    constexpr const char* QMOT4_FIELDS =
+        "t_us:I motor1:H/1000 motor2:H/1000 motor3:H/1000 motor4:H/1000 thrust:H/1000";
+    constexpr const char* QDEBUG_FIELDS = "t_us:I debug0:h debug1:h debug2:h debug3:h debug4:h debug5:h debug6:h debug7:h mode:B";
     constexpr const char* QCHIRP_FIELDS = "t_us:I excite:h/10000 command:h/10000 gyro:h/10 gyrof:h/10 hz:H/10 axis:B run:B";
     constexpr const char* QSTATE_FIELDS =
         "t_us:I roll:h/100 pitch:h/100 yaw:H/100 alt_m:h/10 climb_ms:h/100 alt_target_m:h/10 "
@@ -476,6 +497,8 @@ namespace BlackBoxFormat
     static_assert(schemaSize(QGYRO_FIELDS) == sizeof(CopterGyroRecord), "QGYRO: схема != struct");
     static_assert(schemaSize(QCTRL_FIELDS) == sizeof(CopterCtrlRecord), "QCTRL: схема != struct");
     static_assert(schemaSize(QMOT8_FIELDS) == sizeof(CopterMotor8Record), "QMOT8: схема != struct");
+    static_assert(schemaSize(QMOT4_FIELDS) == sizeof(CopterMotorRecord), "QMOT4: схема != struct");
+    static_assert(schemaSize(QDEBUG_FIELDS) == sizeof(CopterDebugRecord), "QDEBUG: схема != struct");
     static_assert(schemaSize(QSTATE_FIELDS) == sizeof(CopterStateRecord), "QSTATE: схема != struct");
     static_assert(schemaSize(QCHIRP_FIELDS) == sizeof(CopterChirpRecord), "QCHIRP: схема != struct");
     static_assert(schemaSize(POWER_FIELDS) == sizeof(PowerRecord), "POWER: схема != struct");
@@ -501,6 +524,8 @@ namespace BlackBoxFormat
         { REC_QSTATE, "QSTATE", QSTATE_FIELDS, sizeof(CopterStateRecord) },
         { REC_QCHIRP, "QCHIRP", QCHIRP_FIELDS, sizeof(CopterChirpRecord) },
         { REC_QNAV,   "QNAV",   QNAV_FIELDS,   sizeof(CopterNavRecord) },
+        { REC_QMOT4,  "QMOT4",  QMOT4_FIELDS,  sizeof(CopterMotorRecord) },
+        { REC_QDEBUG, "QDEBUG", QDEBUG_FIELDS, sizeof(CopterDebugRecord) },
         // y — байты до конца записи (кусок JPEG)
         { REC_CAM,    "CAM",    "t_us:I frame:H off:I size:I data:y", 0 },
     };

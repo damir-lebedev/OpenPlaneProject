@@ -492,6 +492,70 @@ void test_simulated_flight_is_in_the_log()
 
 }
 
+// 140: выбор полей. debug_mode = RPM_FILTER и blackbox_disable_pids: вместо
+// QCTRL — QMOT4 (моторы и газ), каждый цикл — QDEBUG с частотами режекторов
+// по оборотам; в BFL — debug_mode:46 и поля debug[0..7] с теми же числами,
+// axisP — нули, моторы на месте.
+void test_log_fields_and_debug_mode()
+{
+    Flight f;
+    TEST_ASSERT_TRUE(f.params.setValue(PARAM_DEBUG_MODE, 0, static_cast<float>(DebugMode::RPM_FILTER)));
+    TEST_ASSERT_TRUE(f.params.setValue(PARAM_BLACKBOX_DISABLE_PIDS, 0, 1));
+    f.box.configure(true, CopterBlackBox::Mode::NORMAL, 1);
+    TEST_ASSERT_EQUAL(static_cast<int>(DebugMode::RPM_FILTER), static_cast<int>(f.box.logFields().debug));
+    TEST_ASSERT_FALSE(f.box.logFields().pids);
+    TEST_ASSERT_EQUAL(46, debugModeBf(DebugMode::RPM_FILTER));
+    TEST_ASSERT_EQUAL(static_cast<int>(DebugMode::GYRO_SCALED), static_cast<int>(debugModeFromBf(6)));
+    TEST_ASSERT_EQUAL(static_cast<int>(DebugMode::NONE), static_cast<int>(debugModeFromBf(45)));   // такого нет
+    f.fly();
+    const std::vector<Rec> recs = readFlight(f.storage, 1);
+    const size_t gyro = countType(recs, REC_QGYRO);
+    TEST_ASSERT_TRUE(gyro > 1000);
+    TEST_ASSERT_EQUAL(0, countType(recs, REC_QCTRL));
+    TEST_ASSERT_EQUAL(gyro, countType(recs, REC_QMOT4));
+    TEST_ASSERT_EQUAL(gyro, countType(recs, REC_QDEBUG));
+    TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "debug_mode_bf=46"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_INFO, "set.debug_mode=RPM_FILTER"));
+    TEST_ASSERT_TRUE(hasText(recs, REC_SCHEMA, "QDEBUG"));
+    int maxHz = 0;
+    std::vector<int16_t> d0;
+    for (const Rec& r : recs)
+    {
+        if (r.type != REC_QDEBUG) continue;
+        const BlackBoxFormat::CopterDebugRecord d = r.as<BlackBoxFormat::CopterDebugRecord>();
+        TEST_ASSERT_EQUAL(46, d.mode);
+        TEST_ASSERT_EQUAL(0, d.debug[4]);
+        maxHz = std::max(maxHz, static_cast<int>(d.debug[0]));
+        d0.push_back(d.debug[0]);
+    }
+    char why[80];
+    snprintf(why, sizeof(why), "RPM_FILTER: motor 1 notch up to %d Hz", maxHz);
+    TEST_MESSAGE(why);
+    TEST_ASSERT_TRUE_MESSAGE(maxHz > 100 && maxHz < 1000, why);   // 5" на газу — сотни Гц
+
+    VectorSink sink;
+    bfl::Writer writer(sink);
+    bfl::CopterBflConverter conv(writer);
+    const std::vector<uint8_t> img = f.image();
+    for (size_t at = 0; at + SECTOR_SIZE <= img.size(); at += SECTOR_SIZE) conv.sector(img.data() + at);
+    conv.finish();
+    const bflparse::Log log = bflparse::parse(sink.bytes);
+    TEST_ASSERT_TRUE_MESSAGE(log.error.empty(), log.error.c_str());
+    TEST_ASSERT_EQUAL_STRING("46", log.headers.at("debug_mode").c_str());
+    const int dbg0 = log.field("debug[0]"), dbg7 = log.field("debug[7]"), motor0 = log.field("motor[0]"), p0 = log.field("axisP[0]");
+    TEST_ASSERT_TRUE(dbg0 > motor0 && dbg7 == dbg0 + 7 && motor0 > 0 && p0 > 0);
+    TEST_ASSERT_EQUAL(-1, log.field("debug[8]"));
+    TEST_ASSERT_UINT32_WITHIN(1, gyro, log.frames.size());
+    int32_t maxMotor = 0;
+    for (size_t k = 0; k < log.frames.size() && k < d0.size(); ++k)
+    {
+        TEST_ASSERT_EQUAL_INT32(d0[k], log.frames[k][dbg0]);
+        TEST_ASSERT_EQUAL_INT32(0, log.frames[k][p0]);
+        maxMotor = std::max(maxMotor, log.frames[k][motor0]);
+    }
+    TEST_ASSERT_TRUE(maxMotor > 600);   // моторы — из QMOT4
+}
+
 // 177: драйвер SPI-NOR (hal/SpiNorFlash.h) на эмуляторе микросхемы: JEDEC,
 // запись через границу страницы — двумя командами, сектор и блок, вся
 // микросхема — одной командой, ожидание «занята», чужой и пустой ответ.
@@ -844,6 +908,7 @@ int main()
     RUN_TEST(test_bfl_writer_encoding);
     RUN_TEST(test_simulated_flight_is_in_the_log);
     RUN_TEST(test_chirp_sweeps_in_the_log_identify_the_copter);
+    RUN_TEST(test_log_fields_and_debug_mode);
     RUN_TEST(test_spi_nor_flash_driver);
     RUN_TEST(test_spi_sd_card_driver);
     RUN_TEST(test_spi_sd_card_releases_shared_bus_while_busy);

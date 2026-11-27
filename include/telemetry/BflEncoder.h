@@ -32,9 +32,11 @@
 // 0.01 А. Заголовок представляется «Betaflight 4.5.0 (OpenPlane …)» —
 // иначе Explorer не знает, как читать поля (то же решение, что для MSP).
 //
-// CopterBflConverter переводит записи нашего ящика (QGYRO, QCTRL, QMOT8,
-// QSTATE, INFO — telemetry/CopterBlackBox.h) в кадры: один кадр на цикл,
-// что записан (blackbox_sample_rate). Без Arduino — тесты на ПК.
+// CopterBflConverter переводит записи нашего ящика (QGYRO, QCTRL или QMOT4,
+// QMOT8, QDEBUG, QSTATE, INFO — telemetry/CopterBlackBox.h) в кадры: один
+// кадр на цикл, что записан (blackbox_sample_rate). debug_mode выбран —
+// после моторов поля debug[0..7], в заголовке его номер BF (Explorer
+// подписывает поля по нему). Без Arduino — тесты на ПК.
 // ============================================================
 
 namespace bfl
@@ -53,6 +55,7 @@ namespace bfl
     constexpr uint8_t EVENT_LOG_END = 255;
     constexpr uint16_t I_INTERVAL = 32;
     constexpr uint8_t MAX_MOTORS = 8;
+    constexpr uint8_t DEBUG_FIELDS = 8;
 
     inline uint32_t zigzag(int32_t v) { return (static_cast<uint32_t>(v) << 1) ^ static_cast<uint32_t>(v >> 31); }
 
@@ -81,6 +84,7 @@ namespace bfl
         char craft[32] = "";               // сборка
         int pid[3][4] = {};                // P I D F по осям, единицы BF
         uint8_t motorPoles = 14;
+        uint8_t debugMode = 0;             // номер debug_mode BF; 0 — полей debug[] нет
     };
 
     class Writer
@@ -91,11 +95,14 @@ namespace bfl
         {
         }
 
-        uint8_t fieldCount() const { return static_cast<uint8_t>(F_COUNT_NO_MOTORS + motors); }
+        uint8_t fieldCount() const { return static_cast<uint8_t>(F_COUNT_NO_MOTORS + motors + debugCount); }
+        uint8_t motorCount() const { return motors; }
+        uint8_t debugBase() const { return static_cast<uint8_t>(F_MOTOR + motors); }
 
         void begin(const Header& h)
         {
             motors = h.motors > MAX_MOTORS ? MAX_MOTORS : (h.motors ? h.motors : 1);
+            debugCount = h.debugMode ? DEBUG_FIELDS : 0;
             frames = 0;
             line("Product:Blackbox flight data recorder by Nicholas Sherlock");
             line("Data version:2");
@@ -110,7 +117,7 @@ namespace bfl
             line("Craft name:%s", h.craft);
             // поля главного кадра
             char buf[640];
-            fieldList(buf, sizeof(buf), [](uint8_t i, char* o, size_t n) { fieldName(i, o, n); });
+            fieldList(buf, sizeof(buf), [this](uint8_t i, char* o, size_t n) { fieldName(i, o, n); });
             line("Field I name:%s", buf);
             fieldList(buf, sizeof(buf), [](uint8_t i, char* o, size_t n) {
                 snprintf(o, n, "%u", (i >= F_AXIS_P && i != F_VBAT && i != F_AMPS) ? 1u : 0u);
@@ -146,7 +153,7 @@ namespace bfl
             for (uint8_t a = 0; a < 3; ++a) line("%sPID:%d,%d,%d", AXES[a], h.pid[a][0], h.pid[a][1], h.pid[a][2]);
             line("ff_weight:%d,%d,%d", h.pid[0][3], h.pid[1][3], h.pid[2][3]);
             line("motor_poles:%u", h.motorPoles);
-            line("debug_mode:0");
+            line("debug_mode:%u", h.debugMode);
         }
 
         // Значения главного кадра по порядку полей (fieldCount()).
@@ -191,8 +198,13 @@ namespace bfl
 
         uint32_t frameCount() const { return frames; }
 
-        static void fieldName(uint8_t i, char* out, size_t n)
+        void fieldName(uint8_t i, char* out, size_t n) const
         {
+            if (i >= debugBase())
+            {
+                snprintf(out, n, "debug[%u]", i - debugBase());
+                return;
+            }
             if (i == F_LOOP) snprintf(out, n, "loopIteration");
             else if (i == F_TIME) snprintf(out, n, "time");
             else if (i < F_AXIS_I) snprintf(out, n, "axisP[%u]", i - F_AXIS_P);
@@ -255,8 +267,9 @@ namespace bfl
 
         Sink& sink;
         uint8_t motors = 4;
+        uint8_t debugCount = 0;
         uint32_t frames = 0;
-        int32_t prev[F_COUNT_NO_MOTORS + MAX_MOTORS] = {};
+        int32_t prev[F_COUNT_NO_MOTORS + MAX_MOTORS + DEBUG_FIELDS] = {};
     };
 
     // Записи ящика коптера -> кадры BF. Заголовок — по INFO полёта (они идут
@@ -287,6 +300,22 @@ namespace bfl
                     if (length < sizeof(CopterCtrlRecord)) break;
                     memcpy(&ctrl, data, sizeof(ctrl));
                     haveCtrl = true;
+                    break;
+                case REC_QMOT4:   // blackbox_disable_pids: моторы и газ без PID
+                {
+                    if (length < sizeof(CopterMotorRecord)) break;
+                    CopterMotorRecord m;
+                    memcpy(&m, data, sizeof(m));
+                    ctrl = CopterCtrlRecord{};
+                    ctrl.tUs = m.tUs;
+                    for (uint8_t i = 0; i < 4; ++i) ctrl.motor[i] = m.motor[i];
+                    ctrl.thrust = m.thrust;
+                    haveCtrl = true;
+                    break;
+                }
+                case REC_QDEBUG:
+                    if (length < sizeof(CopterDebugRecord)) break;
+                    memcpy(&dbg, data, sizeof(dbg));
                     break;
                 case REC_QMOT8:
                     if (length < sizeof(CopterMotor8Record)) break;
@@ -349,6 +378,7 @@ namespace bfl
             else if (is("firmware")) snprintf(hdr.firmware, sizeof(hdr.firmware), "%s", v);
             else if (is("build")) snprintf(hdr.craft, sizeof(hdr.craft), "%s", v);
             else if (is("set.motor_poles")) hdr.motorPoles = static_cast<uint8_t>(atoi(v));
+            else if (is("debug_mode_bf")) hdr.debugMode = static_cast<uint8_t>(atoi(v));
             else if (is("pid.roll") || is("pid.pitch") || is("pid.yaw"))
             {
                 const int a = is("pid.roll") ? 0 : is("pid.pitch") ? 1 : 2;
@@ -369,7 +399,7 @@ namespace bfl
                 started = true;
                 firstUs = gyro.tUs;
             }
-            int32_t v[F_COUNT_NO_MOTORS + MAX_MOTORS] = {};
+            int32_t v[F_COUNT_NO_MOTORS + MAX_MOTORS + DEBUG_FIELDS] = {};
             v[F_LOOP] = static_cast<int32_t>(loop++);
             v[F_TIME] = static_cast<int32_t>(gyro.tUs - firstUs);
             for (uint8_t a = 0; a < 3; ++a)
@@ -394,11 +424,15 @@ namespace bfl
             {
                 v[F_RC + 3] = 1000;
             }
-            const uint8_t m = writer.fieldCount() - F_MOTOR;
+            const uint8_t m = writer.motorCount();
             for (uint8_t i = 0; i < m; ++i)
             {
                 const uint16_t cmd = i < 4 ? ctrl.motor[i] : mot8.motor[i - 4];
                 v[F_MOTOR + i] = 48 + static_cast<int32_t>(cmd) * 1999 / 1000;
+            }
+            if (writer.fieldCount() > writer.debugBase())
+            {
+                for (uint8_t i = 0; i < DEBUG_FIELDS; ++i) v[writer.debugBase() + i] = dbg.debug[i];
             }
             writer.mainFrame(v);
             haveCtrl = false;
@@ -430,6 +464,7 @@ namespace bfl
         BlackBoxFormat::CopterGyroRecord gyro{};
         BlackBoxFormat::CopterCtrlRecord ctrl{};
         BlackBoxFormat::CopterMotor8Record mot8{};
+        BlackBoxFormat::CopterDebugRecord dbg{};
         BlackBoxFormat::CopterStateRecord state{};
         bool haveGyro = false, haveCtrl = false, haveState = false, started = false, slowSent = false;
         uint32_t loop = 0, firstUs = 0, lastSlow = 0;

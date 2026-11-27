@@ -457,6 +457,10 @@ BF его не назначает, а инвертор SBUS стоит толь�
 | `blackbox_device` | общая | `NONE`, `SPIFLASH`, `SDCARD`, `SERIAL` | `SPIFLASH` у F405, `SDCARD` у H743 | куда писать чёрный ящик; пишет, только если выбран носитель этой платы (`SERIAL` принимается из diff BF, но не пишет) |
 | `blackbox_mode` | общая | `NORMAL`, `MOTOR_TEST`, `ALWAYS` | `NORMAL` | когда писать: пока ARM, пока крутятся моторы, всегда |
 | `blackbox_sample_rate` | общая | `1/1` … `1/32` | `1/1` (F405 с флешем — `1/2`) | гироскоп, PID и моторы — каждый какой цикл |
+| `debug_mode` | общая | `NONE`, `BATTERY`, `GYRO_FILTERED`, `ACCELEROMETER`, `GYRO_SCALED`, `ALTITUDE`, `FFT_FREQ`, `RC_SMOOTHING`, `RPM_FILTER`, `D_MIN`, `DYN_IDLE`, `FEEDFORWARD` | `NONE` | что писать в `debug[0..7]` каждый цикл (запись `QDEBUG`), как в BF |
+| `blackbox_disable_pids` | общая | `OFF`/`ON` | `OFF` | не писать P, I, D, F — вместо `QCTRL` короткая `QMOT4` (моторы и газ) |
+| `blackbox_disable_gps` | общая | `OFF`/`ON` | `OFF` | не писать решения GPS |
+| `blackbox_disable_debug` | общая | `OFF`/`ON` | `OFF` | не писать `debug[]`, даже если `debug_mode` выбран |
 | `motor_poles` | общая | 4–255 | 14 | магнитов в роторе: обороты = eRPM × 2 / `motor_poles` |
 | `crashflip_motor_percent` | общая | 0–100 % | 0 | turtle mode: моторы другой стороны крутятся с такой долей силы (0 — стоят) |
 | `crashflip_expo` | общая | 0–100 % | 35 | turtle mode: экспо стика — у центра мягче, переворот без рывка |
@@ -1401,7 +1405,9 @@ GPS; курс — компас, сверенный с полётом, а без 
 |---|---|---|
 | `QGYRO` | каждый цикл (`blackbox_sample_rate`) | гироскоп до и после фильтров, уставки, время работы цикла |
 | `QCTRL` | тогда же | P, I, D, F по осям (доля хода моторов), моторы 1–4, газ смесителя |
+| `QMOT4` | вместо `QCTRL`, если `blackbox_disable_pids` | моторы 1–4, газ смесителя (те же поля) |
 | `QMOT8` | тогда же, если моторов больше 4 | моторы 5–8 |
+| `QDEBUG` | тогда же, если выбран `debug_mode` | `debug0`…`debug7` и номер режима BF (`mode`) |
 | `QCHIRP` | тогда же, пока идёт chirp | возбуждение, команда оси вместе с ним, гироскоп до и после фильтров, частота, ось, номер свипа |
 | `QSTATE` | 50 Гц | углы, высота и цель, набор, стики, газ висения, батарея (В, А, мА·ч), обороты, LQ, режим, флаги, запреты ARM |
 | `QNAV` | 10 Гц и сразу при смене флагов | оценка положения от дома (м) и скорость, точка удержания POS HOLD, курс и его источник (`NONE`/`GPS`/`MAG`), этап POS HOLD и почему не держит, этап GPS Rescue, доверие GPS; флаги: положение годно, crash recovery, yaw spin recovery, гироскоп в упоре, компас не верен, подмена GPS, проверка runaway, turtle |
@@ -1416,6 +1422,32 @@ GPS; курс — компас, сверенный с полётом, а без 
 столе), `ALWAYS` — с включения. `blackbox_device = NONE` — не писать.
 При 1 кГц поток ~70 КБ/с: на карту уходят блоки по 512 байт, файл 256 МБ —
 около часа. Если в журнале «очередь переполнена» — `blackbox_sample_rate = 1/2`.
+
+**Выбор полей и `debug_mode`.** `blackbox_disable_pids = ON` убирает PID из
+записи цикла (≈68 → 44 байт на цикл: флеша F405 на 16 МБ хватает в полтора
+раза дольше), `blackbox_disable_gps` — решения GPS; уставка, гироскоп, моторы и
+состояние пишутся всегда. `debug_mode` пишет восемь чисел каждый цикл, номер
+режима — как в BF 4.5 (его видят Configurator по MSP и Blackbox Explorer,
+подписи полей — его):
+
+| `debug_mode` (номер BF) | `debug[0]` | `[1]` | `[2]` | `[3]` |
+|---|---|---|---|---|
+| `BATTERY` (2) | батарея, 0.01 В | ток, 0.01 А | мА·ч | — |
+| `GYRO_FILTERED` (3) | гироскоп после фильтров, крен, °/с | тангаж | рысканье | — |
+| `ACCELEROMETER` (4) | акселерометр X, 1 g = 2048 | Y | Z | — |
+| `GYRO_SCALED` (6) | гироскоп до фильтров, крен, °/с | тангаж | рысканье | — |
+| `ALTITUDE` (14) | высота, см | набор, см/с | цель, см | — |
+| `FFT_FREQ` (17) | пик 1 динамического режектора по крену, Гц | пик 2 | пик 3 | гироскоп крена до фильтров |
+| `RC_SMOOTHING` (39) | частота кадров приёмника, Гц | срез сглаживания стиков, Гц | срез газа, Гц | — |
+| `RPM_FILTER` (46) | режектор мотора 1 (основная гармоника), Гц | мотор 2 | мотор 3 | мотор 4 |
+| `D_MIN` (47) | подъём D крена к `d_max`, % | тангаж, % | D крена (как `axisD`) | D тангажа |
+| `DYN_IDLE` (57) | добавка dynamic idle, 0.1 % | — | — | самый медленный мотор, 0.1 об/с |
+| `FEEDFORWARD` (59) | уставка крена, °/с | F крена (как `axisF`) | уставка тангажа | F тангажа |
+
+В выгрузке BF (`bb bfl`) — поля `debug[0]`…`debug[7]` и `debug_mode:<номер>`
+в заголовке; в Studio — график «Отладка (debug_mode)». По MSP режим
+меняется `MSP_SET_ADVANCED_CONFIG`, поля — маской `MSP_SET_BLACKBOX_CONFIG`
+(биты BF: 0 — PID, 9 — debug, 11 — GPS; остальные у нас не выключаются).
 
 Смотреть — **OpenPlane Studio, раздел «Ящик»**: полёты с карты по USB
 (кнопка «Скачать», файл ложится в папку проекта), сохранённые журналы или
@@ -1456,7 +1488,7 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 |---|---|---|
 | Вход и плата | `API_VERSION`, `FC_VARIANT`, `FC_VERSION`, `BOARD_INFO`, `BUILD_INFO`, `UID`, `NAME`/`SET_NAME`, `MSP2_GET_TEXT`/`SET_TEXT` | имя — `craft_name`; имени пилота, имён профилей и ключа сборки нет — пустые строки (облако BF не спрашивается) |
 | Датчики | `SENSOR_ALIGNMENT`, `ACC_TRIM`, `BOARD_ALIGNMENT_CONFIG`, `ACC_CALIBRATION` | поворот чипа — из файла платы (`OPB_GYRO_ALIGN`), подстройки горизонта углом нет — 0, 0 |
-| Чёрный ящик | `BLACKBOX_CONFIG`/`SET_*`, `DATAFLASH_SUMMARY`, `SDCARD_SUMMARY` | `blackbox_device`, `blackbox_sample_rate`; флеш и карта — «не поддерживаются»: скачать ящик по MSP и включить флешку USB конфигуратор у нас не может — журналы через Studio или `tools/blackbox.py` |
+| Чёрный ящик | `BLACKBOX_CONFIG`/`SET_*`, `DATAFLASH_SUMMARY`, `SDCARD_SUMMARY` | `blackbox_device`, `blackbox_sample_rate`, маска полей (`blackbox_disable_pids/debug/gps`), `debug_mode` — в `ADVANCED_CONFIG`; флеш и карта — «не поддерживаются»: скачать ящик по MSP и включить флешку USB конфигуратор у нас не может — журналы через Studio или `tools/blackbox.py` |
 | Живые данные | `STATUS`, `STATUS_EX`, `RAW_IMU`, `ATTITUDE`, `ALTITUDE`, `ANALOG`, `BATTERY_STATE`, `RC`, `MOTOR`, `BOXNAMES`, `BOXIDS` | флаги запрета ARM — номерами BF (`status`), режимы — наша таблица |
 | PID, расходы | `PID`, `RC_TUNING`, `PID_ADVANCED` и `SET_*` | в реестр, единицы BF; тип расходов — `ACTUAL` (наша кривая), LEVEL и MAG — дефолты BF, не меняются |
 | Фильтры | `FILTER_CONFIG`, `SET_FILTER_CONFIG` | ФНЧ гироскопа и D (типы, срезы, динамика по газу), `gyro_hardware_lpf`, статические режекторы, `yaw_lowpass_hz`, динамический режектор (`dyn_notch_*`) и RPM-фильтр (`rpm_filter_harmonics`, `rpm_filter_min_hz`) — как в BF 4.5 |

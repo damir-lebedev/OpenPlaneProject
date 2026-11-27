@@ -326,7 +326,7 @@ namespace copter
                     w.u8(1u << rate);
                     w.u16(1u << rate);
                     w.u8(rate);
-                    w.u32(0);   // выбор полей — пока весь набор (140)
+                    w.u32(fieldsDisabledMask());   // выбор полей (140)
                     return true;
                 }
                 case UID:
@@ -513,6 +513,13 @@ namespace copter
                         r.u8();
                         r.u8();
                         set(PARAM_BLACKBOX_SAMPLE_RATE, r.u8());
+                    }
+                    if (r.remaining() >= 4)
+                    {
+                        const uint32_t off = r.u32();
+                        set(PARAM_BLACKBOX_DISABLE_PIDS, (off & BB_FIELD_PID) ? 1 : 0);
+                        set(PARAM_BLACKBOX_DISABLE_DEBUG, (off & BB_FIELD_DEBUG) ? 1 : 0);
+                        set(PARAM_BLACKBOX_DISABLE_GPS, (off & BB_FIELD_GPS) ? 1 : 0);
                     }
                     break;
                 }
@@ -1175,6 +1182,14 @@ namespace copter
             if (proto < sizeof(FROM_BF) && FROM_BF[proto] >= 0) set(PARAM_MOTOR_PWM_PROTOCOL, FROM_BF[proto]);
             set(PARAM_MOTOR_PWM_RATE, r.u16());
             set(PARAM_DSHOT_IDLE_VALUE, r.u16());
+            // gyro_use_32khz, motor_pwm_inversion, gyro_to_use, gyro_high_fsr, порог движения,
+            // длительность калибровки u16, смещение рысканья u16, check_overflow — затем debug_mode
+            if (r.remaining() < 10) return;
+            for (int i = 0; i < 5; ++i) r.u8();
+            r.u16();
+            r.u16();
+            r.u8();
+            set(PARAM_DEBUG_MODE, static_cast<uint8_t>(debugModeFromBf(static_cast<uint8_t>(r.u8()))));
         }
 
         void advancedConfig(msp::Writer& w)
@@ -1204,8 +1219,19 @@ namespace copter
             w.u16(125);
             w.u16(0);
             w.u8(0);
-            w.u8(0);       // debug_mode NONE
-            w.u8(1);       // DEBUG_COUNT
+            w.u8(debugModeBf(static_cast<DebugMode>(static_cast<uint8_t>(params.value(PARAM_DEBUG_MODE)))));
+            w.u8(8);       // DEBUG16_VALUE_COUNT
+        }
+
+        // MSP_BLACKBOX_CONFIG: биты выключенных полей, как FLIGHT_LOG_FIELD_SELECT_* BF
+        uint32_t fieldsDisabledMask() const
+        {
+            const LogFields f = params.logFields();
+            uint32_t m = 0;
+            if (!f.pids) m |= BB_FIELD_PID;
+            if (params.value(PARAM_BLACKBOX_DISABLE_DEBUG) > 0.5f) m |= BB_FIELD_DEBUG;
+            if (!f.gps) m |= BB_FIELD_GPS;
+            return m;
         }
 
         void modeRanges(msp::Writer& w)

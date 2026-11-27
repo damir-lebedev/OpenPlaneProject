@@ -1383,6 +1383,43 @@ void test_esc_protocol_order_and_min_command_from_settings()
     TEST_ASSERT_EQUAL_UINT8(3, copterParams.motorOutput(0));
     TEST_ASSERT_EQUAL_UINT8(0, copterParams.motorOutput(3));
 
+    // 140: debug_mode — номером BF в хвосте ADVANCED_CONFIG; поля ящика — маской BLACKBOX_CONFIG
+    uint8_t advFull[] = { 1, 1, 0, 7, 0xE0, 0x01, 0x26, 0x02, 0, 0, 0, 0, 48, 125, 0, 0, 0, 0, 46 };   // RPM_FILTER
+    in.cmd = copter::mspcmd::SET_ADVANCED_CONFIG;
+    memcpy(in.payload, advFull, sizeof(advFull));
+    in.size = sizeof(advFull);
+    TEST_ASSERT_TRUE(copterConsole.mspHandler().process(in, w, millis()));
+    TEST_ASSERT_EQUAL(static_cast<int>(copter::DebugMode::RPM_FILTER), static_cast<int>(copterParams.value(copter::PARAM_DEBUG_MODE)));
+    {
+        msp::Writer r;
+        in.cmd = copter::mspcmd::ADVANCED_CONFIG;
+        in.size = 0;
+        TEST_ASSERT_TRUE(copterConsole.mspHandler().process(in, r, millis()));
+        TEST_ASSERT_TRUE(r.length >= 2);
+        TEST_ASSERT_EQUAL_UINT8(46, r.buf[r.length - 2]);
+        TEST_ASSERT_EQUAL_UINT8(8, r.buf[r.length - 1]);
+    }
+    uint8_t bb[] = { 2, 1, 1, 0x20, 0x00, 0, 0x01, 0x08, 0, 0 };   // SDCARD, 1/1, выключить PID и GPS
+    in.cmd = copter::mspcmd::SET_BLACKBOX_CONFIG;
+    memcpy(in.payload, bb, sizeof(bb));
+    in.size = sizeof(bb);
+    TEST_ASSERT_TRUE(copterConsole.mspHandler().process(in, w, millis()));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, copterParams.value(copter::PARAM_BLACKBOX_DISABLE_PIDS));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, copterParams.value(copter::PARAM_BLACKBOX_DISABLE_GPS));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, copterParams.value(copter::PARAM_BLACKBOX_DISABLE_DEBUG));
+    {
+        msp::Writer r;
+        in.cmd = copter::mspcmd::BLACKBOX_CONFIG;
+        in.size = 0;
+        TEST_ASSERT_TRUE(copterConsole.mspHandler().process(in, r, millis()));
+        uint32_t mask = 0;
+        memcpy(&mask, r.buf + r.length - 4, 4);
+        TEST_ASSERT_EQUAL_HEX32(copter::BB_FIELD_PID | copter::BB_FIELD_GPS, mask);
+    }
+    copterParams.reset(copter::PARAM_DEBUG_MODE, 0);
+    copterParams.reset(copter::PARAM_BLACKBOX_DISABLE_PIDS, 0);
+    copterParams.reset(copter::PARAM_BLACKBOX_DISABLE_GPS, 0);
+
     copterParams.reset(copter::PARAM_MOTOR_PWM_PROTOCOL, 0);
     copterParams.reset(copter::PARAM_MOTOR_OUTPUT_REORDERING, 0);
     copterParams.reset(copter::PARAM_MIN_COMMAND, 0);
