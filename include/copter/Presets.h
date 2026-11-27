@@ -403,6 +403,7 @@ namespace copter
         RateCurve rates[3];
         ThrottleCurve throttle;         // thr_mid / thr_expo / throttle_limit_*
         float idle = 0.055f;            // холостые: доля команды регулятору
+        float fpvMixDeg = 0.0f;         // fpv_mix_degrees: наклон камеры для FPV ANGLE MIX
         float thrustLinear = 0.25f;
         float motorOutputLimit = 1.0f;  // motor_output_limit: доля хода от холостых до полного
         EzLanding ezLanding;            // ez_landing_* (mixer_type = EZLANDING)

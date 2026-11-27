@@ -483,17 +483,19 @@ static copter::VtxRequest vtxRequest()
     return r;
 }
 
-// PINIO: ножка в «включено», пока включён её режим USER1…USER4 (с инверсией
-// платы, как pinio_config в Betaflight).
+// PINIO: ножка в «включено», пока включён её режим USER1…USER4 (с инверсией,
+// как pinio_box / pinio_config в Betaflight; пусто — как в файле платы).
 static void updatePinio(bool force)
 {
     for (uint8_t i = 0; i < 4; ++i)
     {
         const int16_t pin = Config::BOARD_PINIO_PINS[i];
         if (pin < 0) continue;
-        const uint8_t box = Config::BOARD_PINIO_BOX[i];
+        const uint8_t box = copterParams.pinioBox(i, Config::BOARD_PINIO_BOX[i]);
+        const uint8_t cfg = copterParams.pinioConfig(i, Config::BOARD_PINIO_INVERTED[i]);
+        if (!(cfg & copter::CopterParams::PINIO_OUT)) continue;   // 0 — ножку не трогать
         const bool on = box < copter::BOX_COUNT && rxInput.isActive(box);
-        const bool level = on != Config::BOARD_PINIO_INVERTED[i];
+        const bool level = on != ((cfg & copter::CopterParams::PINIO_INVERTED) != 0);
         if (!force && level == static_cast<bool>((pinioLevels >> i) & 1u)) continue;
         if (force) pinMode(static_cast<uint32_t>(pin), OUTPUT);
         digitalWrite(static_cast<uint32_t>(pin), level ? HIGH : LOW);

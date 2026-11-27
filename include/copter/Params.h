@@ -330,6 +330,7 @@ namespace copter
         PARAM_ROLL_RATE_LIMIT,
         PARAM_PITCH_RATE_LIMIT,
         PARAM_YAW_RATE_LIMIT,
+        PARAM_FPV_MIX_DEGREES,
         PARAM_THR_MID,
         PARAM_THR_EXPO,
         PARAM_THROTTLE_LIMIT_TYPE,
@@ -434,6 +435,8 @@ namespace copter
         PARAM_DSHOT_IDLE_VALUE,
         PARAM_MIN_COMMAND,
         PARAM_MOTOR_OUTPUT_REORDERING,
+        PARAM_PINIO_BOX,
+        PARAM_PINIO_CONFIG,
         PARAM_CRASHFLIP_MOTOR_PERCENT,
         PARAM_CRASHFLIP_EXPO,
         PARAM_CRAFT_NAME,
@@ -705,7 +708,7 @@ namespace copter
                              kGroupVtx = ParamGroup::VTX, kGroupGps = ParamGroup::GPS, kGroupBlackbox = ParamGroup::BLACKBOX,
                              kGroupFilters = ParamGroup::FILTERS, kGroupMotors = ParamGroup::MOTORS,
                              kGroupSafety = ParamGroup::SAFETY, kGroupOsd = ParamGroup::OSD,
-                             kGroupAuto = ParamGroup::AUTOPILOT;
+                             kGroupAuto = ParamGroup::AUTOPILOT, kGroupModes = ParamGroup::MODES;
         constexpr ParamDefault kTable = ParamDefault::TABLE, kTune = ParamDefault::TUNE, kBuild = ParamDefault::BUILD,
                                kBattery = ParamDefault::BATTERY;
         static const ParamInfo table[] = {
@@ -945,6 +948,8 @@ namespace copter
             { "roll_rate_limit", kInt, kRate, kGroupRates, 200, 1998, 1998, kTable, "°/с", nullptr, 0, "потолок расхода крена при любой формуле" },
             { "pitch_rate_limit", kInt, kRate, kGroupRates, 200, 1998, 1998, kTable, "°/с", nullptr, 0, "потолок расхода тангажа при любой формуле" },
             { "yaw_rate_limit", kInt, kRate, kGroupRates, 200, 1998, 1998, kTable, "°/с", nullptr, 0, "потолок расхода рысканья при любой формуле" },
+            { "fpv_mix_degrees", kInt, kMaster, kGroupRates, 0, 90, 0, kTable, "°", nullptr, 0,
+              "наклон камеры для режима FPV ANGLE MIX: крен и рысканье — вокруг осей камеры (0 — режим не действует)" },
             { "thr_mid", kInt, kRate, kGroupRates, 0, 100, 50, kTable, "%", nullptr, 0, "кривая газа: точка излома (обычно газ висения)" },
             { "thr_expo", kInt, kRate, kGroupRates, 0, 100, 0, kTable, "%", nullptr, 0, "кривая газа: плоскость у thr_mid — точнее висение" },
             { "throttle_limit_type", kEnum, kRate, kGroupRates, 0, 2, 0, kTable, "", THROTTLE_LIMIT_TYPES, 3,
@@ -1144,6 +1149,10 @@ namespace copter
               "импульс «стоп» аналоговых регуляторов (PWM; у OneShot и Multishot — в той же доле); DShot — не нужен" },
             { "motor_output_reordering", kText, kMaster, kGroupMotors, 0, 15, 0, kTable, "", nullptr, 0,
               "порядок выходов: мотор i — на выход с этим номером (с нуля), через запятую; пусто — по порядку; после перезагрузки" },
+            { "pinio_box", kText, kMaster, kGroupModes, 0, 15, 0, kTable, "", nullptr, 0,
+              "режим, который включает ножку PINIO 1…4 (40–43 — USER1–USER4, 255 — никакой), через запятую; пусто — как в файле платы" },
+            { "pinio_config", kText, kMaster, kGroupModes, 0, 15, 0, kTable, "", nullptr, 0,
+              "ножки PINIO 1…4: 1 — выход, 129 — выход наоборот, 0 — не трогать, через запятую; пусто — как в файле платы" },
             { "crashflip_motor_percent", kInt, kMaster, kGroupMotors, 0, 100, 0, kTable, "%", nullptr, 0,
               "turtle mode: моторы другой стороны крутятся с такой долей силы (0 — стоят)" },
             { "crashflip_expo", kInt, kMaster, kGroupMotors, 0, 100, 35, kTable, "%", nullptr, 0,
@@ -2112,6 +2121,49 @@ namespace copter
             return p <= static_cast<uint8_t>(EscProtocol::DSHOT600) ? static_cast<EscProtocol>(p) : EscProtocol::ONESHOT125;
         }
 
+        // pinio_box / pinio_config (167): ножки PINIO 1…4 платы, как в BF.
+        // Пусто — как в файле платы (boardBox / boardInverted); не названные — тоже.
+        static constexpr uint8_t PINIO_COUNT = 4;
+        static constexpr uint8_t PINIO_OUT = 0x01, PINIO_INVERTED = 0x80;   // биты pinio_config BF
+        uint8_t pinioBox(uint8_t i, uint8_t boardBox) const
+        {
+            uint8_t v[PINIO_COUNT];
+            return pinioValue(PARAM_PINIO_BOX, i, v) ? v[i] : boardBox;
+        }
+        uint8_t pinioConfig(uint8_t i, bool boardInverted) const
+        {
+            uint8_t v[PINIO_COUNT];
+            return pinioValue(PARAM_PINIO_CONFIG, i, v) ? v[i] : static_cast<uint8_t>(boardInverted ? PINIO_OUT | PINIO_INVERTED : PINIO_OUT);
+        }
+        // "a,b,c,d" (0..255, до четырёх) -> значения, count — сколько названо
+        // (остальные — как в файле платы). false — не так написано.
+        static bool pinioList(const char* s, uint8_t out[PINIO_COUNT], uint8_t* count = nullptr)
+        {
+            const char* p = s ? s : "";
+            uint8_t n = 0;
+            while (*p == ' ') ++p;
+            while (*p)
+            {
+                char* end = nullptr;
+                const long v = strtol(p, &end, 10);
+                if (end == p || v < 0 || v > 255 || n >= PINIO_COUNT) return false;
+                out[n++] = static_cast<uint8_t>(v);
+                while (*end == ' ') ++end;
+                if (*end == ',') ++end;
+                else if (*end != '\0') return false;
+                p = end;
+                while (*p == ' ') ++p;
+            }
+            if (count) *count = n;
+            for (uint8_t i = n; i < PINIO_COUNT; ++i) out[i] = 0;
+            return n > 0;
+        }
+        bool pinioValue(ParamId id, uint8_t i, uint8_t v[PINIO_COUNT]) const
+        {
+            uint8_t n = 0;
+            return i < PINIO_COUNT && pinioList(text(id, 0), v, &n) && i < n;
+        }
+
         // motor_output_reordering (076): на какой выход идёт мотор i.
         // Строка не разобралась — по порядку (parse() такую не пропустит).
         uint8_t motorOutput(uint8_t motor) const
@@ -2206,6 +2258,20 @@ namespace copter
                             len += static_cast<size_t>(snprintf(buf + len, sizeof(buf) - len, i ? ",%u" : "%u", order[i]));
                         }
                         s = identity ? "" : buf;
+                    }
+                    if ((id == PARAM_PINIO_BOX || id == PARAM_PINIO_CONFIG) && *s)
+                    {
+                        uint8_t v[PINIO_COUNT], n = 0;
+                        if (!pinioList(s, v, &n))
+                        {
+                            snprintf(error, errorSize, "до четырёх чисел 0..255 через запятую, например %s",
+                                     id == PARAM_PINIO_BOX ? "40,41,255,255" : "1,129,1,1");
+                            return false;
+                        }
+                        size_t len = 0;
+                        for (uint8_t i = 0; i < n; ++i)
+                            len += static_cast<size_t>(snprintf(buf + len, sizeof(buf) - len, i ? ",%u" : "%u", v[i]));
+                        s = buf;
                     }
                     if (id == PARAM_RPM_FILTER_WEIGHTS && *s)
                     {
@@ -2402,6 +2468,7 @@ namespace copter
             if (isSet(PARAM_THRUST_LINEAR, pidIndex)) t.thrustLinear = valueIn(PARAM_THRUST_LINEAR, pidIndex) / 100.0f;
             t.motorOutputLimit = valueIn(PARAM_MOTOR_OUTPUT_LIMIT, pidIndex) / 100.0f;
             t.idle = value(PARAM_DSHOT_IDLE_VALUE) / 10000.0f;
+            t.fpvMixDeg = value(PARAM_FPV_MIX_DEGREES);
             t.ezLanding.threshold = valueIn(PARAM_EZ_LANDING_THRESHOLD, pidIndex) / 100.0f;
             t.ezLanding.limit = valueIn(PARAM_EZ_LANDING_LIMIT, pidIndex) / 100.0f;
             t.ezLanding.speedMs = valueIn(PARAM_EZ_LANDING_SPEED, pidIndex) / 10.0f;
@@ -2645,6 +2712,8 @@ namespace copter
             memset(rpmWeightsText, 0, sizeof(rpmWeightsText));
             memset(accCalibrationText, 0, sizeof(accCalibrationText));
             memset(motorOrderText, 0, sizeof(motorOrderText));
+            memset(pinioBoxText, 0, sizeof(pinioBoxText));
+            memset(pinioConfigText, 0, sizeof(pinioConfigText));
             pidIndex = 0;
             rateIndex = 0;
         }
@@ -2871,6 +2940,8 @@ namespace copter
             if (id == PARAM_RPM_FILTER_WEIGHTS) return slot == 0 ? rpmWeightsText : nullptr;
             if (id == PARAM_ACC_CALIBRATION) return slot == 0 ? accCalibrationText : nullptr;
             if (id == PARAM_MOTOR_OUTPUT_REORDERING) return slot == 0 ? motorOrderText : nullptr;
+            if (id == PARAM_PINIO_BOX) return slot == 0 ? pinioBoxText : nullptr;
+            if (id == PARAM_PINIO_CONFIG) return slot == 0 ? pinioConfigText : nullptr;
             return nullptr;
         }
         const char* stringSlot(ParamId id, uint8_t slot) const { return const_cast<CopterParams*>(this)->stringSlot(id, slot); }
@@ -2922,6 +2993,8 @@ namespace copter
         char rpmWeightsText[NAME_LENGTH + 1] = {};   // rpm_filter_weights; пусто — 100,100,100
         char accCalibrationText[NAME_LENGTH + 1] = {};   // acc_calibration; пусто — 0,0,0,0
         char motorOrderText[NAME_LENGTH + 1] = {};   // motor_output_reordering; пусто — по порядку
+        char pinioBoxText[NAME_LENGTH + 1] = {};     // pinio_box; пусто — как в файле платы
+        char pinioConfigText[NAME_LENGTH + 1] = {};  // pinio_config; пусто — как в файле платы
         uint8_t pidIndex = 0;
         uint8_t rateIndex = 0;
     };

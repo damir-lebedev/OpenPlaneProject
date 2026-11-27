@@ -122,6 +122,19 @@ namespace copter
         pitch = p > 1.0f ? 1.0f : p < -1.0f ? -1.0f : p;
     }
 
+    // FPV ANGLE MIX (BF fpv_mix_degrees): камера наклонена вверх на camDeg, и
+    // стики крена и рысканья вращают коптер вокруг осей камеры, а не рамы —
+    // в кадре разворот не заваливает горизонт. Скорости в °/с, оси FRD (крен +
+    // вправо, рысканье + нос вправо); каждая прижата к своему потолку.
+    inline void fpvMixRotate(float& rollDps, float& yawDps, float camDeg, float rollMax, float yawMax)
+    {
+        const float d = camDeg * 3.14159265f / 180.0f, c = cosf(d), s = sinf(d);
+        const float r = rollDps * c + yawDps * s;
+        const float y = yawDps * c - rollDps * s;
+        rollDps = r > rollMax ? rollMax : r < -rollMax ? -rollMax : r;
+        yawDps = y > yawMax ? yawMax : y < -yawMax ? -yawMax : y;
+    }
+
     // Почему не армится (битовая маска). Биты 0–25 — номера флагов запрета
     // ARM Betaflight 4.5 (`status`, MSP_STATUS_EX: конфигуратор BF читает
     // маску по номерам), коды — их имена. Наши проверки, которых в BF нет, —
@@ -355,6 +368,7 @@ namespace copter
         bool paralyze = false;         // режим PARALYZE на тумблере (защёлкивается в контроллере)
         bool headfree = false;         // режим HEADFREE: стики — от курса при ARM
         bool headAdjust = false;       // режим HEADADJ: курс для HEADFREE — нынешний
+        bool fpvAngleMix = false;      // режим FPV ANGLE MIX: крен и рысканье — в осях камеры
         bool armAssigned = true;       // ARM есть в таблице режимов
         uint32_t frame = 0;            // счётчик кадров приёмника; 0 — неизвестно (кадр — раз в 1/FF_NOMINAL_FRAME_HZ)
         // rxfail стиков = HOLD: на этапе 1 failsafe — последнее верное значение
@@ -467,6 +481,7 @@ namespace copter
         bool runawayCheck = false;     // проверка runaway takeoff ещё работает (после ARM, до уверенного взлёта)
         bool headfree = false;         // HEADFREE действует (режим с горизонтом, не автомат)
         float headfreeRefDeg = 0.0f;   // курс, от которого считаются стики HEADFREE
+        bool fpvMix = false;           // FPV ANGLE MIX действует (ACRO/HORIZON, fpv_mix_degrees > 0)
         bool turtle = false;           // заармлен в turtle mode: моторы наоборот, стик — какой стороной переворачиваться
         LaunchState launch = LaunchState::OFF;   // launch control: ждёт рывка (ACTIVE) или уже стартовал
         uint8_t failsafeStage = 0;     // 0 — нет, 1 — ровно и держит высоту, 2 — процедура
@@ -1067,6 +1082,9 @@ namespace copter
             if (rc.headAdjust) status.headfreeRefDeg = attitude.yawDeg();
             status.headfree = rc.headfree && mode != CopterMode::ACRO && !rescuing && !failsafe && !status.turtle;
             if (status.headfree) headfreeRotate(sticks[0], sticks[1], attitude.yawDeg() - status.headfreeRefDeg);
+            // FPV ANGLE MIX: только где стик — скорость (в ANGLE крен — угол), не с HEADFREE и не автоматом
+            status.fpvMix = rc.fpvAngleMix && tune.fpvMixDeg > 0.0f && (mode == CopterMode::ACRO || mode == CopterMode::HORIZON) &&
+                            !status.headfree && !rescuing && !failsafe && !status.turtle;
             status.rcFrameHz = rcSmooth.frameRateHz();
             status.rcSetpointCutoffHz = rcSmooth.setpointCutoffHz();
             status.rcThrottleCutoffHz = rcSmooth.throttleCutoffHz();
@@ -2012,6 +2030,7 @@ namespace copter
             const PidExtras& px = tune.pid;
             float acro[3];
             for (int a = 0; a < 3; ++a) acro[a] = tune.rates[a].apply(sticks[a]);
+            if (status.fpvMix && !rescueCmd) fpvMixRotate(acro[0], acro[2], tune.fpvMixDeg, tune.rates[0].top(), tune.rates[2].top());
             // ANGLE и ALT_HOLD (и автомат failsafe) — целевой угол стиком; иначе упреждения нет
             if (mode == CopterMode::ACRO || mode == CopterMode::HORIZON) angleTargetValid = false;
             if (mode == CopterMode::ACRO)

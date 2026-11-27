@@ -70,6 +70,7 @@ namespace copter
         BOX_BLACKBOX = 26,
         BOX_FAILSAFE = 27,
         BOX_AIRMODE = 28,
+        BOX_FPV_ANGLE_MIX = 32,
         BOX_FLIP_OVER_AFTER_CRASH = 35,
         BOX_PREARM = 36,
         BOX_GPS_BEEP_SATELLITE_COUNT = 37,
@@ -117,6 +118,7 @@ namespace copter
             { BOX_MAG, "MAG", false },
             { BOX_HEADFREE, "HEADFREE", true },
             { BOX_HEADADJ, "HEADADJ", true },
+            { BOX_FPV_ANGLE_MIX, "FPV ANGLE MIX", true },
             { BOX_BEEPER, "BEEPER", true },
             { BOX_OSD, "OSD DISABLE", true },
             { BOX_TELEMETRY, "TELEMETRY", false },
@@ -859,6 +861,7 @@ namespace copter
             rc.paralyze = isActive(BOX_PARALYZE);
             rc.headfree = isActive(BOX_HEADFREE);
             rc.headAdjust = isActive(BOX_HEADADJ);
+            rc.fpvAngleMix = isActive(BOX_FPV_ANGLE_MIX);
             rc.armAssigned = cfg.hasMode(BOX_ARM);
             return rc;
         }

@@ -1523,6 +1523,99 @@ void test_headfree_rotates_sticks_by_heading()
     TEST_ASSERT_FALSE(b.ctl.getStatus().headfree);
 }
 
+void test_fpv_angle_mix_rotates_roll_and_yaw_into_camera_axes()
+{
+    // камера вверх на 30°: рысканье стиком — вокруг оси камеры, часть уходит в крен
+    float roll = 0.0f, yaw = 100.0f;
+    fpvMixRotate(roll, yaw, 30.0f, 1000.0f, 1000.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-2f, 50.0f, roll);
+    TEST_ASSERT_FLOAT_WITHIN(1e-2f, 86.60f, yaw);
+    // крен стиком — вокруг взгляда камеры: часть уходит в рысканье влево
+    roll = 100.0f;
+    yaw = 0.0f;
+    fpvMixRotate(roll, yaw, 30.0f, 1000.0f, 1000.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-2f, 86.60f, roll);
+    TEST_ASSERT_FLOAT_WITHIN(1e-2f, -50.0f, yaw);
+    // 0° — без изменений; сумма — не выше потолка
+    roll = 300.0f;
+    yaw = -200.0f;
+    fpvMixRotate(roll, yaw, 0.0f, 1000.0f, 1000.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 300.0f, roll);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, -200.0f, yaw);
+    roll = 800.0f;
+    yaw = 800.0f;
+    fpvMixRotate(roll, yaw, 45.0f, 1000.0f, 1000.0f);
+    TEST_ASSERT_FLOAT_WITHIN(1e-2f, 1000.0f, roll);
+    TEST_ASSERT_FLOAT_WITHIN(1e-2f, 0.0f, yaw);
+
+    // в контроллере: только с тумблером, в ACRO/HORIZON и при fpv_mix_degrees > 0
+    CopterTune t = deriveTune(*findBuild("freestyle5"), 1000.0f, EscProtocol::DSHOT600);
+    t.fpvMixDeg = 30.0f;
+    Bench b;
+    b.ctl.configure(t, CopterSettings());
+    TEST_ASSERT_TRUE(b.armAfterBoot());
+    b.rc.mode = CopterMode::ACRO;
+    b.rc.throttle = 0.3f;
+    b.rc.yaw = 0.5f;
+    b.run(0.2f);
+    TEST_ASSERT_FALSE(b.ctl.getStatus().fpvMix);
+    const float yawOnly = b.ctl.getStatus().setpoint[2];
+    TEST_ASSERT_FLOAT_WITHIN(1.0f, 0.0f, b.ctl.getStatus().setpoint[0]);
+    b.rc.fpvAngleMix = true;
+    b.run(0.2f);
+    TEST_ASSERT_TRUE(b.ctl.getStatus().fpvMix);
+    TEST_ASSERT_FLOAT_WITHIN(2.0f, yawOnly * 0.5f, b.ctl.getStatus().setpoint[0]);
+    TEST_ASSERT_FLOAT_WITHIN(2.0f, yawOnly * 0.866f, b.ctl.getStatus().setpoint[2]);
+    b.rc.mode = CopterMode::ANGLE;   // в ANGLE крен — угол: смешивать нечего
+    b.run(0.05f);
+    TEST_ASSERT_FALSE(b.ctl.getStatus().fpvMix);
+    t.fpvMixDeg = 0.0f;
+    b.ctl.configure(t, CopterSettings());
+    b.rc.mode = CopterMode::ACRO;
+    b.run(0.05f);
+    TEST_ASSERT_FALSE(b.ctl.getStatus().fpvMix);
+
+    // настройка и режим — как в BF
+    CopterParams p;
+    TEST_ASSERT_EQUAL(PARAM_FPV_MIX_DEGREES, findParam("fpv_mix_degrees"));
+    char err[96];
+    TEST_ASSERT_TRUE(p.parse(PARAM_FPV_MIX_DEGREES, 0, "35", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_FPV_MIX_DEGREES, 0, "91", err, sizeof(err)));
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 35.0f, p.tune().fpvMixDeg);
+    bool found = false;
+    uint8_t n = 0;
+    const BoxInfo* boxes = boxTable(n);
+    for (uint8_t i = 0; i < n; ++i) found = found || (boxes[i].id == 32 && boxes[i].works);
+    TEST_ASSERT_TRUE(found);
+}
+
+void test_pinio_box_and_config_like_bf()
+{
+    CopterParams p;
+    char err[96], out[32];
+    // пусто — как в файле платы
+    TEST_ASSERT_EQUAL_UINT8(40, p.pinioBox(0, 40));
+    TEST_ASSERT_EQUAL_UINT8(255, p.pinioBox(3, 255));
+    TEST_ASSERT_EQUAL_UINT8(CopterParams::PINIO_OUT | CopterParams::PINIO_INVERTED, p.pinioConfig(0, true));
+    TEST_ASSERT_EQUAL_UINT8(CopterParams::PINIO_OUT, p.pinioConfig(1, false));
+    // названные — свои, остальные — платы
+    TEST_ASSERT_TRUE(p.parse(PARAM_PINIO_BOX, 0, "41, 40", err, sizeof(err)));
+    p.format(PARAM_PINIO_BOX, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("41,40", out);
+    TEST_ASSERT_EQUAL_UINT8(41, p.pinioBox(0, 40));
+    TEST_ASSERT_EQUAL_UINT8(40, p.pinioBox(1, 41));
+    TEST_ASSERT_EQUAL_UINT8(42, p.pinioBox(2, 42));
+    TEST_ASSERT_TRUE(p.parse(PARAM_PINIO_CONFIG, 0, "129,1,0,1", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT8(129, p.pinioConfig(0, false));
+    TEST_ASSERT_EQUAL_UINT8(1, p.pinioConfig(1, true));
+    TEST_ASSERT_EQUAL_UINT8(0, p.pinioConfig(2, true));
+    TEST_ASSERT_FALSE(p.parse(PARAM_PINIO_BOX, 0, "40,41,42,43,44", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_PINIO_BOX, 0, "256", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_PINIO_CONFIG, 0, "x", err, sizeof(err)));
+    TEST_ASSERT_EQUAL(PARAM_PINIO_BOX, findParam("pinio_box"));
+    TEST_ASSERT_EQUAL(PARAM_PINIO_CONFIG, findParam("pinio_config"));
+}
+
 void test_arm_requires_settling_then_arms_with_switch()
 {
     Bench b;
@@ -11344,6 +11437,8 @@ int main()
     RUN_TEST(test_arm_requires_settling_then_arms_with_switch);
     RUN_TEST(test_arm_blockers);
     RUN_TEST(test_headfree_rotates_sticks_by_heading);
+    RUN_TEST(test_fpv_angle_mix_rotates_roll_and_yaw_into_camera_axes);
+    RUN_TEST(test_pinio_box_and_config_like_bf);
     RUN_TEST(test_motor_test_only_disarmed_and_times_out);
     RUN_TEST(test_motor_test_sliders_per_motor);
     RUN_TEST(test_link_loss_on_ground_disarms_and_needs_switch_toggle);
