@@ -30,6 +30,7 @@
 #include "config/Channels.h"
 #include "config/Config.h"
 #include "config/CopterConfig.h"
+#include "copter/Adjustments.h"
 #include "copter/Battery.h"
 #include "copter/Beeper.h"
 #include "copter/StickCommands.h"
@@ -258,6 +259,12 @@ copter::DshotBeacon dshotBeacon;
 copter::StickCommands stickCommands;
 // Меню настроек в очках стиками (CMS, copter/OsdMenu.h).
 copter::OsdMenu osdMenu;
+static copter::InflightAdjuster adjuster;
+static const char* volatile adjustName = nullptr;   // что подстроили — OSD 2 с
+static volatile int adjustValue = 0;
+static volatile uint32_t adjustShowUntilMs = 0;
+static bool adjustUnsaved = false;
+static uint32_t adjustChangedMs = 0;
 
 // Цифровые очки и видеопередатчики (DJI, Walksnail, HDZero) — на UART «MSP»
 // платы (PIN_TELEM_*): OSD по MSP DisplayPort и ответы на их опрос
@@ -948,6 +955,11 @@ static void composeOsd()
             d.hasEscTemp = true;
         }
     }
+    if (adjustName && static_cast<int32_t>(millis() - adjustShowUntilMs) < 0)
+    {
+        d.adjustName = adjustName;
+        d.adjustValue = adjustValue;
+    }
     osdStats.update(d, millis());
     osdScreen.compose(d, copter::osdLayoutFrom(copterParams), &osdStats);
 }
@@ -1064,6 +1076,37 @@ static EscCurrents escCurrents()
     return c;
 }
 
+// Подстройки в полёте (adjrange, copter/Adjustments.h), 100 Гц: меняют
+// настройки в RAM и сразу контроллер; во флеш — без ARM, когда ручки
+// с секунду не трогали (несохранённое из приложения и CLI не пишем за пилота).
+static void runAdjustments()
+{
+    const uint32_t now = millis();
+    uint16_t aux[copter::RxInput::MAX_CHANNELS];
+    const uint8_t auxN = copterParams.rc().auxCount() < copter::RxInput::MAX_CHANNELS ? copterParams.rc().auxCount()
+                                                                                   : copter::RxInput::MAX_CHANNELS;
+    for (uint8_t i = 0; i < auxN; ++i) aux[i] = rxInput.auxUs(i);
+    const bool enabled = rcLinkOk && !copterConsole.cliActive() && !osdMenu.isOpen();
+    const copter::InflightAdjuster::Event ev = adjuster.update(copterParams.adjRanges(), copterParams, aux, auxN, enabled, now);
+    if (ev.shown)
+    {
+        adjustName = copter::adjFunctionInfo(ev.function).name;
+        adjustValue = ev.value;
+        adjustShowUntilMs = now + 2000;
+    }
+    if (ev.changed)
+    {
+        copterController.applyProfile(copterParams.tune());
+        if (ev.profile) beeper.event(copter::BeeperCondition::MULTI_BEEPS, static_cast<uint8_t>(ev.value));
+        adjustUnsaved = true;
+        adjustChangedMs = now;
+    }
+    // во флеш «тихо»: подстройка уже в работе — контроллер не пересчитываем
+    if (adjustUnsaved && !copterController.isArmed() && now - adjustChangedMs >= 1000 && !copterConsole.cliActive() &&
+        copterConsole.storeLearned())
+        adjustUnsaved = false;
+}
+
 static void readBattery()
 {
     const EscCurrents esc = escCurrents();
@@ -1105,6 +1148,7 @@ static void flightTask(void*)
         if (tick % 10 == 0)
         {
             readBattery();
+            runAdjustments();
             t = lap(TASK_BATTERY, t);
         }
         rcReceiver.update();

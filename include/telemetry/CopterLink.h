@@ -31,11 +31,14 @@
 //                       умолчание и откуда оно, единицы, описание,
 //                       значение, у профильных — все 4), "@rc {...}" (map,
 //                       rxrange, таблица aux и тумблеры прошивки, строки vtx,
-//                       изменённые rxfail [канал, "a|h|s", мкс]) и
+//                       изменённые rxfail [канал, "a|h|s", мкс]), "@adj {...}"
+//                       (подстройки в полёте: [№, канал, от, до, функция,
+//                       канал подстройки, центр, масштаб]) и
 //                       "@modes [[номер, "имя", действует], …]" (режимы BF);
 //   set имя значение  — "@set {...}": ok или ошибка, новое значение;
 //   profile N · rateprofile N — "@profile {...}" (сразу, на ходу);
 //   aux … · map … · rxrange … · vtx … · rxfail … — как в CLI; ответ — "@rc {...}";
+//   adjrange …        — подстройка в полёте, как в CLI; ответ — "@adj {...}";
 //   geozone …         — поле и запретные зоны, как в CLI; ответ — "@fence {...}"
 //                       на зону (в потоке params — по строке на каждую из 8);
 //   calibrate vbat В · calibrate ibat А — по мультиметру: vbat_scale /
@@ -172,7 +175,7 @@ public:
         const bool changes = strcmp(cmd, "set") == 0 || strcmp(cmd, "profile") == 0 || strcmp(cmd, "rateprofile") == 0 ||
                              strcmp(cmd, "aux") == 0 || strcmp(cmd, "map") == 0 || strcmp(cmd, "rxrange") == 0 ||
                              strcmp(cmd, "vtx") == 0 || strcmp(cmd, "rxfail") == 0 || strcmp(cmd, "calibrate") == 0 ||
-                             strcmp(cmd, "save") == 0 || strcmp(cmd, "geozone") == 0 ||
+                             strcmp(cmd, "save") == 0 || strcmp(cmd, "geozone") == 0 || strcmp(cmd, "adjrange") == 0 ||
                              strcmp(cmd, "revert") == 0;
         if (!changes) return false;
         if (ctl.isArmed() || cli.active())
@@ -186,6 +189,7 @@ public:
         else if (strcmp(cmd, "save") == 0) doSave();
         else if (strcmp(cmd, "revert") == 0) doRevert();
         else if (strcmp(cmd, "geozone") == 0) doGeozone(args);
+        else if (strcmp(cmd, "adjrange") == 0) doAdjrange(args);
         else doRcTable(cmd, args);
         return true;
     }
@@ -354,6 +358,40 @@ public:
             const size_t length = formatFence(i, line, sizeof(line));
             if (length) io.write(reinterpret_cast<const uint8_t*>(line), length);
         }
+    }
+
+    void doAdjrange(char* args)
+    {
+        using namespace copter;
+        char error[96] = {};
+        if (!params.adjRanges().parse(args, params.rc().auxCount(), error, sizeof(error)))
+        {
+            sendError("adjrange", error);
+            return;
+        }
+        dirty = true;
+        char line[LINE_CAPACITY];
+        const size_t length = formatAdj(line, sizeof(line));
+        if (length) io.write(reinterpret_cast<const uint8_t*>(line), length);
+    }
+
+    // "@adj {"rows":[[№, канал, от, до, функция, канал подстройки, центр, масштаб],…]}" — только занятые.
+    size_t formatAdj(char* buffer, size_t capacity) const
+    {
+        using namespace copter;
+        JsonWriter w(buffer, capacity);
+        w.add("@adj {\"rows\":[");
+        bool first = true;
+        for (uint8_t i = 0; i < AdjRangeTable::SLOTS; ++i)
+        {
+            const AdjRange& r = params.adjRanges().range(i);
+            if (!r.used()) continue;
+            w.add("%s[%u,%u,%u,%u,%u,%u,%u,%u]", first ? "" : ",", i, r.rangeChannel, r.startUs, r.endUs, r.function,
+                  r.adjChannel, r.center, r.scale);
+            first = false;
+        }
+        w.add("]}\n");
+        return w.overflow ? 0 : w.length;
     }
 
     size_t formatModes(char* buffer, size_t capacity) const
@@ -608,7 +646,7 @@ private:
     }
 
     // строки ответа на params: заголовок, настройки, @rc, @modes
-    static constexpr int DUMP_LAST = copter::PARAM_COUNT + 2 + copter::GeoZoneTable::MAX_ZONES;
+    static constexpr int DUMP_LAST = copter::PARAM_COUNT + 3 + copter::GeoZoneTable::MAX_ZONES;
 
     size_t formatDumpLine(int step, char* buffer, size_t capacity) const
     {
@@ -659,8 +697,9 @@ private:
         }
         if (step <= PARAM_COUNT) return formatParam(static_cast<ParamId>(step - 1), buffer, capacity);
         if (step == PARAM_COUNT + 1) return formatRc(buffer, capacity);
+        if (step == PARAM_COUNT + 2) return formatAdj(buffer, capacity);
         // зоны — до @modes: по @modes приложение считает загрузку законченной
-        if (step < DUMP_LAST) return formatFence(static_cast<uint8_t>(step - PARAM_COUNT - 2), buffer, capacity);
+        if (step < DUMP_LAST) return formatFence(static_cast<uint8_t>(step - PARAM_COUNT - 3), buffer, capacity);
         return formatModes(buffer, capacity);
     }
 

@@ -243,6 +243,7 @@ namespace copter
             else if (is(cmd, "rxrange")) cmdRxrange(args);
             else if (is(cmd, "rxfail")) cmdRxfail(args);
             else if (is(cmd, "vtx")) cmdVtx(args);
+            else if (is(cmd, "adjrange")) cmdAdjrange(args);
             else if (is(cmd, "beeper")) cmdBeeper(args, false);
             else if (is(cmd, "beacon")) cmdBeeper(args, true);
             else if (is(cmd, "motor")) cmdMotor(args);
@@ -314,6 +315,7 @@ namespace copter
             print("aux [№ режим канал от до логика связь] — режимы на тумблерах (режимы: aux help)\r\n");
             print("geozone [зона FIELD|NOFLY|clear · зона точка широта долгота] — поле и запретные зоны геозабора\r\n");
             print("map [AETR1234] · rxrange [0-3 мин макс] — порядок каналов · концы стиков\r\n");
+            print("adjrange [№ 0 канал от до функция канал_подстройки центр масштаб] — подстройки в полёте крутилками (функции: adjrange help)\r\n");
             print("rxfail [канал a|h|s [значение]] — канал без связи: a — авто, h — держать, s — задать (AUX)\r\n");
             print("motor [№|255 значение] — мотор без пропеллеров: 1000 стоп … 2000 (у нас до 30 %%), 5 с; 255 — все\r\n");
             print("dshotprog №|255 команда… — регулятору DShot: 1 пискнуть, 7/8 направление обычное/обратное, 12 сохранить\r\n");
@@ -580,6 +582,46 @@ namespace copter
             print("%s\r\n", row);
         }
 
+        // ---- подстройки в полёте (BF: adjrange) ----
+
+        void cmdAdjrange(const char* args)
+        {
+            AdjRangeTable& t = params.adjRanges();
+            char row[64];
+            if (is(args, "help"))
+            {
+                for (uint8_t f = 1; f < ADJ_FUNCTION_COUNT; ++f)
+                {
+                    const AdjFunctionInfo& info = adjFunctionInfo(f);
+                    print("%u %s%s\r\n", f, info.name, info.kind == AdjKind::UNSUPPORTED ? " (нет)" : info.kind == AdjKind::SELECT ? " (тумблер на 3 положения)" : "");
+                }
+                return;
+            }
+            if (*args == '\0')
+            {
+                bool any = false;
+                for (uint8_t i = 0; i < AdjRangeTable::SLOTS; ++i)
+                {
+                    if (!t.range(i).used()) continue;
+                    AdjRangeTable::format(i, t.range(i), row, sizeof(row));
+                    print("%s  # %s\r\n", row, adjFunctionInfo(t.range(i).function).name);
+                    any = true;
+                }
+                if (!any) print("# подстроек нет: adjrange 0 0 канал 1700 2100 функция канал_крутилки 0 0 (adjrange help — функции)\r\n");
+                return;
+            }
+            char error[96];
+            if (!t.parse(args, params.rc().auxCount(), error, sizeof(error)))
+            {
+                printError("%s", error);
+                return;
+            }
+            dirty = true;
+            const long slot = strtol(args, nullptr, 10);
+            AdjRangeTable::format(static_cast<uint8_t>(slot), t.range(static_cast<uint8_t>(slot)), row, sizeof(row));
+            print("%s\r\n", row);
+        }
+
         // ---- пищалка и маяк (BF: beeper / beacon) ----
 
         void cmdBeeper(const char* args, bool beacon)
@@ -614,7 +656,7 @@ namespace copter
             print("%s %s%s\r\n", what, disable ? "-" : "", c == BeeperCondition::COUNT ? "ALL" : beeperConditionName(c));
         }
 
-        // diff/dump: map, aux, rxrange, vtx, rxfail, beeper, beacon — как в BF, перед # master.
+        // diff/dump: map, aux, rxrange, vtx, rxfail, adjrange, beeper, beacon — как в BF, перед # master.
         void dumpTables(bool onlyChanged)
         {
             dumpSerial(onlyChanged);
@@ -660,6 +702,17 @@ namespace copter
                 header = true;
                 rc.formatRxfail(i, row, sizeof(row));
                 print("%s\r\n", row);
+            }
+            header = false;
+            const AdjRangeTable& adj = params.adjRanges();
+            for (uint8_t i = 0; i < AdjRangeTable::SLOTS; ++i)
+            {
+                if (onlyChanged && !adj.range(i).used()) continue;
+                if (!header) print("\r\n# adjrange\r\n");
+                header = true;
+                char adjRow[64];
+                AdjRangeTable::format(i, adj.range(i), adjRow, sizeof(adjRow));
+                print("%s\r\n", adjRow);
             }
             dumpBeeper(PARAM_BEEPER_OFF_FLAGS, "beeper", BEEPER_ALL_MASK, onlyChanged);
             dumpBeeper(PARAM_DSHOT_BEACON_OFF_FLAGS, "beacon", DSHOT_BEACON_ALLOWED, onlyChanged);
@@ -1098,7 +1151,7 @@ namespace copter
         {
             static const char* const LIST[] = { "board_name", "manufacturer_id", "mcu_id", "signature", "resource", "timer",
                                                 "dma", "feature", "mixer", "mmix", "smix",
-                                                "led", "color", "mode_color", "adjrange", "vtxtable", "servo", "dshot_prog" };
+                                                "led", "color", "mode_color", "vtxtable", "servo", "dshot_prog" };
             for (const char* name : LIST)
             {
                 if (is(cmd, name)) return true;

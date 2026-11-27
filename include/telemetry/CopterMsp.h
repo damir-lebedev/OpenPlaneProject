@@ -71,6 +71,7 @@ namespace copter
             DATAFLASH_SUMMARY = 70, SDCARD_SUMMARY = 79, BLACKBOX_CONFIG = 80, SET_BLACKBOX_CONFIG = 81,
             SENSOR_ALIGNMENT = 126, ACC_TRIM = 240,
             BATTERY_CONFIG = 32, SET_BATTERY_CONFIG = 33, MODE_RANGES = 34, SET_MODE_RANGE = 35,
+            ADJUSTMENT_RANGES = 52, SET_ADJUSTMENT_RANGE = 53,
             FEATURE_CONFIG = 36, SET_FEATURE_CONFIG = 37, BOARD_ALIGNMENT_CONFIG = 38,
             SET_BOARD_ALIGNMENT_CONFIG = 43, ACC_CALIBRATION = 205, MIXER_CONFIG = 42, RX_CONFIG = 44, SET_RX_CONFIG = 45,
             ARMING_CONFIG = 61, SET_ARMING_CONFIG = 62, RX_MAP = 64, SET_RX_MAP = 65, REBOOT = 68,
@@ -358,6 +359,7 @@ namespace copter
                 case FILTER_CONFIG: filterConfig(w); return true;
                 case ADVANCED_CONFIG: advancedConfig(w); return true;
                 case MODE_RANGES: modeRanges(w); return true;
+                case ADJUSTMENT_RANGES: adjustmentRanges(w); return true;
                 case MOTOR_CONFIG: motorConfig(w); return true;
                 case FAILSAFE_CONFIG: failsafeConfig(w); return true;
                 case GPS_CONFIG:   // провайдер UBLOX, SBAS AUTO, автонастройка — u-blox M10 настраиваем сами
@@ -541,6 +543,9 @@ namespace copter
                 }
                 case SET_MODE_RANGE:
                     if (!setModeRange(r)) return false;
+                    break;
+                case SET_ADJUSTMENT_RANGE:
+                    if (!setAdjustmentRange(r)) return false;
                     break;
                 case SET_MOTOR_CONFIG:
                     r.u16();
@@ -1214,6 +1219,39 @@ namespace copter
                 w.u8(a.used() ? (a.startUs - RcConfig::AUX_MIN_US) / RcConfig::AUX_STEP_US : 0);
                 w.u8(a.used() ? (a.endUs - RcConfig::AUX_MIN_US) / RcConfig::AUX_STEP_US : 0);
             }
+        }
+
+        // Как в BF: 30 строк по 10 байт — №(0), канал, от, до (шаги 25 мкс), функция, канал подстройки, центр, масштаб.
+        void adjustmentRanges(msp::Writer& w)
+        {
+            const AdjRangeTable& t = params.adjRanges();
+            for (uint8_t i = 0; i < AdjRangeTable::SLOTS; ++i)
+            {
+                const AdjRange& a = t.range(i);
+                w.u8(0);
+                w.u8(a.used() ? a.rangeChannel : 0);
+                w.u8(a.used() ? (a.startUs - AdjRangeTable::MIN_US) / AdjRangeTable::STEP_US : 0);
+                w.u8(a.used() ? (a.endUs - AdjRangeTable::MIN_US) / AdjRangeTable::STEP_US : 0);
+                w.u8(a.used() ? a.function : 0);
+                w.u8(a.used() ? a.adjChannel : 0);
+                w.u16(a.used() ? a.center : 0);
+                w.u16(a.used() ? a.scale : 0);
+            }
+        }
+
+        bool setAdjustmentRange(msp::Reader& r)
+        {
+            if (r.remaining() < 7) return false;
+            const uint8_t slot = r.u8();
+            r.u8();   // старое поле BF
+            const uint8_t ch = r.u8(), start = r.u8(), end = r.u8(), function = r.u8(), adjCh = r.u8();
+            uint16_t center = 0, scale = 0;
+            if (r.remaining() >= 4)
+            {
+                center = r.u16();
+                scale = r.u16();
+            }
+            return params.adjRanges().setRaw(slot, ch, start, end, function, adjCh, center, scale, params.rc().auxCount());
         }
 
         bool setModeRange(msp::Reader& r)

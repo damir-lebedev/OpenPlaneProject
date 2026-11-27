@@ -24,6 +24,7 @@
 #include "helpers/Osd7456Emulator.h"
 #include "helpers/VtxEmulator.h"
 
+#include "copter/Adjustments.h"
 #include "copter/AltitudeHold.h"
 #include "copter/Beeper.h"
 #include "copter/Battery.h"
@@ -5738,6 +5739,174 @@ void test_cli_vtx_and_params()
     cli.execute("exit");
 }
 
+// ---- 121/122: подстройки в полёте (adjrange) ----
+
+void test_adjrange_table_parse_and_store()
+{
+    AdjRangeTable t;
+    char err[96];
+    TEST_ASSERT_FALSE(t.any());
+    TEST_ASSERT_TRUE(t.parse("0 0 1 1700 2100 18 2 0 0", 6, err, sizeof(err)));     // ROLL P шагом с AUX3
+    TEST_ASSERT_TRUE(t.parse("29 0 0 900 2100 12 3 0 0", 6, err, sizeof(err)));     // RATE PROFILE
+    TEST_ASSERT_TRUE(t.parse("5 0 1 1310 1690 15 2 40 20", 6, err, sizeof(err)));   // вниз к шагу 25 мкс
+    TEST_ASSERT_EQUAL_UINT16(1300, t.range(5).startUs);
+    TEST_ASSERT_EQUAL_UINT16(1675, t.range(5).endUs);
+    TEST_ASSERT_FALSE(t.parse("30 0 1 1700 2100 18 2 0 0", 6, err, sizeof(err)));   // № строки
+    TEST_ASSERT_FALSE(t.parse("0 0 6 1700 2100 18 2 0 0", 6, err, sizeof(err)));    // канала нет
+    TEST_ASSERT_FALSE(t.parse("0 0 1 800 2100 18 2 0 0", 6, err, sizeof(err)));
+    TEST_ASSERT_FALSE(t.parse("0 0 1 1700 2100 37 2 0 0", 6, err, sizeof(err)));    // функции нет
+    TEST_ASSERT_FALSE(t.parse("0 0 1 1700 2100 18 2 0 2001", 6, err, sizeof(err)));
+    TEST_ASSERT_FALSE(t.parse("0 0 1 1700 2100 18 2 0", 6, err, sizeof(err)));
+    char row[64];
+    AdjRangeTable::format(5, t.range(5), row, sizeof(row));
+    TEST_ASSERT_EQUAL_STRING("adjrange 5 0 1 1300 1675 15 2 40 20", row);
+
+    uint8_t blob[AdjRangeTable::STORE_MAX];
+    const size_t n = t.serialize(blob, sizeof(blob));
+    TEST_ASSERT_EQUAL_UINT32(2 + 3 * AdjRangeTable::ROW_BYTES, n);
+    AdjRangeTable d;
+    TEST_ASSERT_TRUE(d.deserialize(blob, n));
+    TEST_ASSERT_EQUAL_UINT8(ADJ_RATE_PROFILE, d.range(29).function);
+    TEST_ASSERT_EQUAL_UINT16(40, d.range(5).center);
+    TEST_ASSERT_EQUAL_UINT16(20, d.range(5).scale);
+    TEST_ASSERT_EQUAL_UINT8(2, d.range(0).adjChannel);
+    blob[0] = 9;   // не та версия — пусто
+    TEST_ASSERT_FALSE(d.deserialize(blob, n));
+    TEST_ASSERT_FALSE(d.any());
+    TEST_ASSERT_TRUE(t.parse("0 0 0 900 900 0 0 0 0", 6, err, sizeof(err)));        // стереть строку
+    TEST_ASSERT_FALSE(t.range(0).used());
+}
+
+void test_adjrange_step_absolute_and_profiles()
+{
+    CopterParams& p = five5Params();
+    AdjRangeTable& t = p.adjRanges();
+    char err[96];
+    const uint8_t AUX = 6;
+    TEST_ASSERT_TRUE(t.parse("0 0 0 1700 2100 18 1 0 0", AUX, err, sizeof(err)));    // AUX1 вверх: ROLL P шагом с AUX2
+    TEST_ASSERT_TRUE(t.parse("1 0 5 1700 2100 9 2 77 20", AUX, err, sizeof(err)));   // AUX6 вверх: YAW P = 77 ± 20 с AUX3
+    TEST_ASSERT_TRUE(t.parse("2 0 0 900 2100 12 3 0 0", AUX, err, sizeof(err)));     // RATE PROFILE на AUX4 — всегда
+    TEST_ASSERT_TRUE(t.parse("3 0 4 1700 2100 36 3 0 0", AUX, err, sizeof(err)));    // PID PROFILE тем же AUX4, пока AUX5 вверх
+    TEST_ASSERT_TRUE(t.parse("4 0 0 900 2100 29 1 0 0", AUX, err, sizeof(err)));     // PID AUDIO — у нас нет, молчит
+    InflightAdjuster a;
+    uint16_t aux[AUX] = { 1000, 1500, 1500, 1000, 1000, 1000 };
+    const float p0 = p.value(PARAM_P_ROLL);
+    uint32_t now = 1000;
+    InflightAdjuster::Event ev = a.update(t, p, aux, AUX, true, now);
+    TEST_ASSERT_FALSE(ev.shown);   // профиль на AUX4 внизу — первый, он и стоит
+    aux[1] = 2000;                 // крутилка вверх, но строка не включена
+    ev = a.update(t, p, aux, AUX, true, now += 10);
+    TEST_ASSERT_FALSE(ev.shown);
+    TEST_ASSERT_EQUAL_FLOAT(p0, p.value(PARAM_P_ROLL));
+
+    // шагом: сразу +1, держат — ещё через 0.5 с, середина — снова сразу
+    aux[0] = 2000;
+    ev = a.update(t, p, aux, AUX, true, now += 10);
+    TEST_ASSERT_TRUE(ev.shown && ev.changed && !ev.profile);
+    TEST_ASSERT_EQUAL_UINT8(ADJ_ROLL_P, ev.function);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(p0) + 1, ev.value);
+    TEST_ASSERT_EQUAL_FLOAT(p0 + 1, p.value(PARAM_P_ROLL));
+    ev = a.update(t, p, aux, AUX, true, now += 100);
+    TEST_ASSERT_FALSE(ev.shown);
+    ev = a.update(t, p, aux, AUX, true, now += 400);
+    TEST_ASSERT_TRUE(ev.changed);
+    TEST_ASSERT_EQUAL_FLOAT(p0 + 2, p.value(PARAM_P_ROLL));
+    aux[1] = 1500;
+    TEST_ASSERT_FALSE(a.update(t, p, aux, AUX, true, now += 10).shown);
+    aux[1] = 1000;
+    ev = a.update(t, p, aux, AUX, true, now += 10);
+    TEST_ASSERT_EQUAL_FLOAT(p0 + 1, p.value(PARAM_P_ROLL));
+    // в границе: показать, но не менять
+    const float pMax = paramInfo(PARAM_P_ROLL).max;
+    TEST_ASSERT_TRUE(p.setValue(PARAM_P_ROLL, p.activeSlot(PARAM_P_ROLL), pMax));
+    aux[1] = 1500;
+    a.update(t, p, aux, AUX, true, now += 10);
+    aux[1] = 2000;
+    ev = a.update(t, p, aux, AUX, true, now += 10);
+    TEST_ASSERT_TRUE(ev.shown && !ev.changed);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(pMax), ev.value);
+    aux[0] = 1000;
+    aux[1] = 1500;
+
+    // абсолютно: центр 77, ± 20 по краям
+    aux[5] = 2000;
+    ev = a.update(t, p, aux, AUX, true, now += 10);
+    TEST_ASSERT_TRUE(ev.changed);
+    TEST_ASSERT_EQUAL_UINT8(ADJ_YAW_P, ev.function);
+    TEST_ASSERT_EQUAL_FLOAT(77.0f, p.value(pidParam(2, PidTerm::P)));
+    aux[2] = 2000;
+    a.update(t, p, aux, AUX, true, now += 10);
+    TEST_ASSERT_EQUAL_FLOAT(97.0f, p.value(pidParam(2, PidTerm::P)));
+    aux[2] = 1250;
+    a.update(t, p, aux, AUX, true, now += 10);
+    TEST_ASSERT_EQUAL_FLOAT(67.0f, p.value(pidParam(2, PidTerm::P)));
+    TEST_ASSERT_FALSE(a.update(t, p, aux, AUX, true, now += 10).shown);   // ручку не трогали
+    TEST_ASSERT_EQUAL_INT(57, InflightAdjuster::absoluteValue(t.range(1), 900));   // за краем — как край
+    aux[5] = 1000;
+
+    // профили: три положения тумблера
+    TEST_ASSERT_EQUAL_UINT8(0, InflightAdjuster::selectPosition(1000));
+    TEST_ASSERT_EQUAL_UINT8(1, InflightAdjuster::selectPosition(1500));
+    TEST_ASSERT_EQUAL_UINT8(2, InflightAdjuster::selectPosition(2000));
+    aux[3] = 2000;
+    ev = a.update(t, p, aux, AUX, true, now += 10);
+    TEST_ASSERT_TRUE(ev.changed && ev.profile);
+    TEST_ASSERT_EQUAL_UINT8(ADJ_RATE_PROFILE, ev.function);
+    TEST_ASSERT_EQUAL_INT(3, ev.value);
+    TEST_ASSERT_EQUAL_UINT8(2, p.rateProfile());
+    aux[3] = 1500;
+    aux[4] = 2000;
+    ev = a.update(t, p, aux, AUX, true, now += 10);
+    TEST_ASSERT_EQUAL_UINT8(1, p.rateProfile());
+    TEST_ASSERT_EQUAL_UINT8(1, p.pidProfile());
+    TEST_ASSERT_EQUAL_UINT8(ADJ_PID_PROFILE, ev.function);
+    TEST_ASSERT_EQUAL_INT(2, ev.value);
+    // без связи (CLI, меню) — ничего
+    aux[3] = 1000;
+    TEST_ASSERT_FALSE(a.update(t, p, aux, AUX, false, now += 10).shown);
+    TEST_ASSERT_EQUAL_UINT8(1, p.rateProfile());
+    TEST_ASSERT_EQUAL_UINT8(1, p.pidProfile());
+}
+
+void test_cli_adjrange_diff_and_flash()
+{
+    CopterParams& p = five5Params();
+    Bench b;
+    b.ctl.configure(p.tune());
+    CliCapture port;
+    CopterCli cli(p, b.ctl, port);
+    TEST_ASSERT_TRUE(cli.enter());
+    port.take();
+    cli.execute("adjrange");
+    TEST_ASSERT_TRUE(has(port.take(), "# подстроек нет"));
+    cli.execute("adjrange 0 0 1 1700 2100 18 2 0 0");
+    TEST_ASSERT_TRUE(has(port.take(), "adjrange 0 0 1 1700 2100 18 2 0 0\r\n"));
+    cli.execute("adjrange 0 0 1 1700 2100 99 2 0 0");
+    TEST_ASSERT_TRUE(has(port.take(), "###ОШИБКА: функция 0-36"));
+    cli.execute("adjrange help");
+    const std::string help = port.take();
+    TEST_ASSERT_TRUE(has(help, "36 PID PROFILE (тумблер на 3 положения)\r\n"));
+    TEST_ASSERT_TRUE(has(help, "29 PID AUDIO (нет)\r\n"));
+    cli.execute("adjrange");
+    TEST_ASSERT_TRUE(has(port.take(), "adjrange 0 0 1 1700 2100 18 2 0 0  # ROLL P\r\n"));
+    cli.execute("diff");
+    const std::string out = port.take();
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "\r\n# adjrange\r\nadjrange 0 0 1 1700 2100 18 2 0 0\r\n"), out.c_str());
+
+    RamFlash flash;
+    KeyValueStore kv(flash);
+    TEST_ASSERT_TRUE(p.save(kv));
+    CopterParams r;
+    r.load(kv);   // false — обычных настроек нет, таблица читается всё равно
+    TEST_ASSERT_EQUAL_UINT8(ADJ_ROLL_P, r.adjRanges().range(0).function);
+    cli.execute("defaults nosave");
+    TEST_ASSERT_FALSE(p.adjRanges().any());
+    TEST_ASSERT_TRUE(p.save(kv));   // пусто — ключ стёрт
+    r.load(kv);
+    TEST_ASSERT_FALSE(r.adjRanges().any());
+    cli.execute("exit");
+}
+
 // ---- дом по GPS и телеметрия CRSF ----
 
 namespace
@@ -6665,6 +6834,18 @@ void test_osd_horizon_timer_and_esc()
     TEST_ASSERT_EQUAL_HEX8('-', s.at(7, 1));
     TEST_ASSERT_EQUAL_HEX8('9', s.at(8, 1));
     TEST_ASSERT_EQUAL_HEX8(' ', s.at(9, 1));
+
+    // подстройка в полёте: что и значение
+    l.pos[OSD_ADJUSTMENT_RANGE] = osdPos(6, 4);
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8(' ', s.at(4, 6));
+    d.adjustName = "ROLL P";
+    d.adjustValue = 46;
+    s.compose(d, l, nullptr);
+    TEST_ASSERT_EQUAL_HEX8('R', s.at(4, 6));
+    TEST_ASSERT_EQUAL_HEX8('4', s.at(4, 13));
+    TEST_ASSERT_EQUAL_HEX8('6', s.at(4, 14));
+    d.adjustName = nullptr;
 
     // настройки BF
     CopterParams p;
@@ -9594,6 +9775,22 @@ void test_msp_from_goggles_canvas_gps_and_safety()
 }
 
 // Передатчик на MSP (HDZero, Walksnail): читает MSP_VTX_CONFIG с порта очков.
+void test_msp_adjustment_ranges()
+{
+    MspBench m;
+    std::vector<uint8_t> pl;
+    // № 3: AUX2 1700..2100, PITCH P абсолютно с AUX3, центр 40, масштаб 20
+    TEST_ASSERT_TRUE(m.ask(53, { 3, 0, 1, 32, 48, ADJ_PITCH_P, 2, 40, 0, 20, 0 }, pl));
+    TEST_ASSERT_EQUAL_UINT16(1700, m.params.adjRanges().range(3).startUs);
+    TEST_ASSERT_EQUAL_UINT16(40, m.params.adjRanges().range(3).center);
+    TEST_ASSERT_FALSE(m.ask(53, { 3, 0, 1, 32, 48, 99, 2 }, pl));   // функции нет
+    pl = m.get(52);
+    TEST_ASSERT_EQUAL_UINT32(AdjRangeTable::SLOTS * 10, pl.size());
+    const uint8_t want[10] = { 0, 1, 32, 48, ADJ_PITCH_P, 2, 40, 0, 20, 0 };
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(want, pl.data() + 30, 10);
+    TEST_ASSERT_EQUAL_UINT8(0, pl[4]);   // пустая строка
+}
+
 void test_msp_vtx_follows_the_request()
 {
     MspBench m;
@@ -11234,6 +11431,9 @@ int main()
     RUN_TEST(test_vtx_auto_finds_tramp_and_offline_without_vtx);
     RUN_TEST(test_vtx_ranges_from_switches);
     RUN_TEST(test_cli_vtx_and_params);
+    RUN_TEST(test_adjrange_table_parse_and_store);
+    RUN_TEST(test_adjrange_step_absolute_and_profiles);
+    RUN_TEST(test_cli_adjrange_diff_and_flash);
     RUN_TEST(test_gps_home_distance_and_direction);
     RUN_TEST(test_gps_last_good_point);
     RUN_TEST(test_osd_coordinates_after_fix_lost);
@@ -11286,6 +11486,7 @@ int main()
     RUN_TEST(test_msp_port_answers_goggles_and_never_tears_frames);
     RUN_TEST(test_msp_port_queue_and_rx_budget);
     RUN_TEST(test_msp_from_goggles_canvas_gps_and_safety);
+    RUN_TEST(test_msp_adjustment_ranges);
     RUN_TEST(test_msp_vtx_follows_the_request);
     RUN_TEST(test_osd_output_params);
     RUN_TEST(test_position_estimator_compensates_gps_delay);

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "copter/AdjRanges.h"
 #include "copter/Battery.h"
 #include "copter/Compass.h"
 #include "copter/CopterController.h"
@@ -504,6 +505,7 @@ namespace copter
         PARAM_OSD_TIM_1_POS,
         PARAM_OSD_ESC_TMP_POS,
         PARAM_OSD_ESC_RPM_POS,
+        PARAM_OSD_ADJUSTMENT_RANGE_POS,
         PARAM_OSD_STAT_TIM_2,
         PARAM_OSD_STAT_MAX_ALT,
         PARAM_OSD_STAT_MAX_SPD,
@@ -1308,6 +1310,8 @@ namespace copter
               "OSD: температура самого горячего регулятора (EDT) — x + 32·y, +2048 — показан" },
             { "osd_esc_rpm_pos", kInt, kMaster, kGroupOsd, 0, 16383, 161, kTable, "", nullptr, 0,
               "OSD: обороты моторов по DShot, строка на мотор — x + 32·y, +2048 — показан" },
+            { "osd_adjustment_range_pos", kInt, kMaster, kGroupOsd, 0, 16383, 2182, kTable, "", nullptr, 0,
+              "OSD: подстройка в полёте крутилкой (adjrange) — что и значение, 2 с — x + 32·y, +2048 — показан" },
             { "osd_stat_tim_2", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
               "статистика после полёта: время в полёте" },
             { "osd_stat_max_alt", kEnum, kMaster, kGroupOsd, 0, 1, 1, kTable, "", OFF_ON, 2,
@@ -1542,6 +1546,7 @@ namespace copter
         static constexpr const char* STORE_SPACE = "copter";
         static constexpr const char* STORE_KEY = "params";
         static constexpr const char* RC_KEY = "rc";
+        static constexpr const char* ADJ_KEY = "adj";       // подстройки в полёте (adjrange, AdjRanges.h)
         static constexpr const char* FENCE_KEY = "fence";   // поле и запретные зоны геозабора (GeoZones.h)
 
         using BuildOverrides = void (*)(BuildSpec&);
@@ -1847,6 +1852,8 @@ namespace copter
         const RcConfig& rc() const { return rcConfig; }
         GeoZoneTable& zones() { return geoZones; }
         const GeoZoneTable& zones() const { return geoZones; }
+        AdjRangeTable& adjRanges() { return adjTable; }
+        const AdjRangeTable& adjRanges() const { return adjTable; }
 
         // ---- профили ----
         uint8_t pidProfile() const { return pidIndex; }
@@ -2013,6 +2020,7 @@ namespace copter
             clearValues();
             rcConfig.reset();
             geoZones.reset();
+            adjTable.clear();
             refreshDefaults();
         }
 
@@ -2426,6 +2434,13 @@ namespace copter
             const size_t rcLength = rcConfig.serialize(rcBlob, sizeof(rcBlob));
             if (rcConfig.isDefault()) kv.remove(STORE_SPACE, RC_KEY);
             else ok = kv.put(STORE_SPACE, RC_KEY, rcBlob, rcLength) && ok;
+            if (adjTable.isDefault()) kv.remove(STORE_SPACE, ADJ_KEY);
+            else
+            {
+                uint8_t adjBlob[AdjRangeTable::STORE_MAX];
+                const size_t adjLength = adjTable.serialize(adjBlob, sizeof(adjBlob));
+                ok = adjLength && kv.put(STORE_SPACE, ADJ_KEY, adjBlob, adjLength) && ok;
+            }
             if (geoZones.isDefault()) kv.remove(STORE_SPACE, FENCE_KEY);
             else
             {
@@ -2503,6 +2518,9 @@ namespace copter
             size_t fenceLength = 0;
             const uint8_t* fenceData = kv.get(STORE_SPACE, FENCE_KEY, &fenceLength);
             geoZones.deserialize(fenceData, fenceLength);   // нет — пусто
+            size_t adjLength = 0;
+            const uint8_t* adjData = kv.get(STORE_SPACE, ADJ_KEY, &adjLength);
+            adjTable.deserialize(adjData, adjLength);       // нет — пусто
 
             clearValues();
             size_t length = 0;
@@ -2830,6 +2848,7 @@ namespace copter
         EscProtocol modelEsc = EscProtocol::ONESHOT125;   // протокол, по которому считана модель
         RcConfig rcConfig;
         GeoZoneTable geoZones;
+        AdjRangeTable adjTable;
         float tableDefaults[PARAM_COUNT] = {};
         float defaults[PARAM_COUNT] = {};
         float scaledDefaults[SCALED_COUNT][PROFILES] = {};
@@ -2844,7 +2863,7 @@ namespace copter
         uint8_t rateIndex = 0;
     };
 
-    static_assert(PARAM_OSD_ESC_RPM_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
+    static_assert(PARAM_OSD_ADJUSTMENT_RANGE_POS - PARAM_OSD_LINK_QUALITY_POS + 1 == OSD_ELEMENT_COUNT, "osd_*_pos и OsdElement разошлись");
     static_assert(PARAM_OSD_STAT_OVERLOAD - PARAM_OSD_STAT_TIM_2 + 1 == OSD_STAT_COUNT, "osd_stat_* и OsdStat разошлись");
     static_assert(PARAM_OSD_WARN_LAUNCH_CONTROL - PARAM_OSD_WARN_ARMING_DISABLE + 1 == OSD_WARN_COUNT, "osd_warn_* и OsdWarn разошлись");
 

@@ -129,6 +129,7 @@ namespace copter
         OSD_TIM_1,       // время с включения (таймер 1 BF, ON)
         OSD_ESC_TMP,     // самый горячий регулятор, °C (EDT)
         OSD_ESC_RPM,     // обороты каждого мотора (двунаправленный DShot), столбиком
+        OSD_ADJUSTMENT_RANGE,   // подстройка в полёте: что и сколько (adjrange)
         OSD_ELEMENT_COUNT
     };
 
@@ -172,6 +173,7 @@ namespace copter
             { "tim_1", osdPos(1, 1, false), "время с включения (таймер 1 BF)" },
             { "esc_tmp", osdPos(23, 9, false), "температура самого горячего регулятора, °C" },
             { "esc_rpm", osdPos(1, 5, false), "обороты моторов, по строке на мотор" },
+            { "adjustment_range", osdPos(6, 4), "подстройка в полёте крутилкой: что и новое значение (2 с)" },
         };
         return table[e < OSD_ELEMENT_COUNT ? e : 0];
     }
@@ -351,6 +353,8 @@ namespace copter
         static constexpr uint32_t NO_RPM = 0xFFFFFFFFu;     // мотор не ответил
         uint8_t escRpmCount = 0;                            // 0 — оборотов по DShot нет
         uint32_t escRpm[ESC_MAX] = {};                      // об/мин
+        const char* adjustName = nullptr;                   // подстройка в полёте (copter/Adjustments.h) — 2 с после
+        int adjustValue = 0;
     };
 
     // Статистика полёта для экрана после DISARM.
@@ -746,6 +750,11 @@ namespace copter
                         else snprintf(s, n, "%lu", static_cast<unsigned long>(d.escRpm[m]));
                         printWithSymbol(static_cast<uint8_t>(y + m), x, s, osdsym::RPM);
                     }
+                    return;
+                case OSD_ADJUSTMENT_RANGE:
+                    if (!d.adjustName) return;
+                    snprintf(s, n, "%s %d", d.adjustName, d.adjustValue);
+                    print(y, x, s);
                     return;
                 case OSD_ELEMENT_COUNT:
                 default:

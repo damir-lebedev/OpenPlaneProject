@@ -460,6 +460,55 @@ void test_aux_moves_arm_and_modes()
     takeSerial();
 }
 
+// 121/122: подстройка в полёте — AUX4 вверх, AUX5 шагает P крена; после
+// DISARM (ручки секунду не трогали) — во флеше.
+void test_inflight_adjustment_from_knob()
+{
+    RcChannels rc;
+    run(rc, 0.1);
+    Serial.pushRx("#adjrange 0 0 3 1700 2100 18 4 0 0\r\nsave\r\n");
+    run(rc, 2.5);
+    takeSerial();
+    const float p0 = copterParams.value(copter::PARAM_P_ROLL);
+    rc.set(8, 2000);   // AUX5 вверх, но строка выключена (AUX4 в середине)
+    run(rc, 0.1);
+    TEST_ASSERT_EQUAL_FLOAT(p0, copterParams.value(copter::PARAM_P_ROLL));
+    rc.set(7, 2000);   // AUX4 вверх — шаг сразу, держат — ещё через 0.5 с
+    run(rc, 0.3);
+    TEST_ASSERT_EQUAL_FLOAT(p0 + 1, copterParams.value(copter::PARAM_P_ROLL));
+    TEST_ASSERT_EQUAL_STRING("ROLL P", adjustName);
+    TEST_ASSERT_EQUAL_INT(static_cast<int>(p0) + 1, adjustValue);
+    run(rc, 0.3);
+    TEST_ASSERT_EQUAL_FLOAT(p0 + 2, copterParams.value(copter::PARAM_P_ROLL));
+    rc.set(8, 1500);
+    run(rc, 1.2);      // на земле, не трогали секунду — записано
+
+    armWith(rc, Channels::ARM);
+    TEST_ASSERT_TRUE(copterController.isArmed());
+    rc.set(8, 1000);   // в полёте — вниз на шаг
+    run(rc, 0.05);
+    rc.set(8, 1500);
+    run(rc, 1.2);
+    TEST_ASSERT_EQUAL_FLOAT(p0 + 1, copterParams.value(copter::PARAM_P_ROLL));
+    TEST_ASSERT_TRUE(adjustUnsaved);   // в полёте флеш не трогаем
+    rc.set(Channels::ARM, 1000);
+    run(rc, 1.2);
+    TEST_ASSERT_FALSE(copterController.isArmed());
+    TEST_ASSERT_FALSE(adjustUnsaved);
+    copterParams.setValue(copter::PARAM_P_ROLL, copterParams.activeSlot(copter::PARAM_P_ROLL), p0 + 30);
+    copterConsole.revertSettings();   // из флеша — записанное после DISARM
+    TEST_ASSERT_EQUAL_FLOAT(p0 + 1, copterParams.value(copter::PARAM_P_ROLL));
+
+    rc.set(7, 1500);
+    run(rc, 0.1);
+    char cmd[96];
+    snprintf(cmd, sizeof(cmd), "#adjrange 0 0 0 900 900 0 0 0 0\r\nset p_roll = %d\r\nsave\r\n", static_cast<int>(p0));
+    Serial.pushRx(cmd);
+    run(rc, 2.5);
+    takeSerial();
+    TEST_ASSERT_FALSE(copterParams.adjRanges().any());
+}
+
 // 007: map и протокол приёмника — без пересборки.
 void test_map_and_receiver_protocol_from_cli()
 {
@@ -585,6 +634,9 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE_MESSAGE(isJson(rcLine[0]), rcLine[0].c_str());
     TEST_ASSERT_TRUE(contains(rcLine[0], "\"map\":\"AETR1234\""));
     TEST_ASSERT_TRUE(contains(rcLine[0], "\"fallback\":[[0,0,0,1700,2100,0,0],[1,1,2,900,1300,0,0]"));
+    const auto adjLine = linesWith(log, "@adj ");
+    TEST_ASSERT_EQUAL(1, static_cast<int>(adjLine.size()));
+    TEST_ASSERT_EQUAL_STRING("{\"rows\":[]}", adjLine[0].c_str());
     const auto modes = linesWith(log, "@modes ");
     TEST_ASSERT_EQUAL(1, static_cast<int>(modes.size()));
     TEST_ASSERT_TRUE(isJson(modes[0]));
@@ -632,6 +684,12 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE_MESSAGE(contains(log, "@rc {\"map\":\"TAER1234\""), log.c_str());
     TEST_ASSERT_TRUE(contains(log, "\"aux\":[[0,0,0,1700,2100,0,0]]"));
     TEST_ASSERT_TRUE_MESSAGE(contains(log, "\"vtx\":[[0,2,0,0,1,900,1300]]"), log.c_str());
+    host("adjrange 0 0 1 1700 2100 18 2 0 0");
+    host("adjrange 1 0 1 1700 2100 99 2 0 0");
+    run(rc, 0.1);
+    log = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "@adj {\"rows\":[[0,1,1700,2100,18,2,0,0]]}"), log.c_str());
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "\"adjrange\""), log.c_str());   // ошибка на функцию 99
     host("revert");
     run(rc, 0.05);
     TEST_ASSERT_TRUE(contains(takeSerial(), "@revert {\"ok\":true}"));
@@ -1350,6 +1408,7 @@ int main()
     RUN_TEST(test_gyro_hardware_lpf_sets_chip_register);
     RUN_TEST(test_cli_set_save_and_reboot);
     RUN_TEST(test_aux_moves_arm_and_modes);
+    RUN_TEST(test_inflight_adjustment_from_knob);
     RUN_TEST(test_map_and_receiver_protocol_from_cli);
     RUN_TEST(test_status_and_tasks_like_betaflight);
     RUN_TEST(test_copter_build_from_cli);
