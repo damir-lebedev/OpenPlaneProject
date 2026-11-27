@@ -414,6 +414,7 @@ namespace copter
 
         // для понимания и проверок
         float thrustToWeight = 0, motorTauS = 0, escDelayS = 0;
+        float gyroChipDelayS = 0.0005f;  // фильтр в чипе гироскопа (gyro_hardware_lpf, CopterParams::gyroChipDelayS)
         float crossoverHzRP = 0, crossoverHzYaw = 0, phaseMarginDeg = 0, gainMarginDb = 0;
         float rotHzIdle = 0, rotHzHover = 0, rotHzFull = 0;
         float fullAmpsPerMotor = 0, fullWattsPerMotor = 0, hoverAmpsTotal = 0;
@@ -743,7 +744,7 @@ namespace copter
     inline LoopCheck checkLoop(const CopterTune& t)
     {
         LoopCheck r;
-        detail::LoopShape s{ 0.0f, t.motorTauS, 1.5f / t.loopHz + t.escDelayS + 0.0005f, t.gyroLpfHz, t.dtermLpfHz, 0.0f, 0.0f, 0.0f };
+        detail::LoopShape s{ 0.0f, t.motorTauS, 1.5f / t.loopHz + t.escDelayS + t.gyroChipDelayS, t.gyroLpfHz, t.dtermLpfHz, 0.0f, 0.0f, 0.0f };
         s.loopHz = t.loopHz;
         s.notchQ = t.notchQ;
         s.chain = t.filters.valid ? &t.filters : nullptr;
@@ -873,8 +874,8 @@ namespace copter
         t.filters.dterm1 = { LpfType::PT1, t.dtermLpfHz };
 
         // контур угловой скорости
-        // цикл (выборка + расчёт) + регулятор + фильтр в самом чипе гироскопа (~0.5 мс)
-        const float delay = 1.5f / loopHz + t.escDelayS + 0.0005f;
+        // цикл (выборка + расчёт) + регулятор + фильтр в самом чипе гироскопа (~0.5 мс у NORMAL)
+        const float delay = 1.5f / loopHz + t.escDelayS + t.gyroChipDelayS;
         const float wMax = 2.0f * PI_F * 0.12f * loopHz;
         const float iRatio = 1.0f / 6.0f;
         // Доля D (в долях τ мотора) подбирается: больше D — больше фазы у

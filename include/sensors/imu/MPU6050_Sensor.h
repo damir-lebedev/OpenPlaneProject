@@ -93,6 +93,13 @@ public:
     }
 
 
+    // gyro_hardware_lpf (sensors/imu/HardwareLpf.h): NORMAL, OPTION_1, OPTION_2,
+    // EXPERIMENTAL — DLPF_CFG гироскопа:
+    // 1 = 188 Гц, 0 = 256 Гц (у чипа шире нет, OPTION_2 = OPTION_1), 7 = 3600 Гц.
+    static constexpr imu::HardwareLpfSpec HW_LPF[imu::HARDWARE_LPF_COUNT] = { { 188, 1900 }, { 256, 980 }, { 256, 980 }, { 3600, 170 } };
+    const imu::HardwareLpfSpec* hardwareLpfTable() const override { return HW_LPF; }
+    static constexpr uint8_t GYRO_DLPF[imu::HARDWARE_LPF_COUNT] = { 0x01, 0x00, 0x00, 0x07 };
+
 protected:
 
     bool readSample(RawImuSample& s) override
@@ -171,9 +178,11 @@ private:
         // (MPU6500), задержка ~5 мс. Срезает вибрацию мотора и винта
         // (10x5 на ~8000 об/мин — ~130 Гц), не добавляя заметного
         // запаздывания для стабилизации самолёта.
-        // У коптера (Config::IMU_WIDE_BANDWIDTH) — DLPF_CFG=1: ~188 Гц, 1.9 мс.
+        // У коптера (Config::IMU_WIDE_BANDWIDTH) — DLPF_CFG=1: ~188 Гц, 1.9 мс,
+        // или шире по gyro_hardware_lpf (GYRO_DLPF); акселерометру — 1 всегда.
         const uint8_t dlpf = Config::IMU_WIDE_BANDWIDTH ? 0x01 : 0x03;
-        ok &= device.writeRegister(REG_CONFIG, dlpf);
+        ok &= device.writeRegister(REG_CONFIG, Config::IMU_WIDE_BANDWIDTH
+                                                   ? GYRO_DLPF[imu::hardwareLpfIndex(true)] : dlpf);
         ok &= device.writeRegister(REG_SMPLRT_DIV, 0x00);    // 1 кГц — быстрее цикла
 
         // У MPU6500 фильтр акселерометра отдельный и по умолчанию

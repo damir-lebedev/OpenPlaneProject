@@ -77,7 +77,7 @@ public:
         delay(1);
 
         ok = ok &&
-             setIndirectBits(IPREG_GYRO_LPF, LPF_MASK, lpfCode()) &&
+             setIndirectBits(IPREG_GYRO_LPF, LPF_MASK, gyroLpfCode()) &&
              setIndirectBits(IPREG_ACCEL_LPF, LPF_MASK, lpfCode());
 
         if (!ok)
@@ -93,6 +93,12 @@ public:
         return true;
     }
 
+
+    // gyro_hardware_lpf (sensors/imu/HardwareLpf.h): NORMAL, OPTION_1, OPTION_2,
+    // EXPERIMENTAL — GYRO_UI_LPFBW_SEL при ODR 1.6 кГц:
+    // 1 = ODR/4, 0 = фильтр в обход (шире чип не умеет — остальные пункты так же).
+    static constexpr imu::HardwareLpfSpec HW_LPF[imu::HARDWARE_LPF_COUNT] = { { 400, 500 }, { 800, 250 }, { 800, 250 }, { 800, 250 } };
+    const imu::HardwareLpfSpec* hardwareLpfTable() const override { return HW_LPF; }
 
 protected:
 
@@ -147,6 +153,9 @@ private:
     static constexpr uint8_t LPF_ODR_DIV_32   = 0x04;
 
     static constexpr uint8_t lpfCode() { return Config::IMU_WIDE_BANDWIDTH ? LPF_ODR_DIV_4 : LPF_ODR_DIV_32; }
+    static constexpr uint8_t LPF_BYPASS = 0x00;
+    // гироскоп у коптера — по gyro_hardware_lpf (NORMAL = ODR/4, иначе в обход)
+    static uint8_t gyroLpfCode() { return imu::hardwareLpfIndex(Config::IMU_WIDE_BANDWIDTH) == 0 ? lpfCode() : LPF_BYPASS; }
 
     static constexpr uint32_t GYRO_STARTUP_MS = 45;
 

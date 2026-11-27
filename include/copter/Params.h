@@ -16,6 +16,7 @@
 #include "copter/RcSetup.h"
 #include "copter/Rssi.h"
 #include "copter/Vtx.h"
+#include "sensors/imu/HardwareLpf.h"
 #include "storage/KeyValueStore.h"
 
 // ============================================================
@@ -225,6 +226,7 @@ namespace copter
         PARAM_FEEDFORWARD_BOOST,
         PARAM_FEEDFORWARD_MAX_RATE_LIMIT,
         PARAM_YAW_LOWPASS_HZ,
+        PARAM_GYRO_HARDWARE_LPF,
         PARAM_GYRO_LPF1_TYPE,
         PARAM_GYRO_LPF1_STATIC_HZ,
         PARAM_GYRO_LPF1_DYN_MIN_HZ,
@@ -625,6 +627,7 @@ namespace copter
         static const char* const THROTTLE_LIMIT_TYPES[] = { "OFF", "SCALE", "CLIP" };   // как ThrottleLimitType
         static const char* const FF_AVERAGING[] = { "OFF", "2_POINT", "3_POINT", "4_POINT" };
         static const char* const LPF_TYPES[] = { "PT1", "BIQUAD", "PT2", "PT3" };   // как LpfType
+        static const char* const HARDWARE_LPF[] = { "NORMAL", "OPTION_1", "OPTION_2", "EXPERIMENTAL" };   // как imu::HardwareLpf
         // порядок — как в BF (SERIAL у нас нет — пишет только на свой носитель)
         static const char* const BLACKBOX_DEVICES[] = { "NONE", "SPIFLASH", "SDCARD", "SERIAL" };
         static const char* const BLACKBOX_MODES[] = { "NORMAL", "MOTOR_TEST", "ALWAYS" };
@@ -765,6 +768,8 @@ namespace copter
               "уставка у такой доли наибольшего расхода — упреждение гаснет: нет перелёта на флипе; 0 — выкл" },
             { "yaw_lowpass_hz", kInt, kPid, kGroupFilters, 0, 500, 0, kTune, "Гц", nullptr, 0,
               "ФНЧ выхода PID рысканья: меньше — тише моторы, но рысканье мягче; 0 — без фильтра" },
+            { "gyro_hardware_lpf", kEnum, kMaster, kGroupFilters, 0, 3, 0, kTable, "", HARDWARE_LPF, 4,
+              "фильтр в самом чипе гироскопа: NORMAL проверен, остальные шире — меньше задержка, больше шума; после перезапуска" },
             { "gyro_lpf1_type", kEnum, kMaster, kGroupFilters, 0, 3, 0, kTune, "", LPF_TYPES, 4,
               "тип 1-го ФНЧ гироскопа: PT1 мягкий, PT2/PT3 круче срезают шум, BIQUAD — резче всех, но задержка больше" },
             { "gyro_lpf1_static_hz", kInt, kMaster, kGroupFilters, 0, 1000, 0, kTune, "Гц", nullptr, 0,
@@ -1567,6 +1572,22 @@ namespace copter
 
         // Описание коптера: сборка copter_build (с поправками прошивки) и
         // заданное в CLI поверх.
+        // Фильтр в чипе гироскопа (065): таблица драйвера IMU (полоса, задержка
+        // по пунктам gyro_hardware_lpf), nullptr — чип неизвестен. Склейка
+        // задаёт её после begin() датчика.
+        void setGyroChipFilter(const imu::HardwareLpfSpec* table) { chipLpf = table; }
+        const imu::HardwareLpfSpec* gyroChipFilter() const { return chipLpf; }
+
+        // Задержка фильтра чипа для модели контура: у NORMAL — те же 0.5 мс, что
+        // модель считала всегда, другие пункты — в той же доле, что у чипа.
+        float gyroChipDelayS() const
+        {
+            if (!chipLpf || chipLpf[0].delayUs == 0) return imu::DEFAULT_CHIP_DELAY_S;
+            const uint8_t i = static_cast<uint8_t>(value(PARAM_GYRO_HARDWARE_LPF));
+            if (i >= imu::HARDWARE_LPF_COUNT) return imu::DEFAULT_CHIP_DELAY_S;
+            return imu::DEFAULT_CHIP_DELAY_S * static_cast<float>(chipLpf[i].delayUs) / static_cast<float>(chipLpf[0].delayUs);
+        }
+
         BuildSpec buildSpec() const
         {
             const BuildSpec base = baseBuild(static_cast<uint8_t>(value(PARAM_COPTER_BUILD)));
@@ -2126,6 +2147,7 @@ namespace copter
             t.pid.integratedYawRelax = valueIn(PARAM_INTEGRATED_YAW_RELAX, pidIndex);
             if (bf) applyBetaflightBase(t);
             filtersTo(t);
+            t.gyroChipDelayS = gyroChipDelayS();
             AxisGains* gains[3] = { &t.roll, &t.pitch, &t.yaw };
             for (uint8_t axis = 0; axis < 3; ++axis)
             {
@@ -2699,6 +2721,7 @@ namespace copter
         }
 
         CopterTune model;
+        const imu::HardwareLpfSpec* chipLpf = nullptr;
         BuildSpec modelSpec = {};
         bool haveModel = false;
         bool begun = false;

@@ -1662,7 +1662,16 @@ void setup()
     setupPorts();
 
     configureGyroCalibration();
+    // 065: фильтр в чипе гироскопа — до begin() (драйвер пишет регистр при запуске)
+    imu::setHardwareLpf(static_cast<uint8_t>(copterParams.value(copter::PARAM_GYRO_HARDWARE_LPF)));
     if (imuSensor.begin()) imuSensor.calibrate();
+    copterParams.setGyroChipFilter(imuSensor.hardwareLpfTable());   // полоса и задержка — в модель и Studio
+    if (const imu::HardwareLpfSpec* hw = imuSensor.hardwareLpfTable())
+    {
+        const uint8_t i = imu::hardwareLpfIndex(true);
+        Serial.printf("Фильтр в чипе гироскопа: %s, ~%u Гц, ~%u мкс\n",
+                      copter::paramInfo(copter::PARAM_GYRO_HARDWARE_LPF).options[i], static_cast<unsigned>(hw[i].hz), static_cast<unsigned>(hw[i].delayUs));
+    }
     if (HAS_GYRO2)
     {
         gyro2Bus.begin();

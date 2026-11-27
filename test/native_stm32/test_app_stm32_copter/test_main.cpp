@@ -90,6 +90,8 @@ void test_boot_derives_tune_and_holds_escs_at_stop()
     TEST_ASSERT_TRUE(contains(log, "регуляторы OneShot125, цикл 1000 Гц"));
     TEST_ASSERT_TRUE(contains(log, "Тяговооружённость"));
     TEST_ASSERT_TRUE(contains(log, "ICM42688: подключён"));
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "Фильтр в чипе гироскопа: NORMAL, ~250 Гц, ~500 мкс"), log.c_str());
+    TEST_ASSERT_EQUAL(0x11, imuChip.spi.lastWrite(0x52));   // UI-фильтр ODR/4 (065)
     TEST_ASSERT_TRUE(contains(log, "DPS310: подключён"));
     TEST_ASSERT_FALSE_MESSAGE(contains(log, "ОШИБКА"), log.c_str());
     TEST_ASSERT_EQUAL_UINT8(4, motors.attached());
@@ -234,6 +236,28 @@ void test_console_tune_report_and_motor_test()
 
 // CLI как в Betaflight: ARM запрещён, пока CLI открыт; set → save — во флеш
 // и в контроллер; после «перезагрузки» (настройки заново из флеша) — то же.
+// 065: gyro_hardware_lpf — регистр чипа при запуске IMU, задержка — в запас контура.
+void test_gyro_hardware_lpf_sets_chip_register()
+{
+    const float normalDelay = copterParams.tune().gyroChipDelayS;
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, 0.0005f, normalDelay);
+    TEST_ASSERT_TRUE(copterParams.setValue(copter::PARAM_GYRO_HARDWARE_LPF, 0, 1.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, 0.00025f, copterParams.tune().gyroChipDelayS);   // 250 мкс из 500 у чипа
+    imu::setHardwareLpf(static_cast<uint8_t>(copterParams.value(copter::PARAM_GYRO_HARDWARE_LPF)));
+    TEST_ASSERT_TRUE(imuSensor.begin());   // как после перезапуска
+    TEST_ASSERT_EQUAL(0x10, imuChip.spi.lastWrite(0x52));
+    TEST_ASSERT_TRUE(copterParams.setValue(copter::PARAM_GYRO_HARDWARE_LPF, 0, 3.0f));
+    imu::setHardwareLpf(3);
+    TEST_ASSERT_TRUE(imuSensor.begin());
+    TEST_ASSERT_EQUAL(0x1F, imuChip.spi.lastWrite(0x52));   // малая задержка
+    TEST_ASSERT_TRUE(copterParams.setValue(copter::PARAM_GYRO_HARDWARE_LPF, 0, 0.0f));
+    imu::setHardwareLpf(0);
+    TEST_ASSERT_TRUE(imuSensor.begin());
+    TEST_ASSERT_EQUAL(0x11, imuChip.spi.lastWrite(0x52));
+    imuSensor.calibrate();
+    takeSerial();
+}
+
 void test_cli_set_save_and_reboot()
 {
     RcChannels rc;
@@ -545,7 +569,7 @@ void test_app_protocol_params_set_save()
     TEST_ASSERT_TRUE_MESSAGE(isJson(header[0]), header[0].c_str());
     TEST_ASSERT_TRUE(contains(header[0], "\"build\":\"freestyle5\""));
     TEST_ASSERT_TRUE_MESSAGE(contains(header[0], "\"frame\":{\"type\":\"Quad X\",\"motors\":[[-0.71,0.71,\"cw\",false],"), header[0].c_str());
-    TEST_ASSERT_TRUE_MESSAGE(contains(header[0], "\"motorTestMax\":30,\"dshotCommands\":false,\"uarts\":[[1,1,1],[2,1,1],[3,1,1],[4,1,1],[6,1,1],[7,1,1],[8,1,1]],\"margin\":{\"gm\":"), header[0].c_str());   // MULTISHOT; UART Matek H743 (P63)
+    TEST_ASSERT_TRUE_MESSAGE(contains(header[0], "\"motorTestMax\":30,\"dshotCommands\":false,\"uarts\":[[1,1,1],[2,1,1],[3,1,1],[4,1,1],[6,1,1],[7,1,1],[8,1,1]],\"gyroHw\":[[250,500],[500,250],[500,150],[1000,80]],\"margin\":{\"gm\":"), header[0].c_str());   // MULTISHOT; UART Matek H743 (P63); фильтр чипа (065)
     const auto lines = linesWith(log, "@param ");
     TEST_ASSERT_EQUAL(copter::PARAM_COUNT, static_cast<int>(lines.size()));
     for (const std::string& l : lines) TEST_ASSERT_TRUE_MESSAGE(isJson(l), l.c_str());
@@ -1262,6 +1286,7 @@ int main()
     RUN_TEST(test_three_poses_then_arm_spins_motors_at_idle);
     RUN_TEST(test_link_loss_on_ground_disarms);
     RUN_TEST(test_console_tune_report_and_motor_test);
+    RUN_TEST(test_gyro_hardware_lpf_sets_chip_register);
     RUN_TEST(test_cli_set_save_and_reboot);
     RUN_TEST(test_aux_moves_arm_and_modes);
     RUN_TEST(test_map_and_receiver_protocol_from_cli);

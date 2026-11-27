@@ -4809,7 +4809,7 @@ void test_cli_pastes_betaflight_diff()
         "# rxfail",
         "rxfail 4 h",
         "# master",
-        "set gyro_hardware_lpf = NORMAL",
+        "set gyro_high_fsr = OFF",
         "set dshot_bidir = ON",
         "set motor_pwm_protocol = DSHOT300",
         "set motor_poles = 12",
@@ -4837,9 +4837,9 @@ void test_cli_pastes_betaflight_diff()
     }
     TEST_ASSERT_TRUE_MESSAGE(has(out, "# пропущено: resource — у нас это заголовок платы"), out.c_str());
     TEST_ASSERT_FALSE_MESSAGE(has(out, "###ОШИБКА: нет команды resource"), out.c_str());
-    TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки gyro_hardware_lpf###"));   // каждую — видно сразу
+    TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки gyro_high_fsr###"));   // каждую — видно сразу
     TEST_ASSERT_TRUE_MESSAGE(has(out, "# вставлено: применено 18 строк; не перенесено 11: board_name, manufacturer_id, mcu_id, "
-                                      "signature, resource, timer, dma, feature, serial, gyro_hardware_lpf, "
+                                      "signature, resource, timer, dma, feature, serial, gyro_high_fsr, "
                                       "motor_pwm_protocol\r\n"),
                              out.c_str());
     TEST_ASSERT_EQUAL_FLOAT(52.0f, p.value(PARAM_P_ROLL));
@@ -10931,6 +10931,24 @@ void test_msp_bf_configurator_connects()
     m.params.resetAll();
 }
 
+// 065: gyro_hardware_lpf — задержка чипа в модели контура (запас фазы растёт с полосой).
+void test_gyro_hardware_lpf_delay_in_loop_model()
+{
+    CopterParams& p = five5Params();
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, p.value(PARAM_GYRO_HARDWARE_LPF));   // NORMAL, как в BF
+    TEST_ASSERT_EQUAL_STRING("EXPERIMENTAL", paramInfo(PARAM_GYRO_HARDWARE_LPF).options[3]);
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, imu::DEFAULT_CHIP_DELAY_S, p.tune().gyroChipDelayS);   // чип неизвестен
+    static constexpr imu::HardwareLpfSpec chip[imu::HARDWARE_LPF_COUNT] = { { 188, 1900 }, { 256, 980 }, { 256, 980 }, { 3600, 170 } };
+    p.setGyroChipFilter(chip);
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, 0.0005f, p.tune().gyroChipDelayS);   // NORMAL — те же 0.5 мс
+    const float pmNormal = checkLoop(p.tune()).phaseMarginDeg;
+    p.setValue(PARAM_GYRO_HARDWARE_LPF, 0, 3);
+    TEST_ASSERT_FLOAT_WITHIN(1e-7f, 0.0005f * 170.0f / 1900.0f, p.tune().gyroChipDelayS);
+    TEST_ASSERT_TRUE(checkLoop(p.tune()).phaseMarginDeg > pmNormal);
+    p.setValue(PARAM_GYRO_HARDWARE_LPF, 0, 0);
+    p.setGyroChipFilter(nullptr);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -11160,5 +11178,6 @@ int main()
     RUN_TEST(test_gps_integrity_params_and_osd);
     RUN_TEST(test_dead_reckon_home_unit);
     RUN_TEST(test_dead_reckon_params_and_osd);
+    RUN_TEST(test_gyro_hardware_lpf_delay_in_loop_model);
     return UNITY_END();
 }

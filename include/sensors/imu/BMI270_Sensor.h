@@ -83,7 +83,8 @@ public:
         const bool wide = Config::IMU_WIDE_BANDWIDTH;
         ok &= device.writeRegister(REG_ACC_CONF, wide ? ACC_CONF_WIDE : ACC_CONF_NARROW);
         ok &= device.writeRegister(REG_ACC_RANGE, ACC_RANGE_16G);
-        ok &= device.writeRegister(REG_GYR_CONF, wide ? GYR_CONF_WIDE : GYR_CONF_NARROW);
+        ok &= device.writeRegister(REG_GYR_CONF, wide ? (imu::hardwareLpfIndex(true) == 0 ? GYR_CONF_WIDE : GYR_CONF_3200)
+                                                      : GYR_CONF_NARROW);
         ok &= device.writeRegister(REG_GYR_RANGE, GYR_RANGE_2000);
         ok &= device.writeRegister(REG_PWR_CTRL, PWR_CTRL_ACC_GYR_TEMP);
         ok &= device.writeRegister(REG_PWR_CONF, PWR_CONF_FIFO_WAKEUP);   // без энергосбережения
@@ -103,6 +104,12 @@ public:
         return true;
     }
 
+
+    // gyro_hardware_lpf (sensors/imu/HardwareLpf.h): NORMAL, OPTION_1, OPTION_2,
+    // EXPERIMENTAL — GYR_CONF: normal при ODR 1600 Гц,
+    // иначе normal при ODR 3200 Гц (шире чип не умеет — остальные пункты так же).
+    static constexpr imu::HardwareLpfSpec HW_LPF[imu::HARDWARE_LPF_COUNT] = { { 300, 800 }, { 750, 350 }, { 750, 350 }, { 750, 350 } };
+    const imu::HardwareLpfSpec* hardwareLpfTable() const override { return HW_LPF; }
 
 protected:
 
@@ -201,6 +208,7 @@ private:
     // GYR_CONF: bit7 filter_perf, bit6 noise_perf, 5:4 bwp, 3:0 odr (0x0C — 1600 Гц).
     static constexpr uint8_t GYR_CONF_WIDE   = 0xEC;
     static constexpr uint8_t GYR_CONF_NARROW = 0xCC;
+    static constexpr uint8_t GYR_CONF_3200   = 0xED;   // normal, 3200 Гц (gyro_hardware_lpf не NORMAL)
     static constexpr uint8_t ACC_RANGE_16G   = 0x03;
     static constexpr uint8_t GYR_RANGE_2000  = 0x00;
     static constexpr uint8_t PWR_CTRL_ACC_GYR_TEMP = 0x0E;

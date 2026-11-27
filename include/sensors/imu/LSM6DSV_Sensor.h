@@ -94,7 +94,7 @@ public:
         const bool ok =
             device.writeRegister(REG_CTRL3, CTRL3_BDU | CTRL3_IF_INC) &&
             device.writeRegister(REG_CTRL6, FS_G_2000DPS | ((Config::IMU_WIDE_BANDWIDTH ? GYRO_LPF1_BW_WIDE : GYRO_LPF1_BW) << 4)) &&
-            device.writeRegister(REG_CTRL7, CTRL7_LPF1_G_EN) &&
+            device.writeRegister(REG_CTRL7, ctrl7()) &&   // LPF1 (gyro_hardware_lpf у коптера)
             device.writeRegister(REG_CTRL8, fsXl | (ACCEL_LPF2_BW << 5)) &&
             device.writeRegister(REG_CTRL9, CTRL9_LPF2_XL_EN) &&
             device.writeRegister(REG_CTRL1, ODR_960HZ) &&   // OP_MODE = 0: high performance
@@ -115,6 +115,13 @@ public:
 
     bool isVariant32x() const { return is32x; }
 
+
+    // gyro_hardware_lpf (sensors/imu/HardwareLpf.h): NORMAL, OPTION_1, OPTION_2,
+    // EXPERIMENTAL — LPF1 гироскопа при ODR 960 Гц:
+    // NORMAL — LPF1 с самой широкой полосой (код 0), остальные — LPF1 выключен.
+    static constexpr imu::HardwareLpfSpec HW_LPF[imu::HARDWARE_LPF_COUNT] = { { 280, 800 }, { 450, 400 }, { 450, 400 }, { 450, 400 } };
+    const imu::HardwareLpfSpec* hardwareLpfTable() const override { return HW_LPF; }
+    static uint8_t ctrl7() { return imu::hardwareLpfIndex(Config::IMU_WIDE_BANDWIDTH) == 0 ? CTRL7_LPF1_G_EN : 0x00; }
 
 protected:
 

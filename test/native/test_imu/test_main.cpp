@@ -398,6 +398,23 @@ namespace
     }
 }
 
+// 065: gyro_hardware_lpf — только у коптера; самолёт держит свой узкий фильтр.
+void test_hardware_lpf_choice_ignored_by_plane()
+{
+    imu::setHardwareLpf(3);
+    TEST_ASSERT_EQUAL_UINT8(3, imu::hardwareLpfIndex(true));
+    TEST_ASSERT_EQUAL_UINT8(0, imu::hardwareLpfIndex(false));
+    SpiRig rig(Config::PIN_SPI_CS_IMU, 0);
+    rig.chip.regs[0x75] = 0x47;
+    setIcm(rig.chip.regs, 0, 0, 1, 0, 0);
+    SpiRegisterDevice device = ICM42688_Sensor::spiDevice(rig.bus, Config::PIN_SPI_CS_IMU);
+    ICM42688_Sensor icm(device);
+    TEST_ASSERT_TRUE(icm.begin());
+    TEST_ASSERT_EQUAL(Config::IMU_WIDE_BANDWIDTH ? 0x1F : 0x66, rig.chip.lastWrite(0x52));
+    imu::setHardwareLpf(9);   // вне списка — NORMAL
+    TEST_ASSERT_EQUAL_UINT8(0, imu::hardwareLpfIndex(true));
+}
+
 void test_icm42688_over_spi_is_configured_and_read()
 {
     SpiRig rig(Config::PIN_SPI_CS_IMU, 0);
@@ -415,6 +432,7 @@ void test_icm42688_over_spi_is_configured_and_read()
     TEST_ASSERT_EQUAL(0x06, rig.chip.lastWrite(0x50));
     TEST_ASSERT_EQUAL(0x66, rig.chip.lastWrite(0x52));
     TEST_ASSERT_EQUAL(0x00, rig.chip.lastWrite(0x76));   // банк 0
+    TEST_ASSERT_EQUAL(250, icm.hardwareLpfTable()[0].hz);   // таблица gyro_hardware_lpf
 
     icm.calibrate();
     setIcm(rig.chip.regs, 0, 0, 1, 10, 1325);   // 1325/132.48 + 25 ≈ 35 °C
@@ -750,6 +768,7 @@ int main()
     RUN_TEST(test_orientation_calibration_times_out_without_poses);
     RUN_TEST(test_mounting_mismatch_after_board_moved);
     RUN_TEST(test_icm42688_over_spi_is_configured_and_read);
+    RUN_TEST(test_hardware_lpf_choice_ignored_by_plane);
     RUN_TEST(test_icm42688_ignores_not_ready_samples);
     RUN_TEST(test_mpu6000_over_spi_is_configured_and_read);
     RUN_TEST(test_icm20689_over_spi_and_missing_spi_chip);

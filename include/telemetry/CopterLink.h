@@ -645,6 +645,14 @@ private:
                 first = false;
             }
             w.add("]");
+            // 065: фильтр в чипе гироскопа — [Гц, мкс] на пункт gyro_hardware_lpf
+            if (const imu::HardwareLpfSpec* hw = params.gyroChipFilter())
+            {
+                w.add(",\"gyroHw\":[");
+                for (uint8_t i = 0; i < imu::HARDWARE_LPF_COUNT; ++i)
+                    w.add("%s[%u,%u]", i ? "," : "", static_cast<unsigned>(hw[i].hz), static_cast<unsigned>(hw[i].delayUs));
+                w.add("]");
+            }
             margin(w);
             w.add("}\n");
             return w.overflow ? 0 : w.length;
@@ -840,7 +848,7 @@ private:
     // ,"margin":{"gm":дБ,"pm":°,"hz":срез,"min":дБ,"model":{...}} — запасы контура
     // для PID, что работают, и модель для ступеньки во вкладке «PID» Studio:
     // "loop" Гц, "tau" — мотор, с, "delay" — задержка без фильтров гироскопа, с,
-    // "iy" — integrated yaw (рысканье не моделируется), "ax" — по осям
+    // ("delay" — с фильтром в чипе: gyro_hardware_lpf), "iy" — integrated yaw (рысканье не моделируется), "ax" — по осям
     // [K (°/с²) на единицу команды, P, I, D (с d_max), FF] — коэффициенты в
     // миллионных долях единиц прошивки (без экспонент: %g на плате не нужен).
     // Флеш настроек: занято и всего, байт (вкладка «Прочее»).
@@ -860,7 +868,7 @@ private:
         {
             // та же задержка, что у checkLoop: полтора цикла, ESC, полмиллисекунды на DShot
             w.add(",\"model\":{\"loop\":%.0f,\"tau\":%.4f,\"delay\":%.5f,\"iy\":%d,\"ax\":[", t.loopHz, t.motorTauS,
-                  1.5f / t.loopHz + t.escDelayS + 0.0005f, t.pid.integratedYaw ? 1 : 0);
+                  1.5f / t.loopHz + t.escDelayS + t.gyroChipDelayS, t.pid.integratedYaw ? 1 : 0);
             const copter::AxisGains* g[3] = { &t.roll, &t.pitch, &t.yaw };
             const float k[3] = { t.kRoll, t.kPitch, t.kYaw };
             constexpr float DEG = 180.0f / 3.14159265f;

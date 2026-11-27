@@ -2,6 +2,7 @@
 #include <Arduino.h>
 
 #include "hal/II2CBus.h"
+#include "sensors/imu/HardwareLpf.h"
 
 // ============================================================
 // 🔌 ABSTRACT SENSOR INTERFACE
@@ -210,6 +211,10 @@ public:
     // Шина I2C за самим IMU (LSM6DSV: компас на SDx/SCx), если чип её
     // умеет; nullptr — нет. Плата добавляет её к своим (IBoard::setAuxI2c()).
     virtual II2CBus* auxI2c() { return nullptr; }
+
+    // Фильтр в чипе (gyro_hardware_lpf): таблица из HARDWARE_LPF_COUNT
+    // пунктов — полоса и задержка; nullptr — чип не умеет выбирать.
+    virtual const imu::HardwareLpfSpec* hardwareLpfTable() const { return nullptr; }
 };
 
 // ============================================================

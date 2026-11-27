@@ -192,6 +192,7 @@ public:
     void setAccelCorrection(bool enabled) override { if (imu()) imu()->setAccelCorrection(enabled); }
     void trimGyroBias(const float residualDps[3]) override { if (imu()) imu()->trimGyroBias(residualDps); }
     II2CBus* auxI2c() override { return imu() ? imu()->auxI2c() : nullptr; }
+    const imu::HardwareLpfSpec* hardwareLpfTable() const override { return imu() ? imu()->hardwareLpfTable() : nullptr; }
 
     const SensorChainCore& chain() const { return core; }
 

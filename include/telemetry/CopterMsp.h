@@ -1062,7 +1062,7 @@ namespace copter
             w.u16(pv(PARAM_GYRO_NOTCH2_HZ));
             w.u16(pv(PARAM_GYRO_NOTCH2_CUTOFF));
             w.u8(pv(PARAM_DTERM_LPF1_TYPE));
-            w.u8(0);    // gyro_hardware_lpf
+            w.u8(pv(PARAM_GYRO_HARDWARE_LPF));
             w.u8(0);
             w.u16(gyro);
             w.u16(pv(PARAM_GYRO_LPF2_STATIC_HZ));
@@ -1109,7 +1109,7 @@ namespace copter
             if (r.remaining() >= 1) set(PARAM_DTERM_LPF1_TYPE, r.u8());
             if (r.remaining() >= 10)
             {
-                r.u8();   // gyro_hardware_lpf
+                set(PARAM_GYRO_HARDWARE_LPF, r.u8());
                 r.u8();
                 set(PARAM_GYRO_LPF1_STATIC_HZ, r.u16());
                 set(PARAM_GYRO_LPF2_STATIC_HZ, r.u16());
