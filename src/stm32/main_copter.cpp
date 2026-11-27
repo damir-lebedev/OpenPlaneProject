@@ -204,6 +204,13 @@ static bool configOk = false;
 static bool rebootRequired = false;
 static bool bidirAtBoot = false;   // dshot_bidir при включении (меняется после перезагрузки)
 static uint8_t outputsAtBoot = 0;   // выходов на моторы настроено при включении
+// motor_pwm_protocol, motor_pwm_rate и motor_output_reordering при включении (073, 076):
+// выходы настраиваются только тогда, поменяли — перезагрузка
+static copter::EscProtocol escAtBoot = CopterConfig::ESC_PROTOCOL;
+static uint32_t pwmRateAtBoot = 480;
+static char orderAtBoot[copter::CopterParams::NAME_LENGTH + 1] = {};
+static int16_t motorPins[copter::CopterParams::MAX_MOTOR_OUTPUTS];   // ножка мотора i (после перестановки)
+static int8_t motorAf[copter::CopterParams::MAX_MOTOR_OUTPUTS];
 copter::BatteryMonitor battery;
 // Перегрузка регулятора и батареи по току — copter/EscGuard.h.
 copter::EscGuard escGuard;
@@ -423,7 +430,14 @@ static void applySettings()
     const bool bidirChanged = outputsAtBoot && (copterParams.value(copter::PARAM_DSHOT_BIDIR) > 0.5f) != bidirAtBoot;
     if (bidirChanged && !rebootRequired) Serial.println("dshot_bidir изменён — перезагрузите плату, до того ARM запрещён.");
     const bool frameChanged = outputsAtBoot && motorCount != outputsAtBoot;
-    const bool reboot = frameChanged || bidirChanged;
+    motors.setMinCommand(copterParams.value(copter::PARAM_MIN_COMMAND));
+    const bool escChanged = outputsAtBoot && copterParams.escProtocol() != escAtBoot;
+    const bool orderChanged = outputsAtBoot && strcmp(copterParams.text(copter::PARAM_MOTOR_OUTPUT_REORDERING, 0), orderAtBoot) != 0;
+    const bool rateChanged = outputsAtBoot && escAtBoot == copter::EscProtocol::PWM &&
+                             static_cast<uint32_t>(copterParams.value(copter::PARAM_MOTOR_PWM_RATE)) != pwmRateAtBoot;
+    if ((escChanged || orderChanged || rateChanged) && !rebootRequired)
+        Serial.println("Протокол, частота или порядок выходов моторов изменён — перезагрузите плату, до того ARM запрещён.");
+    const bool reboot = frameChanged || bidirChanged || escChanged || orderChanged || rateChanged;
     if (frameChanged && !rebootRequired)
     {
         Serial.printf("У рамы теперь %u моторов (было %u) — перезагрузите плату, до того ARM запрещён.\n", motorCount,
@@ -1348,7 +1362,8 @@ static void setupCopter(KeyValueStore& store)
     const copter::CopterTune tune = copterParams.tune();
     copter::CopterSettings settings = CopterConfig::settings();
     copterParams.applyTo(settings);
-    settings.turtleAvailable = copter::isDshot(CopterConfig::ESC_PROTOCOL);   // реверс — командой DShot
+    escAtBoot = copterParams.escProtocol();   // motor_pwm_protocol, умолчание — файл платы
+    settings.turtleAvailable = copter::isDshot(escAtBoot);   // реверс — командой DShot
     copterController.configure(tune, settings);
     copterBuild = copterParams.buildSpec();
 
@@ -1359,13 +1374,29 @@ static void setupCopter(KeyValueStore& store)
         configOk = false;
     }
     const bool bidir = copterParams.value(copter::PARAM_DSHOT_BIDIR) > 0.5f;
-    motors.dshotOutput().setBidirectional(bidir && copter::isDshot(CopterConfig::ESC_PROTOCOL));
+    motors.dshotOutput().setBidirectional(bidir && copter::isDshot(escAtBoot));
     bidirAtBoot = bidir;
-    if (!motors.begin(CopterConfig::MOTOR_PINS, tune.frame.count, CopterConfig::ESC_PROTOCOL, CopterConfig::MOTOR_AF,
-                      CopterConfig::MOTOR_AF_COUNT))
+    // motor_output_reordering: мотор i — на выход платы motorOutput(i)
+    snprintf(orderAtBoot, sizeof(orderAtBoot), "%s", copterParams.text(copter::PARAM_MOTOR_OUTPUT_REORDERING, 0));
+    for (uint8_t i = 0; i < copter::CopterParams::MAX_MOTOR_OUTPUTS; ++i)
+    {
+        const uint8_t out = copterParams.motorOutput(i);
+        motorPins[i] = out < CopterConfig::MOTOR_PIN_COUNT ? CopterConfig::MOTOR_PINS[out] : -1;
+        motorAf[i] = out < CopterConfig::MOTOR_AF_COUNT ? CopterConfig::MOTOR_AF[out] : -1;
+        if (i < tune.frame.count && tune.frame.count <= CopterConfig::MOTOR_PIN_COUNT && out >= CopterConfig::MOTOR_PIN_COUNT)
+        {
+            Serial.printf("ОШИБКА: motor_output_reordering: мотор %u — на выход %u, а выходов на плате %u — ARM запрещён.\n",
+                          i + 1, out + 1, CopterConfig::MOTOR_PIN_COUNT);
+            configOk = false;
+        }
+    }
+    pwmRateAtBoot = static_cast<uint32_t>(copterParams.value(copter::PARAM_MOTOR_PWM_RATE));
+    motors.setMinCommand(copterParams.value(copter::PARAM_MIN_COMMAND));
+    if (!motors.begin(motorPins, tune.frame.count, escAtBoot, motorAf, copter::CopterParams::MAX_MOTOR_OUTPUTS,
+                      pwmRateAtBoot))
     {
         Serial.printf("ОШИБКА: выходы на моторы не настроились (%s) — ARM запрещён.\n",
-                      copter::escProtocolName(CopterConfig::ESC_PROTOCOL));
+                      copter::escProtocolName(escAtBoot));
         configOk = false;
     }
     else if (motors.attached() < tune.frame.count)
@@ -1373,19 +1404,19 @@ static void setupCopter(KeyValueStore& store)
         Serial.printf("ОШИБКА: настроено %u выходов из %u — ARM запрещён.\n", motors.attached(), tune.frame.count);
         configOk = false;
     }
-    if (copter::isDshot(CopterConfig::ESC_PROTOCOL) && tune.loopHz > copter::dshot::maxLoopHz(CopterConfig::ESC_PROTOCOL, bidir))
+    if (copter::isDshot(escAtBoot) && tune.loopHz > copter::dshot::maxLoopHz(escAtBoot, bidir))
     {
         Serial.printf("ОШИБКА: %s%s не успевает за циклом %.0f Гц (до %lu) — ARM запрещён.\n",
-                      copter::escProtocolName(CopterConfig::ESC_PROTOCOL), bidir ? " с dshot_bidir" : "", tune.loopHz,
-                      static_cast<unsigned long>(copter::dshot::maxLoopHz(CopterConfig::ESC_PROTOCOL, bidir)));
+                      copter::escProtocolName(escAtBoot), bidir ? " с dshot_bidir" : "", tune.loopHz,
+                      static_cast<unsigned long>(copter::dshot::maxLoopHz(escAtBoot, bidir)));
         configOk = false;
     }
     copterConsole.setMotorTelemetry(&motors.dshotOutput());
-    if (copter::isDshot(CopterConfig::ESC_PROTOCOL)) copterConsole.setEscCommands(&motors.dshotOutput());
+    if (copter::isDshot(escAtBoot)) copterConsole.setEscCommands(&motors.dshotOutput());
     outputsAtBoot = tune.frame.count;
 
     Serial.printf("Коптер: %s (%s), %s, регуляторы %s, цикл %.0f Гц.\n", copterBuild.id, copterBuild.title,
-                  copter::frameName(tune.frame.type), copter::escProtocolName(CopterConfig::ESC_PROTOCOL), tune.loopHz);
+                  copter::frameName(tune.frame.type), copter::escProtocolName(escAtBoot), tune.loopHz);
     Serial.printf("Тяговооружённость %.1f, висение на %.0f %% тяги, полоса контура %.1f Гц ('t' — подробно).\n",
                   tune.thrustToWeight, tune.hoverThrust * 100.0f, tune.crossoverHzRP);
     Serial.printf("PID %s, профиль %u, расходы — профиль %u ('#' — CLI как в Betaflight).\n",
@@ -1533,7 +1564,7 @@ static void printDshotDiag()
 {
     Stm32Dshot& d = motors.dshotOutput();
     Serial.printf("Выходы: %s, моторов DShot %u, таймеров %u, такт таймеров %lu Гц\n",
-                  copter::escProtocolName(CopterConfig::ESC_PROTOCOL), d.attached(), d.timerCount(),
+                  copter::escProtocolName(escAtBoot), d.attached(), d.timerCount(),
                   static_cast<unsigned long>(HAL_RCC_GetPCLK1Freq()));
     // консоль — в задаче полёта: кадры между двумя нажатиями 'x'
     static uint32_t lastMs = 0, lastSent = 0, lastSkipped = 0;
@@ -1552,8 +1583,8 @@ static void printDshotDiag()
     {
         if (!d.isAttached(i)) continue;
         Serial.printf(" M%u: ножка P%c%u, TIM%u CH%u, значение %u, кадр 0x%04X\n", i + 1,
-                      'A' + STM_PORT(digitalPinToPinName(CopterConfig::MOTOR_PINS[i])),
-                      STM_PIN(digitalPinToPinName(CopterConfig::MOTOR_PINS[i])), d.timerOf(i), d.channelOf(i),
+                      'A' + STM_PORT(digitalPinToPinName(motorPins[i])),
+                      STM_PIN(digitalPinToPinName(motorPins[i])), d.timerOf(i), d.channelOf(i),
                       d.value(i), d.frame(i));
     }
     for (uint8_t g = 0; g < d.timerCount(); ++g)
@@ -1598,7 +1629,7 @@ static void printDshotDiag()
     for (uint8_t i = 0; i < CopterConfig::MOTOR_PIN_COUNT && i < Stm32Dshot::MAX_MOTORS; ++i)
     {
         if (!d.isAttached(i)) continue;
-        const PinName pn = digitalPinToPinName(CopterConfig::MOTOR_PINS[i]);
+        const PinName pn = digitalPinToPinName(motorPins[i]);
         GPIO_TypeDef* port = get_GPIO_Port(STM_PORT(pn));
         const uint32_t mask = STM_GPIO_PIN(pn);
         const uint8_t pin = STM_PIN(pn);

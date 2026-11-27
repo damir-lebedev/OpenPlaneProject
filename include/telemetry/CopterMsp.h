@@ -86,6 +86,7 @@ namespace copter
             BEEPER_CONFIG = 184, SET_BEEPER_CONFIG = 185, SET_TX_INFO = 186, TX_INFO = 187, SET_RTC = 246,
             STATUS_EX = 150, UID = 160, SET_RAW_RC = 200, SET_PID = 202, SET_RC_TUNING = 204, SELECT_SETTING = 210,
             SET_MOTOR = 214, SET_MOTOR_CONFIG = 222, EEPROM_WRITE = 250,
+            MOTOR_OUTPUT_REORDERING = 0x3001, SET_MOTOR_OUTPUT_REORDERING = 0x3002,   // MSP2: порядок выходов
             SEND_DSHOT_COMMAND = 0x3003,   // MSP2: мастер направления моторов конфигуратора
             GET_TEXT = 0x3006, SET_TEXT = 0x3007,   // MSP2: имя модели и пилота, ключ сборки
             // MSP2 OpenPlane (свой Lua-скрипт EdgeTX, tools/edgetx): настройка по имени, модель пульта.
@@ -520,14 +521,31 @@ namespace copter
                     break;
                 case SET_PID_ADVANCED: setPidAdvanced(r); break;
                 case SET_FILTER_CONFIG: setFilterConfig(r); break;
-                case SET_ADVANCED_CONFIG: break;   // протокол и делители — сборкой
+                case SET_ADVANCED_CONFIG: setAdvancedConfig(r); break;   // делители — сборкой
+                case MOTOR_OUTPUT_REORDERING:
+                    w.u8(CopterParams::MAX_MOTOR_OUTPUTS);
+                    for (uint8_t i = 0; i < CopterParams::MAX_MOTOR_OUTPUTS; ++i) w.u8(params.motorOutput(i));
+                    return true;
+                case SET_MOTOR_OUTPUT_REORDERING:
+                {
+                    // число, затем выход каждого мотора — в строку motor_output_reordering
+                    const uint8_t n = r.remaining() ? static_cast<uint8_t>(r.u8()) : 0;
+                    if (n == 0 || n > CopterParams::MAX_MOTOR_OUTPUTS || r.remaining() < n) return false;
+                    char text[CopterParams::NAME_LENGTH + 1] = {};
+                    size_t len = 0;
+                    for (uint8_t i = 0; i < n; ++i)
+                        len += static_cast<size_t>(snprintf(text + len, sizeof(text) - len, i ? ",%u" : "%u", r.u8()));
+                    char error[96];
+                    if (!params.parse(PARAM_MOTOR_OUTPUT_REORDERING, 0, text, error, sizeof(error))) return false;
+                    break;
+                }
                 case SET_MODE_RANGE:
                     if (!setModeRange(r)) return false;
                     break;
                 case SET_MOTOR_CONFIG:
                     r.u16();
                     r.u16();
-                    r.u16();
+                    if (r.remaining() >= 2) set(PARAM_MIN_COMMAND, r.u16());
                     if (r.remaining() >= 2)
                     {
                         set(PARAM_MOTOR_POLES, r.u8());
@@ -1139,7 +1157,21 @@ namespace copter
             if (r.remaining() >= 1) set(PARAM_DYN_NOTCH_COUNT, r.u8());
         }
 
-        // motorPwmProtocol BF: PWM 0, ONESHOT125 1, ONESHOT42 2, MULTISHOT 3, DSHOT150 5, 300 6, 600 7.
+        // motorPwmProtocol BF: PWM 0, ONESHOT125 1, ONESHOT42 2, MULTISHOT 3, DSHOT150 5, 300 6, 600 7
+        // (BRUSHED 4 и PROSHOT1000 8 у нас нет — не меняется).
+        void setAdvancedConfig(msp::Reader& r)
+        {
+            if (r.remaining() < 8) return;
+            r.u8();   // gyro_sync_denom
+            r.u8();   // pid_process_denom
+            r.u8();   // use_unsynced_pwm: у нас аналоговые выходы всегда без синхронизации
+            const uint8_t proto = static_cast<uint8_t>(r.u8());
+            static const int8_t FROM_BF[] = { 0, 1, 2, 3, -1, 4, 5, 6 };
+            if (proto < sizeof(FROM_BF) && FROM_BF[proto] >= 0) set(PARAM_MOTOR_PWM_PROTOCOL, FROM_BF[proto]);
+            set(PARAM_MOTOR_PWM_RATE, r.u16());
+            set(PARAM_DSHOT_IDLE_VALUE, r.u16());
+        }
+
         void advancedConfig(msp::Writer& w)
         {
             uint8_t proto = 0;
@@ -1157,8 +1189,8 @@ namespace copter
             w.u8(1);       // pid_process_denom
             w.u8(0);
             w.u8(proto);
-            w.u16(480);
-            w.u16(static_cast<uint32_t>(lroundf(ctl.getTune().idle * 10000.0f)));   // dshot_idle_value
+            w.u16(static_cast<uint32_t>(params.value(PARAM_MOTOR_PWM_RATE)));
+            w.u16(static_cast<uint32_t>(params.value(PARAM_DSHOT_IDLE_VALUE)));
             w.u8(0);
             w.u8(0);
             w.u8(0);
@@ -1203,7 +1235,7 @@ namespace copter
         {
             w.u16(1070);
             w.u16(2000);
-            w.u16(1000);
+            w.u16(static_cast<uint32_t>(params.value(PARAM_MIN_COMMAND)));
             w.u8(ctl.getTune().frame.count);
             w.u8(clampU8(params.value(PARAM_MOTOR_POLES)));
             w.u8(params.value(PARAM_DSHOT_BIDIR) > 0.5f ? 1 : 0);

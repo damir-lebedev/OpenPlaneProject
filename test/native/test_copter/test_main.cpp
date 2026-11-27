@@ -4838,10 +4838,10 @@ void test_cli_pastes_betaflight_diff()
     TEST_ASSERT_TRUE_MESSAGE(has(out, "# пропущено: resource — у нас это заголовок платы"), out.c_str());
     TEST_ASSERT_FALSE_MESSAGE(has(out, "###ОШИБКА: нет команды resource"), out.c_str());
     TEST_ASSERT_TRUE(has(out, "###ОШИБКА: нет настройки gyro_high_fsr###"));   // каждую — видно сразу
-    TEST_ASSERT_TRUE_MESSAGE(has(out, "# вставлено: применено 18 строк; не перенесено 11: board_name, manufacturer_id, mcu_id, "
-                                      "signature, resource, timer, dma, feature, serial, gyro_high_fsr, "
-                                      "motor_pwm_protocol\r\n"),
+    TEST_ASSERT_TRUE_MESSAGE(has(out, "# вставлено: применено 19 строк; не перенесено 10: board_name, manufacturer_id, mcu_id, "
+                                      "signature, resource, timer, dma, feature, serial, gyro_high_fsr\r\n"),
                              out.c_str());
+    TEST_ASSERT_EQUAL(static_cast<int>(EscProtocol::DSHOT300), static_cast<int>(p.escProtocol()));   // 073: протокол — настройка
     TEST_ASSERT_EQUAL_FLOAT(52.0f, p.value(PARAM_P_ROLL));
     TEST_ASSERT_EQUAL_FLOAT(32.0f, p.value(PARAM_D_MIN_ROLL));
     TEST_ASSERT_EQUAL_FLOAT(0.0f, p.value(PARAM_SIMPLIFIED_PIDS_MODE));   // ползунки BF выключены — PID числами
@@ -8683,6 +8683,60 @@ void test_rpm_filter_per_motor()
     TEST_ASSERT_FLOAT_WITHIN(1.0f, 250.0f, f.motorRotationHz(0));
 }
 
+// 073, 075, 076: протокол регуляторов, холостые, min_command и порядок выходов — настройки.
+void test_esc_protocol_idle_and_motor_order_params()
+{
+    CopterParams& p = five5Params();
+    char err[96], out[32];
+    // протокол: умолчание — из файла платы (begin), имя — как в BF; другой — модель заново
+    const EscProtocol board = p.escProtocol();
+    p.format(PARAM_MOTOR_PWM_PROTOCOL, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING(board == EscProtocol::DSHOT600 ? "DSHOT600" : "ONESHOT125", out);
+    const float delayBefore = p.modelTune().escDelayS;
+    TEST_ASSERT_TRUE(p.parse(PARAM_MOTOR_PWM_PROTOCOL, 0, "PWM", err, sizeof(err)));
+    TEST_ASSERT_EQUAL(static_cast<int>(EscProtocol::PWM), static_cast<int>(p.escProtocol()));
+    TEST_ASSERT_TRUE(p.updateModel());
+    TEST_ASSERT_TRUE(p.modelTune().escDelayS > delayBefore);
+    TEST_ASSERT_FALSE(p.parse(PARAM_MOTOR_PWM_PROTOCOL, 0, "PROSHOT1000", err, sizeof(err)));
+    p.reset(PARAM_MOTOR_PWM_PROTOCOL, 0);
+    TEST_ASSERT_TRUE(p.updateModel());
+    TEST_ASSERT_EQUAL(static_cast<int>(board), static_cast<int>(p.escProtocol()));
+
+    // холостые: умолчание — модель (по винту), заданное — в tune().idle
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, p.modelTune().idle, p.tune().idle);
+    TEST_ASSERT_EQUAL_FLOAT(roundf(p.modelTune().idle * 10000.0f), p.value(PARAM_DSHOT_IDLE_VALUE));
+    TEST_ASSERT_TRUE(p.parse(PARAM_DSHOT_IDLE_VALUE, 0, "700", err, sizeof(err)));
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.07f, p.tune().idle);
+    p.reset(PARAM_DSHOT_IDLE_VALUE, 0);
+
+    // min_command: «стоп» аналоговых в той же доле; частота PWM — не выше 490
+    TEST_ASSERT_EQUAL_FLOAT(1000.0f, p.value(PARAM_MIN_COMMAND));
+    TEST_ASSERT_EQUAL_FLOAT(1050.0f, stopPulseUs(EscProtocol::PWM, 1050.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 131.25f, stopPulseUs(EscProtocol::ONESHOT125, 1050.0f));
+    TEST_ASSERT_EQUAL_FLOAT(125.0f, stopPulseUs(EscProtocol::ONESHOT125));
+    TEST_ASSERT_EQUAL_UINT32(480, analogRateHz(EscProtocol::PWM, 480));
+    TEST_ASSERT_EQUAL_UINT32(490, analogRateHz(EscProtocol::PWM, 4000));
+    TEST_ASSERT_EQUAL_UINT32(2000, analogRateHz(EscProtocol::ONESHOT125, 480));
+    TEST_ASSERT_EQUAL_UINT32(0, analogRateHz(EscProtocol::DSHOT600));
+
+    // порядок выходов: как в BF, не названные — по порядку, по порядку — пусто
+    TEST_ASSERT_EQUAL_UINT8(2, p.motorOutput(2));
+    TEST_ASSERT_TRUE(p.parse(PARAM_MOTOR_OUTPUT_REORDERING, 0, "1, 0,3", err, sizeof(err)));
+    p.format(PARAM_MOTOR_OUTPUT_REORDERING, 0, out, sizeof(out));
+    TEST_ASSERT_EQUAL_STRING("1,0,3,2,4,5,6,7", out);   // строка BF: 8 чисел, остальные — свободные выходы
+    TEST_ASSERT_EQUAL_UINT8(1, p.motorOutput(0));
+    TEST_ASSERT_EQUAL_UINT8(0, p.motorOutput(1));
+    TEST_ASSERT_EQUAL_UINT8(3, p.motorOutput(2));
+    TEST_ASSERT_TRUE(p.parse(PARAM_MOTOR_OUTPUT_REORDERING, 0, "0,1,2,3,4,5,6,7", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.isSet(PARAM_MOTOR_OUTPUT_REORDERING, 0));
+    TEST_ASSERT_FALSE(p.parse(PARAM_MOTOR_OUTPUT_REORDERING, 0, "1,1,2,3", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_MOTOR_OUTPUT_REORDERING, 0, "0,8", err, sizeof(err)));
+    TEST_ASSERT_FALSE(p.parse(PARAM_MOTOR_OUTPUT_REORDERING, 0, "a", err, sizeof(err)));
+    TEST_ASSERT_EQUAL_UINT8(3, p.motorOutput(3));
+    // yaw_motors_reversed (BF) — наши props_out
+    TEST_ASSERT_EQUAL(PARAM_PROPS_OUT, findParam("yaw_motors_reversed"));
+}
+
 // 060–063: настройки BF dyn_notch_* и rpm_filter_* — в цепочку; rpm_filter_weights — строкой как в BF.
 void test_dyn_notch_and_rpm_filter_params()
 {
@@ -11137,6 +11191,7 @@ int main()
     RUN_TEST(test_gyro_spectrum_finds_vibration_peak);
     RUN_TEST(test_dyn_notch_cuts_unmodelled_vibration);
     RUN_TEST(test_rpm_filter_weights_and_fade);
+    RUN_TEST(test_esc_protocol_idle_and_motor_order_params);
     RUN_TEST(test_imu_align_params_text_and_settings);
     RUN_TEST(test_imu_align_rotates_board_to_frame);
     RUN_TEST(test_acc_zero_calibrator);

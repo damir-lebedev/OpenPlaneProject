@@ -124,7 +124,9 @@ PD15, PE9. У Matek H743 есть OSD (AT7456E на SPI2) и PINIO: PD10 — `US
 | `x` | выходы DShot на железе: кадров за промежуток между двумя `x`, регистры таймера и DMA, импульсы на ногах моторов (без осциллографа: 32 фронта на кадр — кадр уходит; ширина «0» у DShot300 — 1.25 мкс). Регулятор кадры не берёт или моторы дёргаются вразнобой, а на ногах всё верно — сначала пайка земли регулятора с платой (стенд 2026-11-26: была она) |
 | `#` | CLI как в Betaflight: `set`, `get`, `diff`, `aux`, `map`, `profile`, `save` — [ниже](#настройки-cli-как-в-betaflight) |
 
-Не тот мотор крутится — поменять порядок в `CopterConfig::MOTOR_PINS`; не в
+Не тот мотор крутится — порядок выходов настройкой `motor_output_reordering`
+(как в BF, `1,0,2,3` — первые два мотора меняются выходами; в Studio — карточка
+«Порядок выходов»: два щелчка по схеме), после `save` — перезагрузка; не в
 ту сторону — у DShot прямо с платы: вкладка «Моторы» в Studio (кнопки
 «обычное / обратное» у мотора) или `dshotprog N 8 12` в CLI; у других
 протоколов — в конфигураторе регулятора (BLHeliSuite, ESC-Configurator),
@@ -458,6 +460,11 @@ BF его не назначает, а инвертор SBUS стоит толь�
 | `crashflip_motor_percent` | общая | 0–100 % | 0 | turtle mode: моторы другой стороны крутятся с такой долей силы (0 — стоят) |
 | `crashflip_expo` | общая | 0–100 % | 35 | turtle mode: экспо стика — у центра мягче, переворот без рывка |
 | `dshot_bidir` | общая | `OFF`, `ON` | `OFF` | двунаправленный DShot: регулятор отвечает оборотами; меняется после перезагрузки (до неё ARM запрещён, `REBOOT_REQD`); с ним предел цикла ниже — кадр, 30 мкс и ответ: DShot600 — до 11.8 кГц, 300 — 7.2, 150 — 4.0 |
+| `motor_pwm_protocol` | общая | `PWM`, `ONESHOT125`, `ONESHOT42`, `MULTISHOT`, `DSHOT150`, `DSHOT300`, `DSHOT600` | из файла платы (`ESC_PROTOCOL`) | протокол регуляторов без пересборки; меняется после перезагрузки (до неё ARM запрещён, `REBOOT_REQD`); модель контура сразу берёт задержку нового протокола. `BRUSHED` и `PROSHOT1000` из diff BF не переносятся |
+| `motor_pwm_rate` | общая | 200–32000 Гц | 480 | частота импульсов у `PWM` (выше 490 Гц импульс 2 мс не помещается — 490). OneShot и Multishot идут непрерывно со своей частотой (как `use_unsynced_pwm = ON`) |
+| `dshot_idle_value` | общая | 0–2000 (0.01 %) | по винту (5" — 550) | холостые после ARM: доля команды при газе в ноль — для всех протоколов, как в BF 4.4+ |
+| `min_command` | общая | 750–2250 мкс | 1000 | импульс «стоп» аналоговых регуляторов (PWM; у OneShot и Multishot — в той же доле: 1050 → OneShot125 131 мкс); DShot не использует |
+| `motor_output_reordering` | общая | до 8 номеров 0–7 через запятую | по порядку | мотор i схемы — на выход платы с этим номером (с нуля), как в BF; не названные — на свободные выходы по возрастанию; после перезагрузки. MSP2 `MOTOR_OUTPUT_REORDERING` — тот же порядок для конфигуратора BF. `yaw_motors_reversed` из diff BF — это `props_out` |
 | `dshot_edt` | общая | `OFF`, `ON` | `OFF` | расширенная телеметрия DShot (EDT, нужен `dshot_bidir`): регуляторы Bluejay, BLHeli_32, AM32 между оборотами шлют температуру, напряжение, ток и статус. Команду включения плата шлёт при старте и повторяет (до 4 раз, моторы стоят), если регуляторы отвечают оборотами, а EDT молчит — батарею подключили после USB. Ток от всех регуляторов — защите по току (`ESC OVERLOAD`) на мотор; нет датчика тока на плате — их сумма вместо него. В живом кадре — `"esc"`, в Studio — карточка «Регуляторы» на вкладке «Моторы» |
 | `small_angle` | общая | 0–180° | 25 | стоит наклонённым больше — не армить; 180 — без проверки |
 | `auto_disarm_delay` | общая | 0–60 с | 5 | заармлен, но стоит на земле с газом внизу столько — DISARM (в BF — только при ARM стиками; у нас — с тумблером тоже); 0 — никогда |
@@ -1419,7 +1426,7 @@ F405 с флешем — `test_app_stm32_f405_copter_blackbox` (эмулятор
 | Фильтры | `FILTER_CONFIG`, `SET_FILTER_CONFIG` | ФНЧ гироскопа и D (типы, срезы, динамика по газу), `gyro_hardware_lpf`, статические режекторы, `yaw_lowpass_hz`, динамический режектор (`dyn_notch_*`) и RPM-фильтр (`rpm_filter_harmonics`, `rpm_filter_min_hz`) — как в BF 4.5 |
 | GPS Rescue, автопилот | `GPS_RESCUE`, `GPS_RESCUE_PIDS`, `GPS_CONFIG` и `SET_*` | как в BF 2025.12: угол — `gps_rescue_max_angle`, газ — `autopilot_throttle_*`, висение `autopilot_hover_throttle` (0 = «из описания» — конфигуратору число, которым летим; вернулось то же — остаётся 0), PID — `autopilot_altitude_*`/`position_*`; GPS — UBLOX, настраивается сам, запись принимается без изменений. У POS/ALT HOLD своих MSP в BF нет — CLI, Studio или меню в очках |
 | Режимы, приёмник | `MODE_RANGES`, `SET_MODE_RANGE`, `RX_CONFIG`, `RX_MAP`, `RXFAIL_CONFIG` и `SET_*` | таблицы `aux`, `map`, `rxfail`, `serialrx_provider`, `rx_min/max_usec` |
-| Моторы, безопасность, батарея | `MOTOR_CONFIG`, `ADVANCED_CONFIG`, `FAILSAFE_CONFIG`, `ARMING_CONFIG`, `BATTERY_CONFIG`, `MIXER_CONFIG`, `FEATURE_CONFIG` и `SET_*` | `motor_poles`, `dshot_bidir`, `failsafe_*`, `small_angle`, `auto_disarm_delay`, `vbat_*`; протокол регуляторов — сборкой, features — только показываются |
+| Моторы, безопасность, батарея | `MOTOR_CONFIG`, `ADVANCED_CONFIG`, `FAILSAFE_CONFIG`, `ARMING_CONFIG`, `BATTERY_CONFIG`, `MIXER_CONFIG`, `FEATURE_CONFIG` и `SET_*` | `motor_poles`, `dshot_bidir`, `motor_pwm_protocol`, `motor_pwm_rate`, `dshot_idle_value`, `min_command`, `failsafe_*`, `small_angle`, `auto_disarm_delay`, `vbat_*`; порядок выходов — MSP2 `MOTOR_OUTPUT_REORDERING`; features — только показываются |
 | Профили, сохранение, перезагрузка | `SELECT_SETTING`, `EEPROM_WRITE`, `REBOOT` (0 — плата, 1 — DFU), `SET_ARMING_DISABLED` | как `save` в CLI |
 | Команды регуляторам | `MSP2_SEND_DSHOT_COMMAND` | мастер направления моторов: в ту же очередь, что `dshotprog` |
 | Видеопередатчик | `VTX_CONFIG`, `SET_VTX_CONFIG` | `vtx_band`/`vtx_channel` или `vtx_freq`, `vtx_power`, `vtx_low_power_disarm`; PIT — только тумблером |

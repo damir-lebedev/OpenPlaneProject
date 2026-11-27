@@ -786,7 +786,7 @@ private:
     {
         ctl.stopMotorTest();
         testRunning = false;
-        io.println("Проверка моторов окончена. Крутится не тот мотор — поменяйте порядок в CopterConfig::MOTOR_PINS;");
+        io.println("Проверка моторов окончена. Крутится не тот мотор — set motor_output_reordering (например 1,0,2,3);");
         io.println("не в ту сторону — направление в конфигураторе регулятора (провода не перепаивать).");
     }
 

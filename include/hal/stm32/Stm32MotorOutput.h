@@ -35,8 +35,9 @@ public:
     static constexpr uint8_t MAX_MOTORS = 8;
 
     // false — ни один пин не стал выходом. af — AF таймеров из заголовка платы (-1 — любой).
+    // pwmRateHz — motor_pwm_rate (только у PWM).
     bool begin(const int16_t* pins, uint8_t count, copter::EscProtocol esc, const int8_t* af = nullptr,
-               uint8_t afCount = 0)
+               uint8_t afCount = 0, uint32_t pwmRateHz = 490)
     {
         protocol = esc;
         motorCount = count > MAX_MOTORS ? MAX_MOTORS : count;
@@ -47,8 +48,7 @@ public:
             return attachedCount > 0;
         }
 
-        const copter::PulseRange range = copter::pulseRange(esc);
-        const uint32_t hz = outputRateHz(esc);
+        const uint32_t hz = copter::analogRateHz(esc, pwmRateHz);
         for (uint8_t i = 0; i < motorCount; ++i)
         {
             Output& o = outputs[i];
@@ -64,7 +64,7 @@ public:
             o.ticksPerUs = slot->ticksPerUs;
             o.channel = STM_PIN_CHANNEL(pinmap_function(name, PinMap_TIM));
             o.timer->setMode(o.channel, TIMER_OUTPUT_COMPARE_PWM1, name);
-            o.timer->setCaptureCompare(o.channel, o.ticks(range.stopUs), TICK_COMPARE_FORMAT);
+            o.timer->setCaptureCompare(o.channel, o.ticks(copter::stopPulseUs(esc, minCommandUs)), TICK_COMPARE_FORMAT);
             o.timer->resume();
             o.attached = true;
             ++attachedCount;
@@ -82,12 +82,17 @@ public:
         }
         for (uint8_t i = 0; i < motorCount; ++i)
         {
-            const float us = copter::pulseUs(protocol, spinning ? commands[i] : 0.0f);
+            // стоп (не крутится или мотор стоит) — импульс min_command
+            const float us = spinning && commands[i] > 0.0f ? copter::pulseUs(protocol, commands[i])
+                                                            : copter::stopPulseUs(protocol, minCommandUs);
             const Output& o = outputs[i];
             if (o.attached) o.timer->setCaptureCompare(o.channel, o.ticks(us), TICK_COMPARE_FORMAT);
             lastUs[i] = us;
         }
     }
+
+    // min_command, мкс в шкале PWM (BF 1000): импульс «стоп» аналоговых протоколов.
+    void setMinCommand(float us) { minCommandUs = us; }
 
     void stop()
     {
@@ -105,18 +110,8 @@ public:
     float pulseUs(uint8_t i) const { return i < motorCount ? lastUs[i] : 0.0f; }
     copter::EscProtocol getProtocol() const { return protocol; }
 
-    // Частота повторения импульсов протокола, Гц.
-    static uint32_t outputRateHz(copter::EscProtocol esc)
-    {
-        switch (esc)
-        {
-            case copter::EscProtocol::PWM: return 490;
-            case copter::EscProtocol::ONESHOT125: return 2000;
-            case copter::EscProtocol::ONESHOT42: return 8000;
-            case copter::EscProtocol::MULTISHOT: return 25000;
-            default: return 0;
-        }
-    }
+    // Частота повторения импульсов протокола, Гц (PWM — по умолчанию 490).
+    static uint32_t outputRateHz(copter::EscProtocol esc) { return copter::analogRateHz(esc); }
 
 private:
     static constexpr uint32_t TICK_HZ = 24000000;
@@ -182,6 +177,7 @@ private:
     Output outputs[MAX_MOTORS];
     Stm32Dshot dshot;
     float lastUs[MAX_MOTORS] = {};
+    float minCommandUs = 1000.0f;
     uint8_t motorCount = 0;
     uint8_t attachedCount = 0;
     copter::EscProtocol protocol = copter::EscProtocol::PWM;

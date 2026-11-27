@@ -390,6 +390,11 @@ namespace copter
         PARAM_MOTOR_POLES,
         PARAM_DSHOT_BIDIR,
         PARAM_DSHOT_EDT,
+        PARAM_MOTOR_PWM_PROTOCOL,
+        PARAM_MOTOR_PWM_RATE,
+        PARAM_DSHOT_IDLE_VALUE,
+        PARAM_MIN_COMMAND,
+        PARAM_MOTOR_OUTPUT_REORDERING,
         PARAM_CRASHFLIP_MOTOR_PERCENT,
         PARAM_CRASHFLIP_EXPO,
         PARAM_CRAFT_NAME,
@@ -602,6 +607,9 @@ namespace copter
         // порядок — как Config::RxProtocol (static_assert в main_copter.cpp)
         static const char* const RX_PROVIDERS[] = { "IBUS", "SBUS", "CRSF" };
         static const char* const OFF_ON[] = { "OFF", "ON" };
+        // порядок — как EscProtocol (имена — как motor_pwm_protocol в BF)
+        static const char* const ESC_PROTOCOLS[] = { "PWM", "ONESHOT125", "ONESHOT42", "MULTISHOT",
+                                                    "DSHOT150", "DSHOT300", "DSHOT600" };
         static const char* const ATTITUDE_FILTERS[] = { "MAHONY", "EKF" };
         // порядок — как GyroToUse (copter/GyroSelect.h)
         static const char* const GYROS_TO_USE[] = { "FIRST", "SECOND", "BOTH" };
@@ -1074,6 +1082,16 @@ namespace copter
               "двунаправленный DShot: регулятор отвечает оборотами (Bluejay, BLHeli_32, AM32); меняется после перезагрузки" },
             { "dshot_edt", kEnum, kMaster, kGroupMotors, 0, 1, 0, kTable, "", OFF_ON, 2,
               "расширенная телеметрия DShot (EDT): температура, напряжение и ток каждого регулятора; нужен dshot_bidir" },
+            { "motor_pwm_protocol", kEnum, kMaster, kGroupMotors, 0, 6, 1, kTable, "", ESC_PROTOCOLS, 7,
+              "протокол регуляторов (умолчание — из файла платы); меняется после перезагрузки" },
+            { "motor_pwm_rate", kInt, kMaster, kGroupMotors, 200, 32000, 480, kTable, "Гц", nullptr, 0,
+              "частота импульсов при motor_pwm_protocol = PWM (выше 490 Гц импульс 2 мс не помещается — 490)" },
+            { "dshot_idle_value", kInt, kMaster, kGroupMotors, 0, 2000, 0, kTune, "0.01 %", nullptr, 0,
+              "холостые: команда моторам при газе в ноль после ARM (550 — 5,5 %); умолчание — по размеру винта" },
+            { "min_command", kInt, kMaster, kGroupMotors, 750, 2250, 1000, kTable, "мкс", nullptr, 0,
+              "импульс «стоп» аналоговых регуляторов (PWM; у OneShot и Multishot — в той же доле); DShot — не нужен" },
+            { "motor_output_reordering", kText, kMaster, kGroupMotors, 0, 15, 0, kTable, "", nullptr, 0,
+              "порядок выходов: мотор i — на выход с этим номером (с нуля), через запятую; пусто — по порядку; после перезагрузки" },
             { "crashflip_motor_percent", kInt, kMaster, kGroupMotors, 0, 100, 0, kTable, "%", nullptr, 0,
               "turtle mode: моторы другой стороны крутятся с такой долей силы (0 — стоят)" },
             { "crashflip_expo", kInt, kMaster, kGroupMotors, 0, 100, 35, kTable, "%", nullptr, 0,
@@ -1467,6 +1485,7 @@ namespace copter
         static const ParamAlias aliases[] = {
             { "d_min_gain", PARAM_D_MAX_GAIN },
             { "d_min_advance", PARAM_D_MAX_ADVANCE },
+            { "yaw_motors_reversed", PARAM_PROPS_OUT },   // BF: пропеллеры наружу
         };
         for (const ParamAlias& alias : aliases)
         {
@@ -1545,7 +1564,7 @@ namespace copter
             fileBuild = b;
             fileOverrides = overrides;
             loopHz = loop;
-            esc = escProtocol;
+            tableDefaults[PARAM_MOTOR_PWM_PROTOCOL] = static_cast<float>(escProtocol);
             uint8_t n = 0;
             const BuildSpec* c = buildCatalog(n);
             fileIndex = 0;
@@ -1618,9 +1637,11 @@ namespace copter
         {
             if (!begun) return false;
             const BuildSpec b = buildSpec();
-            if (haveModel && sameBuild(b, modelSpec)) return false;
+            const EscProtocol esc = escProtocol();
+            if (haveModel && sameBuild(b, modelSpec) && esc == modelEsc) return false;
             model = deriveTune(b, loopHz, esc);
             modelSpec = b;
+            modelEsc = esc;
             haveModel = true;
             refreshDefaults();
             return true;
@@ -2013,7 +2034,62 @@ namespace copter
             refreshDefaults();
         }
 
-        EscProtocol escProtocol() const { return esc; }
+        // motor_pwm_protocol (073): умолчание — протокол из файла платы.
+        EscProtocol escProtocol() const
+        {
+            const uint8_t p = static_cast<uint8_t>(value(PARAM_MOTOR_PWM_PROTOCOL));
+            return p <= static_cast<uint8_t>(EscProtocol::DSHOT600) ? static_cast<EscProtocol>(p) : EscProtocol::ONESHOT125;
+        }
+
+        // motor_output_reordering (076): на какой выход идёт мотор i.
+        // Строка не разобралась — по порядку (parse() такую не пропустит).
+        uint8_t motorOutput(uint8_t motor) const
+        {
+            uint8_t order[MAX_MOTOR_OUTPUTS];
+            motorOrder(text(PARAM_MOTOR_OUTPUT_REORDERING, 0), order);
+            return motor < MAX_MOTOR_OUTPUTS ? order[motor] : motor;
+        }
+
+        // "a,b,c…" (0..7, без повторов, до 8 чисел) -> выход каждого мотора;
+        // остальные — свободные выходы по возрастанию. Пусто — по порядку. false — не так написано.
+        static constexpr uint8_t MAX_MOTOR_OUTPUTS = 8;
+        static bool motorOrder(const char* s, uint8_t out[MAX_MOTOR_OUTPUTS])
+        {
+            uint8_t o[MAX_MOTOR_OUTPUTS];
+            for (uint8_t i = 0; i < MAX_MOTOR_OUTPUTS; ++i) o[i] = i;
+            const char* p = s ? s : "";
+            while (*p == ' ') ++p;
+            uint8_t n = 0;
+            uint8_t used = 0;
+            bool ok = true;
+            while (*p && ok)
+            {
+                char* end = nullptr;
+                const long v = strtol(p, &end, 10);
+                if (end == p || v < 0 || v >= MAX_MOTOR_OUTPUTS || n >= MAX_MOTOR_OUTPUTS || (used & (1u << v)))
+                {
+                    ok = false;
+                    break;
+                }
+                used = static_cast<uint8_t>(used | (1u << v));
+                o[n++] = static_cast<uint8_t>(v);
+                while (*end == ' ') ++end;
+                if (*end == ',') ++end;
+                else if (*end != '\0') ok = false;
+                p = end;
+                while (*p == ' ') ++p;
+            }
+            // не названные моторы — на свободные выходы по возрастанию (перестановка без повторов)
+            uint8_t next = 0;
+            for (uint8_t i = n; i < MAX_MOTOR_OUTPUTS && ok; ++i)
+            {
+                while (used & (1u << next)) ++next;
+                o[i] = next;
+                used = static_cast<uint8_t>(used | (1u << next));
+            }
+            for (uint8_t i = 0; i < MAX_MOTOR_OUTPUTS; ++i) out[i] = ok ? o[i] : i;
+            return ok;
+        }
 
         TuneSource source() const { return static_cast<TuneSource>(static_cast<uint8_t>(value(PARAM_TUNE_SOURCE))); }
 
@@ -2041,6 +2117,24 @@ namespace copter
                         }
                         formatAccCalibration(zero, done, buf, sizeof(buf));
                         s = strcmp(buf, "0,0,0,0") == 0 ? "" : buf;
+                    }
+                    if (id == PARAM_MOTOR_OUTPUT_REORDERING && *s)
+                    {
+                        uint8_t order[MAX_MOTOR_OUTPUTS];
+                        if (!motorOrder(s, order))
+                        {
+                            snprintf(error, errorSize, "номера выходов 0..7 через запятую без повторов, например 1,0,2,3");
+                            return false;
+                        }
+                        // как пишет BF; по порядку — то же, что пусто
+                        size_t len = 0;
+                        bool identity = true;
+                        for (uint8_t i = 0; i < MAX_MOTOR_OUTPUTS; ++i)
+                        {
+                            identity = identity && order[i] == i;
+                            len += static_cast<size_t>(snprintf(buf + len, sizeof(buf) - len, i ? ",%u" : "%u", order[i]));
+                        }
+                        s = identity ? "" : buf;
                     }
                     if (id == PARAM_RPM_FILTER_WEIGHTS && *s)
                     {
@@ -2236,6 +2330,7 @@ namespace copter
             if (isSet(PARAM_YAW_LOWPASS_HZ, pidIndex)) t.yawLpfHz = valueIn(PARAM_YAW_LOWPASS_HZ, pidIndex);
             if (isSet(PARAM_THRUST_LINEAR, pidIndex)) t.thrustLinear = valueIn(PARAM_THRUST_LINEAR, pidIndex) / 100.0f;
             t.motorOutputLimit = valueIn(PARAM_MOTOR_OUTPUT_LIMIT, pidIndex) / 100.0f;
+            t.idle = value(PARAM_DSHOT_IDLE_VALUE) / 10000.0f;
             t.ezLanding.threshold = valueIn(PARAM_EZ_LANDING_THRESHOLD, pidIndex) / 100.0f;
             t.ezLanding.limit = valueIn(PARAM_EZ_LANDING_LIMIT, pidIndex) / 100.0f;
             t.ezLanding.speedMs = valueIn(PARAM_EZ_LANDING_SPEED, pidIndex) / 10.0f;
@@ -2468,6 +2563,7 @@ namespace copter
             memset(craftName, 0, sizeof(craftName));
             memset(rpmWeightsText, 0, sizeof(rpmWeightsText));
             memset(accCalibrationText, 0, sizeof(accCalibrationText));
+            memset(motorOrderText, 0, sizeof(motorOrderText));
             pidIndex = 0;
             rateIndex = 0;
         }
@@ -2552,6 +2648,7 @@ namespace copter
             defaults[PARAM_FEEDFORWARD_MAX_RATE_LIMIT] = roundf(pidBase.pid.ffMaxRateLimit * 100.0f);
             defaults[PARAM_YAW_LOWPASS_HZ] = roundf(pidBase.yawLpfHz);
             defaults[PARAM_THRUST_LINEAR] = roundf(pidBase.thrustLinear * 100.0f);
+            defaults[PARAM_DSHOT_IDLE_VALUE] = roundf(pidBase.idle * 10000.0f);
             defaults[PARAM_ANGLE_LIMIT] = fminf(90.0f, fmaxf(10.0f, roundf(pidBase.maxAngleDeg)));
             defaults[PARAM_ANGLE_P_GAIN] = fminf(200.0f, roundf(pidBase.levelGain * 10.0f));
             defaults[PARAM_ANGLE_FEEDFORWARD] = roundf(pidBase.pid.angleFf * 100.0f);
@@ -2692,6 +2789,7 @@ namespace copter
             if (id == PARAM_CRAFT_NAME) return slot == 0 ? craftName : nullptr;
             if (id == PARAM_RPM_FILTER_WEIGHTS) return slot == 0 ? rpmWeightsText : nullptr;
             if (id == PARAM_ACC_CALIBRATION) return slot == 0 ? accCalibrationText : nullptr;
+            if (id == PARAM_MOTOR_OUTPUT_REORDERING) return slot == 0 ? motorOrderText : nullptr;
             return nullptr;
         }
         const char* stringSlot(ParamId id, uint8_t slot) const { return const_cast<CopterParams*>(this)->stringSlot(id, slot); }
@@ -2729,7 +2827,7 @@ namespace copter
         uint8_t fileIndex = 0;
         BuildOverrides fileOverrides = nullptr;
         float loopHz = 1000.0f;
-        EscProtocol esc = EscProtocol::ONESHOT125;
+        EscProtocol modelEsc = EscProtocol::ONESHOT125;   // протокол, по которому считана модель
         RcConfig rcConfig;
         GeoZoneTable geoZones;
         float tableDefaults[PARAM_COUNT] = {};
@@ -2741,6 +2839,7 @@ namespace copter
         char craftName[NAME_LENGTH + 1] = {};
         char rpmWeightsText[NAME_LENGTH + 1] = {};   // rpm_filter_weights; пусто — 100,100,100
         char accCalibrationText[NAME_LENGTH + 1] = {};   // acc_calibration; пусто — 0,0,0,0
+        char motorOrderText[NAME_LENGTH + 1] = {};   // motor_output_reordering; пусто — по порядку
         uint8_t pidIndex = 0;
         uint8_t rateIndex = 0;
     };

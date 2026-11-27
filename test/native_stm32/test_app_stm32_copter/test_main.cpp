@@ -1277,6 +1277,67 @@ void test_dshot_bidirectional_telemetry()
     fake::dshotDmaReset();
 }
 
+// 073, 075, 076: протокол, порядок выходов, min_command и холостые — из настроек.
+// Протокол и порядок — при включении (поменяли — перезагрузка), «стоп» и
+// холостые — сразу.
+void test_esc_protocol_order_and_min_command_from_settings()
+{
+    TEST_ASSERT_EQUAL(static_cast<int>(copter::EscProtocol::ONESHOT125), static_cast<int>(escAtBoot));
+    for (uint8_t i = 0; i < 4; ++i) TEST_ASSERT_EQUAL(MOTORS[i], motorPins[i]);
+    RcChannels rc;
+    Serial.pushRx("#get motor_pwm_protocol\r\nset motor_pwm_protocol = PWM\r\nset motor_output_reordering = 1,0,2,3\r\n"
+                  "set min_command = 1050\r\nset dshot_idle_value = 700\r\nsave\r\n");
+    run(rc, 0.1);
+    std::string log = takeSerial();
+    TEST_ASSERT_TRUE_MESSAGE(contains(log, "motor_pwm_protocol = ONESHOT125"), log.c_str());
+    TEST_ASSERT_TRUE(contains(log, "Протокол, частота или порядок выходов моторов изменён — перезагрузите плату"));
+    TEST_ASSERT_TRUE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_REBOOT);
+    TEST_ASSERT_FLOAT_WITHIN(1e-6f, 0.07f, copterController.getTune().idle);
+    TEST_ASSERT_EQUAL(131, pulse(PB0));   // OneShot125 «стоп» при min_command 1050
+    // тот же драйвер в PWM: «стоп» — min_command, газ — 1000..2000
+    static Stm32MotorOutput pwm;
+    const int16_t pin[] = { PA2 };
+    pwm.setMinCommand(1050.0f);
+    TEST_ASSERT_TRUE(pwm.begin(pin, 1, copter::EscProtocol::PWM, nullptr, 0, 480));
+    TEST_ASSERT_EQUAL(1050, pulse(PA2));
+    const float half[] = { 0.5f };
+    pwm.write(half, true);
+    TEST_ASSERT_EQUAL(1500, pulse(PA2));
+    const float stopCmd[] = { copter::MOTOR_STOP };
+    pwm.write(stopCmd, true);
+    TEST_ASSERT_EQUAL(1050, pulse(PA2));
+
+    // Betaflight Configurator: протокол и холостые — MSP_SET_ADVANCED_CONFIG, порядок — MSP2
+    msp::Writer w;
+    uint8_t adv[] = { 1, 1, 0, 7, 0xE0, 0x01, 0x26, 0x02 };   // DSHOT600, 480 Гц, idle 550
+    static msp::Parser in;
+    in.cmd = copter::mspcmd::SET_ADVANCED_CONFIG;
+    memcpy(in.payload, adv, sizeof(adv));
+    in.size = sizeof(adv);
+    TEST_ASSERT_TRUE(copterConsole.mspHandler().process(in, w, millis()));
+    TEST_ASSERT_EQUAL(static_cast<int>(copter::EscProtocol::DSHOT600), static_cast<int>(copterParams.escProtocol()));
+    TEST_ASSERT_EQUAL_FLOAT(550.0f, copterParams.value(copter::PARAM_DSHOT_IDLE_VALUE));
+    uint8_t order[] = { 4, 3, 2, 1, 0 };
+    in.cmd = copter::mspcmd::SET_MOTOR_OUTPUT_REORDERING;
+    memcpy(in.payload, order, sizeof(order));
+    in.size = sizeof(order);
+    TEST_ASSERT_TRUE(copterConsole.mspHandler().process(in, w, millis()));
+    TEST_ASSERT_EQUAL_UINT8(3, copterParams.motorOutput(0));
+    TEST_ASSERT_EQUAL_UINT8(0, copterParams.motorOutput(3));
+
+    copterParams.reset(copter::PARAM_MOTOR_PWM_PROTOCOL, 0);
+    copterParams.reset(copter::PARAM_MOTOR_OUTPUT_REORDERING, 0);
+    copterParams.reset(copter::PARAM_MIN_COMMAND, 0);
+    copterParams.reset(copter::PARAM_DSHOT_IDLE_VALUE, 0);
+    copterParams.reset(copter::PARAM_MOTOR_PWM_RATE, 0);
+    Serial.pushRx("#save\r\n");
+    run(rc, 0.1);
+    takeSerial();
+    TEST_ASSERT_FALSE(copterController.getStatus().armBlockers & copter::ARM_BLOCK_REBOOT);
+    TEST_ASSERT_EQUAL(125, pulse(PB0));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, copterParams.modelTune().idle, copterController.getTune().idle);
+}
+
 int main()
 {
     wireUpBoard();
@@ -1299,5 +1360,6 @@ int main()
     RUN_TEST(test_dshot_commands_skips_and_missing_dma);
     RUN_TEST(test_dshot_eight_motors_timers_and_af);
     RUN_TEST(test_dshot_bidirectional_telemetry);
+    RUN_TEST(test_esc_protocol_order_and_min_command_from_settings);
     return UNITY_END();
 }

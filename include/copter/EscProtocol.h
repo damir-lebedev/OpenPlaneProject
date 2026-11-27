@@ -74,6 +74,28 @@ namespace copter
         }
     }
 
+    // Импульс «стоп» аналогового протокола при min_command (мкс в шкале PWM,
+    // BF — 1000): у OneShot и Multishot — в той же доле от их «стопа».
+    inline float stopPulseUs(EscProtocol p, float minCommandUs = 1000.0f)
+    {
+        return pulseRange(p).stopUs * minCommandUs / 1000.0f;
+    }
+
+    // Частота повторения импульсов аналогового протокола, Гц: у PWM —
+    // motor_pwm_rate, но не чаще 490 (импульс до 2 мс); у остальных —
+    // своя (импульсы непрерывные, use_unsynced_pwm у них всегда «да»).
+    inline uint32_t analogRateHz(EscProtocol p, uint32_t pwmRateHz = 490)
+    {
+        switch (p)
+        {
+            case EscProtocol::PWM: return pwmRateHz < 50 ? 50 : (pwmRateHz > 490 ? 490 : pwmRateHz);
+            case EscProtocol::ONESHOT125: return 2000;
+            case EscProtocol::ONESHOT42: return 8000;
+            case EscProtocol::MULTISHOT: return 25000;
+            default: return 0;
+        }
+    }
+
     // Команда 0..1 -> ширина импульса, мкс.
     inline float pulseUs(EscProtocol p, float command)
     {
